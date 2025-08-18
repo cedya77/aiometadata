@@ -5,6 +5,7 @@ const fetch = require('node-fetch');
 
 const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
 const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY;
+const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com/banners/images/';
 
 const tokenCache = new Map();
 
@@ -301,6 +302,128 @@ async function filter(type, params, config) {
   }
 }
 
+/**
+ * Get series poster from TVDB
+ */
+async function getSeriesPoster(tvdbId, config) {
+  try {
+    const seriesData = await getSeriesExtended(tvdbId, config);
+    if (seriesData && seriesData.image) {
+      return seriesData.image.startsWith('http') ? seriesData.image : `${TVDB_IMAGE_BASE}${seriesData.image}`;
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting poster for series ${tvdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get series background from TVDB
+ */
+async function getSeriesBackground(tvdbId, config) {
+  try {
+    const seriesData = await getSeriesExtended(tvdbId, config);
+    if (seriesData && seriesData.artworks) {
+      // Look for background artwork (type 3 is typically background)
+      const backgroundArtwork = seriesData.artworks.find(art => art.type === 3);
+      if (backgroundArtwork && backgroundArtwork.image) {
+        return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting background for series ${tvdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get movie poster from TVDB
+ */
+async function getMoviePoster(tvdbId, config) {
+  try {
+    const movieData = await getMovieExtended(tvdbId, config);
+    if (movieData && movieData.image) {
+      return movieData.image.startsWith('http') ? movieData.image : `${TVDB_IMAGE_BASE}${movieData.image}`;
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting poster for movie ${tvdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get movie background from TVDB
+ */
+async function getMovieBackground(tvdbId, config) {
+  try {
+    const movieData = await getMovieExtended(tvdbId, config);
+    if (movieData && movieData.artworks) {
+      // Look for background artwork (type 15 is background for movies)
+      const backgroundArtwork = movieData.artworks.find(art => art.type === 15);
+      if (backgroundArtwork && backgroundArtwork.image) {
+        console.log(`[TVDB] Found movie background (type 15) for TVDB ID ${tvdbId}: ${backgroundArtwork.image}`);
+        return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;
+      }
+      
+      // Fallback to type 3 if type 15 not found
+      const fallbackBackground = movieData.artworks.find(art => art.type === 3);
+      if (fallbackBackground && fallbackBackground.image) {
+        console.log(`[TVDB] Found movie background (type 3 fallback) for TVDB ID ${tvdbId}: ${fallbackBackground.image}`);
+        return fallbackBackground.image.startsWith('http') ? fallbackBackground.image : `${TVDB_IMAGE_BASE}${fallbackBackground.image}`;
+      }
+      
+      console.log(`[TVDB] No background artwork found for movie ${tvdbId}. Available types:`, movieData.artworks.map(art => art.type));
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting background for movie ${tvdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get series logo from TVDB
+ */
+async function getSeriesLogo(tvdbId, config) {
+  try {
+    const seriesData = await getSeriesExtended(tvdbId, config);
+    if (seriesData && seriesData.artworks) {
+      // Look for clear logo artwork (type 23 is clear logo for series)
+      const logoArtwork = seriesData.artworks.find(art => art.type === 23);
+      if (logoArtwork && logoArtwork.image) {
+        return logoArtwork.image.startsWith('http') ? logoArtwork.image : `${TVDB_IMAGE_BASE}${logoArtwork.image}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting logo for series ${tvdbId}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get movie logo from TVDB
+ */
+async function getMovieLogo(tvdbId, config) {
+  try {
+    const movieData = await getMovieExtended(tvdbId, config);
+    if (movieData && movieData.artworks) {
+      // Look for clear logo artwork (type 25 is clear logo for movies)
+      const logoArtwork = movieData.artworks.find(art => art.type === 25);
+      if (logoArtwork && logoArtwork.image) {
+        return logoArtwork.image.startsWith('http') ? logoArtwork.image : `${TVDB_IMAGE_BASE}${logoArtwork.image}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting logo for movie ${tvdbId}:`, error.message);
+    return null;
+  }
+}
+
 module.exports = {
   searchSeries,
   searchMovies,
@@ -312,5 +435,11 @@ module.exports = {
   findByImdbId,
   getAllGenres,
   filter,
-  getSeasonExtended
+  getSeasonExtended,
+  getSeriesPoster,
+  getSeriesBackground,
+  getMoviePoster,
+  getMovieBackground,
+  getSeriesLogo,
+  getMovieLogo
 };

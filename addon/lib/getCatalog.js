@@ -10,6 +10,9 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
 const tvdb = require('./tvdb');
 const { to3LetterCode, to3LetterCountryCode } = require('./language-map');
+const Utils = require('../utils/parseProps');
+const { getImdbRating } = require('./getImdbRating');
+const { resolveAllIds } = require('./id-resolver');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -27,6 +30,7 @@ async function getCatalog(type, language, page, id, genre, config, catalogChoice
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, catalogChoices);
       return { metas: tmdbResults };
     }
+
     else {
       console.warn(`[getCatalog] Received request for unknown catalog prefix: ${id}`);
       return { metas: [] };
@@ -66,19 +70,22 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
   if (!results || results.length === 0) return [];
 
 
-  const metas = results.sort((a, b) => b.score - a.score).map(item => {
+  const metas = await Promise.all(results.sort((a, b) => b.score - a.score).map(async item => {
     const tvdbId = item.tvdb_id || item.id;
     if (!tvdbId || !item.name) return null;
-    const fallbackPosterUrl = item.image ? `${item.image}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-    const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const fallbackPosterUrl = item.image ? (item.image.startsWith('http') ? item.image : `${TVDB_IMAGE_BASE}${item.image}`) : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+    const posterUrl = await Utils.getSeriesPoster({ tmdbId: null, tvdbId: tvdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config);
+    const posterProxyUrl = `${host}/poster/${type}/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
     return {
       id: `tvdb:${tvdbId}`,
       type: type,
       name: item.name,
       poster: posterProxyUrl,
       year: item.year || null,
+      runtime: Utils.parseRunTime(item.runtime),
+      releaseInfo: item.year || null,
     };
-  }).filter(Boolean);
+  }).filter(Boolean));
 
   return metas;
 }
@@ -99,21 +106,29 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     : () => moviedb.discoverTv(parameters, config);
 
   const res = await fetchFunction();
-
-  const metas = res.results.map(item => {
+  const metas = await Promise.all(res.results.map(async item => {
+    // Resolve IDs for each individual item
+    const allIds = await resolveAllIds(`tmdb:${item.id}`, type, config);
+    
     const tmdbPosterFullUrl = item.poster_path
             ? `${TMDB_IMAGE_BASE}${item.poster_path}`
             : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
+    const posterUrl = await Utils.getSeriesPoster({ tmdbId: item.id, tvdbId: null, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
 
-    const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
     return {
       id: `tmdb:${item.id}`,
       type: type,
+      imdb_id: allIds.imdbId,
+      releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
       name: item.title || item.name,
       poster: posterProxyUrl,
-      year: (item.release_date || item.first_air_date || '').substring(0, 4)
+      year: (item.release_date || item.first_air_date || '').substring(0, 4),
+      background: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : null,
+      description: item.overview,
+      genres: item.genre_ids.map(g => genreList.find(genre => genre.id === g)?.name)
     };
-  });
+  }));
 
   return metas;
 }
@@ -206,6 +221,8 @@ function findProvider(providerId) {
   if (!provider) throw new Error(`Could not find provider: ${providerId}`);
   return provider;
 }
+
+
 
 
 module.exports = { getCatalog };

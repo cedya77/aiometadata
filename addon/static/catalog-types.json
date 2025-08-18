@@ -41,6 +41,10 @@
       "nameKey": "schedule",
       "extraSupported": ["genre", "skip"]
     },
+    "studios": {
+      "nameKey": "studios",
+      "extraSupported": ["genre", "skip"]
+    },
     "decade80s": { "nameKey": "decade80s", "extraSupported": ["skip"] },
     "decade90s": { "nameKey": "decade90s", "extraSupported": ["skip"] },
     "decade00s": { "nameKey": "decade00s", "extraSupported": ["skip"] },

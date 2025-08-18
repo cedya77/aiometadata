@@ -1,6 +1,6 @@
 {
   "name": "aio-metadata",
-  "version": "1.0.0-beta.15",
+  "version": "1.0.0",
   "description": "Metadata provider for Stremio",
   "main": "server.js",
   "scripts": {
@@ -32,6 +32,7 @@
   },
   "homepage": "https://github.com/cedya77/aiometadata#readme",
   "dependencies": {
+    "@cospired/i18n-iso-languages": "^4.2.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -68,6 +69,7 @@
     "next-themes": "^0.3.0",
     "node-fetch": "^2.7.0",
     "p-queue": "^8.1.0",
+    "pg": "^8.16.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-kofi": "^0.0.2",
@@ -76,6 +78,7 @@
     "sharp": "^0.33.5",
     "socks-proxy-agent": "^8.0.5",
     "sonner": "^1.7.4",
+    "sqlite3": "^5.1.7",
     "swagger-stats": "^0.99.7",
     "tailwind-merge": "^2.6.0",
     "transliteration": "^2.3.5",

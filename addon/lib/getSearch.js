@@ -47,12 +47,13 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const tmdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TheMovieDB')?.id;
   const tvdbId = extendedRecord.id;
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(fallbackImage)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const posterUrl = await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
+  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   return {
     id: `tvdb:${extendedRecord.id}`,
     type: type,
     name: translatedName, 
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : posterUrl,
     year: extendedRecord.year,
     description: overview,
     //isAnime: isAnime(extendedRecord)
@@ -82,9 +83,8 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 
   }
   
-  const metas = searchResults.map(anime => 
-    Utils.parseAnimeCatalogMeta(anime, config, language)
-  ).filter(Boolean);
+  // Use batch processing for better performance and to avoid rate limits
+  const metas = await Utils.parseAnimeCatalogMetaBatch(searchResults, config, language);
   //console.log(metas); 
   return metas;
 }
@@ -133,10 +133,11 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const tmdbPosterFullUrl = media.poster_path
             ? `https://image.tmdb.org/t/p/w500${media.poster_path}`
             : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
+        const posterUrl = await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: null, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
 
-        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(tmdbPosterFullUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
-        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : tmdbPosterFullUrl;
+        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
         parsed.popularity = media.popularity;
         return parsed;
     });
@@ -378,14 +379,22 @@ async function getSearch(id, type, language, extra, config) {
       case 'mal.genre_search':
         if (extra.genre_id) {
           const results = await jikan.getAnimeByGenre(extra.genre_id, extra.type_filter, page, config);
-          metas = results.map(item => Utils.parseAnimeCatalogMeta(item, config, language));
+          metas = await Utils.parseAnimeCatalogMetaBatch(results, config, language);
         }
         break;
       
       case 'mal.va_search':
         if (extra.va_id) {
           const roles = await jikan.getAnimeByVoiceActor(extra.va_id);
-          metas = roles.map(role => Utils.parseAnimeCatalogMeta(role.anime, config, language, `Role: ${role.character.name}`));
+          const animeResults = roles.map(role => role.anime);
+          const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeResults, config, language);
+          
+          metas = batchMetas.map((meta, index) => {
+            if (roles[index]) {
+              meta.description = `Role: ${roles[index].character.name}`;
+            }
+            return meta;
+          });
         }
         break;
 

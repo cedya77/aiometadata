@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from './components/layout/Header';
-import { InstallFooter } from './components/layout/InstallFooter';
 import { SettingsLayout } from './components/SettingsLayout';
 import { ConfigProvider } from './contexts/ConfigContext';
 import { Toaster } from "@/components/ui/sonner";
@@ -16,8 +15,6 @@ function App() {
             <SettingsLayout />
           </CardContent>
         </Card>
-        
-        <InstallFooter />
         <Toaster />
       </div>
     </ConfigProvider>
@@ -25,3 +22,4 @@ function App() {
 }
 
 export default App;
+

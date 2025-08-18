@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist';
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming';
   showInHome: boolean;
 }
 
@@ -25,6 +25,11 @@ export interface AppConfig {
     series: string;
     anime: string;
     anime_id_provider: 'kitsu' | 'mal' | 'imdb';
+  };
+  artProviders: {
+    movie: 'tmdb' | 'tvdb' | 'fanart';
+    series: 'tmdb' | 'tvdb' | 'fanart';
+    anime: 'mal' | 'anilist' | 'tvdb' | 'fanart';
   };
   tvdbSeasonType: string;
   mal: {
@@ -54,5 +59,10 @@ export interface AppConfig {
         anime_movie: string;
         anime_series: string;
     };
+    // New: per-engine enable/disable
+    engineEnabled?: {
+      [engine: string]: boolean;
+    };
   };
+  streaming: string[];
 }

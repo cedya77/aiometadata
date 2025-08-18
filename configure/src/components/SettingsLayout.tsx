@@ -9,6 +9,7 @@ import { ProvidersSettings } from './sections/ProvidersSettings';
 import { FiltersSettings } from './sections/FiltersSettings';
 import { CatalogsSettings } from './sections/CatalogsSettings';
 import { SearchSettings } from './sections/SearchSettings';
+import { ConfigurationManager } from './ConfigurationManager';
 
 const settingsPages = [
   { value: 'general', title: 'General', component: <GeneralSettings /> },
@@ -17,6 +18,7 @@ const settingsPages = [
   { value: 'filters', title: 'Filters', component: <FiltersSettings /> },
   { value: 'search', title: 'Search', component: <SearchSettings /> },
   { value: 'catalogs', title: 'Catalogs', component: <CatalogsSettings /> },
+  { value: 'configuration', title: 'Configuration', component: <ConfigurationManager /> },
 ];
 
 /**

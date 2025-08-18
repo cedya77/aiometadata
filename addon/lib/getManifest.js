@@ -200,7 +200,17 @@ async function getManifest(config) {
             return await jikan.getAnimeGenres();
           })
           catalogOptions = animeGenres.filter(Boolean).map(genre => genre.name).sort();
-      } else if (userCatalog.id === 'mal.schedule') {
+      } else if (userCatalog.id === 'mal.studios'){
+        const studios = await cacheWrapJikanApi('mal-studios', async () => {
+          console.log('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
+          return await jikan.getStudios();
+        })
+        catalogOptions = studios.map(studio => {
+          const defaultTitle = studio.titles.find(t => t.type === 'Default');
+          return defaultTitle ? defaultTitle.title : null;
+        }).filter(Boolean);
+      }
+      else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       } 
       else {
@@ -220,49 +230,66 @@ async function getManifest(config) {
   
   catalogs = catalogs.filter(Boolean);
 
+  const seen = new Set();
+  catalogs = catalogs.filter(cat => {
+    const key = `${cat.id}:${cat.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   const isSearchEnabled = config.search?.enabled ?? true;
+  const engineEnabled = config.search?.engineEnabled || {};
+  const searchProviders = config.search?.providers || {};
 
   if (isSearchEnabled) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
-    catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
-    catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
-    const searchAnimeSeries = {
-    id: "search",
-    type: "anime.series", 
-    name: "Anime Search (Series)",
-    extra: [{ name: "search", isRequired: true }]
-    };
-    const searchAnimeMovies = {
-      id: "search", 
-      type: "anime.movie", 
-      name: "Anime Search (Movies)",
-      extra: [{ name: "search", isRequired: true }]
-    };
-    catalogs.push(searchAnimeMovies, searchAnimeSeries);
-  
-    const providers = config.search?.providers || {};
-    console.log('[Manifest] Search providers in use:', providers);
-    const isMalSearchInUse = Object.values(providers).some(providerId => 
-        typeof providerId === 'string' && providerId.startsWith('mal.search')
+    // Movie Search
+    if (engineEnabled[searchProviders.movie] !== false) {
+      catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
+    }
+    // Series Search
+    if (engineEnabled[searchProviders.series] !== false) {
+      catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
+    }
+    // Anime Series Search
+    if (engineEnabled[searchProviders.anime_series] !== false) {
+      catalogs.push({
+        id: "search",
+        type: "anime.series",
+        name: "Anime Search (Series)",
+        extra: [{ name: "search", isRequired: true }]
+      });
+    }
+    // Anime Movies Search
+    if (engineEnabled[searchProviders.anime_movie] !== false) {
+      catalogs.push({
+        id: "search",
+        type: "anime.movie",
+        name: "Anime Search (Movies)",
+        extra: [{ name: "search", isRequired: true }]
+      });
+    }
+    // MAL special search catalogs (only if any mal.search engine is enabled)
+    const isMalSearchInUse = Object.entries(searchProviders).some(
+      ([key, providerId]) =>
+        typeof providerId === 'string' &&
+        providerId.startsWith('mal.search') &&
+        engineEnabled[providerId] !== false
     );
-
     if (isMalSearchInUse) {
-      console.log('[Manifest] MAL search is in use for at least one content type. Adding VA and Genre search catalogs.');
-      
       const searchVAAnime = {
         id: "mal.va_search",
         type: "anime",
         name: `${prefix}Voice Actor Roles`,
         extra: [{ name: "va_id", isRequired: true }]
       };
-
       const searchGenreAnime = {
         id: "mal.genre_search",
         type: "anime",
         name: `${prefix}Anime Genre`,
         extra: [{ name: "genre_id", isRequired: true }]
       };
-      
       catalogs.push(searchVAAnime, searchGenreAnime);
     }
   }
@@ -312,8 +339,8 @@ async function getManifest(config) {
     name: "AIOMetadata",
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
-    types: ["movie", "series", "anime.movie", "anime.series"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:"],
+    types: ["movie", "series", "anime.movie", "anime.series", "anime"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:"],
     //stremioAddonsConfig,
     behaviorHints: {
       configurable: true,
@@ -328,6 +355,7 @@ function getDefaultCatalogs() {
   const defaultTmdbCatalogs = Object.keys(CATALOG_TYPES.default);
   const defaultTvdbCatalogs = Object.keys(CATALOG_TYPES.tvdb);
   const defaultMalCatalogs = Object.keys(CATALOG_TYPES.mal);
+  const defaultStreamingCatalogs = Object.keys(CATALOG_TYPES.streaming);
 
   const tmdbCatalogs = defaultTmdbCatalogs.flatMap(id =>
     defaultTypes.map(type => ({
@@ -351,8 +379,16 @@ function getDefaultCatalogs() {
     showInHome: !['genres', 'schedule'].includes(id),
     enabled: true 
   }));
+  const streamingCatalogs = defaultStreamingCatalogs.flatMap(id =>
+    defaultTypes.map(type => ({
+      id: `streaming.${id}`,
+      type,
+      showInHome: false,
+      enabled: true
+    }))
+  );
 
-  return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs];
+  return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs, ...streamingCatalogs];
 }
 
 module.exports = { getManifest, DEFAULT_LANGUAGE };

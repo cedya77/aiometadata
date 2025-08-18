@@ -33,9 +33,24 @@ export function SearchSettings() {
     }));
   };
 
+  const handleEngineEnabledChange = (engine: string, checked: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      search: {
+        ...prev.search,
+        engineEnabled: {
+          ...prev.search.engineEnabled,
+          [engine]: checked,
+        },
+      },
+    }));
+  };
+
   const movieSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('movie'));
   const seriesSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('series'));
-  const animeSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('anime'));
+  const animeSearchProviders = allSearchProviders.filter(
+    p => p.mediaType.includes('anime_movie') || p.mediaType.includes('anime_series')
+  );
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -92,41 +107,64 @@ export function SearchSettings() {
                     {/* Movie Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Movies Engine:</Label>
-                        <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
-                            <SelectTrigger className="w-full sm:w-[280px]"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {movieSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {movieSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Switch
+                                checked={config.search.engineEnabled?.[config.search.providers.movie] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.movie, checked)}
+                                aria-label="Enable this engine"
+                            />
+                        </div>
                     </div>
                     {/* Series Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Series Engine:</Label>
-                        <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
-                            <SelectTrigger className="w-full sm:w-[280px]"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {seriesSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {seriesSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Switch
+                                checked={config.search.engineEnabled?.[config.search.providers.series] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.series, checked)}
+                                aria-label="Enable this engine"
+                            />
+                        </div>
                     </div>
-                    {/* Anime Search Provider */}
+                    {/* Anime (Series) Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                      <Label className="text-lg font-medium">Anime (Series) Engine:</Label>
-                      <div className="flex items-center justify-start w-full sm:w-[280px] h-10 px-3 py-2 text-sm text-muted-foreground border border-input rounded-md bg-stone-900">
-                        {
-                          // Find the label for the currently configured provider
-                          allSearchProviders.find(p => p.value === config.search.providers.anime_series)?.label || 'N/A'
-                        }
-                      </div>
+                        <Label className="text-lg font-medium">Anime (Series) Engine:</Label>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
+                                {animeSearchProviders.find(p => p.value === 'mal.search.series')?.label || 'MAL Keyword (Series)'}
+                            </div>
+                            <Switch
+                                checked={config.search.engineEnabled?.['mal.search.series'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange('mal.search.series', checked)}
+                                aria-label="Enable this engine"
+                            />
+                        </div>
                     </div>
-
+                    {/* Anime (Movies) Search Provider */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                      <Label className="text-lg font-medium">Anime (Movies) Engine:</Label>
-                      <div className="flex items-center justify-start w-full sm:w-[280px] h-10 px-3 py-2 text-sm text-muted-foreground border border-input rounded-md bg-stone-900">
-                        {
-                          allSearchProviders.find(p => p.value === config.search.providers.anime_movie)?.label || 'N/A'
-                        }
-                      </div>
+                        <Label className="text-lg font-medium">Anime (Movies) Engine:</Label>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
+                                {animeSearchProviders.find(p => p.value === 'mal.search.movie')?.label || 'MAL Keyword (Movies)'}
+                            </div>
+                            <Switch
+                                checked={config.search.engineEnabled?.['mal.search.movie'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange('mal.search.movie', checked)}
+                                aria-label="Enable this engine"
+                            />
+                        </div>
                     </div>
                 </CardContent>
             </Card>

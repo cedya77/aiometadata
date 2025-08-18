@@ -3,27 +3,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Switch } from '@/components/ui/switch';
+import { AlertCircle } from 'lucide-react';
 
-// Define the available provider options for clarity and reusability
 const movieProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'tvdb', label: 'TheTVDB' },
-  { value: 'imdb', label: 'IMDb (via TMDB)' },
+  { value: 'imdb', label: 'IMDb' },
 ];
 
 const seriesProviders = [
   { value: 'tvdb', label: 'TheTVDB (Recommended)' },
   { value: 'tmdb', label: 'The Movie Database' },
   { value: 'tvmaze', label: 'TVmaze' },
-  { value: 'imdb', label: 'IMDb (via TMDB)' },
+  { value: 'imdb', label: 'IMDb' },
 ];
 
 const animeProviders = [
   { value: 'mal', label: 'MyAnimeList (Recommended)' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database' },
-  { value: 'tvmaze', label: 'TVmaze' },
-  { value: 'imdb', label: 'IMDb (via TMDB)' },
+  { value: 'imdb', label: 'IMDb' },
 ];
 
 const animeIdProviders = [
@@ -39,6 +38,26 @@ const tvdbSeasonTypes = [
   { value: 'absolute', label: 'Absolute Order' },
   { value: 'alternate', label: 'Alternate Order' },
   { value: 'regional', label: 'Regional Order' },
+];
+
+// Art provider options
+const movieArtProviders = [
+  { value: 'tmdb', label: 'The Movie Database (TMDB)' },
+  { value: 'tvdb', label: 'TheTVDB' },
+  { value: 'fanart', label: 'Fanart.tv' },
+];
+
+const seriesArtProviders = [
+  { value: 'tmdb', label: 'The Movie Database (TMDB)' },
+  { value: 'tvdb', label: 'TheTVDB' },
+  { value: 'fanart', label: 'Fanart.tv' },
+];
+
+const animeArtProviders = [
+  { value: 'mal', label: 'MyAnimeList' },
+  { value: 'anilist', label: 'AniList' },
+  { value: 'tvdb', label: 'TheTVDB' },
+  { value: 'fanart', label: 'Fanart.tv' },
 ];
 
 
@@ -72,6 +91,23 @@ export function ProvidersSettings() {
         }
     }));
   };
+
+  const handleArtProviderChange = (type: 'movie' | 'series' | 'anime', value: string) => {
+    setConfig(prev => ({ 
+      ...prev, 
+      artProviders: { 
+        ...prev.artProviders, 
+        [type]: value as any 
+      } 
+    }));
+  };
+
+  // Check if Fanart is selected as any art provider
+  const isFanartSelected = config.artProviders?.movie === 'fanart' || 
+                          config.artProviders?.series === 'fanart' || 
+                          config.artProviders?.anime === 'fanart';
+
+  const hasFanartKey = config.apiKeys.fanart && config.apiKeys.fanart.trim() !== '';
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -123,6 +159,105 @@ export function ProvidersSettings() {
             </Select>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Art Provider Settings */}
+      <div>
+        <h3 className="text-xl font-semibold mb-4">Art Providers</h3>
+        <p className="text-muted-foreground mb-4">Choose your preferred source for images, thumbnails, and posters.</p>
+        
+        {/* Fanart API Key Warning */}
+        {isFanartSelected && !hasFanartKey && (
+          <div className="p-4 border border-amber-400/30 bg-amber-900/20 rounded-lg mb-4">
+            <div className="flex items-center gap-2 text-amber-400">
+              <AlertCircle className="h-4 w-4" />
+              <p className="text-sm">
+                <strong>Fanart.tv API Key Required:</strong> You've selected Fanart.tv as an art provider. 
+                Please add your Fanart.tv API key in the <strong>Integrations</strong> tab to use this service.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Movie Art Provider */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Movie Art Provider</CardTitle>
+              <CardDescription>Source for movie posters and images.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Select 
+                value={config.artProviders?.movie ?? 'meta'} 
+                onValueChange={(val) => handleArtProviderChange('movie', val)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="meta">Meta Provider (default)</SelectItem>
+                  {movieArtProviders.map(p => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+
+          {/* Series Art Provider */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Series Art Provider</CardTitle>
+              <CardDescription>Source for series posters and images.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Select 
+                value={config.artProviders?.series ?? 'meta'} 
+                onValueChange={(val) => handleArtProviderChange('series', val)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="meta">Meta Provider (default)</SelectItem>
+                  {seriesArtProviders.map(p => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+
+          {/* Anime Art Provider */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Anime Art Provider</CardTitle>
+              <CardDescription>Source for anime posters and images.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Select 
+                value={config.artProviders?.anime ?? 'meta'} 
+                onValueChange={(val) => handleArtProviderChange('anime', val)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="meta">Meta Provider (default)</SelectItem>
+                  {animeArtProviders.map(p => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* TVDB Specific Settings */}

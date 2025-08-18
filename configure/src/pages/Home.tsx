@@ -11,6 +11,7 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import packageJson from "../../../package.json";
 
+
 const languages = [
   { value: "ab-AB", label: "Abkhazian" },
   { value: "aa-AA", label: "Afar" },
@@ -331,6 +332,8 @@ export default function Home() {
               </p>
             </div>
           </div>
+
+
         </motion.div>
       </div>
     </div>

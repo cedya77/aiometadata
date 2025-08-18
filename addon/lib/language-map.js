@@ -1,6 +1,7 @@
 require("dotenv").config();
 const moviedb = require("./getTmdb");
 const getCountryISO3 = require("country-iso-2-to-3");
+const languages = require("@cospired/i18n-iso-languages");
 let languageData = null; // We will cache the data here
 
 /**
@@ -17,7 +18,11 @@ async function loadLanguageData(config) {
 
     // Create a fast lookup map: 'en' -> { english_name: 'English', iso_639_2: 'eng' }
     const languageMap = new Map(
-      allLanguages.map(lang => [lang.iso_639_1, { name: lang.english_name, code3: lang.iso_639_2 }])
+      allLanguages.map(lang => {
+
+        const code3 = languages.alpha2ToAlpha3T(lang.iso_639_1) || languages.alpha2ToAlpha3B(lang.iso_639_1) || 'eng';
+        return [lang.iso_639_1, { name: lang.english_name, code3: lang.iso_639_1 === "pt" ? lang.iso_639_1 : code3 }];
+      })
     );
 
     // Filter and format the list of available translations

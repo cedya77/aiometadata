@@ -82,7 +82,7 @@ async function _makeJikanRequest(url) {
 }
 
 async function searchAnime(type, query, limit = 20, config = {}, page = 1) {
-  let url = `${JIKAN_API_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&order_by=popularity&sort=asc&page=${page}`;
+  let url = `${JIKAN_API_BASE}/anime?q=${encodeURIComponent(query)}&limit=${limit}&page=${page}`;
   if (config.ageRating) {
     let jikanRating;
     switch (config.ageRating) {
@@ -434,6 +434,37 @@ async function getTopAnimeByDateRange(startDate, endDate, page = 1, config = {})
   });
 }
 
+/**
+ * Fetches the list of anime studios (producers) from Jikan.
+ * @param {number} [limit=100] - Number of studios to fetch (max 25 per page, will fetch multiple pages if needed)
+ * @returns {Promise<Array>} - Array of studio objects
+ */
+async function getStudios(limit = 100) {
+  const queryParams = {
+    order_by: 'favorites',
+    sort: 'desc'
+  }; 
+  const endpoint = `/producers`;
+  return jikanPaginator(endpoint, limit, queryParams);
+}
+
+/**
+ * Fetches anime for a given studio (producer) ID from Jikan.
+ * @param {number|string} studioId - The MAL studio/producer ID
+ * @param {number} [page=1] - Page number
+ * @param {number} [limit=25] - Number of anime per page
+ * @returns {Promise<Array>} - Array of anime objects
+ */
+async function getAnimeByStudio(studioId, page = 1, limit = 25) {
+  const url = `${JIKAN_API_BASE}/anime?producers=${studioId}&order_by=members&sort=desc&page=${page}&limit=${limit}`;
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch anime for studio ID ${studioId}:`, e.message);
+      return [];
+    });
+}
+
 
 module.exports = {
   searchAnime,
@@ -448,4 +479,6 @@ module.exports = {
   getUpcoming,
   getTopAnimeByDateRange,
   getAiringSchedule,
+  getStudios,
+  getAnimeByStudio,
 };
