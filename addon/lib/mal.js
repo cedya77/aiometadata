@@ -1,5 +1,5 @@
 require("dotenv").config();
-const axios = require('axios');
+const { httpGet } = require('../utils/httpClient');
 const https = require('https');
 
 const robustAgent = new https.Agent({
@@ -13,12 +13,17 @@ const robustAgent = new https.Agent({
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
 
-const BASE_REQUEST_DELAY = 350; 
-const MAX_RETRIES = 3;      
+const BASE_REQUEST_DELAY = 200;
+const MAX_RETRIES = 3;
+const RATE_LIMIT_DELAY = 1000;    
 
 let requestQueue = [];
 let isProcessing = false;
-console.log(`[Jikan] Keep-Alive is enabled.`);
+let activeRequests = 0;
+const MAX_CONCURRENT_REQUESTS = 1;
+let recentRateLimitHits = 0;
+let lastRateLimitTime = 0;
+console.log(`[Jikan] Keep-Alive is enabled with optimized rate limiting.`);
 
 
 async function processQueue() {
@@ -28,23 +33,65 @@ async function processQueue() {
   }
 
   isProcessing = true;
-  const requestTask = requestQueue.shift();
-  let nextDelay = BASE_REQUEST_DELAY; 
+  
+  // Process multiple requests concurrently if queue is small and we have capacity
+  const requestsToProcess = Math.min(
+    requestQueue.length,
+    MAX_CONCURRENT_REQUESTS - activeRequests
+  );
+  
+  if (requestsToProcess <= 0) {
+    // Wait a bit and try again
+    setTimeout(processQueue, 50);
+    return;
+  }
+  
+  const tasks = [];
+  for (let i = 0; i < requestsToProcess; i++) {
+    const requestTask = requestQueue.shift();
+    tasks.push(processRequest(requestTask));
+  }
+  
+  // Wait for all requests to complete
+  await Promise.allSettled(tasks);
+  
+  // Always add a small delay between batches to be respectful to the API
+  setTimeout(processQueue, BASE_REQUEST_DELAY);
+}
+
+async function processRequest(requestTask) {
+  activeRequests++;
+  let nextDelay = 0; 
 
   try {
     const result = await requestTask.task();
     
     requestTask.resolve(result);
+    
   } catch (error) {
     if (error.response && error.response.status === 429 && requestTask.retries < MAX_RETRIES) {
       requestTask.retries++; 
+      
+      // Track recent rate limit hits
+      const now = Date.now();
+      if (now - lastRateLimitTime < 30000) { // Within last 30 seconds
+        recentRateLimitHits++;
+      } else {
+        recentRateLimitHits = 1; // Reset counter
+      }
+      lastRateLimitTime = now;
 
-      const backoffTime = Math.pow(2, requestTask.retries - 1) * 1000;
-      const jitter = Math.random() * 500; 
-      nextDelay = backoffTime + jitter;
+      // Increase backoff time if we're hitting rate limits frequently
+      let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
+      if (recentRateLimitHits > 3) {
+        baseBackoffTime *= 2; // Double the delay if we're hitting rate limits frequently
+      }
+      
+      const jitter = Math.random() * 200;
+      const totalDelay = baseBackoffTime + jitter;
 
       console.warn(
-        `Jikan rate limit hit. Retrying in ${Math.round(nextDelay)}ms. ` +
+        `Jikan rate limit hit (${recentRateLimitHits} recent hits). Retrying in ${Math.round(totalDelay)}ms. ` +
         `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
       );
       
@@ -53,11 +100,19 @@ async function processQueue() {
       requestTracker.logError('warning', `MAL API rate limit hit`, {
         retries: requestTask.retries,
         maxRetries: MAX_RETRIES,
-        backoffTime: Math.round(nextDelay),
+        backoffTime: Math.round(totalDelay),
+        recentHits: recentRateLimitHits,
         url: requestTask.url
       });
 
-      requestQueue.unshift(requestTask);
+      // Re-queue with delay
+      setTimeout(() => {
+        requestQueue.unshift(requestTask);
+        if (!isProcessing) {
+          processQueue();
+        }
+      }, totalDelay);
+      
     } else {
       if (requestTask.retries >= MAX_RETRIES) {
         console.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries. Giving up.`);
@@ -71,9 +126,9 @@ async function processQueue() {
 
       requestTask.reject(error);
     }
+  } finally {
+    activeRequests--;
   }
-
-  setTimeout(processQueue, nextDelay);
 }
 
 function enqueueRequest(task, url) {
@@ -90,13 +145,14 @@ async function _makeJikanRequest(url) {
   const startTime = Date.now();
   
   try {
-    const response = await axios.get(url, { timeout: 15000, httpsAgent: robustAgent });
+    const response = await httpGet(url, { timeout: 15000, httpsAgent: robustAgent });
     const responseTime = Date.now() - startTime;
     
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('mal', responseTime, true);
     
+    console.log(`[MAL] Request completed in ${responseTime}ms (undici)`);
     return response;
   } catch (error) {
     const responseTime = Date.now() - startTime;

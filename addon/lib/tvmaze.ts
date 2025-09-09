@@ -1,6 +1,7 @@
-const { httpGet } = require('../utils/httpClient');
-const { cacheWrapTvmazeApi } = require('./getCache');
+import { httpGet } from '../utils/httpClient.js';
+import { cacheWrapTvmazeApi } from './getCache.js';
 const packageJson = require('../../package.json');
+
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
@@ -15,20 +16,244 @@ const DEFAULT_HTTP_CONFIG = {
   }
 };
 
+// Type definitions for TVmaze API responses
+interface TVmazeShow {
+  id: number;
+  url: string;
+  name: string;
+  type: string;
+  language: string;
+  genres: string[];
+  status: string;
+  runtime: number;
+  averageRuntime: number;
+  premiered: string;
+  ended: string;
+  officialSite: string;
+  schedule: {
+    time: string;
+    days: string[];
+  };
+  rating: {
+    average: number;
+  };
+  weight: number;
+  network: {
+    id: number;
+    name: string;
+    country: {
+      name: string;
+      code: string;
+      timezone: string;
+    };
+  } | null;
+  webChannel: {
+    id: number;
+    name: string;
+    country: {
+      name: string;
+      code: string;
+      timezone: string;
+    };
+  } | null;
+  dvdCountry: string | null;
+  externals: {
+    tvrage: number | null;
+    thetvdb: number | null;
+    imdb: string | null;
+    themoviedb: number | null;
+  };
+  image: {
+    medium: string;
+    original: string;
+  } | null;
+  summary: string;
+  updated: number;
+  _links: {
+    self: {
+      href: string;
+    };
+    previousepisode: {
+      href: string;
+    };
+  };
+}
+
+interface TVmazeCast {
+  person: {
+    id: number;
+    url: string;
+    name: string;
+    country: {
+      name: string;
+      code: string;
+      timezone: string;
+    } | null;
+    birthday: string | null;
+    deathday: string | null;
+    gender: string;
+    image: {
+      medium: string;
+      original: string;
+    } | null;
+    updated: number;
+    _links: {
+      self: {
+        href: string;
+      };
+    };
+  };
+  character: {
+    id: number;
+    url: string;
+    name: string;
+    image: {
+      medium: string;
+      original: string;
+    } | null;
+    _links: {
+      self: {
+        href: string;
+      };
+    };
+  };
+  self: boolean;
+  voice: boolean;
+}
+
+interface TVmazeCrew {
+  type: string;
+  person: {
+    id: number;
+    url: string;
+    name: string;
+    country: {
+      name: string;
+      code: string;
+      timezone: string;
+    } | null;
+    birthday: string | null;
+    deathday: string | null;
+    gender: string;
+    image: {
+      medium: string;
+      original: string;
+    } | null;
+    updated: number;
+    _links: {
+      self: {
+        href: string;
+      };
+    };
+  };
+}
+
+interface TVmazeShowDetails extends TVmazeShow {
+  _embedded: {
+    cast: TVmazeCast[];
+    crew: TVmazeCrew[];
+  };
+}
+
+interface TVmazeEpisode {
+  id: number;
+  url: string;
+  name: string;
+  season: number;
+  number: number;
+  type: string;
+  airdate: string;
+  airtime: string;
+  airstamp: string;
+  runtime: number;
+  rating: {
+    average: number;
+  };
+  image: {
+    medium: string;
+    original: string;
+  } | null;
+  summary: string;
+  _links: {
+    self: {
+      href: string;
+    };
+    show: {
+      href: string;
+    };
+  };
+}
+
+interface TVmazeSearchResult {
+  score: number;
+  show: TVmazeShow;
+}
+
+interface TVmazePerson {
+  id: number;
+  url: string;
+  name: string;
+  country: {
+    name: string;
+    code: string;
+    timezone: string;
+  } | null;
+  birthday: string | null;
+  deathday: string | null;
+  gender: string;
+  image: {
+    medium: string;
+    original: string;
+  } | null;
+  updated: number;
+  _links: {
+    self: {
+      href: string;
+    };
+  };
+}
+
+interface TVmazePersonSearchResult {
+  score: number;
+  person: TVmazePerson;
+}
+
+interface TVmazeCastCredit {
+  _links: {
+    self: {
+      href: string;
+    };
+  };
+  _embedded: {
+    show: TVmazeShow;
+  };
+}
+
+interface ApiError {
+  notFound?: boolean;
+  error?: boolean;
+}
+
 /**
  * Sleep function for retry delays
  */
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
  * A helper to check for 404s and returns a specific value, otherwise logs the error.
  */
-function handleHttpError(error, context) {
+function handleHttpError(error: any, context: string): ApiError {
   if (error.response && error.response.status === 404) {
     console.log(`${context}: Resource not found (404).`);
     return { notFound: true };
+  }
+  
+  // Handle redirect errors (301, 302, etc.)
+  if (error.response && error.response.status >= 300 && error.response.status < 400) {
+    console.error(`${context}: HTTP ${error.response.status} redirect error - ${error.message || 'Redirect failed'}`);
+    return { error: true };
   }
   
   // Log network errors more concisely
@@ -44,38 +269,45 @@ function handleHttpError(error, context) {
 /**
  * Retry wrapper for API calls
  */
-async function retryApiCall(apiCall, context, retries = MAX_RETRIES) {
+async function retryApiCall<T>(
+  apiCall: () => Promise<T>, 
+  context: string, 
+  retries: number = MAX_RETRIES
+): Promise<T | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await apiCall();
     } catch (error) {
       const isLastAttempt = attempt === retries;
-      const isRetryableError = error.code === 'ECONNABORTED' || 
-                              error.code === 'ENETUNREACH' || 
-                              error.code === 'ECONNREFUSED' ||
-                              (error.response && (error.response.status === 429 || error.response.status >= 500));
+      const isRetryableError = (error as any).code === 'ECONNABORTED' || 
+                              (error as any).code === 'ENETUNREACH' || 
+                              (error as any).code === 'ECONNREFUSED' ||
+                              ((error as any).response && ((error as any).response.status === 429 || (error as any).response.status >= 500));
       
-      if (isLastAttempt || !isRetryableError) {
+      // Don't retry redirect errors (3xx) - they should be handled by the HTTP client
+      const isRedirectError = (error as any).response && (error as any).response.status >= 300 && (error as any).response.status < 400;
+      
+      if (isLastAttempt || !isRetryableError || isRedirectError) {
         const { notFound } = handleHttpError(error, context);
         return notFound ? null : null;
       }
       
       // Exponential backoff: 1s, 2s, 4s (or fixed delay for rate limits as per TVmaze docs)
-      const isRateLimit = error.response && error.response.status === 429;
+      const isRateLimit = (error as any).response && (error as any).response.status === 429;
       const delay = isRateLimit ? RATE_LIMIT_DELAY : RETRY_DELAY * Math.pow(2, attempt - 1);
       console.log(`${context}: Attempt ${attempt} failed${isRateLimit ? ' (rate limited)' : ''}, retrying in ${delay}ms...`);
       await sleep(delay);
     }
   }
+  return null;
 }
-
 
 /**
  * Gets the basic show object from TVmaze using an IMDb ID.
  * Note: TVmaze lookup API returns 301 redirects, which we handle by following the redirect
  * and then making a separate request to get the show data.
  */
-async function getShowByImdbId(imdbId) {
+async function getShowByImdbId(imdbId: string): Promise<TVmazeShow | null> {
   const cacheKey = `lookup-shows-imdb:${imdbId}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -111,7 +343,7 @@ async function getShowByImdbId(imdbId) {
 /**
  * Gets the full show details, including all episodes and cast, using a TVmaze ID.
  */
-async function getShowDetails(tvmazeId) {
+async function getShowDetails(tvmazeId: number): Promise<TVmazeShowDetails | null> {
   const cacheKey = `shows-details:${tvmazeId}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -128,7 +360,7 @@ async function getShowDetails(tvmazeId) {
 /**
  * Gets the episodes for a show.
  */
-async function getShowEpisodes(tvmazeId) {
+async function getShowEpisodes(tvmazeId: number): Promise<TVmazeEpisode[] | null> {
   const cacheKey = `shows-episodes:${tvmazeId}`;
   return cacheWrapTvmazeApi(cacheKey, async () => {
     const url = `${TVMAZE_API_URL}/shows/${tvmazeId}/episodes?specials=1`;
@@ -143,7 +375,7 @@ async function getShowEpisodes(tvmazeId) {
 /**
  * Gets the full show namely to retrieve external ids, using a TVmaze ID.
  */
-async function getShowById(tvmazeId) {
+async function getShowById(tvmazeId: number): Promise<TVmazeShow | null> {
   const cacheKey = `shows-basic:${tvmazeId}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -157,11 +389,10 @@ async function getShowById(tvmazeId) {
   });
 }
 
-
 /**
  * Searches for shows on TVmaze based on a query.
  */
-async function searchShows(query) {
+async function searchShows(query: string): Promise<TVmazeSearchResult[]> {
   const cacheKey = `search-shows:${encodeURIComponent(query)}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -180,7 +411,7 @@ async function searchShows(query) {
  * Note: TVmaze lookup API returns 301 redirects, which we handle by following the redirect
  * and then making a separate request to get the show data.
  */
-async function getShowByTvdbId(tvdbId) {
+async function getShowByTvdbId(tvdbId: number): Promise<TVmazeShow | null> {
   const cacheKey = `lookup-shows-tvdb:${tvdbId}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -216,7 +447,7 @@ async function getShowByTvdbId(tvdbId) {
 /**
  * Searches for people on TVmaze.
  */
-async function searchPeople(query) {
+async function searchPeople(query: string): Promise<TVmazePersonSearchResult[]> {
   const cacheKey = `search-people:${encodeURIComponent(query)}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -233,7 +464,7 @@ async function searchPeople(query) {
 /**
  * Gets all cast credits for a person.
  */
-async function getPersonCastCredits(personId) {
+async function getPersonCastCredits(personId: number): Promise<TVmazeCastCredit[]> {
   const cacheKey = `people-castcredits:${personId}`;
   
   return cacheWrapTvmazeApi(cacheKey, async () => {
@@ -247,13 +478,25 @@ async function getPersonCastCredits(personId) {
   });
 }
 
-module.exports = {
+export {
   getShowByImdbId,
   getShowDetails,
+  getShowEpisodes,
   getShowByTvdbId,
   searchShows,
   searchPeople,
   getPersonCastCredits,
-  getShowById,
-  getShowEpisodes
+  getShowById
+};
+
+// CommonJS compatibility
+module.exports = {
+  getShowByImdbId,
+  getShowDetails,
+  getShowEpisodes,
+  getShowByTvdbId,
+  searchShows,
+  searchPeople,
+  getPersonCastCredits,
+  getShowById
 };

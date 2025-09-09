@@ -1,10 +1,12 @@
-const { httpGet, httpPost } = require("./httpClient");
-const { it } = require("node:test");
-const { resolveAllIds } = require("../lib/id-resolver");
-const Utils = require("./parseProps");
-const moviedb = require("../lib/getTmdb");
+import { httpGet, httpPost } from "./httpClient.js";
+import { resolveAllIds } from "../lib/id-resolver.js";
+import * as Utils from "./parseProps.js";
+import * as moviedb from "../lib/getTmdb.js";
+import { getMeta } from "../lib/getMeta.js";
+import { cacheWrapMetaSmart } from "../lib/getCache.js";
+import { UserConfig } from "../types/index.js";
 
-const host = process.env.HOST_NAME.startsWith('http')
+const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
@@ -30,14 +32,14 @@ let rateLimitState = {
 /**
  * Sleep function for delays
  */
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
  * Check if error is a rate limit error
  */
-function isRateLimitError(error) {
+function isRateLimitError(error: any): boolean {
   return error.response && 
          (error.response.status === 503 || error.response.status === 429) &&
          (error.message.includes('Rate Limiter') || 
@@ -48,7 +50,11 @@ function isRateLimitError(error) {
 /**
  * Rate limiting and retry logic for MDBList API calls
  */
-async function makeRateLimitedRequest(requestFn, context = 'MDBList', retries = RATE_LIMIT_CONFIG.maxRetries) {
+async function makeRateLimitedRequest<T>(
+  requestFn: () => Promise<T>, 
+  context: string = 'MDBList', 
+  retries: number = RATE_LIMIT_CONFIG.maxRetries
+): Promise<T> {
   const now = Date.now();
   
   // Check if we're currently rate limited
@@ -79,7 +85,7 @@ async function makeRateLimitedRequest(requestFn, context = 'MDBList', retries = 
       const responseTime = Date.now() - startTime;
       
       // Track successful request
-      const requestTracker = require('../lib/requestTracker');
+      const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('mdblist', responseTime, true);
       
       // Reset rate limiting state on success
@@ -89,11 +95,11 @@ async function makeRateLimitedRequest(requestFn, context = 'MDBList', retries = 
       
       return response;
       
-    } catch (error) {
+    } catch (error: any) {
       const responseTime = Date.now() - startTime;
       
       // Track failed request
-      const requestTracker = require('../lib/requestTracker');
+      const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('mdblist', responseTime, false);
       
       if (isRateLimitError(error)) {
@@ -157,27 +163,28 @@ async function makeRateLimitedRequest(requestFn, context = 'MDBList', retries = 
       await sleep(delay);
     }
   }
+  
+  throw new Error(`All ${retries} attempts failed`);
 }
 
-async function fetchMDBListItems(listId, apiKey, language, page) {
+async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number): Promise<any[]> {
   const offset = (page * 20) - 20;
   
   try {
     const url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=20&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
     
-    const response = await makeRateLimitedRequest(
+    const response: any = await makeRateLimitedRequest(
       () => httpGet(url),
       `MDBList fetchMDBListItems (listId: ${listId}, page: ${page})`
     );
     
-    const responseTime = Date.now() - Date.now(); // This will be tracked in makeRateLimitedRequest
-    console.log(`[MDBList] fetchMDBListItems completed in ${responseTime}ms (undici)`);
+    console.log(`[MDBList] fetchMDBListItems completed (undici)`);
     
     return [
       ...(response.data.movies || []),
       ...(response.data.shows || [])
     ];
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error retrieving MDBList items:", err.message);
     return [];
   }
@@ -193,14 +200,14 @@ async function fetchMDBListItems(listId, apiKey, language, page) {
  * @param {Array<string>} appendToResponse - Optional array of additional data to append
  * @returns {Promise<Array>} Array of media info objects
  */
-async function fetchMDBListBatchMediaInfo(mediaProvider, mediaType, ids, apiKey, appendToResponse = []) {
+async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: string, ids: string[], apiKey: string, appendToResponse: string[] = []): Promise<any[]> {
   if (!ids || ids.length === 0 || !apiKey) {
     console.warn("[MDBList] Missing required parameters for batch media info");
     return [];
   }
 
   const BATCH_SIZE = 200;
-  const allResults = [];
+  const allResults: any[] = [];
 
   // Split IDs into batches of 200
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -218,7 +225,7 @@ async function fetchMDBListBatchMediaInfo(mediaProvider, mediaType, ids, apiKey,
         append_to_response: appendToResponse
       };
 
-      const response = await makeRateLimitedRequest(
+      const response: any = await makeRateLimitedRequest(
         () => httpPost(url, requestBody, {
           headers: {
             'Content-Type': 'application/json'
@@ -235,7 +242,7 @@ async function fetchMDBListBatchMediaInfo(mediaProvider, mediaType, ids, apiKey,
         console.warn(`[MDBList] Batch ${batchNumber}/${totalBatches} unexpected response format:`, response.data);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[MDBList] Error in batch ${batchNumber}/${totalBatches}:`, error.message);
       if (error.response) {
         console.error(`[MDBList] Response status: ${error.response.status}`);
@@ -254,13 +261,13 @@ async function fetchMDBListBatchMediaInfo(mediaProvider, mediaType, ids, apiKey,
   return allResults;
 }
 
-async function getGenresFromMDBList(listId, apiKey) {
+async function getGenresFromMDBList(listId: string, apiKey: string): Promise<string[]> {
   try {
     const items = await fetchMDBListItems(listId, apiKey, 'en-US', 1);
     const genres = [
       ...new Set(
-        items.flatMap(item =>
-          (item.genre || []).map(g => {
+        items.flatMap((item: any) =>
+          (item.genre || []).map((g: any) => {
             if (!g || typeof g !== "string") return null;
             return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase();
           })
@@ -268,126 +275,74 @@ async function getGenresFromMDBList(listId, apiKey) {
       )
     ].sort();
     return genres;
-  } catch(err) {
+  } catch(err: any) {
     console.error("ERROR in getGenresFromMDBList:", err);
     return [];
   }
 }
 
 
-async function parseMDBListItems(items, type, genreFilter, language, config) {
+async function parseMDBListItems(items: any[], type: string, genreFilter: string, language: string, config: UserConfig): Promise<any[]> {
   let filteredItems = items;
   if (genreFilter) {
     filteredItems = filteredItems.filter(item =>
       Array.isArray(item.genre) &&
-      item.genre.some(g => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())
+      item.genre.some((g: any) => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())
     );
   }
   //console.log(`[MDBList] Filtered items: ${JSON.stringify(filteredItems)}`);
 
   const targetMediaType = type === 'series' ? 'show' : 'movie';
-  const batchMediaInfo = await fetchMDBListBatchMediaInfo('tmdb', targetMediaType, filteredItems.map(item => item.id), config.apiKeys?.mdblist);
+  //const batchMediaInfo = await fetchMDBListBatchMediaInfo('tmdb', targetMediaType, filteredItems.map(item => item.id), config.apiKeys?.mdblist || '');
   //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo)}`);
+
+  // Determine preferred provider
+  let preferredProvider: string;
+  if (type === 'movie') {
+    preferredProvider = config.providers?.movie || 'tmdb';
+  } else {
+    preferredProvider = config.providers?.series || 'tvdb';
+  }
  
   const metas = await Promise.all(filteredItems
     .filter(item => item.mediatype === targetMediaType)
-    .map(async item => {
+    .map(async (item: any) => {
       try {
-        let allIds;
-        let preferredProvider;
-        if (type === 'movie') {
-          preferredProvider = config.providers?.movie || 'tmdb';
-        } else {
-          preferredProvider = config.providers?.series || 'tvdb';
-        }
-        
-        // Check all three art types and collect non-meta providers
-        const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
-        const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
-        const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
-
-        // Collect all unique non-meta providers
+        // Resolve IDs to get the best stremioId
         const targetProviders = new Set();
-        if (posterProvider !== preferredProvider && posterProvider !== 'tmdb' && posterProvider !== 'fanart') targetProviders.add(posterProvider);
-        if (backgroundProvider !== preferredProvider && backgroundProvider !== 'tmdb' && backgroundProvider !== 'fanart') targetProviders.add(backgroundProvider);
-        if (logoProvider !== preferredProvider && logoProvider !== 'tmdb' && logoProvider !== 'fanart') targetProviders.add(logoProvider);
         if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
-        if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
-
+        
+        let allIds;
         let stremioId = `tmdb:${item.id}`;
         if (targetProviders.size > 0) {
           const targetProviderArray = Array.from(targetProviders);
           allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
-        } else {
-          allIds = { tmdbId: item.id, tvdbId: null, imdbId: null, malId: null, kitsuId: null, tvmazeId: null, anidbId: null, anilistId: null };
-        }
-
-        if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
-          stremioId = `tvdb:${allIds.tvdbId}`;
-        } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-          stremioId = `tvmaze:${allIds.tvmazeId}`;
-        } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-          stremioId = allIds.imdbId;
-        }
-
-        const batchMediaItem = batchMediaInfo.find(media => media.ids?.tmdb === item.id);
-        const posterPath = batchMediaItem?.poster || item.poster;
-        const tmdbPosterFullUrl = posterPath 
-          ? `https://image.tmdb.org/t/p/w500${posterPath}` 
-          : `https://artworks.thetvdb.com/banners/images/missing/${type}.jpg`;
-        let posterUrl = tmdbPosterFullUrl;
-        if(allIds) {
-          if (type === 'movie') {
-            posterUrl = await Utils.getMoviePoster({
-              tmdbId: item.id,
-              tvdbId: allIds.tvdbId,
-              imdbId: allIds.imdbId,
-              metaProvider: preferredProvider,
-              fallbackPosterUrl: tmdbPosterFullUrl
-            }, config);
-          } else {
-            posterUrl = await Utils.getSeriesPoster({
-              tmdbId: allIds.tmdbId,
-              tvdbId: allIds.tvdbId,
-              imdbId: allIds.imdbId,
-              metaProvider: preferredProvider,
-                fallbackPosterUrl: tmdbPosterFullUrl
-              }, config);
+          
+          if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
+            stremioId = `tvdb:${allIds.tvdbId}`;
+          } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+            stremioId = `tvmaze:${allIds.tvmazeId}`;
+          } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+            stremioId = allIds.imdbId;
           }
         }
-        //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo.find(media => media.id === item.id))}`);
-        const posterProxyUrl = `${host}/poster/${type}/${stremioId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-        //console.log (`[MDBList] ${JSON.stringify(item)}`);
-        return {
-          id: stremioId,
-          type: type,
-          imdb_id: allIds?.imdbId,
-          name: item.title || item.name,
-          poster: posterProxyUrl,
-          logo: type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config),
-          description: Utils.addMetaProviderAttribution(batchMediaItem?.description || '', 'MDBList', config),
-          runtime: Utils.parseRunTime(batchMediaItem?.runtime || null),
-          imdbRating: String(batchMediaItem?.ratings?.find(rating => rating.source === 'imdb')?.value || 'N/A'),
-          genres: item.genre || [],
-          year: item.release_year || null,
-          releaseInfo: item.release_year || null,
-        };
-      } catch (error) {
-        console.error(`[MDBList] Error resolving IDs for item ${item.id}:`, error.message);
-        const fallbackPosterUrl = item.poster ? `https://image.tmdb.org/t/p/w500${item.poster}` : `https://artworks.thetvdb.com/banners/images/missing/${type}.jpg`;
-        const posterProxyUrl = `${host}/poster/${type}/tmdb:${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-        return {
-          id: `tmdb:${item.id}`,
-          type: type,
-          name: item.title || item.name,
-          poster: posterProxyUrl,
-          year: item.release_year || null,
-          releaseInfo: item.release_year || null,
-        };
+        
+        // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
+        const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
+          return await getMeta(type, language, stremioId, config, config.userUUID);
+        }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+        
+        if (result && result.meta) {
+          return result.meta;
+        }
+        return null;
+      } catch (error: any) {
+        console.error(`[MDBList] Error getting meta for item ${item.id}:`, error.message);
+        return null;
       }
     }));
 
   return metas.filter(Boolean);
 }
 
-module.exports = { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems };
+export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems };

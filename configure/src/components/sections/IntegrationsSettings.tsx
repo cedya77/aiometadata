@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
+import { toast } from 'sonner';
 
 // --- Reusable Component for a single API key input field ---
 const ApiKeyInput = ({

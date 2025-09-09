@@ -1,11 +1,11 @@
-const axios = require("axios");
+const { request } = require("undici");
+const { cacheWrapMetaSmart } = require("../lib/getCache");
+const { getMeta } = require("../lib/getMeta");
 const Utils = require("./parseProps");
-const moviedb = require("../lib/getTmdb");
-const tvdb = require("../lib/tvdb");
-const imdb = require("../lib/imdb");
 const idMapper = require("../lib/id-mapper");
-const { to3LetterCode } = require("../lib/language-map");
+const moviedb = require("../lib/getTmdb");
 const { getImdbRating } = require("../lib/getImdbRating");
+
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -30,20 +30,23 @@ async function fetchStremThruCatalog(catalogUrl) {
       url = new URL(catalogUrl.startsWith('http') ? catalogUrl : `https://${catalogUrl}`);
     }
     
-    const response = await axios.get(url.toString(), {
-      timeout: 30000,
+    const response = await request(url.toString(), {
+      method: 'GET',
       headers: {
         'User-Agent': 'aiometadata-addon/1.0'
-      }
+      },
+      bodyTimeout: 30000
     });
     
-    if (!response.data || !response.data.metas) {
+    const data = await response.body.json();
+    
+    if (!data || !data.metas) {
       console.warn(`[StremThru] Invalid response format from ${url.toString()}`);
       return [];
     }
     
-    console.log(`[✨ StremThru] Successfully fetched ${response.data.metas.length} items from catalog`);
-    return response.data.metas;
+    console.log(`[✨ StremThru] Successfully fetched ${data.metas.length} items from catalog`);
+    return data.metas;
   } catch (err) {
     console.error(`[StremThru] Error fetching catalog from ${catalogUrl}:`, err.message);
     return [];
@@ -58,20 +61,23 @@ async function fetchStremThruCatalog(catalogUrl) {
 async function fetchStremThruManifest(manifestUrl) {
   try {
     console.log(`[✨ StremThru] Fetching manifest from: ${manifestUrl}`);
-    const response = await axios.get(manifestUrl, {
-      timeout: 30000,
+    const response = await request(manifestUrl, {
+      method: 'GET',
       headers: {
         'User-Agent': 'aiometadata-addon/1.0'
-      }
+      },
+      bodyTimeout: 30000
     });
     
-    if (!response.data || !response.data.catalogs) {
+    const data = await response.body.json();
+    
+    if (!data || !data.catalogs) {
       console.warn(`[StremThru] Invalid manifest format from ${manifestUrl}`);
       return [];
     }
     
-    console.log(`[✨ StremThru] Successfully fetched ${response.data.catalogs.length} catalogs from manifest`);
-    return response.data.catalogs;
+    console.log(`[✨ StremThru] Successfully fetched ${data.catalogs.length} catalogs from manifest`);
+    return data.catalogs;
   } catch (err) {
     console.error(`[StremThru] Error fetching manifest from ${manifestUrl}:`, err.message);
     return [];
@@ -126,255 +132,151 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
   
   console.log(`[✨ StremThru] Processing ${filteredItems.length} items (type: ${type}, genre: ${genreFilter || 'all'})`);
   
+  const animeIds = ['mal', 'kitsu', 'anidb', 'anilist']; 
   const metas = await Promise.all(filteredItems
     .map(async item => {
       try {
-        let tmdbId, tvdbId, imdbId, kitsuId, malId, anidbId, anilistId = null;
         const [provider, id] = item.id.split(':');
-        if (provider === 'tmdb') tmdbId = id;
-        if (provider === 'tvdb') tvdbId = id;
-        if (provider.startsWith('tt')) imdbId = id;
-        if (provider === 'kitsu') kitsuId = id;
-        if (provider === 'mal') malId = id;
-        if (provider === 'anidb') anidbId = id;
-        if (provider === 'anilist') anilistId = id;
-        
-        if (!provider || !id) {
-          console.warn(`[StremThru] Invalid ID format: ${item.id}`);
-          return null;
-        }
-        
-        let rpdbItemId = null;
-        if(provider === 'mal') {
-          const mapping = idMapper.getMappingByMalId(id);
-          if(mapping && mapping.themoviedb_id) {
-            rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
-          }
-        } else if(provider === 'kitsu') {
-          const mapping = idMapper.getMappingByKitsuId(id);
-          if(mapping && mapping.themoviedb_id) {
-            rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
-          }
-        } else if(provider === 'anidb') {
-          const mapping = idMapper.getMappingByAnidbId(id);
-          if(mapping && mapping.themoviedb_id) {
-            rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
-          }
-        } else if(provider === 'anilist') {
-          const mapping = idMapper.getMappingByAnilistId(id);
-          if(mapping && mapping.themoviedb_id) {
-            rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
-          }
-        } else {
-          rpdbItemId = item.id;
-        }
-        // Handle poster URLs
-        let posterUrl = item.poster;
-        let posterProxyUrl = null;
-        
-        if (posterUrl && posterUrl.includes('rpdb')) {
-          posterProxyUrl = posterUrl;
-        } else {
-          posterProxyUrl = `${host}/poster/${item.type}/${rpdbItemId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-        }
-        
-        
-        // Get logo if available
         let logo = null;
         let overview = null;
         let genres = null;
         let runtime = null;
         let name = null;
         let imdbRating = null;
-        try {
-            if(provider === 'tmdb') {
-                if (item.type === 'movie') {
-                   const itemDetails = await moviedb.movieInfo({ id: id, language, append_to_response: "external_ids" }, config);
-                   overview = itemDetails?.overview;
-                   genres = Utils.parseGenres(itemDetails?.genres);
-                   runtime = itemDetails?.runtime;
-                   name = itemDetails?.name;
-                   imdbId = imdbId ?? itemDetails.external_ids?.imdb_id;
-                   imdbRating = imdbId ? await getImdbRating(imdbId, 'movie') : null;
-                   logo = await moviedb.getTmdbMovieLogo(id, config);
-                } else {
-                    const itemDetails = await moviedb.tvInfo({ id: id, language, append_to_response: "external_ids" }, config);
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-                    name = itemDetails?.name;
-                    imdbId = imdbId ?? itemDetails.external_ids?.imdb_id;
-                    imdbRating = imdbId ? await getImdbRating(imdbId, 'series') : null;
-                    logo = await moviedb.getTmdbSeriesLogo(id, config);
-                }
-            } else if(provider === 'tvdb') {
-                if (item.type === 'movie') {
-                    const itemDetails = await tvdb.getMovieExtended(id, config);
-                    const langCode = language.split('-')[0];
-                    const langCode3 = await to3LetterCode(langCode, config);
-                    const nameTranslations = itemDetails.translations?.nameTranslations || [];
-                    const overviewTranslations = itemDetails.translations?.overviewTranslations || [];
-                    const translatedName = nameTranslations.find(t => t.language === langCode3)?.name
-                              || nameTranslations.find(t => t.language === 'eng')?.name
-                              || itemDetails.name;
-                    overview = overviewTranslations.find(t => t.language === langCode3)?.overview
-                    || overviewTranslations.find(t => t.language === 'eng')?.overview
-                    || itemDetails.overview;
-                    genres = itemDetails?.genres?.map(g => g.name) || [];
-                    runtime = itemDetails?.runtime;
-                    name = translatedName;
-                    imdbId = imdbId ?? itemDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
-                    imdbRating = imdbId ? await getImdbRating(imdbId, 'movie') : null;
-                    logo = await tvdb.getMovieLogo(id, config);
-                } else {
-                    const itemDetails = await tvdb.getSeriesExtended(id, config);
-                    const langCode = language.split('-')[0];
-                    const langCode3 = await to3LetterCode(langCode, config);
-                    const nameTranslations = itemDetails.translations?.nameTranslations || [];
-                    const overviewTranslations = itemDetails.translations?.overviewTranslations || [];
-                    const translatedName = nameTranslations.find(t => t.language === langCode3)?.name
-                              || nameTranslations.find(t => t.language === 'eng')?.name
-                              || itemDetails.name;
-                    overview = overviewTranslations.find(t => t.language === langCode3)?.overview
-                    || overviewTranslations.find(t => t.language === 'eng')?.overview
-                    || itemDetails.overview;
-                    genres = itemDetails?.genres?.map(g => g.name) || [];
-                    name = translatedName;
-                    runtime = itemDetails?.averageRuntime;
-                    imdbId = imdbId ?? itemDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
-                    imdbRating = imdbId ? await getImdbRating(imdbId, 'series') : null;
-                    logo = await tvdb.getSeriesLogo(id, config);
-                }
-            } else if(provider.startsWith('tt')) {
-                if (item.type === 'movie') {
-                    const itemDetails = await imdb.getMetaFromImdb(id, item.type);
-                    runtime = itemDetails?.runtime;
-                    logo = itemDetails?.logo;
-
-                } else {
-                    const itemDetails = await imdb.getMetaFromImdb(id, item.type);
-                    runtime = itemDetails?.runtime;
-                    logo = itemDetails?.logo;
-                }
-            } else if(provider === 'kitsu') {
-                const mapping = idMapper.getMappingByKitsuId(id);
-                if(mapping && mapping.themoviedb_id) {
-                  if(item.type === 'movie') {
-                    const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.runtime;
-                    logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
-                  } else {
-                    const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-                    logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
-                  }
-                }
-            }else if(provider === 'mal') {
-                const mapping = idMapper.getMappingByMalId(id);
-                if(mapping && mapping.themoviedb_id) {
-                  if(item.type === 'movie') {
-                    const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.runtime;
-                    logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
-                  } else {
-                    const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-                    logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
-                  }
-                }
-            } else if(provider === 'anidb') {
-                const mapping = idMapper.getMappingByAnidbId(id);
-                if(mapping && mapping.themoviedb_id) {
-                  if(item.type === 'movie') {
-                    const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.runtime;
-                    logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
-                  } else {
-                    const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-                    logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
-                  }
-                }
+        let rpdbItemId = item.id;
+        let posterUrl = item.poster;
+        let posterProxyUrl = null;
+        if (animeIds.includes(provider)) {
+          if(provider === 'kitsu') {
+            const mapping = idMapper.getMappingByKitsuId(id);
+            if(mapping && mapping.themoviedb_id) {
+              if(item.type === 'movie') {
+                const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.runtime;
+                logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
+              } else {
+                const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
+                logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
+              }
+              rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
             }
-            else if(provider === 'anilist') {
-                const mapping = idMapper.getMappingByAnilistId(id);
-                if(mapping && mapping.themoviedb_id) {
-                  if(item.type === 'movie') {
-                    const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.runtime;
-                    logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
-                  } else {
-                    const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
-                    imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
-                    name = itemDetails?.name;
-                    overview = itemDetails?.overview;
-                    genres = Utils.parseGenres(itemDetails?.genres);
-                    runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-                    logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
-                  }
-                }
+          }else if(provider === 'mal') {
+            const mapping = idMapper.getMappingByMalId(id);
+            if(mapping && mapping.themoviedb_id) {
+              if(item.type === 'movie') {
+                const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.runtime;
+                logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
+              } else {
+                const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
+                logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
+              }
+              rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
             }
-        } catch (logoError) {
-          console.warn(`[StremThru] Could not fetch logo for ${item.id}:`, logoError.message);
+          } else if(provider === 'anidb') {
+            const mapping = idMapper.getMappingByAnidbId(id);
+            if(mapping && mapping.themoviedb_id) {
+              if(item.type === 'movie') {
+                const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.runtime;
+                logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
+              } else {
+                const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
+                logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
+              }
+              rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
+            }
+          }
+          else if(provider === 'anilist') {
+            const mapping = idMapper.getMappingByAnilistId(id);
+            if(mapping && mapping.themoviedb_id) {
+              if(item.type === 'movie') {
+                const itemDetails = await moviedb.movieInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.imdb_id || mapping.themoviedb_id, 'movie');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.runtime;
+                logo = await moviedb.getTmdbMovieLogo(mapping.themoviedb_id, config);
+              } else {
+                const itemDetails = await moviedb.tvInfo({ id: mapping.themoviedb_id, language, append_to_response: "external_ids" }, config);
+                imdbRating = await getImdbRating(itemDetails.external_ids.imdb_id || mapping.themoviedb_id, 'series');
+                name = itemDetails?.name;
+                overview = itemDetails?.overview;
+                genres = Utils.parseGenres(itemDetails?.genres);
+                runtime = itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
+                logo = await moviedb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
+              }
+              rpdbItemId = `tmdb:${mapping.themoviedb_id}`;
+            }
+          }
+          let year = null;
+          let releaseInfo = null;
+          if (item.releaseInfo) {
+            year = item.releaseInfo;
+            releaseInfo = item.releaseInfo;
+          }
+          
+          if (posterUrl && posterUrl.includes('rpdb')) {
+            posterProxyUrl = posterUrl;
+          } else {
+            posterProxyUrl = `${host}/poster/${item.type}/${rpdbItemId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+          }
+          
+          const meta = {
+            id: item.id,
+            type: item.type,
+            name: name || item.name,
+            poster: posterProxyUrl,
+            logo: logo,
+            description: Utils.addMetaProviderAttribution(overview || item.description || '', provider, config),
+            imdbRating: imdbRating || item.imdbRating,
+            genres: genres || item.genres || [],
+            year: year,
+            releaseInfo: releaseInfo,
+            trailers: item.trailers || []
+          };
+          if (runtime) {
+            meta.runtime = Utils.parseRunTime(runtime);
+          }
+          return meta;
         }
-
-
+        // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
+        const result = await cacheWrapMetaSmart(config.userUUID, item.id, async () => {
+          return await getMeta(item.type, language, item.id, config, config.userUUID);
+        }, undefined, {enableErrorCaching: true, maxRetries: 2}, item.type);
         
-        
-
-        // Handle year/release info
-        let year = null;
-        let releaseInfo = null;
-        if (item.releaseInfo) {
-          year = item.releaseInfo;
-          releaseInfo = item.releaseInfo;
+        if (result && result.meta) {
+          return result.meta;
         }
-        
-        const meta = {
-          id: item.id,
-          type: item.type,
-          name: name || item.name,
-          poster: posterProxyUrl,
-          logo: logo,
-          description: Utils.addMetaProviderAttribution(overview || item.description || '', provider, config),
-          imdbRating: imdbRating || item.imdbRating,
-          genres: genres || item.genres || [],
-          year: year,
-          releaseInfo: releaseInfo,
-          trailers: item.trailers || []
-        };
-        if (runtime) {
-          meta.runtime = Utils.parseRunTime(runtime);
-        }
-        return meta;
+        return null;
       } catch (error) {
         console.error(`[StremThru] Error processing item ${item.id}:`, error.message);
         

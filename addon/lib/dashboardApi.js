@@ -1145,22 +1145,31 @@ class DashboardAPI {
     }
   }
 
-  // Get user statistics and activity data
+  // Get user statistics and activity data with simplified methodology
   async getUserStats() {
     try {
-      // Get total users from database
+      // Use database as primary source for total users (most accurate)
       let totalUsers = 0;
+      let activeUsers = 0;
       let newUsersToday = 0;
       
       if (this.database) {
-        const userUUIDs = await this.database.getAllUserUUIDs();
-        totalUsers = userUUIDs.length;
-        
-        newUsersToday = await this.database.getUsersCreatedToday();
+        try {
+          // Total users = non-deleted users in database
+          const userUUIDs = await this.database.getAllUserUUIDs();
+          totalUsers = userUUIDs.length;
+          
+          // New users today from database
+          newUsersToday = await this.database.getUsersCreatedToday();
+        } catch (dbError) {
+          console.warn('[Dashboard API] Database query failed:', dbError.message);
+        }
       }
-
-      // Get active users from request tracker
-      const activeUsers = this.requestTracker ? await this.requestTracker.getActiveUsers() : 0;
+      
+      // Use request tracker only for active users (better for real-time activity)
+      if (this.requestTracker) {
+        activeUsers = await this.requestTracker.getActiveUsers('15min'); // Active in last 15 minutes
+      }
       
       // Get total requests from request tracker
       const requestStats = this.requestTracker ? await this.requestTracker.getStats() : { totalRequests: 0 };
@@ -1175,6 +1184,8 @@ class DashboardAPI {
         rateLimitedUsers: 0, // No rate limiting implemented yet
         blockedUsers: 0 // No blocking system implemented yet
       };
+
+      console.log(`[Dashboard API] User Stats - Total: ${totalUsers}, Active: ${activeUsers}, New Today: ${newUsersToday}`);
 
       return {
         totalUsers,
@@ -1202,30 +1213,28 @@ class DashboardAPI {
     }
   }
 
-  // Get recent user activity from request tracking
+  // Get recent user activity from improved request tracking
   async getRecentUserActivity() {
     try {
       if (!this.requestTracker) return [];
       
-      // Get recent requests from the last 24 hours
-      const now = new Date();
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      // Get recent user activities from the improved tracking system
+      const recentActivities = await this.requestTracker.getRecentUserActivities(50); // Get last 50 activities
       
-      // Get recent activity from request tracker
-      const recentRequests = this.requestTracker ? await this.requestTracker.getRecentActivity(100) : []; // Get last 100 activities
-      
-      // Group by anonymous user hash and create activity entries
+      // Group by user identifier and create activity entries
       const userActivityMap = new Map();
       
-      recentRequests.forEach(request => {
-        const userHash = request.userHash || 'anonymous';
+      recentActivities.forEach(activity => {
+        const userHash = activity.identifier || 'anonymous';
         if (!userActivityMap.has(userHash)) {
           userActivityMap.set(userHash, {
             id: userHash,
             username: `User ${userHash.substring(0, 8)}`, // Anonymous display name
-            lastSeen: request.timestamp,
+            lastSeen: activity.timestamp,
             requests: 0,
-            status: 'active'
+            status: 'active',
+            userAgent: activity.userAgent,
+            lastEndpoint: activity.endpoint
           });
         }
         
@@ -1233,8 +1242,9 @@ class DashboardAPI {
         user.requests++;
         
         // Update last seen to most recent request
-        if (new Date(request.timestamp) > new Date(user.lastSeen)) {
-          user.lastSeen = request.timestamp;
+        if (new Date(activity.timestamp) > new Date(user.lastSeen)) {
+          user.lastSeen = activity.timestamp;
+          user.lastEndpoint = activity.endpoint;
         }
       });
       

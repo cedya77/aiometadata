@@ -369,7 +369,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
   if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
     try {
         const movieData = await tvdb.getMovieExtended(allIds?.tvdbId, config);
-        return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, config);
+        return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[MovieMeta] Preferred provider 'tvdb' failed for ${stremioId}. Falling back.`);
       console.error(`[MovieMeta] Detailed error for provider '${preferredProvider}':`, e);
@@ -421,8 +421,11 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
     if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
       console.log(`[SeriesMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
     try {
-      const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
-      return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, { allIds }, userUUID);
+      const [seriesData, episodes] = await Promise.all([
+        tvmaze.getShowDetails(allIds.tvmazeId),
+        tvmaze.getShowEpisodes(allIds.tvmazeId)
+      ]);
+      return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tvmaze' failed for ${stremioId}. Falling back. ${e.message}`);
     }
@@ -480,8 +483,11 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
 
       if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
         //console.log(`[AnimeMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
-        const seriesData = await tvmaze.getShowDetails(allIds.tvmazeId);
-        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime);
+        const [seriesData, episodes] = await Promise.all([
+          tvmaze.getShowDetails(allIds.tvmazeId),
+          tvmaze.getShowEpisodes(allIds.tvmazeId)
+        ]);
+        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime);
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
@@ -670,6 +676,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
   }));
 
+  const watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
   
   return {
     id: stremioId,
@@ -695,7 +702,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailerStreams: Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language).length > 0 ? Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language) : Utils.parseTrailerStream(movieData.videos),
     links: Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID),
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders }
   };
 }
 
@@ -789,9 +796,13 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       console.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message);
   }
 
+  let watchProviders = null;
   const seasonPromises = (seasons || [])
     .filter(season => season.episode_count > 0) 
     .map(season => moviedb.seasonInfo({ id: tmdbId, season_number: season.season_number, language }, config));
+  if(tmdbId){
+    watchProviders = (seasons || []).filter(season => season.episode_count > 0).map(season => moviedb.getTvWatchProviders({ id: tmdbId, season_number: season.season_number, language }, config));
+  }
   const imdbEpisodesCount = (cinemetaVideos || []).filter(season => season.season !==0).length;
   const seasonDetails = await Promise.all(seasonPromises);
   const tmdbTotalEpisodes = seasonDetails.filter(season => season.season_number !== 0).reduce((acc, season) => acc + season.episodes.length, 0);
@@ -1013,7 +1024,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, watchProviders: watchProviders }
   };
   if (runtime) {
     meta.runtime = Utils.parseRunTime(runtime);
@@ -1108,6 +1119,10 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   if(!logoUrl && imdbId){
     logoUrl =  imdb.getLogoFromImdb(imdbId);
   }
+  let watchProviders = null;
+  if(tmdbId){
+     watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
+  }
 
   return {
     id: stremioId,
@@ -1135,7 +1150,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
-    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders }
   };
 }
 
@@ -1195,6 +1210,9 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const tvdbLogoUrl = tvdbShow.artworks?.find(a => a.type === 23)?.image;
   let poster, background, logoUrl, imdbRatingValue;
 
+
+  // console log art provider preference
+  console.log(`[TvdbSeriesMeta] Art provider preference:`, config.artProviders?.series);
   if (isAnime) {
     const artwork = await getAnimeArtwork(allIds, config, tvdbPosterUrl, tvdbBackgroundUrl, 'series');
     poster = artwork.poster;
@@ -1260,10 +1278,13 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   const seasonPosters = officialSeasons.map(s => s.image);
 
-
+  let watchProviders = null;
   if (enrichmentData.allIds?.malId) {
 
     const seasonDetailPromises = officialSeasons.filter(s => s.number > 0).map(s => tvdb.getSeasonExtended(s.id, config));
+    if(tmdbId){
+       watchProviders = officialSeasons.filter(s => s.number > 0).map(season => moviedb.getTvWatchProviders({ id: tmdbId, season_number: season.number, language }, config));
+    }
     const detailedSeasons = (await Promise.all(seasonDetailPromises)).filter(Boolean);
 
     /*const kitsuMapPromises = detailedSeasons.map(async (season) => {
@@ -1411,13 +1432,13 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     trailerStreams: trailerStreams,
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, watchProviders: watchProviders }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
 }
 
-async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, config, userUUID, enrichmentData = {}, isAnime = false) {
+async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const { allIds } = enrichmentData;
   const { name, premiered, image, summary, externals } = tvmazeShow;
   const imdbId = externals.imdb || allIds?.imdbId;
@@ -1481,18 +1502,44 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
 
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(poster || '')}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
-  const videos = (tvmazeShow?._embedded?.episodes || []).map(episode => ({
+  const specialVideos = [];
+  let specialCount = 1;
+  (episodes || []).filter(episode => episode.type.toLowerCase().includes('special')).forEach(episode => {
+    let specialEpisode = {
+      id: `${imdbId}:0:${specialCount}`,
+      title: episode.name || `Episode ${specialCount}`,
+      season: 0,
+      episode: specialCount,
+      thumbnail: config.blurThumbs && episode.image?.original
+        ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
+        : episode.image?.original || tvmazeShow.image?.original,
+      overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
+      released: new Date(episode.airstamp),
+      available: new Date(episode.airstamp) < new Date(),
+    };
+    specialCount++;
+    specialVideos.push(specialEpisode);
+  });
+
+  let videos = (episodes || []).filter(episode => !episode.type.toLowerCase().includes('special')).map(episode => ({
     id: `${imdbId}:${episode.season}:${episode.number}`,
     title: episode.name || `Episode ${episode.number}`,
     season: episode.season,
     episode: episode.number,
     thumbnail: config.blurThumbs && episode.image?.original
       ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
-      : episode.image?.original || image?.original,
+      : episode.image?.original || tvmazeShow.image?.original,
     overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
     released: new Date(episode.airstamp),
     available: new Date(episode.airstamp) < new Date(),
   }));
+  // get unique list of seasons
+  const uniqueSeasons = [...new Set(videos.map(episode => episode.season))];
+  let watchProviders = null;
+  if(tmdbId){
+    watchProviders = uniqueSeasons.map(season => moviedb.getTvWatchProviders({ id: tmdbId, season_number: season, language }, config));
+  }
+  videos = [... specialVideos, ... videos];
   if(!logoUrl && imdbId){
     logoUrl =  imdb.getLogoFromImdb(imdbId);
   }
@@ -1517,7 +1564,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, language, co
     videos,
     links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails }
+    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails, watchProviders: watchProviders }
   };
 
   return meta;
@@ -1584,7 +1631,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
               kitsuEpisodes.forEach(kitsuEp => {
                 const episodeNumber = kitsuEp.number;
                 if (episodeNumber) {
-                  console.log(`[Anime Meta] Mapping Kitsu episode ${episodeNumber} (ID: ${kitsuEp.id}) for anime ${kitsuId}`);
+                  //console.log(`[Anime Meta] Mapping Kitsu episode ${episodeNumber} (ID: ${kitsuEp.id}) for anime ${kitsuId}`);
                   kitsuEpisodeMap.set(episodeNumber, kitsuEp);
                 }
               });

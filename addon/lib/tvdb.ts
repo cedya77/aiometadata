@@ -1,0 +1,1126 @@
+import { config } from 'dotenv';
+config();
+import { cacheWrapTvdbApi } from './getCache.js';
+import { to3LetterCode } from './language-map.js';
+import fetch from 'node-fetch';
+import { UserConfig } from '../types/index.js';
+
+const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
+const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY;
+const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com/banners/images/';
+
+// Type definitions for TVDB API responses
+interface TvdbAuthResponse {
+  data: {
+    token: string;
+  };
+}
+
+interface TvdbSearchResult {
+  tvdb_id: string;
+  name: string;
+  year?: string;
+  type: string;
+  image_url?: string;
+  overview?: string;
+  first_air_time?: string;
+  network?: string;
+  country?: string;
+  status?: string;
+  slug?: string;
+}
+
+interface TvdbSeriesExtended {
+  id: string;
+  name: string;
+  slug: string;
+  image: string;
+  overview: string;
+  firstAired: string;
+  lastAired: string;
+  year: string;
+  status: {
+    id: number;
+    name: string;
+    recordType: string;
+    keepUpdated: boolean;
+  };
+  runtime: number;
+  averageRuntime: number;
+  originalCountry: string;
+  originalLanguage: string;
+  defaultSeasonType: number;
+  isOrderRandomized: boolean;
+  lastUpdated: string;
+  nameTranslations: string[];
+  overviewTranslations: string[];
+  airsTime: string;
+  airsDayOfWeek: string;
+  genres: Array<{
+    id: number;
+    name: string;
+    slug: string;
+  }>;
+  tags: Array<{
+    id: number;
+    name: string;
+    slug: string;
+    tagName: string;
+  }>;
+  characters: Array<{
+    id: number;
+    name: string;
+    peopleId: number;
+    peopleType: string;
+    personName: string;
+    personImgURL?: string;
+    image?: string;
+  }>;
+  companies: {
+    production: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description?: string;
+    }>;
+    network: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description?: string;
+    }>;
+    studio: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description?: string;
+    }>;
+  };
+  remoteIds: Array<{
+    id: string;
+    sourceName: string;
+    sourceId: string;
+    url?: string;
+  }>;
+  seasons: Array<{
+    id: number;
+    name: string;
+    slug: string;
+    number: number;
+    image?: string;
+    year?: string;
+    type: {
+      id: number;
+      name: string;
+      type: string;
+      alternateName?: string;
+    };
+  }>;
+  artworks: Array<{
+    id: number;
+    image: string;
+    type: number;
+    width: number;
+    height: number;
+    thumbnail: string;
+    updatedAt: string;
+  }>;
+  trailers: Array<{
+    id: string;
+    name: string;
+    url: string;
+    language: string;
+    runtime: number;
+    thumbnail?: string;
+  }>;
+  translations: {
+    nameTranslations: Array<{
+      language: string;
+      name: string;
+    }>;
+    overviewTranslations: Array<{
+      language: string;
+      overview: string;
+    }>;
+  };
+}
+
+interface TvdbMovieExtended {
+  id: string;
+  name: string;
+  slug: string;
+  image: string;
+  overview: string;
+  runtime: number;
+  year: string;
+  originalCountry: string;
+  originalLanguage: string;
+  first_release: {
+    Date: string;
+  };
+  genres: Array<{
+    id: number;
+    name: string;
+    slug: string;
+  }>;
+  characters: Array<{
+    id: number;
+    name: string;
+    peopleId: number;
+    peopleType: string;
+    personName: string;
+    personImgURL?: string;
+    image?: string;
+  }>;
+  companies: {
+    production: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description?: string;
+    }>;
+    network: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description?: string;
+    }>;
+    studio: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description?: string;
+    }>;
+  };
+  remoteIds: Array<{
+    id: string;
+    sourceName: string;
+    sourceId: string;
+    url?: string;
+  }>;
+  artworks: Array<{
+    id: number;
+    image: string;
+    type: number;
+    width: number;
+    height: number;
+    thumbnail: string;
+    updatedAt: string;
+  }>;
+  trailers: Array<{
+    id: string;
+    name: string;
+    url: string;
+    language: string;
+    runtime: number;
+    thumbnail?: string;
+  }>;
+  translations: {
+    nameTranslations: Array<{
+      language: string;
+      name: string;
+    }>;
+    overviewTranslations: Array<{
+      language: string;
+      overview: string;
+    }>;
+  };
+}
+
+interface TvdbEpisode {
+  id: number;
+  name: string;
+  slug: string;
+  number: number;
+  seasonNumber: number;
+  absoluteNumber: number;
+  overview: string;
+  image: string;
+  aired: string;
+  runtime: number;
+  lastUpdated: string;
+  translations: {
+    nameTranslations: Array<{
+      language: string;
+      name: string;
+    }>;
+    overviewTranslations: Array<{
+      language: string;
+      overview: string;
+    }>;
+  };
+}
+
+interface TvdbEpisodesResponse {
+  episodes: TvdbEpisode[];
+  pageInfo: {
+    page: number;
+    pageSize: number;
+    totalRecords: number;
+    totalPages: number;
+  };
+}
+
+interface TvdbPersonExtended {
+  id: string;
+  name: string;
+  slug: string;
+  image: string;
+  overview: string;
+  birthDate: string;
+  deathDate?: string;
+  birthPlace: string;
+  deathPlace?: string;
+  gender: number;
+  remoteIds: Array<{
+    id: string;
+    sourceName: string;
+    sourceId: string;
+    url?: string;
+  }>;
+  translations: {
+    nameTranslations: Array<{
+      language: string;
+      name: string;
+    }>;
+    overviewTranslations: Array<{
+      language: string;
+      overview: string;
+    }>;
+  };
+}
+
+interface TvdbGenre {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+interface TvdbFilterResult {
+  id: string;
+  name: string;
+  slug: string;
+  image: string;
+  overview: string;
+  year: string;
+  score: number;
+  type: string;
+  firstAired?: string;
+  lastAired?: string;
+  status?: string;
+  network?: string;
+  country?: string;
+  runtime?: number;
+  genres?: Array<{
+    id: number;
+    name: string;
+  }>;
+}
+
+interface TvdbSeasonExtended {
+  id: number;
+  name: string;
+  slug: string;
+  number: number;
+  image?: string;
+  year?: string;
+  type: {
+    id: number;
+    name: string;
+    type: string;
+    alternateName?: string;
+  };
+  episodes: TvdbEpisode[];
+}
+
+interface TvdbCollection {
+  id: string;
+  name: string;
+  slug: string;
+  image?: string;
+  overview?: string;
+  year?: string;
+  entityCount: number;
+  entities: Array<{
+    seriesId?: string;
+    movieId?: string;
+    order: number;
+  }>;
+}
+
+interface TvdbCollectionTranslation {
+  name: string;
+  overview: string;
+  language: string;
+}
+
+interface TokenCache {
+  token: string;
+  expiry: number;
+}
+
+// Global caches
+const tokenCache = new Map<string, TokenCache>(); // Global cache for self-hosted instances
+const userTokenCaches = new Map<string, Map<string, TokenCache>>(); // Per-user cache for public instances
+
+async function getAuthToken(apiKey: string | undefined, userUUID: string | null = null): Promise<string | null> {
+  const key = apiKey || GLOBAL_TVDB_KEY;
+  if (!key) {
+    console.error('TVDB API Key is not configured.');
+    return null;
+  }
+
+  // For public instances (with userUUID), use per-user cache
+  if (userUUID) {
+    if (!userTokenCaches.has(userUUID)) {
+      userTokenCaches.set(userUUID, new Map());
+    }
+    
+    const userCache = userTokenCaches.get(userUUID)!;
+    const cached = userCache.get(key);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.token;
+    }
+
+    try {
+      const response = await fetch(`${TVDB_API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apikey: key }),
+      });
+      if (!response.ok) {
+        console.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}: ${response.statusText}`);
+        return null;
+      }
+      const data: TvdbAuthResponse = await response.json();
+      const token = data.data.token;
+      const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
+      
+      userCache.set(key, { token, expiry });
+      return token;
+    } catch (error) {
+      console.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}:`, (error as Error).message);
+      return null;
+    }
+  }
+
+  // For self-hosted instances (no userUUID), use global cache
+  const cached = tokenCache.get(key);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.token;
+  }
+
+  try {
+    const response = await fetch(`${TVDB_API_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apikey: key }),
+    });
+    if (!response.ok) {
+      console.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}: ${response.statusText}`);
+      return null;
+    }
+    const data: TvdbAuthResponse = await response.json();
+    const token = data.data.token;
+    const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
+    
+    tokenCache.set(key, { token, expiry });
+    return token;
+  } catch (error) {
+    console.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function searchSeries(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error searching TVDB for series "${query}":`, (error as Error).message);
+    return [];
+  }
+}
+
+async function searchMovies(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error searching TVDB for movies "${query}":`, (error as Error).message);
+    return [];
+  }
+}
+
+async function searchPeople(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error searching TVDB for people "${query}":`, (error as Error).message);
+    return [];
+  }
+}
+
+async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<TvdbSeriesExtended | null> {
+  return cacheWrapTvdbApi(`series-extended:${seriesId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+
+    const url = `${TVDB_API_URL}/series/${seriesId}/extended?meta=translations`;
+    const startTime = Date.now();
+    
+    try {
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const responseTime = Date.now() - startTime;
+      
+      if (!response.ok) {
+        // Track failed request
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvdb', responseTime, false);
+        return null;
+      }
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+      
+      const data = await response.json();
+      return data.data;
+    } catch(error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
+      console.error(`Error fetching extended series data for TVDB ID ${seriesId}:`, (error as Error).message);
+      return null; 
+    }
+  });
+}
+
+async function getMovieExtended(movieId: string, config: UserConfig): Promise<TvdbMovieExtended | null> {
+  return cacheWrapTvdbApi(`movie-extended:${movieId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+
+    const url = `${TVDB_API_URL}/movies/${movieId}/extended?meta=translations`;
+    const startTime = Date.now();
+    
+    try {
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const responseTime = Date.now() - startTime;
+      
+      if (!response.ok) {
+        // Track failed request
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvdb', responseTime, false);
+        return null;
+      }
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+      
+      const data = await response.json();
+      return data.data;
+    } catch(error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
+      console.error(`Error fetching extended movie data for TVDB ID ${movieId}:`, (error as Error).message);
+      return null; 
+    }
+  });
+}
+
+async function getPersonExtended(personId: string, config: UserConfig): Promise<TvdbPersonExtended | null> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return null;
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/people/${personId}/extended`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return null;
+    }
+    
+    const data = await response.json();
+    const result = data.data;
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return result;
+  } catch (error) {
+    console.error(`[TVDB] Error getting person extended for ID ${personId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, language: string, config: UserConfig): Promise<{ episodes: TvdbEpisode[] } | null> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return null;
+
+  const langCode3 = await to3LetterCode(language.split('-')[0], config);
+  
+  let allEpisodes: TvdbEpisode[] = [];
+  let page = 0;
+  let hasNextPage = true;
+
+  while(hasNextPage) {
+    const url = `${TVDB_API_URL}/series/${tvdbId}/episodes/${seasonType}/${langCode3}?page=${page}`;
+    try {
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) {
+        console.warn(`[TVDB] API returned non-OK status for ${seasonType} episodes of ${tvdbId}.`);
+        hasNextPage = false;
+        continue;
+      }
+      const data = await response.json();
+      if (data.data && data.data.episodes) {
+        allEpisodes.push(...data.data.episodes);
+      }
+      hasNextPage = data.links && data.links.next;
+      page++;
+    } catch(error) {
+      console.error(`Error fetching page ${page} of ${seasonType} episodes for TVDB ID ${tvdbId}:`, (error as Error).message);
+      hasNextPage = false;
+    }
+  }
+  return { episodes: allEpisodes };
+}
+
+async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', seasonType: string = 'default', config: UserConfig = {} as UserConfig, bypassCache: boolean = false): Promise<TvdbEpisodesResponse | null> {
+  const cacheKey = `series-episodes:${tvdbId}:${language}:${seasonType}`;
+
+  return cacheWrapTvdbApi(cacheKey, async () => {
+    console.log(`[TVDB] Fetching episodes for ${tvdbId} with type: '${seasonType}' and lang: '${language}'`);
+    let result = await _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config);
+ 
+    if ((!result || result.episodes.length === 0) && seasonType !== 'official') {
+      console.warn(`[TVDB] No episodes found for type '${seasonType}'. Falling back to 'official' order.`);
+      result = await _fetchEpisodesBySeasonType(tvdbId, 'official', language, config);
+    }
+
+    if ((!result || result.episodes.length === 0) && language !== 'en-US') {
+      console.warn(`[TVDB] No episodes found in '${language}'. Falling back to 'en-US'.`);
+      return getSeriesEpisodes(tvdbId, 'en-US', seasonType, config, true); 
+    }
+    
+    return result;
+  });
+}
+
+async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/search?remote_id=${imdbId}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    const data = await response.json();
+    const results = data.data || [];
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return results;
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
+    return [];
+  }
+}
+
+async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/search?remote_id=${tmdbId}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    const data = await response.json();
+    const results = data.data || [];
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return results;
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
+    return [];
+  }
+}
+
+async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/genres`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    const data = await response.json();
+    const results = data.data || [];
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return results;
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error getting TVDB genres:`, (error as Error).message);
+    return [];
+  }
+}
+
+async function filter(type: 'movies' | 'series', params: any, config: UserConfig): Promise<TvdbFilterResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+    
+    const response = await fetch(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    const data = await response.json();
+    const results = data.data || [];
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return results;
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error filtering TVDB ${type}:`, (error as Error).message);
+    return [];
+  }
+}
+
+async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<TvdbSeasonExtended | null> {
+  return cacheWrapTvdbApi(`season-extended:${seasonId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+
+    const url = `${TVDB_API_URL}/seasons/${seasonId}/extended`;
+    const startTime = Date.now();
+    
+    try {
+      const response = await fetch(url, { 
+        headers: { 'Authorization': `Bearer ${token}` } 
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      if (!response.ok) {
+        // Track failed request
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvdb', responseTime, false);
+        return null;
+      }
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+      
+      const data = await response.json();
+      return data.data;
+    } catch(error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
+      console.error(`Error fetching extended season data for TVDB ID ${seasonId}:`, (error as Error).message);
+      return null; 
+    }
+  });
+}
+
+async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<string | null> {
+  try {
+    const seriesData = await getSeriesExtended(seriesId, config);
+    if (seriesData && seriesData.image) {
+      return seriesData.image.startsWith('http') ? seriesData.image : `${TVDB_IMAGE_BASE}${seriesData.image}`;
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting poster for series ${seriesId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function getSeriesBackground(seriesId: string, config: UserConfig): Promise<string | null> {
+  try {
+    const seriesData = await getSeriesExtended(seriesId, config);
+    if (seriesData && seriesData.artworks) {
+      // Look for background artwork (type 3 is typically background)
+      const backgroundArtwork = seriesData.artworks.find(art => art.type === 3);
+      if (backgroundArtwork && backgroundArtwork.image) {
+        return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting background for series ${seriesId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function getMoviePoster(movieId: string, config: UserConfig): Promise<string | null> {
+  try {
+    const movieData = await getMovieExtended(movieId, config);
+    if (movieData && movieData.image) {
+      return movieData.image.startsWith('http') ? movieData.image : `${TVDB_IMAGE_BASE}${movieData.image}`;
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting poster for movie ${movieId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function getMovieBackground(movieId: string, config: UserConfig): Promise<string | null> {
+  try {
+    const movieData = await getMovieExtended(movieId, config);
+    if (movieData && movieData.artworks) {
+      // Look for background artwork (type 15 is background for movies)
+      const backgroundArtwork = movieData.artworks.find(art => art.type === 15);
+      if (backgroundArtwork && backgroundArtwork.image) {
+        console.log(`[TVDB] Found movie background (type 15) for TVDB ID ${movieId}: ${backgroundArtwork.image}`);
+        return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;
+      }
+      
+      // Fallback to type 3 if type 15 not found
+      const fallbackBackground = movieData.artworks.find(art => art.type === 3);
+      if (fallbackBackground && fallbackBackground.image) {
+        console.log(`[TVDB] Found movie background (type 3 fallback) for TVDB ID ${movieId}: ${fallbackBackground.image}`);
+        return fallbackBackground.image.startsWith('http') ? fallbackBackground.image : `${TVDB_IMAGE_BASE}${fallbackBackground.image}`;
+      }
+      
+      console.log(`[TVDB] No background artwork found for movie ${movieId}. Available types:`, movieData.artworks.map(art => art.type));
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting background for movie ${movieId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<string | null> {
+  try {
+    const seriesData = await getSeriesExtended(seriesId, config);
+    if (seriesData && seriesData.artworks) {
+      // Look for clear logo artwork (type 23 is clear logo for series)
+      const logoArtwork = seriesData.artworks.find(art => art.type === 23);
+      if (logoArtwork && logoArtwork.image) {
+        return logoArtwork.image.startsWith('http') ? logoArtwork.image : `${TVDB_IMAGE_BASE}${logoArtwork.image}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting logo for series ${seriesId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function getMovieLogo(movieId: string, config: UserConfig): Promise<string | null> {
+  try {
+    const movieData = await getMovieExtended(movieId, config);
+    if (movieData && movieData.artworks) {
+      // Look for clear logo artwork (type 25 is clear logo for movies)
+      const logoArtwork = movieData.artworks.find(art => art.type === 25);
+      if (logoArtwork && logoArtwork.image) {
+        return logoArtwork.image.startsWith('http') ? logoArtwork.image : `${TVDB_IMAGE_BASE}${logoArtwork.image}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`[TVDB] Error getting logo for movie ${movieId}:`, (error as Error).message);
+    return null;
+  }
+}
+
+async function getCollectionsList(config: UserConfig, page: number = 0): Promise<TvdbCollection[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${TVDB_API_URL}/collections?page=${page}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    if (!response.ok) {
+      // Track failed request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return [];
+    }
+    
+    const data = await response.json();
+    const results = data.data || [];
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return results;
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`Error getting TVDB collections list:`, (error as Error).message);
+    return [];
+  }
+}
+
+async function getCollectionDetails(collectionId: string, config: UserConfig): Promise<TvdbCollection | null> {
+  return cacheWrapTvdbApi(`collection-details:${collectionId}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+    try {
+      const url = `${TVDB_API_URL}/lists/${collectionId}/extended`;
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.data;
+    } catch (error) {
+      console.error(`[TVDB] Error fetching collection details for ID ${collectionId}:`, (error as Error).message);
+      return null;
+    }
+  });
+}
+
+async function getCollectionTranslations(collectionId: string, language: string, config: UserConfig): Promise<TvdbCollectionTranslation | null> {
+  return cacheWrapTvdbApi(`collection-translations:${collectionId}:${language}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return null;
+    try {
+      const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.data;
+    } catch (error) {
+      console.error(`[TVDB] Error fetching collection translations for ID ${collectionId}:`, (error as Error).message);
+      return null;
+    }
+  });
+}
+
+export {
+  searchSeries,
+  searchMovies,
+  searchPeople,
+  getSeriesExtended,
+  getMovieExtended,
+  getPersonExtended,
+  getSeriesEpisodes,
+  findByImdbId,
+  findByTmdbId,
+  getAllGenres,
+  filter,
+  getSeasonExtended,
+  getSeriesPoster,
+  getSeriesBackground,
+  getMoviePoster,
+  getMovieBackground,
+  getSeriesLogo,
+  getMovieLogo,
+  getCollectionsList,
+  getCollectionDetails,
+  getCollectionTranslations
+};
+
+// CommonJS compatibility
+module.exports = {
+  searchSeries,
+  searchMovies,
+  searchPeople,
+  getSeriesExtended,
+  getMovieExtended,
+  getPersonExtended,
+  getSeriesEpisodes,
+  findByImdbId,
+  findByTmdbId,
+  getAllGenres,
+  filter,
+  getSeasonExtended,
+  getSeriesPoster,
+  getSeriesBackground,
+  getMoviePoster,
+  getMovieBackground,
+  getSeriesLogo,
+  getMovieLogo,
+  getCollectionsList,
+  getCollectionDetails,
+  getCollectionTranslations
+};

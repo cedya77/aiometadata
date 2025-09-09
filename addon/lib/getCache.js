@@ -607,7 +607,10 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   };
   
   const catalogConfigString = JSON.stringify(catalogConfig);
-  const key = `catalog:${catalogConfigString}:${catalogKey}`;
+  // Only include userUUID for MDBList catalogs since they are user-specific
+  const key = idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.')
+    ? `catalog:${userUUID}:${catalogConfigString}:${catalogKey}`
+    : `catalog:${catalogConfigString}:${catalogKey}`;
   
       console.log(`📦 [Cache] Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
     
@@ -1396,7 +1399,23 @@ function cacheWrapTvdbApi(key, method) {
 }
 
 function cacheWrapTvmazeApi(key, method) {
-  return cacheWrapGlobal(`tvmaze-api:${key}`, method, TVMAZE_API_TTL);
+  const tvmazeResultClassifier = (result, error = null) => {
+    if (error) {
+      return classifyResult(result, error);
+    }
+    
+    // Don't cache null results from TVmaze API - let them retry immediately
+    if (result === null || result === undefined) {
+      console.log(`📦 [TVmaze Cache] Skipping cache for null result: ${key}`);
+      return { type: 'SKIP_CACHE', ttl: 0 };
+    }
+    
+    return classifyResult(result, error);
+  };
+
+  return cacheWrapGlobal(`tvmaze-api:${key}`, method, TVMAZE_API_TTL, {
+    resultClassifier: tvmazeResultClassifier
+  });
 }
 
 /**

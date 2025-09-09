@@ -1,25 +1,29 @@
 require("dotenv").config();
-const { getGenreList } = require("./getGenreList");
-const { getLanguages } = require("./getLanguages");
-const { fetchMDBListItems, parseMDBListItems } = require("../utils/mdbList");
-const { fetchStremThruCatalog, parseStremThruItems } = require("../utils/stremthru");
-const CATALOG_TYPES = require("../static/catalog-types.json");
-const moviedb = require("./getTmdb");
+import { getGenreList } from "./getGenreList.js";
+import { getLanguages } from "./getLanguages.js";
+import { fetchMDBListItems, parseMDBListItems } from "../utils/mdbList.js";
+import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
+import * as CATALOG_TYPES from "../static/catalog-types.json";
+import * as moviedb from "./getTmdb.js";
+import * as tvdb from './tvdb.js';
+import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
+import * as Utils from '../utils/parseProps.js';
+import { resolveAllIds } from './id-resolver.js';
+import { cacheWrapTvdbApi } from './getCache.js';
+import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
+import { getImdbRating } from './getImdbRating.js';
+import { getMeta } from './getMeta.js';
+import { cacheWrapMetaSmart } from './getCache.js';
+import { UserConfig } from '../types/index.js';
+
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
-const tvdb = require('./tvdb');
-const { to3LetterCode, to3LetterCountryCode } = require('./language-map');
-const Utils = require('../utils/parseProps');
-const { resolveAllIds } = require('./id-resolver');
-const { cacheWrapTvdbApi } = require('./getCache');
-const { getTVDBContentRatingId } = require('../utils/tvdbContentRating');
-const { getImdbRating } = require('./getImdbRating');
 
-const host = process.env.HOST_NAME.startsWith('http')
+const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
-async function getCatalog(type, language, page, id, genre, config, userUUID) {
+async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
       console.log(`[getCatalog] Fetching TVDB collections catalog: ${id}`);
@@ -46,19 +50,19 @@ async function getCatalog(type, language, page, id, genre, config, userUUID) {
       console.warn(`[getCatalog] Received request for unknown catalog prefix: ${id}`);
       return { metas: [] };
     }
-  } catch (error) {
+  } catch (error: any) {
     console.warn(`[getCatalog] Error in getCatalog router for id=${id}, type=${type}:`, error.message);
     return { metas: [] };
   }
 }
 
-async function getTvdbCatalog(type, catalogId, genreName, page, language, config) {
+async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig): Promise<any[]> {
   console.log(`[getCatalog] Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
   
   // Cache the raw TVDB API response using a cache key that doesn't include page
   const cacheKey = `tvdb-filter:${type}:${genreName}:${language}`;
   
-  const allTvdbGenres = await getGenreList('tvdb', language, type, config);
+  const allTvdbGenres = await getGenreList('tvdb', language, type as "movie" | "series", config);
   console.log(`[getCatalog] TVDB genres fetched: ${allTvdbGenres.length} genres available`);
   
   const genre = allTvdbGenres.find(g => g.name === genreName);
@@ -69,9 +73,9 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
   const countryCode2 = langParts[1] || langCode2; 
   const langCode3 = await to3LetterCode(langCode2, config);
   const countryCode3 = to3LetterCountryCode(countryCode2);
-  const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating, countryCode3, type === 'movie' ? 'movie' : 'episode');
+  const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating as string, countryCode3, type === 'movie' ? 'movie' : 'episode');
   
-  const params = {
+  const params: any = {
     country: countryCode3 || 'usa',
     lang: langCode3 || 'eng',
     sort: 'score'
@@ -119,31 +123,48 @@ async function getTvdbCatalog(type, catalogId, genreName, page, language, config
   
   console.log(`[getCatalog] Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
+  let preferredProvider: string;
+  if (type === 'movie') {
+    preferredProvider = config.providers?.movie || 'tmdb';
+  } else {
+    preferredProvider = config.providers?.series || 'tvdb';
+  }
   const metas = await Promise.all(paginatedResults.map(async item => {
     const tvdbId = item.id;
-    const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config);
     if (!tvdbId) return null;
-    const fallbackPosterUrl = item.image ? (item.image.startsWith('http') ? item.image : `${TVDB_IMAGE_BASE}${item.image}`) : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-    const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: allIds?.tmdbId, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config) : await Utils.getSeriesPoster({ tmdbId: null, tvdbId: tvdbId, imdbId: null, metaProvider: 'tvdb', fallbackPosterUrl: fallbackPosterUrl }, config);
-    const posterProxyUrl = `${host}/poster/${type}/${type === 'movie' && allIds?.tmdbId ? `tmdb:${allIds?.tmdbId}` : `tvdb:${tvdbId}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    return {
-      id: `tvdb:${tvdbId}`,
-      imdb_id: allIds?.imdbId,
-      type: type,
-      name: item.name,
-      description: item.overview,
-      poster: posterProxyUrl,
-      logo: type === 'movie' ? await moviedb.getTmdbMovieLogo(allIds?.tmdbId, config) : await moviedb.getTmdbSeriesLogo(allIds?.tmdbId, config),
-      year: item.year || null,
-      runtime: Utils.parseRunTime(item.runtime),
-      releaseInfo: item.year || null,
-    };
-  }).filter(Boolean));
+    
+    const targetProviders = new Set();
+    if (preferredProvider !== 'tvdb') targetProviders.add(preferredProvider);
+    let allIds;
+    if (targetProviders.size > 0) {
+      const targetProviderArray = Array.from(targetProviders);
+      allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, null, targetProviderArray);
+    }
+    
+    let stremioId = `tvdb:${tvdbId}`;
+    if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
+      stremioId = `tmdb:${allIds.tmdbId}`;
+    } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+      stremioId = `tvmaze:${allIds.tvmazeId}`;
+    } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+      stremioId = allIds.imdbId;
+    }
+    
+    const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
+      return await getMeta(type, language, stremioId, config, config.userUUID);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+    
+    if (result && result.meta) {
+      return result.meta;
+    }
+    return null;
+  }));
 
-  return metas;
+  const validMetas = metas.filter(meta => meta !== null);
+  return validMetas;
 }
 
-async function getTvdbCollectionsCatalog(type, id, page, language, config) {
+async function getTvdbCollectionsCatalog(type: string, id: string, page: number, language: string, config: UserConfig): Promise<any[]> {
   const langCode = language.split('-')[0];
   if (id === 'tvdb.collections') {
     // Cache the collections list for this specific page
@@ -179,52 +200,39 @@ async function getTvdbCollectionsCatalog(type, id, page, language, config) {
   return [];
 }
 
-async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID) {
+async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
   if (id.startsWith("mdblist.")) {
     console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
-    const results = await fetchMDBListItems(listId, config.apiKeys?.mdblist, language, page);
+    const results = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page);
     return await parseMDBListItems(results, type, genre, language, config);
   }
 
-  const genreList = await getGenreList('tmdb', language, type, config);
+  const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
   const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
 
   const fetchFunction = type === "movie" 
     ? () => moviedb.discoverMovie(parameters, config) 
     : () => moviedb.discoverTv(parameters, config);
 
-  const res = await fetchFunction();
+  const res: any = await fetchFunction();
+  // define preferred provider as string
+  let preferredProvider: string;
+  if (type === 'movie') {
+    preferredProvider = config.providers?.movie || 'tmdb';
+  } else {
+    preferredProvider = config.providers?.series || 'tvdb';
+  }
   const metas = await Promise.all(res.results.map(async item => {
-    // Resolve IDs for each individual item
-    // Check all three art types and collect non-meta providers
-    const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
-    const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
-    const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
-
-    // Determine preferred meta provider
-    let preferredProvider;
-    if (type === 'movie') {
-      preferredProvider = config.providers?.movie || 'tmdb';
-    } else {
-      preferredProvider = config.providers?.series || 'tvdb';
-    }
-
-    // Collect all unique non-meta providers
+    // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
     const targetProviders = new Set();
-    if (posterProvider !== preferredProvider && posterProvider !== 'tmdb' && posterProvider !== 'fanart') targetProviders.add(posterProvider);
-    if (backgroundProvider !== preferredProvider && backgroundProvider !== 'tmdb' && backgroundProvider !== 'fanart') targetProviders.add(backgroundProvider);
-    if (logoProvider !== preferredProvider && logoProvider !== 'tmdb' && logoProvider !== 'fanart') targetProviders.add(logoProvider);
     if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
-    if ((posterProvider === 'fanart' || backgroundProvider === 'fanart' || logoProvider === 'fanart') && type === 'series') targetProviders.add('tvdb');
-
     let allIds;
     if (targetProviders.size > 0) {
       const targetProviderArray = Array.from(targetProviders);
       allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
     }
-    const tmdbLogoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(item.id, config) : await moviedb.getTmdbSeriesLogo(item.id, config);
-
+    
     let stremioId = `tmdb:${item.id}`;
     if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
       stremioId = `tvdb:${allIds.tvdbId}`;
@@ -233,77 +241,24 @@ async function getTmdbAndMdbListCatalog(type, id, genre, page, language, config,
     } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
       stremioId = allIds.imdbId;
     }
-
-
-    // Poster and background with art provider logic
-    const tmdbPosterFullUrl = item.poster_path
-      ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${item.poster_path}`
-      : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-    const tmdbBackgroundFullUrl = item.backdrop_path
-      ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
-      : undefined;
-    const itemDetails = type === 'movie' ? await moviedb.movieInfo({ id: item.id, language, append_to_response: "external_ids" }, config) : await moviedb.tvInfo({ id: item.id, language, append_to_response: "external_ids" }, config);
-    let posterUrl = tmdbPosterFullUrl;
-    let backgroundUrl = tmdbBackgroundFullUrl;
-    if(allIds) {
-      if (type === 'movie') {
-        posterUrl = await Utils.getMoviePoster({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-          fallbackPosterUrl: tmdbPosterFullUrl
-        }, config);
-        backgroundUrl = await Utils.getMovieBackground({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-          fallbackBackgroundUrl: tmdbBackgroundFullUrl
-        }, config);
-      } else {
-        posterUrl = await Utils.getSeriesPoster({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-          fallbackPosterUrl: tmdbPosterFullUrl
-        }, config);
-        backgroundUrl = await Utils.getSeriesBackground({
-          tmdbId: allIds.tmdbId,
-          tvdbId: allIds.tvdbId,
-          imdbId: allIds.imdbId,
-          metaProvider: preferredProvider,
-            fallbackBackgroundUrl: tmdbBackgroundFullUrl
-          }, config);
-      }
+    
+    const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+      return await getMeta(type, language, stremioId, config, userUUID);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+    
+    if (result && result.meta) {
+      return result.meta;
     }
-    const runtime = type === 'movie' ? itemDetails?.runtime || null : itemDetails?.episode_run_time?.[0] ?? itemDetails?.last_episode_to_air?.runtime ?? itemDetails?.next_episode_to_air?.runtime ?? null;
-    const posterProxyUrl = `${host}/poster/${type}/${`tmdb:${item.id}`}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    const imdbRating = await getImdbRating(itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId, type) || item.vote_average?.toFixed(1) || "N/A";
-    return {
-      id: stremioId,
-      type: type,
-      imdb_id: itemDetails.imdb_id || itemDetails.external_ids.imdb_id || allIds?.imdbId,
-      logo: tmdbLogoUrl,
-      releaseInfo: (item.release_date || item.first_air_date || '').substring(0, 4),
-      name: item.title || item.name,
-      poster: posterProxyUrl,
-      year: (item.release_date || item.first_air_date || '').substring(0, 4),
-      background: backgroundUrl,
-      description: item.overview,
-      runtime: Utils.parseRunTime(runtime),
-      genres: item.genre_ids.map(g => genreList.find(genre => genre.id === g)?.name),
-      imdbRating: imdbRating,
-    };
+    return null;
   }));
 
-  return metas;
+  const validMetas = metas.filter(meta => meta !== null);
+  return validMetas;
 }
 
-async function buildParameters(type, language, page, id, genre, genreList, config) {
+async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {
   const languages = await getLanguages(config);
-  const parameters = { language, page};
+  const parameters: any = { language, page};
 
   if (id === 'tmdb.top' && type === 'series') {
     console.log('[TMDB Filter] Applying genre exclusion for popular series catalog.');
@@ -375,34 +330,23 @@ async function buildParameters(type, language, page, id, genre, genreList, confi
   return parameters;
 }
 
-function findGenreId(genreName, genreList) {
+function findGenreId(genreName: string, genreList: any[]): number | undefined {
   const genreData = genreList.find(genre => genre.name === genreName);
   return genreData ? genreData.id : undefined;
 }
 
-function findLanguageCode(genre, languages) {
+function findLanguageCode(genre: string, languages: any[]): string {
   const language = languages.find((lang) => lang.name === genre);
   return language ? language.iso_639_1.split("-")[0] : "";
 }
 
-function findProvider(providerId) {
+function findProvider(providerId: string): any {
   const provider = CATALOG_TYPES.streaming[providerId];
   if (!provider) throw new Error(`Could not find provider: ${providerId}`);
   return provider;
 }
 
-/**
- * Handles StremThru catalog requests
- * @param {string} type - Content type ('movie' or 'series')
- * @param {string} catalogId - The StremThru catalog ID
- * @param {string} genre - Optional genre filter
- * @param {number} page - Page number
- * @param {string} language - Language code
- * @param {Object} config - Addon configuration
- * @param {string} userUUID - User UUID
- * @returns {Promise<Array>} Array of meta items
- */
-async function getStremThruCatalog(type, catalogId, genre, page, language, config, userUUID) {
+async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
   try {
     console.log(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
     
@@ -437,10 +381,10 @@ async function getStremThruCatalog(type, catalogId, genre, page, language, confi
     console.log(`[StremThru] Successfully processed ${metas.length} items for catalog: ${catalogId} (page: ${page})`);
     return metas;
     
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[StremThru] Error processing catalog ${catalogId}:`, error.message);
     return [];
   }
 }
 
-module.exports = { getCatalog };
+export { getCatalog };

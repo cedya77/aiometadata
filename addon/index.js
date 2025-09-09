@@ -133,7 +133,6 @@ const respond = function (req, res, data, opts) {
         const catalogConfig = req.userConfig ? {
           language: req.userConfig.language,
           providers: req.userConfig.providers,
-          artProviders: req.userConfig.artProviders,
           sfw: req.userConfig.sfw,
           includeAdult: req.userConfig.includeAdult,
           ageRating: req.userConfig.ageRating,
@@ -145,7 +144,6 @@ const respond = function (req, res, data, opts) {
         const metaConfig = req.userConfig ? {
           language: req.userConfig.language,
           providers: req.userConfig.providers,
-          artProviders: req.userConfig.artProviders,
           tvdbSeasonType: req.userConfig.tvdbSeasonType,
           castCount: req.userConfig.castCount,
           blurThumbs: req.userConfig.blurThumbs,
@@ -171,47 +169,45 @@ const respond = function (req, res, data, opts) {
       // This ensures Stremio always gets the latest data when config changes
     }
 
-    const cacheControl = getCacheHeaders(opts);
-    if (cacheControl) {
-      const fullCacheControl = `${cacheControl}, public`;
-      res.setHeader("Cache-Control", fullCacheControl);
-      console.log('[Cache] Setting Cache-Control:', fullCacheControl);
-    } else {
-      // Enhanced aggressive cache control for config-sensitive routes
-      let defaultCacheControl;
-      if (req.route && req.route.path) {
-        if (req.route.path.includes('/manifest.json')) {
-          // Manifest: No cache at all - always fresh
-          defaultCacheControl = "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0";
-          console.log('[Cache] Setting manifest Cache-Control:', defaultCacheControl);
-        } else if (req.route.path.includes('/catalog/')) {
-          // Catalog: Very short cache with aggressive revalidation
-          const configVersion = req.userConfig?.configVersion || Date.now();
-          res.setHeader('X-Config-Version', configVersion.toString());
-          res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
-          
-          // Use very short cache to force refresh when config changes
-          defaultCacheControl = "no-cache, must-revalidate, max-age=0";
-          console.log('[Cache] Setting catalog Cache-Control:', defaultCacheControl);
-        } else if (req.route.path.includes('/meta/')) {
-          // Meta: Aggressive cache control to ensure fresh data when config changes
-          const configVersion = req.userConfig?.configVersion || Date.now();
-          res.setHeader('X-Config-Version', configVersion.toString());
-          res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
-          
-          // Use very short cache to force refresh when config changes
-          defaultCacheControl = "no-cache, must-revalidate, max-age=0";
-          console.log('[Cache] Setting aggressive meta Cache-Control:', defaultCacheControl);
-        } else {
-          defaultCacheControl = "public, max-age=3600"; // 1 hour default for other routes
-          console.log('[Cache] Setting default Cache-Control:', defaultCacheControl);
-        }
+    // Enhanced aggressive cache control for config-sensitive routes
+    let cacheControl;
+    if (req.route && req.route.path) {
+      if (req.route.path.includes('/manifest.json')) {
+        // Manifest: No cache at all - always fresh
+        cacheControl = "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0";
+        console.log('[Cache] Setting manifest Cache-Control:', cacheControl);
+      } else if (req.route.path.includes('/catalog/')) {
+        // Catalog: Very short cache with aggressive revalidation
+        const configVersion = req.userConfig?.configVersion || Date.now();
+        res.setHeader('X-Config-Version', configVersion.toString());
+        res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
+        
+        // Use very short cache to force refresh when config changes
+        cacheControl = "no-cache, must-revalidate, max-age=0";
+        console.log('[Cache] Setting catalog Cache-Control:', cacheControl);
+      } else if (req.route.path.includes('/meta/')) {
+        // Meta: Aggressive cache control to ensure fresh data when config changes
+        const configVersion = req.userConfig?.configVersion || Date.now();
+        res.setHeader('X-Config-Version', configVersion.toString());
+        res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
+        
+        // Use very short cache to force refresh when config changes
+        cacheControl = "no-cache, must-revalidate, max-age=0";
+        console.log('[Cache] Setting aggressive meta Cache-Control:', cacheControl);
       } else {
-        defaultCacheControl = "public, max-age=3600"; // 1 hour default for other routes
-        console.log('[Cache] Setting default Cache-Control:', defaultCacheControl);
+        // For other routes, use getCacheHeaders if available, otherwise default
+        const defaultCacheControl = getCacheHeaders(opts);
+        cacheControl = defaultCacheControl || "public, max-age=3600";
+        console.log('[Cache] Setting default Cache-Control:', cacheControl);
       }
-      res.setHeader("Cache-Control", defaultCacheControl);
+    } else {
+      // For routes without path info, use getCacheHeaders if available, otherwise default
+      const defaultCacheControl = getCacheHeaders(opts);
+      cacheControl = defaultCacheControl || "public, max-age=3600";
+      console.log('[Cache] Setting default Cache-Control:', cacheControl);
     }
+    
+    res.setHeader("Cache-Control", cacheControl);
   }
   
   // Force aggressive cache control for meta routes (final override)

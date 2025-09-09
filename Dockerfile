@@ -15,6 +15,9 @@ COPY . .
 # Build da aplicação React
 RUN npm run build
 
+# Build do backend TypeScript
+RUN npm run build:backend
+
 # Etapa de produção
 FROM node:20-alpine AS runner
 
@@ -39,4 +42,4 @@ COPY --from=builder /app/public ./public
 EXPOSE 1337
 
 # Comando para iniciar o servidor
-ENTRYPOINT ["node", "addon/server.js"] 
+ENTRYPOINT ["node", "dist/server.js"] 

@@ -4,6 +4,7 @@ const tvmaze = require('./tvmaze');
 const moviedb = require("./getTmdb");
 const axios = require('axios');
 const database = require('./database');
+const redisIdCache = require('./redis-id-cache');
 
 async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProviders = []) {
   console.log(`🔗 [ID Resolver] Resolving ${stremioId} (type: ${type})`);
@@ -210,13 +211,16 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
     // Cache the mapping for non-anime content
     if (!isAnime) {
       try {
-        await database.saveIdMapping(
+
+        // Also save to Redis cache
+        await redisIdCache.saveIdMapping(
           type,
           allIds.tmdbId,
           allIds.tvdbId,
           allIds.imdbId,
           allIds.tvmazeId
         );
+        
         // console.log(`[ID Cache] Saved mapping for ${type}:`, { tmdbId: allIds.tmdbId, tvdbId: allIds.tvdbId, imdbId: allIds.imdbId, tvmazeId: allIds.tvmazeId });
       } catch (error) {
         console.warn(`❌ [ID Cache] Failed to save mapping: ${error.message}`);

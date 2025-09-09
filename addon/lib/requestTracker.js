@@ -45,10 +45,8 @@ class RequestTracker {
       const today = new Date().toISOString().split('T')[0];
       const hour = new Date().toISOString().substring(0, 13);
       
-      // Get anonymous user identifier (User-Agent hash only - no IP tracking)
-      const userAgent = req.get('User-Agent') || 'unknown';
-      const sessionId = req.get('X-Session-ID') || ''; // Optional session header
-      const userIdentifier = this.hashString(userAgent + sessionId);
+      // Get improved anonymous user identifier
+      const userIdentifier = this.getImprovedUserIdentifier(req);
       
       // Track content requests (meta requests)
       this.trackContentRequest(req);
@@ -59,9 +57,8 @@ class RequestTracker {
       redis.incr(`requests:${hour}`).catch(() => {});
       redis.incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`).catch(() => {});
       
-      // Track active users (anonymous User-Agent hash only)
-      redis.sadd(`active_users:${hour}`, userIdentifier).catch(() => {});
-      redis.expire(`active_users:${hour}`, 3600).catch(() => {}); // 1 hour expiration
+      // Track active users with improved methodology
+      await this.trackActiveUser(userIdentifier, req);
       
       // Set expiration for time-based keys (don't await)
       redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
@@ -1000,6 +997,159 @@ class RequestTracker {
     if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+
+  // Get improved user identifier using multiple factors
+  getImprovedUserIdentifier(req) {
+    const crypto = require('crypto');
+    
+    // Get various identifiers
+    const userAgent = req.get('User-Agent') || 'unknown';
+    const acceptLanguage = req.get('Accept-Language') || '';
+    const acceptEncoding = req.get('Accept-Encoding') || '';
+    const sessionId = req.get('X-Session-ID') || '';
+    
+    // Get anonymized IP (first 3 octets only for privacy)
+    let anonymizedIP = 'unknown';
+    try {
+      const ip = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+      if (ip && ip !== 'unknown') {
+        // For IPv4, keep first 3 octets (e.g., 192.168.1.x)
+        // For IPv6, keep first 3 groups (e.g., 2001:db8:85a3::x)
+        if (ip.includes('.')) {
+          const parts = ip.split('.');
+          anonymizedIP = parts.slice(0, 3).join('.') + '.x';
+        } else if (ip.includes(':')) {
+          const parts = ip.split(':');
+          anonymizedIP = parts.slice(0, 3).join(':') + '::x';
+        } else {
+          anonymizedIP = 'unknown';
+        }
+      }
+    } catch (error) {
+      anonymizedIP = 'unknown';
+    }
+    
+    // Create a composite identifier that's more unique but still anonymous
+    const compositeId = `${userAgent}:${acceptLanguage}:${acceptEncoding}:${anonymizedIP}:${sessionId}`;
+    
+    // Hash the composite identifier
+    return crypto.createHash('sha256').update(compositeId).digest('hex').substring(0, 16);
+  }
+
+  // Track active user with improved methodology
+  async trackActiveUser(userIdentifier, req) {
+    try {
+      const now = Date.now();
+      const hour = new Date().toISOString().substring(0, 13);
+      const minute = new Date().toISOString().substring(0, 16);
+      
+      // Track in multiple time windows for better accuracy
+      const timeWindows = [
+        { key: `active_users:15min`, ttl: 900 }, // 15 minutes
+        { key: `active_users:1hour`, ttl: 3600 }, // 1 hour
+        { key: `active_users:24hour`, ttl: 86400 } // 24 hours
+      ];
+      
+      for (const window of timeWindows) {
+        await redis.sadd(window.key, userIdentifier);
+        await redis.expire(window.key, window.ttl);
+      }
+      
+      // Store detailed user activity for analytics
+      const userActivity = {
+        identifier: userIdentifier,
+        timestamp: now,
+        endpoint: this.normalizeEndpoint(req.path),
+        userAgent: req.get('User-Agent') || 'unknown',
+        method: req.method
+      };
+      
+      // Store in a time-ordered list (keep last 1000 activities)
+      await redis.lpush('user_activities', JSON.stringify(userActivity));
+      await redis.ltrim('user_activities', 0, 999); // Keep only last 1000
+      await redis.expire('user_activities', 86400 * 7); // 7 days
+      
+      // Track unique users per day
+      const today = new Date().toISOString().split('T')[0];
+      await redis.sadd(`unique_users:${today}`, userIdentifier);
+      await redis.expire(`unique_users:${today}`, 86400 * 30); // 30 days
+      
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to track active user:', error.message);
+    }
+  }
+
+  // Get active users with improved methodology
+  async getActiveUsers(timeWindow = '15min') {
+    try {
+      const key = `active_users:${timeWindow}`;
+      const count = await redis.scard(key);
+      return count || 0;
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to get active users:', error.message);
+      return 0;
+    }
+  }
+
+  // Get unique users for a specific day
+  async getUniqueUsersForDay(date = null) {
+    try {
+      const targetDate = date || new Date().toISOString().split('T')[0];
+      const key = `unique_users:${targetDate}`;
+      const count = await redis.scard(key);
+      return count || 0;
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to get unique users for day:', error.message);
+      return 0;
+    }
+  }
+
+  // Get total unique users across all tracked days
+  async getTotalUniqueUsers() {
+    try {
+      const today = new Date();
+      const uniqueUsers = new Set();
+      
+      // Check last 30 days
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        const key = `unique_users:${dateStr}`;
+        
+        try {
+          const users = await redis.smembers(key);
+          if (users) {
+            users.forEach(user => uniqueUsers.add(user));
+          }
+        } catch (error) {
+          // Key might not exist, continue
+        }
+      }
+      
+      return uniqueUsers.size;
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to get total unique users:', error.message);
+      return 0;
+    }
+  }
+
+  // Get recent user activities for analytics
+  async getRecentUserActivities(limit = 50) {
+    try {
+      const activities = await redis.lrange('user_activities', 0, limit - 1);
+      return activities.map(activity => {
+        try {
+          return JSON.parse(activity);
+        } catch (error) {
+          return null;
+        }
+      }).filter(activity => activity !== null);
+    } catch (error) {
+      console.warn('[Request Tracker] Failed to get recent user activities:', error.message);
+      return [];
+    }
   }
 
   // Clean up corrupted Redis keys that might cause WRONGTYPE errors

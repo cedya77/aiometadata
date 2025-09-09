@@ -1594,12 +1594,13 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
 async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
   const artProvider = resolveArtProvider('series', 'poster', config);
   
-  if (artProvider === 'tvdb') {
+  if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
       if(tvdbId) {
         const tvdbPoster = await tvdb.getSeriesPoster(tvdbId, config);
         if (tvdbPoster) {
-        return tvdbPoster;
+          return tvdbPoster;
+        }
       }
       else {
         if(!tmdbId) return fallbackPosterUrl;
@@ -1609,7 +1610,6 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
           return tvdbPoster;
         }
       }
-    }
     } catch (error) {
       console.warn(`[getSeriesPoster] TVDB poster fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }

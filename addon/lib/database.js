@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const redisIdCache = require('./redis-id-cache');
 
 class Database {
   constructor() {
@@ -343,10 +344,12 @@ class Database {
   }
 
   async getCachedMappingByAnyId(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
-    const cached = await this.getCachedIdMapping(contentType, tmdbId, tvdbId, imdbId, tvmazeId);
-    if (cached) {
-      return cached;
+    // Try Redis cache first
+    const redisCached = await redisIdCache.searchByAnyId(contentType, tmdbId, tvdbId, imdbId, tvmazeId);
+    if (redisCached) {
+      return redisCached;
     }
+
     return null;
   }
 
@@ -517,7 +520,7 @@ class Database {
       params = [limit, offset];
     }
     
-    return await this.getQuery(query, params);
+    return await this.allQuery(query, params);
   }
 
   async close() {

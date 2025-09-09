@@ -31,6 +31,7 @@ class ConfigApi {
 
   // Save configuration with password
   async saveConfig(req, res) {
+    console.log(`[ConfigApi] saveConfig called - starting function`);
     try {
       await this.initialize();
       
@@ -81,6 +82,7 @@ class ConfigApi {
       let oldConfig = null;
       try {
         oldConfig = await database.getUserConfig(userUUID);
+        console.log(`[ConfigApi] Retrieved old config for user ${userUUID}`);
       } catch (error) {
         // User might not exist yet, that's fine
         console.log(`[ConfigApi] No existing config found for user ${userUUID}, treating as new config`);
@@ -91,12 +93,14 @@ class ConfigApi {
       configWithTimestamp.configVersion = Date.now();
       
       await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
+      console.log(`[ConfigApi] Saved config for user ${userUUID}`);
       // Always trust the UUID after creation
       await database.trustUUID(userUUID);
       
       // Invalidate user's cache when config changes
       try {
         const redis = require('./getCache').redis;
+        console.log(`[ConfigApi] Starting cache invalidation process`);
         
         // Clear only the meta components affected by config changes
         try {
@@ -136,40 +140,58 @@ class ConfigApi {
             console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
           }
-          
+
           // Art provider changes - affects all art-related components
+          console.log(`[ConfigApi] DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
+          console.log(`[ConfigApi] DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
+          
           if (config.artProviders && oldConfig?.artProviders) {
-            const artProvidersChanged = Object.keys(config.artProviders).some(key => {
-              const newValue = config.artProviders[key];
-              const oldValue = oldConfig.artProviders?.[key];
-              
-              // Handle englishArtOnly boolean property
-              if (key === 'englishArtOnly') {
-                return newValue !== oldValue;
-              }
+            console.log(`[ConfigApi] DEBUG: Both art providers exist, comparing...`);
+            let artProvidersChanged = false;
+            
+            // Check englishArtOnly boolean property
+            if (config.artProviders?.englishArtOnly !== oldConfig?.artProviders?.englishArtOnly) {
+              artProvidersChanged = true;
+              console.log(`[ConfigApi] englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
+            }
+            
+            // Check each content type (movie, series, anime)
+            const contentTypes = ['movie', 'series', 'anime'];
+            for (const contentType of contentTypes) {
+              const newContentType = config.artProviders?.[contentType];
+              const oldContentType = oldConfig?.artProviders?.[contentType];
               
               // Handle legacy string format
-              if (typeof newValue === 'string' && typeof oldValue === 'string') {
-                return newValue !== oldValue;
+              if (typeof newContentType === 'string' && typeof oldContentType === 'string') {
+                if (newContentType !== oldContentType) {
+                  artProvidersChanged = true;
+                  console.log(`[ConfigApi] ${contentType} art provider changed from ${oldContentType} to ${newContentType}`);
+                }
               }
-              
               // Handle new nested object format
-              if (typeof newValue === 'object' && typeof oldValue === 'object') {
-                return newValue.poster !== oldValue.poster || 
-                       newValue.background !== oldValue.background || 
-                       newValue.logo !== oldValue.logo;
+              else if (typeof newContentType === 'object' && typeof oldContentType === 'object') {
+                const artTypes = ['poster', 'background', 'logo'];
+                for (const artType of artTypes) {
+                  if (newContentType?.[artType] !== oldContentType?.[artType]) {
+                    artProvidersChanged = true;
+                    console.log(`[ConfigApi] ${contentType}.${artType} changed from ${oldContentType?.[artType]} to ${newContentType?.[artType]}`);
+                  }
+                }
               }
-              
-              // Handle mixed formats (legacy to new or vice versa)
-              return true;
-            });
+              // Handle mixed formats (legacy to new or vice versa) or missing values
+              else if (newContentType !== oldContentType) {
+                artProvidersChanged = true;
+                console.log(`[ConfigApi] ${contentType} art provider format changed from ${oldContentType} to ${newContentType}`);
+              }
+            }
             
             if (artProvidersChanged) {
               patterns.push(`meta:*`);
               patterns.push(`meta-*:*`);
               patterns.push(`search:*`);
               patterns.push(`catalog:*`);
-              console.log(`[ConfigApi] Old art providers:`, oldConfig.artProviders);
+              console.log(`[ConfigApi] Art providers changed - clearing cache`);
+              console.log(`[ConfigApi] Old art providers:`, oldConfig?.artProviders);
               console.log(`[ConfigApi] New art providers:`, config.artProviders);
             }
           }
@@ -368,6 +390,8 @@ class ConfigApi {
 
   // Update configuration (requires password)
   async updateConfig(req, res) {
+    console.log(`[ConfigApi] updateConfig called for userUUID: ${req.params.userUUID}`);
+    console.log(`[ConfigApi] Request body keys:`, Object.keys(req.body || {}));
     try {
       await this.initialize();
       
@@ -412,8 +436,183 @@ class ConfigApi {
       // Hash the password
       const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
       
+      // Get old config to compare changes
+      let oldConfig = null;
+      try {
+        oldConfig = await database.getUserConfig(userUUID);
+        console.log(`[ConfigApi] Retrieved old config for user ${userUUID}`);
+      } catch (error) {
+        console.log(`[ConfigApi] Could not retrieve old config for user ${userUUID}:`, error.message);
+      }
+
+      // Add timestamp to track config changes
+      // Use a slightly higher timestamp to ensure it's always different
+      const newConfigVersion = Date.now() + 1;
+      const configWithTimestamp = {
+        ...config,
+        lastModified: Date.now(),
+        configVersion: newConfigVersion
+      };
+      
       // Update the configuration
-      await database.saveUserConfig(userUUID, passwordHash, config);
+      await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
+      console.log(`[ConfigApi] Updated config for user ${userUUID} with configVersion: ${configWithTimestamp.configVersion}`);
+      console.log(`[ConfigApi] Previous configVersion was: ${oldConfig?.configVersion || 'none'}`);
+      
+      // Invalidate user's cache when config changes
+      try {
+        const redis = require('./getCache').redis;
+        console.log(`[ConfigApi] Starting cache invalidation process`);
+        
+        // Clear only the meta components affected by config changes
+        try {
+          const patterns = [];
+          
+          // Map config changes to specific cache components that need clearing
+          // This ensures we only clear what's actually affected by the change
+          
+          // Cast-related changes
+          if (config.castCount !== undefined && config.castCount !== oldConfig?.castCount) {
+            patterns.push(`meta-cast:*`);  // Cast components
+            patterns.push(`meta-videos:*`); // Episode components (might include cast info)
+            console.log(`[ConfigApi] Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
+          }
+          
+          // Language changes - affects all meta content
+          if (config.language !== undefined && config.language !== oldConfig?.language) {
+            patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
+            patterns.push(`search:*`); // Also clear search cache since language affects search results
+            console.log(`[ConfigApi] Language changed from ${oldConfig?.language} to ${config.language}`);
+            console.log(`[ConfigApi] DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
+          }
+          
+          // Blur thumbs changes - affects poster/background display
+          if (config.blurThumbs !== undefined && config.blurThumbs !== oldConfig?.blurThumbs) {
+            patterns.push(`meta-poster:*`); // Poster components
+            patterns.push(`meta-background:*`); // Background components
+            patterns.push(`search:*`); // Also clear search cache since blur affects search results
+            console.log(`[ConfigApi] Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, and search cache for blur change`);
+          }
+          
+          // Show prefix changes - affects basic meta display
+          if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
+            patterns.push(`meta-basic:*`); // Basic meta components
+            patterns.push(`search:*`); // Also clear search cache since prefix affects search results
+            console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
+          }
+
+          // Art provider changes - affects all art-related components
+          console.log(`[ConfigApi] DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
+          console.log(`[ConfigApi] DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
+          
+          if (config.artProviders && oldConfig?.artProviders) {
+            console.log(`[ConfigApi] DEBUG: Both art providers exist, comparing...`);
+            let artProvidersChanged = false;
+            
+            // Check englishArtOnly boolean property
+            if (config.artProviders?.englishArtOnly !== oldConfig?.artProviders?.englishArtOnly) {
+              artProvidersChanged = true;
+              console.log(`[ConfigApi] englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
+            }
+            
+            // Check each content type (movie, series, anime)
+            const contentTypes = ['movie', 'series', 'anime'];
+            for (const contentType of contentTypes) {
+              const newContentType = config.artProviders?.[contentType];
+              const oldContentType = oldConfig?.artProviders?.[contentType];
+              
+              if (newContentType && oldContentType) {
+                // Check individual art type properties (poster, background, logo, banner)
+                const artTypes = ['poster', 'background', 'logo', 'banner'];
+                
+                for (const artType of artTypes) {
+                  const newArtProvider = newContentType[artType];
+                  const oldArtProvider = oldContentType[artType];
+                  
+                  if (newArtProvider !== oldArtProvider) {
+                    artProvidersChanged = true;
+                    console.log(`[ConfigApi] ${contentType} ${artType} changed from '${oldArtProvider}' to '${newArtProvider}'`);
+                  }
+                }
+                
+                // Also check legacy providers/fallbacks arrays if they exist
+                const newProviders = newContentType.providers || [];
+                const oldProviders = oldContentType.providers || [];
+                
+                if (newProviders.length > 0 || oldProviders.length > 0) {
+                  if (JSON.stringify(newProviders.sort()) !== JSON.stringify(oldProviders.sort())) {
+                    artProvidersChanged = true;
+                    console.log(`[ConfigApi] ${contentType} providers changed from [${oldProviders.join(', ')}] to [${newProviders.join(', ')}]`);
+                  }
+                }
+                
+                const newFallbacks = newContentType.fallbacks || [];
+                const oldFallbacks = oldContentType.fallbacks || [];
+                
+                if (newFallbacks.length > 0 || oldFallbacks.length > 0) {
+                  if (JSON.stringify(newFallbacks.sort()) !== JSON.stringify(oldFallbacks.sort())) {
+                    artProvidersChanged = true;
+                    console.log(`[ConfigApi] ${contentType} fallbacks changed from [${oldFallbacks.join(', ')}] to [${newFallbacks.join(', ')}]`);
+                  }
+                }
+              } else if (newContentType !== oldContentType) {
+                // One exists and the other doesn't
+                artProvidersChanged = true;
+                console.log(`[ConfigApi] ${contentType} content type changed from ${oldContentType ? 'exists' : 'null'} to ${newContentType ? 'exists' : 'null'}`);
+              }
+            }
+            
+            if (artProvidersChanged) {
+              patterns.push(`meta-poster:*`); // Poster components
+              patterns.push(`meta-background:*`); // Background components
+              patterns.push(`meta-banner:*`); // Banner components
+              patterns.push(`meta-logo:*`); // Logo components
+              patterns.push(`search:*`); // Also clear search cache since art affects search results
+              console.log(`[ConfigApi] Art providers changed - added patterns for all art-related components`);
+            } else {
+              console.log(`[ConfigApi] Art providers unchanged`);
+            }
+          } else if (config.artProviders !== oldConfig?.artProviders) {
+            // One exists and the other doesn't
+            patterns.push(`meta-poster:*`); // Poster components
+            patterns.push(`meta-background:*`); // Background components
+            patterns.push(`meta-banner:*`); // Banner components
+            patterns.push(`meta-logo:*`); // Logo components
+            patterns.push(`search:*`); // Also clear search cache since art affects search results
+            console.log(`[ConfigApi] Art providers changed from ${oldConfig?.artProviders ? 'exists' : 'null'} to ${config.artProviders ? 'exists' : 'null'}`);
+          } else {
+            console.log(`[ConfigApi] No art providers in config or oldConfig`);
+          }
+          
+          // Clear cache patterns if any changes were detected
+          if (patterns.length > 0) {
+            console.log(`[ConfigApi] Clearing cache patterns:`, patterns);
+            
+            // Clear each pattern
+            for (const pattern of patterns) {
+              try {
+                const keys = await redis.keys(`*:${userUUID}:${pattern}`);
+                if (keys.length > 0) {
+                  await redis.del(...keys);
+                  console.log(`[ConfigApi] Cleared ${keys.length} cache entries for pattern: ${pattern}`);
+                }
+              } catch (patternError) {
+                console.error(`[ConfigApi] Error clearing cache pattern ${pattern}:`, patternError);
+              }
+            }
+            
+            console.log(`[ConfigApi] Cache invalidation completed for user ${userUUID}`);
+          } else {
+            console.log(`[ConfigApi] No cache patterns to clear - no relevant config changes detected`);
+          }
+        } catch (cacheError) {
+          console.error(`[ConfigApi] Error during cache invalidation:`, cacheError);
+        }
+      } catch (redisError) {
+        console.error(`[ConfigApi] Error accessing Redis for cache invalidation:`, redisError);
+      }
       
       const hostEnv2 = process.env.HOST_NAME;
       const baseUrl2 = hostEnv2

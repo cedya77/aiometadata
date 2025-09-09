@@ -246,6 +246,128 @@ async function getTvCertifications(params, config) {
   return makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params);
 }
 
+async function getMovieWatchProviders(params, config) {
+  const data = await makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params);
+  if (data?.results) {
+    const country = config.language.split('-')[1] || 'US';
+    const countryProviders = data.results[country];
+    
+    if (countryProviders) {
+      const providers = [];
+      
+      // Extract flatrate providers (subscription services)
+      if (countryProviders.flatrate) {
+        countryProviders.flatrate.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'flatrate',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Extract buy providers (purchase options)
+      if (countryProviders.buy) {
+        countryProviders.buy.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'buy',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Extract rent providers (rental options)
+      if (countryProviders.rent) {
+        countryProviders.rent.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'rent',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Sort by priority (lower number = higher priority)
+      providers.sort((a, b) => a.priority - b.priority);
+      
+      return {
+        country,
+        link: countryProviders.link,
+        providers
+      };
+    }
+  }
+  return null;
+}
+
+async function getTvWatchProviders(params, config) {
+  const data = await makeTmdbRequest(`/tv/${params.id}/season/${params.season_number}/watch/providers`, getApiKey(config), params);
+  if (data?.results) {
+    const country = config.language.split('-')[1] || 'US';
+    const countryProviders = data.results[country];
+    
+    if (countryProviders) {
+      const providers = [];
+      
+      // Extract flatrate providers (subscription services)
+      if (countryProviders.flatrate) {
+        countryProviders.flatrate.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'flatrate',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Extract buy providers (purchase options)
+      if (countryProviders.buy) {
+        countryProviders.buy.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'buy',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Extract rent providers (rental options)
+      if (countryProviders.rent) {
+        countryProviders.rent.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'rent',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Sort by priority (lower number = higher priority)
+      providers.sort((a, b) => a.priority - b.priority);
+      
+      return {
+        country,
+        link: countryProviders.link,
+        providers
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Get TMDB movie poster URL
  * @param {string} tmdbId - TMDB movie ID
@@ -443,5 +565,7 @@ module.exports = {
   getTmdbMovieBackground,
   getTmdbSeriesBackground,
   getTmdbMovieLogo,
-  getTmdbSeriesLogo
+  getTmdbSeriesLogo,
+  getMovieWatchProviders,
+  getTvWatchProviders
 };

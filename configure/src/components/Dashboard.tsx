@@ -33,7 +33,7 @@ import {
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar, Legend } from 'recharts';
 
 // Dashboard Overview Component
-function DashboardOverview() {
+function DashboardOverview({ data, systemData, loading }) {
   
   const [systemStatus, setSystemStatus] = useState({
     status: 'healthy',
@@ -51,58 +51,38 @@ function DashboardOverview() {
 
   const [recentActivity, setRecentActivity] = useState([]);
 
+  // Update state when data prop changes
   useEffect(() => {
-    // Fetch real data from addon APIs
-    const fetchStats = async () => {
-      try {
-        const [overviewResponse, systemResponse] = await Promise.all([
-          fetch('/api/dashboard/overview'),
-          fetch('/api/dashboard/system')
-        ]);
-        
-        if (overviewResponse.ok) {
-          const overviewData = await overviewResponse.json();
-          setQuickStats({
-            totalRequests: overviewData.quickStats.totalRequests,
-            cacheHitRate: overviewData.quickStats.cacheHitRate,
-            activeUsers: overviewData.quickStats.activeUsers,
-            errorRate: overviewData.quickStats.errorRate
-          });
-          
-          // Update system status from systemOverview
-          if (overviewData.systemOverview) {
-            setSystemStatus({
-              status: overviewData.systemOverview.status,
-              uptime: overviewData.systemOverview.uptime,
-              version: overviewData.systemOverview.version,
-              lastUpdate: overviewData.systemOverview.lastUpdate
-            });
-          }
-        }
-        
-        if (systemResponse.ok) {
-          const systemData = await systemResponse.json();
-          if (systemData.recentActivity) {
-            console.log('[Dashboard Overview] Received recent activity:', systemData.recentActivity);
-            setRecentActivity(systemData.recentActivity);
-          } else {
-            console.log('[Dashboard Overview] No recent activity data received');
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch dashboard stats:', error);
-        // Fallback to default values
+    if (data) {
+      // Update quick stats from overview data
+      if (data.quickStats) {
         setQuickStats({
-          totalRequests: 0,
-          cacheHitRate: 0,
-          activeUsers: 0,
-          errorRate: 0
+          totalRequests: data.quickStats.totalRequests,
+          cacheHitRate: data.quickStats.cacheHitRate,
+          activeUsers: data.quickStats.activeUsers,
+          errorRate: data.quickStats.errorRate
         });
       }
-    };
+      
+      // Update system status from systemOverview
+      if (data.systemOverview) {
+        setSystemStatus({
+          status: data.systemOverview.status,
+          uptime: data.systemOverview.uptime,
+          version: data.systemOverview.version,
+          lastUpdate: data.systemOverview.lastUpdate
+        });
+      }
+    }
+  }, [data]);
 
-    fetchStats();
-  }, []);
+  // Update recent activity when systemData changes
+  useEffect(() => {
+    if (systemData && systemData.recentActivity) {
+      console.log('[Dashboard Overview] Received recent activity:', systemData.recentActivity);
+      setRecentActivity(systemData.recentActivity);
+    }
+  }, [systemData]);
 
   return (
     <div className="space-y-6">
@@ -223,7 +203,7 @@ function DashboardOverview() {
 }
 
 // Analytics & Performance Component
-function DashboardAnalytics() {
+function DashboardAnalytics({ data, loading }) {
   
   const [requestMetrics, setRequestMetrics] = useState({
     requestsPerHour: [],
@@ -503,7 +483,7 @@ function DashboardAnalytics() {
 }
 
 // Content Intelligence Component
-function DashboardContent() {
+function DashboardContent({ data, loading }) {
   
   const [popularContent, setPopularContent] = useState([]);
   const [searchPatterns, setSearchPatterns] = useState([]);
@@ -689,7 +669,7 @@ function DashboardContent() {
 }
 
 // System Management Component
-function DashboardSystem() {
+function DashboardSystem({ data, loading }) {
   
   const [systemConfig, setSystemConfig] = useState({
     language: 'en-US',
@@ -986,7 +966,7 @@ function DashboardSystem() {
 }
 
 // Operational Tools Component
-function DashboardOperations() {
+function DashboardOperations({ data, loading }) {
   const { adminKey } = useAdmin();
   
   const [cacheStats, setCacheStats] = useState({
@@ -998,48 +978,24 @@ function DashboardOperations() {
 
   const [errorLogs, setErrorLogs] = useState([]);
   const [maintenanceTasks, setMaintenanceTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
 
+  // Update state when data prop changes
   useEffect(() => {
-    const fetchOperationsData = async () => {
-      try {
-        setLoading(true);
-        const headers = {
-          'Content-Type': 'application/json'
-        };
-        
-        // Add admin key if available
-        if (adminKey) {
-          headers['x-admin-key'] = adminKey;
-        }
-        
-        const response = await fetch('/api/dashboard/operations', { headers });
-        if (response.ok) {
-          const data = await response.json();
-          setErrorLogs(data.errorLogs || []);
-          setMaintenanceTasks(data.maintenanceTasks || []);
-          
-          // Update cache stats from API response
-          if (data.cacheStats) {
-            setCacheStats({
-              totalKeys: data.cacheStats.totalKeys || 0,
-              memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : '0%',
-              hitRate: data.cacheStats.hitRate || 0,
-              evictionRate: data.cacheStats.evictionRate || 0
-            });
-          }
-        } else {
-          console.error('Failed to fetch operations data:', response.status);
-        }
-      } catch (error) {
-        console.error('Error fetching operations data:', error);
-      } finally {
-        setLoading(false);
+    if (data) {
+      setErrorLogs(data.errorLogs || []);
+      setMaintenanceTasks(data.maintenanceTasks || []);
+      
+      // Update cache stats from API response
+      if (data.cacheStats) {
+        setCacheStats({
+          totalKeys: data.cacheStats.totalKeys || 0,
+          memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : '0%',
+          hitRate: data.cacheStats.hitRate || 0,
+          evictionRate: data.cacheStats.evictionRate || 0
+        });
       }
-    };
-
-    fetchOperationsData();
-  }, [adminKey]);
+    }
+  }, [data]);
 
   const handleClearCache = async (type) => {
     try {
@@ -1259,7 +1215,7 @@ function DashboardOperations() {
 }
 
 // User Management Component
-function DashboardUsers() {
+function DashboardUsers({ data, loading }) {
   const { adminKey } = useAdmin();
   
   const [userStats, setUserStats] = useState({
@@ -1277,61 +1233,27 @@ function DashboardUsers() {
     blockedUsers: 0
   });
 
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Update state when data prop changes
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const headers = {
-          'Content-Type': 'application/json'
-        };
-        
-        // Add admin key if available
-        if (adminKey) {
-          headers['x-admin-key'] = adminKey;
-          console.log('[Dashboard Users] Using admin key:', adminKey);
-        } else {
-          console.log('[Dashboard Users] No admin key available');
-          return;
-        }
-        
-        const response = await fetch('/api/dashboard/users', {
-          headers
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        setUserStats({
-          totalUsers: data.totalUsers || 0,
-          activeUsers: data.activeUsers || 0,
-          newUsersToday: data.newUsersToday || 0,
-          totalRequests: data.totalRequests || 0
-        });
-        setUserActivity(data.userActivity || []);
-        setAccessControl(data.accessControl || {
-          adminUsers: 0,
-          apiKeyUsers: 0,
-          rateLimitedUsers: 0,
-          blockedUsers: 0
-        });
-      } catch (err) {
-        console.error('Failed to fetch user data:', err);
-        setError(err.message);
-        // Keep default values on error
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUserData();
-  }, [adminKey]);
+    if (data) {
+      setUserStats({
+        totalUsers: data.totalUsers || 0,
+        activeUsers: data.activeUsers || 0,
+        newUsersToday: data.newUsersToday || 0,
+        totalRequests: data.totalRequests || 0
+      });
+      setUserActivity(data.userActivity || []);
+      setAccessControl(data.accessControl || {
+        adminUsers: 0,
+        apiKeyUsers: 0,
+        rateLimitedUsers: 0,
+        blockedUsers: 0
+      });
+      setError(null);
+    }
+  }, [data]);
 
   if (loading) {
     return (
@@ -1653,8 +1575,80 @@ function AdminLogin() {
 
 // Main Dashboard Component
 export function Dashboard() {
-  const { isAdmin } = useAdmin();
+  const { isAdmin, adminKey } = useAdmin();
   
+  // Unified dashboard data state
+  const [dashboardData, setDashboardData] = useState({
+    overview: null,
+    analytics: null,
+    content: null,
+    system: null,
+    operations: null,
+    users: null,
+    loading: true,
+    error: null
+  });
+
+  // Unified data fetching - fetch all dashboard data once
+  useEffect(() => {
+    const fetchAllDashboardData = async () => {
+      try {
+        setDashboardData(prev => ({ ...prev, loading: true, error: null }));
+        
+        // Fetch all dashboard data in parallel
+        const [overviewResponse, analyticsResponse, contentResponse, systemResponse] = await Promise.all([
+          fetch('/api/dashboard/overview'),
+          fetch('/api/dashboard/analytics'),
+          fetch('/api/dashboard/content'),
+          fetch('/api/dashboard/system')
+        ]);
+
+        const data = {
+          overview: overviewResponse.ok ? await overviewResponse.json() : null,
+          analytics: analyticsResponse.ok ? await analyticsResponse.json() : null,
+          content: contentResponse.ok ? await contentResponse.json() : null,
+          system: systemResponse.ok ? await systemResponse.json() : null,
+          operations: null,
+          users: null
+        };
+
+        // Fetch admin-only data if admin is logged in
+        if (isAdmin && adminKey) {
+          console.log('[Dashboard] Fetching admin data with key:', adminKey ? 'present' : 'missing');
+          const headers = { 'x-admin-key': adminKey };
+          const [operationsResponse, usersResponse] = await Promise.all([
+            fetch('/api/dashboard/operations', { headers }),
+            fetch('/api/dashboard/users', { headers })
+          ]);
+
+          console.log('[Dashboard] Operations response:', operationsResponse.status);
+          console.log('[Dashboard] Users response:', usersResponse.status);
+
+          data.operations = operationsResponse.ok ? await operationsResponse.json() : null;
+          data.users = usersResponse.ok ? await usersResponse.json() : null;
+        } else {
+          console.log('[Dashboard] Not fetching admin data - isAdmin:', isAdmin, 'adminKey:', adminKey ? 'present' : 'missing');
+        }
+
+        setDashboardData({
+          ...data,
+          loading: false,
+          error: null
+        });
+
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+        setDashboardData(prev => ({
+          ...prev,
+          loading: false,
+          error: error.message
+        }));
+      }
+    };
+
+    fetchAllDashboardData();
+  }, [isAdmin, adminKey]); // Re-fetch when admin status changes
+
   // Calculate grid columns based on admin status
   const gridCols = isAdmin ? "grid-cols-6" : "grid-cols-4";
   
@@ -1681,30 +1675,30 @@ export function Dashboard() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-6">
-          <DashboardOverview />
+          <DashboardOverview data={dashboardData.overview} systemData={dashboardData.system} loading={dashboardData.loading} />
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-6">
-          <DashboardAnalytics />
+          <DashboardAnalytics data={dashboardData.analytics} loading={dashboardData.loading} />
         </TabsContent>
 
         <TabsContent value="content" className="mt-6">
-          <DashboardContent />
+          <DashboardContent data={dashboardData.content} loading={dashboardData.loading} />
         </TabsContent>
 
         <TabsContent value="system" className="mt-6">
-          <DashboardSystem />
+          <DashboardSystem data={dashboardData.system} loading={dashboardData.loading} />
         </TabsContent>
 
         {isAdmin && (
           <TabsContent value="operations" className="mt-6">
-            <DashboardOperations />
+            <DashboardOperations data={dashboardData.operations} loading={dashboardData.loading} />
           </TabsContent>
         )}
 
         {isAdmin && (
           <TabsContent value="users" className="mt-6">
-            <DashboardUsers />
+            <DashboardUsers data={dashboardData.users} loading={dashboardData.loading} />
           </TabsContent>
         )}
       </Tabs>

@@ -1,0 +1,132 @@
+require("dotenv").config();
+import * as moviedb from "./getTmdb.js";
+import * as Utils from '../utils/parseProps.js';
+import { resolveAllIds } from './id-resolver.js';
+import { getImdbRating } from './getImdbRating.js';
+import { getMeta } from './getMeta.js';
+import { cacheWrapMetaSmart } from './getCache.js';
+import { UserConfig } from '../types/index.js';
+//const { isAnime } = require("../utils/isAnime");
+//const { getGenreList } = require('./getGenreList');
+
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+
+const host = process.env.HOST_NAME?.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
+
+async function getTrending(type: string, language: string, page: number, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
+  const startTime = performance.now();
+  try {
+    console.log(`[getTrending] Fetching trending for type=${type}, language=${language}, page=${page}, genre=${genre}`);
+    const media_type = type === "series" ? "tv" : type;
+    const time_window = genre && ['day', 'week'].includes(genre.toLowerCase()) ? genre.toLowerCase() : "day";
+    
+    const parameters = { media_type, time_window, language, page };
+    //const genreList = await getGenreList(language, type);
+    
+    const tmdbStartTime = performance.now();
+    const res: any = await moviedb.trending(parameters, config);
+    const tmdbTime = performance.now() - tmdbStartTime;
+    console.log(`[getTrending] TMDB trending fetch took ${tmdbTime.toFixed(2)}ms`);
+    const metasStartTime = performance.now();
+    let preferredProvider;
+    if (type === 'movie') {
+      preferredProvider = config.providers?.movie || 'tmdb';
+    } else {
+      preferredProvider = config.providers?.series || 'tvdb';
+    }
+    const metas = await Promise.all(res.results.map(async (item: any) => {
+      // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
+      const targetProviders = new Set();
+      if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
+      let allIds;
+      if (targetProviders.size > 0) {
+        const targetProviderArray = Array.from(targetProviders);
+        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
+      }
+    
+      let stremioId = `tmdb:${item.id}`;
+      if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
+        stremioId = `tvdb:${allIds.tvdbId}`;
+      } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+        stremioId = `tvmaze:${allIds.tvmazeId}`;
+      } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+        stremioId = allIds.imdbId;
+      }
+      const certifications: any = type === 'movie' ? await moviedb.getMovieCertifications({ id: item.id }, config) : await moviedb.getTvCertifications({ id: item.id }, config);
+      const certification = type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(certifications) : Utils.getTmdbTvCertificationForCountry(certifications);
+      console.log(`[getTrending] Art provider preference for id ${stremioId}:`, config.artProviders?.movie);
+      const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+        return await getMeta(type, language, stremioId, config, userUUID);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+      
+      if (result && result.meta) {
+        result.meta.certification = certification;
+        return result.meta;
+      }
+      return null;
+    }));
+    const metasTime = performance.now() - metasStartTime;
+    const validMetas = metas.filter(meta => meta !== null);
+    console.log(`[getTrending] ${validMetas.length} Metas processing took ${metasTime.toFixed(2)}ms`);
+
+
+    const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+    const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+    
+    // Pre-compute rating mappings and indices for performance
+    const movieToTvMap: { [key: string]: string } = {
+      'G': 'TV-G',
+      'PG': 'TV-PG', 
+      'PG-13': 'TV-14',
+      'R': 'TV-MA',
+      'NC-17': 'TV-MA'
+    };
+    
+    const userRating = config.ageRating;
+    let filteredMetas = validMetas;
+    
+    if (userRating && userRating.toLowerCase() !== 'none') {
+      const isTvRating = type === 'series';
+      const finalUserRating = isTvRating ? (movieToTvMap[userRating] || userRating) : userRating;
+      const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+      const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
+      const filterStartTime = performance.now();
+      filteredMetas = metas.filter(meta => {
+        
+        if (!meta.certification) {
+          return true;
+        }
+        
+        const resultRatingIndex = ratingHierarchy.indexOf(meta.certification);
+        if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
+          return resultRatingIndex <= userRatingIndex;
+        }
+        
+        // If result rating is not in hierarchy (like NR), filter it out when age filtering is enabled
+        if (resultRatingIndex === -1) {
+          return false;
+        }
+        
+        return true;
+      });
+      
+      const filterTime = performance.now() - filterStartTime;
+      console.log(`[getTrending] ${filteredMetas.length} Age rating filtering took ${filterTime.toFixed(2)}ms`);
+    } else {
+      console.log(`[getTrending] No age rating filtering applied (ageRating: ${userRating})`);
+    }
+    
+    const totalTime = performance.now() - startTime;
+    console.log(`[getTrending] Total function execution took ${totalTime.toFixed(2)}ms`);
+    
+    return { metas: filteredMetas };
+
+  } catch (error: any) {
+    console.error(`Error fetching trending for type=${type}:`, error.message);
+    return { metas: [] };
+  }
+}
+
+export { getTrending };

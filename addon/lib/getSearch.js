@@ -493,23 +493,31 @@ async function performTvmazeSearch(query, language, config) {
   ]);
   
   const searchResults = new Map();
-  const addResult = async (show) => {
+  const processedIds = new Set();
+  
+  const addResult = async (show, score = 0) => {
     const parsed = await parseTvmazeResult(show, config);
-    if (parsed && show?.id && !searchResults.has(show.id)) {
-      searchResults.set(show.id, parsed);
+    if (parsed && show?.id && !processedIds.has(show.id)) {
+      processedIds.add(show.id);
+      searchResults.set(show.id, { ...parsed, _score: score });
     }
   };
 
-  await Promise.all(titleResults.map(result => addResult(result.show)));
+  // Process title results in order (preserving TVMaze's relevance scoring)
+  await Promise.all(titleResults.map(result => addResult(result.show, result.score)));
 
+  // Process people results (these don't have scores, so we'll add them at the end)
   if (peopleResults.length > 0) {
     const personId = peopleResults[0].person.id;
     const castCredits = await tvmaze.getPersonCastCredits(personId);
-    castCredits.forEach(credit => addResult(credit._embedded.show));
+    await Promise.all(castCredits.map(credit => addResult(credit._embedded.show, 0)));
   }
   
   if (searchResults.size > 0) {
-    return Array.from(searchResults.values());
+    // Sort by score (highest first) and remove the _score property
+    return Array.from(searchResults.values())
+      .sort((a, b) => (b._score || 0) - (a._score || 0))
+      .map(({ _score, ...result }) => result);
   }
   
   // --- TIER 2 & 3 FALLBACKS ---
@@ -561,7 +569,7 @@ async function parseTvmazeResult(show, config) {
   } else {
     stremioId = `tvmaze:${show.id}`;
   }
-  var fallbackImage = show.image?.original === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : show.image.original;
+  var fallbackImage = show.image?.original || "https://artworks.thetvdb.com/banners/images/missing/series.jpg";
   const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
   const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
   return {
