@@ -680,20 +680,20 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
   let overview = movieData.overview;
   if(language === 'pt-PT'){
-    if (!movieData.overview){
-      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'pt-BR' }, config);
+    if (!movieData.overview || movieData.overview.trim() === ''){
+      const translation = await moviedb.getMovieTranslations(tmdbId, 'pt-BR', config);
       if(translation){
         overview = translation.data.overview;
       } else {
-        const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+        const translation = await moviedb.getMovieTranslations(tmdbId, 'en-US', config);
         if(translation){
           overview = translation.data.overview;
         }
       }
     }
   } else{
-    if(language !== 'en-US' && !movieData.overview){
-      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+    if(language !== 'en-US' && (!movieData.overview || movieData.overview.trim() === '')){
+      const translation = await moviedb.getMovieTranslations(tmdbId, 'en-US', config);
       if(translation){
         overview = translation.data.overview;
       }
@@ -1024,20 +1024,20 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   let overview = seriesData.overview;
   if(language === 'pt-PT'){
-    if (!seriesData.overview){
-      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'pt-BR' }, config);
+    if (!overview || overview.trim() === ''){
+      const translation = await moviedb.getTvTranslations(tmdbId, 'pt-BR', config);
       if(translation){
         overview = translation.data.overview;
       } else {
-        const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+        const translation = await moviedb.getTvTranslations(tmdbId, 'en-US', config);
         if(translation){
           overview = translation.data.overview;
         }
       }
     }
   } else{
-    if(language !== 'en-US' && !seriesData.overview){
-      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+    if(language !== 'en-US' && (!overview || overview.trim() === '')){
+      const translation = await moviedb.getTvTranslations(tmdbId, 'en-US', config);
       if(translation){
         overview = translation.data.overview;
       }

@@ -1,53 +1,48 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023"],
-    "module": "CommonJS",
-    "moduleResolution": "node",
-    "skipLibCheck": true,
-    "allowJs": true,
-    "outDir": "./dist",
-    "rootDir": "./addon",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "removeComments": false,
-    "strict": false,
-    "noImplicitAny": false,
-    "strictNullChecks": false,
-    "strictFunctionTypes": false,
-    "noImplicitReturns": false,
-    "noFallthroughCasesInSwitch": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false,
-    "noImplicitOverride": false,
-    "noPropertyAccessFromIndexSignature": false,
-    "noUncheckedIndexedAccess": false,
-    "allowUnusedLabels": true,
-    "allowUnreachableCode": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": false,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "types": ["node"]
-  },
-  "include": [
-    "addon/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "configure",
-    "**/*.test.ts",
-    "**/*.spec.ts"
-  ]
-}
-
-
-
-
-
+    "compilerOptions": {
+      "target": "ES2022",
+      "lib": ["ES2023"],
+      "module": "CommonJS",
+      "moduleResolution": "node",
+      "skipLibCheck": true,
+      "allowJs": true,
+      "outDir": "./dist",
+      "rootDir": "./addon",
+      "declaration": true,
+      "declarationMap": true,
+      "sourceMap": true,
+      "removeComments": false,
+      "strict": false,
+      "noImplicitAny": false,
+      "strictNullChecks": false,
+      "strictFunctionTypes": false,
+      "noImplicitReturns": false,
+      "noFallthroughCasesInSwitch": false,
+      "noUnusedLocals": false,
+      "noUnusedParameters": false,
+      "exactOptionalPropertyTypes": false,
+      "noImplicitOverride": false,
+      "noPropertyAccessFromIndexSignature": false,
+      "noUncheckedIndexedAccess": false,
+      "allowUnusedLabels": true,
+      "allowUnreachableCode": true,
+      "esModuleInterop": true,
+      "allowSyntheticDefaultImports": true,
+      "forceConsistentCasingInFileNames": true,
+      "resolveJsonModule": true,
+      "isolatedModules": false,
+      "experimentalDecorators": true,
+      "emitDecoratorMetadata": true,
+      "types": ["node"]
+    },
+    "include": [
+      "addon/**/*"
+    ],
+    "exclude": [
+      "node_modules",
+      "dist",
+      "configure",
+      "**/*.test.ts",
+      "**/*.spec.ts"
+    ]
+  }  
