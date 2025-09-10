@@ -204,7 +204,9 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const tmdbPosterFullUrl = media.poster_path
             ? `https://image.tmdb.org/t/p/w500${media.poster_path}`
             : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
-        const posterUrl = await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
+        const posterUrl = mediaType === 'movie' 
+            ? await Utils.getMoviePoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config)
+            : await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
 
         const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
 
@@ -402,11 +404,11 @@ async function performTvdbSearch(type, query, language, config) {
     try {
       const personDetails = await tvdb.getPersonExtended(topPerson.tvdb_id, config);
       if (personDetails && personDetails.characters) {
-        personDetails.characters.forEach(credit => {
+        personDetails.characters.filter(credit => credit.type === 3).forEach(credit => {
 
-          const creditType = credit.type === 'series' ? 'series' : 'movie';
+          const creditType = credit.seriesId ? 'series' : 'movie';
           const creditId = credit.seriesId || credit.movieId;
-          if (creditId) {
+          if (creditId && creditType === type) { 
             idMap.set(String(creditId), creditType);
           }
         });

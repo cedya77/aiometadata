@@ -308,7 +308,7 @@ async function getMovieWatchProviders(params, config) {
 }
 
 async function getTvWatchProviders(params, config) {
-  const data = await makeTmdbRequest(`/tv/${params.id}/season/${params.season_number}/watch/providers`, getApiKey(config), params);
+  const data = await makeTmdbRequest(`/tv/${params.id}/watch/providers`, getApiKey(config), params);
   if (data?.results) {
     const country = config.language.split('-')[1] || 'US';
     const countryProviders = data.results[country];
@@ -364,6 +364,20 @@ async function getTvWatchProviders(params, config) {
         providers
       };
     }
+  }
+  return null;
+}
+
+async function getTranslations(params, config) {
+  const data = await makeTmdbRequest(`/movie/${params.id}/translations`, getApiKey(config), params);
+  if (data?.translations) {
+    const iso639 = config.language.split('-')[0];
+    const iso3166 = config.language.split('-')[1];
+    const translation = data.translations.find(t => t.iso_639_1 === iso639 && t.iso_3166_1 === iso3166);
+    if (translation) {
+      return translation;
+    }
+    return null;
   }
   return null;
 }
@@ -567,5 +581,6 @@ module.exports = {
   getTmdbMovieLogo,
   getTmdbSeriesLogo,
   getMovieWatchProviders,
-  getTvWatchProviders
+  getTvWatchProviders,
+  getTranslations
 };

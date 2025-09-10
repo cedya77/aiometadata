@@ -1007,10 +1007,10 @@ async function getMovieLogo(movieId: string, config: UserConfig): Promise<string
 async function getCollectionsList(config: UserConfig, page: number = 0): Promise<TvdbCollection[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  
+  console.log(`[TVDB getCollectionsList] Getting collections list for page ${page}`);
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/collections?page=${page}`, {
+    const response = await fetch(`${TVDB_API_URL}/lists?page=${page}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -1025,7 +1025,7 @@ async function getCollectionsList(config: UserConfig, page: number = 0): Promise
     
     const data = await response.json();
     const results = data.data || [];
-    
+    console.log(`[TVDB getCollectionsList] Found ${results.length} collections for page ${page}`);
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);

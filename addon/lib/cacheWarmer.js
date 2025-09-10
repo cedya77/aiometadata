@@ -1,8 +1,9 @@
 // lib/cacheWarmer.js
 
-const { cacheWrapGlobal, cacheWrapJikanApi } = require('./getCache');
+const { cacheWrapGlobal, cacheWrapJikanApi, cacheWrapTvdbApi } = require('./getCache');
 const { getGenreList } = require('./getGenreList');
 const mal = require('./mal');
+const tvdb = require('./tvdb');
 
 // Warming strategies
 const WARMING_STRATEGIES = {
@@ -37,6 +38,11 @@ async function warmEssentialContent() {
     await cacheWrapJikanApi('mal-studios', async () => {
       return await mal.getStudios(100);
     }, 30 * 24 * 60 * 1000); // Cache for 30 days
+    
+    // Warm TVDB collections (first page)
+    await cacheWrapTvdbApi('collections-list:0', async () => {
+      return await tvdb.getCollectionsList({}, 0);
+    });
     
     // Record completion for maintenance tracking
     const endTime = Date.now();

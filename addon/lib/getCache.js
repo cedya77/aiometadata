@@ -599,6 +599,12 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
+    // API keys (affect catalog posters and content)
+    apiKeys: { 
+      rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+      mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
+    },
+    
     // Streaming configuration (affects streaming catalog results)
     streaming: config.streaming || [],
     
@@ -771,6 +777,9 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || true,
+     apiKeys: { 
+       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+     }
    };
    
    const isAnime = metaType === 'anime' || prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb';
@@ -987,6 +996,9 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || true,
+     apiKeys: { 
+       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || ''
+     }
    };
    
    const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';

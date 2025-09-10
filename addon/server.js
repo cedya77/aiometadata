@@ -36,7 +36,7 @@ async function startServer() {
   console.log('Database initialization complete.');
 
   // Auto-migrate ID cache from SQLite to Redis if needed
-  await autoMigrateIdCache();
+  // await autoMigrateIdCache(); // DISABLED - Migration stopped
 
   const addon = await startServerWithCacheWarming();
 

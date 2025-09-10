@@ -1065,11 +1065,8 @@ class DashboardAPI {
 
       switch (type) {
         case 'all':
-          // For Redis client, we'll clear all keys
-          const keys = await this.cache.keys('*');
-          if (keys.length > 0) {
-            await this.cache.del(...keys);
-          }
+          // Use FLUSHALL for complete Redis cache clear (faster than keys + del)
+          await this.cache.flushall();
           break;
         case 'expired':
           // Clear keys that are close to expiration (TTL < 1 hour)
@@ -1144,7 +1141,6 @@ class DashboardAPI {
       throw error;
     }
   }
-
   // Get user statistics and activity data with simplified methodology
   async getUserStats() {
     try {

@@ -649,6 +649,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   
   const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
   const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  console.log(`[TmdbMovieMeta] posterProxyUrl: ${posterProxyUrl}`);
   const kitsuId = allIds?.kitsuId;
   const idProvider = config.providers?.movie || 'imdb';
 
@@ -677,11 +678,32 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   }));
 
   const watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
-  
+  let overview = movieData.overview;
+  if(language === 'pt-PT'){
+    if (!movieData.overview){
+      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'pt-BR' }, config);
+      if(translation){
+        overview = translation.data.overview;
+      } else {
+        const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+        if(translation){
+          overview = translation.data.overview;
+        }
+      }
+    }
+  } else{
+    if(language !== 'en-US' && !movieData.overview){
+      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+      if(translation){
+        overview = translation.data.overview;
+      }
+    }
+  }
+
   return {
     id: stremioId,
     type: 'movie',
-    description: Utils.addMetaProviderAttribution(movieData.overview, 'TMDB', config),
+    description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     name: title,
     imdb_id: imdbId,  
     slug: Utils.parseSlug('movie', title, null, stremioId),
@@ -796,13 +818,11 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       console.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message);
   }
 
-  let watchProviders = null;
+  const watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
   const seasonPromises = (seasons || [])
     .filter(season => season.episode_count > 0) 
     .map(season => moviedb.seasonInfo({ id: tmdbId, season_number: season.season_number, language }, config));
-  if(tmdbId){
-    watchProviders = (seasons || []).filter(season => season.episode_count > 0).map(season => moviedb.getTvWatchProviders({ id: tmdbId, season_number: season.season_number, language }, config));
-  }
+  
   const imdbEpisodesCount = (cinemetaVideos || []).filter(season => season.season !==0).length;
   const seasonDetails = await Promise.all(seasonPromises);
   const tmdbTotalEpisodes = seasonDetails.filter(season => season.season_number !== 0).reduce((acc, season) => acc + season.episodes.length, 0);
@@ -1002,6 +1022,28 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const videos = (await Promise.all(videosPromises)).filter(Boolean);
   const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
 
+  let overview = seriesData.overview;
+  if(language === 'pt-PT'){
+    if (!seriesData.overview){
+      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'pt-BR' }, config);
+      if(translation){
+        overview = translation.data.overview;
+      } else {
+        const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+        if(translation){
+          overview = translation.data.overview;
+        }
+      }
+    }
+  } else{
+    if(language !== 'en-US' && !seriesData.overview){
+      const translation = await moviedb.getTranslations({ id: tmdbId, language: 'en-US' }, config);
+      if(translation){
+        overview = translation.data.overview;
+      }
+    }
+  }
+
   const meta = {
     id: stremioId,
     type: 'series',
@@ -1009,7 +1051,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     imdb_id: imdbId,
     slug: Utils.parseSlug('series', name, null, stremioId),
     genres: Utils.parseGenres(seriesData.genres),
-    description: Utils.addMetaProviderAttribution(seriesData.overview, 'TMDB', config),
+    description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
     status: seriesData.status,
@@ -1279,12 +1321,12 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const seasonPosters = officialSeasons.map(s => s.image);
 
   let watchProviders = null;
+  if(tmdbId){
+    watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
+  }
   if (enrichmentData.allIds?.malId) {
 
     const seasonDetailPromises = officialSeasons.filter(s => s.number > 0).map(s => tvdb.getSeasonExtended(s.id, config));
-    if(tmdbId){
-       watchProviders = officialSeasons.filter(s => s.number > 0).map(season => moviedb.getTvWatchProviders({ id: tmdbId, season_number: season.number, language }, config));
-    }
     const detailedSeasons = (await Promise.all(seasonDetailPromises)).filter(Boolean);
 
     /*const kitsuMapPromises = detailedSeasons.map(async (season) => {
@@ -1533,11 +1575,10 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     released: new Date(episode.airstamp),
     available: new Date(episode.airstamp) < new Date(),
   }));
-  // get unique list of seasons
-  const uniqueSeasons = [...new Set(videos.map(episode => episode.season))];
+
   let watchProviders = null;
   if(tmdbId){
-    watchProviders = uniqueSeasons.map(season => moviedb.getTvWatchProviders({ id: tmdbId, season_number: season, language }, config));
+     watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
   }
   videos = [... specialVideos, ... videos];
   if(!logoUrl && imdbId){

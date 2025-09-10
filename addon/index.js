@@ -136,6 +136,10 @@ const respond = function (req, res, data, opts) {
           sfw: req.userConfig.sfw,
           includeAdult: req.userConfig.includeAdult,
           ageRating: req.userConfig.ageRating,
+          apiKeys: { 
+            rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+            mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
+          },
           mal: req.userConfig.mal
         } : {};
         etagContent += crypto.createHash('md5').update(JSON.stringify(catalogConfig)).digest('hex').substring(0, 8);

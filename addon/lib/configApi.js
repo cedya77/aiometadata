@@ -141,6 +141,21 @@ class ConfigApi {
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
           }
 
+          // API key changes - affects poster/background components and search results
+          if (config.apiKeys && oldConfig?.apiKeys) {
+            const rpdbChanged = config.apiKeys.rpdb !== oldConfig.apiKeys.rpdb;
+            const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
+            
+            if (rpdbChanged || mdblistChanged) {
+              patterns.push(`meta-poster:*`); // Poster components affected by RPDB
+              patterns.push(`meta-background:*`); // Background components affected by RPDB
+              patterns.push(`search:*`); // Search results affected by API keys
+              patterns.push(`catalog:*`); // Catalog results affected by API keys
+              console.log(`[ConfigApi] API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
+              console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
+            }
+          }
+
           // Art provider changes - affects all art-related components
           console.log(`[ConfigApi] DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
           console.log(`[ConfigApi] DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
@@ -501,6 +516,21 @@ class ConfigApi {
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
             console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
+          }
+
+          // API key changes - affects poster/background components and search results
+          if (config.apiKeys && oldConfig?.apiKeys) {
+            const rpdbChanged = config.apiKeys.rpdb !== oldConfig.apiKeys.rpdb;
+            const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
+            
+            if (rpdbChanged || mdblistChanged) {
+              patterns.push(`meta-poster:*`); // Poster components affected by RPDB
+              patterns.push(`meta-background:*`); // Background components affected by RPDB
+              patterns.push(`search:*`); // Search results affected by API keys
+              patterns.push(`catalog:*`); // Catalog results affected by API keys
+              console.log(`[ConfigApi] API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
+              console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
+            }
           }
 
           // Art provider changes - affects all art-related components
@@ -873,3 +903,4 @@ module.exports = {
   addCorrection: configApi.addCorrection.bind(configApi),
   removeCorrection: configApi.removeCorrection.bind(configApi)
 };
+
