@@ -250,9 +250,10 @@ function selectFanartImageByLang(images, config, key = 'lang') {
   // If englishArtOnly is enabled, force English language selection
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
   
-  // Filter by target language, then English, then any
+  // Filter by target language, then English, then generic (00), then any
   let filtered = images.filter(img => img[key] === targetLang);
   if (filtered.length === 0) filtered = images.filter(img => img[key] === 'en');
+  if (filtered.length === 0) filtered = images.filter(img => img[key] === '00');
   if (filtered.length === 0) filtered = images;
   //console.log(`[selectFanartImageByLang] Filtered images: ${JSON.stringify(filtered)}`);
   // Sort by likes descending (as int)

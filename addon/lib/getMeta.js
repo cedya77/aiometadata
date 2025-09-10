@@ -682,11 +682,11 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   if(language === 'pt-PT'){
     if (!movieData.overview || movieData.overview.trim() === ''){
       const translation = await moviedb.getMovieTranslations(tmdbId, 'pt-BR', config);
-      if(translation){
+      if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
         overview = translation.data.overview;
       } else {
         const translation = await moviedb.getMovieTranslations(tmdbId, 'en-US', config);
-        if(translation){
+        if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
           overview = translation.data.overview;
         }
       }
@@ -700,13 +700,29 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     }
   }
 
+  // Handle title fallback for pt-PT language
+  let finalTitle = title;
+  if(language === 'pt-PT'){
+    if (!title || title.trim() === ''){
+      const translation = await moviedb.getMovieTranslations(tmdbId, 'pt-BR', config);
+      if(translation && translation.data.title && translation.data.title.trim() !== ''){
+        finalTitle = translation.data.title;
+      } else {
+        const translation = await moviedb.getMovieTranslations(tmdbId, 'en-US', config);
+        if(translation && translation.data.title && translation.data.title.trim() !== ''){
+          finalTitle = translation.data.title;
+        }
+      }
+    }
+  }
+
   return {
     id: stremioId,
     type: 'movie',
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
-    name: title,
+    name: finalTitle,
     imdb_id: imdbId,  
-    slug: Utils.parseSlug('movie', title, null, stremioId),
+    slug: Utils.parseSlug('movie', finalTitle, null, stremioId),
     genres: Utils.parseGenres(movieData.genres),
     director: Utils.parseDirector(credits).join(', '),
     writer: Utils.parseWriter(credits).join(', '),
@@ -1026,11 +1042,11 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   if(language === 'pt-PT'){
     if (!overview || overview.trim() === ''){
       const translation = await moviedb.getTvTranslations(tmdbId, 'pt-BR', config);
-      if(translation){
+      if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
         overview = translation.data.overview;
       } else {
         const translation = await moviedb.getTvTranslations(tmdbId, 'en-US', config);
-        if(translation){
+        if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
           overview = translation.data.overview;
         }
       }
@@ -1044,12 +1060,28 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     }
   }
 
+  // Handle title fallback for pt-PT language
+  let finalName = name;
+  if(language === 'pt-PT'){
+    if (!name || name.trim() === ''){
+      const translation = await moviedb.getTvTranslations(tmdbId, 'pt-BR', config);
+      if(translation && translation.data.name && translation.data.name.trim() !== ''){
+        finalName = translation.data.name;
+      } else {
+        const translation = await moviedb.getTvTranslations(tmdbId, 'en-US', config);
+        if(translation && translation.data.name && translation.data.name.trim() !== ''){
+          finalName = translation.data.name;
+        }
+      }
+    }
+  }
+
   const meta = {
     id: stremioId,
     type: 'series',
-    name: name,
+    name: finalName,
     imdb_id: imdbId,
-    slug: Utils.parseSlug('series', name, null, stremioId),
+    slug: Utils.parseSlug('series', finalName, null, stremioId),
     genres: Utils.parseGenres(seriesData.genres),
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",

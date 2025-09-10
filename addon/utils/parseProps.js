@@ -1042,6 +1042,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
   const useTvdb = artProvider === 'tvdb';
   const useImdb = artProvider === 'imdb';
   const useTmdb = artProvider === 'tmdb';
+  const useFanart = (artProvider === 'fanart' && !!config.apiKeys?.fanart);
   //console.log(`[parseAnimeCatalogMetaBatch] Art provider: ${artProvider}, useAniList: ${useAniList}, useTvdb: ${useTvdb}, useTmdb: ${useTmdb}`);
   
   // Extract MAL IDs and try to get AniList IDs from mappings
@@ -1180,6 +1181,32 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         finalPosterUrl = imdb.getPosterFromImdb(mapping.imdb_id);
       } catch (error) {
         console.warn(`[parseAnimeCatalogMetaBatch] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      }
+    }
+    //console.log(`[parseAnimeCatalogMetaBatch] useFanart: ${useFanart} mapping: ${JSON.stringify(mapping)}`);
+    if (useFanart && mapping) {
+      try {
+        if(mapping.themoviedb_id && stremioType === 'movie') {
+          const images = await fanart.getMovieImages(mapping.themoviedb_id, config);
+          const poster = selectFanartImageByLang(images?.movieposter, config);
+          if (poster) {
+            finalPosterUrl = poster.url;
+          }
+        } else if (mapping.imdb_id && stremioType === 'movie') {
+          const images = await fanart.getMovieImages(mapping.imdb_id, config);
+          const poster = selectFanartImageByLang(images?.movieposter, config);
+          if (poster) {
+            finalPosterUrl = poster.url;
+          }
+        } else if (mapping.thetvdb_id && stremioType === 'series') {
+          const images = await fanart.getShowImages(mapping.thetvdb_id, config);
+          const poster = selectFanartImageByLang(images?.tvposter, config);
+          if (poster) {
+            finalPosterUrl = poster.url;
+          }
+        }
+      } catch (error) {
+        console.warn(`[parseAnimeCatalogMetaBatch] Fanart poster fetch failed for MAL ID ${malId}:`, error.message);
       }
     }
     
