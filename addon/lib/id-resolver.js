@@ -33,13 +33,7 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
   
   if (!isAnime) {
     // Try to get cached mapping first
-    const cachedMapping = await database.getCachedMappingByAnyId(
-      type, 
-      allIds.tmdbId, 
-      allIds.tvdbId, 
-      allIds.imdbId, 
-      allIds.tvmazeId
-    );
+    const cachedMapping = null;
     
     if (cachedMapping) {
       //console.log(`🔗 [ID Resolver] Cached mapping:`, JSON.stringify(cachedMapping));
@@ -170,7 +164,7 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
     if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId || !allIds.tvmazeId)) {
       // get external IDs from Cinemeta
       const externalIds = await getExternalIdsFromImdb(allIds.imdbId, type);
-      //console.log(`🔗 [ID Resolver] External IMDb IDs:`, JSON.stringify(externalIds));
+      console.log(`🔗 [ID Resolver] External IMDb IDs:`, JSON.stringify(externalIds));
       if (externalIds) {
         allIds.tmdbId = allIds.tmdbId ?? externalIds.tmdbId ?? null;
         allIds.tvdbId = allIds.tvdbId ?? externalIds.tvdbId ?? null;
@@ -209,7 +203,7 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
     }
 
     // Cache the mapping for non-anime content
-    if (!isAnime) {
+    /*if (!isAnime) {
       try {
 
         // Also save to Redis cache
@@ -225,7 +219,7 @@ async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProvid
       } catch (error) {
         console.warn(`❌ [ID Cache] Failed to save mapping: ${error.message}`);
       }
-    }
+    }*/
 
   } catch (error) {
     console.warn(`❌ [ID Resolver] API bridging failed for ${stremioId}: ${error.message}`);
