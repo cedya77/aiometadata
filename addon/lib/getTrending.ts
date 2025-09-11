@@ -43,7 +43,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
       let allIds;
       if (targetProviders.size > 0) {
         const targetProviderArray = Array.from(targetProviders);
-        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
+        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, {}, targetProviderArray);
       }
     
       let stremioId = `tmdb:${item.id}`;

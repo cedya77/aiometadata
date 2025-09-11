@@ -5,11 +5,13 @@ const consola = require('consola');
 const logger = consola.create({
   level: 4, // Show all levels
   fancy: true,
+  colors: true,
   formatOptions: {
     colors: true,
     compact: false,
     date: false
-  }
+  },
+  tag: 'Request-Tracker'
 });
 
 class RequestTracker {

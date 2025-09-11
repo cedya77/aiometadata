@@ -14,6 +14,7 @@ const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWra
 const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmRelatedContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
+const consola = require('consola');
 
 // Warm user-specific content based on their config
 async function warmUserContent(userUUID, contentType) {
@@ -40,9 +41,9 @@ async function warmUserContent(userUUID, contentType) {
       await warmRelatedContent('mal.seasonal', 'anime');
     }
     
-    console.log(`[Cache Warming] User content warmed for ${userUUID} (${contentType})`);
+    consola.success(`[Cache Warming] User content warmed for ${userUUID} (${contentType})`);
   } catch (error) {
-    console.warn(`[Cache Warming] Failed to warm user content for ${userUUID}:`, error.message);
+    consola.warn(`[Cache Warming] Failed to warm user content for ${userUUID}:`, error.message);
   }
 }
 const configApi = require('./lib/configApi');
@@ -74,12 +75,12 @@ const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING !== 'false';
 const CACHE_WARMING_INTERVAL = parseInt(process.env.CACHE_WARMING_INTERVAL || '30', 10);
 
 if (ENABLE_CACHE_WARMING && !NO_CACHE) {
-  console.log(`[Cache Warming] Initializing essential content warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
+  consola.info(`[Cache Warming] Initializing essential content warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
   
   // Schedule periodic warming (non-blocking)
   scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
 } else {
-  console.log('[Cache Warming] Cache warming disabled or cache disabled');
+  consola.info('[Cache Warming] Cache warming disabled or cache disabled');
 }
 
 
@@ -136,6 +137,7 @@ const respond = function (req, res, data, opts) {
           sfw: req.userConfig.sfw,
           includeAdult: req.userConfig.includeAdult,
           ageRating: req.userConfig.ageRating,
+          showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
           apiKeys: { 
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
             mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
@@ -151,6 +153,7 @@ const respond = function (req, res, data, opts) {
           tvdbSeasonType: req.userConfig.tvdbSeasonType,
           castCount: req.userConfig.castCount,
           blurThumbs: req.userConfig.blurThumbs,
+          showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
           apiKeys: { 
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
             mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''

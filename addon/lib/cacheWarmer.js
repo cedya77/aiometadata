@@ -4,6 +4,8 @@ const { cacheWrapGlobal, cacheWrapJikanApi, cacheWrapTvdbApi } = require('./getC
 const { getGenreList } = require('./getGenreList');
 const mal = require('./mal');
 const tvdb = require('./tvdb');
+const consola = require('consola');
+const logger = consola.withTag('Cache-Warming');
 
 // Warming strategies
 const WARMING_STRATEGIES = {
@@ -17,7 +19,7 @@ const WARMING_STRATEGIES = {
  */
 async function warmEssentialContent() {
   try {
-    console.log('[Cache Warming] Warming essential content...');
+    logger.info('[Cache Warming] Warming essential content...');
     
     // Record start time for maintenance tracking
     const startTime = Date.now();
@@ -51,15 +53,15 @@ async function warmEssentialContent() {
     try {
       const redis = require('./redisClient');
       await redis.setex('maintenance:last_cache_warming', 86400 * 7, startTime.toString());
-      console.log(`[Cache Warming] Maintenance task tracked: cache warming completed in ${duration}ms`);
+      logger.success(`[Cache Warming] Maintenance task tracked: cache warming completed in ${duration}ms`);
     } catch (trackingError) {
-      console.warn('[Cache Warming] Failed to track maintenance task:', trackingError.message);
+      logger.warn('[Cache Warming] Failed to track maintenance task:', trackingError.message);
     }
     
     initialWarmingComplete = true;
-    console.log('[Cache Warming] Essential content warming completed');
+    logger.success('[Cache Warming] Essential content warming completed');
   } catch (error) {
-    console.error('[Cache Warming] Error warming essential content:', error.message);
+    logger.error('[Cache Warming] Error warming essential content:', error.message);
   }
 }
 
@@ -68,14 +70,14 @@ async function warmEssentialContent() {
  */
 async function warmRelatedContent() {
   try {
-    console.log('[Cache Warming] Warming related content...');
+    logger.info('[Cache Warming] Warming related content...');
     
     // This could be expanded to warm content based on popular movies/series
     // For now, just log that it's called
     
-    console.log('[Cache Warming] Related content warming completed');
+    logger.success('[Cache Warming] Related content warming completed');
   } catch (error) {
-    console.error('[Cache Warming] Error warming related content:', error.message);
+    logger.error('[Cache Warming] Error warming related content:', error.message);
   }
 }
 
@@ -84,14 +86,14 @@ async function warmRelatedContent() {
  */
 async function warmFromUserActivity() {
   try {
-    console.log('[Cache Warming] Warming content from user activity...');
+    logger.info('[Cache Warming] Warming content from user activity...');
     
     // This could analyze user activity logs and warm frequently accessed content
     // For now, just log that it's called
     
-    console.log('[Cache Warming] User activity warming completed');
+    logger.success('[Cache Warming] User activity warming completed');
   } catch (error) {
-    console.error('[Cache Warming] Error warming from user activity:', error.message);
+    logger.error('[Cache Warming] Error warming from user activity:', error.message);
   }
 }
 
@@ -99,20 +101,20 @@ async function warmFromUserActivity() {
  * Schedule essential warming at regular intervals
  */
 function scheduleEssentialWarming(intervalMinutes = 30) {
-  console.log(`[Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
+  logger.info(`[Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
   
   // Schedule recurring warming (initial warming is done separately)
   const intervalMs = intervalMinutes * 60 * 1000;
   setInterval(async () => {
-    console.log('[Cache Warming] Running scheduled essential warming...');
+    logger.info('[Cache Warming] Running scheduled essential warming...');
     
     // Track scheduled maintenance task
     try {
       const redis = require('./redisClient');
       await redis.setex('maintenance:last_cache_warming', 86400 * 7, Date.now().toString());
-      console.log('[Cache Warming] Scheduled maintenance task tracked');
+      logger.success('[Cache Warming] Scheduled maintenance task tracked');
     } catch (trackingError) {
-      console.warn('[Cache Warming] Failed to track scheduled maintenance:', trackingError.message);
+      logger.warn('[Cache Warming] Failed to track scheduled maintenance:', trackingError.message);
     }
     
     await warmEssentialContent();

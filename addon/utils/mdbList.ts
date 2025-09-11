@@ -1,7 +1,5 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
-import * as Utils from "./parseProps.js";
-import * as moviedb from "../lib/getTmdb.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
@@ -316,7 +314,7 @@ async function parseMDBListItems(items: any[], type: string, genreFilter: string
         let stremioId = `tmdb:${item.id}`;
         if (targetProviders.size > 0) {
           const targetProviderArray = Array.from(targetProviders);
-          allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
+          allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, {}, targetProviderArray);
           
           if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
             stremioId = `tvdb:${allIds.tvdbId}`;

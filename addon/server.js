@@ -2,8 +2,7 @@ const { startServerWithCacheWarming } = require('./index.js')
 const PORT = process.env.PORT || 1337;
 const { initializeMapper } = require('./lib/id-mapper');
 const { initializeAnimeListMapper } = require('./lib/anime-list-mapper');
-const geminiService = require('./utils/gemini-service');
-const { autoMigrateIdCache } = require('./lib/auto-migrate');
+const { runCacheCleanup } = require('./lib/cache-cleanup');
 const database = require('./lib/database'); 
 
 async function startServer() {
@@ -34,6 +33,10 @@ async function startServer() {
   console.log('Initializing Database...');
   await database.initialize();
   console.log('Database initialization complete.');
+
+  console.log('Checking for one-time cache cleanup...');
+  await runCacheCleanup();
+  console.log('Cache cleanup check complete.');
 
   // Auto-migrate ID cache from SQLite to Redis if needed
   // await autoMigrateIdCache(); // DISABLED - Migration stopped

@@ -10,11 +10,13 @@ const consola = require('consola');
 const logger = consola.create({ 
   level: 4, // Show all levels
   fancy: true,
+  colors: true,
   formatOptions: {
     colors: true,
     compact: false,
     date: false
-  }
+  },
+  tag: 'ID-Resolver'
 });
 
 /**
@@ -144,9 +146,9 @@ async function getExternalIdsFromImdb(imdbId, type) {
 // --- Main Orchestrator Function ---
 
 async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, targetProviders = []) {
-  logger.info(`[ID Resolver] Starting resolution for ${stremioId} (type: ${type})`);
+  logger.info(`Starting resolution for ${stremioId} (type: ${type})`);
   if (type !== 'movie' && type !== 'series' && type !== 'anime') {
-    logger.warn(`[ID Resolver] Invalid type: ${type}`);
+    logger.warn(`Invalid type: ${type}`);
     return null;
   }
 
@@ -157,7 +159,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   // 2. Handle Anime
   if (isAnime) {
     _handleAnimeMapping(allIds);
-    logger.success(`[ID Resolver] Anime resolution complete for ${stremioId}`);
+    logger.success(` Anime resolution complete for ${stremioId}`);
     return allIds;
   }
 
@@ -165,14 +167,14 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   if (!isAnime) {
     const cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
     if (cachedMapping) {
-      logger.info(`[ID Resolver] Found cached mapping for ${stremioId}`);
+      logger.info(` Found cached mapping for ${stremioId}`);
       allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
       allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
       allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
       allIds.tvmazeId = allIds.tvmazeId || cachedMapping.tvmaze_id;
         return allIds;
     }
-    logger.info(`[ID Resolver] No cache hit for ${stremioId}, proceeding to API lookups.`);
+    logger.info(` No cache hit for ${stremioId}, proceeding to API lookups.`);
   }
 
   // 4. Perform API Lookups in PARALLEL
@@ -245,7 +247,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
                 allIds.imdbId = allIds.imdbId || imdbId;
                 allIds.tvmazeId = allIds.tvmazeId || tvmazeId;
             } else if (result.status === 'rejected') {
-                logger.warn(`[ID Resolver] A secondary API lookup failed: ${result.reason?.message}`);
+                logger.warn(` A secondary API lookup failed: ${result.reason?.message}`);
             }
         }
     }
@@ -262,11 +264,11 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     }
 
   } catch (error) {
-    logger.error(`[ID Resolver] API bridging failed for ${stremioId}: ${error.message}`);
+    logger.error(` API bridging failed for ${stremioId}: ${error.message}`);
   }
 
-  logger.success(`[ID Resolver] Resolution complete for ${stremioId}`);
-  logger.info(`[ID Resolver] Final resolved IDs:`, allIds);
+  logger.success(` Resolution complete for ${stremioId}`);
+  logger.info(` Final resolved IDs for this ${stremioId} of type ${type} are:`, allIds);
   return allIds;
 }
 

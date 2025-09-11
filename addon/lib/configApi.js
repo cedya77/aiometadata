@@ -128,6 +128,7 @@ class ConfigApi {
           if (config.blurThumbs !== undefined && config.blurThumbs !== oldConfig?.blurThumbs) {
             patterns.push(`meta-poster:*`); // Poster components
             patterns.push(`meta-background:*`); // Background components
+            patterns.push(`meta-videos:*`); // Videos components
             patterns.push(`search:*`); // Also clear search cache since blur affects search results
             console.log(`[ConfigApi] Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, and search cache for blur change`);
@@ -139,6 +140,16 @@ class ConfigApi {
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
             console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
+          }
+
+          // Show meta provider attribution changes - affects basic meta display
+          if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
+            patterns.push(`meta-basic:*`); // Basic meta components
+            patterns.push(`search:*`); // Also clear search cache since prefix affects search results
+            patterns.push(`meta:*`);
+            patterns.push(`meta-*:*`);
+            console.log(`[ConfigApi] Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
           }
 
           // API key changes - affects poster/background components and search results
@@ -516,6 +527,15 @@ class ConfigApi {
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
             console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
+          }
+          // show meta provider attribution changes - affects basic meta display
+          if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
+            patterns.push(`meta-basic:*`); // Basic meta components
+            patterns.push(`search:*`);
+            patterns.push(`meta:*`);
+            patterns.push(`meta-*:*`); // Also clear search cache since prefix affects search results
+            console.log(`[ConfigApi] Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
+            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
           }
 
           // API key changes - affects poster/background components and search results

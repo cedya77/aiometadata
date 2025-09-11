@@ -776,7 +776,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
-     showMetaProviderAttribution: config.showMetaProviderAttribution || true,
+     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
      }
@@ -995,7 +995,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
-     showMetaProviderAttribution: config.showMetaProviderAttribution || true,
+     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || ''
      }

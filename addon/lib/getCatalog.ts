@@ -138,7 +138,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     let allIds;
     if (targetProviders.size > 0) {
       const targetProviderArray = Array.from(targetProviders);
-      allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, null, targetProviderArray);
+      allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, {}, targetProviderArray);
     }
     
     let stremioId = `tvdb:${tvdbId}`;
@@ -230,7 +230,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     let allIds;
     if (targetProviders.size > 0) {
       const targetProviderArray = Array.from(targetProviders);
-      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, null, targetProviderArray);
+      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, {}, targetProviderArray);
     }
     
     let stremioId = `tmdb:${item.id}`;
