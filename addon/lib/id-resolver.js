@@ -1,254 +1,273 @@
+
 const idMapper = require('./id-mapper');
-const tvdb = require('./tvdb'); 
+const tvdb = require('./tvdb');
 const tvmaze = require('./tvmaze');
 const moviedb = require("./getTmdb");
 const axios = require('axios');
-const database = require('./database');
 const redisIdCache = require('./redis-id-cache');
+const consola = require('consola');
 
-async function resolveAllIds(stremioId, type, config, prefetcheIds, targetProviders = []) {
-  console.log(`🔗 [ID Resolver] Resolving ${stremioId} (type: ${type})`);
-  console.log(`🔗 [ID Resolver] Config userUUID: ${config.userUUID || 'NOT SET'}`);
- 
-  
-  const allIds = { tmdbId: null, tvdbId: null, imdbId: null, malId: null, kitsuId: null, tvmazeId: null, anidbId: null, anilistId: null };
-  if (prefetcheIds) {
-    allIds.tmdbId = prefetcheIds?.tmdbId;
-    allIds.tvdbId = prefetcheIds?.tvdbId;
-    allIds.imdbId = prefetcheIds?.imdbId;
-    allIds.tvmazeId = prefetcheIds?.tvmazeId;
+const logger = consola.create({ 
+  level: 4, // Show all levels
+  fancy: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  }
+});
+
+/**
+ * Parses the initial Stremio ID into a usable object.
+ * @private
+ */
+function _parseStremioId(stremioId) {
+  const ids = { tmdbId: null, tvdbId: null, imdbId: null, tvmazeId: null, malId: null, kitsuId: null, anidbId: null, anilistId: null };
+  if (stremioId.startsWith('tt')) {
+    ids.imdbId = stremioId;
+    return ids;
   }
   const [prefix, sourceId] = stremioId.split(':');
+  const key = `${prefix}Id`;
+  if (key in ids) {
+    ids[key] = sourceId;
+  }
+  return ids;
+}
 
-  if (prefix === 'tmdb') allIds.tmdbId = sourceId;
-  if (prefix === 'tvdb') allIds.tvdbId = sourceId;
-  if (prefix === 'mal') allIds.malId = sourceId;
-  if (prefix === 'kitsu') allIds.kitsuId = sourceId;
-  if (prefix === 'tvmaze') allIds.tvmazeId = sourceId;
-  if (stremioId.startsWith('tt')) allIds.imdbId = stremioId;
-  if (prefix === 'anidb') allIds.anidbId = sourceId;
-  if (prefix === 'anilist') allIds.anilistId = sourceId;
-  // Handle anime ID mapping first
-  const isAnime = type === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
-  
-  if (!isAnime) {
-    // Try to get cached mapping first
-    const cachedMapping = null;
+/**
+ * Handles the fast, local mapping for anime IDs.
+ * @private
+ */
+function _handleAnimeMapping(allIds) {
+  const providers = ['mal', 'kitsu', 'anidb', 'anilist'];
+  const mappingFunctions = {
+    mal: idMapper.getMappingByMalId,
+    kitsu: idMapper.getMappingByKitsuId,
+    anidb: idMapper.getMappingByAnidbId,
+    anilist: idMapper.getMappingByAnilistId
+  };
+
+  for (const provider of providers) {
+    const id = allIds[`${provider}Id`];
+    if (id) {
+      const mapping = mappingFunctions[provider](id);
+      if (mapping) {
+        allIds.tmdbId = allIds.tmdbId || mapping.themoviedb_id;
+        allIds.imdbId = allIds.imdbId || mapping.imdb_id;
+        allIds.tvdbId = allIds.tvdbId || mapping.thetvdb_id;
+        allIds.tvmazeId = allIds.tvmazeId || mapping.tvmaze_id;
+        allIds.malId = allIds.malId || mapping.mal_id;
+        allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
+        allIds.anidbId = allIds.anidbId || mapping.anidb_id;
+        allIds.anilistId = allIds.anilistId || mapping.anilist_id;
+      }
+    }
+  }
+}
+
+// --- Individual Provider Fetchers ---
+
+async function _fetchFromTmdb(tmdbId, type, config) {
+  if (!tmdbId) return {};
+  try {
+    logger.debug(`[API Fetch] TMDB External IDs for ${type} ${tmdbId}`);
+    const details = type === 'movie'
+      ? await moviedb.movieInfo({ id: tmdbId, append_to_response: 'external_ids' }, config)
+      : await moviedb.tvInfo({ id: tmdbId, append_to_response: 'external_ids' }, config);
     
+    return {
+      imdbId: details.external_ids?.imdb_id || null,
+      tvdbId: details.external_ids?.tvdb_id || null,
+    };
+  } catch (error) {
+    logger.warn(`[API Fetch] Failed to fetch from TMDB ${tmdbId}: ${error.message}`);
+    return {};
+  }
+}
+
+async function _fetchFromTvdb(tvdbId, type, config) {
+  if (!tvdbId) return {};
+  try {
+    logger.debug(`[API Fetch] TVDB Remote IDs for ${type} ${tvdbId}`);
+    const details = type === 'movie'
+      ? await tvdb.getMovieExtended(tvdbId, config)
+      : await tvdb.getSeriesExtended(tvdbId, config);
+
+    const findId = (sourceName) => details.remoteIds?.find(id => id.sourceName === sourceName)?.id || null;
+    
+    return {
+      imdbId: findId('IMDB'),
+      tmdbId: findId('TheMovieDB.com'),
+      tvmazeId: findId('TV Maze'),
+    };
+  } catch (error) {
+    logger.warn(`[API Fetch] Failed to fetch from TVDB ${tvdbId}: ${error.message}`);
+    return {};
+  }
+}
+
+async function _fetchFromTvmaze(tvmazeId, config) {
+  if (!tvmazeId) return {};
+  try {
+    logger.debug(`[API Fetch] TVmaze Externals for ${tvmazeId}`);
+    const details = await tvmaze.getShowById(tvmazeId, config);
+    return {
+      imdbId: details.externals?.imdb || null,
+      tmdbId: details.externals?.themoviedb || null,
+      tvdbId: details.externals?.thetvdb || null,
+    };
+  } catch (error) {
+    logger.warn(`[API Fetch] Failed to fetch from TVmaze ${tvmazeId}: ${error.message}`);
+    return {};
+  }
+}
+
+async function getExternalIdsFromImdb(imdbId, type) {
+  if (!imdbId || imdbId.toString().trim() === '') return undefined;
+  const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
+  try {
+    const response = await axios.get(url);
+    const tvdbId = response.data?.meta?.tvdb_id || response.data?.meta?.thetvdb_id;
+    const tmdbId = response.data?.meta?.moviedb_id || response.data?.meta?.themoviedb_id || response.data?.meta?.tmdb_id;
+    return {
+      tmdbId: (tmdbId && tmdbId.toString().trim() !== '') ? tmdbId : null,
+      tvdbId: (tvdbId && tvdbId.toString().trim() !== '') ? tvdbId : null,
+    };
+  } catch (error) {
+    logger.warn(`[Cinemeta] Could not fetch external ids for ${imdbId}: ${error.message}`);
+    return undefined;
+  }
+}
+
+
+// --- Main Orchestrator Function ---
+
+async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, targetProviders = []) {
+  logger.info(`[ID Resolver] Starting resolution for ${stremioId} (type: ${type})`);
+  if (type !== 'movie' && type !== 'series' && type !== 'anime') {
+    logger.warn(`[ID Resolver] Invalid type: ${type}`);
+    return null;
+  }
+
+  // 1. Initialize IDs
+  let allIds = { ..._parseStremioId(stremioId), ...prefetchedIds };
+  const isAnime = type === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
+
+  // 2. Handle Anime
+  if (isAnime) {
+    _handleAnimeMapping(allIds);
+    logger.success(`[ID Resolver] Anime resolution complete for ${stremioId}`);
+    return allIds;
+  }
+
+  // 3. Check Cache
+  if (!isAnime) {
+    const cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
     if (cachedMapping) {
-      //console.log(`🔗 [ID Resolver] Cached mapping:`, JSON.stringify(cachedMapping));
-      // Merge cached data with existing IDs
+      logger.info(`[ID Resolver] Found cached mapping for ${stremioId}`);
       allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
       allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
       allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
       allIds.tvmazeId = allIds.tvmazeId || cachedMapping.tvmaze_id;
-
-      if(targetProviders.length > 0) {
-        // check if we have the target provider id
-        if(targetProviders.includes('tmdb')) {
-          allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
-        } else if(targetProviders.includes('tvdb')) {
-          allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
-        } else if(targetProviders.includes('imdb')) {
-          allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
-        } else if(targetProviders.includes('tvmaze')) {
-          allIds.tvmazeId = allIds.tvmazeId || cachedMapping.tvmaze_id;
-        }
-      }
-
-      //console.log(`🔗 [ID Resolver] All IDs for target providers:`, JSON.stringify(allIds));
-      // if we have found all the target providers, return early
-      if(targetProviders.length > 0 && targetProviders.every(provider => allIds[provider])) {
-        //console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
         return allIds;
-      }
-      
-      
-      
-      // If we have all the IDs we need, return early
-      if (type === 'series' && allIds.tmdbId && allIds.tvdbId && allIds.imdbId && allIds.tvmazeId) {
-        //console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
-        return allIds;
-      }
-      
-      if(type === 'movie' && allIds.tmdbId && allIds.imdbId && allIds.tvdbId) {
-        //console.log(`🔗 [ID Resolver] Using cached mapping for ${stremioId}`);
-        return allIds;
-      }
     }
+    logger.info(`[ID Resolver] No cache hit for ${stremioId}, proceeding to API lookups.`);
   }
 
+  // 4. Perform API Lookups in PARALLEL
   try {
-    if (allIds.malId) {
-      const mapping = idMapper.getMappingByMalId(allIds.malId);
-      if (mapping) {
-        //console.log(JSON.stringify(mapping));
-        console.log(`🔗 [ID Resolver] MAL ID found: ${JSON.stringify(allIds.malId)}`);
-        allIds.tmdbId = allIds.tmdbId || mapping?.themoviedb_id;
-        allIds.imdbId = allIds.imdbId || mapping?.imdb_id;
-        allIds.kitsuId = allIds.kitsuId || mapping?.kitsu_id;
-        allIds.anidbId = allIds.anidbId || mapping?.anidb_id;
-        allIds.anilistId = allIds.anilistId || mapping?.anilist_id;
-        allIds.tvdbId = allIds.tvdbId || mapping?.thetvdb_id;
+    // Phase 1: Primary lookups based on existing IDs
+    if (allIds.imdbId && !allIds.tmdbId && !allIds.tvdbId) {
+      const cinemetaIds = await getExternalIdsFromImdb(allIds.imdbId, type);
+      if (cinemetaIds) {
+        allIds.tmdbId = allIds.tmdbId || cinemetaIds.tmdbId;
+        allIds.tvdbId = allIds.tvdbId || cinemetaIds.tvdbId;
       }
     }
 
-    if (allIds.kitsuId) {
-      const mapping = idMapper.getMappingByKitsuId(allIds.kitsuId);
-      if (mapping) {
-        allIds.malId = allIds.malId || mapping?.mal_id;
-        allIds.tmdbId = allIds.tmdbId || mapping?.themoviedb_id;
-        allIds.imdbId = allIds.imdbId || mapping?.imdb_id;
-        allIds.anidbId = allIds.anidbId || mapping?.anidb_id;
-        allIds.anilistId = allIds.anilistId || mapping?.anilist_id;
-        allIds.tvdbId = allIds.tvdbId || mapping?.thetvdb_id;
-      }
+    const primaryPromises = [];
+    if (allIds.tmdbId && (!allIds.imdbId || !allIds.tvdbId)) {
+      primaryPromises.push(_fetchFromTmdb(allIds.tmdbId, type, config));
     }
-
-    if (allIds.anidbId) {
-      const mapping = idMapper.getMappingByAnidbId(allIds.anidbId);
-      if (mapping) {
-        allIds.malId = allIds.malId || mapping?.mal_id;
-        allIds.kitsuId = allIds.kitsuId || mapping?.kitsu_id;
-        allIds.tvdbId = allIds.tvdbId || mapping?.thetvdb_id;
-        allIds.tvmazeId = allIds.tvmazeId || mapping?.tvmaze_id;
-        allIds.anilistId = allIds.anilistId || mapping?.anilist_id;
-        allIds.tmdbId = allIds.tmdbId || mapping?.themoviedb_id;
-        allIds.imdbId = allIds.imdbId || mapping?.imdb_id;
-      }
-    }
-    if (allIds.anilistId) {
-      const mapping = idMapper.getMappingByAnilistId(allIds.anilistId);
-      if (mapping) {
-        allIds.malId = allIds.malId || mapping?.mal_id;
-        allIds.kitsuId = allIds.kitsuId || mapping?.kitsu_id;
-        allIds.tmdbId = allIds.tmdbId || mapping?.themoviedb_id;
-        allIds.imdbId = allIds.imdbId || mapping?.imdb_id;
-        allIds.tvdbId = allIds.tvdbId || mapping?.thetvdb_id;
-        allIds.tvmazeId = allIds.tvmazeId || mapping?.tvmaze_id;
-        allIds.anidbId = allIds.anidbId || mapping?.anidb_id;
-      }
-    }
-
-    if (allIds.tmdbId) {
-      const details = type === 'movie'
-        ? await moviedb.movieInfo({ id: allIds.tmdbId, append_to_response: 'external_ids' }, config)
-        : await moviedb.tvInfo({ id: allIds.tmdbId, append_to_response: 'external_ids' }, config);
-      
-      allIds.imdbId = allIds.imdbId ?? details.external_ids?.imdb_id ?? null;
-      console.log(`🔗 [ID Resolver] TMDB external_ids.tvdb_id: ${details.external_ids?.tvdb_id ?? 'NOT FOUND'}`);
-      const tvdbLookupResult = await tvdb.findByTmdbId(allIds.tmdbId, config);
-      console.log(`🔗 [ID Resolver] TVDB findByTmdbId result: ${tvdbLookupResult ? JSON.stringify(tvdbLookupResult) : 'NULL'}`);
-      allIds.tvdbId = allIds.tvdbId ?? details.external_ids?.tvdb_id ?? tvdbLookupResult?.[0]?.series?.id ?? null;
-      console.log(`🔗 [ID Resolver] Final tvdbId: ${allIds.tvdbId ?? 'NOT SET'}`);
-      if(allIds.tvdbId && type === 'series') {
-        const tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
-        allIds.tvmazeId = allIds.tvmazeId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id ?? null;
-      }
-    }
-
     if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
-      let tvdbDetails;
-      if (type === 'movie') {
-        tvdbDetails = await tvdb.getMovieExtended(allIds.tvdbId, config);
-      } else {
-          tvdbDetails = await tvdb.getSeriesExtended(allIds.tvdbId, config);
-      }
-      
-      allIds.imdbId = allIds.imdbId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === 'IMDB')?.id ?? null;
-      allIds.tmdbId = allIds.tmdbId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id ?? null;
-      allIds.tvmazeId = allIds.tvmazeId ?? tvdbDetails.remoteIds?.find(id => id.sourceName === "TV Maze")?.id ?? (await tvmaze.getShowByTvdbId(allIds.tvdbId, config))?.id ?? null;
+      primaryPromises.push(_fetchFromTvdb(allIds.tvdbId, type, config));
     }
-
-
-    if (allIds.imdbId && (!allIds.tmdbId || !allIds.tvdbId || !allIds.tvmazeId)) {
-      // get external IDs from Cinemeta
-      const externalIds = await getExternalIdsFromImdb(allIds.imdbId, type);
-      console.log(`🔗 [ID Resolver] External IMDb IDs:`, JSON.stringify(externalIds));
-      if (externalIds) {
-        allIds.tmdbId = allIds.tmdbId ?? externalIds.tmdbId ?? null;
-        allIds.tvdbId = allIds.tvdbId ?? externalIds.tvdbId ?? null;
-      }
-      if (!allIds.tmdbId) {
-        const findResults = await moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config);
-        const match = findResults.movie_results?.[0] || findResults.tv_results?.[0];
-        if (match && match.id) allIds.tmdbId = match.id;
-      }
-      
-      if (!allIds.tvdbId) {
-        const tvdbMatch = await tvdb.findByImdbId(allIds.imdbId, config);
-        //console.log(tvdbMatch);
-        if (tvdbMatch) {
-          if (type === 'movie' && tvdbMatch.movie && tvdbMatch.movie.id) {
-            allIds.tvdbId = tvdbMatch.movie.id;
-          } else if (type === 'series' && tvdbMatch.series && tvdbMatch.series.id) {
-            allIds.tvdbId = tvdbMatch.series.id;
-          }
-        }
-      }
-
-      if (!allIds.tvmazeId && type === 'series') {
-        const tvmazeMatch = await tvmaze.getShowByImdbId(allIds.imdbId);
-        if (tvmazeMatch && tvmazeMatch.id) allIds.tvmazeId = tvmazeMatch.id;
-      }
-    }
-
     if (allIds.tvmazeId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvdbId)) {
-      const tvmazeDetails = await tvmaze.getShowById(allIds.tvmazeId);
-      if (tvmazeDetails && tvmazeDetails.externals) {
-        allIds.imdbId = allIds.imdbId ?? tvmazeDetails.externals.imdb ?? null;
-        allIds.tmdbId = allIds.tmdbId ?? tvmazeDetails.externals.themoviedb ?? null;
-        allIds.tvdbId = allIds.tvdbId ?? tvmazeDetails.externals.thetvdb ?? null;
+      primaryPromises.push(_fetchFromTvmaze(allIds.tvmazeId, config));
+    }
+    
+    const primaryResults = await Promise.allSettled(primaryPromises);
+    for (const result of primaryResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        const { tmdbId, tvdbId, imdbId, tvmazeId } = result.value;
+
+        allIds.tmdbId = allIds.tmdbId || tmdbId;
+        allIds.tvdbId = allIds.tvdbId || tvdbId;
+        allIds.imdbId = allIds.imdbId || imdbId;
+        allIds.tvmazeId = allIds.tvmazeId || tvmazeId;
       }
     }
+    
+    // Phase 2: Secondary lookups to fill any remaining gaps
+    const secondaryPromises = [];
 
-    // Cache the mapping for non-anime content
-    /*if (!isAnime) {
-      try {
+    // ********* FIX: Re-added secondary lookups by external IDs *********
+    if (!allIds.tmdbId && allIds.imdbId) {
+        secondaryPromises.push(moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config)
+            .then(res => ({ tmdbId: res.movie_results?.[0]?.id || res.tv_results?.[0]?.id || null })));
+    }
+    if (!allIds.tvdbId && allIds.imdbId) {
+        secondaryPromises.push(tvdb.findByImdbId(allIds.imdbId, config)
+            .then(res => ({ tvdbId: (type === 'movie' ? res?.movie?.id : res?.series?.id) || null })));
+    }
+    if (!allIds.tvdbId && allIds.tmdbId) {
+        secondaryPromises.push(tvdb.findByTmdbId(allIds.tmdbId, config)
+            .then(res => {
+                const movieResult = res?.find(r => r.movie);
+                const seriesResult = res?.find(r => r.series);
+                return { tvdbId: (type === 'movie' ? movieResult?.movie?.id : seriesResult?.series?.id) || null };
+            }));
+    }
+    if (!allIds.tvmazeId && allIds.imdbId && type === 'series') {
+        secondaryPromises.push(tvmaze.getShowByImdbId(allIds.imdbId)
+            .then(res => ({ tvmazeId: res?.id || null })));
+    }
+    // ******************************************************************
 
-        // Also save to Redis cache
-        await redisIdCache.saveIdMapping(
-          type,
-          allIds.tmdbId,
-          allIds.tvdbId,
-          allIds.imdbId,
-          allIds.tvmazeId
-        );
-        
-        // console.log(`[ID Cache] Saved mapping for ${type}:`, { tmdbId: allIds.tmdbId, tvdbId: allIds.tvdbId, imdbId: allIds.imdbId, tvmazeId: allIds.tvmazeId });
-      } catch (error) {
-        console.warn(`❌ [ID Cache] Failed to save mapping: ${error.message}`);
-      }
-    }*/
+    if (secondaryPromises.length > 0) {
+        const secondaryResults = await Promise.allSettled(secondaryPromises);
+        for (const result of secondaryResults) {
+            if (result.status === 'fulfilled' && result.value) {
+                const { tmdbId, tvdbId, imdbId, tvmazeId } = result.value;
+                allIds.tmdbId = allIds.tmdbId || tmdbId;
+                allIds.tvdbId = allIds.tvdbId || tvdbId;
+                allIds.imdbId = allIds.imdbId || imdbId;
+                allIds.tvmazeId = allIds.tvmazeId || tvmazeId;
+            } else if (result.status === 'rejected') {
+                logger.warn(`[ID Resolver] A secondary API lookup failed: ${result.reason?.message}`);
+            }
+        }
+    }
+    
+    // 5. Save the complete mapping to cache
+    if (!isAnime) {
+      await redisIdCache.saveIdMapping(
+        type,
+        allIds.tmdbId,
+        allIds.tvdbId,
+        allIds.imdbId,
+        allIds.tvmazeId
+      );
+    }
 
   } catch (error) {
-    console.warn(`❌ [ID Resolver] API bridging failed for ${stremioId}: ${error.message}`);
-    console.warn(`❌ [ID Resolver] Error stack:`, error.stack);
+    logger.error(`[ID Resolver] API bridging failed for ${stremioId}: ${error.message}`);
   }
 
-  console.log(`🔗 [ID Resolver] Final IDs:`, JSON.stringify(allIds));
+  logger.success(`[ID Resolver] Resolution complete for ${stremioId}`);
+  logger.info(`[ID Resolver] Final resolved IDs:`, allIds);
   return allIds;
-}
-
-async function getExternalIdsFromImdb(imdbId, type) {
-  if (!imdbId) {
-    return undefined;
-  }
-
-  const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
-  try {
-    const response = await axios.get(url);
-    const tvdbId = response.data?.meta?.tvdb_id;
-    const tmdbId = response.data?.meta?.moviedb_id;
-    return {
-      tmdbId: tmdbId || null,
-      tvdbId: tvdbId || null
-    };
-
-  } catch (error) {
-    console.warn(`❌ Could not fetch external ids for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`);
-    return undefined;
-  }
 }
 
 module.exports = { resolveAllIds };

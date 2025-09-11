@@ -428,6 +428,8 @@ async function findByTmdbId(tmdbId, config) {
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const data = await response.json();
+    console.log(`[TVDB] findByTmdbId raw response for ${tmdbId}:`, JSON.stringify(data, null, 2));
+    console.log(`[TVDB] findByTmdbId data.data:`, data.data);
     return data.data;
   } catch (error) {
     // Track failed request

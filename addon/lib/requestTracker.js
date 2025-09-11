@@ -1,4 +1,16 @@
 const redis = require('./redisClient');
+const consola = require('consola');
+
+// Configure Consola for better output with forced colors
+const logger = consola.create({
+  level: 4, // Show all levels
+  fancy: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  }
+});
 
 class RequestTracker {
   constructor() {
@@ -9,7 +21,7 @@ class RequestTracker {
     
     // Clean up any corrupted keys on startup
     this.cleanupCorruptedKeys().catch(error => {
-      console.warn('[Request Tracker] Failed to cleanup on startup:', error.message);
+      logger.warn('[Request Tracker] Failed to cleanup on startup:', error.message);
     });
   }
 
@@ -81,7 +93,7 @@ class RequestTracker {
       }
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track request:', error.message);
+      logger.warn('[Request Tracker] Failed to track request:', error.message);
     }
   }
 
@@ -120,7 +132,7 @@ class RequestTracker {
       redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track response:', error.message);
+      logger.warn('[Request Tracker] Failed to track response:', error.message);
     }
   }
 
@@ -192,7 +204,7 @@ class RequestTracker {
       }
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track content request:', error.message);
+      logger.warn('[Request Tracker] Failed to track content request:', error.message);
     }
   }
 
@@ -240,11 +252,11 @@ class RequestTracker {
           try {
             // Try to get real metadata from cache
             const metadataStr = await redis.get(`content_metadata:${contentKey}`);
-            //console.log(`[Request Tracker] Looking for metadata: content_metadata:${contentKey} -> ${metadataStr ? 'FOUND' : 'NOT FOUND'}`);
+            //logger.info(`[Request Tracker] Looking for metadata: content_metadata:${contentKey} -> ${metadataStr ? 'FOUND' : 'NOT FOUND'}`);
             
             if (metadataStr) {
               const metadata = JSON.parse(metadataStr);
-              //console.log(`[Request Tracker] Using real metadata for ${contentKey}: "${metadata.title}"`);
+              //logger.info(`[Request Tracker] Using real metadata for ${contentKey}: "${metadata.title}"`);
               return {
                 id,
                 type: metadata.type || type,
@@ -257,11 +269,11 @@ class RequestTracker {
               };
             }
           } catch (error) {
-            console.warn('[Request Tracker] Failed to load metadata for', contentKey, error.message);
+            logger.warn('[Request Tracker] Failed to load metadata for', contentKey, error.message);
           }
           
           // Fallback to formatted title
-          //console.log(`[Request Tracker] Using fallback title for ${contentKey}: "${this.formatContentTitle(id, type)}"`);
+          //logger.info(`[Request Tracker] Using fallback title for ${contentKey}: "${this.formatContentTitle(id, type)}"`);
           return {
             id,
             type,
@@ -275,7 +287,7 @@ class RequestTracker {
       
       return popularContent;
     } catch (error) {
-      console.error('[Request Tracker] Failed to get popular content:', error);
+      logger.error('[Request Tracker] Failed to get popular content:', error);
       return [];
     }
   }
@@ -321,7 +333,7 @@ class RequestTracker {
       
       return searchPatterns;
     } catch (error) {
-      console.error('[Request Tracker] Failed to get search patterns:', error);
+      logger.error('[Request Tracker] Failed to get search patterns:', error);
       return [];
     }
   }
@@ -336,13 +348,13 @@ class RequestTracker {
       if (!keyMatch) return;
 
       const metaId = keyMatch[1];
-      console.log(`[Request Tracker] Capturing metadata from cache key for ${metaId}: "${meta.name}"`);
+      logger.info(`[Request Tracker] Capturing metadata from cache key for ${metaId}: "${meta.name}"`);
       
       // Use the existing capture method
       await this.captureMetadataFromComponents(metaId, meta, meta.type);
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to capture metadata from cache key:', error.message);
+      logger.warn('[Request Tracker] Failed to capture metadata from cache key:', error.message);
     }
   }
 
@@ -351,7 +363,7 @@ class RequestTracker {
     try {
       if (!meta || !meta.name) return;
 
-      /*console.log(`[Request Tracker] Capturing metadata from components for ${metaId}:`, {
+      /*logger.info(`[Request Tracker] Capturing metadata from components for ${metaId}:`, {
         name: meta.name,
         type: meta.type || metaType,
         imdbRating: meta.imdbRating,
@@ -407,7 +419,7 @@ class RequestTracker {
         cached_at: new Date().toISOString()
       };
 
-      console.log(`[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`);
+      logger.info(`[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`);
       
       // Store in Redis with 30 day TTL for all formats
       redis.set(`content_metadata:${contentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
@@ -416,7 +428,7 @@ class RequestTracker {
       redis.set(`content_metadata:${providerEncodedContentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to capture metadata from components:', error.message);
+      logger.warn('[Request Tracker] Failed to capture metadata from components:', error.message);
     }
   }
 
@@ -429,7 +441,7 @@ class RequestTracker {
       // Extract content info from cache key format: meta:config:id
       const keyMatch = cacheKey.match(/^meta:.*:(.+)$/);
       if (!keyMatch) {
-        console.log(`[Request Tracker] Cache key doesn't match expected format: ${cacheKey}`);
+        logger.info(`[Request Tracker] Cache key doesn't match expected format: ${cacheKey}`);
         return;
       }
 
@@ -469,14 +481,14 @@ class RequestTracker {
         cached_at: new Date().toISOString()
       };
 
-      console.log(`[Request Tracker] Capturing metadata for ${cleanContentKey} and ${encodedContentKey}: "${metadataInfo.title}"`);
+      logger.info(`[Request Tracker] Capturing metadata for ${cleanContentKey} and ${encodedContentKey}: "${metadataInfo.title}"`);
       
       // Store in Redis with 30 day TTL for both formats
       redis.set(`content_metadata:${cleanContentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
       redis.set(`content_metadata:${encodedContentKey}`, JSON.stringify(metadataInfo), 'EX', 86400 * 30).catch(() => {});
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to capture metadata:', error.message);
+      logger.warn('[Request Tracker] Failed to capture metadata:', error.message);
     }
   }
 
@@ -524,7 +536,7 @@ class RequestTracker {
       redis.incr(`cache:hits:${today}`).catch(() => {});
       redis.expire(`cache:hits:${today}`, 86400 * 30).catch(() => {});
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track cache hit:', error.message);
+      logger.warn('[Request Tracker] Failed to track cache hit:', error.message);
     }
   }
 
@@ -534,7 +546,7 @@ class RequestTracker {
       redis.incr(`cache:misses:${today}`).catch(() => {});
       redis.expire(`cache:misses:${today}`, 86400 * 30).catch(() => {});
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track cache miss:', error.message);
+      logger.warn('[Request Tracker] Failed to track cache miss:', error.message);
     }
   }
 
@@ -575,7 +587,7 @@ class RequestTracker {
       }
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track provider call:', error.message);
+      logger.warn('[Request Tracker] Failed to track provider call:', error.message);
     }
   }
 
@@ -604,7 +616,7 @@ class RequestTracker {
               } catch (error) {
                 // Handle WRONGTYPE errors gracefully
                 if (error.message.includes('WRONGTYPE')) {
-                  console.warn(`[Request Tracker] Wrong data type for ${provider}:${hour}, skipping`);
+                  logger.warn(`[Request Tracker] Wrong data type for ${provider}:${hour}, skipping`);
                   return [];
                 }
                 throw error;
@@ -651,7 +663,7 @@ class RequestTracker {
               totalCalls: totalCalls
             };
           } catch (providerError) {
-            console.warn(`[Request Tracker] Failed to get stats for provider ${provider}:`, providerError.message);
+            logger.warn(`[Request Tracker] Failed to get stats for provider ${provider}:`, providerError.message);
             return null;
           }
         })
@@ -663,7 +675,7 @@ class RequestTracker {
         .sort((a, b) => b.totalCalls - a.totalCalls);
         
     } catch (error) {
-      console.error('[Request Tracker] Failed to get provider performance:', error);
+      logger.error('[Request Tracker] Failed to get provider performance:', error);
       return [];
     }
   }
@@ -671,7 +683,7 @@ class RequestTracker {
   // Track recent activity
   async trackActivity(type, details) {
     try {
-      console.log(`[Request Tracker] Tracking activity: ${type} for ${details.endpoint}`);
+      logger.info(`[Request Tracker] Tracking activity: ${type} for ${details.endpoint}`);
       
       const activity = {
         id: Date.now(),
@@ -687,27 +699,27 @@ class RequestTracker {
       await redis.ltrim(activityKey, 0, 99); // Keep only last 100
       await redis.expire(activityKey, 86400 * 7); // 7 days
       
-      console.log(`[Request Tracker] Activity stored successfully: ${type}`);
+      logger.info(`[Request Tracker] Activity stored successfully: ${type}`);
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track activity:', error.message);
+      logger.warn('[Request Tracker] Failed to track activity:', error.message);
     }
   }
 
   // Get recent activity
   async getRecentActivity(limit = 20) {
     try {
-      console.log('[Request Tracker] Getting recent activity...');
+      logger.info('[Request Tracker] Getting recent activity...');
       
       const activities = await redis.lrange('recent_activity', 0, limit - 1);
-      console.log(`[Request Tracker] Found ${activities.length} activities in Redis`);
+      logger.info(`[Request Tracker] Found ${activities.length} activities in Redis`);
       
       const parsedActivities = activities.map(activity => JSON.parse(activity));
-      console.log(`[Request Tracker] Returning ${parsedActivities.length} parsed activities`);
+      logger.info(`[Request Tracker] Returning ${parsedActivities.length} parsed activities`);
       
       return parsedActivities;
     } catch (error) {
-      console.warn('[Request Tracker] Failed to get recent activity:', error.message);
+      logger.warn('[Request Tracker] Failed to get recent activity:', error.message);
       return [];
     }
   }
@@ -736,7 +748,7 @@ class RequestTracker {
       
       return Math.round((totalHits / totalRequests) * 100);
     } catch (error) {
-      console.error('[Request Tracker] Failed to get cache hit rate:', error);
+      logger.error('[Request Tracker] Failed to get cache hit rate:', error);
       return 0;
     }
   }
@@ -790,7 +802,7 @@ class RequestTracker {
         errorRate: Math.min(errorRate, 100) // Cap at 100%
       };
     } catch (error) {
-      console.error('[Request Tracker] Failed to get stats:', error);
+      logger.error('[Request Tracker] Failed to get stats:', error);
       return {
         totalRequests: 0,
         todayRequests: 0,
@@ -831,7 +843,7 @@ class RequestTracker {
       
       return hourlyData;
     } catch (error) {
-      console.error('[Request Tracker] Failed to get hourly stats:', error);
+      logger.error('[Request Tracker] Failed to get hourly stats:', error);
       return [];
     }
   }
@@ -866,7 +878,7 @@ class RequestTracker {
       
       return hourlyData;
     } catch (error) {
-      console.error('[Request Tracker] Failed to get hourly provider stats:', error);
+      logger.error('[Request Tracker] Failed to get hourly provider stats:', error);
       return [];
     }
   }
@@ -890,7 +902,7 @@ class RequestTracker {
         .sort((a, b) => b.requests - a.requests)
         .slice(0, limit);
     } catch (error) {
-      console.error('[Request Tracker] Failed to get top endpoints:', error);
+      logger.error('[Request Tracker] Failed to get top endpoints:', error);
       return [];
     }
   }
@@ -912,7 +924,7 @@ class RequestTracker {
       
       return activeUsers;
     } catch (error) {
-      console.error('[Request Tracker] Failed to get active users:', error);
+      logger.error('[Request Tracker] Failed to get active users:', error);
       return 0;
     }
   }
@@ -939,9 +951,9 @@ class RequestTracker {
       await redis.zadd('error_logs', Date.now(), errorId);
       await redis.expire('error_logs', 86400 * 7);
       
-      console.log(`[Request Tracker] Logged ${level}: ${message}`);
+      logger.info(`[Request Tracker] Logged ${level}: ${message}`);
     } catch (error) {
-      console.warn('[Request Tracker] Failed to log error:', error.message);
+      logger.warn('[Request Tracker] Failed to log error:', error.message);
     }
   }
 
@@ -971,7 +983,7 @@ class RequestTracker {
             }
             return null;
           } catch (error) {
-            console.warn('[Request Tracker] Failed to parse error log:', error.message);
+            logger.warn('[Request Tracker] Failed to parse error log:', error.message);
             return null;
           }
         })
@@ -980,7 +992,7 @@ class RequestTracker {
       // Filter out null values and return
       return errorLogs.filter(log => log !== null);
     } catch (error) {
-      console.error('[Request Tracker] Failed to get error logs:', error);
+      logger.error('[Request Tracker] Failed to get error logs:', error);
       return [];
     }
   }
@@ -1076,7 +1088,7 @@ class RequestTracker {
       await redis.expire(`unique_users:${today}`, 86400 * 30); // 30 days
       
     } catch (error) {
-      console.warn('[Request Tracker] Failed to track active user:', error.message);
+      logger.warn('[Request Tracker] Failed to track active user:', error.message);
     }
   }
 
@@ -1087,7 +1099,7 @@ class RequestTracker {
       const count = await redis.scard(key);
       return count || 0;
     } catch (error) {
-      console.warn('[Request Tracker] Failed to get active users:', error.message);
+      logger.warn('[Request Tracker] Failed to get active users:', error.message);
       return 0;
     }
   }
@@ -1100,7 +1112,7 @@ class RequestTracker {
       const count = await redis.scard(key);
       return count || 0;
     } catch (error) {
-      console.warn('[Request Tracker] Failed to get unique users for day:', error.message);
+      logger.warn('[Request Tracker] Failed to get unique users for day:', error.message);
       return 0;
     }
   }
@@ -1130,7 +1142,7 @@ class RequestTracker {
       
       return uniqueUsers.size;
     } catch (error) {
-      console.warn('[Request Tracker] Failed to get total unique users:', error.message);
+      logger.warn('[Request Tracker] Failed to get total unique users:', error.message);
       return 0;
     }
   }
@@ -1147,7 +1159,7 @@ class RequestTracker {
         }
       }).filter(activity => activity !== null);
     } catch (error) {
-      console.warn('[Request Tracker] Failed to get recent user activities:', error.message);
+      logger.warn('[Request Tracker] Failed to get recent user activities:', error.message);
       return [];
     }
   }
@@ -1164,17 +1176,17 @@ class RequestTracker {
         try {
           const keyType = await redis.type(dailyKey);
           if (keyType !== 'none' && keyType !== 'list') {
-            console.log(`[Request Tracker] Cleaning up corrupted key: ${dailyKey} (type: ${keyType})`);
+            logger.info(`[Request Tracker] Cleaning up corrupted key: ${dailyKey} (type: ${keyType})`);
             await redis.del(dailyKey);
           }
         } catch (error) {
-          console.warn(`[Request Tracker] Failed to check/clean key ${dailyKey}:`, error.message);
+          logger.warn(`[Request Tracker] Failed to check/clean key ${dailyKey}:`, error.message);
         }
       }
       
-      console.log('[Request Tracker] Corrupted key cleanup completed');
+      logger.info('[Request Tracker] Corrupted key cleanup completed');
     } catch (error) {
-      console.warn('[Request Tracker] Failed to cleanup corrupted keys:', error.message);
+      logger.warn('[Request Tracker] Failed to cleanup corrupted keys:', error.message);
     }
   }
 }

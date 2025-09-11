@@ -707,7 +707,7 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search?remote_id=${imdbId}`, {
+    const response = await fetch(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -745,7 +745,7 @@ async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSea
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search?remote_id=${tmdbId}`, {
+    const response = await fetch(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     

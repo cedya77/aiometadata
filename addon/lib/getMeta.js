@@ -1595,18 +1595,60 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     specialVideos.push(specialEpisode);
   });
 
-  let videos = (episodes || []).filter(episode => !episode.type.toLowerCase().includes('special')).map(episode => ({
-    id: `${imdbId}:${episode.season}:${episode.number}`,
-    title: episode.name || `Episode ${episode.number}`,
-    season: episode.season,
-    episode: episode.number,
-    thumbnail: config.blurThumbs && episode.image?.original
-      ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
-      : episode.image?.original || tvmazeShow.image?.original,
-    overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
-    released: new Date(episode.airstamp),
-    available: new Date(episode.airstamp) < new Date(),
-  }));
+  // Helper function to convert year to season number
+  function convertYearToSeason(episodes) {
+    const seasonMap = new Map();
+    const currentYear = new Date().getFullYear();
+    
+    // Group episodes by their "season" (which might be a year)
+    const seasonGroups = new Map();
+    episodes.forEach(episode => {
+      const seasonKey = episode.season;
+      if (!seasonGroups.has(seasonKey)) {
+        seasonGroups.set(seasonKey, []);
+      }
+      seasonGroups.get(seasonKey).push(episode);
+    });
+    
+    // Sort seasons chronologically by first episode air date
+    const sortedSeasons = Array.from(seasonGroups.entries()).sort((a, b) => {
+      const aFirstEpisode = a[1].sort((x, y) => new Date(x.airstamp) - new Date(y.airstamp))[0];
+      const bFirstEpisode = b[1].sort((x, y) => new Date(x.airstamp) - new Date(y.airstamp))[0];
+      return new Date(aFirstEpisode.airstamp) - new Date(bFirstEpisode.airstamp);
+    });
+    
+    // Map years to sequential season numbers
+    sortedSeasons.forEach(([originalSeason, episodes], index) => {
+      const actualSeasonNumber = index + 1;
+      seasonMap.set(originalSeason, actualSeasonNumber);
+    });
+    
+    return seasonMap;
+  }
+  
+  // Convert years to season numbers if needed
+  const seasonMap = convertYearToSeason(episodes || []);
+  
+  // Log season conversion for debugging
+  if (seasonMap.size > 0) {
+    console.log(`[TVmaze] Season conversion for ${stremioId}:`, Array.from(seasonMap.entries()));
+  }
+  
+  let videos = (episodes || []).filter(episode => !episode.type.toLowerCase().includes('special')).map(episode => {
+    const actualSeason = seasonMap.get(episode.season) || episode.season;
+    return {
+      id: `${imdbId}:${actualSeason}:${episode.number}`,
+      title: episode.name || `Episode ${episode.number}`,
+      season: actualSeason,
+      episode: episode.number,
+      thumbnail: config.blurThumbs && episode.image?.original
+        ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
+        : episode.image?.original || tvmazeShow.image?.original,
+      overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
+      released: new Date(episode.airstamp),
+      available: new Date(episode.airstamp) < new Date(),
+    };
+  });
 
   let watchProviders = null;
   if(tmdbId){

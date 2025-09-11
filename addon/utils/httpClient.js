@@ -18,7 +18,9 @@ async function httpRequest(url, options = {}) {
     data,
     headers = {},
     timeout = 30000,
-    httpsAgent // Ignored in undici, kept for compatibility
+    httpsAgent, // Ignored in undici, kept for compatibility
+    maxRetries = 3,
+    retryDelay = 1000
   } = options;
 
   const requestOptions = {
@@ -29,11 +31,12 @@ async function httpRequest(url, options = {}) {
     },
     bodyTimeout: timeout,
     headersTimeout: timeout,
-    connectTimeout: 10000, // 10 second connection timeout
+    connectTimeout: 15000, // Increased to 15 seconds
     // Add TLS configuration for better connectivity
     tls: {
       rejectUnauthorized: false, // Allow self-signed certificates
-      secureProtocol: 'TLSv1_2_method' // Use TLS 1.2
+      // Remove secureProtocol to allow automatic TLS version negotiation
+      // This lets the client and server agree on the best TLS version
     }
   };
 
@@ -42,34 +45,62 @@ async function httpRequest(url, options = {}) {
     requestOptions.headers['Content-Type'] = 'application/json';
   }
 
-  try {
-    const { statusCode, headers, body } = await request(url, requestOptions);
-    
-    if (statusCode >= 200 && statusCode < 300) {
-      const responseData = await body.json();
-      return {
-        data: responseData,
-        status: statusCode,
-        headers
-      };
-    } else {
-      const errorText = await body.text();
-      const error = new Error(`HTTP ${statusCode}: ${errorText}`);
-      error.response = {
-        status: statusCode,
-        data: errorText,
-        headers
-      };
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const { statusCode, headers, body } = await request(url, requestOptions);
+      
+      if (statusCode >= 200 && statusCode < 300) {
+        const responseData = await body.json();
+        return {
+          data: responseData,
+          status: statusCode,
+          headers
+        };
+      } else {
+        const errorText = await body.text();
+        const error = new Error(`HTTP ${statusCode}: ${errorText}`);
+        error.response = {
+          status: statusCode,
+          data: errorText,
+          headers
+        };
+        throw error;
+      }
+    } catch (error) {
+      lastError = error;
+      
+      // Check if this is a retryable error
+      const isRetryable = 
+        error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+        error.code === 'UND_ERR_BODY_TIMEOUT' ||
+        error.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+        error.message.includes('Client network socket disconnected') ||
+        error.message.includes('TLS connection') ||
+        error.message.includes('ECONNRESET') ||
+        error.message.includes('ENOTFOUND') ||
+        error.message.includes('ETIMEDOUT');
+      
+      if (isRetryable && attempt < maxRetries) {
+        const delay = retryDelay * Math.pow(2, attempt); // Exponential backoff
+        console.log(`[HTTP Client] Retry ${attempt + 1}/${maxRetries} for ${url} after ${delay}ms. Error: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      // Transform timeout errors for compatibility
+      if (error.code === 'UND_ERR_HEADERS_TIMEOUT' || error.code === 'UND_ERR_BODY_TIMEOUT') {
+        const timeoutError = new Error('Request timeout');
+        timeoutError.code = 'ECONNABORTED';
+        throw timeoutError;
+      }
+      
       throw error;
     }
-  } catch (error) {
-    if (error.code === 'UND_ERR_HEADERS_TIMEOUT' || error.code === 'UND_ERR_BODY_TIMEOUT') {
-      const timeoutError = new Error('Request timeout');
-      timeoutError.code = 'ECONNABORTED';
-      throw timeoutError;
-    }
-    throw error;
   }
+  
+  throw lastError;
 }
 
 /**

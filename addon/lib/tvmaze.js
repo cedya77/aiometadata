@@ -5,7 +5,12 @@ const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second base delay
-const RATE_LIMIT_DELAY = 2000; // 2 seconds for rate limit backoff (TVmaze recommends "a few seconds")
+const RATE_LIMIT_DELAY = 5000; // 5 seconds for rate limit backoff (TVmaze recommends "a few seconds")
+const MAX_RATE_LIMIT_RETRIES = 5; // More retries for rate limiting
+
+// Global rate limiting to prevent hitting TVmaze too frequently
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 100; // Minimum 100ms between requests
 
 // Default HTTP client config with User-Agent as recommended by TVmaze
 const DEFAULT_HTTP_CONFIG = {
@@ -20,6 +25,21 @@ const DEFAULT_HTTP_CONFIG = {
  */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Rate limiting function to prevent hitting TVmaze too frequently
+ */
+async function rateLimit() {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    const delay = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+    await sleep(delay);
+  }
+  
+  lastRequestTime = Date.now();
 }
 
 /**
@@ -45,25 +65,44 @@ function handleHttpError(error, context) {
  * Retry wrapper for API calls
  */
 async function retryApiCall(apiCall, context, retries = MAX_RETRIES) {
+  let rateLimitRetries = 0;
+  
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Apply rate limiting before each request
+      await rateLimit();
       return await apiCall();
     } catch (error) {
       const isLastAttempt = attempt === retries;
+      const isRateLimit = error.response && error.response.status === 429;
       const isRetryableError = error.code === 'ECONNABORTED' || 
                               error.code === 'ENETUNREACH' || 
                               error.code === 'ECONNREFUSED' ||
                               (error.response && (error.response.status === 429 || error.response.status >= 500));
+      
+      // Handle rate limiting more aggressively
+      if (isRateLimit) {
+        rateLimitRetries++;
+        if (rateLimitRetries > MAX_RATE_LIMIT_RETRIES) {
+          console.error(`${context}: Max rate limit retries (${MAX_RATE_LIMIT_RETRIES}) exceeded. Giving up.`);
+          return null;
+        }
+        
+        // Progressive backoff for rate limits: 5s, 10s, 15s, 20s, 25s
+        const rateLimitDelay = RATE_LIMIT_DELAY * rateLimitRetries;
+        console.log(`${context}: Rate limited (attempt ${rateLimitRetries}/${MAX_RATE_LIMIT_RETRIES}), waiting ${rateLimitDelay}ms before retry...`);
+        await sleep(rateLimitDelay);
+        continue; // Don't count this as a regular retry attempt
+      }
       
       if (isLastAttempt || !isRetryableError) {
         const { notFound } = handleHttpError(error, context);
         return notFound ? null : null;
       }
       
-      // Exponential backoff: 1s, 2s, 4s (or fixed delay for rate limits as per TVmaze docs)
-      const isRateLimit = error.response && error.response.status === 429;
-      const delay = isRateLimit ? RATE_LIMIT_DELAY : RETRY_DELAY * Math.pow(2, attempt - 1);
-      console.log(`${context}: Attempt ${attempt} failed${isRateLimit ? ' (rate limited)' : ''}, retrying in ${delay}ms...`);
+      // Exponential backoff for other errors: 1s, 2s, 4s
+      const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+      console.log(`${context}: Attempt ${attempt} failed, retrying in ${delay}ms...`);
       await sleep(delay);
     }
   }
