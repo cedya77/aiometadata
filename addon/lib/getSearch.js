@@ -442,11 +442,23 @@ async function performTvdbSearch(type, query, language, config) {
     }
   });
 
+  const peopleStartTime = Date.now();
+  consola.info(`[Search] Starting TVDB people search for: "${sanitizedQuery}"`);
+  
   const peopleResults = await tvdb.searchPeople(sanitizedQuery, config);
+  const peopleTime = Date.now() - peopleStartTime;
+  consola.info(`[Search] TVDB people search completed in ${peopleTime}ms, found ${peopleResults?.length || 0} results`);
+  
   if (peopleResults && peopleResults.length > 0) {
     const topPerson = peopleResults[0];
     try {
+      const personDetailsStartTime = Date.now();
+      consola.info(`[Search] Fetching TVDB person extended data for ID: ${topPerson.tvdb_id}`);
+      
       const personDetails = await tvdb.getPersonExtended(topPerson.tvdb_id, config);
+      const personDetailsTime = Date.now() - personDetailsStartTime;
+      consola.info(`[Search] TVDB person extended data fetched in ${personDetailsTime}ms`);
+      
       if (personDetails && personDetails.characters) {
         personDetails.characters.filter(credit => credit.type === 3).forEach(credit => {
 
