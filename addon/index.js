@@ -715,12 +715,14 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         const ratings = await cacheWrapGlobal(`mdblist-ratings:mal:${type}:${result.meta.mal_id}`, async () => {
             return await getMediaRatingFromMDBList('mal', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.mal_id, config.apiKeys?.mdblist);
           }, 7 * 24 * 60 * 60); // 7 days TTL
+        result.meta.app_extras = result.meta.app_extras || {};
         result.meta.app_extras.ratings = ratings;
       }
       else if(result.meta.imdb_id) {
         const ratings = await cacheWrapGlobal(`mdblist-ratings:imdb:${type}:${result.meta.imdb_id}`, async () => {
             return await getMediaRatingFromMDBList('imdb', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.imdb_id, config.apiKeys?.mdblist);
           }, 7 * 24 * 60 * 60); // 7 days TTL
+        result.meta.app_extras = result.meta.app_extras || {};
         result.meta.app_extras.ratings = ratings;
       }
     }
