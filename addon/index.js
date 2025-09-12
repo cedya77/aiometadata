@@ -4,7 +4,7 @@ const path = require("path");
 const crypto = require('crypto');
 const addon = express();
 // Honor X-Forwarded-* headers from reverse proxies (e.g., Traefik) so req.protocol reflects HTTPS
-addon.set('trust proxy', true);
+//addon.set('trust proxy', true);
 
 const { getCatalog } = require("./lib/getCatalog");
 const { getSearch } = require("./lib/getSearch");
