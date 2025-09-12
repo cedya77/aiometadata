@@ -6,6 +6,7 @@ import { getImdbRating } from './getImdbRating.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
+import { fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 //const { isAnime } = require("../utils/isAnime");
 //const { getGenreList } = require('./getGenreList');
 
@@ -36,33 +37,34 @@ async function getTrending(type: string, language: string, page: number, genre: 
     } else {
       preferredProvider = config.providers?.series || 'tvdb';
     }
+
     const metas = await Promise.all(res.results.map(async (item: any) => {
-      // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
-      const targetProviders = new Set();
-      if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
-      let allIds;
-      if (targetProviders.size > 0) {
-        const targetProviderArray = Array.from(targetProviders);
-        allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, {}, targetProviderArray);
-      }
-    
       let stremioId = `tmdb:${item.id}`;
-      if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
-        stremioId = `tvdb:${allIds.tvdbId}`;
-      } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-        stremioId = `tvmaze:${allIds.tvmazeId}`;
-      } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-        stremioId = allIds.imdbId;
+      
+      // Resolve IDs only if necessary, but keep the overall process parallel.
+      if (preferredProvider !== 'tmdb') {
+          const allIds = await resolveAllIds(stremioId, type, config);
+          if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+            stremioId = `tvdb:${allIds.tvdbId}`;
+          } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+            stremioId = `tvmaze:${allIds.tvmazeId}`;
+          } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
+            stremioId = allIds.imdbId;
+          }
       }
-      const certifications: any = type === 'movie' ? await moviedb.getMovieCertifications({ id: item.id }, config) : await moviedb.getTvCertifications({ id: item.id }, config);
-      const certification = type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(certifications) : Utils.getTmdbTvCertificationForCountry(certifications);
-      console.log(`[getTrending] Art provider preference for id ${stremioId}:`, config.artProviders?.movie);
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
         return await getMeta(type, language, stremioId, config, userUUID);
       }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
       
       if (result && result.meta) {
-        result.meta.certification = certification;
+        
+        const certifications: any = type === 'movie' 
+            ? await moviedb.getMovieCertifications({ id: item.id }, config) 
+            : await moviedb.getTvCertifications({ id: item.id }, config);
+        result.meta.app_extras.certification = type === 'movie' 
+            ? Utils.getTmdbMovieCertificationForCountry(certifications) 
+            : Utils.getTmdbTvCertificationForCountry(certifications);
+            
         return result.meta;
       }
       return null;

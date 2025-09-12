@@ -1,7 +1,7 @@
 require("dotenv").config();
 import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
-import { fetchMDBListItems, parseMDBListItems } from "../utils/mdbList.js";
+import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
@@ -223,29 +223,26 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   } else {
     preferredProvider = config.providers?.series || 'tvdb';
   }
+  
+
   const metas = await Promise.all(res.results.map(async item => {
-    // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
-    const targetProviders = new Set();
-    if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
-    let allIds;
-    if (targetProviders.size > 0) {
-      const targetProviderArray = Array.from(targetProviders);
-      allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, {}, targetProviderArray);
-    }
-    
     let stremioId = `tmdb:${item.id}`;
-    if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
-      stremioId = `tvdb:${allIds.tvdbId}`;
-    } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-      stremioId = `tvmaze:${allIds.tvmazeId}`;
-    } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-      stremioId = allIds.imdbId;
+      
+    // Resolve IDs only if necessary, but keep the overall process parallel.
+    if (preferredProvider !== 'tmdb') {
+        const allIds = await resolveAllIds(stremioId, type, config);
+        if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+          stremioId = `tvdb:${allIds.tvdbId}`;
+        } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+          stremioId = `tvmaze:${allIds.tvmazeId}`;
+        } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
+          stremioId = allIds.imdbId;
+        }
     }
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, userUUID);
     }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
-    
     if (result && result.meta) {
       return result.meta;
     }

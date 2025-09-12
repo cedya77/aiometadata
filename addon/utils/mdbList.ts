@@ -4,6 +4,15 @@ import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 
+/**
+ * Checks if an error is a "permanent" client-side error that should not be retried.
+ */
+function isPermanentError(error: any): boolean {
+  const status = error.response?.status;
+  // Consider 4xx errors (except 429 rate limit) as permanent.
+  return status >= 400 && status < 500 && status !== 429;
+}
+
 const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
@@ -38,11 +47,7 @@ function sleep(ms: number): Promise<void> {
  * Check if error is a rate limit error
  */
 function isRateLimitError(error: any): boolean {
-  return error.response && 
-         (error.response.status === 503 || error.response.status === 429) &&
-         (error.message.includes('Rate Limiter') || 
-          error.message.includes('rate limit') ||
-          error.message.includes('too many requests'));
+  return error.response?.status === 429 || error.response?.status === 503;
 }
 
 /**
@@ -53,100 +58,81 @@ async function makeRateLimitedRequest<T>(
   context: string = 'MDBList', 
   retries: number = RATE_LIMIT_CONFIG.maxRetries
 ): Promise<T> {
-  const now = Date.now();
-  
-  // Check if we're currently rate limited
-  if (rateLimitState.isRateLimited && rateLimitState.rateLimitResetTime > now) {
-    const waitTime = rateLimitState.rateLimitResetTime - now + 1000; // Add 1 second buffer
-    console.log(`[${context}] Rate limit active, waiting ${waitTime}ms until reset`);
-    await sleep(waitTime);
-    rateLimitState.isRateLimited = false;
-    rateLimitState.rateLimitResetTime = 0;
-  }
-  
-  // Check minimum interval between requests
-  const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
-  if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
-    const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
-    await sleep(waitTime);
-  }
-  
-  const startTime = Date.now();
   let attempt = 0;
   
   while (attempt < retries) {
     attempt++;
     const isLastAttempt = attempt === retries;
+
+    const now = Date.now();
+    
+    // Check if we're in a global cooldown period from a previous rate limit hit.
+    if (rateLimitState.isRateLimited && rateLimitState.rateLimitResetTime > now) {
+      const waitTime = rateLimitState.rateLimitResetTime - now;
+      console.log(`[${context}] Global rate limit cooldown active, waiting ${waitTime}ms`);
+      await sleep(waitTime);
+    }
+    rateLimitState.isRateLimited = false; // Cooldown is over
+
+    // Enforce minimum interval between every single request attempt.
+    const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
+    if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
+      const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
+      await sleep(waitTime);
+    }
+    
+    // ** CRITICAL FIX: Update the timestamp BEFORE making the request. **
+    // This prevents other parallel calls from firing at the same time.
+    rateLimitState.lastRequestTime = Date.now();
+    const startTime = Date.now();
     
     try {
       const response = await requestFn();
       const responseTime = Date.now() - startTime;
       
-      // Track successful request
       const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('mdblist', responseTime, true);
       
-      // Reset rate limiting state on success
-      rateLimitState.lastRequestTime = Date.now();
+      // Reset recent hits on success
       rateLimitState.recentRateLimitHits = 0;
-      rateLimitState.isRateLimited = false;
       
       return response;
       
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
-      
-      // Track failed request
       const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('mdblist', responseTime, false);
+
+      if (isPermanentError(error)) {
+        console.error(`[${context}] Request failed with permanent error, no retry: ${error.message}`);
+        requestTracker.logError('error', `MDBList API permanent error`, { /* ... */ });
+        throw error;
+      }
       
       if (isRateLimitError(error)) {
-        // Track recent rate limit hits
-        if (now - rateLimitState.lastRateLimitTime < 30000) { // Within last 30 seconds
-          rateLimitState.recentRateLimitHits++;
-        } else {
-          rateLimitState.recentRateLimitHits = 1;
-        }
-        rateLimitState.lastRateLimitTime = now;
+        rateLimitState.lastRateLimitTime = Date.now();
+        rateLimitState.recentRateLimitHits++;
         
         if (isLastAttempt) {
           console.error(`[${context}] Rate limit exceeded after ${retries} attempts:`, error.message);
           throw error;
         }
         
-        // Calculate backoff delay
-        let baseBackoffTime = RATE_LIMIT_CONFIG.rateLimitDelay;
-        if (rateLimitState.recentRateLimitHits > 3) {
-          baseBackoffTime *= 2; // Double the delay if we're hitting rate limits frequently
-        }
-        
-        // Add jitter to prevent thundering herd
+        let backoffTime = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits -1);
         const jitter = Math.random() * 1000;
-        const totalDelay = Math.min(baseBackoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
+        const totalDelay = Math.min(backoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
         
-        console.warn(
-          `[${context}] Rate limit hit (${rateLimitState.recentRateLimitHits} recent hits). ` +
-          `Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${retries})`
-        );
+        console.warn(`[${context}] Rate limit hit. Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${retries})`);
         
-        // Log rate limit warning for dashboard
-        requestTracker.logError('warning', `MDBList API rate limit hit`, {
-          retries: attempt,
-          maxRetries: retries,
-          backoffTime: Math.round(totalDelay),
-          recentHits: rateLimitState.recentRateLimitHits,
-          context: context
-        });
-        
-        // Set rate limit state
+        // Set a global cooldown period for all subsequent requests.
         rateLimitState.isRateLimited = true;
-        rateLimitState.rateLimitResetTime = now + totalDelay;
+        rateLimitState.rateLimitResetTime = Date.now() + totalDelay;
         
         await sleep(totalDelay);
-        continue;
+        continue; // Go to the next attempt
       }
       
-      // For non-rate-limit errors, use exponential backoff
+      // Handle other temporary errors (e.g., 500, timeouts)
       if (isLastAttempt) {
         console.error(`[${context}] Request failed after ${retries} attempts:`, error.message);
         throw error;
@@ -157,12 +143,12 @@ async function makeRateLimitedRequest<T>(
         RATE_LIMIT_CONFIG.maxDelay
       );
       
-      console.log(`[${context}] Attempt ${attempt} failed, retrying in ${delay}ms...`);
+      console.log(`[${context}] Attempt ${attempt} failed with temporary error, retrying in ${delay}ms...`);
       await sleep(delay);
     }
   }
   
-  throw new Error(`All ${retries} attempts failed`);
+  throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
 async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number): Promise<any[]> {
@@ -184,6 +170,43 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     ];
   } catch (err: any) {
     console.error("Error retrieving MDBList items:", err.message);
+    return [];
+  }
+}
+
+
+// get media rating from MDBList
+/**
+ * Fetches media rating from MDBList API for multiple IDs
+ * @param {string} mediaProvider - The media provider . Possible values: tmdb, imdb, trakt, tvdb, mal
+ * @param {string} mediaType - The media type . Possible values: movie, show, any
+ * @param {string} id - ID to fetch rating for
+ * @param {string} apiKey - MDBList API key
+ * @returns {Promise<Array>} Array of media rating objects
+ */
+async function getMediaRatingFromMDBList(mediaProvider: string, mediaType: string, id: string, apiKey: string): Promise<any[]> {
+  if (!apiKey || !id) {
+    // This check is good, it prevents unnecessary API calls.
+    console.warn("[MDBList] Missing API key for getMediaRatingFromMDBList");
+    return [];
+  }
+
+  const url = `https://api.mdblist.com/${mediaProvider}/${mediaType}/${id}?apikey=${apiKey}`;
+  const context = `MDBList getMediaRatingFromMDBList (mediaProvider: ${mediaProvider}, mediaType: ${mediaType}, id: ${id})`;
+
+  try {
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url),
+      context
+    );
+    return response.data?.ratings || [];
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      console.log(`[${context}] Item not found on MDBList (404), returning empty ratings.`);
+      return [];
+    }
+    
+    console.error(`[${context}] An unexpected error occurred:`, error.message);
     return [];
   }
 }
@@ -301,28 +324,24 @@ async function parseMDBListItems(items: any[], type: string, genreFilter: string
   } else {
     preferredProvider = config.providers?.series || 'tvdb';
   }
+  
  
   const metas = await Promise.all(filteredItems
     .filter(item => item.mediatype === targetMediaType)
     .map(async (item: any) => {
       try {
-        // Resolve IDs to get the best stremioId
-        const targetProviders = new Set();
-        if (preferredProvider !== 'tmdb') targetProviders.add(preferredProvider);
-        
-        let allIds;
         let stremioId = `tmdb:${item.id}`;
-        if (targetProviders.size > 0) {
-          const targetProviderArray = Array.from(targetProviders);
-          allIds = await resolveAllIds(`tmdb:${item.id}`, type, config, {}, targetProviderArray);
-          
-          if(preferredProvider === 'tvdb' && allIds?.tvdbId) {
-            stremioId = `tvdb:${allIds.tvdbId}`;
-          } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-            stremioId = `tvmaze:${allIds.tvmazeId}`;
-          } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-            stremioId = allIds.imdbId;
-          }
+      
+        // Resolve IDs only if necessary, but keep the overall process parallel.
+        if (preferredProvider !== 'tmdb') {
+            const allIds = await resolveAllIds(stremioId, type, config);
+            if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+              stremioId = `tvdb:${allIds.tvdbId}`;
+            } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+              stremioId = `tvmaze:${allIds.tvmazeId}`;
+            } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
+              stremioId = allIds.imdbId;
+            }
         }
         
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
@@ -343,4 +362,4 @@ async function parseMDBListItems(items: any[], type: string, genreFilter: string
   return metas.filter(Boolean);
 }
 
-export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems };
+export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList };

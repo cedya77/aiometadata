@@ -1886,6 +1886,11 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     links.push(...Utils.parseAnimeGenreLink(malData.genres, stremioType, userUUID));
     links.push(...Utils.parseAnimeCreditsLink(characterData, userUUID, castCount));
     links.push(...Utils.parseAnimeRelationsLink(malData.relations, stremioType, userUUID));
+
+    let watchProviders = null;
+    if(mapping?.themoviedb_id){
+      watchProviders = stremioType === 'series' ? await moviedb.getTvWatchProviders({ id: mapping.themoviedb_id }, config) : await moviedb.getMovieWatchProviders({ id: mapping.themoviedb_id }, config);
+    }
  
     const meta = {
       id: stremioId,
@@ -1893,6 +1898,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       description: Utils.addMetaProviderAttribution(malData.synopsis, 'MAL', config),
       name: malData.title_english || malData.title,
       imdb_id: imdbId,
+      mal_id: malData.mal_id,
       slug: Utils.parseSlug('series', malData.title_english || malData.title, imdbId, malData.mal_id),
       genres: malData.genres?.map(g => g.name) || [],
       year: malData.year || malData.aired?.from?.substring(0, 4),
@@ -1917,7 +1923,8 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       app_extras: {
         cast: Utils.parseCast(tmdbLikeCredits, castCount, 'mal'),
         director: [],
-        writers: []
+        writers: [],
+        watchProviders: watchProviders
       }
     };
 

@@ -15,6 +15,7 @@ const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmRelatedContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
+const { getMediaRatingFromMDBList } = require("./utils/mdbList");
 
 // Warm user-specific content based on their config
 async function warmUserContent(userUUID, contentType) {
@@ -708,6 +709,20 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
+    } else if (result && result.meta) {
+      // cache wrap the ratings
+      if(result.meta.mal_id) {
+        const ratings = await cacheWrapGlobal(`mdblist-ratings:mal:${type}:${result.meta.mal_id}`, async () => {
+            return await getMediaRatingFromMDBList('mal', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.mal_id, config.apiKeys?.mdblist);
+          }, 7 * 24 * 60 * 60); // 7 days TTL
+        result.meta.app_extras.ratings = ratings;
+      }
+      else if(result.meta.imdb_id) {
+        const ratings = await cacheWrapGlobal(`mdblist-ratings:imdb:${type}:${result.meta.imdb_id}`, async () => {
+            return await getMediaRatingFromMDBList('imdb', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.imdb_id, config.apiKeys?.mdblist);
+          }, 7 * 24 * 60 * 60); // 7 days TTL
+        result.meta.app_extras.ratings = ratings;
+      }
     }
     
     // Warm related content in the background for public instances
