@@ -1,6 +1,7 @@
 const { fetch, Agent } = require('undici');
 const { socksDispatcher } = require('fetch-socks');
 const { scrapeSingleImdbResultByTitle } = require('./imdb');
+const consola = require('consola');
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 
@@ -183,11 +184,31 @@ async function tvInfo(params, config) {
   return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams);
 }
 async function searchMovie(params, config) {
-  return makeTmdbRequest('/search/movie', getApiKey(config), params);
+  const startTime = Date.now();
+  const query = params.query || 'unknown';
+  consola.info(`[TMDB] Starting movie search for: "${query}"`);
+  
+  const result = await makeTmdbRequest('/search/movie', getApiKey(config), params);
+  
+  const searchTime = Date.now() - startTime;
+  const resultCount = result?.results?.length || 0;
+  consola.info(`[TMDB] Movie search completed in ${searchTime}ms, found ${resultCount} results`);
+  
+  return result;
 }
 
 async function searchTv(params, config) {
-  return makeTmdbRequest('/search/tv', getApiKey(config), params);
+  const startTime = Date.now();
+  const query = params.query || 'unknown';
+  consola.info(`[TMDB] Starting TV search for: "${query}"`);
+  
+  const result = await makeTmdbRequest('/search/tv', getApiKey(config), params);
+  
+  const searchTime = Date.now() - startTime;
+  const resultCount = result?.results?.length || 0;
+  consola.info(`[TMDB] TV search completed in ${searchTime}ms, found ${resultCount} results`);
+  
+  return result;
 }
 
 async function discoverMovie(params, config) {
@@ -566,7 +587,19 @@ module.exports = {
   tvInfo,
   searchMovie,
   searchTv,
-  searchPerson: (params, config) => makeTmdbRequest('/search/person', getApiKey(config), params),
+  searchPerson: async (params, config) => {
+    const startTime = Date.now();
+    const query = params.query || 'unknown';
+    consola.info(`[TMDB] Starting person search for: "${query}"`);
+    
+    const result = await makeTmdbRequest('/search/person', getApiKey(config), params);
+    
+    const searchTime = Date.now() - startTime;
+    const resultCount = result?.results?.length || 0;
+    consola.info(`[TMDB] Person search completed in ${searchTime}ms, found ${resultCount} results`);
+    
+    return result;
+  },
   find: (params, config) => makeTmdbRequest(`/find/${params.id}`, getApiKey(config), { external_source: params.external_source }),
   languages: (config) => makeTmdbRequest('/configuration/languages', getApiKey(config)),
   primaryTranslations: (config) => makeTmdbRequest('/configuration/primary_translations', getApiKey(config)),

@@ -2,13 +2,9 @@ require("dotenv").config();
 import * as moviedb from "./getTmdb.js";
 import * as Utils from '../utils/parseProps.js';
 import { resolveAllIds } from './id-resolver.js';
-import { getImdbRating } from './getImdbRating.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
-import { fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
-//const { isAnime } = require("../utils/isAnime");
-//const { getGenreList } = require('./getGenreList');
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 

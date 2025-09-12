@@ -12,6 +12,7 @@ const tvmaze = require('./tvmaze');
 const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
+const consola = require('consola');
 
 
 function getTvdbCertification(contentRatings, countryCode, contentType) {
@@ -170,20 +171,45 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const includeAdult = ['R', 'NC-17'].includes(config.ageRating);
 
     if (type === 'movie') {
+        const movieStartTime = Date.now();
+        consola.info(`[Search] Starting TMDB movie search for: "${query}"`);
+        
         const movieRes = await moviedb.searchMovie({ query, language, include_adult: includeAdult, page: page }, config);
+        const movieTime = Date.now() - movieStartTime;
+        consola.info(`[Search] TMDB movie search completed in ${movieTime}ms, found ${movieRes.results?.length || 0} results`);
+        
         movieRes.results.forEach(addRawResult);
     } else { 
+        const seriesStartTime = Date.now();
+        consola.info(`[Search] Starting TMDB TV search for: "${query}"`);
+        
         const seriesRes = await moviedb.searchTv({ query, language, include_adult: includeAdult, page: page }, config);
+        const seriesTime = Date.now() - seriesStartTime;
+        consola.info(`[Search] TMDB TV search completed in ${seriesTime}ms, found ${seriesRes.results?.length || 0} results`);
+        
         seriesRes.results.forEach(addRawResult);
     }
 
     //console.log(`[Search] Raw results:`, JSON.stringify(rawResults));
     
     if (searchPersons){
+      const personStartTime = Date.now();
+      consola.info(`[Search] Starting TMDB person search for: "${query}"`);
+      
       const personRes = await moviedb.searchPerson({ query, language }, config);
+      const personTime = Date.now() - personStartTime;
+      consola.info(`[Search] TMDB person search completed in ${personTime}ms, found ${personRes.results?.length || 0} results`);
+      
       if (personRes.results?.[0]) {
+          const creditsStartTime = Date.now();
+          consola.info(`[Search] Fetching ${type} credits for person ID: ${personRes.results[0].id}`);
+          
           const credits = type === 'movie' ? 
              await moviedb.personMovieCredits({ id: personRes.results[0].id, language }, config) : await moviedb.personTvCredits({ id: personRes.results[0].id, language }, config);
+          
+          const creditsTime = Date.now() - creditsStartTime;
+          consola.info(`[Search] Person credits fetched in ${creditsTime}ms, found ${credits.cast?.length || 0} cast, ${credits.crew?.length || 0} crew`);
+          
           credits.cast.forEach(addRawResult);
           credits.crew.forEach(media => { if (media.job === "Director" || media.job === "Writer") addRawResult(media); });
       }
@@ -193,7 +219,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const genreList = await getGenreList('tmdb', language, genreType, config);
 
     const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
-        console.log(`[Search] MediaType: ${media.media_type}`);
+        //console.log(`[Search] MediaType: ${media.media_type}`);
         const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
         
         const parsed = Utils.parseMedia(media, media.media_type, genreList, config); 
@@ -347,10 +373,22 @@ async function performAiSearch(type, query, language, config) {
       else if (type === 'series') {
         const searchTitle = suggestion.title;
         if (searchTitle) {
+          const searchStartTime = Date.now();
+          consola.info(`[Search] Starting TVDB series search for: "${searchTitle}"`);
+          
           const searchResults = await tvdb.searchSeries(searchTitle, config);
+          const searchTime = Date.now() - searchStartTime;
+          consola.info(`[Search] TVDB series search completed in ${searchTime}ms, found ${searchResults?.length || 0} results`);
+          
           const topMatchId = searchResults?.[0]?.tvdb_id;
           if (topMatchId) {
+            const extendedStartTime = Date.now();
+            consola.info(`[Search] Fetching TVDB extended data for series ID: ${topMatchId}`);
+            
             const extendedRecord = await tvdb.getSeriesExtended(topMatchId, config);
+            const extendedTime = Date.now() - extendedStartTime;
+            consola.info(`[Search] TVDB extended data fetched in ${extendedTime}ms`);
+            
             parsedResult = await parseTvdbSearchResult(type, extendedRecord, language, config);
           }
         }
@@ -385,11 +423,17 @@ async function performTvdbSearch(type, query, language, config) {
   const idMap = new Map(); 
 
   let titleResults = [];
+  const searchStartTime = Date.now();
+  consola.info(`[Search] Starting TVDB ${type} search for: "${sanitizedQuery}"`);
+  
   if (type === 'movie') {
     titleResults = await tvdb.searchMovies(sanitizedQuery, config);
   } else { 
     titleResults = await tvdb.searchSeries(sanitizedQuery, config);
   }
+  
+  const searchTime = Date.now() - searchStartTime;
+  consola.info(`[Search] TVDB ${type} search completed in ${searchTime}ms, found ${titleResults?.length || 0} results`);
 
   (titleResults || []).forEach(result => {
     const resultId = result.tvdb_id || result.id;

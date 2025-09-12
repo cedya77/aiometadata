@@ -2,6 +2,7 @@ require('dotenv').config();
 const { cacheWrapTvdbApi } = require('./getCache');
 const { to3LetterCode } = require('./language-map');
 const fetch = require('node-fetch');
+const consola = require('consola');
 
 const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
 const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY;
@@ -84,17 +85,21 @@ async function searchSeries(query, config) {
   if (!token) return [];
   
   const startTime = Date.now();
+  consola.info(`[TVDB] Starting series search for: "${query}"`);
+  
   try {
     const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
+    consola.info(`[TVDB] Series search API call completed in ${responseTime}ms`);
     
     if (!response.ok) {
       // Track failed request
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
+      consola.error(`[TVDB] Series search failed with status: ${response.status}`);
       return [];
     }
     
@@ -103,14 +108,16 @@ async function searchSeries(query, config) {
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const data = await response.json();
-    return data.data || [];
+    const results = data.data || [];
+    consola.info(`[TVDB] Series search returned ${results.length} results in ${responseTime}ms`);
+    return results;
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error searching TVDB for series "${query}":`, error.message);
+    consola.error(`[TVDB] Series search error for "${query}" after ${responseTime}ms:`, error.message);
     return [];
   }
 }
@@ -120,17 +127,21 @@ async function searchMovies(query, config) {
   if (!token) return [];
   
   const startTime = Date.now();
+  consola.info(`[TVDB] Starting movie search for: "${query}"`);
+  
   try {
     const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
+    consola.info(`[TVDB] Movie search API call completed in ${responseTime}ms`);
     
     if (!response.ok) {
       // Track failed request
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
+      consola.error(`[TVDB] Movie search failed with status: ${response.status}`);
       return [];
     }
     
@@ -139,14 +150,16 @@ async function searchMovies(query, config) {
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const data = await response.json();
-    return data.data || [];
+    const results = data.data || [];
+    consola.info(`[TVDB] Movie search returned ${results.length} results in ${responseTime}ms`);
+    return results;
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error searching TVDB for movies "${query}":`, error.message);
+    consola.error(`[TVDB] Movie search error for "${query}" after ${responseTime}ms:`, error.message);
     return [];
   }
 }
@@ -156,17 +169,21 @@ async function searchPeople(query, config) {
   if (!token) return [];
   
   const startTime = Date.now();
+  consola.info(`[TVDB] Starting people search for: "${query}"`);
+  
   try {
     const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=person`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
+    consola.info(`[TVDB] People search API call completed in ${responseTime}ms`);
     
     if (!response.ok) {
       // Track failed request
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
+      consola.error(`[TVDB] People search failed with status: ${response.status}`);
       return [];
     }
     
@@ -175,14 +192,16 @@ async function searchPeople(query, config) {
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const data = await response.json();
-    return data.data || [];
+    const results = data.data || [];
+    consola.info(`[TVDB] People search returned ${results.length} results in ${responseTime}ms`);
+    return results;
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error searching TVDB for person "${query}":`, error.message);
+    consola.error(`[TVDB] People search error for "${query}" after ${responseTime}ms:`, error.message);
     return [];
   }
 }
