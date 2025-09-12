@@ -3,6 +3,13 @@
 const packageJson = require('../../package.json');
 const redis = require('./redisClient');
 const { loadConfigFromDatabase } = require('./configApi');
+const consola = require('consola');
+
+// Create tagged loggers
+const cacheLogger = consola.withTag('Cache');
+const globalCacheLogger = consola.withTag('Global-Cache');
+const selfHealingLogger = consola.withTag('Self-Healing');
+const cacheHealthLogger = consola.withTag('Cache-Health');
 
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -187,8 +194,8 @@ function logCacheHealth() {
   const hitRate = total > 0 ? ((cacheHealth.hits / total) * 100).toFixed(2) : '0.00';
   const errorRate = total > 0 ? ((cacheHealth.errors / total) * 100).toFixed(2) : '0.00';
   
-  console.log(`[Cache Health] Hit Rate: ${hitRate}%, Error Rate: ${errorRate}%, Total: ${total}`);
-  console.log(`[Cache Health] Hits: ${cacheHealth.hits}, Misses: ${cacheHealth.misses}, Errors: ${cacheHealth.errors}`);
+  cacheHealthLogger.info(`Hit Rate: ${hitRate}%, Error Rate: ${errorRate}%, Total: ${total}`);
+  cacheHealthLogger.info(`Hits: ${cacheHealth.hits}, Misses: ${cacheHealth.misses}, Errors: ${cacheHealth.errors}`);
   
   // Log most accessed keys
   const topKeys = Array.from(cacheHealth.keyAccessCounts.entries())
@@ -196,7 +203,7 @@ function logCacheHealth() {
     .slice(0, 5);
   
   if (topKeys.length > 0) {
-    console.log('[Cache Health] Most accessed keys:', topKeys.map(([key, count]) => `${key}:${count}`).join(', '));
+    cacheHealthLogger.info('Most accessed keys:', topKeys.map(([key, count]) => `${key}:${count}`).join(', '));
   }
 }
 
@@ -207,7 +214,7 @@ async function attemptSelfHealing(key, originalError) {
   if (!SELF_HEALING_CONFIG.enabled) return false;
   
   try {
-    console.log(`[Self-Healing] Attempting to repair corrupted cache entry: ${key}`);
+    selfHealingLogger.info(`Attempting to repair corrupted cache entry: ${key}`);
     
     // Remove corrupted entry
     await redis.del(key);
@@ -224,10 +231,10 @@ async function attemptSelfHealing(key, originalError) {
     
     await redis.set(key, JSON.stringify(errorResult), 'EX', ERROR_TTL_STRATEGIES.CACHE_CORRUPTED);
     
-    console.log(`[Self-Healing] Successfully repaired corrupted cache entry: ${key}`);
+    selfHealingLogger.success(`Successfully repaired corrupted cache entry: ${key}`);
     return true;
   } catch (error) {
-    console.error(`[Self-Healing] Failed to repair cache entry ${key}:`, error);
+    selfHealingLogger.error(`Failed to repair cache entry ${key}:`, error);
     return false;
   }
 }
@@ -318,30 +325,30 @@ async function cacheWrap(key, method, ttl, options = {}) {
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
-              console.log(`📦 [Cache] Retrying expired temporary error for ${versionedKey}`);
+              cacheLogger.info(`Retrying expired temporary error for ${versionedKey}`);
               await redis.del(versionedKey);
             } else {
-              console.log(`📦 [Cache] HIT (cached error) for ${versionedKey}`);
+              cacheLogger.info(`HIT (cached error) for ${versionedKey}`);
               updateCacheHealth(versionedKey, 'hit', true);
               return parsed;
             }
           } else if (parsed.error) {
-            console.log(`📦 [Cache] HIT (cached error) for ${versionedKey}`);
+            cacheLogger.info(`HIT (cached error) for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           } else {
-            console.log(`⚡ 📦 [Cache] HIT for ${versionedKey}`);
+            cacheLogger.info(`⚡ HIT for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
         } catch (parseError) {
-          console.warn(`📦 [Cache] Corrupted cache entry for ${versionedKey}, attempting self-healing`);
+          cacheLogger.warn(`Corrupted cache entry for ${versionedKey}, attempting self-healing`);
           await attemptSelfHealing(versionedKey, parseError);
           // Continue to retry the method
         }
     }
   } catch (err) {
-    console.warn(`📦 [Cache] Failed to read from Redis for key ${versionedKey}:`, err);
+    cacheLogger.warn(`Failed to read from Redis for key ${versionedKey}:`, err);
       updateCacheHealth(versionedKey, 'error', false);
   }
 
@@ -350,7 +357,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      //console.log(`⏳ 📦 [Cache] MISS for ${versionedKey}`);
+      //cacheLogger.info(`⏳ MISS for ${versionedKey}`);
       updateCacheHealth(versionedKey, 'miss', true);
       
     if (result !== null && result !== undefined) {
@@ -368,7 +375,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
         const validation = cacheValidator.validateBeforeCache(result, contentType);
         
         if (!validation.isValid) {
-          console.warn(`📦 [Cache] Preventing bad data from being cached for ${versionedKey}:`, validation.issues);
+          cacheLogger.warn(`Preventing bad data from being cached for ${versionedKey}:`, validation.issues);
           updateCacheHealth(versionedKey, 'error', false);
           throw new Error(`Bad data detected: ${validation.issues.join(', ')}`);
         }
@@ -376,27 +383,27 @@ async function cacheWrap(key, method, ttl, options = {}) {
         const classification = resultClassifier(result, null, key);
         const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
         
-        console.log(`📦 [Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
+        cacheLogger.info(`Classification: ${classification.type}, TTL: ${finalTtl}s`);
         
         // Skip caching if TTL is 0 (e.g., empty results)
         if (finalTtl > 0) {
         if (classification.type !== 'SUCCESS') {
-            console.warn(`📦 [Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+            cacheLogger.warn(`Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
         }
         
         try {
           await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
       } catch (err) {
-            console.warn(`📦 [Cache] Failed to write to Redis for key ${versionedKey}:`, err);
+            cacheLogger.warn(`Failed to write to Redis for key ${versionedKey}:`, err);
           updateCacheHealth(versionedKey, 'error', false);
           }
         } else {
-          console.log(`📦 [Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
+          cacheLogger.info(`Skipping cache for ${versionedKey} (TTL: 0)`);
         }
     }
     return result;
   } catch (error) {
-    console.error(`📦 [Cache] Method failed for cache key ${versionedKey}:`, error);
+    cacheLogger.error(`Method failed for cache key ${versionedKey}:`, error);
       updateCacheHealth(versionedKey, 'error', false);
       
       // Cache error results if enabled
@@ -412,16 +419,16 @@ async function cacheWrap(key, method, ttl, options = {}) {
             timestamp: new Date().toISOString()
           };
           await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
-          console.warn(`📦 [Cache] Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
+          cacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
         } catch (err) {
-            console.warn(`📦 [Cache] Failed to cache error for key ${versionedKey}:`, err);
+            cacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
         }
       }
       
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
-        console.log(`📦 [Cache] Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
+        cacheLogger.info(`Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
@@ -460,29 +467,29 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
-              console.log(`🔄 [Global Cache] Retrying expired temporary error for ${truncateCacheKey(versionedKey)}`);
+              globalCacheLogger.info(`Retrying expired temporary error for ${truncateCacheKey(versionedKey)}`);
               await redis.del(versionedKey);
             } else {
-              console.log(`❌ [Global Cache] HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
+              globalCacheLogger.info(`❌ HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
               updateCacheHealth(versionedKey, 'hit', true);
               return parsed;
             }
           } else if (parsed.error) {
-            console.log(`❌ [Global Cache] HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
+            globalCacheLogger.info(`❌ HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           } else {
-            console.log(`⚡ [Global Cache] HIT for ${truncateCacheKey(versionedKey)}`);
+            globalCacheLogger.info(`⚡ HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
         } catch (parseError) {
-          console.warn(`[Global Cache] Corrupted cache entry for ${versionedKey}, attempting self-healing`);
+          globalCacheLogger.warn(`Corrupted cache entry for ${versionedKey}, attempting self-healing`);
           await attemptSelfHealing(versionedKey, parseError);
         }
     }
   } catch (err) {
-    console.warn(`[Global Cache] Redis GET error for key ${versionedKey}:`, err.message);
+    globalCacheLogger.warn(`Redis GET error for key ${versionedKey}:`, err.message);
       updateCacheHealth(versionedKey, 'error', false);
   }
 
@@ -491,35 +498,35 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
   try {
     const result = await promise;
-      //console.log(`⏳ [Global Cache] MISS for ${truncateCacheKey(versionedKey)}`);
+      //globalCacheLogger.info(`⏳ MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
       const classification = resultClassifier(result, null, key);
       const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
       
-      //console.log(`[Global Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
+      //globalCacheLogger.info(`Classification: ${classification.type}, TTL: ${finalTtl}s`);
 
       // Skip caching if result classifier says so
       if (classification.type === 'SKIP_CACHE') {
-        console.log(`⏭️ [Global Cache] Skipping cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
+        globalCacheLogger.info(`⏭️ Skipping cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
         return result;
       }
 
       // Skip caching if TTL is 0 (e.g., empty results)
       if (finalTtl > 0) {
       if (classification.type !== 'SUCCESS') {
-        console.warn(`[Global Cache] Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+        globalCacheLogger.warn(`Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
     }
 
     if (result !== null && result !== undefined) {
       await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
         }
       } else {
-        console.log(`[Global Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
+        globalCacheLogger.info(`Skipping cache for ${versionedKey} (TTL: 0)`);
     }
     return result;
   } catch (error) {
-    console.error(`[Global Cache] Method failed for cache key ${versionedKey}:`, error);
+    globalCacheLogger.error(`Method failed for cache key ${versionedKey}:`, error);
       updateCacheHealth(versionedKey, 'error', false);
       
       // Cache error results if enabled
@@ -535,16 +542,16 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
             timestamp: new Date().toISOString()
           };
           await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
-          console.warn(`[Global Cache] Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
+          globalCacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
         } catch (err) {
-          console.warn(`[Global Cache] Failed to cache error for key ${versionedKey}:`, err);
+          globalCacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
         }
       }
       
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
-        console.log(`🔄 [Global Cache] Retrying ${truncateCacheKey(versionedKey)} (attempt ${retries}/${maxRetries})`);
+        globalCacheLogger.info(`🔄 Retrying ${truncateCacheKey(versionedKey)} (attempt ${retries}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
@@ -564,13 +571,13 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   try {
     config = await loadConfigFromDatabase(userUUID);
   } catch (error) {
-    console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+    cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     // Return empty response for invalid UUIDs instead of crashing
     return { metas: [] };
   }
   
   if (!config) {
-    console.warn(`[Cache] No config found for user ${userUUID}`);
+    cacheLogger.warn(`No config found for user ${userUUID}`);
     return { metas: [] };
   }
 
@@ -579,7 +586,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
 
   // Disable caching for trending catalogs since they change frequently
   if (trendingIds.has(idOnly)) {
-    console.log(`📦 [Cache] Skipping cache for trending catalog: ${idOnly}`);
+    cacheLogger.info(`Skipping cache for trending catalog: ${idOnly}`);
     return method(); // Execute without caching
   }
   
@@ -618,7 +625,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     ? `catalog:${userUUID}:${catalogConfigString}:${catalogKey}`
     : `catalog:${catalogConfigString}:${catalogKey}`;
   
-      console.log(`📦 [Cache] Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+      cacheLogger.info(`Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
     
     return cacheWrap(key, method, CATALOG_TTL, options);
   }
@@ -633,13 +640,13 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
   try {
     config = await loadConfigFromDatabase(userUUID);
   } catch (error) {
-    console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+    cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     // Return empty response for invalid UUIDs instead of crashing
     return { metas: [] };
   }
   
   if (!config) {
-    console.warn(`[Cache] No config found for user ${userUUID}`);
+    cacheLogger.warn(`No config found for user ${userUUID}`);
     return { metas: [] };
   }
   
@@ -663,7 +670,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
   const searchConfigString = JSON.stringify(searchConfig);
   const key = `search:${searchConfigString}:${searchKey}`;
   
-      console.log(`📦 [Cache] Search cache key: ${key.substring(0, 120)}...`);
+      cacheLogger.info(`Search cache key: ${key.substring(0, 120)}...`);
   
   // Shorter TTL for search results since they're more dynamic
   const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
@@ -677,13 +684,13 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    try {
      config = await loadConfigFromDatabase(userUUID);
    } catch (error) {
-     console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      // Return empty response for invalid UUIDs instead of crashing
      return { meta: null };
    }
    
    if (!config) {
-     console.warn(`[Cache] No config found for user ${userUUID}`);
+     cacheLogger.warn(`No config found for user ${userUUID}`);
      return { meta: null };
    }
    
@@ -756,13 +763,13 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    try {
      config = await loadConfigFromDatabase(userUUID);
    } catch (error) {
-     console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      // Return empty response for invalid UUIDs instead of crashing
      return { meta: null };
    }
    
    if (!config) {
-     console.warn(`[Cache] No config found for user ${userUUID}`);
+     cacheLogger.warn(`No config found for user ${userUUID}`);
      return { meta: null };
    }
    
@@ -975,13 +982,13 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    try {
      config = await loadConfigFromDatabase(userUUID);
    } catch (error) {
-     console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      // Return null for invalid UUIDs instead of crashing
      return null;
    }
    
    if (!config) {
-     console.warn(`[Cache] No config found for user ${userUUID}`);
+     cacheLogger.warn(`No config found for user ${userUUID}`);
      return null;
    }
    
@@ -1182,12 +1189,12 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     try {
       config = await loadConfigFromDatabase(userUUID);
     } catch (error) {
-      console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
       return; // Skip caching for invalid UUIDs
     }
     
     if (!config) {
-      console.warn(`[Cache] No config found for user ${userUUID}`);
+      cacheLogger.warn(`No config found for user ${userUUID}`);
       return;
     }
     
@@ -1262,12 +1269,12 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     try {
       config = await loadConfigFromDatabase(userUUID);
     } catch (error) {
-      console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
       return null; // Return null for invalid UUIDs
     }
     
     if (!config) {
-      console.warn(`[Cache] No config found for user ${userUUID}`);
+      cacheLogger.warn(`No config found for user ${userUUID}`);
       return null;
     }
     
@@ -1349,13 +1356,13 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
   try {
     config = await loadConfigFromDatabase(userUUID);
   } catch (error) {
-    console.warn(`[Cache] Failed to load config for user ${userUUID}: ${error.message}`);
+    cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     // Return empty response for invalid UUIDs instead of crashing
     return { metas: [] };
   }
   
   if (!config) {
-    console.warn(`[Cache] No config found for user ${userUUID}`);
+    cacheLogger.warn(`No config found for user ${userUUID}`);
     return { metas: [] };
   }
   

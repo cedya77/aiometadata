@@ -13,6 +13,8 @@ const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 const consola = require('consola');
+const { parse } = require("path");
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
 
 function getTvdbCertification(contentRatings, countryCode, contentType) {
@@ -156,193 +158,136 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 
 
 async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1) {
-    const searchResults = new Map();
-    const rawResults = new Map();
+  const startTime = Date.now();
+  const rawResults = new Map();
+  consola.info(`[Search] Starting TMDB search for type "${type}" with query: "${query}"`);
 
-    const addRawResult = (media) => {
-        if (media && !media.media_type) {
-            media.media_type = type;
-        }
-        if (media && media.id && !rawResults.has(media.id)) {
-            rawResults.set(media.id, media);
-        }
-    };
-
-    const includeAdult = ['R', 'NC-17'].includes(config.ageRating);
-
-    if (type === 'movie') {
-        const movieStartTime = Date.now();
-        consola.info(`[Search] Starting TMDB movie search for: "${query}"`);
-        
-        const movieRes = await moviedb.searchMovie({ query, language, include_adult: includeAdult, page: page }, config);
-        const movieTime = Date.now() - movieStartTime;
-        consola.info(`[Search] TMDB movie search completed in ${movieTime}ms, found ${movieRes.results?.length || 0} results`);
-        
-        movieRes.results.forEach(addRawResult);
-    } else { 
-        const seriesStartTime = Date.now();
-        consola.info(`[Search] Starting TMDB TV search for: "${query}"`);
-        
-        const seriesRes = await moviedb.searchTv({ query, language, include_adult: includeAdult, page: page }, config);
-        const seriesTime = Date.now() - seriesStartTime;
-        consola.info(`[Search] TMDB TV search completed in ${seriesTime}ms, found ${seriesRes.results?.length || 0} results`);
-        
-        seriesRes.results.forEach(addRawResult);
-    }
-
-    //console.log(`[Search] Raw results:`, JSON.stringify(rawResults));
-    
-    if (searchPersons){
-      const personStartTime = Date.now();
-      consola.info(`[Search] Starting TMDB person search for: "${query}"`);
-      
-      const personRes = await moviedb.searchPerson({ query, language }, config);
-      const personTime = Date.now() - personStartTime;
-      consola.info(`[Search] TMDB person search completed in ${personTime}ms, found ${personRes.results?.length || 0} results`);
-      
-      if (personRes.results?.[0]) {
-          const creditsStartTime = Date.now();
-          consola.info(`[Search] Fetching ${type} credits for person ID: ${personRes.results[0].id}`);
-          
-          const credits = type === 'movie' ? 
-             await moviedb.personMovieCredits({ id: personRes.results[0].id, language }, config) : await moviedb.personTvCredits({ id: personRes.results[0].id, language }, config);
-          
-          const creditsTime = Date.now() - creditsStartTime;
-          consola.info(`[Search] Person credits fetched in ${creditsTime}ms, found ${credits.cast?.length || 0} cast, ${credits.crew?.length || 0} crew`);
-          
-          credits.cast.forEach(addRawResult);
-          credits.crew.forEach(media => { if (media.job === "Director" || media.job === "Writer") addRawResult(media); });
+  // STEP 1: GATHER ALL POTENTIAL IDs IN PARALLEL (from title search and person search)
+  const addRawResult = (media) => {
+      if (media && media.id && !rawResults.has(media.id)) {
+          media.media_type = type === 'movie' ? 'movie' : 'tv';
+          rawResults.set(media.id, media);
       }
-    }
+  };
 
-    const genreType = type ==='movie' ? 'movie' : 'series'
-    const genreList = await getGenreList('tmdb', language, genreType, config);
+  // Run the initial title search and person search concurrently
+  const [titleRes, personCredits] = await Promise.all([
+      type === 'movie'
+          ? moviedb.searchMovie({ query, language, include_adult: config.includeAdult, page }, config)
+          : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config),
+      
+      searchPersons
+          ? moviedb.searchPerson({ query, language }, config).then(async personRes => {
+              if (personRes.results?.[0]) {
+                  const credits = type === 'movie'
+                      ? await moviedb.personMovieCredits({ id: personRes.results[0].id, language }, config)
+                      : await moviedb.personTvCredits({ id: personRes.results[0].id, language }, config);
+                  // Combine cast and crew from the most relevant person
+                  return [...(credits.cast || []), ...(credits.crew || [])];
+              }
+              return []; // Return empty array if no person is found
+          })
+          : Promise.resolve([]) // Return empty array if person search is disabled
+  ]);
 
-    const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
-        //console.log(`[Search] MediaType: ${media.media_type}`);
+  // Add all found items to our raw results map to ensure uniqueness
+  titleRes.results.forEach(addRawResult);
+  personCredits.forEach(addRawResult);
+  consola.info(`[Search] TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+
+  // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
+  const genreList = await getGenreList('tmdb', language, type, config);
+
+  const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
+    try {
         const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
+        // Filter out items that don't match the search type (e.g., a movie found in an actor's TV credits)
+        if(mediaType !== type) {
+          consola.warn(`[Search] Filtering out ${media.title || media.name} - mediaType: ${mediaType}, searchType: ${type}, original_media_type: ${media.media_type}`);
+          return null;
+        }
+
+        // OPTIMIZATION: Fetch details, external_ids, and certifications in ONE call
+        const details = mediaType === 'movie'
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates" }, config)
+            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings" }, config);
         
-        const parsed = Utils.parseMedia(media, media.media_type, genreList, config); 
-        if (!parsed) return null;
-        const imdbId = media.external_ids?.imdb_id;
-        const tvdbId = media.external_ids?.thetvdb_id;
+        const allIds = {
+            tmdbId: details.id,
+            imdbId: details.external_ids?.imdb_id,
+            tvdbId: details.external_ids?.tvdb_id
+        };
 
-        const tmdbPosterFullUrl = media.poster_path
-            ? `https://image.tmdb.org/t/p/w500${media.poster_path}`
-            : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`; 
-        const posterUrl = mediaType === 'movie' 
-            ? await Utils.getMoviePoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config)
-            : await Utils.getSeriesPoster({ tmdbId: media.id, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterFullUrl }, config);
-
+        // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
+        const [posterUrl, imdbRating, logoUrl, resolvedIds] = await Promise.all([
+            (mediaType === 'movie' ? Utils.getMoviePoster : Utils.getSeriesPoster)({ ...allIds, fallbackPosterUrl: media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : null }, config),
+            allIds.imdbId ? getImdbRating(allIds.imdbId, mediaType) : Promise.resolve(null),
+            mediaType === 'movie' ? moviedb.getTmdbMovieLogo(media.id, config) : moviedb.getTmdbSeriesLogo(media.id, config),
+            resolveAllIds(`tmdb:${media.id}`, mediaType, config)
+        ]);
+        
         const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-
-        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
-        parsed.popularity = media.popularity;
-        if(imdbId) {
-          parsed.imdbRating = await getImdbRating(imdbId, mediaType);
-        }
         
-        // Add certification data
-        try {
-          if (mediaType === 'movie') {
-            const certifications = await moviedb.getMovieCertifications({ id: media.id }, config);
-            parsed.certification = Utils.getTmdbMovieCertificationForCountry(certifications);
-          } else {
-            const certifications = await moviedb.getTvCertifications({ id: media.id }, config);
-            parsed.certification = Utils.getTmdbTvCertificationForCountry(certifications);
-          }
-        } catch (error) {
-          console.warn(`[Search] Failed to fetch certification for ${mediaType} ${media.id}:`, error.message);
-          parsed.certification = null;
-        }
+        // Determine the final Stremio ID based on user preference
+        const preferredProvider = type === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
+        let stremioId = `tmdb:${media.id}`; // Default to TMDB
+        if (preferredProvider === 'tvdb' && resolvedIds?.tvdbId) stremioId = `tvdb:${resolvedIds.tvdbId}`;
+        else if (preferredProvider === 'tvmaze' && resolvedIds?.tvmazeId) stremioId = `tvmaze:${resolvedIds.tvmazeId}`;
+        else if (preferredProvider === 'imdb' && resolvedIds?.imdbId) stremioId = resolvedIds.imdbId;
         
-        let preferredProvider;
-        if (type === 'movie') {
-          preferredProvider = config.providers?.movie || 'tmdb';
-        } else {
-          preferredProvider = config.providers?.series || 'tvdb';
-        }        
-        let stremioId;
-        if (preferredProvider === 'tvdb' && tvdbId) {
-          stremioId = `tvdb:${tvdbId}`;
-        } else if (preferredProvider === 'tvmaze') {
-          if(tvdbId) {
-            const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config);
-            if(allIds.tvmazeId) {
-              stremioId = `tvmaze:${allIds.tvmazeId}`;
-            }
-          } else {
-            stremioId = `tmdb:${media.id}`;
-          }
-        } else if (preferredProvider === 'tmdb' && media.id) {
-          stremioId = `tmdb:${media.id}`;
-        } else if (preferredProvider === 'imdb' && imdbId) {
-          stremioId = imdbId;
-        } else {
-          stremioId = `tmdb:${media.id}`; 
+        // Assemble the final meta object
+        const parsed = Utils.parseMedia(media, mediaType, genreList, config);
+        if (!parsed) return null; // In case parsing fails
+        if (posterUrl===null) {
+          parsed.poster = `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
         }
         parsed.id = stremioId;
-        const logoUrl = type === 'movie' ? await moviedb.getTmdbMovieLogo(media.id, config) : await moviedb.getTmdbSeriesLogo(media.id, config);
+        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
+        parsed.imdbRating = imdbRating;
         parsed.logo = logoUrl;
+        parsed.certification = mediaType === 'movie'
+            ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
+            : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
+
         return parsed;
-    });
+    } catch (error) {
+        console.error(`[Search] Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
+        return null;
+    }
+  });
 
-    const hydratedMetas = (await Promise.all(hydrationPromises)).filter(Boolean);
+  const hydratedMetas = (await Promise.all(hydrationPromises)).filter(Boolean);
+  consola.info(`[Search] Hydration complete in ${Date.now() - startTime}ms. Found ${hydratedMetas.length} valid items.`);
 
-    hydratedMetas.forEach(parsed => {
-        if (parsed.type === type && !searchResults.has(parsed.id)) {
-            searchResults.set(parsed.id, parsed);
-        }
-    });
+  // STEP 3: FINAL SORTING AND FILTERING (your existing logic is good)
+  const sortedResults = Utils.sortSearchResults(hydratedMetas, query);
+  
+  let filteredResults = sortedResults;
+  if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+      const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
-    const finalResults = Array.from(searchResults.values());
-    
-    let filteredResults = finalResults;
-          if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
-        filteredResults = finalResults.filter(result => {
+      filteredResults = sortedResults.filter(result => {
           if (!result.certification) return true;
           
-          // Define rating hierarchies for different content types
-          const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
-          const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
-          
-          // Determine which hierarchy to use based on the certification format
           const isTvRating = type === 'series';
           const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
-          //console.log(`[Search] result title ${result.name} and rating ${result.certification} where user rating is ${config.ageRating} with type ${type}`);
-          
-          let userRating = config.ageRating;
-          if (isTvRating) {
-            const movieToTvMap = {
-              'G': 'TV-G',
-              'PG': 'TV-PG', 
-              'PG-13': 'TV-14',
-              'R': 'TV-MA',
-              'NC-17': 'TV-MA'
-            };
-            userRating = movieToTvMap[config.ageRating] || config.ageRating;
-          }
+          const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
           
           const userRatingIndex = ratingHierarchy.indexOf(userRating);
           const resultRatingIndex = ratingHierarchy.indexOf(result.certification);
           
-          // If user rating is more restrictive (lower index), only show results with same or more restrictive rating
-          if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
-            return resultRatingIndex <= userRatingIndex;
-          }
+          if (userRatingIndex === -1) return true;
+          if (resultRatingIndex === -1) return false;
           
-          // If result rating is not in hierarchy (like NR), filter it out when age filtering is enabled
-          if (resultRatingIndex === -1) {
-            return false;
-          }
-          
-          return true;
-        });
-      
-      console.log(`[Search] Filtered ${finalResults.length} results to ${filteredResults.length} based on age rating: ${config.ageRating}`);
-    }
-    
-    return Utils.sortSearchResults(filteredResults, query);
+          return resultRatingIndex <= userRatingIndex;
+      });
+      consola.info(`[Search] Age rating filter applied: ${sortedResults.length} -> ${filteredResults.length} results.`);
+  }
+
+  consola.success(`[Search] Completed TMDB search for "${query}" in ${Date.now() - startTime}ms. Returning ${filteredResults.length} results.`);
+  return filteredResults;
 }
 
 
@@ -422,18 +367,18 @@ async function performTvdbSearch(type, query, language, config) {
 
   const idMap = new Map(); 
 
-  let titleResults = [];
+  // STEP 1: GATHER IDs FROM TITLE AND PEOPLE SEARCHES IN PARALLEL
   const searchStartTime = Date.now();
-  consola.info(`[Search] Starting TVDB ${type} search for: "${sanitizedQuery}"`);
-  
-  if (type === 'movie') {
-    titleResults = await tvdb.searchMovies(sanitizedQuery, config);
-  } else { 
-    titleResults = await tvdb.searchSeries(sanitizedQuery, config);
-  }
-  
-  const searchTime = Date.now() - searchStartTime;
-  consola.info(`[Search] TVDB ${type} search completed in ${searchTime}ms, found ${titleResults?.length || 0} results`);
+  consola.info(`[Search] Starting TVDB parallel search for: "${sanitizedQuery}"`);
+
+  const [titleResults, peopleResults] = await Promise.all([
+    type === 'movie' 
+      ? tvdb.searchMovies(sanitizedQuery, config) 
+      : tvdb.searchSeries(sanitizedQuery, config),
+    tvdb.searchPeople(sanitizedQuery, config)
+  ]);
+
+  consola.info(`[Search] TVDB initial searches completed in ${Date.now() - searchStartTime}ms.`);
 
   (titleResults || []).forEach(result => {
     const resultId = result.tvdb_id || result.id;
@@ -441,32 +386,22 @@ async function performTvdbSearch(type, query, language, config) {
       idMap.set(String(resultId), type);
     }
   });
-
-  const peopleStartTime = Date.now();
-  consola.info(`[Search] Starting TVDB people search for: "${sanitizedQuery}"`);
   
-  const peopleResults = await tvdb.searchPeople(sanitizedQuery, config);
-  const peopleTime = Date.now() - peopleStartTime;
-  consola.info(`[Search] TVDB people search completed in ${peopleTime}ms, found ${peopleResults?.length || 0} results`);
-  
+  // Process people results to find related movies/series
   if (peopleResults && peopleResults.length > 0) {
     const topPerson = peopleResults[0];
     try {
-      const personDetailsStartTime = Date.now();
-      consola.info(`[Search] Fetching TVDB person extended data for ID: ${topPerson.tvdb_id}`);
-      
       const personDetails = await tvdb.getPersonExtended(topPerson.tvdb_id, config);
-      const personDetailsTime = Date.now() - personDetailsStartTime;
-      consola.info(`[Search] TVDB person extended data fetched in ${personDetailsTime}ms`);
-      
       if (personDetails && personDetails.characters) {
-        personDetails.characters.filter(credit => credit.type === 3).forEach(credit => {
-
-          const creditType = credit.seriesId ? 'series' : 'movie';
-          const creditId = credit.seriesId || credit.movieId;
-          if (creditId && creditType === type) { 
-            idMap.set(String(creditId), creditType);
-          }
+        personDetails.characters
+          .filter(credit => credit.type === 3) // Filter for 'Actor' role type
+          .forEach(credit => {
+            const creditType = credit.seriesId ? 'series' : 'movie';
+            const creditId = credit.seriesId || credit.movieId;
+            // Only add if it matches the type we are searching for
+            if (creditId && creditType === type) { 
+              idMap.set(String(creditId), creditType);
+            }
         });
       }
     } catch (e) {
@@ -474,69 +409,60 @@ async function performTvdbSearch(type, query, language, config) {
     }
   }
   
-
-  const uniqueEntries = Array.from(idMap.entries());
-  if (uniqueEntries.length === 0) {
+  const uniqueIds = Array.from(idMap.keys());
+  if (uniqueIds.length === 0) {
+    consola.info('[Search] No unique TVDB IDs found after initial search.');
     return [];
   }
+  consola.info(`[Search] Found ${uniqueIds.length} unique TVDB IDs to fetch details for.`);
 
-  const detailPromises = uniqueEntries.map(([id, itemType]) => {
-    if (itemType === 'movie') {
-      return tvdb.getMovieExtended(id, config);
-    }
-    return tvdb.getSeriesExtended(id, config);
+  // STEP 2: FETCH EXTENDED DETAILS FOR ALL UNIQUE IDs IN PARALLEL
+  const detailPromises = uniqueIds.map(id => {
+    return type === 'movie' 
+      ? tvdb.getMovieExtended(id, config) 
+      : tvdb.getSeriesExtended(id, config);
   });
   
-  const detailedResults = await Promise.allSettled(detailPromises);
-  const parsePromises = detailedResults
+  const detailedResults = (await Promise.allSettled(detailPromises))
     .filter(res => res.status === 'fulfilled' && res.value)
-    .map(res => {
-        return parseTvdbSearchResult(type, res.value, language, config);
-    });
+    .map(res => res.value); // Extract successful results
+    
+  consola.info(`[Search] Successfully fetched extended details for ${detailedResults.length} items.`);
+
+  // STEP 3: PARSE ALL DETAILED RESULTS INTO STREMIO METAS IN PARALLEL
+  const parsePromises = detailedResults.map(record =>
+    parseTvdbSearchResult(type, record, language, config)
+  );
     
   const finalResults = (await Promise.all(parsePromises)).filter(Boolean);
+  consola.info(`[Search] Successfully parsed ${finalResults.length} items into Stremio metas.`);
 
-  const filteredResults = finalResults.filter(item => item.type === type);
-
-  // Apply age rating filtering if configured
-  let ageFilteredResults = filteredResults;
+  // STEP 4: APPLY AGE RATING FILTERING
+  let ageFilteredResults = finalResults;
   if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
-    ageFilteredResults = filteredResults.filter(result => {
+    const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+    const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+    const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
+    ageFilteredResults = finalResults.filter(result => {
       if (!result.certification) return true;
       
-      // Define rating hierarchies for different content types
-      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
-      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
-      
-      // Determine which hierarchy to use based on the certification format
       const isTvRating = type === 'series';
       const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
-      
-      let userRating = config.ageRating;
-      if (isTvRating) {
-        const movieToTvMap = {
-          'G': 'TV-G',
-          'PG': 'TV-PG', 
-          'PG-13': 'TV-14',
-          'R': 'TV-MA',
-          'NC-17': 'TV-MA'
-        };
-        userRating = movieToTvMap[config.ageRating] || config.ageRating;
-      }
+      const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
       
       const userRatingIndex = ratingHierarchy.indexOf(userRating);
       const resultRatingIndex = ratingHierarchy.indexOf(result.certification);
       
-      // If user rating is more restrictive (lower index), only show results with same or more restrictive rating
-      if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
-        return resultRatingIndex <= userRatingIndex;
-      }
+      if (userRatingIndex === -1) return true; // If user rating is invalid, don't filter
+      if (resultRatingIndex === -1) return false; // Filter out items with unrecognized ratings
       
-      return true;
+      return resultRatingIndex <= userRatingIndex;
     });
     
-    console.log(`[Search] TVDB filtered ${filteredResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
+    consola.info(`[Search] TVDB filtered ${finalResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
   }
+  console.log(`[Search] TVDB search results completed in ${Date.now() - searchStartTime}ms`);
 
   return ageFilteredResults;
 }
@@ -646,7 +572,7 @@ async function parseTvmazeResult(show, config) {
 
 
 async function getSearch(id, type, language, extra, config) {
-  const timerLabel = `Search for "${JSON.stringify(extra)}" (type: ${id})`;
+  const timerLabel = `Search for "${JSON.stringify(extra)}" (type: ${id}) - ${Date.now()}`;
   try {
     if (!extra) {
       console.warn(`Search request for id '${id}' received with no 'extra' argument.`);

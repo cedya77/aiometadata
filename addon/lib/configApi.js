@@ -146,8 +146,6 @@ class ConfigApi {
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
             patterns.push(`meta-basic:*`); // Basic meta components
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            patterns.push(`meta:*`);
-            patterns.push(`meta-*:*`);
             console.log(`[ConfigApi] Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
           }
@@ -532,8 +530,6 @@ class ConfigApi {
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
             patterns.push(`meta-basic:*`); // Basic meta components
             patterns.push(`search:*`);
-            patterns.push(`meta:*`);
-            patterns.push(`meta-*:*`); // Also clear search cache since prefix affects search results
             console.log(`[ConfigApi] Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
           }

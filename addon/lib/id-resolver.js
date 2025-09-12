@@ -268,7 +268,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   }
 
   logger.success(` Resolution complete for ${stremioId}`);
-  logger.info(` Final resolved IDs for this ${stremioId} of type ${type} are:`, allIds);
+  logger.box(` Final resolved IDs for this ${stremioId} of type ${type} are:`, allIds);
   return allIds;
 }
 

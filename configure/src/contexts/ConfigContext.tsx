@@ -67,12 +67,7 @@ function initializeConfigFromSources(): AppConfig | null {
       
       delete providers.anime;
       
-      try {
-        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(loadedConfig));
-        console.log("[Config Migration] Migrated config saved back to localStorage.");
-      } catch (e) {
-        console.error("[Config Migration] Failed to save migrated config:", e);
-      }
+      // Migration completed - config will be saved to database when user saves
     }
   }
 
