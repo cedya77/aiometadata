@@ -43,7 +43,7 @@ function loadTranslations(language) {
   return { ...defaultTranslations, ...selectedTranslations };
 }
 
-function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false) {
+function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false, customName = null) {
   const extra = [];
 
   if (catalogDef.extraSupported.includes("genre")) {
@@ -97,10 +97,13 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
     pageSize = 20; // Default for TMDB or others
   }
 
+  // Use custom name if provided, otherwise use translated name
+  const catalogName = customName || `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`;
+
   return {
     id,
     type,
-    name: `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`,
+    name: catalogName,
     pageSize: pageSize,
     extra,
     showInHome: showInHome 
@@ -398,7 +401,8 @@ async function getManifest(config) {
           genres,
           showPrefix,
           translatedCatalogs,
-          userCatalog.showInHome
+          userCatalog.showInHome,
+          userCatalog.name
         );
       }
       else if (userCatalog.id === 'mal.genres') {
@@ -433,7 +437,8 @@ async function getManifest(config) {
           catalogOptions,
           showPrefix,
           translatedCatalogs,
-          userCatalog.showInHome
+          userCatalog.showInHome,
+          userCatalog.name
       );
       return catalog;   
     }));

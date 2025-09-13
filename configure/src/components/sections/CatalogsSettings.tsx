@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { streamingServices, regions } from "@/data/streamings";
@@ -47,6 +47,8 @@ const CollapsibleSection = ({ title, children }: { title: string, children: Reac
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig } = useConfig();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
+  const [isEditing, setIsEditing] = useState(false);
+  const [newName, setNewName] = useState(catalog.name);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -78,6 +80,21 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         (c.id === catalog.id && c.type === catalog.type) ? { ...c, showInHome: !c.showInHome } : c
       )
     }));
+  };
+
+  const handleNameChange = () => {
+    if (newName.trim() === '') {
+      setNewName(catalog.name); // revert if empty
+      setIsEditing(false);
+      return;
+    }
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        (c.id === catalog.id && c.type === catalog.type) ? { ...c, name: newName.trim() } : c
+      )
+    }));
+    setIsEditing(false);
   };
 
   const handleDelete = () => {
@@ -138,7 +155,32 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Badge>
         </div>
         <div>
-          <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onBlur={handleNameChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleNameChange();
+                  } else if (e.key === 'Escape') {
+                    setIsEditing(false);
+                    setNewName(catalog.name);
+                  }
+                }}
+                autoFocus
+                className="bg-transparent border-b border-foreground/50 focus:outline-none"
+              />
+            ) : (
+              <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            )}
+            <button onClick={() => setIsEditing(true)} className={`${isEditing ? 'hidden' : ''} text-muted-foreground hover:text-foreground`}>
+              <Pencil size={14} />
+            </button>
+          </div>
           <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>{catalog.type}</p>
         </div>
       </div>
