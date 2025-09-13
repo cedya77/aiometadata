@@ -220,13 +220,23 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
         const [posterUrl, imdbRating, logoUrl, resolvedIds] = await Promise.all([
-            (mediaType === 'movie' ? Utils.getMoviePoster : Utils.getSeriesPoster)({ ...allIds, fallbackPosterUrl: media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : null }, config),
+            (mediaType === 'movie' ? Utils.getMoviePoster : Utils.getSeriesPoster)({ ...allIds, fallbackPosterUrl: media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg` }, config),
             allIds.imdbId ? getImdbRating(allIds.imdbId, mediaType) : Promise.resolve(null),
             mediaType === 'movie' ? moviedb.getTmdbMovieLogo(media.id, config) : moviedb.getTmdbSeriesLogo(media.id, config),
             resolveAllIds(`tmdb:${media.id}`, mediaType, config)
         ]);
         
-        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        // Debug: Check for malformed poster URLs
+        if (!posterUrl || posterUrl === 'null' || posterUrl.includes('undefined')) {
+          consola.warn(`[Search] Malformed poster URL for ${media.title || media.name}: ${posterUrl}`);
+        }
+        
+        // Ensure we always have a valid poster URL
+        const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
+          ? posterUrl 
+          : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg`;
+        
+        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         
         // Determine the final Stremio ID based on user preference
         const preferredProvider = type === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
@@ -238,11 +248,9 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         // Assemble the final meta object
         const parsed = Utils.parseMedia(media, mediaType, genreList, config);
         if (!parsed) return null; // In case parsing fails
-        if (posterUrl===null) {
-          parsed.poster = `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-        }
+        
         parsed.id = stremioId;
-        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : posterUrl;
+        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl;
         parsed.imdbRating = imdbRating;
         parsed.logo = logoUrl;
         parsed.certification = mediaType === 'movie'

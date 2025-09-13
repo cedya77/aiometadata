@@ -8,6 +8,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import { 
   Activity, 
   BarChart3, 
@@ -15,6 +16,7 @@ import {
   Database, 
   Globe, 
   HardDrive, 
+  Loader2,
   Monitor, 
   Server, 
   Settings, 
@@ -978,6 +980,7 @@ function DashboardOperations({ data, loading }) {
 
   const [errorLogs, setErrorLogs] = useState([]);
   const [maintenanceTasks, setMaintenanceTasks] = useState([]);
+  const [cacheClearing, setCacheClearing] = useState(false);
 
   // Update state when data prop changes
   useEffect(() => {
@@ -998,6 +1001,7 @@ function DashboardOperations({ data, loading }) {
   }, [data]);
 
   const handleClearCache = async (type) => {
+    setCacheClearing(true);
     try {
       console.log(`Clearing ${type} cache...`);
       
@@ -1020,30 +1024,50 @@ function DashboardOperations({ data, loading }) {
         const result = await response.json();
         console.log('Cache cleared successfully:', result.message);
         
-        // Refresh the cache stats after clearing
-        const operationsResponse = await fetch('/api/dashboard/operations', { headers });
-        if (operationsResponse.ok) {
-          const data = await operationsResponse.json();
-          if (data.cacheStats) {
-            setCacheStats({
-              totalKeys: data.cacheStats.totalKeys || 0,
-              memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : '0%',
-              hitRate: data.cacheStats.hitRate || 0,
-              evictionRate: data.cacheStats.evictionRate || 0
-            });
+        // Update cache stats with the key count from the clear response
+        if (result.keyCount !== undefined) {
+          setCacheStats(prev => ({
+            ...prev,
+            totalKeys: result.keyCount
+          }));
+        } else {
+          // Fallback: refresh the cache stats after clearing
+          const operationsResponse = await fetch('/api/dashboard/operations', { headers });
+          if (operationsResponse.ok) {
+            const data = await operationsResponse.json();
+            if (data.cacheStats) {
+              setCacheStats({
+                totalKeys: data.cacheStats.totalKeys || 0,
+                memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : '0%',
+                hitRate: data.cacheStats.hitRate || 0,
+                evictionRate: data.cacheStats.evictionRate || 0
+              });
+            }
           }
         }
         
-        // Show success message (you could add a toast notification here)
-        alert(`Cache ${type} cleared successfully!`);
+        // Show success toast with key count if available
+        const message = result.keyCount !== undefined 
+          ? `Cache ${type} cleared successfully! ${result.keyCount} essential keys remain.`
+          : `Cache ${type} cleared successfully!`;
+        
+        toast.success("Cache Cleared", {
+          description: message
+        });
       } else {
         const error = await response.json();
         console.error('Failed to clear cache:', error.error);
-        alert(`Failed to clear cache: ${error.error}`);
+        toast.error("Cache Clear Failed", {
+          description: error.error
+        });
       }
     } catch (error) {
       console.error('Error clearing cache:', error);
-      alert(`Error clearing cache: ${error.message}`);
+      toast.error("Cache Clear Error", {
+        description: error.message
+      });
+    } finally {
+      setCacheClearing(false);
     }
   };
 
@@ -1058,7 +1082,13 @@ function DashboardOperations({ data, loading }) {
       <Card>
         <CardHeader>
           <CardTitle>Cache Management</CardTitle>
-          <CardDescription>Redis cache statistics and management tools</CardDescription>
+          <CardDescription>
+            Redis cache statistics and management tools. 
+            <br />
+            <span className="text-xs text-muted-foreground">
+              Note: "Clear All Cache" will show ~13 essential keys remaining (maintenance tracking, genres, etc.)
+            </span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1082,22 +1112,46 @@ function DashboardOperations({ data, loading }) {
                 onClick={() => handleClearCache('all')} 
                 variant="outline" 
                 className="w-full"
+                disabled={cacheClearing}
               >
-                Clear All Cache
+                {cacheClearing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Clearing Cache...
+                  </>
+                ) : (
+                  'Clear All Cache'
+                )}
               </Button>
               <Button 
                 onClick={() => handleClearCache('expired')} 
                 variant="outline" 
                 className="w-full"
+                disabled={cacheClearing}
               >
-                Clear Expired
+                {cacheClearing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  'Clear Expired'
+                )}
               </Button>
               <Button 
                 onClick={() => handleClearCache('metadata')} 
                 variant="outline" 
                 className="w-full"
+                disabled={cacheClearing}
               >
-                Clear Metadata Cache
+                {cacheClearing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  'Clear Metadata Cache'
+                )}
               </Button>
             </div>
           </div>

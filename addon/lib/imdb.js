@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { httpGet } = require('../utils/httpClient.js');
 
 const imdbAxiosInstance = axios.create();
 
@@ -41,7 +42,7 @@ async function getMetaFromImdb(imdbId, type, stremioId) {
 
     const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
     try {
-        const response = await imdbAxiosInstance.get(url);
+        const response = await httpGet(url);
         const meta = response.data?.meta;
         if (meta) {
             if(stremioId) {
@@ -65,7 +66,7 @@ async function getMetaFromImdbIo(imdbId, type, stremioId) {
 
     const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
     try {
-        const response = await imdbAxiosInstance.get(url);
+        const response = await httpGet(url);
         const meta = response.data?.meta;
         if (meta) {
             if(stremioId) {
@@ -459,6 +460,7 @@ async function scrapeSingleImdbResultByTitle(title, type) {
         return null;
     }
 }
+
 
 module.exports = {
     getMetaFromImdb,

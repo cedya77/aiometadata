@@ -145,7 +145,7 @@ async function _makeJikanRequest(url) {
   const startTime = Date.now();
   
   try {
-    const response = await httpGet(url, { timeout: 15000, httpsAgent: robustAgent });
+    const response = await httpGet(url);
     const responseTime = Date.now() - startTime;
     
     // Track successful request

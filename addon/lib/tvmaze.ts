@@ -1,19 +1,25 @@
 import { httpGet } from '../utils/httpClient.js';
 import { cacheWrapTvmazeApi } from './getCache.js';
 const packageJson = require('../../package.json');
-
+import { Agent } from 'undici';
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second base delay
 const RATE_LIMIT_DELAY = 2000; // 2 seconds for rate limit backoff (TVmaze recommends "a few seconds")
 
+
+const tvmazeAgent = new Agent({
+  connections: 10, // Limit to a maximum of 10 concurrent connections to api.tvmaze.com
+  keepAliveTimeout: 30 * 1000, // Keep sockets open for 30 seconds of inactivity
+});
 // Default HTTP client config with User-Agent as recommended by TVmaze
 const DEFAULT_HTTP_CONFIG = {
   timeout: DEFAULT_TIMEOUT,
   headers: {
     'User-Agent': `${packageJson.name}/${packageJson.version} (https://github.com/cedya77/aiometadata)`
-  }
+  },
+  dispatcher: tvmazeAgent,
 };
 
 // Type definitions for TVmaze API responses

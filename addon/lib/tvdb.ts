@@ -2,7 +2,7 @@ import { config } from 'dotenv';
 config();
 import { cacheWrapTvdbApi } from './getCache.js';
 import { to3LetterCode } from './language-map.js';
-import fetch from 'node-fetch';
+import { httpGet, httpPost } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
 
 const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
@@ -383,17 +383,12 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
     }
 
     try {
-      const response = await fetch(`${TVDB_API_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apikey: key }),
-      });
-      if (!response.ok) {
-        console.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}: ${response.statusText}`);
+      const response = await httpPost(`${TVDB_API_URL}/login`, { apikey: key });
+      const token = response.data.data?.token;
+      if (!token) {
+        console.error(`[TVDB] No token in login response for user ${userUUID}`);
         return null;
       }
-      const data: TvdbAuthResponse = await response.json();
-      const token = data.data.token;
       const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
       
       userCache.set(key, { token, expiry });
@@ -411,17 +406,12 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
   }
 
   try {
-    const response = await fetch(`${TVDB_API_URL}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apikey: key }),
-    });
-    if (!response.ok) {
-      console.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}: ${response.statusText}`);
+    const response = await httpPost(`${TVDB_API_URL}/login`, { apikey: key });
+    const token = response.data.data?.token;
+    if (!token) {
+      console.error(`[TVDB] No token in global login response`);
       return null;
     }
-    const data: TvdbAuthResponse = await response.json();
-    const token = data.data.token;
     const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
     
     tokenCache.set(key, { token, expiry });
@@ -438,25 +428,17 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
+    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    const data = await response.json();
-    return data.data || [];
+    return response.data || [];
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -474,25 +456,17 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
+    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    const data = await response.json();
-    return data.data || [];
+    return response.data || [];
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -510,25 +484,17 @@ async function searchPeople(query: string, config: UserConfig): Promise<TvdbSear
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people`, {
+    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    const data = await response.json();
-    return data.data || [];
+    return response.data || [];
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -549,22 +515,14 @@ async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<
     const startTime = Date.now();
     
     try {
-      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
       const responseTime = Date.now() - startTime;
-      
-      if (!response.ok) {
-        // Track failed request
-        const requestTracker = require('./requestTracker');
-        requestTracker.trackProviderCall('tvdb', responseTime, false);
-        return null;
-      }
       
       // Track successful request
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, true);
       
-      const data = await response.json();
-      return data.data;
+      return (response.data as any)?.data;
     } catch(error) {
       // Track failed request
       const responseTime = Date.now() - startTime;
@@ -586,22 +544,14 @@ async function getMovieExtended(movieId: string, config: UserConfig): Promise<Tv
     const startTime = Date.now();
     
     try {
-      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
       const responseTime = Date.now() - startTime;
-      
-      if (!response.ok) {
-        // Track failed request
-        const requestTracker = require('./requestTracker');
-        requestTracker.trackProviderCall('tvdb', responseTime, false);
-        return null;
-      }
       
       // Track successful request
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, true);
       
-      const data = await response.json();
-      return data.data;
+      return (response.data as any)?.data;
     } catch(error) {
       // Track failed request
       const responseTime = Date.now() - startTime;
@@ -620,27 +570,17 @@ async function getPersonExtended(personId: string, config: UserConfig): Promise<
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/people/${personId}/extended`, {
+    const response = await httpGet(`${TVDB_API_URL}/people/${personId}/extended`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return null;
-    }
-    
-    const data = await response.json();
-    const result = data.data;
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    return result;
+    return (response.data as any)?.data;
   } catch (error) {
     console.error(`[TVDB] Error getting person extended for ID ${personId}:`, (error as Error).message);
     return null;
@@ -660,13 +600,8 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
   while(hasNextPage) {
     const url = `${TVDB_API_URL}/series/${tvdbId}/episodes/${seasonType}/${langCode3}?page=${page}`;
     try {
-      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!response.ok) {
-        console.warn(`[TVDB] API returned non-OK status for ${seasonType} episodes of ${tvdbId}.`);
-        hasNextPage = false;
-        continue;
-      }
-      const data = await response.json();
+      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = response.data as any;
       if (data.data && data.data.episodes) {
         allEpisodes.push(...data.data.episodes);
       }
@@ -707,25 +642,17 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
+    const response = await httpGet(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
-    const data = await response.json();
-    const results = data.data || [];
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const results = (response.data as any)?.data || [];
     
     return results;
   } catch (error) {
@@ -745,25 +672,17 @@ async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSea
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
+    const response = await httpGet(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
-    const data = await response.json();
-    const results = data.data || [];
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const results = (response.data as any)?.data || [];
     
     return results;
   } catch (error) {
@@ -783,25 +702,17 @@ async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {
   
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/genres`, {
+    const response = await httpGet(`${TVDB_API_URL}/genres`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
-    const data = await response.json();
-    const results = data.data || [];
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const results = (response.data as any)?.data || [];
     
     return results;
   } catch (error) {
@@ -828,25 +739,17 @@ async function filter(type: 'movies' | 'series', params: any, config: UserConfig
       }
     });
     
-    const response = await fetch(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
+    const response = await httpGet(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
-    const data = await response.json();
-    const results = data.data || [];
-    
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    const results = (response.data as any)?.data || [];
     
     return results;
   } catch (error) {
@@ -869,25 +772,17 @@ async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<
     const startTime = Date.now();
     
     try {
-      const response = await fetch(url, { 
+      const response = await httpGet(url, { 
         headers: { 'Authorization': `Bearer ${token}` } 
       });
       
       const responseTime = Date.now() - startTime;
       
-      if (!response.ok) {
-        // Track failed request
-        const requestTracker = require('./requestTracker');
-        requestTracker.trackProviderCall('tvdb', responseTime, false);
-        return null;
-      }
-      
       // Track successful request
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, true);
       
-      const data = await response.json();
-      return data.data;
+      return (response.data as any)?.data;
     } catch(error) {
       // Track failed request
       const responseTime = Date.now() - startTime;
@@ -1010,21 +905,13 @@ async function getCollectionsList(config: UserConfig, page: number = 0): Promise
   console.log(`[TVDB getCollectionsList] Getting collections list for page ${page}`);
   const startTime = Date.now();
   try {
-    const response = await fetch(`${TVDB_API_URL}/lists?page=${page}`, {
+    const response = await httpGet(`${TVDB_API_URL}/lists?page=${page}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
     const responseTime = Date.now() - startTime;
     
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('tvdb', responseTime, false);
-      return [];
-    }
-    
-    const data = await response.json();
-    const results = data.data || [];
+    const results = (response.data as any)?.data || [];
     console.log(`[TVDB getCollectionsList] Found ${results.length} collections for page ${page}`);
     // Track successful request
     const requestTracker = require('./requestTracker');
@@ -1048,10 +935,8 @@ async function getCollectionDetails(collectionId: string, config: UserConfig): P
     if (!token) return null;
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/extended`;
-      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.data;
+      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      return (response.data as any)?.data;
     } catch (error) {
       console.error(`[TVDB] Error fetching collection details for ID ${collectionId}:`, (error as Error).message);
       return null;
@@ -1065,10 +950,8 @@ async function getCollectionTranslations(collectionId: string, language: string,
     if (!token) return null;
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;
-      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.data;
+      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      return (response.data as any)?.data;
     } catch (error) {
       console.error(`[TVDB] Error fetching collection translations for ID ${collectionId}:`, (error as Error).message);
       return null;

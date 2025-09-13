@@ -221,7 +221,8 @@ class DashboardAPI {
       if (this.cache) {
         // Get real Redis cache stats
         try {
-          const keys = await this.cache.keys('*');
+          // Use dbsize() for consistency with clearCache method
+          const totalKeys = await this.cache.dbsize();
           const cacheHitRate = this.requestTracker ? await this.requestTracker.getCacheHitRate() : 0;
           
           // Get real Redis memory usage
@@ -260,7 +261,7 @@ class DashboardAPI {
             missRate: missRate,
             memoryUsage: memoryUsage,
             evictionRate: 2.1, // TODO: Calculate real eviction rate from Redis stats
-            totalKeys: keys.length
+            totalKeys: totalKeys
           };
         } catch (redisError) {
           console.warn('[Dashboard API] Redis error, using fallback stats:', redisError.message);
@@ -1067,6 +1068,9 @@ class DashboardAPI {
         case 'all':
           // Use FLUSHALL for complete Redis cache clear (faster than keys + del)
           await this.cache.flushall();
+          
+          // Wait longer for cache warming to complete
+          await new Promise(resolve => setTimeout(resolve, 3000));
           break;
         case 'expired':
           // Clear keys that are close to expiration (TTL < 1 hour)
@@ -1095,7 +1099,21 @@ class DashboardAPI {
           throw new Error(`Unknown cache type: ${type}`);
       }
 
-      return { success: true, message: `Cache ${type} cleared successfully` };
+      // Get final key count after clearing
+      const finalKeyCount = await this.cache.dbsize();
+      
+      // Debug: List the actual keys for troubleshooting
+      if (type === 'all' && finalKeyCount > 0) {
+        const keys = await this.cache.keys('*');
+        console.log(`[Cache Clear] Remaining keys after clear:`, keys);
+      }
+      
+      let message = `Cache ${type} cleared successfully`;
+      if (type === 'all' && finalKeyCount > 0) {
+        message += `. ${finalKeyCount} essential keys remain (maintenance tracking, genres, etc.)`;
+      }
+      
+      return { success: true, message, keyCount: finalKeyCount };
     } catch (error) {
       console.error('[Dashboard API] Error clearing cache:', error);
       return { success: false, message: error.message };

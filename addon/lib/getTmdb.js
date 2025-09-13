@@ -1,6 +1,6 @@
 const { fetch, Agent } = require('undici');
 const { socksDispatcher } = require('fetch-socks');
-const { scrapeSingleImdbResultByTitle } = require('./imdb');
+const { scrapeSingleImdbResultByTitle, getMetaFromImdbIo } = require('./imdb');
 const consola = require('consola');
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
@@ -110,8 +110,9 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
     const data = await response.json();
     const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
     const currentTmdbId = isMovieDetailEndpoint ? isMovieDetailEndpoint[1] : null;
-    const type = isMovieDetailEndpoint ? 'movie' : 'series';
-    if (!data.imdb_id && currentTmdbId) {
+    const isSeriesDetailEndpoint = endpoint.match(/^\/tv\/(\d+)$/);
+    const type = isMovieDetailEndpoint ? 'movie' : isSeriesDetailEndpoint ? 'series' : null;
+    if (!data.imdb_id && currentTmdbId && type) {
         if (scrapedImdbIdCache.has(currentTmdbId)) {
             const cachedImdbId = scrapedImdbIdCache.get(currentTmdbId);
             data.imdb_id = cachedImdbId;
@@ -127,6 +128,16 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
 
                 if (imdbScrapedResult && imdbScrapedResult.imdbId) {
                     const foundImdbId = imdbScrapedResult.imdbId;
+                    const foundImdbMeta = await getMetaFromImdbIo(foundImdbId, type);
+                    if (!foundImdbMeta) {
+                        console.warn(`[TMDB] IMDb ID ${foundImdbId} type mismatch. returning data without IMDb ID.`);
+                        return data;
+                    } else {
+                      if (foundImdbMeta.releaseInfo?.includes('-') && type === 'movie') {
+                        console.warn(`[TMDB] IMDb ID ${foundImdbId} has a runtime that includes a dash. returning data without IMDb ID.`);
+                        return data;
+                      }
+                    }
                     data.imdb_id = foundImdbId;
                     if (!data.external_ids) {
                         data.external_ids = {};
