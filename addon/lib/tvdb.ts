@@ -438,7 +438,7 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    return response.data || [];
+    return (response.data as any)?.data || [];
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -466,7 +466,7 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    return response.data || [];
+    return (response.data as any)?.data || [];
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -494,7 +494,7 @@ async function searchPeople(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    return response.data || [];
+    return (response.data as any)?.data || [];
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
