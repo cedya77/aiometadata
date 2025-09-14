@@ -3,6 +3,7 @@ import { useConfig,  CatalogConfig} from '@/contexts/ConfigContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Loader2 } from 'lucide-react';
 import { toast } from "sonner";
@@ -18,6 +19,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [isValid, setIsValid] = useState(!!config.apiKeys.mdblist);
   const [isChecking, setIsChecking] = useState(false);
   const [customListUrl, setCustomListUrl] = useState("");
+  const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random'>('rank');
+  const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('desc');
 
   const validateApiKey = useCallback(async (isRefresh = false) => {
     if (!tempKey) {
@@ -64,6 +67,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               enabled: true,
               showInHome: true,
               source: 'mdblist',
+              sort: defaultSort,
+              order: defaultOrder,
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -143,6 +148,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         enabled: true,
         showInHome: true,
         source: 'mdblist',
+        sort: defaultSort,
+        order: defaultOrder,
       };
 
       setConfig(prev => {
@@ -183,6 +190,65 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               Where do I get this?
             </a>
           </div>
+          
+          {isValid && (
+            <div className="space-y-4 pt-4 border-t border-border">
+              <div className="space-y-2">
+                <Label>Default Sort Options</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sort-select">Sort By</Label>
+                    <Select value={defaultSort} onValueChange={(value: any) => setDefaultSort(value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select sort option" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="rank">Rank</SelectItem>
+                        <SelectItem value="score">Score</SelectItem>
+                        <SelectItem value="usort">User Sort</SelectItem>
+                        <SelectItem value="score_average">Score Average</SelectItem>
+                        <SelectItem value="released">Release Date</SelectItem>
+                        <SelectItem value="releasedigital">Digital Release</SelectItem>
+                        <SelectItem value="imdbrating">IMDB Rating</SelectItem>
+                        <SelectItem value="imdbvotes">IMDB Votes</SelectItem>
+                        <SelectItem value="last_air_date">Last Air Date</SelectItem>
+                        <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
+                        <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
+                        <SelectItem value="rogerbert">Roger Ebert</SelectItem>
+                        <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
+                        <SelectItem value="rtaudience">RT Audience</SelectItem>
+                        <SelectItem value="metacritic">Metacritic</SelectItem>
+                        <SelectItem value="myanimelist">MyAnimeList</SelectItem>
+                        <SelectItem value="letterrating">Letterboxd Rating</SelectItem>
+                        <SelectItem value="lettervotes">Letterboxd Votes</SelectItem>
+                        <SelectItem value="budget">Budget</SelectItem>
+                        <SelectItem value="revenue">Revenue</SelectItem>
+                        <SelectItem value="runtime">Runtime</SelectItem>
+                        <SelectItem value="title">Title</SelectItem>
+                        <SelectItem value="added">Date Added</SelectItem>
+                        <SelectItem value="random">Random</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="order-select">Order</Label>
+                    <Select value={defaultOrder} onValueChange={(value: 'asc' | 'desc') => setDefaultOrder(value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select order" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="asc">Ascending</SelectItem>
+                        <SelectItem value="desc">Descending</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Note: Sort settings will apply to newly added lists. Changes take effect after saving your configuration.
+              </div>
+            </div>
+          )}
           {isValid && (
             <div className="space-y-2 pt-4 border-t border-border">
               <Label htmlFor="customListUrl">Add Another User's Public List by URL</Label>

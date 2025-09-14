@@ -151,18 +151,26 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
-async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number): Promise<any[]> {
+async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string): Promise<any[]> {
   const offset = (page * 20) - 20;
   
   try {
-    const url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=20&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
+    let url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=20&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
+    
+    // Add sort and order parameters if provided
+    if (sort) {
+      url += `&sort=${sort}`;
+    }
+    if (order) {
+      url += `&order=${order}`;
+    }
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url),
-      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page})`
+      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, sort: ${sort}, order: ${order})`
     );
     
-    console.log(`[MDBList] fetchMDBListItems completed (undici)`);
+    console.log(`[MDBList] fetchMDBListItems completed (undici) listId: ${listId} - sort: ${sort}, order: ${order}`);
     
     return [
       ...(response.data.movies || []),

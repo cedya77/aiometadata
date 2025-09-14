@@ -9,9 +9,10 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { streamingServices, regions } from "@/data/streamings";
 import { allCatalogDefinitions } from '@/data/catalogs';
 
@@ -44,11 +45,95 @@ const CollapsibleSection = ({ title, children }: { title: string, children: Reac
   );
 };
 
+const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig } = useConfig();
+  const [sort, setSort] = useState(catalog.sort || 'rank');
+  const [order, setOrder] = useState(catalog.order || 'desc');
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, sort, order }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>MDBList Sort Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value: any) => setSort(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select sort option" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rank">Rank</SelectItem>
+                <SelectItem value="score">Score</SelectItem>
+                <SelectItem value="usort">User Sort</SelectItem>
+                <SelectItem value="score_average">Score Average</SelectItem>
+                <SelectItem value="released">Release Date</SelectItem>
+                <SelectItem value="releasedigital">Digital Release</SelectItem>
+                <SelectItem value="imdbrating">IMDB Rating</SelectItem>
+                <SelectItem value="imdbvotes">IMDB Votes</SelectItem>
+                <SelectItem value="last_air_date">Last Air Date</SelectItem>
+                <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
+                <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
+                <SelectItem value="rogerbert">Roger Ebert</SelectItem>
+                <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
+                <SelectItem value="rtaudience">RT Audience</SelectItem>
+                <SelectItem value="metacritic">Metacritic</SelectItem>
+                <SelectItem value="myanimelist">MyAnimeList</SelectItem>
+                <SelectItem value="letterrating">Letterboxd Rating</SelectItem>
+                <SelectItem value="lettervotes">Letterboxd Votes</SelectItem>
+                <SelectItem value="budget">Budget</SelectItem>
+                <SelectItem value="revenue">Revenue</SelectItem>
+                <SelectItem value="runtime">Runtime</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="added">Date Added</SelectItem>
+                <SelectItem value="random">Random</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Order</Label>
+            <Select value={order} onValueChange={(value: 'asc' | 'desc') => setOrder(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select order" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground mb-4">
+          Note: Changes will take effect after you save your configuration in the Configuration Manager.
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig } = useConfig();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
+  const [showSettings, setShowSettings] = useState(false);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -237,6 +322,17 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
          
 
+          {catalog.source === 'mdblist' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Sort Settings">
+                  <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sort Settings</TooltipContent>
+            </Tooltip>
+          )}
+
           {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru') && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -249,6 +345,12 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           )}
         </TooltipProvider>
       </div>
+      
+      <MDBListSettingsDialog 
+        catalog={catalog} 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+      />
     </Card>
   );
 };

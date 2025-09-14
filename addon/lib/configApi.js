@@ -246,6 +246,39 @@ class ConfigApi {
             console.log(`[ConfigApi] DEBUG: Added patterns for meta and search cache for SFW change`);
           }
           
+          // MDBList catalog changes - affects specific catalog cache
+          if (config.catalogs && oldConfig?.catalogs) {
+            const oldMdbCatalogs = oldConfig.catalogs.filter(c => c.id?.startsWith('mdblist.'));
+            const newMdbCatalogs = config.catalogs.filter(c => c.id?.startsWith('mdblist.'));
+            
+            // Check if any MDBList catalog sort/order settings changed
+            let mdblistChanged = false;
+            const changedCatalogs = [];
+            
+            for (const newCatalog of newMdbCatalogs) {
+              const oldCatalog = oldMdbCatalogs.find(c => c.id === newCatalog.id && c.type === newCatalog.type);
+              if (oldCatalog) {
+                if (newCatalog.sort !== oldCatalog.sort || newCatalog.order !== oldCatalog.order) {
+                  mdblistChanged = true;
+                  changedCatalogs.push(newCatalog.id);
+                  console.log(`[ConfigApi] MDBList catalog ${newCatalog.id} sort/order changed:`, {
+                    old: { sort: oldCatalog.sort, order: oldCatalog.order },
+                    new: { sort: newCatalog.sort, order: newCatalog.order }
+                  });
+                }
+              }
+            }
+            
+            if (mdblistChanged) {
+              // Clear cache for specific MDBList catalogs that changed
+              for (const catalogId of changedCatalogs) {
+                const pattern = `catalog:${userUUID}:*${catalogId}*`;
+                patterns.push(pattern);
+                console.log(`[ConfigApi] Added cache invalidation pattern for MDBList catalog: ${pattern}`);
+              }
+            }
+          }
+          
           // Search-specific changes - affects search results
           if (config.search && oldConfig?.search) {
             const searchProvidersChanged = config.search.providers && oldConfig.search.providers && 
@@ -630,6 +663,39 @@ class ConfigApi {
             console.log(`[ConfigApi] Art providers changed from ${oldConfig?.artProviders ? 'exists' : 'null'} to ${config.artProviders ? 'exists' : 'null'}`);
           } else {
             console.log(`[ConfigApi] No art providers in config or oldConfig`);
+          }
+          
+          // MDBList catalog changes - affects specific catalog cache
+          if (config.catalogs && oldConfig?.catalogs) {
+            const oldMdbCatalogs = oldConfig.catalogs.filter(c => c.id?.startsWith('mdblist.'));
+            const newMdbCatalogs = config.catalogs.filter(c => c.id?.startsWith('mdblist.'));
+            
+            // Check if any MDBList catalog sort/order settings changed
+            let mdblistChanged = false;
+            const changedCatalogs = [];
+            
+            for (const newCatalog of newMdbCatalogs) {
+              const oldCatalog = oldMdbCatalogs.find(c => c.id === newCatalog.id && c.type === newCatalog.type);
+              if (oldCatalog) {
+                if (newCatalog.sort !== oldCatalog.sort || newCatalog.order !== oldCatalog.order) {
+                  mdblistChanged = true;
+                  changedCatalogs.push(newCatalog.id);
+                  console.log(`[ConfigApi] MDBList catalog ${newCatalog.id} sort/order changed:`, {
+                    old: { sort: oldCatalog.sort, order: oldCatalog.order },
+                    new: { sort: newCatalog.sort, order: newCatalog.order }
+                  });
+                }
+              }
+            }
+            
+            if (mdblistChanged) {
+              // Clear cache for specific MDBList catalogs that changed
+              for (const catalogId of changedCatalogs) {
+                const pattern = `*${catalogId}*`;
+                patterns.push(pattern);
+                console.log(`[ConfigApi] Added cache invalidation pattern for MDBList catalog: ${pattern}`);
+              }
+            }
           }
           
           // Clear cache patterns if any changes were detected

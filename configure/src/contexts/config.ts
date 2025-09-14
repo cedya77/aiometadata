@@ -8,6 +8,9 @@ export interface CatalogConfig {
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
   manifestData?: any; // Store original manifest data for advanced features like skip support
+  // MDBList sorting options
+  sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random';
+  order?: 'asc' | 'desc';
 }
 
 export interface SearchConfig {

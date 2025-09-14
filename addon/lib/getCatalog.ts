@@ -202,7 +202,11 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   if (id.startsWith("mdblist.")) {
     console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
-    const results = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page);
+    const catalogConfig = config.catalogs?.find(c => c.id === id);
+    const sort = catalogConfig?.sort || 'rank';
+    const order = catalogConfig?.order || 'desc';
+    console.log(`[getCatalog] MDBList sorting - sort: ${sort}, order: ${order}`);
+    const results = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order);
     return await parseMDBListItems(results, type, genre, language, config);
   }
 
