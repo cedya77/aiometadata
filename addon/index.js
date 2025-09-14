@@ -509,9 +509,19 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
   // Pass config to req for ETag generation
   req.userConfig = config;
+  let extraArgs = {};
+  if (extra) {
+    if (id.includes('search') && extra.startsWith('search=')) {
+      // Take everything after 'search=' as the query, and decode it.
+      extraArgs = { search: decodeURIComponent(extra.substring('search='.length)) };
+    } else {
+      // For regular catalogs, URLSearchParams is usually safe.
+      extraArgs = Object.fromEntries(new URLSearchParams(extra));
+    }
+  }
   const cacheWrapper = cacheWrapCatalog;
 
-  const catalogKey = `${id}:${type}:${JSON.stringify(extra || {})}`;
+  const catalogKey = `${id}:${type}:${JSON.stringify(extraArgs || {})}`;
   
   const cacheOptions = {
     enableErrorCaching: true,
@@ -523,7 +533,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       
       if (id.includes('search')) {
       // Use search-specific cache wrapper
-        const extraArgs = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
       const searchKey = `${id}:${type}:${JSON.stringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
