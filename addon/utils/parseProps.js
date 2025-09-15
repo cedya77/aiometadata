@@ -30,25 +30,63 @@ function sortSearchResults(results, query) {
   results.sort((a, b) => {
     const titleA = normalize(a.name || '');
     const titleB = normalize(b.name || '');
-    
-    // Exact match priority (only if popularity > 3.5)
-    const minPopularityForExactMatch = 3.5;
     const scoreA = a.popularity || a.score || 0;
     const scoreB = b.popularity || b.score || 0;
+    const voteCountA = a.vote_count || 0;
+    const voteCountB = b.vote_count || 0;
+    const voteAverageA = a.vote_average || 0;
+    const voteAverageB = b.vote_average || 0;
     
-    if (titleA === normalizedQuery && titleB !== normalizedQuery && scoreA > minPopularityForExactMatch) return -1;
-    if (titleA !== normalizedQuery && titleB === normalizedQuery && scoreB > minPopularityForExactMatch) return 1;
+    // Exact match priority (only if popularity > 1 AND has some votes)
+    const minPopularityForExactMatch = 1;
+    const minVotesForExactMatch = 10; // Require some votes to prevent obscure exact matches from ranking too high
+    const isExactA = titleA === normalizedQuery && scoreA > minPopularityForExactMatch && voteCountA >= minVotesForExactMatch;
+    const isExactB = titleB === normalizedQuery && scoreB > minPopularityForExactMatch && voteCountB >= minVotesForExactMatch;
     
-    // Starts with query priority
+    // Both exact matches - sort by comprehensive score
+    if (isExactA && isExactB) {
+      // Primary: popularity
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      // Secondary: vote count (more votes = more reliable)
+      if (voteCountA !== voteCountB) return voteCountB - voteCountA;
+      // Tertiary: vote average (but only if both have sufficient votes)
+      if (voteCountA >= 50 && voteCountB >= 50 && voteAverageA !== voteAverageB) {
+        return voteAverageB - voteAverageA;
+      }
+      // Quaternary: year (newer first)
+      const yearA = parseInt(a.year, 10) || 0;
+      const yearB = parseInt(b.year, 10) || 0;
+      if (yearA !== yearB) return yearB - yearA;
+      return 0;
+    }
+    
+    // One exact match
+    if (isExactA && !isExactB) return -1;
+    if (!isExactA && isExactB) return 1;
+    
+    // Starts with query priority (only for non-exact matches)
     const startsWithA = titleA.startsWith(normalizedQuery);
     const startsWithB = titleB.startsWith(normalizedQuery);
+    
     if (startsWithA && !startsWithB) return -1;
     if (!startsWithA && startsWithB) return 1;
     
-    // Score/popularity priority
+    // For items in same category (both start with OR both don't start with), use comprehensive scoring
+    // Primary: popularity/score
     if (scoreA !== scoreB) return scoreB - scoreA;
     
-    // Year priority (newer first)
+    // Secondary: vote count (higher count = more established/popular)
+    if (voteCountA !== voteCountB) return voteCountB - voteCountA;
+    
+    // Tertiary: vote average (but only for items with sufficient votes)
+    const minVotesForAverageComparison = 50;
+    if (voteCountA >= minVotesForAverageComparison && 
+        voteCountB >= minVotesForAverageComparison && 
+        voteAverageA !== voteAverageB) {
+      return voteAverageB - voteAverageA;
+    }
+    
+    // Quaternary: year priority (newer first)
     const yearA = parseInt(a.year, 10) || 0;
     const yearB = parseInt(b.year, 10) || 0;
     if (yearA !== yearB) return yearB - yearA;
