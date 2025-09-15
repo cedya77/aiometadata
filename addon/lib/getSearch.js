@@ -170,13 +170,27 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       }
   };
 
+  const shouldSearchPersons = (() => {
+    if (!searchPersons) return false; // Respect the explicit parameter
+    
+    // Check for symbols that are unlikely in a person's name
+    const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
+    if (nameInvalidatingSymbols.test(query)) {
+      consola.info(`[Search] Skipping person search due to invalid symbols in query: "${query}"`);
+      return false;
+    }
+    
+    // If checks pass, it's plausible the user is searching for a person.
+    return true;
+  })();
+
   // Run the initial title search and person search concurrently
   const [titleRes, personCredits] = await Promise.all([
       type === 'movie'
           ? moviedb.searchMovie({ query, language, include_adult: config.includeAdult, page }, config)
           : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config),
       
-      searchPersons
+      shouldSearchPersons
           ? moviedb.searchPerson({ query, language }, config).then(async personRes => {
               if (personRes.results?.[0]) {
                   const credits = type === 'movie'
@@ -187,7 +201,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
               }
               return []; // Return empty array if no person is found
           })
-          : Promise.resolve([]) // Return empty array if person search is disabled
+          : Promise.resolve([]) // Return empty array if person search is disabled or filtered out
   ]);
 
   // Add all found items to our raw results map to ensure uniqueness
