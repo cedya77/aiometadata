@@ -116,6 +116,7 @@ function parseMedia(el, type, genreList = [], config = {}) {
     popularity: el.popularity, 
     vote_average: el.vote_average || 0,
     vote_count: el.vote_count || 0,
+    matchType: el.matchType || 'title'
   };
 }
 
