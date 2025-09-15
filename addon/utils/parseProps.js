@@ -14,87 +14,203 @@ const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
+/**
+ * Normalizes a string for searching:
+ * - Converts to lowercase
+ * - Removes accents and diacritics
+ * - Removes non-alphanumeric characters (except whitespace)
+ * - Removes a leading "the "
+ */
 function normalize(str) {
+  if (!str) return '';
   return str
-    .normalize("NFD") //seperate letters from accents
-    .replace(/[\u0300-\u036f]/g, "") //Remove accents, tildes, etc
+    .normalize("NFD") 
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, "")  // Remove everything except letters, numbers, and whitespace
-    .replace(/^the\s+/, "")  //skip 'the' article *experimental*
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/^the\s+/, "")
     .trim();
 }
 
+/**
+ * Calculates the Levenshtein distance between two strings.
+ * This implementation is optimized to use only two rows of the matrix to save memory.
+ * @param {string} s1 The first string.
+ * @param {string} s2 The second string.
+ * @returns {number} The edit distance between the two strings.
+ */
+function levenshteinDistance(s1, s2) {
+  if (s1.length < s2.length) {
+    return levenshteinDistance(s2, s1);
+  }
+  if (s2.length === 0) {
+    return s1.length;
+  }
+
+  let previousRow = Array.from({ length: s2.length + 1 }, (_, i) => i);
+
+  for (let i = 0; i < s1.length; i++) {
+    let currentRow = [i + 1];
+    for (let j = 0; j < s2.length; j++) {
+      let insertions = previousRow[j + 1] + 1;
+      let deletions = currentRow[j] + 1;
+      let substitutions = previousRow[j] + (s1[i] !== s2[j]);
+      currentRow.push(Math.min(insertions, deletions, substitutions));
+    }
+    previousRow = currentRow;
+  }
+  
+  return previousRow[previousRow.length - 1];
+}
+
+/**
+ * Calculates a similarity score between 0 and 1 based on Levenshtein distance.
+ * @param {string} s1 The first string.
+ * @param {string} s2 The second string.
+ * @returns {number} A similarity score from 0.0 (completely different) to 1.0 (identical).
+ */
+function calculateSimilarity(s1, s2) {
+  const maxLength = Math.max(s1.length, s2.length);
+  if (maxLength === 0) return 1.0; // Both are empty
+  const distance = levenshteinDistance(s1, s2);
+  return 1.0 - distance / maxLength;
+}
+
+
 function sortSearchResults(results, query) {
   const normalizedQuery = normalize(query);
-  
-  results.sort((a, b) => {
-    const titleA = normalize(a.name || '');
-    const titleB = normalize(b.name || '');
-    const scoreA = a.popularity || a.score || 0;
-    const scoreB = b.popularity || b.score || 0;
-    const voteCountA = a.vote_count || 0;
-    const voteCountB = b.vote_count || 0;
-    const voteAverageA = a.vote_average || 0;
-    const voteAverageB = b.vote_average || 0;
+  if (!normalizedQuery) return results;
+
+  // Split query into words for a more robust 'contains' check
+  const queryWords = normalizedQuery.split(/\s+/).filter(w => w);
+
+  // Determine the user's search intent
+  const personMatchCount = results.filter(r => r.matchType === 'person').length;
+  const titleMatchCount = results.length - personMatchCount;
+
+  // The query is considered a "Person Search" only if person matches significantly
+  // outnumber title matches.
+  const isPersonSearchIntent = personMatchCount > titleMatchCount && personMatchCount > 5;
+
+// 1. DECORATE: Recognize person matches and redefine 'isExact'.
+const processedResults = results.map(item => {
+    const title = normalize(item.name || '');
+    const score = item.popularity || item.score || 0;
+    const voteCount = item.vote_count || 0;
+
+    // Figure out if item comes from Person's Search
+    const isPersonMatch = item.matchType === 'person' && isPersonSearchIntent;
+
+    // A result is only a "true" exact match if its title is identical
+    // AND it has both reasonable popularity AND a solid number of votes.
+    const MIN_POP_FOR_EXACT = 1.5; 
+    const MIN_VOTES_FOR_EXACT = 5;   
+
+    const isExact = (title === normalizedQuery) && 
+                    (score > MIN_POP_FOR_EXACT) && 
+                    (voteCount > MIN_VOTES_FOR_EXACT);
+
+    // If it wasn't a "true" exact match or a person match, it can be considered for startsWith or contains.
+    const startsWith = !isExact && !isPersonMatch && title.startsWith(normalizedQuery);
+    const contains = !isExact && !isPersonMatch && !startsWith && queryWords.every(word => title.includes(word));
+    const similarity = calculateSimilarity(title, normalizedQuery);
+
     
-    // Exact match priority (only if popularity > 1 AND has some votes)
-    const minPopularityForExactMatch = 1;
-    const minVotesForExactMatch = 10; // Require some votes to prevent obscure exact matches from ranking too high
-    const isExactA = titleA === normalizedQuery && scoreA > minPopularityForExactMatch && voteCountA >= minVotesForExactMatch;
-    const isExactB = titleB === normalizedQuery && scoreB > minPopularityForExactMatch && voteCountB >= minVotesForExactMatch;
+    return {
+      originalItem: item,
+      title,
+      score,
+      voteCount,
+      voteAverage: item.vote_average || 0,
+      year: parseInt(item.year, 10) || 0,
+      isExact,
+      isPersonMatch,
+      startsWith,
+      contains,
+      similarity
+    };
+});
+
+
+
+// 2. FILTER:
+  const filteredResults = processedResults.filter(item => {
+
+    // --- Tier 1: 'isExact' gets a free pass ---
+    if (item.isExact || item.isPersonMatch) {
+      return true;
+    }
+
+    // --- Tier 2: 'startsWith' must show a sign of life ---
+    // This is a lenient check to keep new/upcoming movies while filtering true junk.
+    if (item.startsWith) {
+      const hasAtLeastOneVote = item.voteCount >= 1;
+      const hasSomePopularity = item.score >= 1.0;
+      return hasAtLeastOneVote || hasSomePopularity;
+    }
+
+    // --- Tier 4: Two-stage filter for all "other" matches ---
     
-    // Both exact matches - sort by comprehensive score
-    if (isExactA && isExactB) {
-      // Primary: popularity
-      if (scoreA !== scoreB) return scoreB - scoreA;
-      // Secondary: vote count (more votes = more reliable)
-      if (voteCountA !== voteCountB) return voteCountB - voteCountA;
-      // Tertiary: vote average (but only if both have sufficient votes)
-      if (voteCountA >= 50 && voteCountB >= 50 && voteAverageA !== voteAverageB) {
-        return voteAverageB - voteAverageA;
-      }
-      // Quaternary: year (newer first)
-      const yearA = parseInt(a.year, 10) || 0;
-      const yearB = parseInt(b.year, 10) || 0;
-      if (yearA !== yearB) return yearB - yearA;
-      return 0;
+    // Stage 1: Hard cutoff for extremely low similarity.
+    // If a title is this dissimilar, it's junk, regardless of votes.
+    const JUNK_SIMILARITY_THRESHOLD = 0.15; // 15%
+    if (item.similarity < JUNK_SIMILARITY_THRESHOLD) {
+      return false;
+    }
+
+    // Stage 2: Nuanced check for mediocre matches (e.g., 15% to 60% similarity).
+    // These are only filtered if they ALSO have a very low vote count.
+    const isLowQualitySimilarityMatch = item.similarity < 0.6 && item.voteCount < 5;
+    return !isLowQualitySimilarityMatch;
+  });
+
+// 3. SORT:
+  filteredResults.sort((a, b) => {
+    // --- Tier 1: "True" Exact Match Priority ---
+    if (a.isExact !== b.isExact) {
+      return a.isExact ? -1 : 1;
+    }
+
+    // --- NEW Tier 2: Person Match Priority ---
+    if (a.isPersonMatch !== b.isPersonMatch) {
+      return a.isPersonMatch ? -1 : 1;
+    }
+
+    // --- Tier 3: Starts-With Priority ---
+    if (a.startsWith !== b.startsWith) {
+      return a.startsWith ? -1 : 1;
     }
     
-    // One exact match
-    if (isExactA && !isExactB) return -1;
-    if (!isExactA && isExactB) return 1;
-    
-    // Starts with query priority (only for non-exact matches)
-    const startsWithA = titleA.startsWith(normalizedQuery);
-    const startsWithB = titleB.startsWith(normalizedQuery);
-    
-    if (startsWithA && !startsWithB) return -1;
-    if (!startsWithA && startsWithB) return 1;
-    
-    // For items in same category (both start with OR both don't start with), use comprehensive scoring
-    // Primary: popularity/score
-    if (scoreA !== scoreB) return scoreB - scoreA;
-    
-    // Secondary: vote count (higher count = more established/popular)
-    if (voteCountA !== voteCountB) return voteCountB - voteCountA;
-    
-    // Tertiary: vote average (but only for items with sufficient votes)
+    // --- Tier 4: Contains Priority ---
+    if (a.contains !== b.contains) {
+      return a.contains ? -1 : 1;
+    }
+
+    // --- Tier 5: Levenshtein Similarity (for "other" matches) ---
+    const isOtherMatch = !a.isExact && !a.isPersonMatch && !a.startsWith && !a.contains;
+    if (isOtherMatch && a.similarity !== b.similarity) {
+        return b.similarity - a.similarity;
+    }
+
+    // --- Final Phase: Universal Tie-breaker based on Quality ---
+    // This applies to items WITHIN the same tier.
+    if (a.score !== b.score) return b.score - a.score;
+    if (a.voteCount !== b.voteCount) return b.voteCount - a.voteCount;
+
     const minVotesForAverageComparison = 50;
-    if (voteCountA >= minVotesForAverageComparison && 
-        voteCountB >= minVotesForAverageComparison && 
-        voteAverageA !== voteAverageB) {
-      return voteAverageB - voteAverageA;
+    if (a.voteCount >= minVotesForAverageComparison &&
+        b.voteCount >= minVotesForAverageComparison &&
+        a.voteAverage !== b.voteAverage) {
+      return b.voteAverage - a.voteAverage;
     }
-    
-    // Quaternary: year priority (newer first)
-    const yearA = parseInt(a.year, 10) || 0;
-    const yearB = parseInt(b.year, 10) || 0;
-    if (yearA !== yearB) return yearB - yearA;
-    
+
+    if (a.year !== b.year) return b.year - a.year;
+
     return 0;
   });
   
-  return results;
+  const finalResults = filteredResults.map(p => p.originalItem);
+  return finalResults;
 }
 
 function parseMedia(el, type, genreList = [], config = {}) {
