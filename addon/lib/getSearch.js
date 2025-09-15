@@ -204,9 +204,15 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           : Promise.resolve([]) // Return empty array if person search is disabled or filtered out
   ]);
 
-  // Add all found items to our raw results map to ensure uniqueness
-  titleRes.results.forEach(addRawResult);
-  personCredits.forEach(addRawResult);
+  // Add all found items to our raw results map, tagging them by source
+  titleRes.results.forEach(media => {
+      media.matchType = 'title'; // Tag as a direct title match
+      addRawResult(media);
+  });
+  personCredits.forEach(media => {
+      media.matchType = 'person'; // Tag as a match from a person's filmography
+      addRawResult(media);
+  });
   consola.info(`[Search] TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
