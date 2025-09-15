@@ -75,6 +75,9 @@ function parseMedia(el, type, genreList = [], config = {}) {
     year: type === 'movie' ? (el.release_date?.substring(0, 4) || '') : (el.first_air_date?.substring(0, 4) || ''),
     type: type === 'movie' ? type : 'series',
     description: addMetaProviderAttribution(el.overview, 'TMDB', config),
+    popularity: el.popularity, 
+    vote_average: el.vote_average || 0,
+    vote_count: el.vote_count || 0,
   };
 }
 
