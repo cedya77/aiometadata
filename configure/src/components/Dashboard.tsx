@@ -504,18 +504,36 @@ function DashboardPerformance({ data, loading }) {
     return `${(ms / 60000).toFixed(1)}m`;
   };
 
-  const getMetricColor = (average) => {
-    if (average < 100) return 'text-green-600';
-    if (average < 500) return 'text-yellow-600';
-    if (average < 1000) return 'text-orange-600';
-    return 'text-red-600';
+  const getMetricColor = (average, metricType = 'general') => {
+    // Different thresholds for different metric types
+    if (metricType === 'search') {
+      if (average < 3000) return 'text-green-600';  // Under 3 seconds = green
+      if (average < 5000) return 'text-yellow-600'; // 3-5 seconds = yellow
+      if (average < 8000) return 'text-orange-600'; // 5-8 seconds = orange
+      return 'text-red-600'; // Over 8 seconds = red
+    } else {
+      // General metrics (ID resolution, API calls, etc.)
+      if (average < 100) return 'text-green-600';
+      if (average < 500) return 'text-yellow-600';
+      if (average < 1000) return 'text-orange-600';
+      return 'text-red-600';
+    }
   };
 
-  const getMetricStatus = (average) => {
-    if (average < 100) return 'Excellent';
-    if (average < 500) return 'Good';
-    if (average < 1000) return 'Fair';
-    return 'Poor';
+  const getMetricStatus = (average, metricType = 'general') => {
+    // Different thresholds for different metric types
+    if (metricType === 'search') {
+      if (average < 3000) return 'Excellent';  // Under 3 seconds = Excellent
+      if (average < 5000) return 'Good';       // 3-5 seconds = Good
+      if (average < 8000) return 'Fair';       // 5-8 seconds = Fair
+      return 'Poor';                           // Over 8 seconds = Poor
+    } else {
+      // General metrics (ID resolution, API calls, etc.)
+      if (average < 100) return 'Excellent';
+      if (average < 500) return 'Good';
+      if (average < 1000) return 'Fair';
+      return 'Poor';
+    }
   };
 
   if (loading) {
@@ -536,6 +554,10 @@ function DashboardPerformance({ data, loading }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics.slice(0, 4).map((metric) => {
           const stats = timingMetrics[metric]?.overall || {};
+          const isSearchMetric = metric.startsWith('search_') || metric === 'search_operation';
+          const metricType = isSearchMetric ? 'search' : 'general';
+          const colorThreshold = isSearchMetric ? 3000 : 500;
+          
           return (
             <Card key={metric}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -546,7 +568,7 @@ function DashboardPerformance({ data, loading }) {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  <span className={getMetricColor(stats.average || 0)}>
+                  <span className={getMetricColor(stats.average || 0, metricType)}>
                     {formatDuration(stats.average || 0)}
                   </span>
                 </div>
@@ -555,8 +577,8 @@ function DashboardPerformance({ data, loading }) {
                   P95: {formatDuration(stats.p95 || 0)} • 
                   Count: {stats.count || 0}
                 </p>
-                <Badge variant={stats.average < 500 ? 'default' : 'destructive'} className="mt-2">
-                  {getMetricStatus(stats.average || 0)}
+                <Badge variant={stats.average < colorThreshold ? 'default' : 'destructive'} className="mt-2">
+                  {getMetricStatus(stats.average || 0, metricType)}
                 </Badge>
               </CardContent>
             </Card>
@@ -638,7 +660,7 @@ function DashboardPerformance({ data, loading }) {
                       </p>
                     </div>
                     <div className="text-right">
-                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
+                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0, 'search')}`}>
                         {formatDuration(stats.average || 0)}
                       </div>
                       <div className="text-xs text-muted-foreground">
