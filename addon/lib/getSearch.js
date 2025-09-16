@@ -13,6 +13,7 @@ const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 const consola = require('consola');
+const timingMetrics = require('./timing-metrics');
 const { parse } = require("path");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
@@ -604,9 +605,28 @@ async function parseTvmazeResult(show, config) {
   };
 }
 
+// Helper function to determine provider from search ID
+function getProviderFromSearchId(searchId) {
+  if (searchId.includes('mal.')) {
+    return 'mal';
+  } else if (searchId.includes('tmdb.')) {
+    return 'tmdb';
+  } else if (searchId.includes('tvdb.')) {
+    return 'tvdb';
+  } else if (searchId.includes('tvmaze.')) {
+    return 'tvmaze';
+  } else if (searchId === 'search') {
+    // For generic 'search' case, we need to look at the actual provider used
+    // This will be determined by the config.search.providers setting
+    return 'search'; // Generic search - actual provider determined at runtime
+  } else {
+    return 'unknown';
+  }
+}
 
 async function getSearch(id, type, language, extra, config) {
   const timerLabel = `Search for "${JSON.stringify(extra)}" (type: ${id}) - ${Date.now()}`;
+  const searchStartTime = Date.now();
   try {
     if (!extra) {
       console.warn(`Search request for id '${id}' received with no 'extra' argument.`);
@@ -704,11 +724,99 @@ async function getSearch(id, type, language, extra, config) {
         break;
     }
 
+    const searchDuration = Date.now() - searchStartTime;
     console.timeEnd(timerLabel);
+    
+    // Record search timing metrics
+    let actualProvider = getProviderFromSearchId(id);
+    
+    // For generic 'search' case, determine the actual provider used
+    if (id === 'search' && extra.search) {
+      let providerId;
+      if (type === 'movie') {
+        providerId = config.search?.providers?.movie;
+      } else if (type === 'series') {
+        providerId = config.search?.providers?.series;
+      } else if (type === 'anime.movie') {
+        providerId = config.search?.providers?.anime_movie;
+      } else if (type === 'anime.series') {
+        providerId = config.search?.providers?.anime_series;
+      }
+      
+      if (providerId) {
+        // Extract the actual provider name from the provider ID
+        if (providerId.includes('mal.')) actualProvider = 'mal';
+        else if (providerId.includes('tmdb.')) actualProvider = 'tmdb';
+        else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
+        else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
+      }
+    }
+    
+    timingMetrics.recordTiming('search_operation', searchDuration, {
+      searchId: id,
+      searchType: type,
+      queryText: queryText,
+      resultCount: metas.length,
+      provider: actualProvider
+    });
+    
+    // Also record provider-specific timing
+    timingMetrics.recordTiming(`search_${actualProvider}`, searchDuration, {
+      searchId: id,
+      searchType: type,
+      queryText: queryText,
+      resultCount: metas.length
+    });
+    
     return { metas };
   } catch (error) {
+    const searchDuration = Date.now() - searchStartTime;
     console.timeEnd(timerLabel);
     console.error(`Error during search for id "${id}":`, error);
+    
+    // Record failed search timing
+    let actualProvider = getProviderFromSearchId(id);
+    
+    // For generic 'search' case, determine the actual provider used
+    if (id === 'search' && extra.search) {
+      let providerId;
+      if (type === 'movie') {
+        providerId = config.search?.providers?.movie;
+      } else if (type === 'series') {
+        providerId = config.search?.providers?.series;
+      } else if (type === 'anime.movie') {
+        providerId = config.search?.providers?.anime_movie;
+      } else if (type === 'anime.series') {
+        providerId = config.search?.providers?.anime_series;
+      }
+      
+      if (providerId) {
+        // Extract the actual provider name from the provider ID
+        if (providerId.includes('mal.')) actualProvider = 'mal';
+        else if (providerId.includes('tmdb.')) actualProvider = 'tmdb';
+        else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
+        else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
+      }
+    }
+    
+    timingMetrics.recordTiming('search_operation', searchDuration, {
+      searchId: id,
+      searchType: type,
+      queryText: queryText,
+      resultCount: 0,
+      error: error.message,
+      provider: actualProvider
+    });
+    
+    // Also record provider-specific timing for failures
+    timingMetrics.recordTiming(`search_${actualProvider}`, searchDuration, {
+      searchId: id,
+      searchType: type,
+      queryText: queryText,
+      resultCount: 0,
+      error: error.message
+    });
+    
     return { metas: [] };
   }
 }

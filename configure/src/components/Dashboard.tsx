@@ -18,6 +18,7 @@ import {
   HardDrive, 
   Loader2,
   Monitor, 
+  Search,
   Server, 
   Settings, 
   Shield,
@@ -607,6 +608,50 @@ function DashboardPerformance({ data, loading }) {
           </CardContent>
         </Card>
 
+        {/* Search Provider Performance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              Search Provider Performance
+            </CardTitle>
+            <CardDescription>
+              Search response times by provider (TMDB, TVDB, TVMaze, MAL, etc.)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {['search_tmdb', 'search_tvdb', 'search_tvmaze', 'search_mal'].map((metric) => {
+                const stats = timingMetrics[metric]?.overall || {};
+                if (stats.count === 0) return null;
+                
+                const providerName = metric.replace('search_', '').toUpperCase();
+                
+                return (
+                  <div key={metric} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div>
+                      <h4 className="font-medium">
+                        {providerName} Search
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        {stats.count} searches
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
+                        {formatDuration(stats.average || 0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        P95: {formatDuration(stats.p95 || 0)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* API Performance */}
         <Card>
           <CardHeader>
@@ -620,7 +665,7 @@ function DashboardPerformance({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {['api_lookup', 'nameToImdb_lookup', 'imdb_scrape_lookup', 'tmdb_external_ids'].map((metric) => {
+              {['api_lookup', 'nameToImdb_lookup', 'imdb_scrape_lookup', 'tmdb_external_ids', 'search_operation'].map((metric) => {
                 const stats = timingMetrics[metric]?.overall || {};
                 if (stats.count === 0) return null;
                 
@@ -691,6 +736,53 @@ function DashboardPerformance({ data, loading }) {
                 ) : (
                   'No API timing data available yet.'
                 )}
+              </p>
+            </div>
+            
+            <div className="p-4 rounded-lg bg-muted">
+              <h4 className="font-medium mb-2">Search Performance</h4>
+              <p className="text-sm text-muted-foreground">
+                {timingMetrics?.['search_operation']?.overall?.average ? (
+                  <>
+                    Search operations average{' '}
+                    <span className="font-medium">
+                      {formatDuration(timingMetrics?.['search_operation']?.overall?.average || 0)}
+                    </span>
+                    . {timingMetrics?.['search_operation']?.overall?.average > 5000 ? 'Consider optimizing search queries or implementing search caching.' : 'Search performance looks good!'}
+                  </>
+                ) : (
+                  'No search timing data available yet.'
+                )}
+              </p>
+            </div>
+            
+            <div className="p-4 rounded-lg bg-muted">
+              <h4 className="font-medium mb-2">Provider Performance</h4>
+              <p className="text-sm text-muted-foreground">
+                {(() => {
+                  const providers = ['search_tmdb', 'search_tvdb', 'search_tvmaze', 'search_mal'];
+                  const providerStats = providers.map(provider => ({
+                    name: provider.replace('search_', '').toUpperCase(),
+                    avg: timingMetrics?.[provider]?.overall?.average || 0,
+                    count: timingMetrics?.[provider]?.overall?.count || 0
+                  })).filter(p => p.count > 0);
+                  
+                  if (providerStats.length === 0) {
+                    return 'No provider timing data available yet.';
+                  }
+                  
+                  const fastest = providerStats.reduce((min, p) => p.avg < min.avg ? p : min);
+                  const slowest = providerStats.reduce((max, p) => p.avg > max.avg ? p : max);
+                  
+                  return (
+                    <>
+                      <span className="font-medium text-green-600">{fastest.name}</span> is fastest ({formatDuration(fastest.avg)})
+                      {slowest.name !== fastest.name && (
+                        <> while <span className="font-medium text-orange-600">{slowest.name}</span> is slowest ({formatDuration(slowest.avg)})</>
+                      )}
+                    </>
+                  );
+                })()}
               </p>
             </div>
           </div>
