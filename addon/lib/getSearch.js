@@ -78,7 +78,10 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   console.log(JSON.stringify({tmdbId, imdbId, tvmazeId, tvdbId}));
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
   const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config) : await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  
+  // Validate poster URL to prevent malformed URLs
+  const validPosterUrl = posterUrl && typeof posterUrl === 'string' && !posterUrl.includes('undefined') && posterUrl !== 'null' ? posterUrl : fallbackImage;
+  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   
   let certification = null;
   try {
@@ -111,15 +114,17 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     stremioId = `tvdb:${extendedRecord.id}`; // fallback
   }
   const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
+  // Validate logo URL to prevent malformed URLs
+  const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : null;
   return {
     id: stremioId,
     type: type,
     name: translatedName, 
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : posterUrl,
+    poster: config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl,
     year: extendedRecord.year,
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
-    logo: logoUrl,
+    logo: validLogoUrl,
     genres: extendedRecord.genres?.map(g => g.name) || [],
     imdbRating: imdbId ? await getImdbRating(imdbId, type) : 'N/A',
     //isAnime: isAnime(extendedRecord)
@@ -173,7 +178,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   const shouldSearchPersons = (() => {
     if (!searchPersons) return false; // Respect the explicit parameter
     
-    // Check for symbols that are unlikely in a person's name
+    // Check for symbols that are unlikely in a 'person''s name
     const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
     if (nameInvalidatingSymbols.test(query)) {
       consola.info(`[Search] Skipping person search due to invalid symbols in query: "${query}"`);
@@ -276,7 +281,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         parsed.certification = mediaType === 'movie'
             ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
             : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
-
+        parsed.popularity = media.popularity;
+        parsed.score = media.score;
         return parsed;
     } catch (error) {
         console.error(`[Search] Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);

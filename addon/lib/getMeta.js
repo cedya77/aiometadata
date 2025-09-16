@@ -376,7 +376,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
     }
   }
 
-      if (allIds?.imdbId && preferredProvider === 'imdb') {
+  if (allIds?.imdbId && preferredProvider === 'imdb') {
     try {
         let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
         return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config);
@@ -385,12 +385,29 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
     }
   }
 
-    if (allIds?.tmdbId) {
+  if (allIds?.tmdbId) {
     try {
       const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
       return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
-      console.error(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId}: ${e.message}`);
+      console.warn(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId}: fallback to provider of the stremioId`);
+    } 
+  }
+  const [provider, id] = stremioId.startsWith('tt') ? ['imdb', stremioId] : stremioId.split(':');
+  if (provider === 'tvdb' && id) {
+    try {
+      const movieData = await tvdb.getMovieExtended(id, config);
+      return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
+    } catch (e) {
+      console.warn(`[MovieMeta] Preferred provider 'tvdb' failed for ${stremioId}.error message: ${e.message}`);
+    }
+  }
+   else if (provider === 'imdb' && id) {
+    try {
+      const movieData = await imdb.getMetaFromImdb(id, 'movie');
+      return await buildImdbMovieResponse(stremioId, movieData, { allIds }, config);
+    } catch (e) {
+      console.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. error message: ${e.message}`);
     }
   }
   
@@ -437,9 +454,35 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
         tvdb.getSeriesExtended(allIds.tvdbId, config),
         tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config)
       ]);
-              return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds });
+      return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds });
     } catch (e) {
-      console.error(`[SeriesMeta] Native provider 'tvdb' also failed for ${stremioId}: ${e.message}`);
+      console.warn(`[SeriesMeta] Native provider 'tvdb' also failed for ${stremioId}: fallback to provider of the stremioId`);
+    }
+  }
+  const [provider, id] = stremioId.startsWith('tt') ? ['imdb', stremioId] : stremioId.split(':');
+  if (provider === 'tmdb' && id) {
+    try {
+      const seriesData = await moviedb.tvInfo({ id: id, language, append_to_response: "videos,credits,external_ids" }, config);
+      return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
+    } catch (e) {
+      console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. error message: ${e.message}`);
+    }
+  } else if (provider === 'imdb' && id) {
+    try {
+      const seriesData = await imdb.getMetaFromImdb(id, 'series');
+      return await buildImdbSeriesResponse(stremioId, seriesData, { allIds }, config);
+    } catch (e) {
+      console.warn(`[SeriesMeta] Preferred provider 'imdb' failed for ${stremioId}. error message: ${e.message}`);
+    }
+  } else if (provider === 'tvmaze' && id) {
+    try {
+      const [seriesData, episodes] = await Promise.all([
+        tvmaze.getShowDetails(id),
+        tvmaze.getShowEpisodes(id)
+      ]);
+      return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds });
+    } catch (e) {
+      console.warn(`[SeriesMeta] Preferred provider 'tvmaze' failed for ${stremioId}. error message: ${e.message}`);
     }
   }
 

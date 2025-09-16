@@ -730,6 +730,9 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false
+     };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
      metaConfig.artProvider = {
@@ -820,6 +823,9 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
      }
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false
+     };
    }
    
    const metaConfigString = JSON.stringify(metaConfig);
@@ -1029,6 +1035,9 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false
+     };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
      metaConfig.artProvider = {
@@ -1039,6 +1048,9 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
      }
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false
+     };
    }
    
    const metaConfigString = JSON.stringify(metaConfig);
@@ -1233,6 +1245,9 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false
+     };
     } else if (metaType === 'series') {
       metaConfig.metaProvider = config.providers?.series || 'tvdb';
       metaConfig.artProvider = {
@@ -1243,6 +1258,9 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       if (prefix === 'tvdb') {
         metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
       }
+      metaConfig.tmdb = {
+        scrapeImdb: config.tmdb?.scrapeImdb || false
+      };
     }
     
     const metaConfigString = JSON.stringify(metaConfig);
@@ -1313,6 +1331,9 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false
+     };
     } else if (metaType === 'series') {
       metaConfig.metaProvider = config.providers?.series || 'tvdb';
       metaConfig.artProvider = {
@@ -1323,6 +1344,9 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       if (prefix === 'tvdb') {
         metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
       }
+      metaConfig.tmdb = {
+        scrapeImdb: config.tmdb?.scrapeImdb || false
+      };
     }
     
     const metaConfigString = JSON.stringify(metaConfig);

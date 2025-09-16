@@ -94,7 +94,7 @@ interface SearchProviderDefinition {
 export const allSearchProviders: SearchProviderDefinition[] = [
   // Generic Providers
   { value: 'tmdb.search', label: 'TMDB Search', mediaType: ['movie', 'series'] },
-  { value: 'tvdb.search', label: 'TheTVDB Search', mediaType: ['series'] },
+  { value: 'tvdb.search', label: 'TheTVDB Search', mediaType: ['movie', 'series'] },
   { value: 'tvmaze.search', label: 'TVmaze Search', mediaType: ['series'] },
 
   // Anime-Specific Providers

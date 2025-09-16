@@ -1,0 +1,3 @@
+[33ma048858[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mpr-21[m[33m)[m revamp tmdb movie search logic
+[33m0bdea06[m correctly pass popularity/vote values  from tmdb
+[33mcef1ce5[m skip persons search for strings unlikely to be names

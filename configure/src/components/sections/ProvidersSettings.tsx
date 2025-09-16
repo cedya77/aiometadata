@@ -71,6 +71,16 @@ export function ProvidersSettings() {
     }));
   };
 
+  const handleTmdbToggle = (key: 'scrapeImdb', checked: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      tmdb: {
+        ...prev.tmdb,
+        [key]: checked,
+      }
+    }));
+  };
+
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -193,6 +203,28 @@ export function ProvidersSettings() {
             <p className="text-xs text-amber-600 mt-1">
               ⚠️ Using TVDB/IMDb as anime meta provider with Kitsu/MAL anime compatibility ID is considered experimental as they rely on community mappings and could contain inaccurate information.
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* TMDB Specific Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>The Movie Database (TMDB) Settings</CardTitle>
+          <CardDescription>Customize how data is handled when TMDB is the source.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Scrape IMDb Toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="scrape-imdb" className="text-lg font-medium">Scrape IMDb Data</Label>
+              <p className="text-sm text-muted-foreground">Automatically scrape additional data from IMDb to obtain IMDb ID when missing from TMDB. This is useful for sports events and other content that doesn't have an IMDb ID in TMDB.</p>
+            </div>
+            <Switch
+              id="scrape-imdb"
+              checked={config.tmdb?.scrapeImdb || false}
+              onCheckedChange={(val) => handleTmdbToggle('scrapeImdb', val)}
+            />
           </div>
         </CardContent>
       </Card>

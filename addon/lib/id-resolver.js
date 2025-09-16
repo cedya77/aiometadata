@@ -5,6 +5,7 @@ const tvmaze = require('./tvmaze');
 const moviedb = require("./getTmdb");
 const axios = require('axios');
 const redisIdCache = require('./redis-id-cache');
+const timingMetrics = require('./timing-metrics');
 const consola = require('consola');
 
 const logger = consola.create({ 
@@ -72,17 +73,36 @@ function _handleAnimeMapping(allIds) {
 
 async function _fetchFromTmdb(tmdbId, type, config) {
   if (!tmdbId) return {};
+  const startTime = Date.now();
   try {
     logger.debug(`[API Fetch] TMDB External IDs for ${type} ${tmdbId}`);
-    const details = type === 'movie'
-      ? await moviedb.movieInfo({ id: tmdbId, append_to_response: 'external_ids' }, config)
-      : await moviedb.tvInfo({ id: tmdbId, append_to_response: 'external_ids' }, config);
+    const externalIds = type === 'movie'
+      ? await moviedb.movieExternalIds(tmdbId, config)
+      : await moviedb.tvExternalIds(tmdbId, config);
+    const duration = Date.now() - startTime;
+    
+    // Record timing metrics for TMDB external IDs
+    await timingMetrics.recordTiming('tmdb_external_ids', duration, { 
+      type, 
+      tmdbId,
+      success: true,
+      method: 'dedicated_endpoint'
+    });
+    
+    logger.debug(`[API Fetch] TMDB External IDs completed in ${duration}ms for ${type} ${tmdbId}`);
     
     return {
-      imdbId: details.external_ids?.imdb_id || null,
-      tvdbId: details.external_ids?.tvdb_id || null,
+      imdbId: externalIds.imdb_id || null,
+      tvdbId: externalIds.tvdb_id || null,
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+    await timingMetrics.recordTiming('tmdb_external_ids', duration, { 
+      type, 
+      tmdbId,
+      success: false,
+      method: 'dedicated_endpoint'
+    });
     logger.warn(`[API Fetch] Failed to fetch from TMDB ${tmdbId}: ${error.message}`);
     return {};
   }
@@ -146,6 +166,7 @@ async function getExternalIdsFromImdb(imdbId, type) {
 // --- Main Orchestrator Function ---
 
 async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, targetProviders = []) {
+  const startTime = Date.now();
   logger.info(`Starting resolution for ${stremioId} (type: ${type})`);
   if (type !== 'movie' && type !== 'series' && type !== 'anime') {
     logger.warn(`Invalid type: ${type}`);
@@ -159,7 +180,14 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   // 2. Handle Anime
   if (isAnime) {
     _handleAnimeMapping(allIds);
-    logger.success(` Anime resolution complete for ${stremioId}`);
+    const duration = Date.now() - startTime;
+    await timingMetrics.recordTiming('id_resolution_anime', duration, { 
+      type, 
+      stremioId,
+      cached: false,
+      resolution_type: 'anime_mapping'
+    });
+    logger.success(` Anime resolution complete for ${stremioId} (took ${duration}ms)`);
     return allIds;
   }
 
@@ -172,12 +200,21 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
       allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
       allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
       allIds.tvmazeId = allIds.tvmazeId || cachedMapping.tvmaze_id;
-        return allIds;
+      const duration = Date.now() - startTime;
+      await timingMetrics.recordTiming('id_resolution_cache', duration, { 
+        type, 
+        stremioId,
+        cached: true,
+        resolution_type: 'cache_hit'
+      });
+      logger.success(` Cache hit resolution complete for ${stremioId} (took ${duration}ms)`);
+      return allIds;
     }
     logger.info(` No cache hit for ${stremioId}, proceeding to API lookups.`);
   }
 
   // 4. Perform API Lookups in PARALLEL
+  const apiStartTime = Date.now();
   try {
     // Phase 1: Primary lookups based on existing IDs
     if (allIds.imdbId && !allIds.tmdbId && !allIds.tvdbId) {
@@ -192,11 +229,11 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     if (allIds.tmdbId && (!allIds.imdbId || !allIds.tvdbId)) {
       primaryPromises.push(_fetchFromTmdb(allIds.tmdbId, type, config));
     }
-    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
-      primaryPromises.push(_fetchFromTvdb(allIds.tvdbId, type, config));
-    }
     if (allIds.tvmazeId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvdbId)) {
       primaryPromises.push(_fetchFromTvmaze(allIds.tvmazeId, config));
+    }
+    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
+      primaryPromises.push(_fetchFromTvdb(allIds.tvdbId, type, config));
     }
     
     const primaryResults = await Promise.allSettled(primaryPromises);
@@ -214,7 +251,6 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     // Phase 2: Secondary lookups to fill any remaining gaps
     const secondaryPromises = [];
 
-    // ********* FIX: Re-added secondary lookups by external IDs *********
     if (!allIds.tmdbId && allIds.imdbId) {
         secondaryPromises.push(moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config)
             .then(res => ({ tmdbId: res.movie_results?.[0]?.id || res.tv_results?.[0]?.id || null })));
@@ -267,7 +303,28 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     logger.error(` API bridging failed for ${stremioId}: ${error.message}`);
   }
 
-  logger.success(` Resolution complete for ${stremioId}`);
+  const apiDuration = Date.now() - apiStartTime;
+  const totalDuration = Date.now() - startTime;
+  
+  // Record API lookup timing
+  await timingMetrics.recordTiming('api_lookup', apiDuration, { 
+    type, 
+    stremioId,
+    cached: false,
+    resolution_type: 'api_lookup'
+  });
+  
+  // Record total resolution timing
+  await timingMetrics.recordTiming('id_resolution_total', totalDuration, { 
+    type, 
+    stremioId,
+    cached: false,
+    resolution_type: 'full_resolution'
+  });
+  
+  logger.info(` API lookup phase took ${apiDuration}ms for ${stremioId}`);
+  const duration = totalDuration;
+  logger.success(` Resolution complete for ${stremioId} (took ${duration}ms)`);
   logger.box(` Final resolved IDs for this ${stremioId} of type ${type} are:`, allIds);
   return allIds;
 }

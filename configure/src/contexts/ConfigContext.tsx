@@ -97,6 +97,9 @@ const initialConfig: AppConfig = {
     skipFiller: false, 
     skipRecap: false,
   },
+  tmdb: {
+    scrapeImdb: false,
+  },
   apiKeys: { 
     gemini: "", 
     tmdb: "",
@@ -225,6 +228,8 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           ...preloadedConfig.search,
           engineEnabled: hydratedEngineEnabled,
         },
+        mal: { ...initialConfig.mal, ...preloadedConfig.mal },
+        tmdb: { ...initialConfig.tmdb, ...preloadedConfig.tmdb },
         catalogs: hydratedCatalogs,
       };
     }

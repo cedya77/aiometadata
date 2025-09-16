@@ -1522,6 +1522,17 @@ addon.post("/api/dashboard/test-errors", (req, res) => {
   }
 });
 
+addon.get("/api/dashboard/timing", async (req, res) => {
+  try {
+    const timingMetrics = require('./lib/timing-metrics');
+    const data = await timingMetrics.getDashboardData();
+    res.json(data);
+  } catch (error) {
+    console.error('[Dashboard API] Timing metrics error:', error);
+    res.status(500).json({ error: 'Failed to fetch timing metrics' });
+  }
+});
+
 addon.get("/api/dashboard/content", (req, res) => {
   
   try {

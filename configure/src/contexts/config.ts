@@ -56,6 +56,9 @@ export interface AppConfig {
     skipFiller: boolean;
     skipRecap: boolean;
   };
+  tmdb: {
+    scrapeImdb: boolean;
+  };
   apiKeys: {
     gemini: string;
     tmdb: string;

@@ -484,6 +484,222 @@ function DashboardAnalytics({ data, loading }) {
   );
 }
 
+// Performance Metrics Component
+function DashboardPerformance({ data, loading }) {
+  
+  const [timingMetrics, setTimingMetrics] = useState({});
+  const [selectedMetric, setSelectedMetric] = useState('id_resolution_total');
+  const [timeRange, setTimeRange] = useState('24h');
+
+  useEffect(() => {
+    if (data) {
+      setTimingMetrics(data);
+    }
+  }, [data]);
+
+  const formatDuration = (ms) => {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  const getMetricColor = (average) => {
+    if (average < 100) return 'text-green-600';
+    if (average < 500) return 'text-yellow-600';
+    if (average < 1000) return 'text-orange-600';
+    return 'text-red-600';
+  };
+
+  const getMetricStatus = (average) => {
+    if (average < 100) return 'Excellent';
+    if (average < 500) return 'Good';
+    if (average < 1000) return 'Fair';
+    return 'Poor';
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  const metrics = Object.keys(timingMetrics);
+
+  return (
+    <div className="space-y-6">
+      {/* Performance Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {metrics.slice(0, 4).map((metric) => {
+          const stats = timingMetrics[metric]?.overall || {};
+          return (
+            <Card key={metric}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium capitalize">
+                  {metric.replace(/_/g, ' ')}
+                </CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  <span className={getMetricColor(stats.average || 0)}>
+                    {formatDuration(stats.average || 0)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Avg: {formatDuration(stats.average || 0)} • 
+                  P95: {formatDuration(stats.p95 || 0)} • 
+                  Count: {stats.count || 0}
+                </p>
+                <Badge variant={stats.average < 500 ? 'default' : 'destructive'} className="mt-2">
+                  {getMetricStatus(stats.average || 0)}
+                </Badge>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Detailed Metrics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ID Resolution Metrics */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              ID Resolution Performance
+            </CardTitle>
+            <CardDescription>
+              Time taken to resolve external IDs for movies and series
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {['id_resolution_total', 'id_resolution_cache', 'id_resolution_anime'].map((metric) => {
+                const stats = timingMetrics[metric]?.overall || {};
+                if (stats.count === 0) return null;
+                
+                return (
+                  <div key={metric} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div>
+                      <h4 className="font-medium capitalize">
+                        {metric.replace(/_/g, ' ')}
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        {stats.count} operations
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
+                        {formatDuration(stats.average || 0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatDuration(stats.min || 0)} - {formatDuration(stats.max || 0)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* API Performance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              API Performance
+            </CardTitle>
+            <CardDescription>
+              External API response times and lookup performance
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {['api_lookup', 'nameToImdb_lookup', 'imdb_scrape_lookup', 'tmdb_external_ids'].map((metric) => {
+                const stats = timingMetrics[metric]?.overall || {};
+                if (stats.count === 0) return null;
+                
+                return (
+                  <div key={metric} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div>
+                      <h4 className="font-medium capitalize">
+                        {metric.replace(/_/g, ' ')}
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        {stats.count} operations
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
+                        {formatDuration(stats.average || 0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        P95: {formatDuration(stats.p95 || 0)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Performance Insights */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Performance Insights
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-lg bg-muted">
+              <h4 className="font-medium mb-2">Cache Effectiveness</h4>
+              <p className="text-sm text-muted-foreground">
+                {timingMetrics?.['id_resolution_cache']?.overall?.count > 0 ? (
+                  <>
+                    Cache hits are averaging{' '}
+                    <span className="font-medium text-green-600">
+                      {formatDuration(timingMetrics?.['id_resolution_cache']?.overall?.average || 0)}
+                    </span>
+                    , significantly faster than API lookups.
+                  </>
+                ) : (
+                  'No cache data available yet.'
+                )}
+              </p>
+            </div>
+            
+            <div className="p-4 rounded-lg bg-muted">
+              <h4 className="font-medium mb-2">API Performance</h4>
+              <p className="text-sm text-muted-foreground">
+                {timingMetrics?.['api_lookup']?.overall?.average ? (
+                  <>
+                    External API calls average{' '}
+                    <span className="font-medium">
+                      {formatDuration(timingMetrics?.['api_lookup']?.overall?.average || 0)}
+                    </span>
+                    . Consider caching strategies for slower endpoints.
+                  </>
+                ) : (
+                  'No API timing data available yet.'
+                )}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // Content Intelligence Component
 function DashboardContent({ data, loading }) {
   
@@ -1636,6 +1852,7 @@ export function Dashboard() {
     overview: null,
     analytics: null,
     content: null,
+    performance: null,
     system: null,
     operations: null,
     users: null,
@@ -1650,10 +1867,11 @@ export function Dashboard() {
         setDashboardData(prev => ({ ...prev, loading: true, error: null }));
         
         // Fetch all dashboard data in parallel
-        const [overviewResponse, analyticsResponse, contentResponse, systemResponse] = await Promise.all([
+        const [overviewResponse, analyticsResponse, contentResponse, performanceResponse, systemResponse] = await Promise.all([
           fetch('/api/dashboard/overview'),
           fetch('/api/dashboard/analytics'),
           fetch('/api/dashboard/content'),
+          fetch('/api/dashboard/timing'),
           fetch('/api/dashboard/system')
         ]);
 
@@ -1661,6 +1879,7 @@ export function Dashboard() {
           overview: overviewResponse.ok ? await overviewResponse.json() : null,
           analytics: analyticsResponse.ok ? await analyticsResponse.json() : null,
           content: contentResponse.ok ? await contentResponse.json() : null,
+          performance: performanceResponse.ok ? await performanceResponse.json() : null,
           system: systemResponse.ok ? await systemResponse.json() : null,
           operations: null,
           users: null
@@ -1723,6 +1942,7 @@ export function Dashboard() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
+          <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           {isAdmin && <TabsTrigger value="operations">Operations</TabsTrigger>}
           {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
@@ -1738,6 +1958,10 @@ export function Dashboard() {
 
         <TabsContent value="content" className="mt-6">
           <DashboardContent data={dashboardData.content} loading={dashboardData.loading} />
+        </TabsContent>
+
+        <TabsContent value="performance" className="mt-6">
+          <DashboardPerformance data={dashboardData.performance} loading={dashboardData.loading} />
         </TabsContent>
 
         <TabsContent value="system" className="mt-6">

@@ -87,7 +87,7 @@ async function _processAnimeItem(item, provider, id, language, config) {
  * Processes a standard movie or series item using the addon's core getMeta function.
  * @private
  */
-async function _processStandardItem(item, language, config) {
+async function _processStandardItem(item, provider, language, config) {
   const result = await cacheWrapMetaSmart(config.userUUID, item.id, async () => {
       let stremioId = item.id;
       const preferredProvider = item.type === 'movie'
@@ -95,16 +95,19 @@ async function _processStandardItem(item, language, config) {
           : config.providers?.series || 'tvdb';
 
       // Resolve all IDs to find the one for the preferred provider.
-      const allIds = await resolveAllIds(item.id, item.type, config);
+      
 
-      if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-          stremioId = `tvdb:${allIds.tvdbId}`;
-      } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-          stremioId = `tvmaze:${allIds.tvmazeId}`;
-      } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
-          stremioId = allIds.imdbId;
-      } else if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
-          stremioId = `tmdb:${allIds.tmdbId}`;
+      if (provider !== preferredProvider){
+        const allIds = await resolveAllIds(item.id, item.type, config);
+        if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+            stremioId = `tvdb:${allIds.tvdbId}`;
+        } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+            stremioId = `tvmaze:${allIds.tvmazeId}`;
+        } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
+            stremioId = allIds.imdbId;
+        } else if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
+            stremioId = `tmdb:${allIds.tmdbId}`;
+        }
       }
       
       // Use the potentially translated ID to get the meta.
@@ -210,7 +213,7 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
       if (animeProviders.has(provider)) {
         meta = await _processAnimeItem(item, provider, id, language, config);
       } else {
-        meta = await _processStandardItem(item, language, config);
+        meta = await _processStandardItem(item, provider, language, config);
       }
       
       // If a processor returns null (e.g., anime mapping failed), use the fallback.
