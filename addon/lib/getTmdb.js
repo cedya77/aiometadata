@@ -1,9 +1,14 @@
 const { fetch, Agent } = require('undici');
 const { socksDispatcher } = require('fetch-socks');
 const { scrapeSingleImdbResultByTitle, getMetaFromImdbIo } = require('./imdb');
+const requestTracker = require('./requestTracker');
 const consola = require('consola');
+var nameToImdb = require("name-to-imdb");
+const timingMetrics = require('./timing-metrics');
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
+
+
 
 /**
  * Selects the best TMDB image by language (user's, then English, then any)
@@ -62,109 +67,165 @@ const scrapedImdbIdCache = new Map();
 async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null) {
   if (!apiKey) throw new Error("TMDB API key is required.");
   
-  const queryForUrl = {};
-
-  for (const key in params) {
-    if (params[key] !== undefined) {
-      queryForUrl[key] = params[key] === null ? null : String(params[key]);
-    }
-  }
-  
-  const queryParams = new URLSearchParams(queryForUrl);
+  const queryParams = new URLSearchParams(params);
   queryParams.append('api_key', apiKey);
-  
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
 
-  const startTime = Date.now();
-  try {
-    const response = await fetch(url, {
-      method: method,
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      dispatcher: dispatcher,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(15000)
-    });
+  let attempt = 0;
+  const maxRetries = 3;
+  let lastError;
 
-    const responseTime = Date.now() - startTime;
+  while(attempt < maxRetries) {
+    attempt++;
+    const startTime = Date.now();
+    
+    // *** FIX 1: The 'try' block now wraps the entire attempt. ***
+    try {
+      const response = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        dispatcher: dispatcher,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(15000)
+      });
 
-    if (!response.ok) {
-      // Track failed request
-      const requestTracker = require('./requestTracker');
+      const responseTime = Date.now() - startTime;
+
+      if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);
+          const waitTime = retryAfter * 1000 + 50;
+          console.warn(`[TMDB] Rate limit hit for ${endpoint}. Waiting ${waitTime}ms.`);
+          
+          // Throw a specific error to be caught by the catch block for retrying
+          const rateLimitError = new Error(`Rate limit hit (429)`);
+          rateLimitError.isRetryable = true;
+          rateLimitError.retryDelay = waitTime;
+          throw rateLimitError;
+      }
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
+        throw new Error(errorMessage); // This will be caught by the catch block below
+      }
+
+      // Track successful request with rate limit headers
+      const rateLimitHeaders = {
+        limit: response.headers.get('x-ratelimit-limit'),
+        remaining: response.headers.get('x-ratelimit-remaining'),
+        reset: response.headers.get('x-ratelimit-reset')
+      };
+      requestTracker.trackProviderCall('tmdb', responseTime, true, rateLimitHeaders);
+      
+      const data = await response.json();
+      const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
+      const currentTmdbId = isMovieDetailEndpoint ? isMovieDetailEndpoint[1] : null;
+      const isSeriesDetailEndpoint = endpoint.match(/^\/tv\/(\d+)$/);
+      const type = isMovieDetailEndpoint ? 'movie' : isSeriesDetailEndpoint ? 'series' : null;
+      if (!data.imdb_id && currentTmdbId && type) {
+          const startTime = Date.now();
+          const imdbSearchResult = await nameToImdb({ name: data.original_title || data.title || "", type: type, year: data.release_date ? data.release_date.substring(0, 4) : "" }, (err, result) => {
+            if (err) {
+              console.warn(`[TMDB] Failed to get IMDB ID for season name "${data.original_title || data.title}":`, err);
+              return null;
+            } else {
+              console.log(`[TMDB] IMDB ID for season name "${data.original_title || data.title}":`, result);
+              return result;
+            }
+          });
+          const duration = Date.now() - startTime;
+          await timingMetrics.recordTiming('nameToImdb_lookup', duration, { 
+            type, 
+            title: data.original_title || data.title,
+            year: data.release_date ? data.release_date.substring(0, 4) : '',
+            success: !!imdbSearchResult
+          });
+          console.log(`[TMDB] nameToImdb lookup took ${duration}ms for "${data.original_title || data.title}" (${type})`);
+          if (imdbSearchResult) {
+              data.imdb_id = imdbSearchResult;
+              if (!data.external_ids) data.external_ids = {};
+              data.external_ids.imdb_id = imdbSearchResult;
+              console.log(`[TMDB] Successfully found IMDb ID: ${imdbSearchResult} for "${data.original_title || data.title}"`);
+          } else {
+              console.log(`[TMDB] No IMDb ID found for "${data.original_title || data.title}" (${type})`);
+          }
+      }
+
+      if (!data.imdb_id && currentTmdbId && type && config.tmdb?.scrapeImdb) {
+          if (scrapedImdbIdCache.has(currentTmdbId)) {
+              const cachedImdbId = scrapedImdbIdCache.get(currentTmdbId);
+              data.imdb_id = cachedImdbId;
+              if (!data.external_ids) data.external_ids = {};
+              data.external_ids.imdb_id = cachedImdbId;
+          } else { 
+              console.log(`[TMDB] imdb_id in TMDB response: ${data.imdb_id}`);
+              const titleForScraper = data.original_title || data.title || null;
+
+              if (titleForScraper) {
+                  console.log(`[TMDB] Attempting to scrape IMDb for title: "${titleForScraper}"`);
+                  const scrapeStartTime = Date.now();
+                  const imdbScrapedResult = await scrapeSingleImdbResultByTitle(titleForScraper, type);
+                  
+
+                  if (imdbScrapedResult && imdbScrapedResult.imdbId) {
+                      const foundImdbId = imdbScrapedResult.imdbId;
+                      const foundImdbMeta = await getMetaFromImdbIo(foundImdbId, type);
+                      if (!foundImdbMeta) {
+                          console.warn(`[TMDB] IMDb ID ${foundImdbId} type mismatch. returning data without IMDb ID.`);
+                          return data;
+                      } else {
+                        if (foundImdbMeta.releaseInfo?.includes('-') && type === 'movie') {
+                          console.warn(`[TMDB] IMDb ID ${foundImdbId} has a runtime that includes a dash. returning data without IMDb ID.`);
+                          return data;
+                        }
+                      }
+                      data.imdb_id = foundImdbId;
+                      if (!data.external_ids) {
+                          data.external_ids = {};
+                      }
+                      data.external_ids.imdb_id = foundImdbId;
+
+                      scrapedImdbIdCache.set(currentTmdbId, foundImdbId);
+                      const scrapeDuration = Date.now() - scrapeStartTime;
+                  
+                  // Record timing metrics for IMDb scraping
+                      await timingMetrics.recordTiming('imdb_scrape_lookup', scrapeDuration, { 
+                        type, 
+                        title: titleForScraper,
+                        success: !!(imdbScrapedResult && imdbScrapedResult.imdbId),
+                        method: 'scrape'
+                      });
+                      
+                      console.log(`[TMDB] IMDb scraping took ${scrapeDuration}ms for "${titleForScraper}" (${type})`);
+                      console.log(`[TMDB] IMDb ID found by scraper: ${foundImdbId}`);
+                  } else {
+                      console.warn(`[TMDB] IMDb scraper returned no ID for title: "${titleForScraper}"`);
+                  }
+              } else {
+                  console.warn(`[TMDB] 'original_title'/'title' is null skipping IMDb fallback`);
+              }
+          }
+      } else if (data.imdb_id) {
+        console.log(`[TMDB] IMDb ID already present (${data.imdb_id}); skipping fallback for endpoint: ${endpoint}`);
+      }
+
+      return data;
+    } catch (error) {
+      lastError = error;
+      const responseTime = Date.now() - startTime;
       requestTracker.trackProviderCall('tmdb', responseTime, false);
       
-      const errorBody = await response.json().catch(() => ({}));
-      const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
-      console.error(`[TMDB] Request failed for ${endpoint}: ${errorMessage}`);
-      throw new Error(errorMessage);
+      // Check for custom retry delay from our 429 logic
+      const delay = error.retryDelay || (1000 * Math.pow(2, attempt - 1));
+
+      // Decide if we should retry
+      if (attempt < maxRetries && (error.isRetryable || error.code?.startsWith('UND_ERR_'))) {
+        console.log(`[TMDB] Request to ${endpoint} failed. Retrying in ${delay}ms (attempt ${attempt}/${maxRetries}). Error: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw lastError;
+      }
     }
-
-    // Track successful request with rate limit headers
-    const requestTracker = require('./requestTracker');
-    const rateLimitHeaders = {
-      limit: response.headers.get('x-ratelimit-limit'),
-      remaining: response.headers.get('x-ratelimit-remaining'),
-      reset: response.headers.get('x-ratelimit-reset')
-    };
-    requestTracker.trackProviderCall('tmdb', responseTime, true, rateLimitHeaders);
-    
-    const data = await response.json();
-    const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
-    const currentTmdbId = isMovieDetailEndpoint ? isMovieDetailEndpoint[1] : null;
-    const isSeriesDetailEndpoint = endpoint.match(/^\/tv\/(\d+)$/);
-    const type = isMovieDetailEndpoint ? 'movie' : isSeriesDetailEndpoint ? 'series' : null;
-    if (!data.imdb_id && currentTmdbId && type) {
-        if (scrapedImdbIdCache.has(currentTmdbId)) {
-            const cachedImdbId = scrapedImdbIdCache.get(currentTmdbId);
-            data.imdb_id = cachedImdbId;
-            if (!data.external_ids) data.external_ids = {};
-            data.external_ids.imdb_id = cachedImdbId;
-        } else { 
-            console.log(`[TMDB] imdb_id in TMDB response: ${data.imdb_id}`);
-            const titleForScraper = data.original_title || data.title || null;
-
-            if (titleForScraper) {
-                console.log(`[TMDB] Attempting to scrape IMDb for title: "${titleForScraper}"`);
-                const imdbScrapedResult = await scrapeSingleImdbResultByTitle(titleForScraper, type);
-
-                if (imdbScrapedResult && imdbScrapedResult.imdbId) {
-                    const foundImdbId = imdbScrapedResult.imdbId;
-                    const foundImdbMeta = await getMetaFromImdbIo(foundImdbId, type);
-                    if (!foundImdbMeta) {
-                        console.warn(`[TMDB] IMDb ID ${foundImdbId} type mismatch. returning data without IMDb ID.`);
-                        return data;
-                    } else {
-                      if (foundImdbMeta.releaseInfo?.includes('-') && type === 'movie') {
-                        console.warn(`[TMDB] IMDb ID ${foundImdbId} has a runtime that includes a dash. returning data without IMDb ID.`);
-                        return data;
-                      }
-                    }
-                    data.imdb_id = foundImdbId;
-                    if (!data.external_ids) {
-                        data.external_ids = {};
-                    }
-                    data.external_ids.imdb_id = foundImdbId;
-
-                    scrapedImdbIdCache.set(currentTmdbId, foundImdbId);
-                    console.log(`[TMDB] IMDb ID found by scraper: ${foundImdbId}`);
-                } else {
-                    console.warn(`[TMDB] IMDb scraper returned no ID for title: "${titleForScraper}"`);
-                }
-            } else {
-                console.warn(`[TMDB] 'original_title'/'title' is null skipping IMDb fallback`);
-            }
-        }
-    } else if (data.imdb_id) {
-      console.log(`[TMDB] IMDb ID already present (${data.imdb_id}); skipping fallback for endpoint: ${endpoint}`);
-    }
-
-    return data;
-  } catch (error) {
-    // Track failed request
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tmdb', responseTime, false);
-    
-    throw new Error(`[TMDB] Request to ${endpoint} failed: ${error.message}`);
   }
 }
 
@@ -194,6 +255,15 @@ async function tvInfo(params, config) {
   const { id, ...queryParams } = params;
   return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams);
 }
+
+async function movieExternalIds(id, config) {
+  return makeTmdbRequest(`/movie/${id}/external_ids`, getApiKey(config), { id });
+}
+
+async function tvExternalIds(id, config) {
+  return makeTmdbRequest(`/tv/${id}/external_ids`, getApiKey(config), { id });
+}
+
 async function searchMovie(params, config) {
   const startTime = Date.now();
   const query = params.query || 'unknown';
@@ -337,6 +407,27 @@ async function getMovieWatchProviders(params, config) {
     }
   }
   return null;
+}
+
+/**
+ * Fetches ALL image types for a TMDB ID in a single API call.
+ * This is our central helper.
+ * @param {string} mediaType - 'movie' or 'tv'
+ * @param {string} tmdbId - The TMDB ID
+ * @param {object} config - The user config
+ * @returns {Promise<{posters: Array, backdrops: Array, logos: Array}>}
+ */
+async function getTmdbImages(mediaType, tmdbId, config) {
+  if (!tmdbId) return { posters: [], backdrops: [], logos: [] };
+  try {
+    const endpoint = `/${mediaType}/${tmdbId}/images`;
+    // This makes ONE network request.
+    const imagesData = await makeTmdbRequest(endpoint, getApiKey(config), {});
+    return imagesData || { posters: [], backdrops: [], logos: [] };
+  } catch (error) {
+    console.warn(`[TMDB] Failed to get images for ${mediaType} ${tmdbId}:`, error.message);
+    return { posters: [], backdrops: [], logos: [] };
+  }
 }
 
 async function getTvWatchProviders(params, config) {
@@ -641,5 +732,8 @@ module.exports = {
   getMovieWatchProviders,
   getTvWatchProviders,
   getMovieTranslations,
-  getTvTranslations
+  getTvTranslations,
+  movieExternalIds,
+  tvExternalIds,
+  getTmdbImages
 };
