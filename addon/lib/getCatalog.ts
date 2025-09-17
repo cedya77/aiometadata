@@ -114,7 +114,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const sortedResults = results.sort((a, b) => b.score - a.score);
   
   // Apply client-side pagination
-  const pageSize = 20;
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize;
   const paginatedResults = sortedResults.slice(startIndex, endIndex);
@@ -373,7 +373,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     }
 
     // Apply client-side pagination
-    const pageSize = 20;
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     const paginatedItems = items.slice(startIndex, endIndex);

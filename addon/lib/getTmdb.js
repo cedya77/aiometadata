@@ -151,7 +151,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
           }
       }
 
-      if (!data.imdb_id && currentTmdbId && type && config.tmdb?.scrapeImdb) {
+      if (!data.imdb_id && currentTmdbId && type && config?.tmdb?.scrapeImdb) {
           if (scrapedImdbIdCache.has(currentTmdbId)) {
               const cachedImdbId = scrapedImdbIdCache.get(currentTmdbId);
               data.imdb_id = cachedImdbId;
