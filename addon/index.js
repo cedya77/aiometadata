@@ -544,7 +544,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
-        const pageSize = id.includes(`mal.`) ? 25 : 20;
+        const pageSize = id.includes(`mal.`) ? 25 : (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20);
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [type, language, page];
         switch (id) {

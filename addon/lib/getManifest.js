@@ -92,9 +92,10 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
 
   let pageSize;
   if (id.startsWith('mal.')) {
-    pageSize = 25; // Jikan API uses a page size of 25
+    pageSize = 25; // Jikan API uses a page size of 25 (anime catalogs)
   } else {
-    pageSize = 20; // Default for TMDB or others
+    // Use environment variable for non-anime catalogs, fallback to 20
+    pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20;
   }
 
   // Use custom name if provided, otherwise use translated name
@@ -171,7 +172,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
       id: userCatalog.id,
       type: userCatalog.type,
       name: userCatalog.name,
-      pageSize: 20,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
@@ -251,7 +252,7 @@ async function createStremThruCatalog(userCatalog) {
       id: userCatalog.id,
       type: userCatalog.type,
       name: userCatalog.name,
-      pageSize: 20,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },

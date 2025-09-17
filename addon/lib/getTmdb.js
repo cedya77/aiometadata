@@ -64,7 +64,7 @@ if (SOCKS_PROXY_URL) {
 // It prevents calling the scraper multiple times for the same TMDB ID within the same session.
 const scrapedImdbIdCache = new Map();
 
-async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null) {
+async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null, config = {}) {
   if (!apiKey) throw new Error("TMDB API key is required.");
   
   const queryParams = new URLSearchParams(params);
@@ -235,7 +235,7 @@ async function getAccountDetails(sessionId, apiKey) {
     if (accountDetailsCache.has(sessionId)) {
         return accountDetailsCache.get(sessionId);
     }
-    const details = await makeTmdbRequest('/account', apiKey, { session_id: sessionId });
+    const details = await makeTmdbRequest('/account', apiKey, { session_id: sessionId }, 'GET', null, {});
     if (details) {
         accountDetailsCache.set(sessionId, details);
     }
@@ -249,19 +249,19 @@ function getApiKey(config) {
 
 async function movieInfo(params, config) {
   const { id, ...queryParams } = params;
-  return makeTmdbRequest(`/movie/${id}`, getApiKey(config), queryParams);
+  return makeTmdbRequest(`/movie/${id}`, getApiKey(config), queryParams, 'GET', null, config);
 }
 async function tvInfo(params, config) {
   const { id, ...queryParams } = params;
-  return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams);
+  return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams, 'GET', null, config);
 }
 
 async function movieExternalIds(id, config) {
-  return makeTmdbRequest(`/movie/${id}/external_ids`, getApiKey(config), { id });
+  return makeTmdbRequest(`/movie/${id}/external_ids`, getApiKey(config), { id }, 'GET', null, config);
 }
 
 async function tvExternalIds(id, config) {
-  return makeTmdbRequest(`/tv/${id}/external_ids`, getApiKey(config), { id });
+  return makeTmdbRequest(`/tv/${id}/external_ids`, getApiKey(config), { id }, 'GET', null, config);
 }
 
 async function searchMovie(params, config) {
@@ -269,7 +269,7 @@ async function searchMovie(params, config) {
   const query = params.query || 'unknown';
   consola.info(`[TMDB] Starting movie search for: "${query}"`);
   
-  const result = await makeTmdbRequest('/search/movie', getApiKey(config), params);
+  const result = await makeTmdbRequest('/search/movie', getApiKey(config), params, 'GET', null, config);
   
   const searchTime = Date.now() - startTime;
   const resultCount = result?.results?.length || 0;
@@ -283,7 +283,7 @@ async function searchTv(params, config) {
   const query = params.query || 'unknown';
   consola.info(`[TMDB] Starting TV search for: "${query}"`);
   
-  const result = await makeTmdbRequest('/search/tv', getApiKey(config), params);
+  const result = await makeTmdbRequest('/search/tv', getApiKey(config), params, 'GET', null, config);
   
   const searchTime = Date.now() - startTime;
   const resultCount = result?.results?.length || 0;
@@ -293,63 +293,63 @@ async function searchTv(params, config) {
 }
 
 async function discoverMovie(params, config) {
-  return makeTmdbRequest('/discover/movie', getApiKey(config), params);
+  return makeTmdbRequest('/discover/movie', getApiKey(config), params, 'GET', null, config);
 }
 
 async function discoverTv(params, config) {
-  return makeTmdbRequest('/discover/tv', getApiKey(config), params);
+  return makeTmdbRequest('/discover/tv', getApiKey(config), params, 'GET', null, config);
 }
 
 async function genreMovieList(params, config) {
-  return makeTmdbRequest('/genre/movie/list', getApiKey(config), params);
+  return makeTmdbRequest('/genre/movie/list', getApiKey(config), params, 'GET', null, config);
 }
 
 
 
 async function requestToken(config) { 
-  return makeTmdbRequest('/authentication/token/new', getApiKey(config));
+  return makeTmdbRequest('/authentication/token/new', getApiKey(config), {}, 'GET', null, config);
 }
 
 async function sessionId(params, config) { 
-  return makeTmdbRequest('/authentication/session/new', getApiKey(config), {}, 'POST', params);
+  return makeTmdbRequest('/authentication/session/new', getApiKey(config), {}, 'POST', params, config);
 }
 
 async function accountFavoriteMovies(params, config) {
   const apiKey = getApiKey(config);
   const account = await getAccountDetails(params.session_id, apiKey);
-  return makeTmdbRequest(`/account/${account.id}/favorite/movies`, apiKey, params);
+  return makeTmdbRequest(`/account/${account.id}/favorite/movies`, apiKey, params, 'GET', null, config);
 }
 
 async function accountFavoriteTv(params, config) {
   const apiKey = getApiKey(config);
   const account = await getAccountDetails(params.session_id, apiKey);
-  return makeTmdbRequest(`/account/${account.id}/favorite/tv`, apiKey, params);
+  return makeTmdbRequest(`/account/${account.id}/favorite/tv`, apiKey, params, 'GET', null, config);
 }
 
 async function accountMovieWatchlist(params, config) {
   const apiKey = getApiKey(config);
   const account = await getAccountDetails(params.session_id, apiKey);
-  return makeTmdbRequest(`/account/${account.id}/watchlist/movies`, apiKey, params);
+  return makeTmdbRequest(`/account/${account.id}/watchlist/movies`, apiKey, params, 'GET', null, config);
 }
 
 async function accountTvWatchlist(params, config) {
   const apiKey = getApiKey(config);
   const account = await getAccountDetails(params.session_id, apiKey);
-  return makeTmdbRequest(`/account/${account.id}/watchlist/tv`, apiKey, params);
+  return makeTmdbRequest(`/account/${account.id}/watchlist/tv`, apiKey, params, 'GET', null, config);
 }
 
 async function getMovieCertifications(params, config) {
   const apiKey = getApiKey(config);
-  return makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params);
+  return makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params, 'GET', null, config);
 }
 
 async function getTvCertifications(params, config) {
   const apiKey = getApiKey(config);
-  return makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params);
+  return makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params, 'GET', null, config);
 }
 
 async function getMovieWatchProviders(params, config) {
-  const data = await makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params);
+  const data = await makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config);
   if (data?.results) {
     const country = config.language.split('-')[1] || 'US';
     const countryProviders = data.results[country];
@@ -422,7 +422,7 @@ async function getTmdbImages(mediaType, tmdbId, config) {
   try {
     const endpoint = `/${mediaType}/${tmdbId}/images`;
     // This makes ONE network request.
-    const imagesData = await makeTmdbRequest(endpoint, getApiKey(config), {});
+    const imagesData = await makeTmdbRequest(endpoint, getApiKey(config), {}, 'GET', null, config);
     return imagesData || { posters: [], backdrops: [], logos: [] };
   } catch (error) {
     console.warn(`[TMDB] Failed to get images for ${mediaType} ${tmdbId}:`, error.message);
@@ -431,7 +431,7 @@ async function getTmdbImages(mediaType, tmdbId, config) {
 }
 
 async function getTvWatchProviders(params, config) {
-  const data = await makeTmdbRequest(`/tv/${params.id}/watch/providers`, getApiKey(config), params);
+  const data = await makeTmdbRequest(`/tv/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config);
   if (data?.results) {
     const country = config.language.split('-')[1] || 'US';
     const countryProviders = data.results[country];
@@ -492,7 +492,7 @@ async function getTvWatchProviders(params, config) {
 }
 
 async function getMovieTranslations(tmdbId, language, config) {
-  const data = await makeTmdbRequest(`/movie/${tmdbId}/translations`, getApiKey(config));
+  const data = await makeTmdbRequest(`/movie/${tmdbId}/translations`, getApiKey(config), {}, 'GET', null, config);
   if (data?.translations) {
     const iso639 = language.split('-')[0];
     const iso3166 = language.split('-')[1];
@@ -506,7 +506,7 @@ async function getMovieTranslations(tmdbId, language, config) {
 }
 
 async function getTvTranslations(tmdbId, language, config) {
-  const data = await makeTmdbRequest(`/tv/${tmdbId}/translations`, getApiKey(config));
+  const data = await makeTmdbRequest(`/tv/${tmdbId}/translations`, getApiKey(config), {}, 'GET', null, config);
   if (data?.translations) {
     const iso639 = language.split('-')[0];
     const iso3166 = language.split('-')[1];
@@ -531,7 +531,7 @@ async function getTmdbMoviePoster(tmdbId, config) {
   
   try {
     const apiKey = getApiKey(config);
-    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {});
+    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
     
     if (images && images.posters && images.posters.length > 0) {
       const poster = selectTmdbImageByLang(images.posters, config);
@@ -559,7 +559,7 @@ async function getTmdbSeriesPoster(tmdbId, config) {
   
   try {
     const apiKey = getApiKey(config);
-    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {});
+    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
     
     if (images && images.posters && images.posters.length > 0) {
       const poster = selectTmdbImageByLang(images.posters, config);
@@ -586,7 +586,7 @@ async function getTmdbMovieBackground(tmdbId, config) {
   
   try {
     const apiKey = getApiKey(config);
-    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {});
+    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
     
     if (images && images.backdrops && images.backdrops.length > 0) {
       const backdrop = selectTmdbImageByLang(images.backdrops, config);
@@ -613,7 +613,7 @@ async function getTmdbSeriesBackground(tmdbId, config) {
   
   try {
     const apiKey = getApiKey(config);
-    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {});
+    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
     
     if (images && images.backdrops && images.backdrops.length > 0) {
       const backdrop = selectTmdbImageByLang(images.backdrops, config);
@@ -640,7 +640,7 @@ async function getTmdbMovieLogo(tmdbId, config) {
   
   try {
     const apiKey = getApiKey(config);
-    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {});
+    const images = await makeTmdbRequest(`/movie/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
     
     if (images && images.logos && images.logos.length > 0) {
       const logo = selectTmdbImageByLang(images.logos, config);
@@ -667,7 +667,7 @@ async function getTmdbSeriesLogo(tmdbId, config) {
   
   try {
     const apiKey = getApiKey(config);
-    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {});
+    const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
     
     if (images && images.logos && images.logos.length > 0) {
       const logo = selectTmdbImageByLang(images.logos, config);
@@ -694,7 +694,7 @@ module.exports = {
     const query = params.query || 'unknown';
     consola.info(`[TMDB] Starting person search for: "${query}"`);
     
-    const result = await makeTmdbRequest('/search/person', getApiKey(config), params);
+    const result = await makeTmdbRequest('/search/person', getApiKey(config), params, 'GET', null, config);
     
     const searchTime = Date.now() - startTime;
     const resultCount = result?.results?.length || 0;
@@ -702,19 +702,19 @@ module.exports = {
     
     return result;
   },
-  find: (params, config) => makeTmdbRequest(`/find/${params.id}`, getApiKey(config), { external_source: params.external_source }),
-  languages: (config) => makeTmdbRequest('/configuration/languages', getApiKey(config)),
-  primaryTranslations: (config) => makeTmdbRequest('/configuration/primary_translations', getApiKey(config)),
+  find: (params, config) => makeTmdbRequest(`/find/${params.id}`, getApiKey(config), { external_source: params.external_source }, 'GET', null, config),
+  languages: (config) => makeTmdbRequest('/configuration/languages', getApiKey(config), {}, 'GET', null, config),
+  primaryTranslations: (config) => makeTmdbRequest('/configuration/primary_translations', getApiKey(config), {}, 'GET', null, config),
   discoverMovie,
   discoverTv,
-  personMovieCredits: (params, config) => makeTmdbRequest(`/person/${params.id}/movie_credits`, getApiKey(config), params),
-  personTvCredits: (params, config) => makeTmdbRequest(`/person/${params.id}/tv_credits`, getApiKey(config), params),
-  seasonInfo: (params, config) => makeTmdbRequest(`/tv/${params.id}/season/${params.season_number}`, getApiKey(config), params),
-  trending: (params, config) => makeTmdbRequest(`/trending/${params.media_type}/${params.time_window}`, getApiKey(config), params),
-  movieImages: (params, config) => makeTmdbRequest(`/movie/${params.id}/images`, getApiKey(config), params),
-  tvImages: (params, config) => makeTmdbRequest(`/tv/${params.id}/images`, getApiKey(config), params),
+  personMovieCredits: (params, config) => makeTmdbRequest(`/person/${params.id}/movie_credits`, getApiKey(config), params, 'GET', null, config),
+  personTvCredits: (params, config) => makeTmdbRequest(`/person/${params.id}/tv_credits`, getApiKey(config), params, 'GET', null, config),
+  seasonInfo: (params, config) => makeTmdbRequest(`/tv/${params.id}/season/${params.season_number}`, getApiKey(config), params, 'GET', null, config),
+  trending: (params, config) => makeTmdbRequest(`/trending/${params.media_type}/${params.time_window}`, getApiKey(config), params, 'GET', null, config),
+  movieImages: (params, config) => makeTmdbRequest(`/movie/${params.id}/images`, getApiKey(config), params, 'GET', null, config),
+  tvImages: (params, config) => makeTmdbRequest(`/tv/${params.id}/images`, getApiKey(config), params, 'GET', null, config),
   genreMovieList,
-  genreTvList: (params, config) => makeTmdbRequest('/genre/tv/list', getApiKey(config), params),
+  genreTvList: (params, config) => makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config),
   requestToken,
   sessionId,
   accountFavoriteMovies,
