@@ -164,13 +164,16 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
       ];
     }
     
+    // Add "None" option when showInHome is false to work around Stremio's genre requirement
+    const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
+    
     const catalog = {
       id: userCatalog.id,
       type: userCatalog.type,
       name: userCatalog.name,
       pageSize: 20,
       extra: [
-        { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
       showInHome: userCatalog.showInHome

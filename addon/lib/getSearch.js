@@ -706,7 +706,7 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performAnimeSearch('movie', query, language, config, page);
                 break;
               case 'tmdb.search':
-                metas = await performTmdbSearch(type, query, language, config, page);
+                metas = await performTmdbSearch(type, query, language, config, true, page);
                 break;
               case 'tvdb.search':
                 metas = await performTvdbSearch(type, query, language, config);

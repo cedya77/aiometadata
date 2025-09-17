@@ -313,7 +313,7 @@ async function getGenresFromMDBList(listId: string, apiKey: string): Promise<str
 
 async function parseMDBListItems(items: any[], type: string, genreFilter: string, language: string, config: UserConfig): Promise<any[]> {
   let filteredItems = items;
-  if (genreFilter) {
+  if (genreFilter && genreFilter.toLowerCase() !== 'none') {
     filteredItems = filteredItems.filter(item =>
       Array.isArray(item.genre) &&
       item.genre.some((g: any) => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())

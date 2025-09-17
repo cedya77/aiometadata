@@ -277,7 +277,8 @@ async function getGenresFromMDBList(listId, apiKey) {
 
 async function parseMDBListItems(items, type, genreFilter, language, config) {
   let filteredItems = items;
-  if (genreFilter) {
+  console.log(`[MDBList] current genreFilter: ${genreFilter}`);
+  if (genreFilter && genreFilter.toLowerCase() !== 'none') {
     filteredItems = filteredItems.filter(item =>
       Array.isArray(item.genre) &&
       item.genre.some(g => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())

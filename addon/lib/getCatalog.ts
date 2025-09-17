@@ -300,7 +300,9 @@ async function buildParameters(type: string, language: string, page: number, id:
     const provider = findProvider(id.split(".")[1]);
     console.log(`[getCatalog] Found provider: ${JSON.stringify(provider)}`);
 
-    parameters.with_genres = genre ? findGenreId(genre, genreList) : undefined;
+    if(genre && genre.toLowerCase() !== 'none') {
+      parameters.with_genres = findGenreId(genre, genreList);
+    }
     parameters.with_watch_providers = provider.watchProviderId
     parameters.watch_region = provider.country;
     parameters.with_watch_monetization_types = "flatrate|free|ads";
@@ -308,18 +310,20 @@ async function buildParameters(type: string, language: string, page: number, id:
     switch (id) {
       case "tmdb.top":
         parameters.sort_by = 'popularity.desc'
-        parameters.with_genres = genre ? findGenreId(genre, genreList) : undefined;
+        if(genre && genre.toLowerCase() !== 'none') {
+          parameters.with_genres = findGenreId(genre, genreList);
+        }
         if (type === "series") {
           parameters.watch_region = language.split("-")[1];
           parameters.with_watch_monetization_types = "flatrate|free|ads|rent|buy";
         }
         break;
       case "tmdb.year":
-        const year = genre ? genre : new Date().getFullYear();
+        const year = genre && genre.toLowerCase() !== 'none' ? genre : new Date().getFullYear();
         parameters[type === "movie" ? "primary_release_year" : "first_air_date_year"] = year;
         break;
       case "tmdb.language":
-        const findGenre = genre ? findLanguageCode(genre, languages) : language.split("-")[0];
+        const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, languages) : language.split("-")[0];
         parameters.with_original_language = findGenre;
         break;
       default:

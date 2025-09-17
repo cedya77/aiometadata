@@ -4,7 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -1919,7 +1921,7 @@ function AdminLogin() {
           Admin Login
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md mx-4">
         <DialogHeader>
           <DialogTitle>Admin Authentication</DialogTitle>
           <DialogDescription>
@@ -1960,6 +1962,7 @@ function AdminLogin() {
 // Main Dashboard Component
 export function Dashboard() {
   const { isAdmin, adminKey } = useAdmin();
+  const { isMobile } = useBreakpoint();
   
   // Unified dashboard data state
   const [dashboardData, setDashboardData] = useState({
@@ -2039,12 +2042,64 @@ export function Dashboard() {
   // Calculate grid columns based on admin status
   const gridCols = isAdmin ? "grid-cols-6" : "grid-cols-4";
   
+  // Dashboard pages configuration
+  const dashboardPages = [
+    { value: 'overview', title: 'Overview', component: <DashboardOverview data={dashboardData.overview} systemData={dashboardData.system} loading={dashboardData.loading} /> },
+    { value: 'analytics', title: 'Analytics', component: <DashboardAnalytics data={dashboardData.analytics} loading={dashboardData.loading} /> },
+    { value: 'content', title: 'Content', component: <DashboardContent data={dashboardData.content} loading={dashboardData.loading} /> },
+    { value: 'performance', title: 'Performance', component: <DashboardPerformance data={dashboardData.performance} loading={dashboardData.loading} /> },
+    { value: 'system', title: 'System', component: <DashboardSystem data={dashboardData.system} loading={dashboardData.loading} /> },
+  ];
+
+  // Add admin-only pages
+  if (isAdmin) {
+    dashboardPages.push(
+      { value: 'operations', title: 'Operations', component: <DashboardOperations data={dashboardData.operations} loading={dashboardData.loading} /> },
+      { value: 'users', title: 'Users', component: <DashboardUsers data={dashboardData.users} loading={dashboardData.loading} /> }
+    );
+  }
+
+  // Mobile layout with accordion
+  if (isMobile) {
+    return (
+      <div className="w-full p-4">
+        <div className="flex flex-col items-start justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+            <p className="text-sm text-muted-foreground">
+              Monitor your addon's performance, health, and usage statistics
+            </p>
+          </div>
+          <AdminLogin />
+        </div>
+
+        <Accordion type="single" collapsible className="w-full">
+          {dashboardPages.map((page, index) => (
+            <AccordionItem 
+              value={page.value} 
+              key={page.value}
+              className={index === dashboardPages.length - 1 ? "border-b-0" : "border-b"}
+            >
+              <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
+                {page.title}
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-6">
+                {page.component}
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      </div>
+    );
+  }
+
+  // Desktop layout with tabs
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-sm sm:text-base text-muted-foreground">
             Monitor your addon's performance, health, and usage statistics
           </p>
         </div>
@@ -2052,14 +2107,14 @@ export function Dashboard() {
       </div>
 
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-2 bg-muted">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="content">Content</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          {isAdmin && <TabsTrigger value="operations">Operations</TabsTrigger>}
-          {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
+        <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-1 bg-muted overflow-x-auto">
+          <TabsTrigger value="overview" className="text-xs sm:text-sm whitespace-nowrap">Overview</TabsTrigger>
+          <TabsTrigger value="analytics" className="text-xs sm:text-sm whitespace-nowrap">Analytics</TabsTrigger>
+          <TabsTrigger value="content" className="text-xs sm:text-sm whitespace-nowrap">Content</TabsTrigger>
+          <TabsTrigger value="performance" className="text-xs sm:text-sm whitespace-nowrap">Perf</TabsTrigger>
+          <TabsTrigger value="system" className="text-xs sm:text-sm whitespace-nowrap">System</TabsTrigger>
+          {isAdmin && <TabsTrigger value="operations" className="text-xs sm:text-sm whitespace-nowrap">Ops</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="users" className="text-xs sm:text-sm whitespace-nowrap">Users</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" className="mt-6">

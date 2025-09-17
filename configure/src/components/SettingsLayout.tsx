@@ -32,8 +32,17 @@ export function SettingsLayout() {
   // Use our custom hook to determine if we're on a mobile-sized screen.
   const { isMobile } = useBreakpoint();
   
-  // Check if we're in dashboard mode
+  // Check if we're in dashboard mode FIRST (before mobile check)
   const isDashboardMode = typeof window !== 'undefined' && (window as any).DASHBOARD_MODE;
+
+  // If in dashboard mode, show only the dashboard (regardless of mobile/desktop)
+  if (isDashboardMode) {
+    return (
+      <div className="w-full">
+        <Dashboard />
+      </div>
+    );
+  }
 
   // --- RENDER ACCORDION ON MOBILE ---
   if (isMobile) {
@@ -53,15 +62,6 @@ export function SettingsLayout() {
           </AccordionItem>
         ))}
       </Accordion>
-    );
-  }
-
-  // If in dashboard mode, show only the dashboard
-  if (isDashboardMode) {
-    return (
-      <div className="w-full">
-        <Dashboard />
-      </div>
     );
   }
 

@@ -3,10 +3,10 @@ const idMapper = require('./id-mapper');
 const tvdb = require('./tvdb');
 const tvmaze = require('./tvmaze');
 const moviedb = require("./getTmdb");
-const axios = require('axios');
 const redisIdCache = require('./redis-id-cache');
 const timingMetrics = require('./timing-metrics');
 const consola = require('consola');
+const { httpGet } = require('../utils/httpClient');
 
 const logger = consola.create({ 
   level: 4, // Show all levels
@@ -148,10 +148,11 @@ async function _fetchFromTvmaze(tvmazeId, config) {
 async function getExternalIdsFromImdb(imdbId, type) {
   if (!imdbId || imdbId.toString().trim() === '') return undefined;
   const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
+
   try {
-    const response = await axios.get(url);
-    const tvdbId = response.data?.meta?.tvdb_id || response.data?.meta?.thetvdb_id;
-    const tmdbId = response.data?.meta?.moviedb_id || response.data?.meta?.themoviedb_id || response.data?.meta?.tmdb_id;
+    const { data } = await httpGet(url);
+    const tvdbId = data?.meta?.tvdb_id || data?.meta?.thetvdb_id;
+    const tmdbId = data?.meta?.moviedb_id || data?.meta?.themoviedb_id || data?.meta?.tmdb_id;
     return {
       tmdbId: (tmdbId && tmdbId.toString().trim() !== '') ? tmdbId : null,
       tvdbId: (tvdbId && tvdbId.toString().trim() !== '') ? tvdbId : null,
