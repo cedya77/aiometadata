@@ -78,7 +78,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const tvdbId = extendedRecord.id;
   console.log(JSON.stringify({tmdbId, imdbId, tvmazeId, tvdbId}));
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
-  const posterUrl = type === 'movie' ? await Utils.getMoviePoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config) : await Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: fallbackImage }, config);
+  const posterUrl = fallbackImage;
   
   // Validate poster URL to prevent malformed URLs
   const validPosterUrl = posterUrl && typeof posterUrl === 'string' && !posterUrl.includes('undefined') && posterUrl !== 'null' ? posterUrl : fallbackImage;
@@ -116,7 +116,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   }
   const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
   // Validate logo URL to prevent malformed URLs
-  const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : null;
+  const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId? imdb.getLogoFromImdb(imdbId) : null;
   return {
     id: stremioId,
     type: type,
@@ -198,10 +198,18 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       
       shouldSearchPersons
           ? moviedb.searchPerson({ query, language }, config).then(async personRes => {
-              if (personRes.results?.[0]) {
-                  const credits = type === 'movie'
-                      ? await moviedb.personMovieCredits({ id: personRes.results[0].id, language }, config)
-                      : await moviedb.personTvCredits({ id: personRes.results[0].id, language }, config);
+              if (personRes.results?.length > 0) {
+                const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+                const topPerson = sortedPersons[0];
+                
+                consola.info(`[Search] personRes: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
+                if (!topPerson.name.toLowerCase().includes(query.toLowerCase())) {
+                  consola.info(`[Search] Skipping person ${topPerson.name} because it doesn't match the query: "${query}"`);
+                  return [];
+                }
+                const credits = type === 'movie'
+                    ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
+                    : await moviedb.personTvCredits({ id: topPerson.id, language }, config);
                   // Combine cast and crew from the most relevant person
                   return [...(credits.cast || []), ...(credits.crew || [])];
               }
@@ -222,11 +230,12 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   // number of results from people search
   consola.info(`[Search] TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
   consola.info(`[Search] TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+  const sortedRawResults = Utils.sortSearchResults(Array.from(rawResults.values()), query).slice(0, 25);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
   const genreList = await getGenreList('tmdb', language, type, config);
 
-  const hydrationPromises = Array.from(rawResults.values()).map(async (media) => {
+  const hydrationPromises = sortedRawResults.map(async (media) => {
     try {
         const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
         // Filter out items that don't match the search type (e.g., a movie found in an actor's TV credits)
@@ -300,15 +309,15 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   consola.info(`[Search] Hydration complete in ${Date.now() - startTime}ms. Found ${hydratedMetas.length} valid items.`);
 
   // STEP 3: FINAL SORTING AND FILTERING (your existing logic is good)
-  const sortedResults = Utils.sortSearchResults(hydratedMetas, query);
   
-  let filteredResults = sortedResults;
+  
+  let filteredResults = hydratedMetas;
   if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
       const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
       const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
       const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
-      filteredResults = sortedResults.filter(result => {
+      filteredResults = filteredResults.filter(result => {
           if (!result.certification) return true;
           
           const isTvRating = type === 'series';

@@ -78,6 +78,7 @@ function calculateSimilarity(s1, s2) {
 
 
 function sortSearchResults(results, query) {
+  //console.log(`[Search] results: ${JSON.stringify(results)}`);
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return results;
 
@@ -94,7 +95,7 @@ function sortSearchResults(results, query) {
 
 // 1. DECORATE: Recognize person matches and redefine 'isExact'.
 const processedResults = results.map(item => {
-    const title = normalize(item.name || '');
+    const title = normalize(item.name || item.title || '');
     const score = item.popularity || item.score || 0;
     const voteCount = item.vote_count || 0;
 
@@ -127,7 +128,10 @@ const processedResults = results.map(item => {
       isPersonMatch,
       startsWith,
       contains,
-      similarity
+      similarity,
+      id: item.id,
+      poster_path: item.poster_path,
+      mediaType: item.media_type
     };
 });
 
