@@ -125,8 +125,8 @@ function getCatalogDefinition(catalogId) {
 function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movie, genres_series, filterLanguages }) {
   if (catalogDef.defaultOptions) return catalogDef.defaultOptions;
 
-  const movieGenres = showInHome ? [...genres_movie] : ["Top", ...genres_movie];
-  const seriesGenres = showInHome ? [...genres_series] : ["Top", ...genres_series];
+  const movieGenres = [...genres_movie]
+  const seriesGenres = [...genres_series]
 
   switch (catalogDef.nameKey) {
     case 'year':
@@ -209,13 +209,41 @@ async function createStremThruCatalog(userCatalog) {
       return null;
     }
     
-    // Get genres from the manifest - they're already available in the userCatalog
+    // Get genres from multiple sources with fallback priority:
+    // 1. userCatalog.genres (from manifest import)
+    // 2. userCatalog.manifestData.extra (from original StremThru manifest)
+    // 3. Fetch from catalog items (as last resort)
     let genres = [];
-    if (userCatalog.genres && Array.isArray(userCatalog.genres)) {
+    
+    if (userCatalog.genres && Array.isArray(userCatalog.genres) && userCatalog.genres.length > 0) {
       genres = userCatalog.genres;
-      //console.log(`[Manifest] Using genres from manifest: ${genres.length} genres`);
-    } else {
-      console.warn(`[Manifest] No genres found in manifest for ${userCatalog.id}, catalog may not support genre filtering`);
+      console.log(`[Manifest] Using genres from userCatalog.genres: ${genres.length} genres`);
+    } else if (userCatalog.manifestData && userCatalog.manifestData.extra) {
+      // Try to extract genres from the original manifest data
+      const genreExtra = userCatalog.manifestData.extra.find(e => e.name === 'genre');
+      if (genreExtra && genreExtra.options && Array.isArray(genreExtra.options) && genreExtra.options.length > 0) {
+        genres = genreExtra.options;
+        console.log(`[Manifest] Using genres from manifestData.extra: ${genres.length} genres`);
+      }
+    }
+    
+    // If still no genres, try to fetch from catalog items (last resort)
+    if (genres.length === 0) {
+      try {
+        console.log(`[Manifest] Attempting to fetch genres from catalog items for ${userCatalog.id}`);
+        const items = await fetchStremThruCatalog(catalogUrl);
+        if (items && items.length > 0) {
+          genres = await getGenresFromStremThruCatalog(items);
+          console.log(`[Manifest] Extracted ${genres.length} genres from catalog items`);
+        }
+      } catch (genreError) {
+        console.warn(`[Manifest] Failed to fetch genres from catalog items for ${userCatalog.id}:`, genreError.message);
+      }
+    }
+    
+    // Final fallback
+    if (genres.length === 0) {
+      console.warn(`[Manifest] No genres found for ${userCatalog.id}, using fallback`);
       genres = ['None']; // Single option for catalogs without genre support
     }
     

@@ -193,11 +193,6 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
   const animeProviders = new Set(['mal', 'kitsu', 'anidb', 'anilist']);
   
   let filteredItems = items;
-  if (genreFilter && genreFilter.toLowerCase() !== 'none') {
-    filteredItems = items.filter(item =>
-      item.genres?.some(g => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())
-    );
-  }
   
   console.log(`[✨ StremThru] Processing ${filteredItems.length} items (type: ${type}, genre: ${genreFilter || 'all'})`);
 
@@ -227,9 +222,14 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
 
   const metas = await Promise.all(metaPromises);
   const validMetas = metas.filter(Boolean);
+  if (genreFilter && genreFilter.toLowerCase() !== 'none') {
+    filteredItems = validMetas.filter(item =>
+      item.genres?.some(g => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())
+    );
+  }
   
   console.log(`[✨ StremThru] Successfully parsed ${validMetas.length}/${filteredItems.length} items`);
-  return validMetas;
+  return filteredItems;
 }
 
 module.exports = {
