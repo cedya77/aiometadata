@@ -219,6 +219,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       media.matchType = 'person'; // Tag as a match from a person's filmography
       addRawResult(media);
   });
+  // number of results from people search
+  consola.info(`[Search] TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
   consola.info(`[Search] TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
@@ -233,22 +235,24 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           return null;
         }
 
+        let logoUrl; let backgroundUrl; let posterUrl;
         // OPTIMIZATION: Fetch details, external_ids, and certifications in ONE call
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates" }, config)
-            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings" }, config);
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates, images", include_image_language: null }, config)
+            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings, images", include_image_language: null }, config);
         
         const allIds = {
             tmdbId: details.id,
             imdbId: details.external_ids?.imdb_id,
             tvdbId: details.external_ids?.tvdb_id
         };
+        logoUrl = details.images?.logos?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${details.images?.logos?.[0]?.file_path}` : null;
+        backgroundUrl = details.images?.backdrops?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${details.images?.backdrops?.[0]?.file_path}` : null;
+        posterUrl = media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg`;
 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
-        const [posterUrl, imdbRating, logoUrl, resolvedIds] = await Promise.all([
-            (mediaType === 'movie' ? Utils.getMoviePoster : Utils.getSeriesPoster)({ ...allIds, fallbackPosterUrl: media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg` }, config),
+        const [imdbRating, resolvedIds] = await Promise.all([
             allIds.imdbId ? getImdbRating(allIds.imdbId, mediaType) : Promise.resolve(null),
-            mediaType === 'movie' ? moviedb.getTmdbMovieLogo(media.id, config) : moviedb.getTmdbSeriesLogo(media.id, config),
             resolveAllIds(`tmdb:${media.id}`, mediaType, config)
         ]);
         
@@ -279,6 +283,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl;
         parsed.imdbRating = imdbRating;
         parsed.logo = logoUrl;
+        parsed.background = backgroundUrl;
         parsed.certification = mediaType === 'movie'
             ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
             : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
