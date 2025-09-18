@@ -307,6 +307,7 @@ async function buildParameters(type: string, language: string, page: number, id:
     
     logger.debug(`Excluding genre IDs: ${parameters.without_genres}`);
   }*/
+  parameters.include_adult = config.includeAdult;
 
   if (config.ageRating) {
     switch (config.ageRating) {
@@ -401,24 +402,70 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     // sparkle emoji
     logger.debug(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
     
-    // Fetch catalog items from StremThru with proper pagination
-    const items = await fetchStremThruCatalog(catalogUrl);
+    // Calculate StremThru pagination (skip in multiples of 100, client-side paginate to 20)
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+    const stremThruBatchSize = 100;
+    
+    // Determine which 100-item batch we need from StremThru
+    const globalItemIndex = (page - 1) * pageSize; // 0-based index of first item on this page
+    const stremThruSkip = Math.floor(globalItemIndex / stremThruBatchSize) * stremThruBatchSize;
+    
+    // Fetch the 100-item batch from StremThru with server-side genre filtering
+    let items = await fetchStremThruCatalog(catalogUrl, stremThruSkip, genre);
+    
+    // Fallback: if we get empty results with skip > 0, try skip=0 (for small genre lists)
+    if ((!items || items.length === 0) && stremThruSkip > 0) {
+      logger.debug(`[✨ StremThru] Empty results with skip=${stremThruSkip}, falling back to skip=0`);
+      items = await fetchStremThruCatalog(catalogUrl, 0, genre);
+    }
+    
     if (!items || items.length === 0) {
-      logger.warn(`[StremThru] No items returned from catalog: ${catalogUrl} (page: ${page})`);
+      logger.warn(`[StremThru] No items returned from catalog: ${catalogUrl} (page: ${page}, genre: ${genre || 'all'})`);
       return [];
     }
-    let filteredItems = items;
-    if (genre && genre.toLowerCase() !== 'none') {
-      filteredItems = items.filter(item =>
-        item.genres?.some(g => typeof g === "string" && g.toLowerCase() === genre.toLowerCase())
-      );
+    
+    // No client-side filtering needed - StremThru handles genre filtering server-side
+    const filteredItems = items;
+    
+    // Client-side pagination within the fetched batch
+    let localStartIndex, localEndIndex;
+    
+    if (stremThruSkip === 0 && filteredItems.length < stremThruBatchSize) {
+      // Fallback case: we got all results from skip=0, paginate through entire list
+      localStartIndex = globalItemIndex;
+      localEndIndex = Math.min(globalItemIndex + pageSize, filteredItems.length);
+      // If we're beyond available items, return empty
+      if (localStartIndex >= filteredItems.length) {
+        localStartIndex = 0;
+        localEndIndex = 0;
+      }
+    } else {
+      // Normal case: paginate within the 100-item batch
+      localStartIndex = globalItemIndex % stremThruBatchSize;
+      localEndIndex = Math.min(localStartIndex + pageSize, filteredItems.length);
     }
-
-    // Apply client-side pagination
-    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    const paginatedItems = filteredItems.slice(startIndex, endIndex);
+    
+    let paginatedItems = filteredItems.slice(localStartIndex, localEndIndex);
+    
+    // Handle case where page spans across batch boundaries (skip normal batch boundaries in fallback case)
+    if (paginatedItems.length < pageSize && localStartIndex + pageSize > stremThruBatchSize && !(stremThruSkip === 0 && filteredItems.length < stremThruBatchSize)) {
+      // Need to fetch next batch to complete the page
+      const nextStremThruSkip = stremThruSkip + stremThruBatchSize;
+      const nextItems = await fetchStremThruCatalog(catalogUrl, nextStremThruSkip, genre);
+      
+      if (nextItems && nextItems.length > 0) {
+        // No client-side filtering needed - StremThru handles genre filtering server-side
+        const nextFilteredItems = nextItems;
+        
+        const remainingItemsNeeded = pageSize - paginatedItems.length;
+        const nextBatchItems = nextFilteredItems.slice(0, remainingItemsNeeded);
+        paginatedItems = [...paginatedItems, ...nextBatchItems];
+        
+        logger.debug(`[✨ StremThru] Fetched additional ${nextBatchItems.length} items from next batch (skip: ${nextStremThruSkip}, genre: ${genre || 'all'})`);
+      }
+    }
+    
+    logger.debug(`[✨ StremThru] Batch skip: ${stremThruSkip}, local slice: ${localStartIndex}-${localEndIndex}, final items: ${paginatedItems.length}`);
     
     // Parse items into Stremio format
     const metas = await parseStremThruItems(paginatedItems, type, genre, language, config);

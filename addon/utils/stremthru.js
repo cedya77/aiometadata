@@ -142,14 +142,27 @@ function _createFallbackMeta(item, language, config) {
 
 // --- Exported Functions ---
 
-async function fetchStremThruCatalog(catalogUrl) {
+async function fetchStremThruCatalog(catalogUrl, skip = 0, genre) {
   try {
-    const data = await _makeRequest(catalogUrl);
+    let url = catalogUrl;
+    
+    // Build URL parameters
+    const params = [];
+    if (skip > 0) params.push(`skip=${skip}`);
+    if (genre && genre.toLowerCase() !== 'none') params.push(`genre=${encodeURIComponent(genre)}`);
+    
+    if (params.length > 0) {
+      // Remove .json extension if present, add parameters, then add .json back
+      url = url.replace(/\.json$/, '');
+      url = `${url}/${params.join('&')}.json`;
+    }
+    
+    const data = await _makeRequest(url);
     if (!data || !data.metas) {
       console.warn(`[StremThru] Invalid response format from ${catalogUrl}`);
       return [];
     }
-    console.log(`[✨ StremThru] Successfully fetched ${data.metas.length} items from catalog`);
+    console.log(`[✨ StremThru] Successfully fetched ${data.metas.length} items from catalog (skip: ${skip}, genre: ${genre || 'all'})`);
     return data.metas;
   } catch (err) {
     return [];
