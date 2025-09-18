@@ -294,7 +294,7 @@ async function buildParameters(type: string, language: string, page: number, id:
   const languages = await getLanguages(config);
   const parameters: any = { language, page};
 
-  if (id === 'tmdb.top' && type === 'series') {
+  /*if (id === 'tmdb.top' && type === 'series') {
     logger.debug('Applying genre exclusion for popular series catalog.');
 
     const excludedGenreIds = [
@@ -306,7 +306,7 @@ async function buildParameters(type: string, language: string, page: number, id:
     parameters.without_genres = excludedGenreIds.join(',');
     
     logger.debug(`Excluding genre IDs: ${parameters.without_genres}`);
-  }
+  }*/
 
   if (config.ageRating) {
     switch (config.ageRating) {
