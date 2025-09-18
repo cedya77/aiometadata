@@ -398,10 +398,10 @@ async function parseMDBListItems(items: any[], type: string, genreFilter: string
     .map(async (item: any) => {
       try {
         let stremioId = `tmdb:${item.id}`;
-      
+        let allIds: any = {};
         // Resolve IDs only if necessary, but keep the overall process parallel.
         if (preferredProvider !== 'tmdb') {
-            const allIds = await resolveAllIds(stremioId, type, config);
+            allIds = await resolveAllIds(stremioId, type, config);
             if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
               stremioId = `tvdb:${allIds.tvdbId}`;
             } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
@@ -413,7 +413,7 @@ async function parseMDBListItems(items: any[], type: string, genreFilter: string
         
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-          return await getMeta(type, language, stremioId, config, config.userUUID);
+          return await getMeta(type, language, stremioId, config, config.userUUID, allIds);
         }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
         
         if (result && result.meta) {

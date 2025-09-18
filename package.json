@@ -65,6 +65,7 @@
     "cmdk": "^1.0.0",
     "consola": "^3.4.2",
     "country-iso-2-to-3": "^1.1.0",
+    "csv-parse": "^6.1.0",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "fanart.tv-api": "^2.0.1",

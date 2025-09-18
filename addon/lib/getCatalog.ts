@@ -149,7 +149,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     let allIds;
     if (targetProviders.size > 0) {
       const targetProviderArray = Array.from(targetProviders);
-      allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, {}, targetProviderArray);
+      allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, targetProviderArray);
     }
     
     let stremioId = `tvdb:${tvdbId}`;
@@ -162,7 +162,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     }
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, config.userUUID);
+      return await getMeta(type, language, stremioId, config, config.userUUID, allIds);
     }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
     
     if (result && result.meta) {
@@ -264,10 +264,10 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
   const metas = await Promise.all(res.results.map(async item => {
     let stremioId = `tmdb:${item.id}`;
-      
+    let allIds: any = {};
     // Resolve IDs only if necessary, but keep the overall process parallel.
     if (preferredProvider !== 'tmdb') {
-        const allIds = await resolveAllIds(stremioId, type, config);
+       allIds = await resolveAllIds(stremioId, type, config);
         if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
           stremioId = `tvdb:${allIds.tvdbId}`;
         } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
@@ -278,7 +278,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, userUUID);
+      return await getMeta(type, language, stremioId, config, userUUID, allIds);
     }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
     if (result && result.meta) {
       return result.meta;

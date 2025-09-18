@@ -2,6 +2,7 @@ import * as express from 'express';
 import { startServerWithCacheWarming } from './index.js';
 import { initializeMapper } from './lib/id-mapper.js';
 import { initializeAnimeListMapper } from './lib/anime-list-mapper.js';
+import { initializeMappings } from './lib/wiki-mapper.js';
 import { runCacheCleanup } from './cache-cleanup.js';
 import database from './lib/database.js';
 import consola from 'consola';
@@ -32,6 +33,10 @@ async function startServer(): Promise<void> {
   consola.info('Initializing Anime List Mapper...');
   await initializeAnimeListMapper();
   consola.success('Anime List Mapper initialization complete.');
+
+  consola.info('Initializing Wiki Mappings...');
+  await initializeMappings();
+  consola.success('Wiki Mappings initialization complete.');
 
   consola.info('Initializing Database...');
   await database.initialize();

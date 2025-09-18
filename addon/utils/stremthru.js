@@ -93,12 +93,12 @@ async function _processStandardItem(item, provider, language, config) {
       const preferredProvider = item.type === 'movie'
           ? config.providers?.movie || 'tmdb'
           : config.providers?.series || 'tvdb';
-
+      let allIds = {};
       // Resolve all IDs to find the one for the preferred provider.
       
 
       if (provider !== preferredProvider){
-        const allIds = await resolveAllIds(item.id, item.type, config);
+        allIds = await resolveAllIds(item.id, item.type, config);
         if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
             stremioId = `tvdb:${allIds.tvdbId}`;
         } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
@@ -112,7 +112,7 @@ async function _processStandardItem(item, provider, language, config) {
       
       // Use the potentially translated ID to get the meta.
       // Note: Your getMeta function must be able to handle these different ID formats.
-      return await getMeta(item.type, language, stremioId, config, config.userUUID);
+      return await getMeta(item.type, language, stremioId, config, config.userUUID, allIds);
   }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type);
   
   return result?.meta || null;

@@ -7,6 +7,7 @@ const redisIdCache = require('./redis-id-cache');
 const timingMetrics = require('./timing-metrics');
 const consola = require('consola');
 const { httpGet } = require('../utils/httpClient');
+const { mappings } = require('./wiki-mapper.js');
 
 const logger = consola.create({ 
   level: 4, // Show all levels
@@ -19,6 +20,15 @@ const logger = consola.create({
   },
   tag: 'ID-Resolver'
 });
+
+// Performance tracking counters
+let performanceStats = {
+  totalResolutions: 0,
+  wikiMappingEarlyReturns: 0,
+  cacheEarlyReturns: 0,
+  apiCallsRequired: 0,
+  animeResolutions: 0
+};
 
 /**
  * Parses the initial Stremio ID into a usable object.
@@ -168,6 +178,7 @@ async function getExternalIdsFromImdb(imdbId, type) {
 
 async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, targetProviders = []) {
   const startTime = Date.now();
+  performanceStats.totalResolutions++;
   logger.debug(`Starting resolution for ${stremioId} (type: ${type})`);
   if (type !== 'movie' && type !== 'series' && type !== 'anime') {
     logger.warn(`Invalid type: ${type}`);
@@ -178,8 +189,10 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   let allIds = { ..._parseStremioId(stremioId), ...prefetchedIds };
   const isAnime = type === 'anime' || allIds.malId || allIds.kitsuId || allIds.anidbId || allIds.anilistId;
 
+
   // 2. Handle Anime
   if (isAnime) {
+    performanceStats.animeResolutions++;
     _handleAnimeMapping(allIds);
     const duration = Date.now() - startTime;
     await timingMetrics.recordTiming('id_resolution_anime', duration, { 
@@ -194,8 +207,62 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
 
   // 3. Check Cache
   if (!isAnime) {
+    // 1.5. Check wiki mappings first for fast resolution
+    try {
+      let wikiMapping = null;
+      if (allIds.tmdbId && (type === 'movie' || type === 'series')) {
+        wikiMapping = await mappings.getByTmdbId(allIds.tmdbId.toString(), type);
+      } else if (allIds.tvdbId && (type === 'movie' || type === 'series')) {
+        wikiMapping = await mappings.getByTvdbId(allIds.tvdbId.toString());
+      } else if (allIds.imdbId && (type === 'movie' || type === 'series')) {
+        wikiMapping = await mappings.getByImdbId(allIds.imdbId, type);
+      } else if (allIds.tvmazeId && type === 'series') {
+        wikiMapping = await mappings.getSeriesByTvmaze(allIds.tvmazeId.toString());
+      }
+      
+      if (wikiMapping) {
+        // Merge wiki mapping data with existing IDs
+        if (wikiMapping.imdbId && !allIds.imdbId) allIds.imdbId = wikiMapping.imdbId;
+        if (wikiMapping.tvdbId && !allIds.tvdbId) allIds.tvdbId = wikiMapping.tvdbId;
+        if (wikiMapping.tmdbId && !allIds.tmdbId) allIds.tmdbId = wikiMapping.tmdbId;
+        if (wikiMapping.tvmazeId && !allIds.tvmazeId) allIds.tvmazeId = wikiMapping.tvmazeId;
+        
+        logger.debug(`Wiki mapping found for ${stremioId}:`, { imdbId: allIds.imdbId, tvdbId: allIds.tvdbId, tmdbId: allIds.tmdbId, tvmazeId: allIds.tvmazeId });
+        
+        // Check if we have all target providers - if so, return early
+        if (targetProviders.length > 0) {
+          const hasAllTargets = targetProviders.every(provider => {
+            switch (provider) {
+              case 'imdb': return allIds.imdbId;
+              case 'tvdb': return allIds.tvdbId;
+              case 'tmdb': return allIds.tmdbId;
+              case 'tvmaze': return allIds.tvmazeId;
+              default: return false;
+            }
+          });
+          
+          if (hasAllTargets) {
+            performanceStats.wikiMappingEarlyReturns++;
+            const duration = Date.now() - startTime;
+            await timingMetrics.recordTiming('id_resolution_wiki', duration, { 
+              type, 
+              stremioId,
+              cached: false,
+              resolution_type: 'wiki_mapping_complete'
+            });
+            logger.success(` Wiki mapping provided all target providers for ${stremioId} (took ${duration}ms)`);
+            return allIds;
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(`Wiki mapping lookup failed for ${stremioId}:`, error.message);
+    }
+
+
     const cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
     if (cachedMapping) {
+      performanceStats.cacheEarlyReturns++;
       logger.debug(` Found cached mapping for ${stremioId}`);
       allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
       allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
@@ -215,6 +282,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   }
 
   // 4. Perform API Lookups in PARALLEL
+  performanceStats.apiCallsRequired++;
   const apiStartTime = Date.now();
   try {
     // Phase 1: Primary lookups based on existing IDs
@@ -330,4 +398,59 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   return allIds;
 }
 
-module.exports = { resolveAllIds };
+function getPerformanceStats() {
+  const total = performanceStats.totalResolutions;
+  if (total === 0) {
+    return {
+      totalResolutions: 0,
+      wikiMappingEarlyReturns: { count: 0, percentage: 0 },
+      cacheEarlyReturns: { count: 0, percentage: 0 },
+      apiCallsRequired: { count: 0, percentage: 0 },
+      animeResolutions: { count: 0, percentage: 0 },
+      earlyReturnRate: 0
+    };
+  }
+  
+  const wikiCount = performanceStats.wikiMappingEarlyReturns;
+  const cacheCount = performanceStats.cacheEarlyReturns;
+  const apiCount = performanceStats.apiCallsRequired;
+  const animeCount = performanceStats.animeResolutions;
+  const earlyReturns = wikiCount + cacheCount + animeCount;
+  
+  return {
+    totalResolutions: total,
+    wikiMappingEarlyReturns: { 
+      count: wikiCount, 
+      percentage: Math.round((wikiCount / total) * 100) 
+    },
+    cacheEarlyReturns: { 
+      count: cacheCount, 
+      percentage: Math.round((cacheCount / total) * 100) 
+    },
+    apiCallsRequired: { 
+      count: apiCount, 
+      percentage: Math.round((apiCount / total) * 100) 
+    },
+    animeResolutions: { 
+      count: animeCount, 
+      percentage: Math.round((animeCount / total) * 100) 
+    },
+    earlyReturnRate: Math.round((earlyReturns / total) * 100)
+  };
+}
+
+function resetPerformanceStats() {
+  performanceStats = {
+    totalResolutions: 0,
+    wikiMappingEarlyReturns: 0,
+    cacheEarlyReturns: 0,
+    apiCallsRequired: 0,
+    animeResolutions: 0
+  };
+}
+
+module.exports = { 
+  resolveAllIds, 
+  getPerformanceStats, 
+  resetPerformanceStats 
+};

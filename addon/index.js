@@ -1444,18 +1444,22 @@ addon.post("/api/dashboard/cache/clear", (req, res) => {
 addon.get("/api/dashboard/analytics", async (req, res) => {
   
   try {
-    const [stats, hourlyStats, topEndpoints, providerHourlyData] = await Promise.all([
+    const { getPerformanceStats } = require('./lib/id-resolver.js');
+    
+    const [stats, hourlyStats, topEndpoints, providerHourlyData, idResolverStats] = await Promise.all([
       requestTracker.getStats(),
       requestTracker.getHourlyStats(24),
       requestTracker.getTopEndpoints(10),
-      requestTracker.getHourlyProviderStats(24)
+      requestTracker.getHourlyProviderStats(24),
+      Promise.resolve(getPerformanceStats())
     ]);
 
     res.json({ 
       requestStats: stats, 
       hourlyData: hourlyStats,
       topEndpoints: topEndpoints,
-      providerHourlyData: providerHourlyData
+      providerHourlyData: providerHourlyData,
+      idResolverPerformance: idResolverStats
     });
   } catch (error) {
     console.error('[Dashboard API] Error:', error);

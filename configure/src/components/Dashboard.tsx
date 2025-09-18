@@ -226,6 +226,14 @@ function DashboardAnalytics({ data, loading }) {
 
   const [providerPerformance, setProviderPerformance] = useState([]);
   const [providerHourlyData, setProviderHourlyData] = useState([]);
+  const [idResolverPerformance, setIdResolverPerformance] = useState({
+    totalResolutions: 0,
+    wikiMappingEarlyReturns: { count: 0, percentage: 0 },
+    cacheEarlyReturns: { count: 0, percentage: 0 },
+    apiCallsRequired: { count: 0, percentage: 0 },
+    animeResolutions: { count: 0, percentage: 0 },
+    earlyReturnRate: 0
+  });
 
   useEffect(() => {
     // Fetch real analytics data
@@ -265,6 +273,11 @@ function DashboardAnalytics({ data, loading }) {
 
           // Update provider performance
           setProviderPerformance(overviewData.providerPerformance || []);
+
+          // Update ID resolver performance
+          if (analyticsData.idResolverPerformance) {
+            setIdResolverPerformance(analyticsData.idResolverPerformance);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch analytics data:', error);
@@ -483,6 +496,7 @@ function DashboardAnalytics({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+
     </div>
   );
 }
@@ -493,12 +507,39 @@ function DashboardPerformance({ data, loading }) {
   const [timingMetrics, setTimingMetrics] = useState({});
   const [selectedMetric, setSelectedMetric] = useState('id_resolution_total');
   const [timeRange, setTimeRange] = useState('24h');
+  const [idResolverPerformance, setIdResolverPerformance] = useState({
+    totalResolutions: 0,
+    wikiMappingEarlyReturns: { count: 0, percentage: 0 },
+    cacheEarlyReturns: { count: 0, percentage: 0 },
+    apiCallsRequired: { count: 0, percentage: 0 },
+    animeResolutions: { count: 0, percentage: 0 },
+    earlyReturnRate: 0
+  });
 
   useEffect(() => {
     if (data) {
       setTimingMetrics(data);
     }
   }, [data]);
+
+  useEffect(() => {
+    // Fetch ID resolver performance data
+    const fetchIdResolverPerformance = async () => {
+      try {
+        const response = await fetch('/api/dashboard/analytics');
+        if (response.ok) {
+          const analyticsData = await response.json();
+          if (analyticsData.idResolverPerformance) {
+            setIdResolverPerformance(analyticsData.idResolverPerformance);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch ID resolver performance:', error);
+      }
+    };
+
+    fetchIdResolverPerformance();
+  }, []);
 
   const formatDuration = (ms) => {
     if (ms < 1000) return `${ms}ms`;
@@ -808,6 +849,92 @@ function DashboardPerformance({ data, loading }) {
                   );
                 })()}
               </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ID Resolver Performance */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-4 w-4" />
+            ID Resolver Performance
+          </CardTitle>
+          <CardDescription>Performance breakdown of ID resolution process</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Overview Stats */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center p-4 bg-blue-50 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {idResolverPerformance.totalResolutions.toLocaleString()}
+                  </div>
+                  <div className="text-sm text-blue-600">Total Resolutions</div>
+                </div>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">
+                    {idResolverPerformance.earlyReturnRate}%
+                  </div>
+                  <div className="text-sm text-green-600">Early Return Rate</div>
+                </div>
+              </div>
+              
+              {/* Breakdown */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="text-sm">Wiki Mappings</span>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">{idResolverPerformance.wikiMappingEarlyReturns.count.toLocaleString()}</div>
+                    <div className="text-xs text-green-600">{idResolverPerformance.wikiMappingEarlyReturns.percentage}%</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="text-sm">Cache Hits</span>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">{idResolverPerformance.cacheEarlyReturns.count.toLocaleString()}</div>
+                    <div className="text-xs text-blue-600">{idResolverPerformance.cacheEarlyReturns.percentage}%</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="text-sm">Anime Resolutions</span>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">{idResolverPerformance.animeResolutions.count.toLocaleString()}</div>
+                    <div className="text-xs text-purple-600">{idResolverPerformance.animeResolutions.percentage}%</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-red-50 rounded">
+                  <span className="text-sm">API Calls Required</span>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">{idResolverPerformance.apiCallsRequired.count.toLocaleString()}</div>
+                    <div className="text-xs text-red-600">{idResolverPerformance.apiCallsRequired.percentage}%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Chart */}
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsBarChart
+                  data={[
+                    { name: 'Wiki Mappings', value: idResolverPerformance.wikiMappingEarlyReturns.percentage, fill: '#10b981' },
+                    { name: 'Cache Hits', value: idResolverPerformance.cacheEarlyReturns.percentage, fill: '#3b82f6' },
+                    { name: 'Anime', value: idResolverPerformance.animeResolutions.percentage, fill: '#8b5cf6' },
+                    { name: 'API Calls', value: idResolverPerformance.apiCallsRequired.percentage, fill: '#ef4444' }
+                  ]}
+                  layout="horizontal"
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+                  <YAxis type="category" dataKey="name" width={80} />
+                  <Tooltip formatter={(value) => [`${value}%`, 'Percentage']} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} />
+                </RechartsBarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </CardContent>

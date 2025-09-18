@@ -36,10 +36,11 @@ async function getTrending(type: string, language: string, page: number, genre: 
 
     const metas = await Promise.all(res.results.map(async (item: any) => {
       let stremioId = `tmdb:${item.id}`;
+      let allIds: any = {};
       
       // Resolve IDs only if necessary, but keep the overall process parallel.
       if (preferredProvider !== 'tmdb') {
-          const allIds = await resolveAllIds(stremioId, type, config);
+          allIds = await resolveAllIds(stremioId, type, config);
           if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
             stremioId = `tvdb:${allIds.tvdbId}`;
           } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
@@ -49,7 +50,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
           }
       }
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-        return await getMeta(type, language, stremioId, config, userUUID);
+        return await getMeta(type, language, stremioId, config, userUUID, allIds);
       }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
       
       if (result && result.meta) {

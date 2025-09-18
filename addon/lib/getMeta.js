@@ -55,7 +55,7 @@ const host = process.env.HOST_NAME.startsWith('http')
     : `https://${process.env.HOST_NAME}`;
 
 // --- Main Orchestrator ---
-async function getMeta(type, language, stremioId, config = {}, userUUID) {
+async function getMeta(type, language, stremioId, config = {}, userUUID, prefetchedIds = {}) {
   try {
     // --- TVDB Collections Meta Handler ---
     console.log(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
@@ -325,22 +325,35 @@ async function getMeta(type, language, stremioId, config = {}, userUUID) {
     const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
     const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
     const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
-    // imdbId is always a target provider for movies and series
+    const prefetchedProviders = [];
+    if(prefetchedIds.tmdbId) {
+      prefetchedProviders.push('tmdb');
+    }
+    if(prefetchedIds.tvdbId) {
+      prefetchedProviders.push('tvdb');
+    }
+    if(prefetchedIds.imdbId) {
+      prefetchedProviders.push('imdb');
+    }
+    if(prefetchedIds.tvmazeId) {
+      prefetchedProviders.push('tvmaze');
+    }
     const targetProviders = new Set();
     targetProviders.add(preferredProvider);
-    if(preferredProvider !== posterProvider) {
+    if(preferredProvider !== posterProvider && !prefetchedProviders.includes(posterProvider)) {
       targetProviders.add(posterProvider);
     }
-    if(preferredProvider !== backgroundProvider) {
+    if(preferredProvider !== backgroundProvider && !prefetchedProviders.includes(backgroundProvider)) {
       targetProviders.add(backgroundProvider);
     }
-    if(preferredProvider !== logoProvider) {
+    if(preferredProvider !== logoProvider && !prefetchedProviders.includes(logoProvider)) {
       targetProviders.add(logoProvider);
     }
-    if(!targetProviders.has('imdb')) {
+    if(!targetProviders.has('imdb') && !prefetchedProviders.includes('imdb')) {
       targetProviders.add('imdb');
     }
-    const allIds = await resolveAllIds(stremioId, type, config, null, Array.from(targetProviders));
+    let allIds = { ...prefetchedIds };
+    allIds = await resolveAllIds(stremioId, type, config, allIds, Array.from(targetProviders));
     const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
     const finalType = isAnime ? 'anime' : type;
     switch (finalType) {
