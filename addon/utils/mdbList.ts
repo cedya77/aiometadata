@@ -164,7 +164,7 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
-async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
+async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string, genre?: string): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
   // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
   const offset = (page * pageSize) - pageSize;
@@ -179,10 +179,13 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     if (order) {
       url += `&order=${order}`;
     }
+    if (genre && genre.toLowerCase() !== 'none') {
+      url += `&filter_genre=${genre}`;
+    }
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url),
-      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order})`
+      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
     );
     
     // Extract pagination metadata from headers
@@ -370,14 +373,8 @@ async function getGenresFromMDBList(listId: string, apiKey: string): Promise<str
 }
 
 
-async function parseMDBListItems(items: any[], type: string, genreFilter: string, language: string, config: UserConfig): Promise<any[]> {
+async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig): Promise<any[]> {
   let filteredItems = items;
-  if (genreFilter && genreFilter.toLowerCase() !== 'none') {
-    filteredItems = filteredItems.filter(item =>
-      Array.isArray(item.genre) &&
-      item.genre.some((g: any) => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())
-    );
-  }
   //console.log(`[MDBList] Filtered items: ${JSON.stringify(filteredItems)}`);
 
   const targetMediaType = type === 'series' ? 'show' : 'movie';

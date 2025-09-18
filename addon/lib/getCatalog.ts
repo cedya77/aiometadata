@@ -219,7 +219,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const sort = catalogConfig?.sort || 'rank';
     const order = catalogConfig?.order || 'desc';
     logger.debug(`MDBList sorting - sort: ${sort}, order: ${order}`);
-    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order);
+    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genre);
     
     // Smart pagination handling
     if (response.totalItems !== undefined && response.totalPages !== undefined) {
@@ -242,7 +242,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     
-    return await parseMDBListItems(response.items, type, genre, language, config);
+    return await parseMDBListItems(response.items, type, language, config);
   }
 
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
