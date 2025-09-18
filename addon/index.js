@@ -515,8 +515,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       // Take everything after 'search=' as the query, and decode it.
       extraArgs = { search: decodeURIComponent(extra.substring('search='.length)) };
     } else {
-      // For regular catalogs, URLSearchParams is usually safe.
-      extraArgs = Object.fromEntries(new URLSearchParams(extra));
+      // For regular catalogs, decode the entire string first
+      extraArgs = Object.fromEntries(new URLSearchParams(req.url.split("/").pop().split("?")[0].slice(0, -5)).entries());
     }
   }
   const cacheWrapper = cacheWrapCatalog;
@@ -543,7 +543,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       // Use regular catalog cache wrapper
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
         let metas = [];
-        const { genre: genreName, type_filter,  skip } = extra ? Object.fromEntries(new URLSearchParams(extra)) : {};
+        const { genre: genreName, type_filter,  skip } = extraArgs;
         const pageSize = id.includes(`mal.`) ? 25 : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [type, language, page];

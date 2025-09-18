@@ -192,11 +192,10 @@ async function getGenresFromStremThruCatalog(items) {
 async function parseStremThruItems(items, type, genreFilter, language, config) {
   const animeProviders = new Set(['mal', 'kitsu', 'anidb', 'anilist']);
   
-  let filteredItems = items;
   
-  console.log(`[✨ StremThru] Processing ${filteredItems.length} items (type: ${type}, genre: ${genreFilter || 'all'})`);
+  console.log(`[✨ StremThru] Processing ${items.length} items (type: ${type}, genre: ${genreFilter || 'all'})`);
 
-  const metaPromises = filteredItems.map(async item => {
+  const metaPromises = items.map(async item => {
     try {
       const [provider, id] = item.id.startsWith('tt') ? ['imdb', item.id] : item.id.split(':');
       if (!provider || !id) {
@@ -222,14 +221,9 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
 
   const metas = await Promise.all(metaPromises);
   const validMetas = metas.filter(Boolean);
-  if (genreFilter && genreFilter.toLowerCase() !== 'none') {
-    filteredItems = validMetas.filter(item =>
-      item.genres?.some(g => typeof g === "string" && g.toLowerCase() === genreFilter.toLowerCase())
-    );
-  }
   
-  console.log(`[✨ StremThru] Successfully parsed ${validMetas.length}/${filteredItems.length} items`);
-  return filteredItems;
+  console.log(`[✨ StremThru] Successfully parsed ${validMetas.length}/${items.length} items`);
+  return validMetas;
 }
 
 module.exports = {

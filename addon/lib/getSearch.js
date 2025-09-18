@@ -13,6 +13,18 @@ const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 const consola = require('consola');
+
+const logger = consola.create({ 
+  level: 4, // Show all levels
+  fancy: true,
+  colors: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  },
+  tag: 'Search'
+});
 const timingMetrics = require('./timing-metrics');
 const { parse } = require("path");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
@@ -76,7 +88,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const imdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
   const tvmazeId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TV Maze')?.id;
   const tvdbId = extendedRecord.id;
-  console.log(JSON.stringify({tmdbId, imdbId, tvmazeId, tvdbId}));
+  logger.debug('Resolved IDs:', {tmdbId, imdbId, tvmazeId, tvdbId});
   var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
   const posterUrl = fallbackImage;
   
@@ -94,7 +106,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
       certification = getTvdbCertification(extendedRecord.contentRatings, countryCode, contentType);
     }
   } catch (error) {
-    console.warn(`[Search] Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
+    logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
   }
   
   let preferredProvider;
@@ -136,7 +148,7 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
   let searchResults = [];
   switch(type){
     case 'movie':
-      console.log('performing anime search for movie', query);
+      logger.debug('Performing anime search for movie:', query);
       searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
     case 'series':
@@ -156,6 +168,14 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 
   }
   
+  // Early return if no search results
+  if (!searchResults || searchResults.length === 0) {
+    logger.info(`No anime results found for query: "${query}"`);
+    return [];
+  }
+  
+  logger.debug(`Found ${searchResults.length} anime results for query: "${query}"`);
+  
   // Use batch processing for better performance and to avoid rate limits
   const metas = await Utils.parseAnimeCatalogMetaBatch(searchResults, config, language);
   //console.log(metas); 
@@ -166,7 +186,7 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1) {
   const startTime = Date.now();
   const rawResults = new Map();
-  consola.info(`[Search] Starting TMDB search for type "${type}" with query: "${query}"`);
+  logger.info(`Starting TMDB search for type "${type}" with query: "${query}"`);
 
   // STEP 1: GATHER ALL POTENTIAL IDs IN PARALLEL (from title search and person search)
   const addRawResult = (media) => {
@@ -182,7 +202,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     // Check for symbols that are unlikely in a 'person''s name
     const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
     if (nameInvalidatingSymbols.test(query)) {
-      consola.info(`[Search] Skipping person search due to invalid symbols in query: "${query}"`);
+      logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
       return false;
     }
     
@@ -202,9 +222,9 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
                 const topPerson = sortedPersons[0];
                 
-                consola.info(`[Search] personRes: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
+                logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
                 if (!topPerson.name.toLowerCase().includes(query.toLowerCase())) {
-                  consola.info(`[Search] Skipping person ${topPerson.name} because it doesn't match the query: "${query}"`);
+                  logger.debug(`Skipping person ${topPerson.name} because it doesn't match the query: "${query}"`);
                   return [];
                 }
                 const credits = type === 'movie'
@@ -228,8 +248,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       addRawResult(media);
   });
   // number of results from people search
-  consola.info(`[Search] TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
-  consola.info(`[Search] TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+  logger.debug(`TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
+  logger.debug(`TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
   const sortedRawResults = Utils.sortSearchResults(Array.from(rawResults.values()), query).slice(0, 25);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
@@ -240,7 +260,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
         // Filter out items that don't match the search type (e.g., a movie found in an actor's TV credits)
         if(mediaType !== type) {
-          consola.warn(`[Search] Filtering out ${media.title || media.name} - mediaType: ${mediaType}, searchType: ${type}, original_media_type: ${media.media_type}`);
+          logger.debug(`Filtering out ${media.title || media.name} - mediaType: ${mediaType}, searchType: ${type}`);
           return null;
         }
 
@@ -267,7 +287,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         
         // Debug: Check for malformed poster URLs
         if (!posterUrl || posterUrl === 'null' || posterUrl.includes('undefined')) {
-          consola.warn(`[Search] Malformed poster URL for ${media.title || media.name}: ${posterUrl}`);
+          logger.warn(`Malformed poster URL for ${media.title || media.name}: ${posterUrl}`);
         }
         
         // Ensure we always have a valid poster URL
@@ -300,13 +320,13 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         parsed.score = media.score;
         return parsed;
     } catch (error) {
-        console.error(`[Search] Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
+        logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
         return null;
     }
   });
 
   const hydratedMetas = (await Promise.all(hydrationPromises)).filter(Boolean);
-  consola.info(`[Search] Hydration complete in ${Date.now() - startTime}ms. Found ${hydratedMetas.length} valid items.`);
+  logger.info(`Hydration complete in ${Date.now() - startTime}ms. Found ${hydratedMetas.length} valid items.`);
 
   // STEP 3: FINAL SORTING AND FILTERING (your existing logic is good)
   
@@ -332,10 +352,10 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           
           return resultRatingIndex <= userRatingIndex;
       });
-      consola.info(`[Search] Age rating filter applied: ${sortedResults.length} -> ${filteredResults.length} results.`);
+      logger.debug(`Age rating filter applied: ${sortedResults.length} -> ${filteredResults.length} results.`);
   }
 
-  consola.success(`[Search] Completed TMDB search for "${query}" in ${Date.now() - startTime}ms. Returning ${filteredResults.length} results.`);
+  logger.success(`Completed TMDB search for "${query}" in ${Date.now() - startTime}ms. Returning ${filteredResults.length} results.`);
   return filteredResults;
 }
 
@@ -343,10 +363,10 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 async function performAiSearch(type, query, language, config) {
   const aiSuggestions = await performGeminiSearch(config.geminikey, query, type, language);
   if (!aiSuggestions || aiSuggestions.length === 0) {
-    console.log('[AI Search] Gemini returned no suggestions.');
+    logger.info('Gemini returned no suggestions.');
     return [];
   }
-  console.log('[AI Search] Gemini suggested:', JSON.stringify(aiSuggestions, null, 2));
+  logger.debug('Gemini suggested:', JSON.stringify(aiSuggestions, null, 2));
 
   const finalMetas = [];
   const seenIds = new Set();
@@ -368,20 +388,20 @@ async function performAiSearch(type, query, language, config) {
         const searchTitle = suggestion.title;
         if (searchTitle) {
           const searchStartTime = Date.now();
-          consola.info(`[Search] Starting TVDB series search for: "${searchTitle}"`);
+          logger.debug(`Starting TVDB series search for: "${searchTitle}"`);
           
           const searchResults = await tvdb.searchSeries(searchTitle, config);
           const searchTime = Date.now() - searchStartTime;
-          consola.info(`[Search] TVDB series search completed in ${searchTime}ms, found ${searchResults?.length || 0} results`);
+          logger.debug(`TVDB series search completed in ${searchTime}ms, found ${searchResults?.length || 0} results`);
           
           const topMatchId = searchResults?.[0]?.tvdb_id;
           if (topMatchId) {
             const extendedStartTime = Date.now();
-            consola.info(`[Search] Fetching TVDB extended data for series ID: ${topMatchId}`);
+            logger.debug(`Fetching TVDB extended data for series ID: ${topMatchId}`);
             
             const extendedRecord = await tvdb.getSeriesExtended(topMatchId, config);
             const extendedTime = Date.now() - extendedStartTime;
-            consola.info(`[Search] TVDB extended data fetched in ${extendedTime}ms`);
+            logger.debug(`TVDB extended data fetched in ${extendedTime}ms`);
             
             parsedResult = await parseTvdbSearchResult(type, extendedRecord, language, config);
           }
@@ -402,7 +422,7 @@ async function performAiSearch(type, query, language, config) {
 
     } catch (error) {
       const title = suggestion.title || suggestion.english_title || 'Unknown';
-      console.error(`[AI Search] Failed to process suggestion "${title}":`, error.message);
+      logger.error(`Failed to process AI suggestion "${title}":`, error.message);
       continue; 
     }
   }
@@ -418,7 +438,7 @@ async function performTvdbSearch(type, query, language, config) {
 
   // STEP 1: GATHER IDs FROM TITLE AND PEOPLE SEARCHES IN PARALLEL
   const searchStartTime = Date.now();
-  consola.info(`[Search] Starting TVDB parallel search for: "${sanitizedQuery}"`);
+  logger.info(`Starting TVDB parallel search for: "${sanitizedQuery}"`);
 
   const [titleResults, peopleResults] = await Promise.all([
     type === 'movie' 
@@ -427,7 +447,7 @@ async function performTvdbSearch(type, query, language, config) {
     tvdb.searchPeople(sanitizedQuery, config)
   ]);
 
-  consola.info(`[Search] TVDB initial searches completed in ${Date.now() - searchStartTime}ms.`);
+  logger.debug(`TVDB initial searches completed in ${Date.now() - searchStartTime}ms.`);
 
   (titleResults || []).forEach(result => {
     const resultId = result.tvdb_id || result.id;
@@ -454,16 +474,16 @@ async function performTvdbSearch(type, query, language, config) {
         });
       }
     } catch (e) {
-      console.warn(`[TVDB Search] Could not fetch person details for ${topPerson.name}:`, e.message);
+      logger.warn(`Could not fetch person details for ${topPerson.name}:`, e.message);
     }
   }
   
   const uniqueIds = Array.from(idMap.keys());
   if (uniqueIds.length === 0) {
-    consola.info('[Search] No unique TVDB IDs found after initial search.');
+    logger.info('No unique TVDB IDs found after initial search.');
     return [];
   }
-  consola.info(`[Search] Found ${uniqueIds.length} unique TVDB IDs to fetch details for.`);
+  logger.debug(`Found ${uniqueIds.length} unique TVDB IDs to fetch details for.`);
 
   // STEP 2: FETCH EXTENDED DETAILS FOR ALL UNIQUE IDs IN PARALLEL
   const detailPromises = uniqueIds.map(id => {
@@ -476,7 +496,7 @@ async function performTvdbSearch(type, query, language, config) {
     .filter(res => res.status === 'fulfilled' && res.value)
     .map(res => res.value); // Extract successful results
     
-  consola.info(`[Search] Successfully fetched extended details for ${detailedResults.length} items.`);
+  logger.debug(`Successfully fetched extended details for ${detailedResults.length} items.`);
 
   // STEP 3: PARSE ALL DETAILED RESULTS INTO STREMIO METAS IN PARALLEL
   const parsePromises = detailedResults.map(record =>
@@ -484,7 +504,7 @@ async function performTvdbSearch(type, query, language, config) {
   );
     
   const finalResults = (await Promise.all(parsePromises)).filter(Boolean);
-  consola.info(`[Search] Successfully parsed ${finalResults.length} items into Stremio metas.`);
+  logger.info(`Successfully parsed ${finalResults.length} items into Stremio metas.`);
 
   // STEP 4: APPLY AGE RATING FILTERING
   let ageFilteredResults = finalResults;
@@ -509,9 +529,9 @@ async function performTvdbSearch(type, query, language, config) {
       return resultRatingIndex <= userRatingIndex;
     });
     
-    consola.info(`[Search] TVDB filtered ${finalResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
+    logger.debug(`TVDB filtered ${finalResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
   }
-  console.log(`[Search] TVDB search results completed in ${Date.now() - searchStartTime}ms`);
+  logger.info(`TVDB search results completed in ${Date.now() - searchStartTime}ms`);
 
   return ageFilteredResults;
 }
@@ -554,7 +574,7 @@ async function performTvmazeSearch(query, language, config) {
   }
   
   // --- TIER 2 & 3 FALLBACKS ---
-  console.log(`Initial searches failed for "${query}". Trying fallback tiers...`);
+  logger.info(`Initial searches failed for "${query}". Trying fallback tiers...`);
   /*const tvdbResults = await tvdb.search(query);
   if (tvdbResults.length > 0) {
     const topTvdbResult = tvdbResults[0];
@@ -643,12 +663,12 @@ async function getSearch(id, type, language, extra, config) {
   const searchStartTime = Date.now();
   try {
     if (!extra) {
-      console.warn(`Search request for id '${id}' received with no 'extra' argument.`);
+      logger.warn(`Search request for id '${id}' received with no 'extra' argument.`);
       return { metas: [] };
     }
 
     const queryText = extra.search || extra.genre_id || extra.va_id || 'N/A';
-    console.time(timerLabel);
+    // Timing handled by logger.info at completion
 
     let metas = [];
      const pageSize = 25; 
@@ -678,13 +698,13 @@ async function getSearch(id, type, language, extra, config) {
         break;
 
       /*case 'mal.search.series':
-        console.log(`[getSearch] Performing mal.search.series search for series: ${extra.search}`);
+        logger.debug(`Performing mal.search.series search for series: ${extra.search}`);
         if (extra.search) {
           metas = await performAnimeSearch('series', extra.search, language, config);
         }
         break;  
       case 'mal.search.movie':
-        console.log(`[getSearch] Performing mal.search.movie search for movies: ${extra.search}`);
+        logger.debug(`Performing mal.search.movie search for movies: ${extra.search}`);
         if (extra.search) {
           metas = await performAnimeSearch('movie', extra.search, language, config);
         }
@@ -694,7 +714,7 @@ async function getSearch(id, type, language, extra, config) {
         if (extra.search) {
           const query = extra.search;
           let providerId;
-          console.log(`[getSearch] Performing search for type '${type}' with query '${query}'`);
+          logger.info(`Performing search for type '${type}' with query '${query}'`);
           if (type === 'movie') {
             providerId = config.search?.providers?.movie;
           } else if (type === 'series') {
@@ -707,10 +727,10 @@ async function getSearch(id, type, language, extra, config) {
           
           providerId = providerId || getDefaultProvider(type);
           if (config.search?.ai_enabled && config.geminikey) {
-            console.log(`[getSearch] Performing AI-enhanced search for type '${type}'`);
+            logger.info(`Performing AI-enhanced search for type '${type}'`);
             metas = await performAiSearch(type, query, language, config);
           } else {
-            console.log(`[getSearch] Performing direct keyword search for type '${type}' using provider '${providerId}'`);
+            logger.debug(`Performing direct keyword search for type '${type}' using provider '${providerId}'`);
 
             switch (providerId) {
               case 'mal.search.series':
@@ -734,12 +754,12 @@ async function getSearch(id, type, language, extra, config) {
         break;
       
       default:
-        console.warn(`[getSearch] Received unknown search ID: '${id}'`);
+        logger.warn(`Received unknown search ID: '${id}'`);
         break;
     }
 
     const searchDuration = Date.now() - searchStartTime;
-    console.timeEnd(timerLabel);
+    logger.info(`Search completed in ${searchDuration}ms for "${queryText}" (${id})`);
     
     // Record search timing metrics
     let actualProvider = getProviderFromSearchId(id);
@@ -785,8 +805,7 @@ async function getSearch(id, type, language, extra, config) {
     return { metas };
   } catch (error) {
     const searchDuration = Date.now() - searchStartTime;
-    console.timeEnd(timerLabel);
-    console.error(`Error during search for id "${id}":`, error);
+    logger.error(`Search failed after ${searchDuration}ms for "${queryText}" (${id}):`, error);
     
     // Record failed search timing
     let actualProvider = getProviderFromSearchId(id);

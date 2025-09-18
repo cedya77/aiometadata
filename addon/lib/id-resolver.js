@@ -168,7 +168,7 @@ async function getExternalIdsFromImdb(imdbId, type) {
 
 async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, targetProviders = []) {
   const startTime = Date.now();
-  logger.info(`Starting resolution for ${stremioId} (type: ${type})`);
+  logger.debug(`Starting resolution for ${stremioId} (type: ${type})`);
   if (type !== 'movie' && type !== 'series' && type !== 'anime') {
     logger.warn(`Invalid type: ${type}`);
     return null;
@@ -196,7 +196,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   if (!isAnime) {
     const cachedMapping = await redisIdCache.getCachedIdMapping(type, allIds.tmdbId, allIds.tvdbId, allIds.imdbId, allIds.tvmazeId);
     if (cachedMapping) {
-      logger.info(` Found cached mapping for ${stremioId}`);
+      logger.debug(` Found cached mapping for ${stremioId}`);
       allIds.tmdbId = allIds.tmdbId || cachedMapping.tmdb_id;
       allIds.tvdbId = allIds.tvdbId || cachedMapping.tvdb_id;
       allIds.imdbId = allIds.imdbId || cachedMapping.imdb_id;
@@ -211,7 +211,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
       logger.success(` Cache hit resolution complete for ${stremioId} (took ${duration}ms)`);
       return allIds;
     }
-    logger.info(` No cache hit for ${stremioId}, proceeding to API lookups.`);
+    logger.debug(` No cache hit for ${stremioId}, proceeding to API lookups.`);
   }
 
   // 4. Perform API Lookups in PARALLEL
@@ -323,10 +323,10 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     resolution_type: 'full_resolution'
   });
   
-  logger.info(` API lookup phase took ${apiDuration}ms for ${stremioId}`);
+  logger.debug(` API lookup phase took ${apiDuration}ms for ${stremioId}`);
   const duration = totalDuration;
   logger.success(` Resolution complete for ${stremioId} (took ${duration}ms)`);
-  logger.box(` Final resolved IDs for this ${stremioId} of type ${type} are:`, allIds);
+  logger.debug(` Final resolved IDs for ${stremioId} (type: ${type}):`, allIds);
   return allIds;
 }
 

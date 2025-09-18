@@ -387,7 +387,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 
   if (allIds?.tmdbId) {
     try {
-      const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
+      const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids, images", include_image_language: null }, config);
       return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId}: fallback to provider of the stremioId`);
@@ -419,7 +419,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
     if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
     try {
-      const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
+      const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids, images", include_image_language: null }, config);
       return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. Falling back.`);
@@ -663,7 +663,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
 
 async function buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const { allIds } = enrichmentData;
-  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits } = movieData;
+  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits, images } = movieData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
   const castCount = config.castCount === 0 ? undefined : config.castCount;
@@ -671,7 +671,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   // Get artwork based on art provider preference
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
   const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  let tmdbLogoUrl = null;
+  let tmdbLogoUrl = images?.logos?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${images?.logos?.[0]?.file_path}` : null;
   
   let poster, background, logoUrl, imdbRatingValue;
   
@@ -789,7 +789,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
 
 
 async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
-  const { id: tmdbId, name, external_ids, poster_path, backdrop_path, credits, videos: trailers, seasons } = seriesData;
+  const { id: tmdbId, name, external_ids, poster_path, backdrop_path, credits, videos: trailers, seasons, images } = seriesData;
   const { allIds } = enrichmentData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
@@ -800,8 +800,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   // Get artwork based on art provider preference
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-  const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  let tmdbLogoUrl = null;
+  const tmdbBackgroundUrl = images?.backdrops?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${images?.backdrops?.[0]?.file_path}` : null;
+  let tmdbLogoUrl = images?.logos?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${images?.logos?.[0]?.file_path}` : null;
   let poster, background, logoUrl, imdbRatingValue;
   
   if (isAnime) {

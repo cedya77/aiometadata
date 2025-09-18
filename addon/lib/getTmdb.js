@@ -70,6 +70,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
   const queryParams = new URLSearchParams(params);
   queryParams.append('api_key', apiKey);
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
+  console.log(`[TMDB] Making request to ${url}`);
 
   let attempt = 0;
   const maxRetries = 3;

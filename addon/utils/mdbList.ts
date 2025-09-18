@@ -3,6 +3,19 @@ import { resolveAllIds } from "../lib/id-resolver.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
+const consola = require('consola');
+
+const logger = consola.create({ 
+  level: 4, // Show all levels
+  fancy: true,
+  colors: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  },
+  tag: 'MDBList'
+});
 
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.
@@ -69,7 +82,7 @@ async function makeRateLimitedRequest<T>(
     // Check if we're in a global cooldown period from a previous rate limit hit.
     if (rateLimitState.isRateLimited && rateLimitState.rateLimitResetTime > now) {
       const waitTime = rateLimitState.rateLimitResetTime - now;
-      console.log(`[${context}] Global rate limit cooldown active, waiting ${waitTime}ms`);
+      logger.debug(`Global rate limit cooldown active, waiting ${waitTime}ms - ${context}`);
       await sleep(waitTime);
     }
     rateLimitState.isRateLimited = false; // Cooldown is over
@@ -104,7 +117,7 @@ async function makeRateLimitedRequest<T>(
       requestTracker.trackProviderCall('mdblist', responseTime, false);
 
       if (isPermanentError(error)) {
-        console.error(`[${context}] Request failed with permanent error, no retry: ${error.message}`);
+        logger.error(`Request failed with permanent error, no retry: ${error.message} - ${context}`);
         requestTracker.logError('error', `MDBList API permanent error`, { /* ... */ });
         throw error;
       }
@@ -114,7 +127,7 @@ async function makeRateLimitedRequest<T>(
         rateLimitState.recentRateLimitHits++;
         
         if (isLastAttempt) {
-          console.error(`[${context}] Rate limit exceeded after ${retries} attempts:`, error.message);
+          logger.error(`Rate limit exceeded after ${retries} attempts: ${error.message} - ${context}`);
           throw error;
         }
         
@@ -122,7 +135,7 @@ async function makeRateLimitedRequest<T>(
         const jitter = Math.random() * 1000;
         const totalDelay = Math.min(backoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
         
-        console.warn(`[${context}] Rate limit hit. Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${retries})`);
+        logger.warn(`Rate limit hit. Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${retries}) - ${context}`);
         
         // Set a global cooldown period for all subsequent requests.
         rateLimitState.isRateLimited = true;
@@ -134,7 +147,7 @@ async function makeRateLimitedRequest<T>(
       
       // Handle other temporary errors (e.g., 500, timeouts)
       if (isLastAttempt) {
-        console.error(`[${context}] Request failed after ${retries} attempts:`, error.message);
+        logger.error(`Request failed after ${retries} attempts: ${error.message} - ${context}`);
         throw error;
       }
       
@@ -143,7 +156,7 @@ async function makeRateLimitedRequest<T>(
         RATE_LIMIT_CONFIG.maxDelay
       );
       
-      console.log(`[${context}] Attempt ${attempt} failed with temporary error, retrying in ${delay}ms...`);
+      logger.debug(`Attempt ${attempt} failed with temporary error, retrying in ${delay}ms - ${context}`);
       await sleep(delay);
     }
   }
@@ -151,11 +164,13 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
-async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string): Promise<any[]> {
-  const offset = (page * 20) - 20;
+async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
+  // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+  const offset = (page * pageSize) - pageSize;
   
   try {
-    let url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=20&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
+    let url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
     
     // Add sort and order parameters if provided
     if (sort) {
@@ -167,18 +182,62 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url),
-      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, sort: ${sort}, order: ${order})`
+      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order})`
     );
     
-    console.log(`[MDBList] fetchMDBListItems completed (undici) listId: ${listId} - sort: ${sort}, order: ${order}`);
+    // Extract pagination metadata from headers
+    const totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
+    const hasMore = response.headers?.['x-has-more'] === 'true';
     
-    return [
+    // Calculate total pages from headers
+    const totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
+    
+    const items = [
       ...(response.data.movies || []),
       ...(response.data.shows || [])
     ];
+    
+    // Smart pagination validation and logging
+    if (totalItems !== undefined) {
+      // Validate request didn't exceed available items
+      if (offset >= totalItems) {
+        logger.warn(`Requested offset ${offset} exceeds total items ${totalItems} for list ${listId}`);
+        return { 
+          items: [], 
+          totalItems, 
+          hasMore: false, 
+          totalPages 
+        };
+      }
+      
+      // Enhanced logging with pagination context
+      const itemsReturned = items.length;
+      const expectedItems = Math.min(pageSize, totalItems - offset);
+      
+      logger.debug(`Smart pagination - listId: ${listId}, page: ${page}/${totalPages}, items: ${itemsReturned}/${expectedItems}, offset: ${offset}, totalItems: ${totalItems}, hasMore: ${hasMore}`);
+      
+      // Validate response consistency
+      if (!hasMore && itemsReturned > 0 && offset + itemsReturned < totalItems) {
+        logger.warn(`Inconsistent pagination: hasMore=false but ${offset + itemsReturned} < ${totalItems}`);
+      }
+      
+      // Early exit detection
+      if (!hasMore && itemsReturned === 0) {
+        logger.info(`Reached end of list at page ${page} (no items returned)`);
+      }
+    } else {
+      logger.debug(`No pagination headers - listId: ${listId}, page: ${page}, items: ${items.length}, hasMore: ${hasMore}`);
+    }
+    
+    return {
+      items,
+      totalItems,
+      hasMore,
+      totalPages
+    };
   } catch (err: any) {
-    console.error("Error retrieving MDBList items:", err.message);
-    return [];
+    logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
+    return { items: [] };
   }
 }
 
@@ -195,7 +254,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
 async function getMediaRatingFromMDBList(mediaProvider: string, mediaType: string, id: string, apiKey: string): Promise<any[]> {
   if (!apiKey || !id) {
     // This check is good, it prevents unnecessary API calls.
-    console.warn("[MDBList] Missing API key for getMediaRatingFromMDBList");
+    logger.warn("Missing API key for getMediaRatingFromMDBList");
     return [];
   }
 
@@ -210,11 +269,11 @@ async function getMediaRatingFromMDBList(mediaProvider: string, mediaType: strin
     return response.data?.ratings || [];
   } catch (error: any) {
     if (error.response?.status === 404) {
-      console.log(`[${context}] Item not found on MDBList (404), returning empty ratings.`);
+      logger.info(`Item not found on MDBList (404), returning empty ratings - ${context}`);
       return [];
     }
     
-    console.error(`[${context}] An unexpected error occurred:`, error.message);
+    logger.error(`An unexpected error occurred: ${error.message} - ${context}`);
     return [];
   }
 }
@@ -231,7 +290,7 @@ async function getMediaRatingFromMDBList(mediaProvider: string, mediaType: strin
  */
 async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: string, ids: string[], apiKey: string, appendToResponse: string[] = []): Promise<any[]> {
   if (!ids || ids.length === 0 || !apiKey) {
-    console.warn("[MDBList] Missing required parameters for batch media info");
+    logger.warn("Missing required parameters for batch media info");
     return [];
   }
 
@@ -244,7 +303,7 @@ async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: stri
     const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(ids.length / BATCH_SIZE);
 
-    console.log(`[MDBList] Processing batch ${batchNumber}/${totalBatches} with ${batchIds.length} items`);
+    logger.debug(`Processing batch ${batchNumber}/${totalBatches} with ${batchIds.length} items`);
 
     try {
       const url = `https://api.mdblist.com/${mediaProvider}/${mediaType}?apikey=${apiKey}`;
@@ -265,17 +324,17 @@ async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: stri
       );
 
       if (response.data && Array.isArray(response.data)) {
-        console.log(`[MDBList] Batch ${batchNumber}/${totalBatches} successful: ${response.data.length} items (undici)`);
+        logger.debug(`Batch ${batchNumber}/${totalBatches} successful: ${response.data.length} items`);
         allResults.push(...response.data);
       } else {
-        console.warn(`[MDBList] Batch ${batchNumber}/${totalBatches} unexpected response format:`, response.data);
+        logger.warn(`Batch ${batchNumber}/${totalBatches} unexpected response format:`, response.data);
       }
 
     } catch (error: any) {
-      console.error(`[MDBList] Error in batch ${batchNumber}/${totalBatches}:`, error.message);
+      logger.error(`Error in batch ${batchNumber}/${totalBatches}:`, error.message);
       if (error.response) {
-        console.error(`[MDBList] Response status: ${error.response.status}`);
-        console.error(`[MDBList] Response data:`, error.response.data);
+        logger.error(`Response status: ${error.response.status}`);
+        logger.error(`Response data:`, error.response.data);
       }
       // Continue with next batch even if this one fails
     }
@@ -286,16 +345,16 @@ async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: stri
     }
   }
 
-  console.log(`[MDBList] Completed all batches. Total items fetched: ${allResults.length}`);
+  logger.info(`Completed all batches. Total items fetched: ${allResults.length}`);
   return allResults;
 }
 
 async function getGenresFromMDBList(listId: string, apiKey: string): Promise<string[]> {
   try {
-    const items = await fetchMDBListItems(listId, apiKey, 'en-US', 1);
+    const response = await fetchMDBListItems(listId, apiKey, 'en-US', 1);
     const genres = [
       ...new Set(
-        items.flatMap((item: any) =>
+        response.items.flatMap((item: any) =>
           (item.genre || []).map((g: any) => {
             if (!g || typeof g !== "string") return null;
             return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase();
@@ -305,7 +364,7 @@ async function getGenresFromMDBList(listId: string, apiKey: string): Promise<str
     ].sort();
     return genres;
   } catch(err: any) {
-    console.error("ERROR in getGenresFromMDBList:", err);
+    logger.error("Error in getGenresFromMDBList:", err);
     return [];
   }
 }
@@ -362,7 +421,7 @@ async function parseMDBListItems(items: any[], type: string, genreFilter: string
         }
         return null;
       } catch (error: any) {
-        console.error(`[MDBList] Error getting meta for item ${item.id}:`, error.message);
+        logger.error(`Error getting meta for item ${item.id}:`, error.message);
         return null;
       }
     }));

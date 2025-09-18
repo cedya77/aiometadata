@@ -751,7 +751,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    const metaConfigString = JSON.stringify(metaConfig);
    const key = `meta:${metaConfigString}:${metaId}`;
    
-       console.log(`📦 [Cache] Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
+       cacheLogger.debug(`Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
    
    return cacheWrap(key, method, ttl, options);
 }
@@ -856,7 +856,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    const meta = result?.meta || result;
    
   if (!meta || !meta.id || !meta.name || !meta.type) {
-          console.warn(`📦 [Cache] No valid meta object returned for ${metaId}`);
+          cacheLogger.warn(`No valid meta object returned for ${metaId}`);
     return { meta: null };
   }
   
@@ -865,7 +865,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     const requestTracker = require('./requestTracker');
     await requestTracker.captureMetadataFromComponents(metaId, meta, meta.type);
   } catch (error) {
-    console.warn(`[Cache] Failed to capture metadata for dashboard: ${error.message}`);
+    cacheLogger.warn(`Failed to capture metadata for dashboard: ${error.message}`);
   }
    
    const componentPromises = [];
@@ -1083,7 +1083,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          return { componentName, data: null };
        }
      } catch (error) {
-       console.warn(`📦 [Cache] Error fetching component ${componentName}:`, error);
+       cacheLogger.warn(`Error fetching component ${componentName}:`, error);
        return { componentName, data: null };
      }
    });
@@ -1138,7 +1138,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
   // Validate the reconstructed meta
   if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
-    console.warn(`📦 [Cache] Reconstructed meta missing required fields for ${metaId}`);
+    cacheLogger.warn(`Reconstructed meta missing required fields for ${metaId}`);
     return null;
   }
   
@@ -1147,10 +1147,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     const requestTracker = require('./requestTracker');
     await requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type);
   } catch (error) {
-    console.warn(`[Cache] Failed to capture metadata for dashboard: ${error.message}`);
+    cacheLogger.warn(`Failed to capture reconstructed metadata for dashboard: ${error.message}`);
   }
   
-  console.log(`📦 [Cache] Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
+  cacheLogger.info(`Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
   
   return { meta: reconstructedMeta };
 }
@@ -1160,7 +1160,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  * This provides granular caching with graceful degradation
  */
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
-   console.log(`📦 [Cache] Smart meta caching for ${metaId} (type: ${type})`);
+   cacheLogger.info(`Smart meta caching for ${metaId} (type: ${type})`);
    
    // First, try to reconstruct from cached components
    const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type);
@@ -1170,7 +1170,7 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   }
    
    // If reconstruction failed, generate full meta and cache components
-   console.log(`📦 [Cache] Component reconstruction failed for ${metaId}, generating full meta`);
+   cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta`);
    return await cacheWrapMetaComponents(userUUID, metaId, method, ttl, options, type);
 }
 
@@ -1184,7 +1184,7 @@ async function cacheComponent(cacheKey, componentData, ttl) {
   try {
     await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
   } catch (error) {
-    console.warn(`📦 [Cache] Failed to cache component for ${cacheKey}:`, error);
+    cacheLogger.warn(`Failed to cache component for ${cacheKey}:`, error);
   }
 }
 
@@ -1270,7 +1270,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
     
   } catch (error) {
-    console.warn(`📦 [Cache] Failed to cache component ${componentName} for ${metaId}:`, error);
+    cacheLogger.warn(`Failed to cache component ${componentName} for ${metaId}:`, error);
   }
 }
 
@@ -1364,7 +1364,7 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     }
     
   } catch (error) {
-    console.warn(`📦 [Cache] Failed to get cached component ${componentName} for ${metaId}:`, error);
+    cacheLogger.warn(`Failed to get cached component ${componentName} for ${metaId}:`, error);
     return null;
   }
 }
@@ -1415,7 +1415,7 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
   const catalogConfigString = JSON.stringify(catalogConfig);
   const key = `catalog:${catalogConfigString}:${catalogKey}`;
   
-  console.log(`📦 [Cache] Static catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+  cacheLogger.debug(`Static catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
   
   return cacheWrap(key, method, STATIC_CATALOG_TTL, options);
 }
@@ -1429,7 +1429,7 @@ function cacheWrapTvdbApi(key, method) {
     
     // Don't cache null results from TVDB API - let them retry immediately
     if (result === null || result === undefined) {
-      console.log(`📦 [TVDB Cache] Skipping cache for null result: ${key}`);
+      cacheLogger.debug(`TVDB Cache - Skipping cache for null result: ${key}`);
       return { type: 'SKIP_CACHE', ttl: 0 };
     }
     
@@ -1449,7 +1449,7 @@ function cacheWrapTvmazeApi(key, method) {
     
     // Don't cache null results from TVmaze API - let them retry immediately
     if (result === null || result === undefined) {
-      console.log(`📦 [TVmaze Cache] Skipping cache for null result: ${key}`);
+      cacheLogger.debug(`TVmaze Cache - Skipping cache for null result: ${key}`);
       return { type: 'SKIP_CACHE', ttl: 0 };
     }
     
@@ -1491,7 +1491,7 @@ function clearCacheHealth() {
   cacheHealth.corruptedEntries = 0;
   cacheHealth.errorCounts = {};
   cacheHealth.keyAccessCounts.clear();
-  console.log('[Cache Health] Statistics cleared');
+  cacheHealthLogger.info('Statistics cleared');
 }
 
 /**
@@ -1499,16 +1499,16 @@ function clearCacheHealth() {
  */
 async function clearCache(key) {
   if (!redis) {
-    console.warn('📦 [Cache] Redis not available, cannot clear cache');
+    cacheLogger.warn('Redis not available, cannot clear cache');
     return;
   }
   
   try {
     const result = await redis.del(key);
-    console.log(`📦 [Cache] Cleared key: ${key} (${result} keys removed)`);
+    cacheLogger.info(`Cleared key: ${key} (${result} keys removed)`);
     return result;
   } catch (error) {
-    console.error(`📦 [Cache] Failed to clear key ${key}:`, error.message);
+    cacheLogger.error(`Failed to clear key ${key}:`, error.message);
     throw error;
   }
 }

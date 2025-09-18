@@ -1733,7 +1733,7 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
     }
   }
   
-  if (artProvider === 'tmdb') {
+  if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
         const tmdbLogo = await tmdb.movieImages({ id: tmdbId }, config).then(res => {
@@ -2018,7 +2018,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
     }
   }
   
-  if (artProvider === 'tmdb') {
+  if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
         const tmdbLogo = await tmdb.tvImages({ id: tmdbId }, config).then(res => {

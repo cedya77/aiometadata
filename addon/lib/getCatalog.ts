@@ -1,6 +1,19 @@
 require("dotenv").config();
 import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
+const consola = require('consola');
+
+const logger = consola.create({ 
+  level: 4, // Show all levels
+  fancy: true,
+  colors: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  },
+  tag: 'Catalog'
+});
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import * as CATALOG_TYPES from "../static/catalog-types.json";
@@ -24,47 +37,47 @@ const host = process.env.HOST_NAME?.startsWith('http')
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
-      console.log(`[getCatalog] Fetching TVDB collections catalog: ${id}`);
+      logger.info(`Fetching TVDB collections catalog: ${id}`);
       const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
       return { metas: metas };
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
-      console.log(`[getCatalog] Routing to TVDB catalog handler for id: ${id}`);
+      logger.info(`Routing to TVDB catalog handler for id: ${id}`);
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config);
       return { metas: tvdbResults };
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
-      console.log(`[getCatalog] Routing to TMDB/MDBList catalog handler for id: ${id}`);
+      logger.info(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID);
       return { metas: tmdbResults };
     }
     else if (id.startsWith('stremthru.')) {
-      console.log(`[getCatalog] Routing to StremThru catalog handler for id: ${id}`);
+      logger.info(`Routing to StremThru catalog handler for id: ${id}`);
       const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
       return { metas: stremthruResults };
     }
 
     else {
-      console.warn(`[getCatalog] Received request for unknown catalog prefix: ${id}`);
+      logger.warn(`Received request for unknown catalog prefix: ${id}`);
       return { metas: [] };
     }
   } catch (error: any) {
-    console.warn(`[getCatalog] Error in getCatalog router for id=${id}, type=${type}:`, error.message);
+    logger.error(`Error in getCatalog router for id=${id}, type=${type}:`, error.message);
     return { metas: [] };
   }
 }
 
 async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig): Promise<any[]> {
-  console.log(`[getCatalog] Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
+  logger.info(`Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
   
   // Cache the raw TVDB API response using a cache key that doesn't include page
   const cacheKey = `tvdb-filter:${type}:${genreName}:${language}`;
   
   const allTvdbGenres = await getGenreList('tvdb', language, type as "movie" | "series", config);
-  console.log(`[getCatalog] TVDB genres fetched: ${allTvdbGenres.length} genres available`);
+  logger.debug(`TVDB genres fetched: ${allTvdbGenres.length} genres available`);
   
   const genre = allTvdbGenres.find(g => g.name === genreName);
-  console.log(`[getCatalog] Genre lookup for "${genreName}":`, genre ? `Found ID ${genre.id}` : 'NOT FOUND');
+  logger.debug(`Genre lookup for "${genreName}":`, genre ? `Found ID ${genre.id}` : 'NOT FOUND');
   
   const langParts = language.split('-');
   const langCode2 = langParts[0];
@@ -80,15 +93,15 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   };
 
   if (tvdbContentRatingId) {
-    console.log(`[getCatalog] Using TVDB content rating ID ${tvdbContentRatingId} for TVDB filter`);
+    logger.debug(`Using TVDB content rating ID ${tvdbContentRatingId} for TVDB filter`);
     params.contentRating = tvdbContentRatingId;
   }
 
   if (genre) {
     params.genre = genre.id;
-    console.log(`[getCatalog] Using genre ID ${genre.id} for TVDB filter`);
+    logger.debug(`Using genre ID ${genre.id} for TVDB filter`);
   } else {
-    console.log(`[getCatalog] WARNING: No genre found for "${genreName}", proceeding without genre filter`);
+    logger.warn(`No genre found for "${genreName}", proceeding without genre filter`);
   }
   
   const tvdbType = type === 'movie' ? 'movies' : 'series';
@@ -96,17 +109,17 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     params.sortType = 'desc';
   }
   
-  console.log(`[getCatalog] TVDB filter params:`, JSON.stringify(params));
+  logger.debug(`TVDB filter params:`, JSON.stringify(params));
   
   // Use cacheWrapTvdbApi to cache the raw API response
   const results = await cacheWrapTvdbApi(cacheKey, async () => {
     return await tvdb.filter(tvdbType, params, config);
   });
   
-  console.log(`[getCatalog] TVDB filter results: ${results ? results.length : 0} items returned`);
+  logger.info(`TVDB filter results: ${results ? results.length : 0} items returned`);
   
   if (!results || results.length === 0) {
-    console.log(`[getCatalog] No results from TVDB filter, returning empty array`);
+    logger.warn(`No results from TVDB filter, returning empty array`);
     return [];
   }
 
@@ -119,7 +132,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const endIndex = startIndex + pageSize;
   const paginatedResults = sortedResults.slice(startIndex, endIndex);
   
-  console.log(`[getCatalog] Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
+  logger.info(`Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
   let preferredProvider: string;
   if (type === 'movie') {
@@ -169,7 +182,7 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     const collections = await cacheWrapTvdbApi(`collections-list:${page}`, () => tvdb.getCollectionsList(config, page));
     if (!collections || !collections.length) return [];
     
-    console.log(`[getTvdbCollectionsCatalog] Page ${page}: fetched ${collections.length} collections from TVDB API`);
+    logger.info(`Page ${page}: fetched ${collections.length} collections from TVDB API`);
     
     // Fetch extended details and translations for each collection in parallel
     const metas = await Promise.all(collections.map(async col => {
@@ -200,14 +213,36 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
 
 async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
   if (id.startsWith("mdblist.")) {
-    console.log(`[getCatalog] Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
+    logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
     const catalogConfig = config.catalogs?.find(c => c.id === id);
     const sort = catalogConfig?.sort || 'rank';
     const order = catalogConfig?.order || 'desc';
-    console.log(`[getCatalog] MDBList sorting - sort: ${sort}, order: ${order}`);
-    const results = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order);
-    return await parseMDBListItems(results, type, genre, language, config);
+    logger.debug(`MDBList sorting - sort: ${sort}, order: ${order}`);
+    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order);
+    
+    // Smart pagination handling
+    if (response.totalItems !== undefined && response.totalPages !== undefined) {
+      const pageInfo = `page ${page}/${response.totalPages}`;
+      const itemInfo = `${response.items.length} items`;
+      const totalInfo = `${response.totalItems} total`;
+      const statusInfo = response.hasMore ? 'more available' : 'end reached';
+      
+      logger.debug(`MDBList smart pagination - ${pageInfo}, ${itemInfo}, ${totalInfo}, ${statusInfo}`);
+      
+      // Early exit for empty pages beyond list end
+      if (!response.hasMore && response.items.length === 0) {
+        logger.debug(`MDBList early exit - no more items for list ${listId} at page ${page}`);
+        return [];
+      }
+      
+      // Performance warning for large offsets
+      if (page > 50) {
+        logger.warn(`MDBList performance warning - requesting page ${page} (offset ${(page - 1) * (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20)}) for list ${listId}`);
+      }
+    }
+    
+    return await parseMDBListItems(response.items, type, genre, language, config);
   }
 
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
@@ -260,7 +295,7 @@ async function buildParameters(type: string, language: string, page: number, id:
   const parameters: any = { language, page};
 
   if (id === 'tmdb.top' && type === 'series') {
-    console.log('[TMDB Filter] Applying genre exclusion for popular series catalog.');
+    logger.debug('Applying genre exclusion for popular series catalog.');
 
     const excludedGenreIds = [
       '10767', // Talk
@@ -270,7 +305,7 @@ async function buildParameters(type: string, language: string, page: number, id:
     
     parameters.without_genres = excludedGenreIds.join(',');
     
-    console.log(`[TMDB Filter] Excluding genre IDs: ${parameters.without_genres}`);
+    logger.debug(`Excluding genre IDs: ${parameters.without_genres}`);
   }
 
   if (config.ageRating) {
@@ -298,7 +333,7 @@ async function buildParameters(type: string, language: string, page: number, id:
 
   if (id.includes("streaming")) {
     const provider = findProvider(id.split(".")[1]);
-    console.log(`[getCatalog] Found provider: ${JSON.stringify(provider)}`);
+    logger.debug(`Found provider: ${JSON.stringify(provider)}`);
 
     if(genre && genre.toLowerCase() !== 'none') {
       parameters.with_genres = findGenreId(genre, genreList);
@@ -311,6 +346,7 @@ async function buildParameters(type: string, language: string, page: number, id:
       case "tmdb.top":
         parameters.sort_by = 'popularity.desc'
         if(genre && genre.toLowerCase() !== 'none') {
+          logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
           parameters.with_genres = findGenreId(genre, genreList);
         }
         if (type === "series") {
@@ -351,41 +387,47 @@ function findProvider(providerId: string): any {
 
 async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
   try {
-    console.log(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
+    logger.info(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
     
     // Find the user catalog configuration to get the source URL
     const userCatalog = config.catalogs?.find(c => c.id === catalogId);
     if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
-      console.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
+      logger.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
       return [];
     }
     
     // Use sourceUrl for StremThru catalogs, fallback to source for backward compatibility
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
     // sparkle emoji
-    console.log(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
+    logger.debug(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
     
     // Fetch catalog items from StremThru with proper pagination
     const items = await fetchStremThruCatalog(catalogUrl);
     if (!items || items.length === 0) {
-      console.warn(`[StremThru] No items returned from catalog: ${catalogUrl} (page: ${page})`);
+      logger.warn(`[StremThru] No items returned from catalog: ${catalogUrl} (page: ${page})`);
       return [];
+    }
+    let filteredItems = items;
+    if (genre && genre.toLowerCase() !== 'none') {
+      filteredItems = items.filter(item =>
+        item.genres?.some(g => typeof g === "string" && g.toLowerCase() === genre.toLowerCase())
+      );
     }
 
     // Apply client-side pagination
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    const paginatedItems = items.slice(startIndex, endIndex);
+    const paginatedItems = filteredItems.slice(startIndex, endIndex);
     
     // Parse items into Stremio format
     const metas = await parseStremThruItems(paginatedItems, type, genre, language, config);
     
-    console.log(`[StremThru] Successfully processed ${metas.length} items for catalog: ${catalogId} (page: ${page})`);
+    logger.success(`[StremThru] Successfully processed ${metas.length} items for catalog: ${catalogId} (page: ${page})`);
     return metas;
     
   } catch (error: any) {
-    console.error(`[StremThru] Error processing catalog ${catalogId}:`, error.message);
+    logger.error(`[StremThru] Error processing catalog ${catalogId}:`, error.message);
     return [];
   }
 }
