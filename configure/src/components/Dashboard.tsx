@@ -885,31 +885,31 @@ function DashboardPerformance({ data, loading }) {
               {/* Breakdown */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm">Wiki Mappings</span>
+                  <span className="text-sm text-gray-900">Wiki Mappings</span>
                   <div className="text-right">
-                    <div className="text-sm font-medium">{idResolverPerformance.wikiMappingEarlyReturns.count.toLocaleString()}</div>
-                    <div className="text-xs text-green-600">{idResolverPerformance.wikiMappingEarlyReturns.percentage}%</div>
+                    <div className="text-sm font-medium text-gray-900">{idResolverPerformance.wikiMappingEarlyReturns.count.toLocaleString()}</div>
+                    <div className="text-xs text-green-700">{idResolverPerformance.wikiMappingEarlyReturns.percentage}%</div>
                   </div>
                 </div>
                 <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm">Cache Hits</span>
+                  <span className="text-sm text-gray-900">Cache Hits</span>
                   <div className="text-right">
-                    <div className="text-sm font-medium">{idResolverPerformance.cacheEarlyReturns.count.toLocaleString()}</div>
-                    <div className="text-xs text-blue-600">{idResolverPerformance.cacheEarlyReturns.percentage}%</div>
+                    <div className="text-sm font-medium text-gray-900">{idResolverPerformance.cacheEarlyReturns.count.toLocaleString()}</div>
+                    <div className="text-xs text-blue-700">{idResolverPerformance.cacheEarlyReturns.percentage}%</div>
                   </div>
                 </div>
                 <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm">Anime Resolutions</span>
+                  <span className="text-sm text-gray-900">Anime Resolutions</span>
                   <div className="text-right">
-                    <div className="text-sm font-medium">{idResolverPerformance.animeResolutions.count.toLocaleString()}</div>
-                    <div className="text-xs text-purple-600">{idResolverPerformance.animeResolutions.percentage}%</div>
+                    <div className="text-sm font-medium text-gray-900">{idResolverPerformance.animeResolutions.count.toLocaleString()}</div>
+                    <div className="text-xs text-purple-700">{idResolverPerformance.animeResolutions.percentage}%</div>
                   </div>
                 </div>
                 <div className="flex justify-between items-center p-2 bg-red-50 rounded">
-                  <span className="text-sm">API Calls Required</span>
+                  <span className="text-sm text-gray-900">API Calls Required</span>
                   <div className="text-right">
-                    <div className="text-sm font-medium">{idResolverPerformance.apiCallsRequired.count.toLocaleString()}</div>
-                    <div className="text-xs text-red-600">{idResolverPerformance.apiCallsRequired.percentage}%</div>
+                    <div className="text-sm font-medium text-gray-900">{idResolverPerformance.apiCallsRequired.count.toLocaleString()}</div>
+                    <div className="text-xs text-red-700">{idResolverPerformance.apiCallsRequired.percentage}%</div>
                   </div>
                 </div>
               </div>
