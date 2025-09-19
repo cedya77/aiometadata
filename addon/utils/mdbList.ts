@@ -6,7 +6,9 @@ import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 
 const logger = consola.create({ 
-  level: 4, // Show all levels
+  level: process.env.LOG_LEVEL ? 
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+    (process.env.NODE_ENV === 'production' ? 3 : 4),
   fancy: true,
   colors: true,
   formatOptions: {

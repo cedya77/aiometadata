@@ -7,6 +7,10 @@ import { runCacheCleanup } from './cache-cleanup.js';
 import database from './lib/database.js';
 import consola from 'consola';
 
+// Configure logging level based on environment
+const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+consola.level = (consola as any).LogLevels[logLevel.toLowerCase()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
+
 const PORT: number = parseInt(process.env.PORT || '1337', 10);
 
 async function startServer(): Promise<void> {

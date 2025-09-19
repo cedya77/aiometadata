@@ -15,7 +15,9 @@ const { performGeminiSearch } = require('../utils/gemini-service');
 const consola = require('consola');
 
 const logger = consola.create({ 
-  level: 4, // Show all levels
+  level: process.env.LOG_LEVEL ? 
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+    (process.env.NODE_ENV === 'production' ? 3 : 4),
   fancy: true,
   colors: true,
   formatOptions: {
@@ -223,8 +225,14 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 const topPerson = sortedPersons[0];
                 
                 logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
-                if (!topPerson.name.toLowerCase().includes(query.toLowerCase())) {
-                  logger.debug(`Skipping person ${topPerson.name} because it doesn't match the query: "${query}"`);
+                
+                const personName = topPerson.name.toLowerCase();
+                const queryLower = query.toLowerCase();
+                const isExactMatch = personName === queryLower;
+                const isContainedWithPopularity = personName.includes(queryLower) && (topPerson.popularity || 0) > 3;
+                
+                if (!isExactMatch && !isContainedWithPopularity) {
+                  logger.debug(`Skipping person ${topPerson.name} - not exact match and doesn't meet popularity threshold (${topPerson.popularity || 0} <= 3)`);
                   return [];
                 }
                 const credits = type === 'movie'
@@ -253,7 +261,6 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   const sortedRawResults = Utils.sortSearchResults(Array.from(rawResults.values()), query).slice(0, 25);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
-  const genreList = await getGenreList('tmdb', language, type, config);
 
   const hydrationPromises = sortedRawResults.map(async (media) => {
     try {

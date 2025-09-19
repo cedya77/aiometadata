@@ -338,17 +338,42 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, prefetc
     if(prefetchedIds.tvmazeId) {
       prefetchedProviders.push('tvmaze');
     }
+    // Helper function to map art providers to their required metadata providers
+    const getMetadataProvidersForArtProvider = (artProvider, contentType) => {
+      switch (artProvider) {
+        case 'fanart':
+          // Fanart.tv requires TMDB ID for movies, TVDB ID for series/anime
+          return contentType === 'movie' ? ['tmdb', 'imdb'] : ['tvdb'];
+        case 'tmdb':
+          return ['tmdb'];
+        case 'tvdb':
+          return ['tvdb'];
+        case 'imdb':
+          return ['imdb'];
+        case 'tvmaze':
+          return ['tvmaze'];
+        default:
+          // For unknown art providers, return empty array
+          return [];
+      }
+    };
+
     const targetProviders = new Set();
     targetProviders.add(preferredProvider);
-    if(preferredProvider !== posterProvider && !prefetchedProviders.includes(posterProvider)) {
-      targetProviders.add(posterProvider);
+    
+    // Add metadata providers needed for art providers
+    const artProviders = [posterProvider, backgroundProvider, logoProvider];
+    for (const artProvider of artProviders) {
+      if (artProvider !== preferredProvider && !prefetchedProviders.includes(artProvider)) {
+        const requiredProviders = getMetadataProvidersForArtProvider(artProvider, type);
+        for (const provider of requiredProviders) {
+          if (!prefetchedProviders.includes(provider)) {
+            targetProviders.add(provider);
+          }
+        }
+      }
     }
-    if(preferredProvider !== backgroundProvider && !prefetchedProviders.includes(backgroundProvider)) {
-      targetProviders.add(backgroundProvider);
-    }
-    if(preferredProvider !== logoProvider && !prefetchedProviders.includes(logoProvider)) {
-      targetProviders.add(logoProvider);
-    }
+    
     if(!targetProviders.has('imdb') && !prefetchedProviders.includes('imdb')) {
       targetProviders.add('imdb');
     }

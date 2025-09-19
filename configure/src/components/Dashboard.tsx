@@ -555,11 +555,11 @@ function DashboardPerformance({ data, loading }) {
       if (average < 8000) return 'text-orange-600'; // 5-8 seconds = orange
       return 'text-red-600'; // Over 8 seconds = red
     } else {
-      // General metrics (ID resolution, API calls, etc.)
-      if (average < 100) return 'text-green-600';
-      if (average < 500) return 'text-yellow-600';
-      if (average < 1000) return 'text-orange-600';
-      return 'text-red-600';
+      // General metrics (ID resolution, API calls, etc.) - Match the updated status thresholds
+      if (average < 500) return 'text-green-600';   // Under 500ms = green (Excellent)
+      if (average < 1500) return 'text-yellow-600'; // 500ms-1.5s = yellow (Good)
+      if (average < 3000) return 'text-orange-600'; // 1.5s-3s = orange (Fair)
+      return 'text-red-600';                        // Over 3s = red (Poor)
     }
   };
 
@@ -571,11 +571,22 @@ function DashboardPerformance({ data, loading }) {
       if (average < 8000) return 'Fair';       // 5-8 seconds = Fair
       return 'Poor';                           // Over 8 seconds = Poor
     } else {
-      // General metrics (ID resolution, API calls, etc.)
-      if (average < 100) return 'Excellent';
-      if (average < 500) return 'Good';
-      if (average < 1000) return 'Fair';
-      return 'Poor';
+      // General metrics (ID resolution, API calls, etc.) - More realistic thresholds
+      if (average < 500) return 'Excellent';   // Under 500ms = Excellent
+      if (average < 1500) return 'Good';       // 500ms-1.5s = Good  
+      if (average < 3000) return 'Fair';       // 1.5s-3s = Fair
+      return 'Poor';                           // Over 3s = Poor
+    }
+  };
+
+  const getMetricBadgeVariant = (average, metricType = 'general') => {
+    const status = getMetricStatus(average, metricType);
+    switch (status) {
+      case 'Excellent': return 'default';      // Green-ish badge
+      case 'Good': return 'secondary';         // Gray badge  
+      case 'Fair': return 'outline';           // Orange-ish badge
+      case 'Poor': return 'destructive';       // Red badge
+      default: return 'secondary';
     }
   };
 
@@ -599,7 +610,7 @@ function DashboardPerformance({ data, loading }) {
           const stats = timingMetrics[metric]?.overall || {};
           const isSearchMetric = metric.startsWith('search_') || metric === 'search_operation';
           const metricType = isSearchMetric ? 'search' : 'general';
-          const colorThreshold = isSearchMetric ? 3000 : 500;
+          const colorThreshold = isSearchMetric ? 3000 : 1500;
           
           return (
             <Card key={metric}>
@@ -620,7 +631,7 @@ function DashboardPerformance({ data, loading }) {
                   P95: {formatDuration(stats.p95 || 0)} • 
                   Count: {stats.count || 0}
                 </p>
-                <Badge variant={stats.average < colorThreshold ? 'default' : 'destructive'} className="mt-2">
+                <Badge variant={getMetricBadgeVariant(stats.average || 0, metricType)} className="mt-2">
                   {getMetricStatus(stats.average || 0, metricType)}
                 </Badge>
               </CardContent>

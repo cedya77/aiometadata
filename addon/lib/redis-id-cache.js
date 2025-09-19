@@ -3,7 +3,9 @@ const consola = require('consola');
 
 // Configure Consola for consistent logging
 const logger = consola.create({
-  level: 4,
+  level: process.env.LOG_LEVEL ? 
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+    (process.env.NODE_ENV === 'production' ? 3 : 4),
   fancy: true,
   formatOptions: {
     colors: true,
