@@ -400,8 +400,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 
   if (allIds?.tmdbId) {
     try {
-      const langCode = language.split('-')[0]; // 'pt-BR' -> 'pt'
-        // Use a Set to avoid duplicates if the user's language is English
+      const langCode = language.split('-')[0]; 
       const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
       const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images", include_image_language: imageLanguages }, config);
       return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });

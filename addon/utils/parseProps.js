@@ -131,7 +131,8 @@ const processedResults = results.map(item => {
       similarity,
       id: item.id,
       poster_path: item.poster_path,
-      mediaType: item.media_type
+      mediaType: item.media_type,
+      genre_ids: item.genre_ids
     };
 });
 
@@ -218,25 +219,28 @@ const processedResults = results.map(item => {
 }
 
 function parseMedia(el, type, genreList = [], config = {}) {
-  const genres = Array.isArray(el.genre_ids)
+  const genres = Array.isArray(el.genre_ids) && genreList.length > 0
     ? el.genre_ids.map(genreId => (genreList.find((g) => g.id === genreId) || {}).name).filter(Boolean)
-    : [];
+    : el?.genres ? parseGenres(el.genres) : [];
+
+  const castCount = config.castCount === 0 ? undefined : config.castCount;
 
   return {
     id: `tmdb:${el.id}`,
     name: type === 'movie' ? el.title : el.name,
-    genre: genres,
+    genres: genres,
     poster: el.poster_path ? `https://image.tmdb.org/t/p/w500${el.poster_path}` : null,
     background: el.backdrop_path ? `https://image.tmdb.org/t/p/original${el.backdrop_path}` : null,
     posterShape: "regular",
     imdbRating: el.vote_average ? el.vote_average.toFixed(1) : 'N/A',
     year: type === 'movie' ? (el.release_date?.substring(0, 4) || '') : (el.first_air_date?.substring(0, 4) || ''),
     type: type === 'movie' ? type : 'series',
+    releaseInfo: type === 'movie' ? (el.release_date?.substring(0, 4) || '') : (el.first_air_date?.substring(0, 4) || ''),
     description: addMetaProviderAttribution(el.overview, 'TMDB', config),
     popularity: el.popularity, 
     vote_average: el.vote_average || 0,
     vote_count: el.vote_count || 0,
-    matchType: el.matchType || 'title'
+    matchType: el.matchType || 'title',
   };
 }
 

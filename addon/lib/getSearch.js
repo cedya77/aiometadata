@@ -265,18 +265,22 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         }
 
         let logoUrl; let backgroundUrl; let posterUrl;
+        const langCode = language.split('-')[0]; 
+        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         // OPTIMIZATION: Fetch details, external_ids, and certifications in ONE call
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates, images", include_image_language: null }, config)
-            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings, images", include_image_language: null }, config);
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,credits", include_image_language: imageLanguages }, config)
+            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,credits", include_image_language: imageLanguages }, config);
         
         const allIds = {
             tmdbId: details.id,
             imdbId: details.external_ids?.imdb_id,
             tvdbId: details.external_ids?.tvdb_id
         };
-        logoUrl = details.images?.logos?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${details.images?.logos?.[0]?.file_path}` : null;
-        backgroundUrl = details.images?.backdrops?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${details.images?.backdrops?.[0]?.file_path}` : null;
+        const selectedBg = details.images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
+        const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
+        logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
+        backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
         posterUrl = media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg`;
 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
@@ -305,9 +309,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         else if (preferredProvider === 'imdb' && resolvedIds?.imdbId) stremioId = resolvedIds.imdbId;
         
         // Assemble the final meta object
-        const parsed = Utils.parseMedia(media, mediaType, genreList, config);
+        const parsed = Utils.parseMedia(details, mediaType, [], config);
         if (!parsed) return null; // In case parsing fails
-        
         parsed.id = stremioId;
         parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl;
         parsed.imdbRating = imdbRating;
@@ -318,6 +321,9 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
             : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
         parsed.popularity = media.popularity;
         parsed.score = media.score;
+        if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
+        parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
+        if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
         return parsed;
     } catch (error) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
@@ -352,7 +358,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           
           return resultRatingIndex <= userRatingIndex;
       });
-      logger.debug(`Age rating filter applied: ${sortedResults.length} -> ${filteredResults.length} results.`);
+      logger.debug(`Age rating filter applied: ${hydratedMetas.length} -> ${filteredResults.length} results.`);
   }
 
   logger.success(`Completed TMDB search for "${query}" in ${Date.now() - startTime}ms. Returning ${filteredResults.length} results.`);
@@ -659,15 +665,15 @@ function getProviderFromSearchId(searchId) {
 }
 
 async function getSearch(id, type, language, extra, config) {
-  const timerLabel = `Search for "${JSON.stringify(extra)}" (type: ${id}) - ${Date.now()}`;
   const searchStartTime = Date.now();
+  
+  const queryText = extra?.search || extra?.genre_id || extra?.va_id || 'N/A';
+  
   try {
     if (!extra) {
       logger.warn(`Search request for id '${id}' received with no 'extra' argument.`);
       return { metas: [] };
     }
-
-    const queryText = extra.search || extra.genre_id || extra.va_id || 'N/A';
     // Timing handled by logger.info at completion
 
     let metas = [];
