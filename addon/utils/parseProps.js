@@ -154,19 +154,13 @@ const processedResults = results.map(item => {
       return hasAtLeastOneVote || hasSomePopularity;
     }
 
-    // --- Tier 4: Two-stage filter for all "other" matches ---
+    // --- Tier 3: Two-stage filter for all "other" matches ---
     
-    // Stage 1: Hard cutoff for extremely low similarity.
-    // If a title is this dissimilar, it's junk, regardless of votes.
-    const JUNK_SIMILARITY_THRESHOLD = 0.15; // 15%
-    if (item.similarity < JUNK_SIMILARITY_THRESHOLD) {
-      return false;
-    }
+    const MIN_SIMILARITY = 0.30; //30%
+    const MIN_VOTES = 10;
+    const isLowQuality = item.similarity < MIN_SIMILARITY || item.voteCount < MIN_VOTES;
+    return !isLowQuality;
 
-    // Stage 2: Nuanced check for mediocre matches (e.g., 15% to 60% similarity).
-    // These are only filtered if they ALSO have a very low vote count.
-    const isLowQualitySimilarityMatch = item.similarity < 0.6 && item.voteCount < 5;
-    return !isLowQualitySimilarityMatch;
   });
 
 // 3. SORT:
