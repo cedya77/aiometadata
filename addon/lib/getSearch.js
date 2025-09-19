@@ -276,8 +276,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         // OPTIMIZATION: Fetch details, external_ids, and certifications in ONE call
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,credits", include_image_language: imageLanguages }, config)
-            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,credits", include_image_language: imageLanguages }, config);
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations", include_image_language: imageLanguages }, config)
+            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations", include_image_language: imageLanguages }, config);
         
         const allIds = {
             tmdbId: details.id,

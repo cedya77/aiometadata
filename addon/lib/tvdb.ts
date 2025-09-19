@@ -204,6 +204,8 @@ interface TvdbMovieExtended {
     type: number;
     width: number;
     height: number;
+    score: number;
+    includesText: boolean;
     thumbnail: string;
     updatedAt: string;
   }>;
@@ -843,7 +845,7 @@ async function getMovieBackground(movieId: string, config: UserConfig): Promise<
     const movieData = await getMovieExtended(movieId, config);
     if (movieData && movieData.artworks) {
       // Look for background artwork (type 15 is background for movies)
-      const backgroundArtwork = movieData.artworks.find(art => art.type === 15);
+      const backgroundArtwork = movieData.artworks.find(art => art.type === 15 && art.includesText === false);
       if (backgroundArtwork && backgroundArtwork.image) {
         console.log(`[TVDB] Found movie background (type 15) for TVDB ID ${movieId}: ${backgroundArtwork.image}`);
         return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;

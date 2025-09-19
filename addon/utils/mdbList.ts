@@ -429,3 +429,4 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
 }
 
 export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList };
+

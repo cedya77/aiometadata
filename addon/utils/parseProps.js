@@ -223,11 +223,16 @@ function parseMedia(el, type, genreList = [], config = {}) {
     ? el.genre_ids.map(genreId => (genreList.find((g) => g.id === genreId) || {}).name).filter(Boolean)
     : el?.genres ? parseGenres(el.genres) : [];
 
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  let name = type === 'movie' ? el.title : el.name;
+
+  if(el.translations){
+    el.overview = processOverviewTranslations(el.translations, config.language, el.overview);
+    name = processTitleTranslations(el.translations, config.language, name);
+  }
 
   return {
     id: `tmdb:${el.id}`,
-    name: type === 'movie' ? el.title : el.name,
+    name: name,
     genres: genres,
     poster: el.poster_path ? `https://image.tmdb.org/t/p/w500${el.poster_path}` : null,
     background: el.backdrop_path ? `https://image.tmdb.org/t/p/original${el.backdrop_path}` : null,
@@ -242,6 +247,73 @@ function parseMedia(el, type, genreList = [], config = {}) {
     vote_count: el.vote_count || 0,
     matchType: el.matchType || 'title',
   };
+}
+
+function processOverviewTranslations(translations, language, overview) {
+  if(language === 'pt-PT'){
+    let translation = tmdb.getTranslations(translations, 'pt-PT');
+      if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
+        overview = translation.data.overview;
+      } else {
+        if(!overview || overview.trim() === ''){
+          translation = tmdb.getTranslations(translations, 'pt-BR');
+          if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
+            overview = translation.data.overview;
+          }
+          if(!overview || overview.trim() === ''){
+            translation = tmdb.getTranslations(translations, 'en-US');
+            if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
+              overview = translation.data.overview;
+            }
+          }
+        }
+      }
+    } else {
+      let translation = tmdb.getTranslations(translations, language);
+      if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
+        overview = translation.data.overview;
+      } else {
+        translation = tmdb.getTranslations(translations, 'en-US');
+        if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
+          overview = translation.data.overview;
+        }
+      }
+    }
+  return overview;
+}
+
+function processTitleTranslations(translations, language, title) {
+  // Handle title fallback for pt-PT language
+  if(language === 'pt-PT'){
+    let translation = tmdb.getTranslations(translations, 'pt-PT');
+    if(translation && translation.data.title && translation.data.title.trim() !== ''){
+      title = translation.data.title;
+    } else {
+      if(!title || title.trim() === ''){
+        translation = tmdb.getTranslations(translations, 'pt-BR');
+        if(translation && translation.data.title && translation.data.title.trim() !== ''){
+          title = translation.data.title;
+        }
+        if(!title || title.trim() === ''){
+          translation = tmdb.getTranslations(translations, 'en-US');
+          if(translation && translation.data.title && translation.data.title.trim() !== ''){
+            title = translation.data.title;
+          }
+        }
+      }
+    }
+  } else {
+    let translation = tmdb.getTranslations(translations, language);
+    if(translation && translation.data.title && translation.data.title.trim() !== ''){
+      title = translation.data.title;
+    } else {
+      translation = tmdb.getTranslations(translations, 'en-US');
+      if(translation && translation.data.title && translation.data.title.trim() !== ''){
+        title = translation.data.title;
+      }
+    }
+  }
+  return title;
 }
 
 // Helper function to add meta provider attribution to overview
@@ -2237,5 +2309,7 @@ module.exports = {
   getTmdbMovieCertificationForCountry,
   getTmdbTvCertificationForCountry,
   resolveArtProvider,
-  addMetaProviderAttribution
+  addMetaProviderAttribution,
+  processOverviewTranslations,
+  processTitleTranslations
 };

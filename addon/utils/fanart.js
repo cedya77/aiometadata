@@ -1,5 +1,6 @@
 require("dotenv").config();
 const FanartTvApi = require('fanart.tv-api');
+const { cacheWrapGlobal } = require('../lib/getCache');
 
 const clientCache = new Map();
 
@@ -45,22 +46,25 @@ async function getBestSeriesBackground(tvdbId, config) {
     return null;
   }
 
-  try {
-    const images = await fanartClient.getShowImages(tvdbId);
+  const cacheKey = `fanart-api:series-background:${tvdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const images = await fanartClient.getShowImages(tvdbId);
 
-    if (!images.showbackground || images.showbackground.length === 0) {
+      if (!images.showbackground || images.showbackground.length === 0) {
+        return null;
+      }
+      const sortedBackgrounds = images.showbackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+      return sortedBackgrounds[0].url;
+    } catch (error) {
+      if (error.message && error.message.includes("Not Found")) {
+        console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
+      } else {
+        console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
+      }
       return null;
     }
-    const sortedBackgrounds = images.showbackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-    return sortedBackgrounds[0].url;
-  } catch (error) {
-    if (error.message && error.message.includes("Not Found")) {
-      console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
-    } else {
-      console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
-    }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days - artwork rarely changes
 }
 
 /**
@@ -72,21 +76,24 @@ async function getBestMovieBackground(tmdbId, config) {
     return null;
   }
 
-  try {
-    const images = await fanartClient.getMovieImages(tmdbId);
-    if (!images.moviebackground || images.moviebackground.length === 0) {
+  const cacheKey = `fanart-api:movie-background:${tmdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const images = await fanartClient.getMovieImages(tmdbId);
+      if (!images.moviebackground || images.moviebackground.length === 0) {
+        return null;
+      }
+      const sortedBackgrounds = images.moviebackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+      return sortedBackgrounds[0].url;
+    } catch (error) {
+      if (error.message && error.message.includes("Not Found")) {
+        console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
+      } else {
+        console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
+      }
       return null;
     }
-    const sortedBackgrounds = images.moviebackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-    return sortedBackgrounds[0].url;
-  } catch (error) {
-    if (error.message && error.message.includes("Not Found")) {
-      console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
-    } else {
-      console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
-    }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
@@ -100,14 +107,18 @@ async function getMovieImages(tmdbId, config) {
   if (!fanartClient || !tmdbId) {
     return null;
   }
-  try {
-    return await fanartClient.getMovieImages(tmdbId);
-  } catch (error) {
-    if (error.message && !error.message.includes("Not Found")) {
-      console.error(`[Fanart] Error in getMovieImages for TMDB ID ${tmdbId}:`, error.message);
+
+  const cacheKey = `fanart-api:movie-images:${tmdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      return await fanartClient.getMovieImages(tmdbId);
+    } catch (error) {
+      if (error.message && !error.message.includes("Not Found")) {
+        console.error(`[Fanart] Error in getMovieImages for TMDB ID ${tmdbId}:`, error.message);
+      }
+      return null;
     }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
@@ -119,21 +130,24 @@ async function getBestMoviePoster(tmdbId, config) {
     return null;
   }
 
-  try {
-    const images = await fanartClient.getMovieImages(tmdbId);
-    if (!images.movieposter || images.movieposter.length === 0) {
+  const cacheKey = `fanart-api:movie-poster:${tmdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const images = await fanartClient.getMovieImages(tmdbId);
+      if (!images.movieposter || images.movieposter.length === 0) {
+        return null;
+      }
+      const sortedPosters = images.movieposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+      return sortedPosters[0].url;
+    } catch (error) {
+      if (error.message && error.message.includes("Not Found")) {
+        console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
+      } else {
+        console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
+      }
       return null;
     }
-    const sortedPosters = images.movieposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-    return sortedPosters[0].url;
-  } catch (error) {
-    if (error.message && error.message.includes("Not Found")) {
-      console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
-    } else {
-      console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
-    }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
@@ -146,21 +160,24 @@ async function getBestMovieLogo(tmdbId, config) {
     return null;
   }
 
-  try {
-    const images = await fanartClient.getMovieImages(tmdbId);
-    if (!images.hdmovielogo || images.hdmovielogo.length === 0) {
+  const cacheKey = `fanart-api:movie-logo:${tmdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const images = await fanartClient.getMovieImages(tmdbId);
+      if (!images.hdmovielogo || images.hdmovielogo.length === 0) {
+        return null;
+      }
+      const sortedLogos = images.hdmovielogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+      return sortedLogos[0].url;
+    } catch (error) {
+      if (error.message && error.message.includes("Not Found")) {
+        console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
+      } else {
+        console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
+      }
       return null;
     }
-    const sortedLogos = images.hdmovielogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-    return sortedLogos[0].url;
-  } catch (error) {
-    if (error.message && error.message.includes("Not Found")) {
-      console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
-    } else {
-      console.error(`[Fanart] Error fetching data for TMDB ID ${tmdbId}:`, error.message);
-    }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
@@ -172,21 +189,24 @@ async function getBestSeriesPoster(tvdbId, config) {
     return null;
   }
 
-  try {
-    const images = await fanartClient.getShowImages(tvdbId);
-    if (!images.tvposter || images.tvposter.length === 0) {
+  const cacheKey = `fanart-api:series-poster:${tvdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const images = await fanartClient.getShowImages(tvdbId);
+      if (!images.tvposter || images.tvposter.length === 0) {
+        return null;
+      }
+      const sortedPosters = images.tvposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+      return sortedPosters[0].url;
+    } catch (error) {
+      if (error.message && error.message.includes("Not Found")) {
+        console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
+      } else {
+        console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
+      }
       return null;
     }
-    const sortedPosters = images.tvposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-    return sortedPosters[0].url;
-  } catch (error) {
-    if (error.message && error.message.includes("Not Found")) {
-      console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
-    } else {
-      console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
-    }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
@@ -198,21 +218,24 @@ async function getBestTVLogo(tvdbId, config) {
     return null;
   }
 
-  try {
-    const images = await fanartClient.getShowImages(tvdbId);
-    if (!images.hdtvlogo || images.hdtvlogo.length === 0) {
+  const cacheKey = `fanart-api:series-logo:${tvdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const images = await fanartClient.getShowImages(tvdbId);
+      if (!images.hdtvlogo || images.hdtvlogo.length === 0) {
+        return null;
+      }
+      const sortedLogos = images.hdtvlogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
+      return sortedLogos[0].url;
+    } catch (error) {
+      if (error.message && error.message.includes("Not Found")) {
+        console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
+      } else {
+        console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
+      }
       return null;
     }
-    const sortedLogos = images.hdtvlogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-    return sortedLogos[0].url;
-  } catch (error) {
-    if (error.message && error.message.includes("Not Found")) {
-      console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
-    } else {
-      console.error(`[Fanart] Error fetching data for TVDB ID ${tvdbId}:`, error.message);
-    }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
@@ -226,15 +249,19 @@ async function getShowImages(tvdbId, config) {
   if (!fanartClient || !tvdbId) {
     return null;
   }
-  try {
-    return await fanartClient.getShowImages(tvdbId);
-  } catch (error) {
-    // We can be less verbose for 404s, as they are expected.
-    if (error.message && !error.message.includes("Not Found")) {
-      console.error(`[Fanart] Error in getShowImages for TVDB ID ${tvdbId}:`, error.message);
+
+  const cacheKey = `fanart-api:series-images:${tvdbId}`;
+  return cacheWrapGlobal(cacheKey, async () => {
+    try {
+      return await fanartClient.getShowImages(tvdbId);
+    } catch (error) {
+      // We can be less verbose for 404s, as they are expected.
+      if (error.message && !error.message.includes("Not Found")) {
+        console.error(`[Fanart] Error in getShowImages for TVDB ID ${tvdbId}:`, error.message);
+      }
+      return null;
     }
-    return null;
-  }
+  }, 7 * 24 * 60 * 60); // Cache for 7 days
 }
 
 /**
