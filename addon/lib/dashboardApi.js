@@ -573,7 +573,8 @@ class DashboardAPI {
         cacheEnabled: 0,
         blurThumbs: 0,
         skipFiller: 0,
-        skipRecap: 0
+        skipRecap: 0,
+        allowEpisodeMarking: 0
       }
     };
 
@@ -661,6 +662,7 @@ class DashboardAPI {
       if (config.blurThumbs) stats.features.blurThumbs++;
       if (config.mal?.skipFiller) stats.features.skipFiller++;
       if (config.mal?.skipRecap) stats.features.skipRecap++;
+      if (config.mal?.allowEpisodeMarking) stats.features.allowEpisodeMarking++;
     });
 
     // Convert to percentages and format for display
@@ -696,7 +698,8 @@ class DashboardAPI {
         cacheEnabled: Math.round((stats.features.cacheEnabled / total) * 100),
         blurThumbs: Math.round((stats.features.blurThumbs / total) * 100),
         skipFiller: Math.round((stats.features.skipFiller / total) * 100),
-        skipRecap: Math.round((stats.features.skipRecap / total) * 100)
+        skipRecap: Math.round((stats.features.skipRecap / total) * 100),
+        allowEpisodeMarking: Math.round((stats.features.allowEpisodeMarking / total) * 100)
       }
     };
   }
@@ -720,7 +723,8 @@ class DashboardAPI {
         cacheEnabled: 100,
         blurThumbs: 0,
         skipFiller: 0,
-        skipRecap: 0
+        skipRecap: 0,
+        allowEpisodeMarking: 0
       }
     };
   }

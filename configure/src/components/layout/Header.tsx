@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { InstallDialog } from '../InstallDialog';
 import { toast } from 'sonner';
 import { compressToEncodedURIComponent } from 'lz-string';
-import { LogIn, LogOut, Eye, EyeOff } from 'lucide-react';
+import { LogIn, LogOut, Eye, EyeOff, BarChart3 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,7 +46,10 @@ export function Header() {
       const isFromStremio = window.location.pathname.includes('/stremio/') || 
                            sessionStorage.getItem('fromStremioSettings') === 'true';
       
-      if (!auth.authenticated && isFromStremio) {
+      // Don't prompt for login on dashboard route
+      const isDashboardRoute = window.location.pathname === '/dashboard' || window.location.pathname === '/dashboard/';
+      
+      if (!auth.authenticated && isFromStremio && !isDashboardRoute) {
         sessionStorage.removeItem('fromStremioSettings');
         setTimeout(() => setIsLoginOpen(true), 100);
       }
@@ -186,6 +189,18 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-3">
+        <Button
+          onClick={() => {
+            const host = `${window.location.protocol}//${window.location.host}`;
+            window.open(`${host}/dashboard`, '_blank');
+          }}
+          variant="outline"
+          size="icon"
+          aria-label="Open Dashboard"
+          title="Open Dashboard"
+        >
+          <BarChart3 className="h-5 w-5" />
+        </Button>
         {isLoggedIn ? (
           <Button
             onClick={async () => {

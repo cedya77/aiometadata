@@ -51,7 +51,7 @@ export function ProvidersSettings() {
     setConfig(prev => ({ ...prev, tvdbSeasonType: value }));
   };
  
-  const handleMalToggle = (key: 'skipFiller' | 'skipRecap', checked: boolean) => {
+  const handleMalToggle = (key: 'skipFiller' | 'skipRecap' | 'allowEpisodeMarking', checked: boolean) => {
     setConfig(prev => ({
       ...prev,
       mal: {
@@ -180,6 +180,18 @@ export function ProvidersSettings() {
               id="skip-recap"
               checked={config.mal.skipRecap}
               onCheckedChange={(val) => handleMalToggle('skipRecap', val)}
+            />
+          </div>
+          {/* Allow Episode Marking Toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="allow-episode-marking" className="text-lg font-medium">Allow Episode Marking</Label>
+              <p className="text-sm text-muted-foreground">Enable users to mark episodes as filler or recap.</p>
+            </div>
+            <Switch
+              id="allow-episode-marking"
+              checked={config.mal.allowEpisodeMarking}
+              onCheckedChange={(val) => handleMalToggle('allowEpisodeMarking', val)}
             />
           </div>
           {/* Stream Compatibility ID Dropdown */}

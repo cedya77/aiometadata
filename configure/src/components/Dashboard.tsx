@@ -1146,7 +1146,7 @@ function DashboardSystem({ data, loading }) {
     aggregatedStats: {
       metaProviders: { movie: [], series: [], anime: [] },
       languages: [],
-      features: { cacheEnabled: 100, blurThumbs: 0, skipFiller: 0, skipRecap: 0 }
+      features: { cacheEnabled: 100, blurThumbs: 0, skipFiller: 0, skipRecap: 0, allowEpisodeMarking: 0 }
     }
   });
 
@@ -1293,6 +1293,12 @@ function DashboardSystem({ data, loading }) {
                     {systemConfig.aggregatedStats?.features?.skipRecap || 0}%
                   </p>
                   <p className="text-sm text-muted-foreground">Skip Recap</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-green-600">
+                    {systemConfig.aggregatedStats?.features?.allowEpisodeMarking || 0}%
+                  </p>
+                  <p className="text-sm text-muted-foreground">Episode Marking</p>
                 </div>
               </div>
             </div>

@@ -1872,6 +1872,14 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         if (!thumbnailUrl) {
           thumbnailUrl = posterUrl;
         }
+        if (config.mal?.allowEpisodeMarking) {
+          if (ep.filler) {
+            episodeSynopsis = `[Filler] ${episodeSynopsis}`;
+          }
+          if (ep.recap) {
+            episodeSynopsis = `[Recap] ${episodeSynopsis}`;
+          }
+        }
         
         return {
           id: episodeId,

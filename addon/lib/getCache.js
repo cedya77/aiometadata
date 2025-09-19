@@ -721,7 +721,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
       skipFiller: config.mal?.skipFiller || false,
-      skipRecap: config.mal?.skipRecap || false
+      skipRecap: config.mal?.skipRecap || false,
+      allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
     };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -804,7 +805,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
-       skipRecap: config.mal?.skipRecap || false
+       skipRecap: config.mal?.skipRecap || false,
+       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
      };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -1026,7 +1028,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
-       skipRecap: config.mal?.skipRecap || false
+       skipRecap: config.mal?.skipRecap || false,
+       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
      };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -1236,7 +1239,8 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
       metaConfig.mal = {
         skipFiller: config.mal?.skipFiller || false,
-        skipRecap: config.mal?.skipRecap || false
+        skipRecap: config.mal?.skipRecap || false,
+        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
       };
     } else if (metaType === 'movie') {
       metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -1322,7 +1326,8 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
       metaConfig.mal = {
         skipFiller: config.mal?.skipFiller || false,
-        skipRecap: config.mal?.skipRecap || false
+        skipRecap: config.mal?.skipRecap || false,
+        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
       };
     } else if (metaType === 'movie') {
       metaConfig.metaProvider = config.providers?.movie || 'tmdb';

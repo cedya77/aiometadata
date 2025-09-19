@@ -52,6 +52,7 @@ async function runMigration() {
       mal: {
         skipFiller: false,
         skipRecap: false,
+        allowEpisodeMarking: false
       },
       apiKeys: { 
         gemini: "sample_key_123", 
