@@ -55,6 +55,7 @@ export interface AppConfig {
   mal: {
     skipFiller: boolean;
     skipRecap: boolean;
+    allowEpisodeMarking: boolean;
   };
   tmdb: {
     scrapeImdb: boolean;

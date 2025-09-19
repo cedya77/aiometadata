@@ -400,7 +400,10 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 
   if (allIds?.tmdbId) {
     try {
-      const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids, images", include_image_language: null }, config);
+      const langCode = language.split('-')[0]; // 'pt-BR' -> 'pt'
+        // Use a Set to avoid duplicates if the user's language is English
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images", include_image_language: imageLanguages }, config);
       return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId}: fallback to provider of the stremioId`);
@@ -432,7 +435,10 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
     if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
     try {
-      const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids, images", include_image_language: null }, config);
+      const langCode = language.split('-')[0];
+        // Use a Set to avoid duplicates if the user's language is English
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images", include_image_language: imageLanguages }, config);
       return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. Falling back.`);
@@ -475,7 +481,10 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
   const [provider, id] = stremioId.startsWith('tt') ? ['imdb', stremioId] : stremioId.split(':');
   if (provider === 'tmdb' && id) {
     try {
-      const seriesData = await moviedb.tvInfo({ id: id, language, append_to_response: "videos,credits,external_ids" }, config);
+      const langCode = language.split('-')[0];
+        // Use a Set to avoid duplicates if the user's language is English
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const seriesData = await moviedb.tvInfo({ id: id, language, append_to_response: "videos,credits,external_ids,images", include_image_language: imageLanguages }, config);
       return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. error message: ${e.message}`);
@@ -514,12 +523,14 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   if (preferredProvider !== nativeProvider) {
     try {
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
-        
+        const langCode = language.split('-')[0];
+        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         if (type === 'movie') {
-          const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
+          
+          const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images", include_image_language: imageLanguages }, config);
           return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         } else {
-          const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids" }, config);
+          const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images", include_image_language: imageLanguages }, config);
             return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime);
         }
       }
@@ -683,8 +694,10 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   
   // Get artwork based on art provider preference
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
-  const tmdbBackgroundUrl = backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  let tmdbLogoUrl = images?.logos?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${images?.logos?.[0]?.file_path}` : null;
+  const selectedBg = images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
+  const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
+  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
+  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
   
   let poster, background, logoUrl, imdbRatingValue;
   
@@ -705,7 +718,6 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   
   const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
   const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-  console.log(`[TmdbMovieMeta] posterProxyUrl: ${posterProxyUrl}`);
   const kitsuId = allIds?.kitsuId;
   const idProvider = config.providers?.movie || 'imdb';
 
@@ -813,8 +825,10 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   // Get artwork based on art provider preference
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
-  const tmdbBackgroundUrl = images?.backdrops?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${images?.backdrops?.[0]?.file_path}` : null;
-  let tmdbLogoUrl = images?.logos?.[0]?.file_path ? `https://image.tmdb.org/t/p/original${images?.logos?.[0]?.file_path}` : null;
+  const selectedBg = images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
+  const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
+  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
+  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
   let poster, background, logoUrl, imdbRatingValue;
   
   if (isAnime) {

@@ -96,6 +96,7 @@ const initialConfig: AppConfig = {
   mal: {
     skipFiller: false, 
     skipRecap: false,
+    allowEpisodeMarking: false,
   },
   tmdb: {
     scrapeImdb: false,
