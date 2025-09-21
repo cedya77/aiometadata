@@ -248,13 +248,16 @@ async function createStremThruCatalog(userCatalog) {
       genres = ['None']; // Single option for catalogs without genre support
     }
     
+    // Add "None" option when showInHome is false to work around Stremio's genre requirement
+    const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
+    
     const catalog = {
       id: userCatalog.id,
       type: userCatalog.type,
       name: userCatalog.name,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
-        { name: "genre", options: genres, isRequired: userCatalog.showInHome ? false : true },
+        { name: "genre", options: genreOptions, isRequired: true },
         { name: "skip" },
       ],
       showInHome: userCatalog.showInHome

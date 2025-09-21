@@ -78,7 +78,7 @@ function calculateSimilarity(s1, s2) {
 
 
 function sortSearchResults(results, query) {
-  //console.log(`[Search] results: ${JSON.stringify(results)}`);
+  console.log(`[Search] results: ${JSON.stringify(results)}`);
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return results;
 

@@ -146,13 +146,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     const tvdbId = item.id;
     if (!tvdbId) return null;
     
-    const targetProviders = new Set();
-    if (preferredProvider !== 'tvdb') targetProviders.add(preferredProvider);
-    let allIds;
-    if (targetProviders.size > 0) {
-      const targetProviderArray = Array.from(targetProviders);
-      allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, targetProviderArray);
-    }
+    const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, {}, ['imdb']);
     
     let stremioId = `tvdb:${tvdbId}`;
     //if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
@@ -162,12 +156,12 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     //} else if(preferredProvider === 'imdb' && allIds?.imdbId) {
     //  stremioId = allIds.imdbId;
     //}
-    if(allIds.imdbId) {
-      stremioId = allIds.imdbId;
+    if(allIds?.imdbId) {
+      stremioId = allIds?.imdbId;
     }
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, config.userUUID, allIds);
+      return await getMeta(type, language, stremioId, config, config.userUUID, allIds as any);
     }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
     
     if (result && result.meta) {
