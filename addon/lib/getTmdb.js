@@ -70,7 +70,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
   const queryParams = new URLSearchParams(params);
   queryParams.append('api_key', apiKey);
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
-  console.log(`[TMDB] Making request to ${url}`);
+  //console.log(`[TMDB] Making request to ${url}`);
 
   let attempt = 0;
   const maxRetries = 3;
@@ -351,6 +351,66 @@ async function getTvCertifications(params, config) {
 
 async function getMovieWatchProviders(params, config) {
   const data = await makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config);
+  if (data?.results) {
+    const country = config.language.split('-')[1] || 'US';
+    const countryProviders = data.results[country];
+    
+    if (countryProviders) {
+      const providers = [];
+      
+      // Extract flatrate providers (subscription services)
+      if (countryProviders.flatrate) {
+        countryProviders.flatrate.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'flatrate',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Extract buy providers (purchase options)
+      if (countryProviders.buy) {
+        countryProviders.buy.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'buy',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Extract rent providers (rental options)
+      if (countryProviders.rent) {
+        countryProviders.rent.forEach(provider => {
+          providers.push({
+            name: provider.provider_name,
+            logo: provider.logo_path ? `https://image.tmdb.org/t/p/w500${provider.logo_path}` : null,
+            id: provider.provider_id,
+            type: 'rent',
+            priority: provider.display_priority
+          });
+        });
+      }
+      
+      // Sort by priority (lower number = higher priority)
+      providers.sort((a, b) => a.priority - b.priority);
+      
+      return {
+        country,
+        link: countryProviders.link,
+        providers
+      };
+    }
+  }
+  return null;
+}
+
+function getWatchProviders(data, config) {
   if (data?.results) {
     const country = config.language.split('-')[1] || 'US';
     const countryProviders = data.results[country];
@@ -720,5 +780,6 @@ module.exports = {
   getTranslations,
   movieExternalIds,
   tvExternalIds,
-  getTmdbImages
+  getTmdbImages,
+  getWatchProviders
 };

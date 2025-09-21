@@ -20,7 +20,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [isChecking, setIsChecking] = useState(false);
   const [customListUrl, setCustomListUrl] = useState("");
   const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random'>('rank');
-  const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('desc');
+  const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('asc');
 
   const validateApiKey = useCallback(async (isRefresh = false) => {
     if (!tempKey) {

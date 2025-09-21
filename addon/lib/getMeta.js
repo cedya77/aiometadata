@@ -427,7 +427,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
     try {
       const langCode = language.split('-')[0]; 
       const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations", include_image_language: imageLanguages }, config);
+      const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages }, config);
       return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId}: fallback to provider of the stremioId`);
@@ -462,7 +462,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       const langCode = language.split('-')[0];
         // Use a Set to avoid duplicates if the user's language is English
       const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations", include_image_language: imageLanguages }, config);
+      const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages }, config);
       return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. Falling back.`);
@@ -508,7 +508,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       const langCode = language.split('-')[0];
         // Use a Set to avoid duplicates if the user's language is English
       const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-      const seriesData = await moviedb.tvInfo({ id: id, language, append_to_response: "videos,credits,external_ids,images,translations", include_image_language: imageLanguages }, config);
+      const seriesData = await moviedb.tvInfo({ id: id, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages }, config);
       return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds });
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'tmdb' failed for ${stremioId}. error message: ${e.message}`);
@@ -551,10 +551,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         if (type === 'movie') {
           
-          const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations", include_image_language: imageLanguages }, config);
+          const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages }, config);
           return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         } else {
-          const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations", include_image_language: imageLanguages }, config);
+          const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages }, config);
             return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime);
         }
       }
@@ -582,10 +582,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
-          let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series', stremioId);
+          let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
           return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
           } else if(type === 'movie') {
-            let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie', stremioId);
+            let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
             return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
@@ -664,7 +664,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   imdbData.poster = config.apiKeys?.rpdb ? posterProxyUrl : poster;
   imdbData.background = background;
   imdbData.logo = logoUrl;
-  imdbData.id = stremioId;
+  //imdbData.id = stremioId;
   
   // Add meta provider attribution to description
   if (imdbData.description) {
@@ -701,7 +701,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   imdbData.poster = config.apiKeys?.rpdb ? posterProxyUrl : poster;
   imdbData.background = background;
   imdbData.logo = logoUrl;
-  imdbData.id = stremioId;
+  //imdbData.id = stremioId;
   
   // Add meta provider attribution to description
   if (imdbData.description) {
@@ -713,7 +713,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
 
 async function buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const { allIds } = enrichmentData;
-  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits, images } = movieData;
+  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits, images, } = movieData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
   const castCount = config.castCount === 0 ? undefined : config.castCount;
@@ -771,7 +771,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
   }));
 
-  const watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
+  const watchProviders = moviedb.getWatchProviders(movieData['watch/providers'], config);
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
   finalTitle = Utils.processTitleTranslations(movieData.translations, language, title);
@@ -897,7 +897,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       console.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message);
   }
 
-  const watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
+  const watchProviders = moviedb.getWatchProviders(seriesData['watch/providers'], config);
   const seasonPromises = (seasons || [])
     .filter(season => season.episode_count > 0) 
     .map(season => moviedb.seasonInfo({ id: tmdbId, season_number: season.season_number, language }, config));

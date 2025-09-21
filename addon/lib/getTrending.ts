@@ -39,16 +39,19 @@ async function getTrending(type: string, language: string, page: number, genre: 
       let allIds: any = {};
       
       // Resolve IDs only if necessary, but keep the overall process parallel.
-      if (preferredProvider !== 'tmdb') {
+      //if (preferredProvider !== 'imdb') {
           allIds = await resolveAllIds(stremioId, type, config);
-          if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+          /*if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
             stremioId = `tvdb:${allIds.tvdbId}`;
           } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
             stremioId = `tvmaze:${allIds.tvmazeId}`;
           } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
             stremioId = allIds.imdbId;
+          }*/
+          if(allIds.imdbId) {
+            stremioId = allIds.imdbId;
           }
-      }
+      //}
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
         return await getMeta(type, language, stremioId, config, userUUID, allIds);
       }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);

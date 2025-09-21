@@ -398,16 +398,11 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
       try {
         let stremioId = `tmdb:${item.id}`;
         let allIds: any = {};
-        // Resolve IDs only if necessary, but keep the overall process parallel.
-        if (preferredProvider !== 'tmdb') {
-            allIds = await resolveAllIds(stremioId, type, config);
-            if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-              stremioId = `tvdb:${allIds.tvdbId}`;
-            } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-              stremioId = `tvmaze:${allIds.tvmazeId}`;
-            } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
-              stremioId = allIds.imdbId;
-            }
+        if(item.imdb_id){
+          stremioId = item.imdb_id;
+        } else{
+          allIds = await resolveAllIds(stremioId, type, config, {tmdbId: item.id}, ['imdb']);
+          if(allIds?.imdbId) stremioId = allIds.imdbId;
         }
         
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching

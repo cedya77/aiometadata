@@ -48,7 +48,7 @@ const CollapsibleSection = ({ title, children }: { title: string, children: Reac
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig } = useConfig();
   const [sort, setSort] = useState(catalog.sort || 'rank');
-  const [order, setOrder] = useState(catalog.order || 'desc');
+  const [order, setOrder] = useState(catalog.order || 'asc');
 
   const handleSave = () => {
     setConfig(prev => ({

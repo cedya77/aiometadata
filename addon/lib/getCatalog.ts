@@ -155,11 +155,14 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     }
     
     let stremioId = `tvdb:${tvdbId}`;
-    if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
-      stremioId = `tmdb:${allIds.tmdbId}`;
-    } else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-      stremioId = `tvmaze:${allIds.tvmazeId}`;
-    } else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+    //if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
+    //  stremioId = `tmdb:${allIds.tmdbId}`;
+    //} else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+    //  stremioId = `tvmaze:${allIds.tvmazeId}`;
+    //} else if(preferredProvider === 'imdb' && allIds?.imdbId) {
+    //  stremioId = allIds.imdbId;
+    //}
+    if(allIds.imdbId) {
       stremioId = allIds.imdbId;
     }
     
@@ -268,15 +271,18 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     let stremioId = `tmdb:${item.id}`;
     let allIds: any = {};
     // Resolve IDs only if necessary, but keep the overall process parallel.
-    if (preferredProvider !== 'tmdb') {
+    //if (preferredProvider !== 'tmdb') {
        allIds = await resolveAllIds(stremioId, type, config);
-        if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-          stremioId = `tvdb:${allIds.tvdbId}`;
-        } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-          stremioId = `tvmaze:${allIds.tvmazeId}`;
-        } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
-          stremioId = allIds.imdbId;
-        }
+     //   if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
+    //      stremioId = `tvdb:${allIds.tvdbId}`;
+    //    } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
+    //      stremioId = `tvmaze:${allIds.tvmazeId}`;
+    //    } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
+    //      stremioId = allIds.imdbId;
+    //    }
+    //}
+    if(allIds.imdbId) {
+      stremioId = allIds.imdbId;
     }
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {

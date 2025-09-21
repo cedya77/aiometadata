@@ -111,23 +111,8 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
   }
   
-  let preferredProvider;
-  if (type === 'movie') {
-    preferredProvider = config.providers?.movie || 'tmdb';
-  } else {
-    preferredProvider = config.providers?.series || 'tvdb';
-  }
-  let stremioId;
-  if (preferredProvider === 'tvmaze' && tvmazeId) {
-    stremioId = `tvmaze:${tvmazeId}`;
-  }
-   else if (preferredProvider === 'tmdb' && tmdbId) {
-    stremioId = `tmdb:${tmdbId}`;
-  } else if (preferredProvider === 'imdb' && imdbId) {
-    stremioId = imdbId;
-  } else {
-    stremioId = `tvdb:${extendedRecord.id}`; // fallback
-  }
+  let stremioId = `tvdb:${extendedRecord.id}`;
+  if(imdbId) stremioId = imdbId;
   const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
   // Validate logo URL to prevent malformed URLs
   const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId? imdb.getLogoFromImdb(imdbId) : null;
@@ -293,7 +278,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
         const [imdbRating, resolvedIds] = await Promise.all([
             allIds.imdbId ? getImdbRating(allIds.imdbId, mediaType) : Promise.resolve(null),
-            resolveAllIds(`tmdb:${media.id}`, mediaType, config)
+            resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds)
         ]);
         
         // Debug: Check for malformed poster URLs
@@ -308,12 +293,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         
         const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         
-        // Determine the final Stremio ID based on user preference
-        const preferredProvider = type === 'movie' ? (config.providers?.movie || 'tmdb') : (config.providers?.series || 'tvdb');
         let stremioId = `tmdb:${media.id}`; // Default to TMDB
-        if (preferredProvider === 'tvdb' && resolvedIds?.tvdbId) stremioId = `tvdb:${resolvedIds.tvdbId}`;
-        else if (preferredProvider === 'tvmaze' && resolvedIds?.tvmazeId) stremioId = `tvmaze:${resolvedIds.tvmazeId}`;
-        else if (preferredProvider === 'imdb' && resolvedIds?.imdbId) stremioId = resolvedIds.imdbId;
+        if(resolvedIds?.imdbId) stremioId = resolvedIds.imdbId;
         
         // Assemble the final meta object
         const parsed = Utils.parseMedia(details, mediaType, [], config);
@@ -624,17 +605,8 @@ async function parseTvmazeResult(show, config) {
   const tvdbId = show.externals?.thetvdb;
   const tmdbId = show.externals?.themoviedb;
   // use preferred provider id as id. tvmaze are type series only.
-  const preferredProvider = config.providers?.series || 'tvdb';
-  let stremioId;
-  if (preferredProvider === 'tvdb' && tvdbId) {
-    stremioId = `tvdb:${tvdbId}`;
-  } else if (preferredProvider === 'tmdb' && tmdbId) {
-    stremioId = `tmdb:${tmdbId}`;
-  } else if (preferredProvider === 'imdb' && imdbId) {
-    stremioId = imdbId;
-  } else {
-    stremioId = `tvmaze:${show.id}`;
-  }
+  let stremioId = `tvmaze:${show.id}` ;
+  if(imdbId) stremioId = imdbId;
   var fallbackImage = show.image?.original || "https://artworks.thetvdb.com/banners/images/missing/series.jpg";
   const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
   const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
