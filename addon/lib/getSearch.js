@@ -264,11 +264,12 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
             ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations", include_image_language: imageLanguages }, config)
             : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations", include_image_language: imageLanguages }, config);
         
-        const allIds = {
+        let allIds = {
             tmdbId: details.id,
-            imdbId: details.external_ids?.imdb_id,
+            imdbId: details.external_ids?.imdb_id || details.imdb_id,
             tvdbId: details.external_ids?.tvdb_id
         };
+        allIds = await resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds, ['imdb']);
         const selectedBg = details.images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
         const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
         logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
@@ -431,11 +432,24 @@ async function performTvdbSearch(type, query, language, config) {
   const searchStartTime = Date.now();
   logger.info(`Starting TVDB parallel search for: "${sanitizedQuery}"`);
 
+  const shouldSearchPersons = (() => {
+    
+    // Check for symbols that are unlikely in a 'person''s name
+    const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
+    if (nameInvalidatingSymbols.test(query)) {
+      logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
+      return false;
+    }
+    
+    // If checks pass, it's plausible the user is searching for a person.
+    return true;
+  })();
+
   const [titleResults, peopleResults] = await Promise.all([
     type === 'movie' 
       ? tvdb.searchMovies(sanitizedQuery, config) 
       : tvdb.searchSeries(sanitizedQuery, config),
-    tvdb.searchPeople(sanitizedQuery, config)
+    shouldSearchPersons ? tvdb.searchPeople(sanitizedQuery, config) : Promise.resolve([])
   ]);
 
   logger.debug(`TVDB initial searches completed in ${Date.now() - searchStartTime}ms.`);
@@ -531,9 +545,18 @@ async function performTvmazeSearch(query, language, config) {
   const sanitizedQuery = sanitizeTvmazeQuery(query);
   if (!sanitizedQuery) return [];
 
+  const shouldSearchPersons = (() => {
+    const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
+    if (nameInvalidatingSymbols.test(query)) {
+      logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
+      return false;
+    }
+    return true;
+  })();
+
   const [titleResults, peopleResults] = await Promise.all([
     tvmaze.searchShows(sanitizedQuery),
-    tvmaze.searchPeople(sanitizedQuery)
+    shouldSearchPersons ? tvmaze.searchPeople(sanitizedQuery) : Promise.resolve([])
   ]);
   
   const searchResults = new Map();

@@ -75,7 +75,25 @@ async function httpRequest(url, options = {}) {
  * Convenience method for GET requests
  */
 async function httpGet(url, options = {}) {
-  return httpRequest(url, { ...options, method: 'GET' });
+  // Follow up to 3 redirects for GET requests (handles 301/302/303/307/308)
+  let currentUrl = url;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await httpRequest(currentUrl, { ...options, method: 'GET' });
+    } catch (error) {
+      const status = error?.response?.status;
+      const locationHeader = error?.response?.headers?.location || error?.response?.headers?.Location;
+      const isRedirect = status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+      if (isRedirect && locationHeader) {
+        // Resolve relative Location headers against the current URL
+        currentUrl = new URL(locationHeader, currentUrl).toString();
+        continue;
+      }
+      throw error;
+    }
+  }
+  // Final attempt without further redirect handling
+  return httpRequest(currentUrl, { ...options, method: 'GET' });
 }
 
 /**

@@ -404,7 +404,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 
   if (allIds?.imdbId && preferredProvider === 'imdb') {
     try {
-        let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
+        let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'movie');
         return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config);
     } catch (e) {
       console.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. Falling back.`);
@@ -424,7 +424,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
       
       return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
-      console.warn(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId}: fallback to provider of the stremioId`);
+      console.warn(`[MovieMeta] Native provider 'tmdb' also failed for ${stremioId} with error: ${e.message}: fallback to provider of the stremioId`);
     } 
   }
   const [provider, id] = stremioId.startsWith('tt') ? ['imdb', stremioId] : stremioId.split(':');
@@ -438,7 +438,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
   }
    else if (provider === 'imdb' && id) {
     try {
-      const movieData = await imdb.getMetaFromImdb(id, 'movie');
+      const movieData = await imdb.getMetaFromImdbIo(id, 'movie');
       return await buildImdbMovieResponse(stremioId, movieData, { allIds }, config);
     } catch (e) {
       console.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. error message: ${e.message}`);
@@ -465,7 +465,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
   if (allIds?.imdbId && preferredProvider === 'imdb') {
     try {
-      let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
+      let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'series');
       return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config);
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'imdb' failed for ${stremioId}. Falling back.`);
@@ -509,7 +509,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
     }
   } else if (provider === 'imdb' && id) {
     try {
-      const seriesData = await imdb.getMetaFromImdb(id, 'series');
+      const seriesData = await imdb.getMetaFromImdbIo(id, 'series');
       return await buildImdbSeriesResponse(stremioId, seriesData, { allIds }, config);
     } catch (e) {
       console.warn(`[SeriesMeta] Preferred provider 'imdb' failed for ${stremioId}. error message: ${e.message}`);
@@ -576,10 +576,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
-          let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
+          let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'series');
           return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
           } else if(type === 'movie') {
-            let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
+            let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'movie');
             return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
@@ -658,6 +658,17 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   imdbData.poster = config.apiKeys?.rpdb ? posterProxyUrl : poster;
   imdbData.background = background;
   imdbData.logo = logoUrl;
+
+  if(imdbData.credits_cast) {
+    imdbData.credits_cast.map(cast => {
+      cast.profile_path = cast.profile_path ? cast.profile_path.startsWith('http') ? cast.profile_path : `https://image.tmdb.org/t/p/w276_and_h350_face${cast.profile_path}` : null;
+    });
+  }
+  if(imdbData.credits_crew) {
+    imdbData.credits_crew.map(crew => {
+      crew.profile_path = crew.profile_path ? crew.profile_path.startsWith('http') ? crew.profile_path : `https://image.tmdb.org/t/p/w276_and_h350_face${crew.profile_path}` : null;
+    });
+  }
   //imdbData.id = stremioId;
   
   // Add meta provider attribution to description
@@ -669,6 +680,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
 }
 
 async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, config, isAnime = false) {
+  //console.log(`[ImdbMovieResponse] Building response for ${stremioId} with imdbData: ${JSON.stringify(imdbData)}`);
   const { allIds } = enrichmentData;
   const tmdbId = allIds?.tmdbId;
   const tvdbId = allIds?.tvdbId;
@@ -695,12 +707,26 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   imdbData.poster = config.apiKeys?.rpdb ? posterProxyUrl : poster;
   imdbData.background = background;
   imdbData.logo = logoUrl;
+
+  if(imdbData.credits_cast) {
+    imdbData.credits_cast.map(cast => {
+      cast.profile_path = cast.profile_path ? cast.profile_path.startsWith('http') ? cast.profile_path : `https://image.tmdb.org/t/p/w276_and_h350_face${cast.profile_path}` : null;
+    });
+  }
+  if(imdbData.credits_crew) {
+    imdbData.credits_crew.map(crew => {
+      crew.profile_path = crew.profile_path ? crew.profile_path.startsWith('http') ? crew.profile_path : `https://image.tmdb.org/t/p/w276_and_h350_face${crew.profile_path}` : null;
+    });
+  }
   //imdbData.id = stremioId;
   
   // Add meta provider attribution to description
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
+
+  
+  console.log(`[ImdbMovieResponse] Returning response for ${stremioId} with imdbData: ${JSON.stringify(imdbData)}`);
   
   return imdbData;
 }

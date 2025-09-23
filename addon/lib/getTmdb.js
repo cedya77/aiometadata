@@ -125,14 +125,23 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       const type = isMovieDetailEndpoint ? 'movie' : isSeriesDetailEndpoint ? 'series' : null;
       if (!data.imdb_id && currentTmdbId && type) {
           const startTime = Date.now();
-          const imdbSearchResult = await nameToImdb({ name: data.original_title || data.title || "", type: type, year: data.release_date ? data.release_date.substring(0, 4) : "" }, (err, result) => {
-            if (err) {
-              console.warn(`[TMDB] Failed to get IMDB ID for season name "${data.original_title || data.title}":`, err);
-              return null;
-            } else {
-              console.log(`[TMDB] IMDB ID for season name "${data.original_title || data.title}":`, result);
-              return result;
-            }
+          const imdbSearchResult = await new Promise((resolve) => {
+            nameToImdb(
+              {
+                name: data.original_title || data.title || "",
+                type: type,
+                year: data.release_date ? data.release_date.substring(0, 4) : ""
+              },
+              (err, result) => {
+                if (err) {
+                  console.warn(`[TMDB] Failed to get IMDB ID for season name "${data.original_title || data.title}":`, err);
+                  resolve(null);
+                } else {
+                  console.log(`[TMDB] IMDB ID for season name "${data.original_title || data.title}":`, result);
+                  resolve(result);
+                }
+              }
+            );
           });
           const duration = Date.now() - startTime;
           await timingMetrics.recordTiming('nameToImdb_lookup', duration, { 

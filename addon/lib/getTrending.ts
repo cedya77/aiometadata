@@ -45,6 +45,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
         const certifications: any = type === 'movie' 
             ? await moviedb.getMovieCertifications({ id: item.id }, config) 
             : await moviedb.getTvCertifications({ id: item.id }, config);
+        result.meta.app_extras = result.meta.app_extras || {};
         result.meta.app_extras.certification = type === 'movie' 
             ? Utils.getTmdbMovieCertificationForCountry(certifications) 
             : Utils.getTmdbTvCertificationForCountry(certifications);

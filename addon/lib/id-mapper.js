@@ -482,7 +482,7 @@ async function getCinemetaVideosForImdbSeries(imdbId) {
   
   try {
     // Fetch episode data from Cinemeta API
-    const cinemetaUrl = `https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`;
+    const cinemetaUrl = `https://cinemeta-live.strem.io/meta/series/${imdbId}.json`;
     console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
     const response = await httpGet(cinemetaUrl);

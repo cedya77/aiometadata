@@ -12,16 +12,10 @@ async function getImdbRating(imdbId, type) {
     return undefined;
   }
 
-  const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
-  const backupUrl = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
+  const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
   try {
     const response = await axios.get(url);
     const rating = response.data?.meta?.imdbRating;
-    if (!rating) {
-      const backupResponse = await axios.get(backupUrl);
-      const backupRating = backupResponse.data?.meta?.imdbRating;
-      return backupRating ? String(backupRating) : undefined;
-    }
     return rating ? String(rating) : undefined;
 
   } catch (error) {
