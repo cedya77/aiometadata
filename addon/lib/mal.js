@@ -1,17 +1,38 @@
 require("dotenv").config();
 const { httpGet } = require('../utils/httpClient');
-const https = require('https');
-
-const robustAgent = new https.Agent({
-  family: 4, // Force IPv4
-  keepAlive: true,
-  maxSockets: 100,
-  maxFreeSockets: 10,
-  timeout: 60000,
-  freeSocketTimeout: 30000
-});
+const { socksDispatcher } = require('fetch-socks');
+const { Agent } = require('undici');
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
+
+// Proxy configuration for MAL requests
+const MAL_SOCKS_PROXY_URL = process.env.MAL_SOCKS_PROXY_URL;
+let malDispatcher;
+
+if (MAL_SOCKS_PROXY_URL) {
+  try {
+    const proxyUrlObj = new URL(MAL_SOCKS_PROXY_URL);
+    if (proxyUrlObj.protocol === 'socks5:' || proxyUrlObj.protocol === 'socks4:') {
+      malDispatcher = socksDispatcher({
+        type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
+        host: proxyUrlObj.hostname,
+        port: parseInt(proxyUrlObj.port),
+        userId: proxyUrlObj.username,
+        password: proxyUrlObj.password,
+      });
+      console.log(`[MAL] SOCKS proxy is enabled for Jikan API via fetch-socks.`);
+    } else {
+      console.error(`[MAL] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
+      malDispatcher = new Agent({ connect: { timeout: 30000 } });
+    }
+  } catch (error) {
+    console.error(`[MAL] Invalid MAL_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
+    malDispatcher = new Agent({ connect: { timeout: 30000 } });
+  }
+} else {
+  malDispatcher = new Agent({ connect: { timeout: 30000 } });
+  console.log('[MAL] undici agent is enabled for direct connections.');
+}
 
 const BASE_REQUEST_DELAY = 200;
 const MAX_RETRIES = 3;
@@ -145,7 +166,7 @@ async function _makeJikanRequest(url) {
   const startTime = Date.now();
   
   try {
-    const response = await httpGet(url);
+    const response = await httpGet(url, { dispatcher: malDispatcher });
     const responseTime = Date.now() - startTime;
     
     // Track successful request
