@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
-const axios = require('axios');
+const { httpGet, httpHead } = require('../utils/httpClient');
 const { redis } = require('./getCache'); 
 const kitsu = require('./kitsu');
 const { numberValueTypes } = require('framer-motion');
@@ -69,7 +69,7 @@ async function downloadAndProcessAnimeList() {
   try {
     if (useRedisCache) {
       const savedEtag = await redis.get(REDIS_ETAG_KEY);
-      const headers = (await axios.head(REMOTE_MAPPING_URL, { timeout: 10000 })).headers;
+      const headers = (await httpHead(REMOTE_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
 
       console.log(`[ID Mapper] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
@@ -89,7 +89,7 @@ async function downloadAndProcessAnimeList() {
     }
 
     console.log('[ID Mapper] Downloading full list...');
-    const response = await axios.get(REMOTE_MAPPING_URL, { timeout: 45000 });
+    const response = await httpGet(REMOTE_MAPPING_URL);
     const jsonData = JSON.stringify(response.data);
 
     
@@ -127,7 +127,7 @@ async function downloadAndProcessKitsuToImdbMapping() {
   try {
     if (useRedisCache) {
       const savedEtag = await redis.get(REDIS_KITSU_TO_IMDB_ETAG_KEY);
-      const headers = (await axios.head(REMOTE_KITSU_TO_IMDB_MAPPING_URL, { timeout: 10000 })).headers;
+      const headers = (await httpHead(REMOTE_KITSU_TO_IMDB_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
 
       console.log(`[ID Mapper] [Kitsu-IMDB] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
@@ -149,7 +149,7 @@ async function downloadAndProcessKitsuToImdbMapping() {
     }
 
     console.log('[ID Mapper] [Kitsu-IMDB] Downloading Kitsu to IMDB mapping...');
-    const response = await axios.get(REMOTE_KITSU_TO_IMDB_MAPPING_URL, { timeout: 45000 });
+    const response = await httpGet(REMOTE_KITSU_TO_IMDB_MAPPING_URL);
     kitsuToImdbMapping = response.data;
     const jsonData = JSON.stringify(kitsuToImdbMapping);
 
@@ -485,7 +485,7 @@ async function getCinemetaVideosForImdbSeries(imdbId) {
     const cinemetaUrl = `https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`;
     console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
-    const response = await axios.get(cinemetaUrl, { timeout: 10000 });
+    const response = await httpGet(cinemetaUrl);
     const cinemetaData = response.data.meta;
     
     if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {
@@ -513,7 +513,7 @@ async function getCinemetaVideosForImdbIoSeries(imdbId) {
     const cinemetaUrl = `https://cinemeta-live.strem.io/meta/series/${imdbId}.json`;
     console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
-    const response = await axios.get(cinemetaUrl, { timeout: 10000 });
+    const response = await httpGet(cinemetaUrl);
     const cinemetaData = response.data.meta;
     
     if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {

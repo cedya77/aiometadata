@@ -98,7 +98,15 @@ async function _fetchFromTmdb(tmdbId, type, config) {
       type, 
       tmdbId,
       success: true,
-      method: 'dedicated_endpoint'
+      method: 'dedicated_endpoint',
+      provider: 'tmdb'
+    });
+    
+    // Record provider-specific timing
+    await timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
+      operation: 'external_ids',
+      tmdbId,
+      success: true
     });
     
     logger.debug(`[API Fetch] TMDB External IDs completed in ${duration}ms for ${type} ${tmdbId}`);
@@ -113,8 +121,19 @@ async function _fetchFromTmdb(tmdbId, type, config) {
       type, 
       tmdbId,
       success: false,
-      method: 'dedicated_endpoint'
+      method: 'dedicated_endpoint',
+      provider: 'tmdb',
+      error: error.message
     });
+    
+    // Record provider-specific timing for failures
+    await timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
+      operation: 'external_ids',
+      tmdbId,
+      success: false,
+      error: error.message
+    });
+    
     logger.warn(`[API Fetch] Failed to fetch from TMDB ${tmdbId}: ${error.message}`);
     return {};
   }
@@ -122,11 +141,29 @@ async function _fetchFromTmdb(tmdbId, type, config) {
 
 async function _fetchFromTvdb(tvdbId, type, config) {
   if (!tvdbId) return {};
+  const startTime = Date.now();
   try {
     logger.debug(`[API Fetch] TVDB Remote IDs for ${type} ${tvdbId}`);
     const details = type === 'movie'
       ? await tvdb.getMovieExtended(tvdbId, config)
       : await tvdb.getSeriesExtended(tvdbId, config);
+
+    const duration = Date.now() - startTime;
+    
+    // Record timing metrics for TVDB
+    await timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
+      type, 
+      tvdbId,
+      success: true,
+      provider: 'tvdb'
+    });
+    
+    // Record provider-specific timing
+    await timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
+      operation: 'remote_ids',
+      tvdbId,
+      success: true
+    });
 
     const findId = (sourceName) => details.remoteIds?.find(id => id.sourceName === sourceName)?.id || null;
     
@@ -136,6 +173,23 @@ async function _fetchFromTvdb(tvdbId, type, config) {
       tvmazeId: findId('TV Maze'),
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+    await timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
+      type, 
+      tvdbId,
+      success: false,
+      provider: 'tvdb',
+      error: error.message
+    });
+    
+    // Record provider-specific timing for failures
+    await timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
+      operation: 'remote_ids',
+      tvdbId,
+      success: false,
+      error: error.message
+    });
+    
     logger.warn(`[API Fetch] Failed to fetch from TVDB ${tvdbId}: ${error.message}`);
     return {};
   }
@@ -143,15 +197,48 @@ async function _fetchFromTvdb(tvdbId, type, config) {
 
 async function _fetchFromTvmaze(tvmazeId, config) {
   if (!tvmazeId) return {};
+  const startTime = Date.now();
   try {
     logger.debug(`[API Fetch] TVmaze Externals for ${tvmazeId}`);
     const details = await tvmaze.getShowById(tvmazeId, config);
+    const duration = Date.now() - startTime;
+    
+    // Record timing metrics for TVMaze
+    await timingMetrics.recordTiming('tvmaze_externals', duration, { 
+      tvmazeId,
+      success: true,
+      provider: 'tvmaze'
+    });
+    
+    // Record provider-specific timing
+    await timingMetrics.recordTiming('api_tvmaze_series', duration, {
+      operation: 'externals',
+      tvmazeId,
+      success: true
+    });
+    
     return {
       imdbId: details.externals?.imdb || null,
       tmdbId: details.externals?.themoviedb || null,
       tvdbId: details.externals?.thetvdb || null,
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+    await timingMetrics.recordTiming('tvmaze_externals', duration, { 
+      tvmazeId,
+      success: false,
+      provider: 'tvmaze',
+      error: error.message
+    });
+    
+    // Record provider-specific timing for failures
+    await timingMetrics.recordTiming('api_tvmaze_series', duration, {
+      operation: 'externals',
+      tvmazeId,
+      success: false,
+      error: error.message
+    });
+    
     logger.warn(`[API Fetch] Failed to fetch from TVmaze ${tvmazeId}: ${error.message}`);
     return {};
   }
@@ -297,13 +384,28 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     }
 
     const primaryPromises = [];
-    if (allIds.tmdbId && (!allIds.imdbId || !allIds.tvdbId)) {
+    
+    // Determine what IDs we actually need based on targetProviders
+    const needsImdb = targetProviders.length === 0 || targetProviders.includes('imdb');
+    const needsTmdb = targetProviders.length === 0 || targetProviders.includes('tmdb');
+    const needsTvdb = targetProviders.length === 0 || targetProviders.includes('tvdb');
+    const needsTvmaze = targetProviders.length > 0 && targetProviders.includes('tvmaze');
+    
+    // Only fetch from TMDB if we need IMDB or TVDB IDs and don't have them
+    if (allIds.tmdbId && ((needsImdb && !allIds.imdbId) || (needsTvdb && !allIds.tvdbId))) {
+      logger.debug(`[Primary API] TMDB external IDs - needs: imdb=${needsImdb && !allIds.imdbId}, tvdb=${needsTvdb && !allIds.tvdbId}`);
       primaryPromises.push(_fetchFromTmdb(allIds.tmdbId, type, config));
     }
-    if (allIds.tvmazeId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvdbId)) {
+    
+    // Only fetch from TVMaze if we explicitly need TVMaze, TMDB, or TVDB IDs
+    if (allIds.tvmazeId && ((needsImdb && !allIds.imdbId) || (needsTmdb && !allIds.tmdbId) || (needsTvdb && !allIds.tvdbId))) {
+      logger.debug(`[Primary API] TVMaze externals - needs: imdb=${needsImdb && !allIds.imdbId}, tmdb=${needsTmdb && !allIds.tmdbId}, tvdb=${needsTvdb && !allIds.tvdbId}`);
       primaryPromises.push(_fetchFromTvmaze(allIds.tvmazeId, config));
     }
-    if (allIds.tvdbId && (!allIds.imdbId || !allIds.tmdbId || !allIds.tvmazeId)) {
+    
+    // Only fetch from TVDB if we need IMDB, TMDB, or TVMaze IDs and don't have them
+    if (allIds.tvdbId && ((needsImdb && !allIds.imdbId) || (needsTmdb && !allIds.tmdbId) || (needsTvmaze && !allIds.tvmazeId))) {
+      logger.debug(`[Primary API] TVDB remote IDs - needs: imdb=${needsImdb && !allIds.imdbId}, tmdb=${needsTmdb && !allIds.tmdbId}, tvmaze=${needsTvmaze && !allIds.tvmazeId}`);
       primaryPromises.push(_fetchFromTvdb(allIds.tvdbId, type, config));
     }
     
@@ -321,31 +423,177 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     
     // Phase 2: Secondary lookups to fill any remaining gaps
     const secondaryPromises = [];
+    const secondaryTimings = [];
 
-    if (!allIds.tmdbId && allIds.imdbId) {
-        secondaryPromises.push(moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config)
-            .then(res => ({ tmdbId: res.movie_results?.[0]?.id || res.tv_results?.[0]?.id || null })));
+    if (!allIds.tmdbId && allIds.imdbId && needsTmdb) {
+        const tmdbFindStartTime = Date.now();
+        logger.debug(`[Secondary API] TMDB find by IMDB - targetProviders: [${targetProviders.join(', ')}]`);
+        secondaryPromises.push(
+            moviedb.find({ id: allIds.imdbId, external_source: 'imdb_id' }, config)
+                .then(res => {
+                    const duration = Date.now() - tmdbFindStartTime;
+                    const tmdbId = res.movie_results?.[0]?.id || res.tv_results?.[0]?.id || null;
+                    secondaryTimings.push({
+                        operation: 'tmdb_find_by_imdb',
+                        duration,
+                        success: !!tmdbId,
+                        provider: 'tmdb',
+                        sourceId: allIds.imdbId,
+                        type
+                    });
+                    return { tmdbId };
+                })
+                .catch(error => {
+                    const duration = Date.now() - tmdbFindStartTime;
+                    secondaryTimings.push({
+                        operation: 'tmdb_find_by_imdb',
+                        duration,
+                        success: false,
+                        provider: 'tmdb',
+                        sourceId: allIds.imdbId,
+                        type,
+                        error: error.message
+                    });
+                    return { tmdbId: null };
+                })
+        );
     }
-    if (!allIds.tvdbId && allIds.imdbId) {
-        secondaryPromises.push(tvdb.findByImdbId(allIds.imdbId, config)
-            .then(res => ({ tvdbId: (type === 'movie' ? res?.movie?.id : res?.series?.id) || null })));
+    
+    if (!allIds.tvdbId && allIds.imdbId && needsTvdb) {
+        console.log('Finding TVDB ID for IMDB ID', allIds.imdbId);
+        const tvdbFindStartTime = Date.now();
+        logger.debug(`[Secondary API] TVDB find by IMDB - targetProviders: [${targetProviders.join(', ')}]`);
+        secondaryPromises.push(
+            tvdb.findByImdbId(allIds.imdbId, config)
+                .then(res => {
+                    const duration = Date.now() - tvdbFindStartTime;
+                    const tvdbId = (type === 'movie' ? res?.[0]?.movie?.id : res?.[0]?.series?.id) || null;
+                    secondaryTimings.push({
+                        operation: 'tvdb_find_by_imdb',
+                        duration,
+                        success: !!tvdbId,
+                        provider: 'tvdb',
+                        sourceId: allIds.imdbId,
+                        type
+                    });
+                    return { tvdbId };
+                })
+                .catch(error => {
+                    const duration = Date.now() - tvdbFindStartTime;
+                    secondaryTimings.push({
+                        operation: 'tvdb_find_by_imdb',
+                        duration,
+                        success: false,
+                        provider: 'tvdb',
+                        sourceId: allIds.imdbId,
+                        type,
+                        error: error.message
+                    });
+                    return { tvdbId: null };
+                })
+        );
     }
-    if (!allIds.tvdbId && allIds.tmdbId) {
-        secondaryPromises.push(tvdb.findByTmdbId(allIds.tmdbId, config)
-            .then(res => {
-                const movieResult = res?.find(r => r.movie);
-                const seriesResult = res?.find(r => r.series);
-                return { tvdbId: (type === 'movie' ? movieResult?.movie?.id : seriesResult?.series?.id) || null };
-            }));
+    
+    if (!allIds.tvdbId && allIds.tmdbId && needsTvdb) {
+        const tvdbFindTmdbStartTime = Date.now();
+        logger.debug(`[Secondary API] TVDB find by TMDB - targetProviders: [${targetProviders.join(', ')}]`);
+        secondaryPromises.push(
+            tvdb.findByTmdbId(allIds.tmdbId, config)
+                .then(res => {
+                    const duration = Date.now() - tvdbFindTmdbStartTime;
+                    const movieResult = res?.find(r => r.movie);
+                    const seriesResult = res?.find(r => r.series);
+                    const tvdbId = (type === 'movie' ? movieResult?.movie?.id : seriesResult?.series?.id) || null;
+                    secondaryTimings.push({
+                        operation: 'tvdb_find_by_tmdb',
+                        duration,
+                        success: !!tvdbId,
+                        provider: 'tvdb',
+                        sourceId: allIds.tmdbId,
+                        type
+                    });
+                    return { tvdbId };
+                })
+                .catch(error => {
+                    const duration = Date.now() - tvdbFindTmdbStartTime;
+                    secondaryTimings.push({
+                        operation: 'tvdb_find_by_tmdb',
+                        duration,
+                        success: false,
+                        provider: 'tvdb',
+                        sourceId: allIds.tmdbId,
+                        type,
+                        error: error.message
+                    });
+                    return { tvdbId: null };
+                })
+        );
     }
-    if (!allIds.tvmazeId && allIds.imdbId && type === 'series') {
-        secondaryPromises.push(tvmaze.getShowByImdbId(allIds.imdbId)
-            .then(res => ({ tvmazeId: res?.id || null })));
+    
+    // Only call TVMaze if it's specifically requested in targetProviders
+    // If no targetProviders specified, we should only fetch essential providers (TMDB, TVDB, IMDB)
+    const shouldCallTvmaze = targetProviders.length > 0 && targetProviders.includes('tvmaze');
+    if (!allIds.tvmazeId && allIds.imdbId && type === 'series' && shouldCallTvmaze) {
+        const tvmazeFindStartTime = Date.now();
+        logger.debug(`[Secondary API] TVMaze lookup requested - targetProviders: [${targetProviders.join(', ')}]`);
+        secondaryPromises.push(
+            tvmaze.getShowByImdbId(allIds.imdbId)
+                .then(res => {
+                    const duration = Date.now() - tvmazeFindStartTime;
+                    const tvmazeId = res?.id || null;
+                    secondaryTimings.push({
+                        operation: 'tvmaze_find_by_imdb',
+                        duration,
+                        success: !!tvmazeId,
+                        provider: 'tvmaze',
+                        sourceId: allIds.imdbId,
+                        type
+                    });
+                    return { tvmazeId };
+                })
+                .catch(error => {
+                    const duration = Date.now() - tvmazeFindStartTime;
+                    secondaryTimings.push({
+                        operation: 'tvmaze_find_by_imdb',
+                        duration,
+                        success: false,
+                        provider: 'tvmaze',
+                        sourceId: allIds.imdbId,
+                        type,
+                        error: error.message
+                    });
+                    return { tvmazeId: null };
+                })
+        );
+    } else if (!allIds.tvmazeId && allIds.imdbId && type === 'series' && !shouldCallTvmaze) {
+        logger.debug(`[Secondary API] Skipping TVMaze lookup - not in targetProviders: [${targetProviders.join(', ')}]`);
     }
-    // ******************************************************************
 
     if (secondaryPromises.length > 0) {
+        logger.debug(`Starting ${secondaryPromises.length} secondary API lookups for ${stremioId}`);
         const secondaryResults = await Promise.allSettled(secondaryPromises);
+        
+        // Record individual secondary API call timings
+        for (const timing of secondaryTimings) {
+            await timingMetrics.recordTiming(`secondary_${timing.operation}`, timing.duration, {
+                type: timing.type,
+                success: timing.success,
+                provider: timing.provider,
+                sourceId: timing.sourceId,
+                error: timing.error
+            });
+            
+            // Also record provider-specific secondary timing
+            await timingMetrics.recordTiming(`secondary_${timing.provider}_${timing.type}`, timing.duration, {
+                operation: timing.operation,
+                success: timing.success,
+                sourceId: timing.sourceId,
+                error: timing.error
+            });
+            
+            logger.debug(`Secondary ${timing.operation} completed in ${timing.duration}ms (success: ${timing.success})`);
+        }
+        
         for (const result of secondaryResults) {
             if (result.status === 'fulfilled' && result.value) {
                 const { tmdbId, tvdbId, imdbId, tvmazeId } = result.value;
@@ -357,6 +605,8 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
                 logger.warn(` A secondary API lookup failed: ${result.reason?.message}`);
             }
         }
+        
+        logger.debug(`Secondary API lookups completed for ${stremioId}. Found IDs: ${JSON.stringify({ tmdb: allIds.tmdbId, tvdb: allIds.tvdbId, imdb: allIds.imdbId, tvmaze: allIds.tvmazeId })}`);
     }
     
     // 5. Save the complete mapping to cache

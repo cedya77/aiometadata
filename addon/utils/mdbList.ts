@@ -382,14 +382,6 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   const targetMediaType = type === 'series' ? 'show' : 'movie';
   //const batchMediaInfo = await fetchMDBListBatchMediaInfo('tmdb', targetMediaType, filteredItems.map(item => item.id), config.apiKeys?.mdblist || '');
   //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo)}`);
-
-  // Determine preferred provider
-  let preferredProvider: string;
-  if (type === 'movie') {
-    preferredProvider = config.providers?.movie || 'tmdb';
-  } else {
-    preferredProvider = config.providers?.series || 'tvdb';
-  }
   
  
   const metas = await Promise.all(filteredItems
@@ -397,17 +389,10 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
     .map(async (item: any) => {
       try {
         let stremioId = `tmdb:${item.id}`;
-        let allIds: any = {};
-        if(item.imdb_id){
-          stremioId = item.imdb_id;
-        } else{
-          allIds = await resolveAllIds(stremioId, type, config, {tmdbId: item.id}, ['imdb']);
-          if(allIds?.imdbId) stremioId = allIds.imdbId;
-        }
         
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-          return await getMeta(type, language, stremioId, config, config.userUUID, allIds);
+          return await getMeta(type, language, stremioId, config, config.userUUID, false);
         }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
         
         if (result && result.meta) {

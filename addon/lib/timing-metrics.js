@@ -166,6 +166,158 @@ class TimingMetrics {
   }
 
   /**
+   * Get timing breakdown by provider
+   * @returns {Object} Provider-specific timing data
+   */
+  async getProviderTimingBreakdown() {
+    try {
+      const providerMetrics = ['search_tmdb', 'search_tvdb', 'search_tvmaze', 'search_mal'];
+      const secondaryMetrics = [
+        'secondary_tmdb_find_by_imdb', 
+        'secondary_tvdb_find_by_imdb', 
+        'secondary_tvdb_find_by_tmdb', 
+        'secondary_tvmaze_find_by_imdb'
+      ];
+      const breakdown = {};
+
+      // Primary search metrics
+      for (const metric of providerMetrics) {
+        const stats = await this.getStats(metric);
+        if (stats.count > 0) {
+          const provider = metric.replace('search_', '');
+          breakdown[provider] = {
+            ...stats,
+            provider: provider.toUpperCase(),
+            success_rate: await this.getSuccessRate(metric),
+            type: 'search'
+          };
+        }
+      }
+
+      // Secondary API call metrics
+      for (const metric of secondaryMetrics) {
+        const stats = await this.getStats(metric);
+        if (stats.count > 0) {
+          const metricKey = `${metric}_secondary`;
+          breakdown[metricKey] = {
+            ...stats,
+            provider: metric.replace('secondary_', '').replace(/_find_by_.*/, '').toUpperCase(),
+            success_rate: await this.getSuccessRate(metric),
+            type: 'secondary',
+            operation: metric.replace('secondary_', '')
+          };
+        }
+      }
+
+      return breakdown;
+    } catch (error) {
+      logger.error('Failed to get provider timing breakdown:', error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Get timing breakdown by resolution type
+   * @returns {Object} Resolution-type-specific timing data
+   */
+  async getResolutionTimingBreakdown() {
+    try {
+      const resolutionMetrics = ['id_resolution_total', 'id_resolution_cache', 'id_resolution_anime', 'id_resolution_wiki'];
+      const breakdown = {};
+
+      for (const metric of resolutionMetrics) {
+        const stats = await this.getStats(metric);
+        if (stats.count > 0) {
+          const resolutionType = metric.replace('id_resolution_', '');
+          breakdown[resolutionType] = {
+            ...stats,
+            resolution_type: resolutionType,
+            success_rate: await this.getSuccessRate(metric)
+          };
+        }
+      }
+
+      return breakdown;
+    } catch (error) {
+      logger.error('Failed to get resolution timing breakdown:', error.message);
+      return {};
+    }
+  }
+
+  /**
+   * Get success rate for a metric (based on error metadata)
+   * @param {string} metric - The metric name
+   * @returns {number} Success rate percentage
+   */
+  async getSuccessRate(metric) {
+    try {
+      const key = `${this.keyPrefix}${metric}`;
+      const rawData = await this.redis.lrange(key, 0, -1);
+      
+      if (!rawData || rawData.length === 0) {
+        return 100; // Default to 100% if no data
+      }
+
+      const data = rawData.map(item => JSON.parse(item));
+      const totalCount = data.length;
+      const errorCount = data.filter(item => item.metadata.error).length;
+      
+      return Math.round(((totalCount - errorCount) / totalCount) * 100);
+    } catch (error) {
+      logger.error(`Failed to get success rate for metric ${metric}:`, error.message);
+      return 100; // Default to 100% on error
+    }
+  }
+
+  /**
+   * Get timing trends over time periods
+   * @param {string} metric - The metric name
+   * @param {Array} periods - Array of time periods in hours
+   * @returns {Object} Timing trends
+   */
+  async getTimingTrends(metric, periods = [1, 24, 168]) { // 1h, 24h, 7d
+    try {
+      const trends = {};
+      
+      for (const period of periods) {
+        const cutoff = Date.now() - (period * 60 * 60 * 1000);
+        const key = `${this.keyPrefix}${metric}`;
+        const rawData = await this.redis.lrange(key, 0, -1);
+        
+        if (!rawData || rawData.length === 0) {
+          trends[`${period}h`] = { count: 0, average: 0 };
+          continue;
+        }
+
+        const data = rawData
+          .map(item => JSON.parse(item))
+          .filter(item => item.timestamp > cutoff)
+          .map(item => item.duration)
+          .sort((a, b) => a - b);
+
+        if (data.length > 0) {
+          const average = Math.round(data.reduce((acc, val) => acc + val, 0) / data.length);
+          const p95 = data[Math.floor(data.length * 0.95)];
+          
+          trends[`${period}h`] = {
+            count: data.length,
+            average,
+            p95,
+            period: `${period}h`
+          };
+        } else {
+          trends[`${period}h`] = { count: 0, average: 0, period: `${period}h` };
+        }
+      }
+
+      return trends;
+    } catch (error) {
+      logger.error(`Failed to get timing trends for metric ${metric}:`, error.message);
+      return {};
+    }
+  }
+
+  /**
    * Clear old data for a metric
    * @param {string} metric - The metric name
    * @param {number} maxAge - Maximum age in milliseconds

@@ -719,7 +719,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   
   try {
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, fullConfig, userUUID);
+      return await getMeta(type, language, stremioId, fullConfig, userUUID, true);
     }, undefined, cacheOptions, type);
 
     if (!result || !result.meta) {
@@ -1419,6 +1419,39 @@ addon.get("/api/dashboard/operations", (req, res) => {
   } catch (error) {
     console.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch operations data' });
+  }
+});
+
+// Enhanced timing metrics API endpoint
+addon.get("/api/dashboard/timing", async (req, res) => {
+  try {
+    const timingMetrics = require('./lib/timing-metrics');
+    
+    // Get comprehensive timing data
+    const [dashboardData, providerBreakdown, resolutionBreakdown] = await Promise.all([
+      timingMetrics.getDashboardData(),
+      timingMetrics.getProviderTimingBreakdown(),
+      timingMetrics.getResolutionTimingBreakdown()
+    ]);
+    
+    // Get timing trends for key metrics
+    const timingTrends = {};
+    const keyMetrics = ['id_resolution_total', 'search_operation', 'api_lookup'];
+    
+    for (const metric of keyMetrics) {
+      timingTrends[metric] = await timingMetrics.getTimingTrends(metric);
+    }
+    
+    res.json({
+      dashboard: dashboardData,
+      providerBreakdown,
+      resolutionBreakdown,
+      timingTrends,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[Timing API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch timing data' });
   }
 });
 

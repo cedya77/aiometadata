@@ -146,8 +146,6 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     const tvdbId = item.id;
     if (!tvdbId) return null;
     
-    const allIds = await resolveAllIds(`tvdb:${tvdbId}`, type, config, {}, ['imdb']);
-    
     let stremioId = `tvdb:${tvdbId}`;
     //if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
     //  stremioId = `tmdb:${allIds.tmdbId}`;
@@ -156,12 +154,9 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     //} else if(preferredProvider === 'imdb' && allIds?.imdbId) {
     //  stremioId = allIds.imdbId;
     //}
-    if(allIds?.imdbId) {
-      stremioId = allIds?.imdbId;
-    }
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, config.userUUID, allIds as any);
+      return await getMeta(type, language, stremioId, config, config.userUUID, false);
     }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
     
     if (result && result.meta) {
@@ -253,34 +248,13 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
   const res: any = await fetchFunction();
   // define preferred provider as string
-  let preferredProvider: string;
-  if (type === 'movie') {
-    preferredProvider = config.providers?.movie || 'tmdb';
-  } else {
-    preferredProvider = config.providers?.series || 'tvdb';
-  }
   
 
   const metas = await Promise.all(res.results.map(async item => {
     let stremioId = `tmdb:${item.id}`;
-    let allIds: any = {};
-    // Resolve IDs only if necessary, but keep the overall process parallel.
-    //if (preferredProvider !== 'tmdb') {
-       allIds = await resolveAllIds(stremioId, type, config);
-     //   if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-    //      stremioId = `tvdb:${allIds.tvdbId}`;
-    //    } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-    //      stremioId = `tvmaze:${allIds.tvmazeId}`;
-    //    } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
-    //      stremioId = allIds.imdbId;
-    //    }
-    //}
-    if(allIds.imdbId) {
-      stremioId = allIds.imdbId;
-    }
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, userUUID, allIds);
+      return await getMeta(type, language, stremioId, config, userUUID, false);
     }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
     if (result && result.meta) {
       return result.meta;

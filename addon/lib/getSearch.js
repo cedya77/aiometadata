@@ -276,10 +276,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         posterUrl = media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg`;
 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
-        const [imdbRating, resolvedIds] = await Promise.all([
-            allIds.imdbId ? getImdbRating(allIds.imdbId, mediaType) : Promise.resolve(null),
-            resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds)
-        ]);
+        const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null;
         
         // Debug: Check for malformed poster URLs
         if (!posterUrl || posterUrl === 'null' || posterUrl.includes('undefined')) {
@@ -294,7 +291,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         
         let stremioId = `tmdb:${media.id}`; // Default to TMDB
-        if(resolvedIds?.imdbId) stremioId = resolvedIds.imdbId;
+        if(allIds?.imdbId) stremioId = allIds.imdbId;
         
         // Assemble the final meta object
         const parsed = Utils.parseMedia(details, mediaType, [], config);

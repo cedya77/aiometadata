@@ -1145,6 +1145,15 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     return null;
   }
   
+  // For series, check if videos array is empty or doesn't contain episodes
+  if (reconstructedMeta.type === 'series') {
+    const videos = reconstructedMeta.videos;
+    if (!videos || !Array.isArray(videos) || videos.length === 0) {
+      cacheLogger.info(`Series ${metaId} has empty videos array, forcing full reconstruction`);
+      return null;
+    }
+  }
+  
   // Capture metadata for dashboard display
   try {
     const requestTracker = require('./requestTracker');

@@ -655,7 +655,7 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const results = (response.data as any)?.data || [];
-    
+    console.log(`Found TVDB ID for IMDB ID ${imdbId}:`, results);
     return results;
   } catch (error) {
     // Track failed request

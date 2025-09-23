@@ -518,7 +518,15 @@ function DashboardPerformance({ data, loading }) {
 
   useEffect(() => {
     if (data) {
-      setTimingMetrics(data);
+      // The API returns nested structure: { dashboard: {...}, providerBreakdown: {...}, ... }
+      // We need to merge the dashboard metrics with the other data
+      const processedData = {
+        ...data.dashboard, // Main timing metrics
+        providerBreakdown: data.providerBreakdown,
+        resolutionBreakdown: data.resolutionBreakdown,
+        timingTrends: data.timingTrends
+      };
+      setTimingMetrics(processedData);
     }
   }, [data]);
 
@@ -655,27 +663,40 @@ function DashboardPerformance({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {['id_resolution_total', 'id_resolution_cache', 'id_resolution_anime'].map((metric) => {
+              {['id_resolution_total', 'id_resolution_cache', 'id_resolution_anime', 'id_resolution_wiki'].map((metric) => {
                 const stats = timingMetrics[metric]?.overall || {};
                 if (stats.count === 0) return null;
                 
                 return (
-                  <div key={metric} className="flex items-center justify-between p-3 rounded-lg border">
-                    <div>
-                      <h4 className="font-medium capitalize">
-                        {metric.replace(/_/g, ' ')}
-                      </h4>
-                      <p className="text-sm text-muted-foreground">
-                        {stats.count} operations
-                      </p>
+                  <div key={metric} className="p-4 rounded-lg border">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="font-medium capitalize">
+                          {metric.replace(/_/g, ' ')}
+                        </h4>
+                        <p className="text-sm text-muted-foreground">
+                          {stats.count} operations
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
+                          {formatDuration(stats.average || 0)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          avg
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
-                        {formatDuration(stats.average || 0)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatDuration(stats.min || 0)} - {formatDuration(stats.max || 0)}
-                      </div>
+                    
+                    {/* Compact timing summary */}
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <span>min {formatDuration(stats.min || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p50 {formatDuration(stats.p50 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p95 {formatDuration(stats.p95 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>max {formatDuration(stats.max || 0)}</span>
                     </div>
                   </div>
                 );
@@ -741,27 +762,239 @@ function DashboardPerformance({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {['api_lookup', 'nameToImdb_lookup', 'imdb_scrape_lookup', 'tmdb_external_ids', 'search_operation'].map((metric) => {
+              {['api_lookup', 'nameToImdb_lookup', 'imdb_scrape_lookup', 'tmdb_external_ids', 'tvdb_remote_ids', 'tvmaze_externals', 'search_operation'].map((metric) => {
                 const stats = timingMetrics[metric]?.overall || {};
                 if (stats.count === 0) return null;
                 
+                // Use search thresholds for search_operation, general for others
+                const metricType = metric === 'search_operation' ? 'search' : 'general';
+                
                 return (
-                  <div key={metric} className="flex items-center justify-between p-3 rounded-lg border">
-                    <div>
+                  <div key={metric} className="p-4 rounded-lg border">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="font-medium capitalize">
+                          {metric.replace(/_/g, ' ')}
+                        </h4>
+                        <p className="text-sm text-muted-foreground">
+                          {stats.count} operations
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-lg font-bold ${getMetricColor(stats.average || 0, metricType)}`}>
+                          {formatDuration(stats.average || 0)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          avg
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Compact timing summary */}
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <span>min {formatDuration(stats.min || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p50 {formatDuration(stats.p50 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p95 {formatDuration(stats.p95 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>max {formatDuration(stats.max || 0)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Search Provider Performance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              Search Provider Performance
+            </CardTitle>
+            <CardDescription>
+              Performance of actual search operations by provider (TMDB, TVDB, TVMaze, MAL)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Object.entries((timingMetrics as any).providerBreakdown || {})
+                .filter(([key, data]) => (data as any).type === 'search')
+                .map(([key, providerData]) => {
+                  const stats = providerData as any;
+                  if (stats.count === 0) return null;
+                  
+                  const providerName = stats.provider || key.toUpperCase();
+                  
+                  return (
+                    <div key={key} className="p-4 rounded-lg border">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-medium">
+                            {providerName} Provider
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            {stats.count} search operations
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-lg font-bold ${getMetricColor(stats.average || 0, 'search')}`}>
+                            {formatDuration(stats.average || 0)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            avg response
+                          </div>
+                          {stats.success_rate !== undefined && (
+                            <div className={`text-xs mt-1 ${
+                              stats.success_rate >= 95 ? 'text-green-600' : 
+                              stats.success_rate >= 90 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                              {stats.success_rate}% success
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                    {/* Compact timing summary */}
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <span>min {formatDuration(stats.min || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p50 {formatDuration(stats.p50 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p95 {formatDuration(stats.p95 || 0)}</span>
+                      {stats.p99 ? (<>
+                        <span className="mx-2">•</span>
+                        <span>p99 {formatDuration(stats.p99 || 0)}</span>
+                      </>) : null}
+                      <span className="mx-2">•</span>
+                      <span>max {formatDuration(stats.max || 0)}</span>
+                    </div>
+                    </div>
+                  );
+                })}
+              {Object.entries((timingMetrics as any).providerBreakdown || {}).filter(([key, data]) => (data as any).type === 'search').length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No search operations recorded yet</p>
+                  <p className="text-sm">Search providers will appear here after you perform searches</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Secondary API Call Performance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              ID Resolution API Calls
+            </CardTitle>
+            <CardDescription>
+              Performance of API calls during ID resolution (TMDB external IDs, TVDB remote IDs, TVMaze lookups, etc.)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Object.entries((timingMetrics as any).providerBreakdown || {})
+                .filter(([key, data]) => (data as any).type === 'secondary')
+                .map(([key, providerData]) => {
+                  const stats = providerData as any;
+                  if (stats.count === 0) return null;
+                  
+                  const operationName = (stats.operation || key).replace(/_/g, ' ').toUpperCase();
+                
+                return (
+                  <div key={key} className="p-4 rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="font-medium">
+                          {operationName}
+                        </h4>
+                        <p className="text-sm text-muted-foreground">
+                          {stats.count} ID resolution calls
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
+                          {formatDuration(stats.average || 0)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          avg lookup
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Compact timing summary */}
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <span>min {formatDuration(stats.min || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p50 {formatDuration(stats.p50 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>p95 {formatDuration(stats.p95 || 0)}</span>
+                      <span className="mx-2">•</span>
+                      <span>max {formatDuration(stats.max || 0)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Timing Trends Over Time */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Timing Trends
+            </CardTitle>
+            <CardDescription>
+              Performance trends over different time periods (1h, 24h, 7d)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {['id_resolution_total', 'search_operation', 'api_lookup'].map((metric) => {
+                const trends = (timingMetrics as any).timingTrends?.[metric] || {};
+                if (!trends || Object.keys(trends).length === 0) return null;
+                
+                return (
+                  <div key={metric} className="p-4 rounded-lg border">
+                    <div className="mb-3">
                       <h4 className="font-medium capitalize">
                         {metric.replace(/_/g, ' ')}
                       </h4>
                       <p className="text-sm text-muted-foreground">
-                        {stats.count} operations
+                        Performance trends across time periods
                       </p>
                     </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${getMetricColor(stats.average || 0)}`}>
-                        {formatDuration(stats.average || 0)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        P95: {formatDuration(stats.p95 || 0)}
-                      </div>
+                    
+                    {/* Time period breakdown */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {Object.entries(trends).map(([period, data]) => {
+                        const trendData = data as any;
+                        return (
+                          <div key={period} className="text-center p-3 bg-muted rounded">
+                            <div className="font-medium text-lg">
+                              {formatDuration(trendData.average || 0)}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {period} average
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {trendData.count || 0} operations
+                            </div>
+                            {trendData.p95 && (
+                              <div className="text-xs text-orange-600 mt-1">
+                                P95: {formatDuration(trendData.p95)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

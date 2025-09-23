@@ -11,6 +11,31 @@ module.exports = {
     './src/**/*.{ts,tsx}',
     './configure/src/**/*.{js,ts,jsx,tsx}', // Your path is correct here
   ],
+  // Ensure dynamically generated classes are not purged
+  safelist: [
+    // text colors used dynamically by getMetricColor
+    'text-green-600',
+    'text-yellow-600',
+    'text-orange-600',
+    'text-red-600',
+    // background tiles used in provider/secondary sections
+    'bg-green-50',
+    'bg-blue-50',
+    'bg-yellow-50',
+    'bg-orange-50',
+    'bg-red-50',
+    // dark mode counterparts
+    'dark:text-green-300',
+    'dark:text-blue-300',
+    'dark:text-yellow-300',
+    'dark:text-orange-300',
+    'dark:text-red-300',
+    'dark:bg-green-950',
+    'dark:bg-blue-950',
+    'dark:bg-yellow-950',
+    'dark:bg-orange-950',
+    'dark:bg-red-950'
+  ],
   prefix: "", // You can add a prefix if needed, but empty is standard
   
   // 3. Define the theme with all the necessary CSS variables from shadcn/ui
