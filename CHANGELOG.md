@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.24.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.23.3.0...v1.0.0-beta.24.0) (2025-09-24)
+
+
+### Features
+
+* Add allowEpisodeMarking UI toggle and dashboard button ([69bd4a7](https://github.com/cedya77/aiometadata/commit/69bd4a7a2e4c6bc326e20c8688eef90b87e9f079))
+* Add MDBList catalog sorting functionality with cache invalidation ([77a99a9](https://github.com/cedya77/aiometadata/commit/77a99a98a95958fc6eb53d2a71ed70f50802e413))
+* add ratings object from mdblist when key is provided ([307d1df](https://github.com/cedya77/aiometadata/commit/307d1df46b2c7c749d015871257baf88e3ace89d))
+* Add wiki mappings system with performance tracking ([272ff4a](https://github.com/cedya77/aiometadata/commit/272ff4a3e45a00ad141a4a66202b03ee9bc30050))
+* **catalogs:** add option to modifiy catalog names ([17a5d0e](https://github.com/cedya77/aiometadata/commit/17a5d0e01d5c650ce3a745beab0a0e5b2f126a74))
+* **catalogs:** get genres from ST lists ([164ab37](https://github.com/cedya77/aiometadata/commit/164ab379b77d338a30b59cadc49a839728a3a082))
+* **http:** follow redirects in httpClient; fix nameToImdb await; safe certification write in trending and adapt to cinemeta api changes ([393dd94](https://github.com/cedya77/aiometadata/commit/393dd946a45d8e74d8d479185e55a54502aac214))
+* **meta:** uniformize catalogs and search ids to use imdb ids to better integrate with stremio's ecosystem ([0eb8e58](https://github.com/cedya77/aiometadata/commit/0eb8e582057a94b0983168b512fd8bf9d5ee1702))
+* optimize undici networking ([4cbf13c](https://github.com/cedya77/aiometadata/commit/4cbf13c192df640044e93a18621b0d3e3a259d0d))
+* **search:** improve tmdb search and overall search times ([bf6dd20](https://github.com/cedya77/aiometadata/commit/bf6dd20d2e5914d347a6bb732227bc0723c1aca1))
+
+
+### Bug Fixes
+
+* Art provider ID resolution, logging levels, and dashboard metrics ([eedbd9d](https://github.com/cedya77/aiometadata/commit/eedbd9db10517597304c4892a25c8415698d8d99))
+* **backgrounds:** remove space in append causing tmdb bgs to disappear ([5cd988b](https://github.com/cedya77/aiometadata/commit/5cd988b8a3d686d41b4645098623c40062f49cf9))
+* dashboard cache performance color ([c8501e7](https://github.com/cedya77/aiometadata/commit/c8501e7fad9e38aad7703746d1c2e4185f1dbc24))
+* **getTmdb:** pass config object correctly ([b5181ea](https://github.com/cedya77/aiometadata/commit/b5181ea38858d05adea9ebbe852d2a4ef5d3dd88))
+* **getTmdb:** undo getTmdb.js getting reverted ([5ec99f2](https://github.com/cedya77/aiometadata/commit/5ec99f235a380f6abfb8b5a6e695ec0acf50f658))
+* isRequired condition for ST ([ad37a33](https://github.com/cedya77/aiometadata/commit/ad37a33bdfc886d26f1fff2692fdbac26e225eaf))
+* **mdblist:** fix genre filtering ([e4edbc3](https://github.com/cedya77/aiometadata/commit/e4edbc3327e6089f2bab4ca9caaf5069aa5ec78e))
+* **meta:** defensive programming for null app_extras object ([6215756](https://github.com/cedya77/aiometadata/commit/6215756453edabf52ddc6d006bdedadd4a11bb79))
+* **search:** properly pass url containing special characters to search from stremio. Thanks to code by [@0x](https://github.com/0x)Constant1 (https://github.com/0xConstant1) ([8f262dc](https://github.com/cedya77/aiometadata/commit/8f262dc65b8f72774fbcd30b1ef4a015c59c2673))
+* **ST lists:** fix pagination and genre filtering ([38a4d00](https://github.com/cedya77/aiometadata/commit/38a4d0070f78aed101e545d49cb7facd8fda345d))
+* **translations:** correctly fallback when selected language isnt available for titles and overviews ([27b9b9c](https://github.com/cedya77/aiometadata/commit/27b9b9c64234e0b06e2e9ed232e4a52d28369604))
+* tvdb genres not resolving correctly to imdb and add none genres to ST catalogs when showInHome is false ([9272225](https://github.com/cedya77/aiometadata/commit/9272225c15224d135b3ce0f4666b51c4b466e0b9))
+* **tvdb:** fix tvdb search response ([34fcd69](https://github.com/cedya77/aiometadata/commit/34fcd692ff54b36753f718b20e293fe1d4a857e8))
+
 ## [1.0.0-beta.23.3.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.23.2.0...v1.0.0-beta.23.3.0) (2025-09-11)
 
 
