@@ -35,6 +35,8 @@ All notable changes to this project will be documented in this file. See [standa
 * tvdb genres not resolving correctly to imdb and add none genres to ST catalogs when showInHome is false ([9272225](https://github.com/cedya77/aiometadata/commit/9272225c15224d135b3ce0f4666b51c4b466e0b9))
 * **tvdb:** fix tvdb search response ([34fcd69](https://github.com/cedya77/aiometadata/commit/34fcd692ff54b36753f718b20e293fe1d4a857e8))
 
+Note: TMDB search has been revamped with filtering, so please create an issue if you have trouble finding a title.
+
 ## [1.0.0-beta.23.3.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.23.2.0...v1.0.0-beta.23.3.0) (2025-09-11)
 
 
