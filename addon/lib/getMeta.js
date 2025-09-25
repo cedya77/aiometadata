@@ -410,7 +410,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 
   if (allIds?.imdbId && preferredProvider === 'imdb') {
     try {
-        let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'movie');
+        let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
         return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config);
     } catch (e) {
       logger.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. Falling back.`);
@@ -439,7 +439,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
   }
    else if (provider === 'imdb' && id) {
     try {
-      const movieData = await imdb.getMetaFromImdbIo(id, 'movie');
+      const movieData = await imdb.getMetaFromImdb(id, 'movie');
       return await buildImdbMovieResponse(stremioId, movieData, { allIds }, config);
     } catch (e) {
       logger.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. error message: ${e.message}`);
@@ -466,7 +466,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
   if (allIds?.imdbId && preferredProvider === 'imdb') {
     try {
-      let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'series');
+      let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
       return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config);
     } catch (e) {
       logger.warn(`[SeriesMeta] Preferred provider 'imdb' failed for ${stremioId}. Falling back.`);
@@ -510,7 +510,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
     }
   } else if (provider === 'imdb' && id) {
     try {
-      const seriesData = await imdb.getMetaFromImdbIo(id, 'series');
+      const seriesData = await imdb.getMetaFromImdb(id, 'series');
       return await buildImdbSeriesResponse(stremioId, seriesData, { allIds }, config);
     } catch (e) {
       logger.warn(`[SeriesMeta] Preferred provider 'imdb' failed for ${stremioId}. error message: ${e.message}`);
@@ -577,10 +577,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
-          let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'series');
+          let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
           return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
           } else if(type === 'movie') {
-            let imdbData = await imdb.getMetaFromImdbIo(allIds.imdbId, 'movie');
+            let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
             return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
@@ -676,7 +676,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
-
+  
   return imdbData;
 }
 
@@ -908,7 +908,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       logger.debug(`[ID Builder] Built Season-to-Kitsu map for tmdb:${tmdbId}:`, seasonToKitsuIdMap);
     }
     //console.log(`[TmdbSeriesMeta] credits: ${JSON.stringify(credits)}`);
-    const imdbMeta = await imdb.getMetaFromImdbIo(imdbId, 'series', stremioId);
+    const imdbMeta = await imdb.getMetaFromImdb(imdbId, 'series', stremioId);
 
     // Fetch Cinemeta videos data for IMDB episode mapping (once per IMDB series)
     let cinemetaVideos = null;
@@ -940,7 +940,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     });
     const tmdbTotalEpisodes = seriesData.number_of_episodes;
     if (imdbEpisodesCount !== tmdbTotalEpisodes) {
-      const imdbMeta = await imdb.getMetaFromImdbIo(imdbId, 'series', stremioId);
+      const imdbMeta = await imdb.getMetaFromImdb(imdbId, 'series', stremioId);
       if (imdbMeta) {
         const cinemetaIoVideos = (imdbMeta.videos || []).filter(episode => episode.season !== 0);
         if (cinemetaIoVideos.length > 0 && cinemetaIoVideos.length === tmdbTotalEpisodes) {
