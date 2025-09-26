@@ -19,6 +19,7 @@ const { cacheWrapMeta } = require('./getCache');
 const kitsu = require('./kitsu');
 var nameToImdb = require("name-to-imdb");
 const consola = require('consola');
+const { cp } = require("fs");
 
 // Configure logging level based on environment (consistent with other modules)
 const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
@@ -571,7 +572,13 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
         } else if (type === 'movie') {
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
-                      return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
+          if(!movieData) {
+            if(allIds?.imdbId) {
+              let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
+              return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+            }
+          }
+          return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         }
       }
 
@@ -1184,7 +1191,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const tvdbId = movieData.id;
   const { allIds } = enrichmentData;
   const kitsuId = allIds?.kitsuId;
-  const imdbId = allIds?.imdbId;
+  let imdbId = allIds?.imdbId;
   const tmdbId = allIds?.tmdbId;
 
   const { year, image: tvdbPosterPath, remoteIds, characters } = movieData;
@@ -1271,9 +1278,13 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   if(tmdbId){
      watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
   }
+  console.log(`[TvdbMovieMeta] remoteIds:`, remoteIds);
 
+  imdbId = imdbId || remoteIds?.find(id => id.sourceName === 'IMDB')?.id 
+ 
+  //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   return {
-    id: isAnime ? stremioId : remoteIds.find(id => id.sourceName === 'IMDB')?.id || imdbId || stremioId,
+    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
     type: 'movie',
     name: translatedName,
     imdb_id: imdbId,
@@ -1557,7 +1568,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
       logoUrl =  imdb.getLogoFromImdb(imdbId);
     }
   }
-  imdbId = imdbId || remoteIds.find(id => id.sourceName === 'IMDB')?.id 
+  imdbId = imdbId || remoteIds?.find(id => id.sourceName === 'IMDB')?.id 
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
