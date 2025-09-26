@@ -664,7 +664,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     // Add display settings that affect search results
     blurThumbs: config.blurThumbs || false,
     showPrefix: config.showPrefix || false,
-    showMetaProviderAttribution: config.showMetaProviderAttribution || false
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+    useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
@@ -721,6 +722,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
       skipFiller: config.mal?.skipFiller || false,
+      useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
       skipRecap: config.mal?.skipRecap || false,
       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
     };
@@ -736,6 +738,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
      metaConfig.artProvider = {
        poster: resolveArtProvider('series', 'poster', config),
        background: resolveArtProvider('series', 'background', config),
@@ -806,7 +809,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
        skipRecap: config.mal?.skipRecap || false,
-       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
+       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
+       useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
      };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -828,6 +832,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      metaConfig.tmdb = {
       scrapeImdb: config.tmdb?.scrapeImdb || false
      };
+     metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
    }
    
    const metaConfigString = JSON.stringify(metaConfig);
@@ -1029,7 +1034,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
        skipRecap: config.mal?.skipRecap || false,
-       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
+       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
+       useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
      };
    } else if (metaType === 'movie') {
      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -1043,6 +1049,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
+     metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
      metaConfig.artProvider = {
        poster: resolveArtProvider('series', 'poster', config),
        background: resolveArtProvider('series', 'background', config),
@@ -1249,7 +1256,8 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       metaConfig.mal = {
         skipFiller: config.mal?.skipFiller || false,
         skipRecap: config.mal?.skipRecap || false,
-        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
+        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
+        useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
       };
     } else if (metaType === 'movie') {
       metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -1263,6 +1271,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
      };
     } else if (metaType === 'series') {
       metaConfig.metaProvider = config.providers?.series || 'tvdb';
+      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
       metaConfig.artProvider = {
        poster: resolveArtProvider('series', 'poster', config),
        background: resolveArtProvider('series', 'background', config),
@@ -1336,7 +1345,8 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       metaConfig.mal = {
         skipFiller: config.mal?.skipFiller || false,
         skipRecap: config.mal?.skipRecap || false,
-        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false
+        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
+        useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
       };
     } else if (metaType === 'movie') {
       metaConfig.metaProvider = config.providers?.movie || 'tmdb';
@@ -1350,6 +1360,7 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
      };
     } else if (metaType === 'series') {
       metaConfig.metaProvider = config.providers?.series || 'tvdb';
+      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
       metaConfig.artProvider = {
        poster: resolveArtProvider('series', 'poster', config),
        background: resolveArtProvider('series', 'background', config),

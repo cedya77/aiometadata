@@ -463,6 +463,9 @@ async function getManifest(config) {
       }
       else {
         catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
+        if (userCatalog.id.startsWith('streaming.') && userCatalog.showInHome === false) {
+          catalogOptions = ['None', ...catalogOptions];
+        }
       }
 
       const catalog = createCatalog(

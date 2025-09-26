@@ -32,6 +32,8 @@ export interface AppConfig {
     series: string;
     anime: string;
     anime_id_provider: 'kitsu' | 'mal' | 'imdb';
+    /** If true, use anime meta provider for any catalog item detected as anime after IMDb mapping */
+    forceAnimeForDetectedImdb: boolean;
   };
   artProviders: {
     movie: 'meta' | 'tmdb' | 'tvdb' | 'fanart' | 'imdb' | {
@@ -56,6 +58,8 @@ export interface AppConfig {
     skipFiller: boolean;
     skipRecap: boolean;
     allowEpisodeMarking: boolean;
+    /** If true, prefer IMDb IDs for catalog and search items when available */
+    useImdbIdForCatalogAndSearch?: boolean;
   };
   tmdb: {
     scrapeImdb: boolean;

@@ -85,7 +85,7 @@ const initialConfig: AppConfig = {
   showMetaProviderAttribution: false,
   castCount: 10,
   sfw: false,
-  providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', },
+  providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', forceAnimeForDetectedImdb: false },
   artProviders: { 
     movie: { poster: 'meta', background: 'meta', logo: 'meta' },
     series: { poster: 'meta', background: 'meta', logo: 'meta' },
@@ -97,6 +97,7 @@ const initialConfig: AppConfig = {
     skipFiller: false, 
     skipRecap: false,
     allowEpisodeMarking: false,
+    useImdbIdForCatalogAndSearch: false,
   },
   tmdb: {
     scrapeImdb: false,

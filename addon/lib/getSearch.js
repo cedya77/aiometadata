@@ -139,7 +139,7 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
       searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
     case 'series':
-      const desiredTvTypes = new Set(['tv', 'ova', 'ona', 'tv special']);
+      const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
         return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
@@ -330,7 +330,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
       filteredResults = filteredResults.filter(result => {
-          if (!result.certification) return true;
+          if (!result.certification || result.certification.toLowerCase() === 'nr' || result.certification === "") return true;
           
           const isTvRating = type === 'series';
           const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;

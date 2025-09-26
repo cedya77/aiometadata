@@ -10,6 +10,8 @@ const idMapper = require('../lib/id-mapper');
 const { selectFanartImageByLang } = require('./fanart');
 const { getImdbRating } = require('../lib/getImdbRating');
 const consola = require('consola');
+const { cacheWrapMetaSmart } = require('../lib/getCache');
+// Dynamic import to avoid circular dependency
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -1007,12 +1009,16 @@ function getDefaultProvider(contentType) {
   }
 }
 
-async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'series' }, config) {
+async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaType = 'series' }, config) {
   
   console.log(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
-  
-  // Check art provider preference
   const artProvider = resolveArtProvider('anime', 'background', config);
+  const mapping = malId ? idMapper.getMappingByMalId(malId) : null;
+  tvdbId = tvdbId || mapping?.thetvdb_id;
+  tmdbId = tmdbId || mapping?.themoviedb_id;
+  imdbId = imdbId || mapping?.imdb_id;
+  // Check art provider preference
+  
   
   if (artProvider === 'anilist' && malId) {
     try {
@@ -1039,41 +1045,33 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
     }
   }
   
-  if (artProvider === 'tvdb' && malId) {
+  if (artProvider === 'tvdb' && tvdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.thetvdb_id) {
-        // Use the appropriate TVDB function based on media type
-        const tvdbBackground = mediaType === 'movie'
-          ? await tvdb.getMovieBackground(mapping.thetvdb_id, config)
-          : await tvdb.getSeriesBackground(mapping.thetvdb_id, config);
+      // Use the appropriate TVDB function based on media type
+      const tvdbBackground = mediaType === 'movie'
+          ? await tvdb.getMovieBackground(tvdbId, config)
+          : await tvdb.getSeriesBackground(tvdbId, config);
         
         if (tvdbBackground) {
           console.log(`[getAnimeBg] Found TVDB background for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${mediaType})`);
           return tvdbBackground;
         }
-      }
     } catch (error) {
       console.warn(`[getAnimeBg] TVDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
 
-  if (artProvider === 'imdb' && malId) {
+  if (artProvider === 'imdb' && imdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.imdb_id) {
-        return imdb.getBackgroundFromImdb(mapping.imdb_id);
-      }
+      return imdb.getBackgroundFromImdb(imdbId);
     } catch (error) {
       console.warn(`[getAnimeBg] IMDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
 
-  if (artProvider === 'tmdb' && malId) {
+  if (artProvider === 'tmdb' && tmdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.themoviedb_id) {
-        // Use TMDB background for anime
+      // Use TMDB background for anime
         const tmdbBackground = mediaType === 'movie' 
           ? await tmdb.movieImages({ id: tmdbId, include_image_language: null }, config).then(res => {
             const img = res.backdrops[0];
@@ -1085,10 +1083,9 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
           });
         
         if (tmdbBackground) {
-          console.log(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${mediaType})`);
+          console.log(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${tmdbId}, Type: ${mediaType})`);
           return tmdbBackground;
         }
-      }
     } catch (error) {
       console.warn(`[getAnimeBg] TMDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
@@ -1099,25 +1096,14 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
     let fanartUrl = null;
     if (mediaType === 'series') {
       if (tvdbId) {
-        console.log(`[getAnimeBg] Found TVDB ID for MAL ID: ${malId} (TVDB ID: ${tvdbId})`);
+        //console.log(`[getAnimeBg] Found TVDB ID for MAL ID: ${malId} (TVDB ID: ${tvdbId})`);
         fanartUrl = await fanart.getBestSeriesBackground(tvdbId, config);
-      } else {
-        console.log(`[getAnimeBg] No TVDB ID found for MAL ID: ${malId}`);
-        const mapping = idMapper.getMappingByMalId(malId);
-        console.log(`[getAnimeBg] Mapping for MAL ID: ${malId}:`, mapping);
-        if (mapping && mapping.thetvdb_id) {
-          console.log(`[getAnimeBg] Found TVDB ID for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id})`);
-          fanartUrl = await fanart.getBestSeriesBackground(mapping.thetvdb_id, config);
-        }
       }
     } else if (mediaType === 'movie') {
       if (tmdbId) {
         fanartUrl = await fanart.getBestMovieBackground(tmdbId, config);
-      } else {
-        const mapping = idMapper.getMappingByMalId(malId);
-        if (mapping && mapping.themoviedb_id) {
-          fanartUrl = await fanart.getBestMovieBackground(mapping.themoviedb_id, config);
-        }
+      } else if (imdbId) {
+        fanartUrl = await fanart.getBestMovieBackground(imdbId, config);
       }
     }
 
@@ -1135,23 +1121,23 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, malPosterUrl, mediaType = 'se
 /**
  * Get anime logo with art provider preference
  */
-async function getAnimeLogo({ malId, mediaType = 'series' }, config) {
+async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series' }, config) {
   const artProvider = resolveArtProvider('anime', 'logo', config);
-  const mapping = idMapper.getMappingByMalId(malId);
-  const tvdbId = mapping?.thetvdb_id;
-  const tmdbId = mapping?.themoviedb_id;
+  const mapping = malId ? idMapper.getMappingByMalId(malId) : null;
+  tvdbId = tvdbId || mapping?.thetvdb_id;
+  tmdbId = tmdbId || mapping?.themoviedb_id;
+  imdbId = imdbId || mapping?.imdb_id;
   
-  if (artProvider === 'tvdb' && malId) {
+  if (artProvider === 'tvdb' && tvdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.thetvdb_id) {
+      if (tvdbId) {
         // Use the appropriate TVDB function based on media type
         const tvdbLogo = mediaType === 'movie'
-          ? await tvdb.getMovieLogo(mapping.thetvdb_id, config)
-          : await tvdb.getSeriesLogo(mapping.thetvdb_id, config);
+          ? await tvdb.getMovieLogo(tvdbId, config)
+          : await tvdb.getSeriesLogo(tvdbId, config);
         
         if (tvdbLogo) {
-          //console.log(`[getAnimeLogo] Found TVDB logo for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${mediaType})`);
+          //console.log(`[getAnimeLogo] Found TVDB logo for MAL ID: ${malId} (TVDB ID: ${tvdbId}, Type: ${mediaType})`);
           return tvdbLogo;
         }
       }
@@ -1160,30 +1146,23 @@ async function getAnimeLogo({ malId, mediaType = 'series' }, config) {
     }
   }
 
-  if (artProvider === 'imdb' && malId) {
+  if (artProvider === 'imdb' && imdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.imdb_id) {
-        return imdb.getLogoFromImdb(mapping.imdb_id);
-      }
+      return imdb.getLogoFromImdb(imdbId);
     } catch (error) {
       console.warn(`[getAnimeLogo] IMDB logo fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
-  if (artProvider === 'tmdb' && malId) {
+  if (artProvider === 'tmdb' && tmdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.themoviedb_id) {
-        // Use TMDB logo for anime
-        const tmdbLogo = mediaType === 'movie' 
-          ? await tmdb.getTmdbMovieLogo(mapping.themoviedb_id, config)
-          : await tmdb.getTmdbSeriesLogo(mapping.themoviedb_id, config);
+      // Use TMDB logo for anime
+      const tmdbLogo = mediaType === 'movie' 
+          ? await tmdb.getTmdbMovieLogo(tmdbId, config)
+          : await tmdb.getTmdbSeriesLogo(tmdbId, config);
         
         if (tmdbLogo) {
-          //console.log(`[getAnimeLogo] Found TMDB logo for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${mediaType})`);
           return tmdbLogo;
         }
-      }
     } catch (error) {
       console.warn(`[getAnimeLogo] TMDB logo fetch failed for MAL ID ${malId}:`, error.message);
     }
@@ -1211,11 +1190,13 @@ async function getAnimeLogo({ malId, mediaType = 'series' }, config) {
 /**
  * Get anime poster with art provider preference
  */
-async function getAnimePoster({ malId, malPosterUrl, mediaType = 'series' }, config) {
+async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, mediaType = 'series' }, config) {
   const artProvider = resolveArtProvider('anime', 'poster', config);
-  const mapping = idMapper.getMappingByMalId(malId);
-  const tvdbId = mapping?.thetvdb_id;
-  const tmdbId = mapping?.themoviedb_id;
+  const mapping = malId ? idMapper.getMappingByMalId(malId) : null;
+  tvdbId = tvdbId || mapping?.thetvdb_id;
+  tmdbId = tmdbId || mapping?.themoviedb_id;
+  imdbId = imdbId || mapping?.imdb_id;
+  
   if (artProvider === 'anilist' && malId) {
     try {
       const anilistData = await anilist.getAnimeArtwork(malId);
@@ -1231,51 +1212,42 @@ async function getAnimePoster({ malId, malPosterUrl, mediaType = 'series' }, con
     }
   }
   
-  if (artProvider === 'tvdb' && malId) {
+  if (artProvider === 'tvdb' && tvdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.thetvdb_id) {
-        // Use the appropriate TVDB function based on media type
-        const tvdbPoster = mediaType === 'movie' 
-          ? await tvdb.getMoviePoster(mapping.thetvdb_id, config)
-          : await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
-        
-        if (tvdbPoster) {
-          //console.log(`[getAnimePoster] Found TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${mediaType})`);
-          return tvdbPoster;
-        }
+      const tvdbPoster = mediaType === 'movie' 
+          ? await tvdb.getMoviePoster(tvdbId, config)
+          : await tvdb.getSeriesPoster(tvdbId, config);
+
+      if (tvdbPoster) {
+        //console.log(`[getAnimePoster] Found TVDB poster for MAL ID: ${malId} (TVDB ID: ${tvdbId}, Type: ${mediaType})`);
+        return tvdbPoster;
       }
     } catch (error) {
-      console.warn(`[getAnimePoster] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      console.warn(`[getAnimePoster] TVDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
 
-  if (artProvider === 'imdb' && malId) {
+  if (artProvider === 'imdb' && imdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.imdb_id) {
-        return imdb.getPosterFromImdb(mapping.imdb_id);
-      }
+      return imdb.getPosterFromImdb(imdbId);
     } catch (error) {
-      console.warn(`[getAnimePoster] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      console.warn(`[getAnimePoster] IMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
-  if (artProvider === 'tmdb' && malId) {
+  if (artProvider === 'tmdb' && tmdbId) {
     try {
-      const mapping = idMapper.getMappingByMalId(malId);
-      if (mapping && mapping.themoviedb_id) {
+      // Use TMDB poster for anime
         // Use TMDB poster for anime
         const tmdbPoster = mediaType === 'movie' 
-          ? await tmdb.getTmdbMoviePoster(mapping.themoviedb_id, config)
-          : await tmdb.getTmdbSeriesPoster(mapping.themoviedb_id, config);
+          ? await tmdb.getTmdbMoviePoster(tmdbId, config)
+          : await tmdb.getTmdbSeriesPoster(tmdbId, config);
         
         if (tmdbPoster) {
-          //console.log(`[getAnimePoster] Found TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${mediaType})`);
+          //console.log(`[getAnimePoster] Found TMDB poster for MAL ID: ${malId} (TMDB ID: ${tmdbId}, Type: ${mediaType})`);
           return tmdbPoster;
         }
-      }
     } catch (error) {
-      console.warn(`[getAnimePoster] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      console.warn(`[getAnimePoster] TMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
   if (config.apiKeys.fanart) {
@@ -1285,8 +1257,8 @@ async function getAnimePoster({ malId, malPosterUrl, mediaType = 'series' }, con
       const images = await fanart.getShowImages(tvdbId, config);
       const poster = selectFanartImageByLang(images?.tvposter, config);
       fanartUrl = poster?.url;
-    } else if (mediaType === 'movie' && tmdbId) {
-      const images = await fanart.getMovieImages(tmdbId, config);
+    } else if (mediaType === 'movie' && (tmdbId || imdbId)) {
+      const images = await fanart.getMovieImages(tmdbId || imdbId, config);
       const poster = selectFanartImageByLang(images?.movieposter, config);
       fanartUrl = poster?.url;
     }
@@ -1534,14 +1506,18 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     const preferredProvider = config.providers?.anime || 'mal';
 
     const mapping = idMapper.getMappingByMalId(malId);
+    /*if(mapping && !mapping.imdb_id && mapping.themoviedb_id){
+      const allIds = await resolveAllIds(mapping.themoviedb_id, stremioType, config, {}, ['imdb']);
+      mapping.imdb_id = allIds?.imdbId;
+    }*/
     let id = `mal:${malId}`;
     if (preferredProvider === 'tvdb') {
-      if (mapping && mapping.thetvdb_id) {
-        id= `tvdb:${mapping.thetvdb_id}`;
+      if (mapping && mapping.imdb_id) {
+        id= `${mapping.imdb_id}`;
       }
     } else if (preferredProvider === 'tmdb') {
-      if (mapping && mapping.themoviedb_id) {
-        id = `tmdb:${mapping.themoviedb_id}`;
+      if (mapping && mapping.imdb_id) {
+        id = `${mapping.imdb_id}`;
       }
     } else if (preferredProvider === 'imdb') {
       if (mapping && mapping.imdb_id) {
@@ -1668,22 +1644,29 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         name: anime.title_english || anime.title
       });
     }
-
-    return {
-      id:  `mal:${malId}`,
-      type: stremioType,
-      logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
-      name: anime.title_english || anime.title,
-      poster: finalPosterUrl,
-      description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
-      year: anime.year,
-      imdb_id: mapping?.imdb_id,
-      releaseInfo: anime.year,
-      runtime: parseRunTime(anime.duration),
-      imdbRating: imdbRating,
-      trailers: trailers,
-      trailerStreams: trailerStreams
-      };
+    if(config.mal?.useImdbIdForCatalogAndSearch && stremioType === 'series'){
+      return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
+        const { getMeta } = await import("../lib/getMeta");
+        return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, false);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType))?.meta || null;
+    }
+    else {
+      return {
+        id: `mal:${malId}`,
+        type: stremioType,
+        logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
+        name: anime.title_english || anime.title,
+        poster: finalPosterUrl,
+        description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
+        year: anime.year,
+        imdb_id: mapping?.imdb_id,
+        releaseInfo: anime.year,
+        runtime: parseRunTime(anime.duration),
+        imdbRating: imdbRating,
+        trailers: trailers,
+        trailerStreams: trailerStreams
+        };
+    }
   }));
   
   return results.filter(Boolean);

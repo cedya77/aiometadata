@@ -37,16 +37,23 @@ async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgr
       tvdbId: allIds?.tvdbId,
       tmdbId: allIds?.tmdbId,
       malId: allIds?.malId,
+      imdbId: allIds?.imdbId,
     malPosterUrl: fallbackBackgroundUrl,
     mediaType: type
     }, config),
     Utils.getAnimePoster({
       malId: allIds?.malId,
+      imdbId: allIds?.imdbId,
+      tvdbId: allIds?.tvdbId,
+      tmdbId: allIds?.tmdbId,
     malPosterUrl: fallbackPosterUrl,
     mediaType: type
     }, config),
     Utils.getAnimeLogo({
       malId: allIds?.malId,
+      imdbId: allIds?.imdbId,
+      tvdbId: allIds?.tvdbId,
+      tmdbId: allIds?.tmdbId,
     mediaType: type
     }, config),
     getImdbRating(allIds?.imdbId, type)
@@ -323,15 +330,18 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     }
     let meta;
     logger.info(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
+    const isImdbIdAnime = stremioId.startsWith('tt') && idMapper.getMappingByImdbId(stremioId);
+    const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:') || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
+    const finalType = isAnime ? 'anime' : type;
     let preferredProvider;
-    if (type === 'movie') {
+    if (finalType === 'movie') {
       preferredProvider = config.providers?.movie || 'tmdb';
     } else {
       preferredProvider = config.providers?.series || 'tvdb';
     }
-    const posterProvider = Utils.resolveArtProvider(type, 'poster', config);
-    const backgroundProvider = Utils.resolveArtProvider(type, 'background', config);
-    const logoProvider = Utils.resolveArtProvider(type, 'logo', config);
+    const posterProvider = Utils.resolveArtProvider(finalType, 'poster', config);
+    const backgroundProvider = Utils.resolveArtProvider(finalType, 'background', config);
+    const logoProvider = Utils.resolveArtProvider(finalType, 'logo', config);
     // Helper function to map art providers to their required metadata providers
     const getMetadataProvidersForArtProvider = (artProvider, contentType) => {
       switch (artProvider) {
@@ -372,9 +382,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     if(!targetProviders.has(preferredProvider)) {
       targetProviders.add(preferredProvider);
     }
-    const allIds = await resolveAllIds(stremioId, type, config, {}, Array.from(targetProviders));
-    const isAnime = stremioId.startsWith('mal:') || stremioId.startsWith('kitsu:') || stremioId.startsWith('anidb:') || stremioId.startsWith('anilist:');
-    const finalType = isAnime ? 'anime' : type;
+    const allIds =  await resolveAllIds(stremioId, type, config, {}, Array.from(targetProviders));
     switch (finalType) {
       case 'movie':
         meta = await getMovieMeta(stremioId, preferredProvider, language, config, userUUID, allIds);
@@ -404,7 +412,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
         return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds });
     } catch (e) {
       logger.warn(`[MovieMeta] Preferred provider 'tvdb' failed for ${stremioId}. Falling back.`);
-      logger.error(`[MovieMeta] Detailed error for provider '${preferredProvider}':`, e);
+      logger.error(`[MovieMeta] Full error details:`, e);
     }
   }
 
@@ -414,6 +422,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
         return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config);
     } catch (e) {
       logger.warn(`[MovieMeta] Preferred provider 'imdb' failed for ${stremioId}. Falling back.`);
+      logger.error(`[MovieMeta] Full error details:`, e);
     }
   }
 
@@ -533,7 +542,6 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 // --- Anime worker ---
 
 async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime, includeVideos) {
-  const malId = allIds?.malId;
   const nativeProvider = 'mal';
 
   logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
@@ -589,43 +597,47 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
 
     } catch (e) {
       logger.warn(`[AnimeMeta] Preferred provider '${preferredProvider}' failed for ${stremioId}. Falling back. Error: ${e.message}`);
+      logger.error(`[AnimeMeta] Full error details:`, e);
+    }
+  }
+  if(!config.mal?.useImdbIdForCatalogAndSearch) {
+    try {
+      logger.info(`[AnimeMeta] Using native provider 'mal' for ${stremioId}`);
+      
+      // Fetch all components (cacheWrapMetaSmart will handle caching)
+      const [details, characters, episodes] = await Promise.all([
+        jikan.getAnimeDetails(allIds?.malId),
+        jikan.getAnimeCharacters(allIds?.malId),
+        jikan.getAnimeEpisodes(allIds?.malId),
+      ]);
+      
+  
+      
+      if (!details) {
+        throw new Error(`Jikan returned no core details for MAL ID ${allIds?.malId}.`);
+      }
+      
+      
+      // Fetch artwork (cacheWrapMetaSmart will handle caching)
+      const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, type);
+      const { background, poster, logo } = artwork;
+      
+      
+      
+      
+      return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
+        mapping: allIds, 
+        bestBackgroundUrl: background,
+        bestPosterUrl: poster,
+        bestLogoUrl: logo
+      });
+  
+    } catch (error) {
+      logger.error(`[AnimeMeta] CRITICAL: Native provider 'mal' also failed for ${stremioId}: ${error.message}`);
     }
   }
 
-  try {
-    logger.info(`[AnimeMeta] Using native provider 'mal' for ${stremioId}`);
-    
-    // Fetch all components (cacheWrapMetaSmart will handle caching)
-    const [details, characters, episodes] = await Promise.all([
-      jikan.getAnimeDetails(allIds?.malId),
-      jikan.getAnimeCharacters(allIds?.malId),
-      jikan.getAnimeEpisodes(allIds?.malId),
-    ]);
-    
-
-    
-    if (!details) {
-      throw new Error(`Jikan returned no core details for MAL ID ${allIds?.malId}.`);
-    }
-    
-    
-    // Fetch artwork (cacheWrapMetaSmart will handle caching)
-    const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, type);
-    const { background, poster, logo } = artwork;
-    
-    
-    
-    
-    return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
-      mapping: allIds, 
-      bestBackgroundUrl: background,
-      bestPosterUrl: poster,
-      bestLogoUrl: logo
-    });
-
-  } catch (error) {
-    logger.error(`[AnimeMeta] CRITICAL: Native provider 'mal' also failed for ${stremioId}: ${error.message}`);
-  }
+  
   
   
   return null;
@@ -1334,7 +1346,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const overview = overviewTranslations.find(t => t.language === langCode3)?.overview
                    || overviewTranslations.find(t => t.language === 'eng')?.overview
                    || tvdbShow.overview;
-  const imdbId = allIds?.imdbId;
+  let imdbId = allIds?.imdbId;
   const tmdbId = allIds?.tmdbId;
   const tvdbId = tvdbShow.id;
   const malId = allIds?.malId;
@@ -1422,7 +1434,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
     
 
-    if (enrichmentData.allIds?.malId) {
+    if (isAnime) {
 
       const seasonDetailPromises = officialSeasons.filter(s => s.number > 0).map(s => tvdb.getSeasonExtended(s.id, config));
       const detailedSeasons = (await Promise.all(seasonDetailPromises)).filter(Boolean);
@@ -1468,7 +1480,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           if (episode.seasonNumber === 0) {
             episodeId = `${imdbId || `tvdb:${tvdbId}`}:0:${episode.number}`;
           } 
-          else if (kitsuId && config.providers?.anime_id_provider === 'kitsu') {
+          else if (config.providers?.anime_id_provider === 'kitsu' && isAnime) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
@@ -1488,7 +1500,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               }
             }
           }
-          else if(malId && config.providers?.anime_id_provider === 'mal') {
+          else if(config.providers?.anime_id_provider === 'mal' && !config.mal?.useImdbIdForCatalogAndSearch) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
@@ -1545,10 +1557,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
       logoUrl =  imdb.getLogoFromImdb(imdbId);
     }
   }
+  imdbId = imdbId || remoteIds.find(id => id.sourceName === 'IMDB')?.id 
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
-    id: isAnime ? stremioId : remoteIds.find(id => id.sourceName === 'IMDB')?.id || imdbId || stremioId,
+    id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
     type: 'series',
     name: translatedName,
     imdb_id: imdbId,

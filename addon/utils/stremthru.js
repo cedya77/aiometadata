@@ -3,7 +3,7 @@ const { cacheWrapMetaSmart } = require("../lib/getCache");
 const { getMeta } = require("../lib/getMeta");
 const Utils = require("./parseProps");
 const idMapper = require("../lib/id-mapper");
-const moviedb = require("../lib/getTmdb");
+const imdb = require("../lib/imdb");
 const { getImdbRating } = require("../lib/getImdbRating");
 const { resolveAllIds } = require('../lib/id-resolver');
 
@@ -46,41 +46,53 @@ async function _processAnimeItem(item, provider, id, language, config) {
   const getMapping = mappingFunctions[provider];
   const mapping = getMapping ? getMapping(id) : null;
 
-  if (!mapping || !mapping.themoviedb_id) {
-    console.warn(`[StremThru] No TMDB mapping found for anime ${provider}:${id}`);
+  if (!mapping) {
+    console.warn(`[StremThru] No mapping found for anime ${provider}:${id}`);
     return null; // Let the main loop handle the fallback
   }
 
-  const tmdbId = mapping.themoviedb_id;
+  const imdbId = mapping.imdb_id;
   const isMovie = item.type === 'movie';
 
-  const details = isMovie
-    ? await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "external_ids" }, config)
-    : await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "external_ids" }, config);
 
-  const imdbId = isMovie ? details.imdb_id : details.external_ids?.imdb_id;
-  const imdbRating = await getImdbRating(imdbId || tmdbId, item.type);
-
-  const posterUrl = mapping.mal_id
-    ? await Utils.getAnimePoster({ malId: mapping.mal_id, malPosterUrl: item.poster, mediaType: item.type }, config)
+  if(config.mal?.useImdbIdForCatalogAndSearch && item.type === 'series' && mapping.imdb_id){
+    return (await cacheWrapMetaSmart(config.userUUID, imdbId, async () => {
+      return await getMeta(item.type, language, imdbId, config, config.userUUID, false);
+    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type))?.meta || null;
+  }
+  else if(!config.mal?.useImdbIdForCatalogAndSearch || !imdbId){
+    const posterUrl = mapping.mal_id
+    ? await Utils.getAnimePoster({ malId: mapping.mal_id, imdbId: imdbId, malPosterUrl: item.poster, mediaType: item.type }, config)
     : item.poster;
 
-  const posterProxyUrl = `${host}/poster/${item.type}/tmdb:${tmdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    let posterProxyUrl;
+    if(imdbId){
+      posterProxyUrl = `${host}/poster/${item.type}/${imdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    }else{
+      posterProxyUrl = posterUrl;
+    }
+    const details = await imdb.getMetaFromImdb(imdbId, item.type);
 
-  return {
-    id: item.id,
-    type: item.type,
-    name: details.name || details.title || item.name,
-    poster: posterProxyUrl,
-    logo: isMovie ? await moviedb.getTmdbMovieLogo(tmdbId, config) : await moviedb.getTmdbSeriesLogo(tmdbId, config),
-    description: Utils.addMetaProviderAttribution(details.overview || item.description, provider, config),
-    imdbRating: imdbRating || item.imdbRating,
-    genres: Utils.parseGenres(details.genres) || item.genres || [],
-    year: item.releaseInfo || new Date(details.release_date || details.first_air_date).getFullYear(),
-    releaseInfo: item.releaseInfo,
-    runtime: Utils.parseRunTime(isMovie ? details.runtime : (details.episode_run_time?.[0] || null)),
-    trailers: item.trailers || []
-  };
+    console.log(`[StremThru] StremThru item: ${JSON.stringify(item)}`);
+    return {
+      id: item.id,
+      type: item.type,
+      cast: details?.cast || [],
+      name: item.name ,
+      poster: posterProxyUrl,
+      releaseInfo: details?.releaseInfo || item.releaseInfo,
+      background: details?.background || item.background,
+      logo: details?.logo,
+      description: Utils.addMetaProviderAttribution(item.description || details?.description, provider, config),
+      imdbRating: details?.imdbRating || item.imdbRating,
+      genres: item.genres || [],
+      runtime: details?.runtime,
+      year: item.releaseInfo, 
+      trailers: item.trailers || details?.trailers || [],
+      behavioralHints: details?.behavioralHints || item.behavioralHints,
+    };
+  }
+
 }
 
 /**

@@ -42,6 +42,7 @@ const tvdbSeasonTypes = [
 
 export function ProvidersSettings() {
   const { config, setConfig } = useConfig();
+  const isImdbForCatalog = !!config.mal?.useImdbIdForCatalogAndSearch;
 
   const handleProviderChange = (type: 'movie' | 'series' | 'anime', value: string) => {
     setConfig(prev => ({ ...prev, providers: { ...prev.providers, [type]: value } }));
@@ -57,6 +58,22 @@ export function ProvidersSettings() {
       mal: {
         ...prev.mal,
         [key]: checked,
+      }
+    }));
+  };
+
+  const handleMalUseImdbToggle = (checked: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      mal: {
+        ...prev.mal,
+        useImdbIdForCatalogAndSearch: checked,
+      },
+      providers: {
+        ...prev.providers,
+        // If enabling, ensure MAL isn't selected as anime meta provider
+        anime: checked && prev.providers.anime === 'mal' ? 'imdb' : prev.providers.anime,
+        // No automatic switching of anime_id_provider
       }
     }));
   };
@@ -77,6 +94,16 @@ export function ProvidersSettings() {
       tmdb: {
         ...prev.tmdb,
         [key]: checked,
+      }
+    }));
+  };
+
+  const handleForceAnimeToggle = (checked: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      providers: {
+        ...prev.providers,
+        forceAnimeForDetectedImdb: checked
       }
     }));
   };
@@ -124,12 +151,41 @@ export function ProvidersSettings() {
             <Select value={config.providers.anime} onValueChange={(val) => handleProviderChange('anime', val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {animeProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                {(isImdbForCatalog ? animeProviders.filter(p => p.value !== 'mal') : animeProviders)
+                  .map(p => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
               </SelectContent>
             </Select>
+            {isImdbForCatalog && (
+              <p className="text-xs text-muted-foreground mt-2">MAL is disabled because "Use IMDb ID for Catalog/Search" is enabled in MAL settings.</p>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Force Anime Meta for IMDb-detected Anime */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Anime Detection Override</CardTitle>
+          <CardDescription>
+            When enabled, any catalog item that maps to an anime (via MAL/Kitsu detection) will use the Anime meta provider, even if the original catalog was non-anime.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="force-anime-for-imdb" className="text-lg font-medium">Use Anime Meta for Detected Anime (IMDb)</Label>
+              <p className="text-sm text-muted-foreground">Helps ensure correct metadata for anime that appear in non-anime catalogs after IMDb mapping.</p>
+            </div>
+            <Switch
+              id="force-anime-for-imdb"
+              checked={config.providers.forceAnimeForDetectedImdb || false}
+              onCheckedChange={handleForceAnimeToggle}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
 
       {/* TVDB Specific Settings */}
@@ -149,6 +205,29 @@ export function ProvidersSettings() {
             <p className="text-xs text-muted-foreground mt-2">"Aired Order (Default)" or "Official order" are recommended.</p>
         </CardContent>
       </Card>
+
+      {/* TMDB Specific Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>The Movie Database (TMDB) Settings</CardTitle>
+          <CardDescription>Customize how data is handled when TMDB is the source.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Scrape IMDb Toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="scrape-imdb" className="text-lg font-medium">Scrape IMDb Data</Label>
+              <p className="text-sm text-muted-foreground">Automatically scrape additional data from IMDb to obtain IMDb ID when missing from TMDB. This is useful for sports events and other content that doesn't have an IMDb ID in TMDB.</p>
+            </div>
+            <Switch
+              id="scrape-imdb"
+              checked={config.tmdb?.scrapeImdb || false}
+              onCheckedChange={(val) => handleTmdbToggle('scrapeImdb', val)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* MyAnimeList Specific Settings */}
       <Card>
         <CardHeader>
@@ -194,6 +273,18 @@ export function ProvidersSettings() {
               onCheckedChange={(val) => handleMalToggle('allowEpisodeMarking', val)}
             />
           </div>
+          {/* Use IMDb ID for Catalog/Search */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="mal-use-imdb" className="text-lg font-medium">Use IMDb ID for Catalog/Search for Series</Label>
+              <p className="text-sm text-muted-foreground">Prefer IMDb IDs for anime items in catalogs and search (when available).</p>
+            </div>
+            <Switch
+              id="mal-use-imdb"
+              checked={!!config.mal.useImdbIdForCatalogAndSearch}
+              onCheckedChange={handleMalUseImdbToggle}
+            />
+          </div>
           {/* Stream Compatibility ID Dropdown */}
           <div className="pt-6 border-t border-border">
             <Label className="text-lg font-medium">Anime Stream Compatibility ID</Label>
@@ -215,28 +306,6 @@ export function ProvidersSettings() {
             <p className="text-xs text-amber-600 mt-1">
               ⚠️ Using TVDB/IMDb as anime meta provider with Kitsu/MAL anime compatibility ID is considered experimental as they rely on community mappings and could contain inaccurate information.
             </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* TMDB Specific Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>The Movie Database (TMDB) Settings</CardTitle>
-          <CardDescription>Customize how data is handled when TMDB is the source.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Scrape IMDb Toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="scrape-imdb" className="text-lg font-medium">Scrape IMDb Data</Label>
-              <p className="text-sm text-muted-foreground">Automatically scrape additional data from IMDb to obtain IMDb ID when missing from TMDB. This is useful for sports events and other content that doesn't have an IMDb ID in TMDB.</p>
-            </div>
-            <Switch
-              id="scrape-imdb"
-              checked={config.tmdb?.scrapeImdb || false}
-              onCheckedChange={(val) => handleTmdbToggle('scrapeImdb', val)}
-            />
           </div>
         </CardContent>
       </Card>
