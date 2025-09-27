@@ -1257,8 +1257,8 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
       const images = await fanart.getShowImages(tvdbId, config);
       const poster = selectFanartImageByLang(images?.tvposter, config);
       fanartUrl = poster?.url;
-    } else if (mediaType === 'movie' && (tmdbId || imdbId)) {
-      const images = await fanart.getMovieImages(tmdbId || imdbId, config);
+    } else if (mediaType === 'movie' && (imdbId || tmdbId)) {
+      const images = await fanart.getMovieImages(imdbId || tmdbId, config);
       const poster = selectFanartImageByLang(images?.movieposter, config);
       fanartUrl = poster?.url;
     }

@@ -249,7 +249,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   const res: any = await fetchFunction();
   // define preferred provider as string
   
-
+  //sort res.results by vote count in descending order
+  res.results.sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
   const metas = await Promise.all(res.results.map(async item => {
     let stremioId = `tmdb:${item.id}`;
     
@@ -268,7 +269,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
 async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {
   const languages = await getLanguages(config);
-  const parameters: any = { language, page};
+  const parameters: any = { language, page, 'vote_count.gte': 50};
 
   /*if (id === 'tmdb.top' && type === 'series') {
     logger.debug('Applying genre exclusion for popular series catalog.');
@@ -321,7 +322,7 @@ async function buildParameters(type: string, language: string, page: number, id:
   } else {
     switch (id) {
       case "tmdb.top":
-        parameters.sort_by = 'popularity.desc'
+        parameters.sort_by = 'primary_release_date.desc'
         if(genre && genre.toLowerCase() !== 'none') {
           logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
           parameters.with_genres = findGenreId(genre, genreList);

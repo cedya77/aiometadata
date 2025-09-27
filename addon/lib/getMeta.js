@@ -577,8 +577,9 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
               return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
+          } else {
+            return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
           }
-          return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         }
       }
 
@@ -607,7 +608,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       logger.error(`[AnimeMeta] Full error details:`, e);
     }
   }
-  if(!config.mal?.useImdbIdForCatalogAndSearch) {
+  if(!config.mal?.useImdbIdForCatalogAndSearch || (config.mal?.useImdbIdForCatalogAndSearch && type !== 'series')) {
     try {
       logger.info(`[AnimeMeta] Using native provider 'mal' for ${stremioId}`);
       
