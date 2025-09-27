@@ -434,6 +434,163 @@ function parseMedia(el, type, genreList = [], config = {}) {
   };
 }
 
+/**
+ * Sorts and filters TVDB search results to provide the most relevant matches first.
+ * This function creates a relevance score based on match type, data completeness,
+ * series status, and recency.
+ * @param {Array} results - The array of parsed TVDB search results.
+ * @param {string} query - The original search query.
+ * @returns {Array} The sorted and filtered search results.
+ */
+function sortTvdbSearchResults(results, query) {
+  const normalizedQuery = normalize(query);
+
+  if (!normalizedQuery) return results;
+
+  logger.debug(`[TVDB Sort] Processing ${results.length} results for query: "${normalizedQuery}"`);
+
+  // Regex to remove trailing years in parentheses, e.g., " (2023)"
+  const yearRegex = /\s\(\d{4}\)$/;
+
+  // 1. DECORATE results with properties needed for sorting and filtering.
+  const processedResults = results.map((item) => {
+    // Clean the title by removing the year before normalizing
+    const cleanedTitle = (item.name || "").replace(yearRegex, '');
+    const title = normalize(cleanedTitle);
+    
+    const year = parseInt(item.year, 10) || 0;
+    const similarity = calculateSimilarity(title, normalizedQuery);
+    
+    // Check aliases and translations for matches, also cleaning them
+    const hasAliasMatch = (item.aliases || []).some(alias => 
+      alias && typeof alias.name === 'string' && normalize(alias.name.replace(yearRegex, '')) === normalizedQuery
+    );
+    const hasTranslationMatch = (item.translations || []).some(t => 
+      typeof t === 'string' && normalize(t.replace(yearRegex, '')) === normalizedQuery
+    );
+
+    // "StartsWith" logic
+    const startsWith = title.startsWith(normalizedQuery) && (
+      title.length === normalizedQuery.length ||
+      [' ', ':'].includes(title[normalizedQuery.length]) // The next character is a separator
+    );
+
+    // "Contains" logic to match whole words.
+    const queryWords = normalizedQuery.split(/\s+/);
+    const titleWords = new Set(title.split(/\s+/));
+    const contains = queryWords.every(word => titleWords.has(word));
+
+    // Determine match reason with a clear hierarchy
+    let matchReason = "Other";
+    if (title === normalizedQuery) {
+      matchReason = "Exact";
+    } else if (hasAliasMatch || hasTranslationMatch) {
+      matchReason = "Alias/Translation";
+    } else if (startsWith) {
+      matchReason = "StartsWith";
+    } else if (contains) {
+      matchReason = "Contains";
+    }
+
+    // Check if the original poster URL is valid and not a 'missing' placeholder.
+    const hasRealPoster = !!item._rawPosterUrl && !item._rawPosterUrl.includes('/missing/');
+
+    return {
+      originalItem: item,
+      title, // Use the cleaned and normalized title for all comparisons
+      year,
+      similarity,
+      matchReason,
+      hasPoster: hasRealPoster,
+      hasOverview: !!(item.description && item.description.trim() !== ''),
+      isContinuing: item.status === "Continuing",
+    };
+  });
+  
+  // 2. FILTER out the lowest quality results.
+  const filteredResults = processedResults.filter(item => {
+    // Filter out any item that doesn't have a direct match reason.
+    if (item.matchReason === "Other") {
+      return false;
+    }
+
+    // Only remove if it's missing BOTH a poster AND an overview.
+    const isLowQuality = !item.hasPoster && !item.hasOverview;
+    if (isLowQuality) {
+      return false;
+    }
+    
+    return true;
+  });
+  
+  // 3. SORT the filtered results based on our relevance hierarchy.
+  filteredResults.sort((a, b) => {
+    // Primary Sort: Absolutely prioritize items WITH a poster over those without.
+    if (a.hasPoster !== b.hasPoster) {
+      return a.hasPoster ? -1 : 1;
+    }
+
+    // Helper function to assign a priority tier based on match type.
+    const getMatchTier = (item) => {
+      switch (item.matchReason) {
+        case "Exact": return 5;
+        case "Alias/Translation": return 4;
+        case "StartsWith": return 3;
+        case "Contains": return 2;
+        default: return 1;
+      }
+    };
+    
+    // Secondary Sort: By match quality tier
+    const aTier = getMatchTier(a);
+    const bTier = getMatchTier(b);
+    if (aTier !== bTier) {
+      return bTier - aTier;
+    }
+    
+    // Tertiary Sort (for series): Prioritize "Continuing" shows
+    if (a.isContinuing !== b.isContinuing) {
+      return a.isContinuing ? -1 : 1;
+    }
+    
+    // Quaternary Sort: Recency (newer items first)
+    if (a.year !== b.year) {
+      return b.year - a.year;
+    }
+    
+    // Final Tie-breaker: Higher text similarity
+    if (a.similarity !== b.similarity) {
+      return b.similarity - a.similarity;
+    }
+    
+    return 0; // Items are considered equal
+  });
+  
+  // 4. LOGGING for verification and debugging.
+  if (isDebugEnabled) {
+    logger.debug("Sorted & Filtered TVDB Search Results:");
+    const formatForTable = (item) => {
+      const aliases = (item.originalItem.aliases || []).map(a => a.name).join(', ');
+      const translations = (item.originalItem.translations || []).join(', ');
+      const altNames = [aliases, translations].filter(Boolean).join(' | ');
+
+      return {
+        Title: item.originalItem.name.substring(0, 35),
+        Year: item.year || "----",
+        Similarity: item.similarity.toFixed(2),
+        Reason: item.matchReason,
+        Status: item.originalItem.status || 'N/A',
+        HasPoster: item.hasPoster ? 'Yes' : 'No',
+        "Aliases/Translations": altNames.substring(0, 40) + (altNames.length > 40 ? '...' : '')
+      };
+    };
+    console.table(filteredResults.map(formatForTable));
+  }
+
+  // 5. Return the original items in the newly sorted order.
+  return filteredResults.map(p => p.originalItem);
+}
+
 function processOverviewTranslations(translations, language, overview) {
   if(language === 'pt-PT'){
     let translation = tmdb.getTranslations(translations, 'pt-PT');
@@ -2462,6 +2619,7 @@ module.exports = {
   getRpdbPoster,
   checkIfExists,
   sortSearchResults,
+  sortTvdbSearchResults,
   parseAnimeCreditsLink,
   getAnimeBg,
   parseAnimeCatalogMeta,
