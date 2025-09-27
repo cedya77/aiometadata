@@ -91,10 +91,12 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const tvmazeId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TV Maze')?.id;
   const tvdbId = extendedRecord.id;
   logger.debug('Resolved IDs:', {tmdbId, imdbId, tvmazeId, tvdbId});
-  var fallbackImage = extendedRecord.image === null ? "https://artworks.thetvdb.com/banners/images/missing/series.jpg" : extendedRecord.image;
-  const posterUrl = fallbackImage;
   
-  // Validate poster URL to prevent malformed URLs
+  const rawPosterUrl = extendedRecord.image;
+
+  const fallbackImage = `https://www.thetvdb.com/images/missing/movie.jpg`;
+  const posterUrl = rawPosterUrl || fallbackImage;
+  
   const validPosterUrl = posterUrl && typeof posterUrl === 'string' && !posterUrl.includes('undefined') && posterUrl !== 'null' ? posterUrl : fallbackImage;
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   
@@ -114,20 +116,23 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   let stremioId = `tvdb:${extendedRecord.id}`;
   if(imdbId) stremioId = imdbId;
   const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
-  // Validate logo URL to prevent malformed URLs
   const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId? imdb.getLogoFromImdb(imdbId) : null;
+  
   return {
     id: stremioId,
     type: type,
     name: translatedName, 
     poster: config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl,
+    _rawPosterUrl: rawPosterUrl, 
     year: extendedRecord.year,
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
     logo: validLogoUrl,
     genres: extendedRecord.genres?.map(g => g.name) || [],
     imdbRating: imdbId ? await getImdbRating(imdbId, type) : 'N/A',
-    //isAnime: isAnime(extendedRecord)
+    status: extendedRecord.status?.name || extendedRecord.status,
+    aliases: extendedRecord.aliases || [],
+    translations: extendedRecord.translations?.nameTranslations?.map(t => t.name) || [],
   };
 }
 
@@ -504,6 +509,7 @@ async function performTvdbSearch(type, query, language, config) {
   logger.debug(`Successfully fetched extended details for ${detailedResults.length} items.`);
 
   // STEP 3: PARSE ALL DETAILED RESULTS INTO STREMIO METAS IN PARALLEL
+  // We are now passing the fully detailed 'record' which contains aliases and translations
   const parsePromises = detailedResults.map(record =>
     parseTvdbSearchResult(type, record, language, config)
   );
@@ -511,14 +517,17 @@ async function performTvdbSearch(type, query, language, config) {
   const finalResults = (await Promise.all(parsePromises)).filter(Boolean);
   logger.info(`Successfully parsed ${finalResults.length} items into Stremio metas.`);
 
+  // Apply sorting and filtering
+  const sortedResults = Utils.sortTvdbSearchResults(finalResults, sanitizedQuery);
+
   // STEP 4: APPLY AGE RATING FILTERING
-  let ageFilteredResults = finalResults;
+  let ageFilteredResults = sortedResults;
   if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
     const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
     const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
     const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
-    ageFilteredResults = finalResults.filter(result => {
+    ageFilteredResults = sortedResults.filter(result => {
       if (!result.certification) return true;
       
       const isTvRating = type === 'series';
