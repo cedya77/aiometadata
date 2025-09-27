@@ -440,16 +440,13 @@ function processOverviewTranslations(translations, language, overview) {
       if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
         overview = translation.data.overview;
       } else {
-        if(!overview || overview.trim() === ''){
-          translation = tmdb.getTranslations(translations, 'pt-BR');
+        translation = tmdb.getTranslations(translations, 'pt-BR');
+        if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
+          overview = translation.data.overview;
+        } else{
+          translation = tmdb.getTranslations(translations, 'en-US');
           if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
             overview = translation.data.overview;
-          }
-          if(!overview || overview.trim() === ''){
-            translation = tmdb.getTranslations(translations, 'en-US');
-            if(translation && translation.data.overview && translation.data.overview.trim() !== ''){
-              overview = translation.data.overview;
-            }
           }
         }
       }
@@ -474,16 +471,13 @@ function processTitleTranslations(translations, language, title) {
     if(translation && translation.data.title && translation.data.title.trim() !== ''){
       title = translation.data.title;
     } else {
-      if(!title || title.trim() === ''){
-        translation = tmdb.getTranslations(translations, 'pt-BR');
+      translation = tmdb.getTranslations(translations, 'pt-BR');
+      if(translation && translation.data.title && translation.data.title.trim() !== ''){
+        title = translation.data.title;
+      } else {
+        translation = tmdb.getTranslations(translations, 'en-US');
         if(translation && translation.data.title && translation.data.title.trim() !== ''){
           title = translation.data.title;
-        }
-        if(!title || title.trim() === ''){
-          translation = tmdb.getTranslations(translations, 'en-US');
-          if(translation && translation.data.title && translation.data.title.trim() !== ''){
-            title = translation.data.title;
-          }
         }
       }
     }

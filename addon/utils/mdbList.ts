@@ -174,11 +174,11 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
   try {
     let url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
     
-    // Add sort and order parameters if provided
-    if (sort) {
+    // Add sort and order parameters if provided and not empty
+    if (sort && sort.trim() !== '') {
       url += `&sort=${sort}`;
     }
-    if (order) {
+    if (order && order.trim() !== '') {
       url += `&order=${order}`;
     }
     if (genre && genre.toLowerCase() !== 'none') {

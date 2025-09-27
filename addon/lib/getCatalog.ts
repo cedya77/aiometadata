@@ -210,8 +210,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const listId = id.split(".")[1];
     const catalogConfig = config.catalogs?.find(c => c.id === id);
-    const sort = catalogConfig?.sort || 'rank';
-    const order = catalogConfig?.order || 'desc';
+    const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
+    const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
     logger.debug(`MDBList sorting - sort: ${sort}, order: ${order}`);
     const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genre);
     

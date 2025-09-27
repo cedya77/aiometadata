@@ -47,8 +47,8 @@ const CollapsibleSection = ({ title, children }: { title: string, children: Reac
 
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig } = useConfig();
-  const [sort, setSort] = useState(catalog.sort || 'rank');
-  const [order, setOrder] = useState(catalog.order || 'asc');
+  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>(catalog.sort || 'default');
+  const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
 
   const handleSave = () => {
     setConfig(prev => ({
@@ -71,11 +71,12 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label>Sort By</Label>
-            <Select value={sort} onValueChange={(value: any) => setSort(value)}>
+            <Select value={sort} onValueChange={(value: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default') => setSort(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select sort option" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="default">Use Default Sorting</SelectItem>
                 <SelectItem value="rank">Rank</SelectItem>
                 <SelectItem value="score">Score</SelectItem>
                 <SelectItem value="usort">User Sort</SelectItem>
@@ -103,18 +104,20 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Order</Label>
-            <Select value={order} onValueChange={(value: 'asc' | 'desc') => setOrder(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select order" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asc">Ascending</SelectItem>
-                <SelectItem value="desc">Descending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {sort !== 'default' && (
+            <div className="space-y-2">
+              <Label>Order</Label>
+              <Select value={order} onValueChange={(value: 'asc' | 'desc') => setOrder(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select order" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="text-xs text-muted-foreground mb-4">
           Note: Changes will take effect after you save your configuration in the Configuration Manager.

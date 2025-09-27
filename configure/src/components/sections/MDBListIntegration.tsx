@@ -19,7 +19,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [isValid, setIsValid] = useState(!!config.apiKeys.mdblist);
   const [isChecking, setIsChecking] = useState(false);
   const [customListUrl, setCustomListUrl] = useState("");
-  const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random'>('rank');
+  const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>('default');
   const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('asc');
 
   const validateApiKey = useCallback(async (isRefresh = false) => {
@@ -202,46 +202,49 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                       <SelectTrigger>
                         <SelectValue placeholder="Select sort option" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="rank">Rank</SelectItem>
-                        <SelectItem value="score">Score</SelectItem>
-                        <SelectItem value="usort">User Sort</SelectItem>
-                        <SelectItem value="score_average">Score Average</SelectItem>
-                        <SelectItem value="released">Release Date</SelectItem>
-                        <SelectItem value="releasedigital">Digital Release</SelectItem>
-                        <SelectItem value="imdbrating">IMDB Rating</SelectItem>
-                        <SelectItem value="imdbvotes">IMDB Votes</SelectItem>
-                        <SelectItem value="last_air_date">Last Air Date</SelectItem>
-                        <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
-                        <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
-                        <SelectItem value="rogerbert">Roger Ebert</SelectItem>
-                        <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
-                        <SelectItem value="rtaudience">RT Audience</SelectItem>
-                        <SelectItem value="metacritic">Metacritic</SelectItem>
-                        <SelectItem value="myanimelist">MyAnimeList</SelectItem>
-                        <SelectItem value="letterrating">Letterboxd Rating</SelectItem>
-                        <SelectItem value="lettervotes">Letterboxd Votes</SelectItem>
-                        <SelectItem value="budget">Budget</SelectItem>
-                        <SelectItem value="revenue">Revenue</SelectItem>
-                        <SelectItem value="runtime">Runtime</SelectItem>
-                        <SelectItem value="title">Title</SelectItem>
-                        <SelectItem value="added">Date Added</SelectItem>
-                        <SelectItem value="random">Random</SelectItem>
-                      </SelectContent>
+              <SelectContent>
+                <SelectItem value="default">Use Default Sorting</SelectItem>
+                <SelectItem value="rank">Rank</SelectItem>
+                <SelectItem value="score">Score</SelectItem>
+                <SelectItem value="usort">User Sort</SelectItem>
+                <SelectItem value="score_average">Score Average</SelectItem>
+                <SelectItem value="released">Release Date</SelectItem>
+                <SelectItem value="releasedigital">Digital Release</SelectItem>
+                <SelectItem value="imdbrating">IMDB Rating</SelectItem>
+                <SelectItem value="imdbvotes">IMDB Votes</SelectItem>
+                <SelectItem value="last_air_date">Last Air Date</SelectItem>
+                <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
+                <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
+                <SelectItem value="rogerbert">Roger Ebert</SelectItem>
+                <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
+                <SelectItem value="rtaudience">RT Audience</SelectItem>
+                <SelectItem value="metacritic">Metacritic</SelectItem>
+                <SelectItem value="myanimelist">MyAnimeList</SelectItem>
+                <SelectItem value="letterrating">Letterboxd Rating</SelectItem>
+                <SelectItem value="lettervotes">Letterboxd Votes</SelectItem>
+                <SelectItem value="budget">Budget</SelectItem>
+                <SelectItem value="revenue">Revenue</SelectItem>
+                <SelectItem value="runtime">Runtime</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="added">Date Added</SelectItem>
+                <SelectItem value="random">Random</SelectItem>
+              </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="order-select">Order</Label>
-                    <Select value={defaultOrder} onValueChange={(value: 'asc' | 'desc') => setDefaultOrder(value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select order" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="asc">Ascending</SelectItem>
-                        <SelectItem value="desc">Descending</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {defaultSort !== 'default' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="order-select">Order</Label>
+                      <Select value={defaultOrder} onValueChange={(value: 'asc' | 'desc') => setDefaultOrder(value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select order" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="asc">Ascending</SelectItem>
+                          <SelectItem value="desc">Descending</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-xs text-muted-foreground mt-2">
