@@ -412,7 +412,7 @@ function parseMedia(el, type, genreList = [], config = {}) {
 
   if(el.translations){
     el.overview = processOverviewTranslations(el.translations, config.language, el.overview);
-    name = processTitleTranslations(el.translations, config.language, name);
+    name = processTitleTranslations(el.translations, config.language, name, type);
   }
 
   return {
@@ -464,31 +464,31 @@ function processOverviewTranslations(translations, language, overview) {
   return overview;
 }
 
-function processTitleTranslations(translations, language, title) {
+function processTitleTranslations(translations, language, title, type) {
   // Handle title fallback for pt-PT language
   if(language === 'pt-PT'){
     let translation = tmdb.getTranslations(translations, 'pt-PT');
-    if(translation && translation.data.title && translation.data.title.trim() !== ''){
-      title = translation.data.title;
+    if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+      title = type === 'movie' ? translation.data.title : translation.data.name;
     } else {
       translation = tmdb.getTranslations(translations, 'pt-BR');
-      if(translation && translation.data.title && translation.data.title.trim() !== ''){
-        title = translation.data.title;
+      if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+        title = type === 'movie' ? translation.data.title : translation.data.name;
       } else {
         translation = tmdb.getTranslations(translations, 'en-US');
-        if(translation && translation.data.title && translation.data.title.trim() !== ''){
-          title = translation.data.title;
+        if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+          title = type === 'movie' ? translation.data.title : translation.data.name;
         }
       }
     }
   } else {
     let translation = tmdb.getTranslations(translations, language);
-    if(translation && translation.data.title && translation.data.title.trim() !== ''){
-      title = translation.data.title;
+    if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+      title = type === 'movie' ? translation.data.title : translation.data.name;
     } else {
       translation = tmdb.getTranslations(translations, 'en-US');
-      if(translation && translation.data.title && translation.data.title.trim() !== ''){
-        title = translation.data.title;
+      if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+        title = type === 'movie' ? translation.data.title : translation.data.name;
       }
     }
   }

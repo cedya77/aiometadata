@@ -47,21 +47,41 @@ export function SettingsLayout() {
   // --- RENDER ACCORDION ON MOBILE ---
   if (isMobile) {
     return (
-      <Accordion type="single" collapsible className="w-full">
-        {settingsPages.map((page, index) => (
-          <AccordionItem 
-            value={page.value} 
-            key={page.value}
-            // FIX: Use theme-aware border
-            className={index === settingsPages.length - 1 ? "border-b-0" : "border-b"}
+      <div className="w-full space-y-6">
+        <Accordion type="single" collapsible className="w-full">
+          {settingsPages.map((page, index) => (
+            <AccordionItem 
+              value={page.value} 
+              key={page.value}
+              // FIX: Use theme-aware border
+              className={index === settingsPages.length - 1 ? "border-b-0" : "border-b"}
+            >
+              <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
+                {page.title}
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-6">{page.component}</AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+        
+        {/* Buy Me a Coffee Button */}
+        <div className="flex justify-center pt-4">
+          <button
+            onClick={() => {
+              window.open('https://buymeacoffee.com/cedya', '_blank');
+            }}
+            aria-label="Buy me a coffee"
+            title="Buy me a coffee"
+            className="inline-block"
           >
-            <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
-              {page.title}
-            </AccordionTrigger>
-            <AccordionContent className="pt-2 pb-6">{page.component}</AccordionContent>
-          </AccordionItem>
-        ))}
-      </Accordion>
+            <img
+              src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+              alt="Buy Me A Coffee"
+              className="h-12 w-auto hover:opacity-90 transition-opacity"
+            />
+          </button>
+        </div>
+      </div>
     );
   }
 

@@ -44,22 +44,25 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       let restoredListsCount = 0;
 
       setConfig(prev => {
-        const currentMdbCatalogs = prev.catalogs.filter(c => c.id.startsWith("mdblist."));
-        const existingMdbListIds = new Set(currentMdbCatalogs.map(c => c.id));
-        const otherCatalogs = prev.catalogs.filter(c => !c.id.startsWith("mdblist."));
+        // Keep all existing catalogs in their current order
+        let newCatalogs = [...prev.catalogs];
         
-        let newCatalogs = [...otherCatalogs];
+        // Get existing MDBList catalog IDs for quick lookup
+        const existingMdbListIds = new Set(
+          newCatalogs
+            .filter(c => c.id.startsWith("mdblist."))
+            .map(c => `${c.id}-${c.type}`)
+        );
 
         // Process each list from the API
         listsFromApi.forEach((list: any) => {
           const type = list.mediatype === "movie" ? "movie" : "series";
           const catalogId = `mdblist.${list.id}`;
+          const catalogKey = `${catalogId}-${type}`;
           
           // Check if catalog already exists
-          const existingCatalog = newCatalogs.find(c => c.id === catalogId && c.type === type);
-          
-          if (!existingCatalog) {
-            // Add new catalog
+          if (!existingMdbListIds.has(catalogKey)) {
+            // Add new catalog at the end
             const newCatalog: CatalogConfig = {
               id: catalogId,
               type,
@@ -73,11 +76,26 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
           } else {
-            // Catalog exists, ensure it's enabled
-            if (!existingCatalog.enabled) {
-              existingCatalog.enabled = true;
-              existingCatalog.showInHome = true;
-              restoredListsCount++;
+            // Catalog exists, update its properties but keep position
+            const existingCatalogIndex = newCatalogs.findIndex(c => c.id === catalogId && c.type === type);
+            if (existingCatalogIndex !== -1) {
+              const existingCatalog = newCatalogs[existingCatalogIndex];
+              // Only restore if it was disabled
+              if (!existingCatalog.enabled) {
+                newCatalogs[existingCatalogIndex] = {
+                  ...existingCatalog,
+                  enabled: true,
+                  showInHome: true,
+                  name: list.name, // Update name in case it changed
+                };
+                restoredListsCount++;
+              } else {
+                // Just update the name in case it changed
+                newCatalogs[existingCatalogIndex] = {
+                  ...existingCatalog,
+                  name: list.name,
+                };
+              }
             }
           }
         });

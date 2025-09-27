@@ -812,7 +812,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const watchProviders = moviedb.getWatchProviders(movieData['watch/providers'], config);
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
-  finalTitle = Utils.processTitleTranslations(movieData.translations, language, title);
+  finalTitle = Utils.processTitleTranslations(movieData.translations, language, title, 'movie');
   
 
   return {
@@ -1156,7 +1156,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;
-  finalName = Utils.processTitleTranslations(seriesData.translations, language, finalName);
+  finalName = Utils.processTitleTranslations(seriesData.translations, language, finalName, 'series');
 
   const meta = {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,

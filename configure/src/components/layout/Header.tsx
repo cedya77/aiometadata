@@ -188,7 +188,21 @@ export function Header() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <button
+          onClick={() => {
+            window.open('https://buymeacoffee.com/cedya', '_blank');
+          }}
+          aria-label="Buy me a coffee"
+          title="Buy me a coffee"
+          className="hidden sm:inline-block"
+        >
+          <img
+            src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+            alt="Buy Me A Coffee"
+            className="h-8 sm:h-10 w-auto hover:opacity-90 transition-opacity"
+          />
+        </button>
         <Button
           onClick={() => {
             const host = `${window.location.protocol}//${window.location.host}`;
@@ -198,8 +212,9 @@ export function Header() {
           size="icon"
           aria-label="Open Dashboard"
           title="Open Dashboard"
+          className="h-8 w-8 sm:h-10 sm:w-10"
         >
-          <BarChart3 className="h-5 w-5" />
+          <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5" />
         </Button>
         {isLoggedIn ? (
           <Button
@@ -217,12 +232,19 @@ export function Header() {
             variant="outline"
             size="icon"
             aria-label="Sign out"
+            className="h-8 w-8 sm:h-10 sm:w-10"
           >
-            <LogOut className="h-5 w-5" />
+            <LogOut className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         ) : (
-          <Button onClick={() => { if (!authTransitioning) setIsLoginOpen(true); }} variant="outline" size="icon" aria-label="Log in">
-            <LogIn className="h-5 w-5" />
+          <Button 
+            onClick={() => { if (!authTransitioning) setIsLoginOpen(true); }} 
+            variant="outline" 
+            size="icon" 
+            aria-label="Log in"
+            className="h-8 w-8 sm:h-10 sm:w-10"
+          >
+            <LogIn className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         )}
         <ThemeToggle />
