@@ -169,7 +169,7 @@ export function ProvidersSettings() {
         <CardHeader>
           <CardTitle>Anime Detection Override</CardTitle>
           <CardDescription>
-            When enabled, any catalog item that maps to an anime (via MAL/Kitsu detection) will use the Anime meta provider, even if the original catalog was non-anime.
+            When enabled, any catalog item that maps to an anime (via MAL/Kitsu/AniList/AniDB... detection) will use the Anime meta provider, even if the original catalog was non-anime.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -237,6 +237,18 @@ export function ProvidersSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Use IMDb ID for Catalog/Search */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="mal-use-imdb" className="text-lg font-medium">Use IMDb ID for Catalog/Search for Series</Label>
+              <p className="text-sm text-muted-foreground">Prefer IMDb IDs for anime items in catalogs and search (when available).</p>
+            </div>
+            <Switch
+              id="mal-use-imdb"
+              checked={!!config.mal.useImdbIdForCatalogAndSearch}
+              onCheckedChange={handleMalUseImdbToggle}
+            />
+          </div>
           {/* Skip Filler Toggle */}
           <div className="flex items-center justify-between">
             <div>
@@ -271,18 +283,6 @@ export function ProvidersSettings() {
               id="allow-episode-marking"
               checked={config.mal.allowEpisodeMarking}
               onCheckedChange={(val) => handleMalToggle('allowEpisodeMarking', val)}
-            />
-          </div>
-          {/* Use IMDb ID for Catalog/Search */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="mal-use-imdb" className="text-lg font-medium">Use IMDb ID for Catalog/Search for Series</Label>
-              <p className="text-sm text-muted-foreground">Prefer IMDb IDs for anime items in catalogs and search (when available).</p>
-            </div>
-            <Switch
-              id="mal-use-imdb"
-              checked={!!config.mal.useImdbIdForCatalogAndSearch}
-              onCheckedChange={handleMalUseImdbToggle}
             />
           </div>
           {/* Stream Compatibility ID Dropdown */}
