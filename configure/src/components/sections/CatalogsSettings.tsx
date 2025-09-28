@@ -440,15 +440,19 @@ export function CatalogsSettings() {
   const [isStremThruOpen, setIsStremThruOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
+  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
+      // Filter out disabled catalogs if hideDisabledCatalogs is true
+      if (hideDisabledCatalogs && !cat.enabled) return false;
+      
       if (cat.source !== "streaming") return true;
       const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
       return Array.isArray(config.streaming) && config.streaming.includes(serviceId);
     }),
-    [config.catalogs, config.streaming]
+    [config.catalogs, config.streaming, hideDisabledCatalogs]
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -599,12 +603,25 @@ export function CatalogsSettings() {
           <p className="text-muted-foreground">
             Drag to reorder. Click icons to toggle visibility.
           </p>
-          <div className="flex items-center space-x-4 pt-2 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center space-x-6 pt-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
               <Eye className="h-4 w-4 text-green-500 dark:text-green-400"/> Enabled
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
               <Home className="h-4 w-4 text-blue-500 dark:text-blue-400"/> On Home Board
+            </div>
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              {hideDisabledCatalogs ? (
+                <EyeOff className="h-4 w-4 text-orange-500 dark:text-orange-400"/> 
+              ) : (
+                <Eye className="h-4 w-4 text-muted-foreground"/>
+              )}
+              <button
+                onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {hideDisabledCatalogs ? 'Hide Disabled' : 'Show All'}
+              </button>
             </div>
           </div>
         </div>

@@ -9,16 +9,16 @@ interface CatalogDefinition {
 
 // --- Catalogs sourced from TMDB and TVDB ---
 export const baseCatalogs: CatalogDefinition[] = [
-  { id: 'tmdb.top', name: 'TMDB Popular Movies', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'tmdb.top', name: 'TMDB Popular Series', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'tmdb.trending', name: 'TMDB Trending Movies', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'tmdb.trending', name: 'TMDB Trending Series', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'tmdb.year', name: 'TMDB By Year (Movies)', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
-  { id: 'tmdb.year', name: 'TMDB By Year (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
-  { id: 'tmdb.language', name: 'TMDB By Language (Movies)', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
-  { id: 'tmdb.language', name: 'TMDB By Language (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
-  { id: 'tvdb.genres', name: 'TVDB Genres (Movies)', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
-  { id: 'tvdb.genres', name: 'TVDB Genres (Series)', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tmdb.top', name: 'TMDB Popular', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.top', name: 'TMDB Popular', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.trending', name: 'TMDB Trending', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.trending', name: 'TMDB Trending', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.year', name: 'TMDB By Year', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tmdb.year', name: 'TMDB By Year', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tmdb.language', name: 'TMDB By Language', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tmdb.language', name: 'TMDB By Language', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.genres', name: 'TVDB Genres', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.genres', name: 'TVDB Genres', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.collections', name: 'TVDB Collections', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
 ];
 
