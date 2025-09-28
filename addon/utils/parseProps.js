@@ -458,7 +458,8 @@ function sortTvdbSearchResults(results, query) {
     const cleanedTitle = (item.name || "").replace(yearRegex, '');
     const title = normalize(cleanedTitle);
     
-    const year = parseInt(item.year, 10) || 0;
+    // Handle 'Upcoming' status for year parsing
+    const year = item.status === 'Upcoming' ? 9999 : (parseInt(item.year, 10) || 0);
     const similarity = calculateSimilarity(title, normalizedQuery);
     
     // Check aliases and translations for matches, also cleaning them
@@ -504,6 +505,7 @@ function sortTvdbSearchResults(results, query) {
       hasPoster: hasRealPoster,
       hasOverview: !!(item.description && item.description.trim() !== ''),
       isContinuing: item.status === "Continuing",
+      isUpcoming: item.status === "Upcoming", // Add a flag for 'Upcoming'
     };
   });
   
@@ -528,6 +530,11 @@ function sortTvdbSearchResults(results, query) {
     // Primary Sort: Absolutely prioritize items WITH a poster over those without.
     if (a.hasPoster !== b.hasPoster) {
       return a.hasPoster ? -1 : 1;
+    }
+
+    // Prioritize available content (Continuing/Ended) over Upcoming content.
+    if (a.isUpcoming !== b.isUpcoming) {
+      return a.isUpcoming ? 1 : -1; // Upcoming items go to the bottom
     }
 
     // Helper function to assign a priority tier based on match type.
@@ -576,7 +583,7 @@ function sortTvdbSearchResults(results, query) {
 
       return {
         Title: item.originalItem.name.substring(0, 35),
-        Year: item.year || "----",
+        Year: item.year === 9999 ? 'TBA' : item.year || "----", // Display TBA for upcoming
         Similarity: item.similarity.toFixed(2),
         Reason: item.matchReason,
         Status: item.originalItem.status || 'N/A',
