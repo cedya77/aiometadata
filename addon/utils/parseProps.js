@@ -493,7 +493,7 @@ function sortTvdbSearchResults(results, query) {
     }
 
     // Check if the original poster URL is valid and not a 'missing' placeholder.
-    const hasRealPoster = !!item._rawPosterUrl && !item._rawPosterUrl.includes('/missing/');
+    const hasRealPoster = !!item._rawPosterUrl;
 
     return {
       originalItem: item,
