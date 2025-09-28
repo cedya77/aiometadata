@@ -443,6 +443,7 @@ function parseMedia(el, type, genreList = [], config = {}) {
  * @returns {Array} The sorted and filtered search results.
  */
 function sortTvdbSearchResults(results, query) {
+  
   const normalizedQuery = normalize(query);
 
   if (!normalizedQuery) return results;
@@ -451,6 +452,10 @@ function sortTvdbSearchResults(results, query) {
 
   // Regex to remove trailing years in parentheses, e.g., " (2023)"
   const yearRegex = /\s\(\d{4}\)$/;
+  const currentYear = new Date().getFullYear();
+  
+  // Threshold for 'Contains' matches
+  const CONTAINS_SIMILARITY_THRESHOLD = 0.20;
 
   // 1. DECORATE results with properties needed for sorting and filtering.
   const processedResults = results.map((item) => {
@@ -493,7 +498,7 @@ function sortTvdbSearchResults(results, query) {
       matchReason = "Contains";
     }
 
-    // Check if the original poster URL is valid and not a 'missing' placeholder.
+    // A real poster exists if the raw URL from the API was not null/undefined.
     const hasRealPoster = !!item._rawPosterUrl;
 
     return {
@@ -516,6 +521,19 @@ function sortTvdbSearchResults(results, query) {
       return false;
     }
 
+    if (!item.year && !item.isUpcoming) {
+        return false;
+    }
+
+    if (item.matchReason === "Contains") {
+      const isRecent = item.year >= currentYear - 2;
+      const isSimilarEnough = item.similarity >= CONTAINS_SIMILARITY_THRESHOLD;
+      // Keep if it's either recent OR similar enough. Filter out if it's neither.
+      if (!isRecent && !isSimilarEnough) {
+        return false;
+      }
+    }
+
     // Only remove if it's missing BOTH a poster AND an overview.
     const isLowQuality = !item.hasPoster && !item.hasOverview;
     if (isLowQuality) {
@@ -532,46 +550,30 @@ function sortTvdbSearchResults(results, query) {
       return a.hasPoster ? -1 : 1;
     }
 
-    // Prioritize available content (Continuing/Ended) over Upcoming content.
+    // De-prioritize "Upcoming" items below all other released content.
     if (a.isUpcoming !== b.isUpcoming) {
-      return a.isUpcoming ? 1 : -1; // Upcoming items go to the bottom
+      return a.isUpcoming ? 1 : -1;
     }
 
-    // Helper function to assign a priority tier based on match type.
-    const getMatchTier = (item) => {
-      switch (item.matchReason) {
-        case "Exact": return 5;
-        case "Alias/Translation": return 4;
-        case "StartsWith": return 3;
-        case "Contains": return 2;
-        default: return 1;
-      }
+    // Give a higher score to more recent items to nudge them towards the top,
+    // otherwise maintain the original API order.
+    const getFreshnessScore = (item) => {
+      if (item.year === currentYear) return 1; // Boost for current year
+      return 0; // Everything else has a neutral score
     };
-    
-    // Secondary Sort: By match quality tier
-    const aTier = getMatchTier(a);
-    const bTier = getMatchTier(b);
-    if (aTier !== bTier) {
-      return bTier - aTier;
+
+    const aScore = getFreshnessScore(a);
+    const bScore = getFreshnessScore(b);
+
+    if (aScore !== bScore) {
+      return bScore - aScore; // Higher score comes first
     }
-    
-    // Tertiary Sort (for series): Prioritize "Continuing" shows
-    if (a.isContinuing !== b.isContinuing) {
-      return a.isContinuing ? -1 : 1;
-    }
-    
-    // Quaternary Sort: Recency (newer items first)
-    if (a.year !== b.year) {
-      return b.year - a.year;
-    }
-    
-    // Final Tie-breaker: Higher text similarity
-    if (a.similarity !== b.similarity) {
-      return b.similarity - a.similarity;
-    }
-    
-    return 0; // Items are considered equal
+
+    // If freshness is the same, we don't apply any other sorting,
+    // thus preserving the original API order as the primary tie-breaker.
+    return 0;
   });
+  
   
   // 4. LOGGING for verification and debugging.
   if (isDebugEnabled) {
@@ -583,7 +585,7 @@ function sortTvdbSearchResults(results, query) {
 
       return {
         Title: item.originalItem.name.substring(0, 35),
-        Year: item.year === 9999 ? 'TBA' : item.year || "----", // Display TBA for upcoming
+        Year: item.year === 9999 ? 'TBA' : item.year || "----",
         Similarity: item.similarity.toFixed(2),
         Reason: item.matchReason,
         Status: item.originalItem.status || 'N/A',
