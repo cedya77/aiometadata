@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.24.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.0...v1.0.0-beta.24.1.0) (2025-09-28)
+
+
+### Features
+
+* add custom ttl for mdblist ([2ddba0a](https://github.com/cedya77/aiometadata/commit/2ddba0aef733e8290cd398065036f7a2e5720835))
+* add SOCKS5 proxy support for MDBList API ([182b8e3](https://github.com/cedya77/aiometadata/commit/182b8e3d3dfa1236ce02c2e56581122ca300f3a3))
+* **meta:** add fallback to imdbId for tvdb movies (useful for anime movies) ([cd2a698](https://github.com/cedya77/aiometadata/commit/cd2a698710d1f20768edffad85a8f2afed3b6c81))
+* **meta:** add option to use imdb id with mal catalogs, enabling calendar functions and the like ([a6ed329](https://github.com/cedya77/aiometadata/commit/a6ed329abce0b769babaefafe76aab2afcc56e36))
+* **tmdb catalog:** revamp popular catalog ([cec252a](https://github.com/cedya77/aiometadata/commit/cec252a8d4c458e4a9e1b732a79c1d17133d1b54))
+
 ## [1.0.0-beta.24.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.23.3.0...v1.0.0-beta.24.0) (2025-09-24)
 
 
