@@ -94,7 +94,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   
   const rawPosterUrl = extendedRecord.image;
 
-  const fallbackImage = `https://www.thetvdb.com/images/missing/movie.jpg`;
+  const fallbackImage = `${host}/missing_poster.png`;
   const posterUrl = rawPosterUrl || fallbackImage;
   
   const validPosterUrl = posterUrl && typeof posterUrl === 'string' && !posterUrl.includes('undefined') && posterUrl !== 'null' ? posterUrl : fallbackImage;
@@ -277,9 +277,10 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         allIds = await resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds, ['imdb']);
         const selectedBg = details.images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
         const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
+        const fallbackImage = `${host}/missing_poster.png`;
         logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
         backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
-        posterUrl = media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg`;
+        posterUrl = media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : fallbackImage;
 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
         const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null;
@@ -292,7 +293,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         // Ensure we always have a valid poster URL
         const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
           ? posterUrl 
-          : `https://artworks.thetvdb.com/banners/images/missing/${mediaType}.jpg`;
+          : fallbackImage;
         
         const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
         
@@ -636,7 +637,7 @@ async function parseTvmazeResult(show, config) {
   // use preferred provider id as id. tvmaze are type series only.
   let stremioId = `tvmaze:${show.id}` ;
   if(imdbId) stremioId = imdbId;
-  var fallbackImage = show.image?.original || "https://artworks.thetvdb.com/banners/images/missing/series.jpg";
+  var fallbackImage = show.image?.original || `${host}/missing_poster.png`;
   const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
   const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
   return {
