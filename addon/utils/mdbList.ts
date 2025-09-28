@@ -4,6 +4,8 @@ import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
+const { socksDispatcher } = require('fetch-socks');
+const { Agent } = require('undici');
 
 const logger = consola.create({ 
   level: process.env.LOG_LEVEL ? 
@@ -18,6 +20,35 @@ const logger = consola.create({
   },
   tag: 'MDBList'
 });
+
+// Proxy configuration for MDBList requests
+const MDBLIST_SOCKS_PROXY_URL = process.env.MDBLIST_SOCKS_PROXY_URL;
+let mdblistDispatcher;
+
+if (MDBLIST_SOCKS_PROXY_URL) {
+  try {
+    const proxyUrlObj = new URL(MDBLIST_SOCKS_PROXY_URL);
+    if (proxyUrlObj.protocol === 'socks5:' || proxyUrlObj.protocol === 'socks4:') {
+      mdblistDispatcher = socksDispatcher({
+        type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
+        host: proxyUrlObj.hostname,
+        port: parseInt(proxyUrlObj.port),
+        userId: proxyUrlObj.username,
+        password: proxyUrlObj.password,
+      });
+      logger.info(`[MDBList] SOCKS proxy is enabled for MDBList API via fetch-socks.`);
+    } else {
+      logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
+      mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+    }
+  } catch (error) {
+    logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
+    mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+  }
+} else {
+  mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+  logger.info('[MDBList] undici agent is enabled for direct connections.');
+}
 
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.
@@ -186,7 +217,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     }
     
     const response: any = await makeRateLimitedRequest(
-      () => httpGet(url),
+      () => httpGet(url, { dispatcher: mdblistDispatcher }),
       `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
     );
     
@@ -268,7 +299,7 @@ async function getMediaRatingFromMDBList(mediaProvider: string, mediaType: strin
 
   try {
     const response: any = await makeRateLimitedRequest(
-      () => httpGet(url),
+      () => httpGet(url, { dispatcher: mdblistDispatcher }),
       context
     );
     return response.data?.ratings || [];
@@ -323,7 +354,8 @@ async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: stri
           headers: {
             'Content-Type': 'application/json'
           },
-          timeout: 30000 // 30 second timeout for batch requests
+          timeout: 30000, // 30 second timeout for batch requests
+          dispatcher: mdblistDispatcher
         }),
         `MDBList batch media info (batch ${batchNumber}/${totalBatches})`
       );
