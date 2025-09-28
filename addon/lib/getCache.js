@@ -625,9 +625,22 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     ? `catalog:${userUUID}:${catalogConfigString}:${catalogKey}`
     : `catalog:${catalogConfigString}:${catalogKey}`;
   
-      cacheLogger.info(`Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+  // Use custom cache TTL for MDBList catalogs if specified
+  let cacheTTL = CATALOG_TTL;
+  let finalKey = key;
+  
+  if (idOnly.startsWith('mdblist.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      finalKey = `${key}:ttl:${cacheTTL}`;
+      cacheLogger.info(`Using custom cache TTL for MDBList catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+    }
+  }
+  
+  cacheLogger.info(`Catalog cache key (${idOnly}): ${finalKey.substring(0, 120)}...`);
     
-    return cacheWrap(key, method, CATALOG_TTL, options);
+  return cacheWrap(finalKey, method, cacheTTL, options);
   }
 
 /**

@@ -49,13 +49,14 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const { setConfig } = useConfig();
   const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>(catalog.sort || 'default');
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || 86400); // Default to 24 hours
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order }
+          ? { ...c, sort, order, cacheTTL }
           : c
       )
     }));
@@ -118,6 +119,27 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </Select>
             </div>
           )}
+          <div className="space-y-2">
+            <Label>Cache TTL (seconds)</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="number"
+                value={cacheTTL}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || 86400)}
+                min="300"
+                max="604800"
+                step="3600"
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder="86400"
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How long to cache this list before refreshing. Range: 5 minutes to 7 days.
+            </p>
+          </div>
         </div>
         <div className="text-xs text-muted-foreground mb-4">
           Note: Changes will take effect after you save your configuration in the Configuration Manager.
@@ -597,7 +619,7 @@ export function CatalogsSettings() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="space-y-4">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold">Catalog Management</h2>
           <p className="text-muted-foreground">
@@ -625,20 +647,20 @@ export function CatalogsSettings() {
             </div>
           </div>
         </div>
-        <div className="flex-shrink-0 flex flex-wrap gap-2">
-          <Button onClick={handleOpenStreamingDialog} className="flex-1 sm:flex-none min-w-0">
-            <span className="truncate">Manage Streaming Providers</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={handleOpenStreamingDialog} size="sm">
+            Manage Streaming Providers
           </Button>
-          <Button onClick={() => setIsMdbListOpen(true)} className="flex-1 sm:flex-none min-w-0">
-            <span className="truncate">Manage MDBList Integration</span>
+          <Button onClick={() => setIsMdbListOpen(true)} size="sm">
+            Manage MDBList Integration
           </Button>
-          <Button onClick={() => setIsStremThruOpen(true)} className="flex-1 sm:flex-none min-w-0">
-            <span className="truncate">Import StremThru Catalogs</span>
+          <Button onClick={() => setIsStremThruOpen(true)} size="sm">
+            Import StremThru Catalogs
           </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleReloadCatalogs} aria-label="Reload Catalogs" className="flex-shrink-0">
+                <Button variant="ghost" size="icon" onClick={handleReloadCatalogs} aria-label="Reload Catalogs">
                   <RefreshCw className="w-5 h-5" />
                 </Button>
               </TooltipTrigger>

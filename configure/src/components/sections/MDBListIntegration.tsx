@@ -21,6 +21,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [customListUrl, setCustomListUrl] = useState("");
   const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>('default');
   const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('asc');
+  const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(86400); // Default to 24 hours
 
   const validateApiKey = useCallback(async (isRefresh = false) => {
     if (!tempKey) {
@@ -72,6 +73,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               source: 'mdblist',
               sort: defaultSort,
               order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -168,6 +170,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         source: 'mdblist',
         sort: defaultSort,
         order: defaultOrder,
+        cacheTTL: defaultCacheTTL,
       };
 
       setConfig(prev => {
@@ -265,8 +268,30 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                   )}
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="default-cache-ttl">Default Cache TTL (seconds)</Label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    id="default-cache-ttl"
+                    type="number"
+                    value={defaultCacheTTL}
+                    onChange={(e) => setDefaultCacheTTL(parseInt(e.target.value) || 86400)}
+                    min="300"
+                    max="604800"
+                    step="3600"
+                    className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                    placeholder="86400"
+                  />
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    ({Math.floor(defaultCacheTTL / 3600)}h {Math.floor((defaultCacheTTL % 3600) / 60)}m)
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  How long to cache newly added lists before refreshing. Range: 5 minutes to 7 days.
+                </p>
+              </div>
               <div className="text-xs text-muted-foreground mt-2">
-                Note: Sort settings will apply to newly added lists. Changes take effect after saving your configuration.
+                Note: Sort and cache settings will apply to newly added lists. Changes take effect after saving your configuration.
               </div>
             </div>
           )}

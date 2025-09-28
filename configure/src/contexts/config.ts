@@ -11,6 +11,8 @@ export interface CatalogConfig {
   // MDBList sorting options
   sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default';
   order?: 'asc' | 'desc';
+  // Custom cache TTL for MDBList catalogs (in seconds, defaults to 24 hours)
+  cacheTTL?: number;
 }
 
 export interface SearchConfig {
