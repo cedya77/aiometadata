@@ -134,6 +134,69 @@ class RequestTracker {
       redis.expire(`status:${statusCode}:${today}`, 86400 * 30).catch(() => {});
       redis.expire(`errors:${statusCode}:${today}`, 86400 * 30).catch(() => {});
       redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
+
+      // If this was a catalog search, compute real success (results > 0)
+      if (req.path.includes('/catalog/')) {
+        let rawSearch = '';
+        // Query param
+        if (req.query && req.query.search) {
+          rawSearch = String(req.query.search);
+        }
+        // Path extras
+        if (!rawSearch) {
+          try {
+            const extrasMatch = req.path.match(/\/catalog\/[^/]+\/[^/]+\/(.*)\.(json|xml)$/i);
+            if (extrasMatch && extrasMatch[1]) {
+              const extrasPart = extrasMatch[1];
+              const segments = extrasPart.split('/');
+              for (const segment of segments) {
+                if (segment.toLowerCase().startsWith('search=')) {
+                  const val = segment.substring('search='.length);
+                  rawSearch = decodeURIComponent(val);
+                  break;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        const queryNorm = rawSearch.toLowerCase().trim();
+        if (queryNorm) {
+          // Determine type for optional per-type success storage
+          let catalogType = 'all';
+          try {
+            const catalogMatch = req.path.match(/\/catalog\/([^/]+)/);
+            if (catalogMatch && catalogMatch[1]) catalogType = catalogMatch[1].toLowerCase();
+          } catch (_) {}
+
+          // Try to parse response body from res.locals if present (since we can't reliably read res.send data here)
+          // Many routes set res.locals.payload before sending; if not available, we can't compute success here.
+          let resultsCount = 0;
+          try {
+            const payload = res.locals?.payload || res.locals?.data;
+            if (payload) {
+              const obj = typeof payload === 'string' ? JSON.parse(payload) : payload;
+              if (obj && typeof obj === 'object') {
+                const candidates = ['metas', 'results', 'items'];
+                for (const key of candidates) {
+                  if (Array.isArray(obj[key])) {
+                    resultsCount = obj[key].length;
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+
+          // Fallback: if we don't have res.locals, try to infer from status code 200 (treat as attempt only)
+          // We only increment success if resultsCount > 0
+          if (resultsCount > 0) {
+            redis.zincrby(`search_success:${today}`, 1, queryNorm).catch(() => {});
+            redis.expire(`search_success:${today}`, 86400 * 30).catch(() => {});
+            redis.zincrby(`search_success:${today}:${catalogType}`, 1, queryNorm).catch(() => {});
+            redis.expire(`search_success:${today}:${catalogType}`, 86400 * 30).catch(() => {});
+          }
+        }
+      }
       
     } catch (error) {
       logger.warn('[Request Tracker] Failed to track response:', error.message);
@@ -189,11 +252,65 @@ class RequestTracker {
       }
       
       // Track search requests
-      if (path.includes('/catalog/') && req.query && req.query.search) {
-        const searchQuery = req.query.search.toLowerCase().trim();
+      if (path.includes('/catalog/')) {
+        let rawSearch = '';
+
+        // Case 1: standard query parameter (e.g., ?search=foo)
+        if (req.query && req.query.search) {
+          rawSearch = String(req.query.search);
+        }
+
+        // Case 2: Stremio-style extras in the path: /catalog/{type}/{id}/.../search={query}.json
+        // Example: /catalog/movie/mdblist.12345/genre=action/search=star%20wars.json
+        if (!rawSearch) {
+          try {
+            const extrasMatch = path.match(/\/catalog\/[^/]+\/[^/]+\/(.*)\.(json|xml)$/i);
+            if (extrasMatch && extrasMatch[1]) {
+              const extrasPart = extrasMatch[1];
+              const segments = extrasPart.split('/');
+              for (const segment of segments) {
+                if (segment.toLowerCase().startsWith('search=')) {
+                  const val = segment.substring('search='.length);
+                  rawSearch = decodeURIComponent(val);
+                  break;
+                }
+              }
+            }
+          } catch (_) {
+            // ignore parsing errors; fall through
+          }
+        }
+
+        const searchQuery = rawSearch.toLowerCase().trim();
         if (searchQuery) {
-          redis.zincrby(`search_patterns:${today}`, 1, searchQuery).catch(() => {});
-          redis.expire(`search_patterns:${today}`, 86400 * 30).catch(() => {}); // 30 days
+          // Determine catalog type (movie/series/anime/etc.) if present
+          let catalogType = 'all';
+          try {
+            const catalogMatch = path.match(/\/catalog\/([^/]+)/);
+            if (catalogMatch && catalogMatch[1]) {
+              catalogType = catalogMatch[1].toLowerCase();
+            }
+          } catch (_) {}
+
+          // Debounce per user + query for a short window to avoid overcounting
+          const userHash = this.getImprovedUserIdentifier(req);
+          const dedupeKey = `search_dedupe:${today}:${userHash}:${catalogType}:${searchQuery}`;
+          try {
+            const setResult = await redis.set(dedupeKey, '1', 'NX', 'EX', 3);
+            if (setResult) {
+              // Increment global aggregate
+              redis.zincrby(`search_patterns:${today}`, 1, searchQuery).catch(() => {});
+              redis.expire(`search_patterns:${today}`, 86400 * 30).catch(() => {}); // 30 days
+
+              // Increment per-type aggregate
+              redis.zincrby(`search_patterns:${today}:${catalogType}`, 1, searchQuery).catch(() => {});
+              redis.expire(`search_patterns:${today}:${catalogType}`, 86400 * 30).catch(() => {});
+            }
+          } catch (_) {
+            // On Redis error, fall back to naive increment to avoid losing data entirely
+            redis.zincrby(`search_patterns:${today}`, 1, searchQuery).catch(() => {});
+            redis.expire(`search_patterns:${today}`, 86400 * 30).catch(() => {});
+          }
         }
       }
       
@@ -254,13 +371,37 @@ class RequestTracker {
       const popularContent = await Promise.all(
         contentEntries.map(async ({ contentKey, type, id, requests }) => {
           try {
-            // Try to get real metadata from cache
-            const metadataStr = await redis.get(`content_metadata:${contentKey}`);
-            //logger.info(`[Request Tracker] Looking for metadata: content_metadata:${contentKey} -> ${metadataStr ? 'FOUND' : 'NOT FOUND'}`);
-            
+            // Try to get real metadata from cache with multiple key variants
+            const tryKeys = [];
+            // exact member key (often includes .json or provider prefix)
+            tryKeys.push(`content_metadata:${contentKey}`);
+            // decoded variant without extension
+            const parts = contentKey.split(':');
+            const keyType = parts[0];
+            const rawId = parts.slice(1).join(':');
+            const decoded = decodeURIComponent(rawId || '');
+            const cleanId = decoded.replace(/\.(json|xml)$/i, '');
+            tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
+            // encoded + .json variant from captureMetadataFromComponents
+            const encodedJson = encodeURIComponent(cleanId) + '.json';
+            tryKeys.push(`content_metadata:${keyType}:${encodedJson}`);
+            // provider variants (tmdb:123 etc.) if present in original
+            if (cleanId.includes(':')) {
+              tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
+              const providerEncoded = encodeURIComponent(cleanId) + '.json';
+              tryKeys.push(`content_metadata:${keyType}:${providerEncoded}`);
+            }
+
+            let metadataStr = null;
+            for (const k of tryKeys) {
+              try {
+                metadataStr = await redis.get(k);
+                if (metadataStr) break;
+              } catch (_) {}
+            }
+
             if (metadataStr) {
               const metadata = JSON.parse(metadataStr);
-              //logger.info(`[Request Tracker] Using real metadata for ${contentKey}: "${metadata.title}"`);
               return {
                 id,
                 type: metadata.type || type,
@@ -302,14 +443,20 @@ class RequestTracker {
       const today = new Date().toISOString().split('T')[0];
       const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
       
-      // Get search patterns from both days
-      const [todaySearches, yesterdaySearches] = await Promise.all([
+      // Get attempts and successes from both days
+      const [
+        todaySearches, yesterdaySearches,
+        todaySuccesses, yesterdaySuccesses
+      ] = await Promise.all([
         redis.zrevrange(`search_patterns:${today}`, 0, limit - 1, 'WITHSCORES'),
-        redis.zrevrange(`search_patterns:${yesterday}`, 0, limit - 1, 'WITHSCORES')
+        redis.zrevrange(`search_patterns:${yesterday}`, 0, limit - 1, 'WITHSCORES'),
+        redis.zrevrange(`search_success:${today}`, 0, -1, 'WITHSCORES'),
+        redis.zrevrange(`search_success:${yesterday}`, 0, -1, 'WITHSCORES')
       ]);
       
       // Combine and format results
       const searchMap = new Map();
+      const successMap = new Map();
       
       // Process today's searches
       for (let i = 0; i < todaySearches.length; i += 2) {
@@ -324,13 +471,25 @@ class RequestTracker {
         const count = parseInt(yesterdaySearches[i + 1]) || 0;
         searchMap.set(query, (searchMap.get(query) || 0) + count);
       }
+
+      // Process successes
+      for (let i = 0; i < todaySuccesses.length; i += 2) {
+        const query = todaySuccesses[i];
+        const count = parseInt(todaySuccesses[i + 1]) || 0;
+        successMap.set(query, (successMap.get(query) || 0) + count);
+      }
+      for (let i = 0; i < yesterdaySuccesses.length; i += 2) {
+        const query = yesterdaySuccesses[i];
+        const count = parseInt(yesterdaySuccesses[i + 1]) || 0;
+        successMap.set(query, (successMap.get(query) || 0) + count);
+      }
       
       // Convert to array and sort
       const searchPatterns = Array.from(searchMap.entries())
         .map(([query, count]) => ({
           query,
           count,
-          success: 95 + Math.random() * 5 // TODO: Track actual success rates
+          success: count > 0 ? Math.max(0, Math.min(100, Math.round(((successMap.get(query) || 0) / count) * 100))) : 0
         }))
         .sort((a, b) => b.count - a.count)
         .slice(0, limit);

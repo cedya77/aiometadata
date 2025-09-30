@@ -2605,6 +2605,71 @@ function genSeasonsString(seasons) {
   }
 }
 
+/**
+ * Check if a movie has been released digitally
+ * A movie is considered "released digitally" if:
+ * 1. It was released more than 1 year ago (assume digital release available), OR
+ * 2. For recent movies (< 1 year), has explicit digital/physical/TV release dates in TMDB data
+ * @param meta - The movie meta object
+ * @returns true if the movie has been released digitally, false otherwise
+ */
+function isReleasedDigitally(meta) {
+  if (!meta || meta.type !== 'movie') {
+    return true; // Only filter movies, not series
+  }
+
+  // Check if movie has a release date
+  if (!meta.released) {
+    // No release date means it's unreleased or unknown - keep due to lack of data
+    return true;
+  }
+
+  const releaseDate = new Date(meta.released);
+  const now = new Date();
+  
+  // Check if date is valid
+  if (isNaN(releaseDate.getTime())) {
+    // Invalid date - keep due to lack of data
+    return true;
+  }
+  
+  const daysSinceRelease = (now.getTime() - releaseDate.getTime()) / (1000 * 60 * 60 * 24);
+
+  // If release date is in the future, definitely not released
+  if (daysSinceRelease < 0) {
+    return false;
+  }
+
+  // If movie is older than 1 year, assume it has a digital release
+  const ONE_YEAR_IN_DAYS = 365;
+  if (daysSinceRelease >= ONE_YEAR_IN_DAYS) {
+    return true;
+  }
+
+  // For recent movies (< 1 year old), check for explicit digital/physical/TV release
+  // If no release data is available, show the movie (avoid false positives)
+  if (!meta.app_extras?.releaseDates?.results) {
+    logger.debug(`Movie ${meta.name} has no release date data, showing by default`);
+    return true;
+  }
+
+  // Type 4 = Digital, Type 5 = Physical, Type 6 = TV
+  const hasDigitalRelease = meta.app_extras.releaseDates.results.some((country) =>
+    country.release_dates?.some((release) =>
+      release.type >= 4 && release.type <= 6 && new Date(release.release_date) <= now
+    )
+  );
+
+  if (hasDigitalRelease) {
+    logger.debug(`Movie ${meta.name} has digital release`);
+    return true;
+  }
+
+  // Movie is recent (< 1 year) and no digital release confirmed - hide it
+  logger.debug(`Movie ${meta.name} released ${Math.floor(daysSinceRelease)} days ago, no digital release found`);
+  return false;
+}
+
 module.exports = {
   parseMedia,
   parseCast,
@@ -2654,5 +2719,6 @@ module.exports = {
   addMetaProviderAttribution,
   processOverviewTranslations,
   processTitleTranslations,
-  genSeasonsString
+  genSeasonsString,
+  isReleasedDigitally
 };

@@ -5,6 +5,7 @@ import { resolveAllIds } from './id-resolver.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
+import { isReleasedDigitally } from "../utils/parseProps.js";
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
@@ -103,6 +104,16 @@ async function getTrending(type: string, language: string, page: number, genre: 
       console.log(`[getTrending] ${filteredMetas.length} Age rating filtering took ${filterTime.toFixed(2)}ms`);
     } else {
       console.log(`[getTrending] No age rating filtering applied (ageRating: ${userRating})`);
+    }
+
+    // Apply digital release filter if enabled (movies only)
+    if (type === 'movie' && config.hideUnreleasedDigital) {
+      const beforeCount = filteredMetas.length;
+      filteredMetas = filteredMetas.filter(meta => isReleasedDigitally(meta));
+      const afterCount = filteredMetas.length;
+      if (beforeCount !== afterCount) {
+        console.log(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
     }
     
     const totalTime = performance.now() - startTime;

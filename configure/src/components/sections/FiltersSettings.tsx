@@ -25,6 +25,10 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, sfw: checked }));
   };
 
+  const handleHideUnreleasedDigitalChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, hideUnreleasedDigital: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -70,6 +74,26 @@ export function FiltersSettings() {
               onCheckedChange={handleSfwChange}
             />
             <Label htmlFor="sfw-mode">Safe for Work (SFW) Mode</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Hide Unreleased Digital Movies Card */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Digital Release Filter</CardTitle>
+          <CardDescription>
+            Hide movies that haven't been released digitally yet. This filters out movies that are only in theaters or haven't been released at all. Applies to movie catalogs only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="hide-unreleased-digital"
+              checked={config.hideUnreleasedDigital ?? false}
+              onCheckedChange={handleHideUnreleasedDigitalChange}
+            />
+            <Label htmlFor="hide-unreleased-digital">Hide Unreleased Movies</Label>
           </div>
         </CardContent>
       </Card>

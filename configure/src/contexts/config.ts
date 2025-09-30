@@ -76,6 +76,7 @@ export interface AppConfig {
   };
   ageRating: string;
   sfw: boolean;
+  hideUnreleasedDigital: boolean;
   searchEnabled: boolean;
   sessionId: string;
   catalogs: CatalogConfig[];

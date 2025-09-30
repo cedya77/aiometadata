@@ -1,7 +1,7 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
 import { getMeta } from "../lib/getMeta.js";
-import { cacheWrapMetaSmart } from "../lib/getCache.js";
+import { cacheWrapMetaSmart, cacheWrapMDBListGenres } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const { socksDispatcher } = require('fetch-socks');
@@ -388,18 +388,22 @@ async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: stri
 
 async function getGenresFromMDBList(listId: string, apiKey: string): Promise<string[]> {
   try {
-    const response = await fetchMDBListItems(listId, apiKey, 'en-US', 1);
-    const genres = [
-      ...new Set(
-        response.items.flatMap((item: any) =>
-          (item.genre || []).map((g: any) => {
-            if (!g || typeof g !== "string") return null;
-            return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase();
-          })
-        ).filter(Boolean)
-      )
-    ].sort();
-    return genres;
+    return await cacheWrapMDBListGenres(listId, async () => {
+      logger.debug(`Fetching fresh genres from MDBList for list ${listId}`);
+      const response = await fetchMDBListItems(listId, apiKey, 'en-US', 1);
+      const genres = [
+        ...new Set(
+          response.items.flatMap((item: any) =>
+            (item.genre || []).map((g: any) => {
+              if (!g || typeof g !== "string") return null;
+              return g.charAt(0).toUpperCase() + g.slice(1).toLowerCase();
+            })
+          ).filter(Boolean)
+        )
+      ].sort();
+      logger.info(`Successfully fetched and cached ${genres.length} genres for list ${listId}`);
+      return genres;
+    });
   } catch(err: any) {
     logger.error("Error in getGenresFromMDBList:", err);
     return [];

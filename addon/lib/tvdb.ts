@@ -447,7 +447,7 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error searching TVDB for series "${query}":`, (error as Error).message);
+    console.error(`[searchSeries] Error searching TVDB for series "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -475,7 +475,7 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error searching TVDB for movies "${query}":`, (error as Error).message);
+    console.error(`[searchMovies] Error searching TVDB for movies "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -503,7 +503,7 @@ async function searchPeople(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error searching TVDB for people "${query}":`, (error as Error).message);
+    console.error(`[searchPeople] Error searching TVDB for people "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -531,7 +531,7 @@ async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
-      console.error(`Error fetching extended series data for TVDB ID ${seriesId}:`, (error as Error).message);
+      console.error(`[getSeriesExtended] Error fetching extended series data for TVDB ID ${seriesId}:`, (error as Error).message);
       return null; 
     }
   });
@@ -560,7 +560,7 @@ async function getMovieExtended(movieId: string, config: UserConfig): Promise<Tv
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
-      console.error(`Error fetching extended movie data for TVDB ID ${movieId}:`, (error as Error).message);
+      console.error(`[getMovieExtended] Error fetching extended movie data for TVDB ID ${movieId}:`, (error as Error).message);
       return null; 
     }
   });
@@ -610,7 +610,7 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
       hasNextPage = data.links && data.links.next;
       page++;
     } catch(error) {
-      console.error(`Error fetching page ${page} of ${seasonType} episodes for TVDB ID ${tvdbId}:`, (error as Error).message);
+      console.error(`[_fetchEpisodesBySeasonType] Error fetching page ${page} of ${seasonType} episodes for TVDB ID ${tvdbId}:`, (error as Error).message);
       hasNextPage = false;
     }
   }
@@ -663,7 +663,7 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
+    console.error(`[findByImdbId] Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
     return [];
   }
 }
@@ -693,7 +693,7 @@ async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSea
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
+    console.error(`[findByTmdbId] Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
     return [];
   }
 }
@@ -723,7 +723,7 @@ async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error getting TVDB genres:`, (error as Error).message);
+    console.error(`[getAllGenres] Error getting TVDB genres:`, (error as Error).message);
     return [];
   }
 }
@@ -760,7 +760,7 @@ async function filter(type: 'movies' | 'series', params: any, config: UserConfig
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error filtering TVDB ${type}:`, (error as Error).message);
+    console.error(`[filter] Error filtering TVDB ${type}:`, (error as Error).message);
     return [];
   }
 }
@@ -791,7 +791,7 @@ async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
-      console.error(`Error fetching extended season data for TVDB ID ${seasonId}:`, (error as Error).message);
+      console.error(`[getSeasonExtended] Error fetching extended season data for TVDB ID ${seasonId}:`, (error as Error).message);
       return null; 
     }
   });
@@ -805,7 +805,7 @@ async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<st
     }
     return null;
   } catch (error) {
-    console.error(`[TVDB] Error getting poster for series ${seriesId}:`, (error as Error).message);
+    console.error(`[getSeriesPoster] Error getting poster for series ${seriesId}:`, (error as Error).message);
     return null;
   }
 }
@@ -822,7 +822,7 @@ async function getSeriesBackground(seriesId: string, config: UserConfig): Promis
     }
     return null;
   } catch (error) {
-    console.error(`[TVDB] Error getting background for series ${seriesId}:`, (error as Error).message);
+    console.error(`[getSeriesBackground] Error getting background for series ${seriesId}:`, (error as Error).message);
     return null;
   }
 }
@@ -835,7 +835,7 @@ async function getMoviePoster(movieId: string, config: UserConfig): Promise<stri
     }
     return null;
   } catch (error) {
-    console.error(`[TVDB] Error getting poster for movie ${movieId}:`, (error as Error).message);
+    console.error(`[getMoviePoster] Error getting poster for movie ${movieId}:`, (error as Error).message);
     return null;
   }
 }
@@ -862,7 +862,7 @@ async function getMovieBackground(movieId: string, config: UserConfig): Promise<
     }
     return null;
   } catch (error) {
-    console.error(`[TVDB] Error getting background for movie ${movieId}:`, (error as Error).message);
+    console.error(`[getMovieBackground] Error getting background for movie ${movieId}:`, (error as Error).message);
     return null;
   }
 }
@@ -879,7 +879,7 @@ async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<stri
     }
     return null;
   } catch (error) {
-    console.error(`[TVDB] Error getting logo for series ${seriesId}:`, (error as Error).message);
+    console.error(`[getSeriesLogo] Error getting logo for series ${seriesId}:`, (error as Error).message);
     return null;
   }
 }
@@ -896,7 +896,7 @@ async function getMovieLogo(movieId: string, config: UserConfig): Promise<string
     }
     return null;
   } catch (error) {
-    console.error(`[TVDB] Error getting logo for movie ${movieId}:`, (error as Error).message);
+    console.error(`[getMovieLogo] Error getting logo for movie ${movieId}:`, (error as Error).message);
     return null;
   }
 }
@@ -926,7 +926,7 @@ async function getCollectionsList(config: UserConfig, page: number = 0): Promise
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`Error getting TVDB collections list:`, (error as Error).message);
+    console.error(`[getCollections] Error getting TVDB collections list:`, (error as Error).message);
     return [];
   }
 }

@@ -30,6 +30,7 @@ export interface UserConfig {
   sfw?: boolean;
   includeAdult?: boolean;
   ageRating?: string;
+  hideUnreleasedDigital?: boolean;
   tvdbSeasonType?: string;
   castCount?: number;
   blurThumbs?: boolean;

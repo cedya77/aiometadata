@@ -23,6 +23,8 @@ const JIKAN_API_TTL = 7 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
+const MDBLIST_GENRES_TTL = 7 * 24 * 60 * 60; // Cache MDBList genres for 7 days
+const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60; // Cache StremThru genres for 7 days
 
 // Enhanced error caching strategy with self-healing
 const ERROR_TTL_STRATEGIES = {
@@ -603,6 +605,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
+    hideUnreleasedDigital: config.hideUnreleasedDigital || false,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
@@ -627,20 +630,18 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   // Use custom cache TTL for MDBList catalogs if specified
   let cacheTTL = CATALOG_TTL;
-  let finalKey = key;
   
   if (idOnly.startsWith('mdblist.')) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
     if (catalogConfig?.cacheTTL) {
       cacheTTL = catalogConfig.cacheTTL;
-      finalKey = `${key}:ttl:${cacheTTL}`;
       cacheLogger.info(`Using custom cache TTL for MDBList catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
     }
   }
   
-  cacheLogger.info(`Catalog cache key (${idOnly}): ${finalKey.substring(0, 120)}...`);
+  cacheLogger.info(`Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
     
-  return cacheWrap(finalKey, method, cacheTTL, options);
+  return cacheWrap(key, method, cacheTTL, options);
   }
 
 /**
@@ -1412,6 +1413,18 @@ function cacheWrapJikanApi(key, method) {
   return cacheWrapGlobal(`jikan-api:${subkey}`, method, JIKAN_API_TTL);
 }
 
+function cacheWrapMDBListGenres(listId, method) {
+  cacheLogger.debug(`Caching MDBList genres for list ${listId}`);
+  return cacheWrapGlobal(`mdblist-genres:${listId}`, method, MDBLIST_GENRES_TTL);
+}
+
+function cacheWrapStremThruGenres(catalogUrl, method) {
+  // Use a hash or simplified key from the catalog URL to avoid super long keys
+  const urlKey = Buffer.from(catalogUrl).toString('base64').substring(0, 50);
+  cacheLogger.debug(`Caching StremThru genres for catalog ${urlKey}`);
+  return cacheWrapGlobal(`stremthru-genres:${urlKey}`, method, STREMTHRU_GENRES_TTL);
+}
+
 async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
   let config;
@@ -1443,6 +1456,7 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
+    hideUnreleasedDigital: config.hideUnreleasedDigital || false,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
@@ -1558,6 +1572,8 @@ module.exports = {
   cacheWrapCatalog,
   cacheWrapSearch,
   cacheWrapJikanApi,
+  cacheWrapMDBListGenres,
+  cacheWrapStremThruGenres,
   cacheWrapStaticCatalog,
   cacheWrapMeta,
   cacheWrapMetaComponents,

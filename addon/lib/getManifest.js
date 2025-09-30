@@ -8,7 +8,7 @@ const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
 const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
-const { cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
+const { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } = require('./getCache');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -232,11 +232,18 @@ async function createStremThruCatalog(userCatalog) {
     if (genres.length === 0) {
       try {
         console.log(`[Manifest] Attempting to fetch genres from catalog items for ${userCatalog.id}`);
-        const items = await fetchStremThruCatalog(catalogUrl);
-        if (items && items.length > 0) {
-          genres = await getGenresFromStremThruCatalog(items);
-          console.log(`[Manifest] Extracted ${genres.length} genres from catalog items`);
-        }
+        // Wrap in cache to avoid repeated API calls on manifest generation
+        genres = await cacheWrapStremThruGenres(catalogUrl, async () => {
+          console.log(`[Manifest] Fetching fresh genres from StremThru catalog: ${catalogUrl}`);
+          const items = await fetchStremThruCatalog(catalogUrl);
+          if (items && items.length > 0) {
+            const extractedGenres = await getGenresFromStremThruCatalog(items);
+            console.log(`[Manifest] Extracted and cached ${extractedGenres.length} genres from catalog items`);
+            return extractedGenres;
+          }
+          return [];
+        });
+        console.log(`[Manifest] Using ${genres.length} genres for ${userCatalog.id}`);
       } catch (genreError) {
         console.warn(`[Manifest] Failed to fetch genres from catalog items for ${userCatalog.id}:`, genreError.message);
       }

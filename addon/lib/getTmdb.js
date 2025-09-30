@@ -107,6 +107,13 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
         const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
+        
+        // Handle 404 errors gracefully - resource not found
+        if (response.status === 404) {
+          console.warn(`[TMDB] Resource not found for ${endpoint}: ${errorMessage}`);
+          return null; // Return null instead of throwing for 404s
+        }
+        
         throw new Error(errorMessage); // This will be caught by the catch block below
       }
 

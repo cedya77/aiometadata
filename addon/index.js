@@ -142,6 +142,7 @@ const respond = function (req, res, data, opts) {
           sfw: req.userConfig.sfw,
           includeAdult: req.userConfig.includeAdult,
           ageRating: req.userConfig.ageRating,
+          hideUnreleasedDigital: req.userConfig.hideUnreleasedDigital,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
           apiKeys: { 
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
@@ -789,11 +790,11 @@ addon.get("/poster/:type/:id", async function (req, res) {
     return res.redirect(302, fallback);
   }
 
-  const [idSource, idValue] = id.split(':');
+  const [idSource, idValue] = id.startsWith('tt') ? ['imdb', id] : id.split(':');
   const ids = {
     tmdbId: idSource === 'tmdb' ? idValue : null,
     tvdbId: idSource === 'tvdb' ? idValue : null,
-    imdbId: idSource.startsWith('tt') ? idSource : null,
+    imdbId: idSource === 'imdb' ? idValue : null,
   };
 
   try {
@@ -1577,11 +1578,11 @@ addon.get("/api/dashboard/timing", async (req, res) => {
 });
 
 addon.get("/api/dashboard/content", (req, res) => {
-  
   try {
+    const limit = parseInt(req.query.limit) || 10;
     Promise.all([
       requestTracker.getPopularContent(10),
-      requestTracker.getSearchPatterns(10),
+      requestTracker.getSearchPatterns(limit),
       requestTracker.getStats() // For content quality metrics
     ]).then(([popularContent, searchPatterns, stats]) => {
       res.json({ 

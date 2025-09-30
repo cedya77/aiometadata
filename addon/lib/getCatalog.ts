@@ -28,6 +28,7 @@ import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
+import { isReleasedDigitally } from "../utils/parseProps.js";
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
@@ -35,6 +36,7 @@ const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
 const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
+
 
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
   try {
@@ -165,7 +167,18 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     return null;
   }));
 
-  const validMetas = metas.filter(meta => meta !== null);
+  let validMetas = metas.filter(meta => meta !== null);
+  
+  // Apply digital release filter if enabled (movies only)
+  if (type === 'movie' && config.hideUnreleasedDigital) {
+    const beforeCount = validMetas.length;
+    validMetas = validMetas.filter(meta =>  isReleasedDigitally(meta));
+    const afterCount = validMetas.length;
+    if (beforeCount !== afterCount) {
+      logger.info(`Digital release filter (TVDB): filtered out ${beforeCount - afterCount} unreleased movies`);
+    }
+  }
+  
   return validMetas;
 }
 
@@ -236,7 +249,19 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     
-    return await parseMDBListItems(response.items, type, language, config);
+    let metas = await parseMDBListItems(response.items, type, language, config);
+    
+    // Apply digital release filter if enabled (movies only)
+    if (type === 'movie' && config.hideUnreleasedDigital) {
+      const beforeCount = metas.length;
+      metas = metas.filter(meta => isReleasedDigitally(meta));
+      const afterCount = metas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter (MDBList): filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    return metas;
   }
 
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
@@ -263,7 +288,18 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     return null;
   }));
 
-  const validMetas = metas.filter(meta => meta !== null);
+  let validMetas = metas.filter(meta => meta !== null);
+  
+  // Apply digital release filter if enabled (movies only)
+  if (type === 'movie' && config.hideUnreleasedDigital) {
+    const beforeCount = validMetas.length;
+    validMetas = validMetas.filter(meta => isReleasedDigitally(meta));
+    const afterCount = validMetas.length;
+    if (beforeCount !== afterCount) {
+      logger.info(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+    }
+  }
+  
   return validMetas;
 }
 
@@ -445,7 +481,17 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     logger.debug(`[✨ StremThru] Batch skip: ${stremThruSkip}, local slice: ${localStartIndex}-${localEndIndex}, final items: ${paginatedItems.length}`);
     
     // Parse items into Stremio format
-    const metas = await parseStremThruItems(paginatedItems, type, genre, language, config);
+    let metas = await parseStremThruItems(paginatedItems, type, genre, language, config);
+    
+    // Apply digital release filter if enabled (movies only)
+    if (type === 'movie' && config.hideUnreleasedDigital) {
+      const beforeCount = metas.length;
+      metas = metas.filter(meta => isReleasedDigitally(meta));
+      const afterCount = metas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter (StremThru): filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
     
     logger.success(`[StremThru] Successfully processed ${metas.length} items for catalog: ${catalogId} (page: ${page})`);
     return metas;

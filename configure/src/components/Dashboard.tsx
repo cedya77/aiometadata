@@ -1192,6 +1192,7 @@ function DashboardContent({ data, loading }) {
   
   const [popularContent, setPopularContent] = useState([]);
   const [searchPatterns, setSearchPatterns] = useState([]);
+  const [searchLimit, setSearchLimit] = useState(10);
   const [contentQuality, setContentQuality] = useState({
     missingMetadata: 0,
     failedMappings: 0,
@@ -1203,7 +1204,7 @@ function DashboardContent({ data, loading }) {
     // Fetch real content data
     const fetchContentData = async () => {
       try {
-        const response = await fetch('/api/dashboard/content');
+        const response = await fetch(`/api/dashboard/content?limit=${searchLimit}`);
         if (response.ok) {
           const data = await response.json();
           
@@ -1223,7 +1224,7 @@ function DashboardContent({ data, loading }) {
     };
 
     fetchContentData();
-  }, []);
+  }, [searchLimit]);
 
   return (
     <div className="space-y-6">
@@ -1279,36 +1280,55 @@ function DashboardContent({ data, loading }) {
       <Card>
         <CardHeader>
           <CardTitle>Search Patterns</CardTitle>
-          <CardDescription>Most common search queries and success rates</CardDescription>
+          <CardDescription>Most common search queries (shows today + yesterday)</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {searchPatterns.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No search patterns yet</p>
-                <p className="text-sm">Search queries will appear here as users search for content</p>
-              </div>
-            ) : (
-              searchPatterns.map((pattern, index) => (
-                <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <span className="font-medium">"{pattern.query}"</span>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Count</p>
-                      <p className="font-medium">{pattern.count}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Success</p>
-                      <p className="font-medium">{Math.round(pattern.success)}%</p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Show</span>
+            <select
+              value={searchLimit}
+              onChange={(e) => setSearchLimit(parseInt(e.target.value) || 10)}
+              className="px-2 py-1 border rounded-md bg-background text-sm"
+            >
+              <option value={10}>Top 10</option>
+              <option value={20}>Top 20</option>
+              <option value={50}>Top 50</option>
+            </select>
           </div>
+          {searchPatterns.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No search patterns yet</p>
+              <p className="text-sm">Search queries will appear here as users search for content</p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-x-4 gap-y-3">
+              {(() => {
+                const counts = searchPatterns.map((p: any) => p.count);
+                const min = Math.min(...counts);
+                const max = Math.max(...counts);
+                const scale = (count: number) => {
+                  if (max === min) return 16; // px
+                  const t = (count - min) / (max - min);
+                  return Math.round(14 + t * 22); // 14px -> 36px
+                };
+                return searchPatterns.map((p: any, idx: number) => (
+                  <span
+                    key={idx}
+                    title={`"${p.query}" • Count: ${p.count}`}
+                    className="select-none cursor-default inline-block"
+                    style={{
+                      fontSize: `${scale(p.count)}px`,
+                      lineHeight: 1.1,
+                      color: 'hsl(220 60% 55%)'
+                    }}
+                  >
+                    {p.query}
+                  </span>
+                ));
+              })()}
+            </div>
+          )}
         </CardContent>
       </Card>
 
