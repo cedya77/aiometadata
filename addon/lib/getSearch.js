@@ -264,10 +264,10 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         let logoUrl; let backgroundUrl; let posterUrl;
         const langCode = language.split('-')[0]; 
         const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-        // OPTIMIZATION: Fetch details, external_ids, and certifications in ONE call
+        // OPTIMIZATION: Fetch details, external_ids, certifications, and keywords in ONE call
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations", include_image_language: imageLanguages }, config)
-            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations", include_image_language: imageLanguages }, config);
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords", include_image_language: imageLanguages }, config)
+            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
         
         let allIds = {
             tmdbId: details.id,
@@ -316,19 +316,49 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        return parsed;
+        
+        return { parsed, details }; // Return both for keyword filtering
     } catch (error) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
         return null;
     }
   });
 
-  const hydratedMetas = (await Promise.all(hydrationPromises)).filter(Boolean);
-  logger.info(`Hydration complete in ${Date.now() - startTime}ms. Found ${hydratedMetas.length} valid items.`);
+  const hydratedResults = (await Promise.all(hydrationPromises)).filter(Boolean);
+  logger.info(`Hydration complete in ${Date.now() - startTime}ms. Found ${hydratedResults.length} valid items.`);
 
-  // STEP 3: FINAL SORTING AND FILTERING (your existing logic is good)
+  // STEP 3: KEYWORD FILTERING
+  let keywordFilteredResults;
+  if (config.includeAdult === false) {
+    const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga'];
+    logger.debug(`Filtering results with adult keyword blacklist as includeAdult is false.`);
+    keywordFilteredResults = hydratedResults.filter(result => {
+        const keywordsObject = result.details.keywords;
+        if (!keywordsObject) {
+            return true; // No keywords, can't filter, so we keep it.
+        }
+
+        // Keywords can be in `results` (for TV) or `keywords` (for movies)
+        const keywords = keywordsObject.results || keywordsObject.keywords || [];
+        
+        for (const keyword of keywords) {
+            const keywordName = keyword.name.toLowerCase();
+            // Check if any blacklisted word is a substring of the keyword name
+            if (adultKeywordBlacklist.some(blacklisted => keywordName.includes(blacklisted))) {
+                logger.debug(`Item "${result.parsed.name}" was filtered because of keyword "${keyword.name}"`);
+                return false; // Filter this item out
+            }
+        }
+        return true; // Keep this item
+    });
+    logger.debug(`Keyword filtering applied: ${hydratedResults.length} -> ${keywordFilteredResults.length} results.`);
+  } else {
+    keywordFilteredResults = hydratedResults;
+  }
   
-  
+  const hydratedMetas = keywordFilteredResults.map(result => result.parsed);
+
+  // STEP 4: FINAL SORTING AND FILTERING
   let filteredResults = hydratedMetas;
   if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
       const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
