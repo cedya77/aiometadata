@@ -343,9 +343,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         
         for (const keyword of keywords) {
             const keywordName = keyword.name.toLowerCase();
-            // Check if any blacklisted word is a substring of the keyword name
-            if (adultKeywordBlacklist.some(blacklisted => keywordName.includes(blacklisted))) {
-                logger.debug(`Item "${result.parsed.name}" was filtered because of keyword "${keyword.name}"`);
+            if (adultKeywordBlacklist.includes(keywordName)) {
+                logger.info(`Item "${result.parsed.name}" was filtered because of keyword "${keyword.name}"`);
                 return false; // Filter this item out
             }
         }
