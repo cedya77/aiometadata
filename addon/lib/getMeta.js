@@ -431,7 +431,8 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
       const movieData = await moviedb.movieInfo({ 
         id: allIds.tmdbId, 
         language, 
-        append_to_response: "videos,credits,external_ids,images,translations,watch/providers,release_dates", 
+        append_to_response: config.hideUnreleasedDigital ? "videos,credits,external_ids,images,translations,watch/providers,release_dates" : 
+                                "videos,credits,external_ids,images,translations,watch/providers", 
         include_image_language: imageLanguages 
       }, config);
       
@@ -797,6 +798,11 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
 
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
+  }
+  if (tmdbId && config.hideUnreleasedDigital){
+    const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
+    imdbData.app_extras = imdbData.app_extras || {};
+    imdbData.app_extras.releaseDates = movieData.release_dates;
   }
 
   return imdbData;
@@ -1259,7 +1265,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const { allIds } = enrichmentData;
   const kitsuId = allIds?.kitsuId;
   let imdbId = allIds?.imdbId;
-  const tmdbId = allIds?.tmdbId;
+  let tmdbId = allIds?.tmdbId;
 
   const { year, image: tvdbPosterPath, remoteIds, characters } = movieData;
   const langCode = language.split('-')[0];
@@ -1348,6 +1354,13 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   console.log(`[TvdbMovieMeta] remoteIds:`, remoteIds);
 
   imdbId = imdbId || remoteIds?.find(id => id.sourceName === 'IMDB')?.id 
+  tmdbId = tmdbId || remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id 
+
+  let release_dates = null;
+  if(tmdbId && config.hideUnreleasedDigital){
+    const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
+    release_dates = movieData.release_dates;
+  }
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   return {
@@ -1376,7 +1389,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
-    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders }
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: release_dates }
   };
 }
 
