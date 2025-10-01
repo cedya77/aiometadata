@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.24.2.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.1.0...v1.0.0-beta.24.2.0) (2025-10-01)
+
+
+### Features
+
+* Add MDBList/StremThru genre caching and digital release filter ([044d57f](https://github.com/cedya77/aiometadata/commit/044d57f72107728e941f4a9b262e679c68ee3b14))
+* **meta:** add digital release filtering to tvdb and imdb movie meta ([523c4d4](https://github.com/cedya77/aiometadata/commit/523c4d4d84d61bd1ff65285f0a04752464bf3fcc))
+
+
+### Bug Fixes
+
+* **logo:** fix lang selection for logo ([63feaf3](https://github.com/cedya77/aiometadata/commit/63feaf3c13d6ca680341b9453fc6f084eb2ed606))
+* **tvdb genres:** set lang to eng  and country to usa ([8aebf83](https://github.com/cedya77/aiometadata/commit/8aebf834ceb6fa81548723255fdb408f1e03f132))
+
 ## [1.0.0-beta.24.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.0...v1.0.0-beta.24.1.0) (2025-09-28)
 
 
