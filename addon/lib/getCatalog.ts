@@ -92,7 +92,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   
   const params: any = {
     country: countryCode3 || 'usa',
-    lang: langCode3 || 'eng',
+    lang: 'eng',
     sort: 'score'
   };
   if (isTrending) {

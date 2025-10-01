@@ -2420,7 +2420,9 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbLogo = await tmdb.tvImages({ id: tmdbId }, config).then(res => {
+        const langCode = config.language.split('-')[0];
+        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+        const tmdbLogo = await tmdb.tvImages({ id: tmdbId, include_image_language: imageLanguages }, config).then(res => {
           const img = selectTmdbImageByLang(res.logos, config);
           return img?.file_path;
         });
@@ -2433,7 +2435,9 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
         if(!tvdbId) return fallbackLogoUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
         if(mappedIds.tmdbId) {
-          const tmdbLogo = await tmdb.tvImages({ id: mappedIds.tmdbId }, config).then(res => {
+          const langCode = config.language.split('-')[0];
+          const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+          const tmdbLogo = await tmdb.tvImages({ id: mappedIds.tmdbId, include_image_language: imageLanguages }, config).then(res => {
             const img = selectTmdbImageByLang(res.logos, config);
             return img?.file_path;
           });
@@ -2576,10 +2580,12 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1') {
   
   // If englishArtOnly is enabled, force English language selection
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
+  const targetCountry = config.language.split('-')[1]?.toUpperCase() || 'US';
   
   // Sort by vote_average descending
   const sorted = images.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
   return (
+    sorted.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||
     sorted.find(img => img[key] === targetLang) ||
     sorted.find(img => img[key] === 'en') ||
     sorted[0]
