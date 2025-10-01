@@ -266,7 +266,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         // OPTIMIZATION: Fetch details, external_ids, certifications, and keywords in ONE call
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords", include_image_language: imageLanguages }, config)
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords, release_dates", include_image_language: imageLanguages }, config)
             : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
         
         let allIds = {
@@ -275,7 +275,10 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
             tvdbId: details.external_ids?.tvdb_id
         };
         allIds = await resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds, ['imdb']);
-        const selectedBg = details.images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
+        const selectedBg = details.images?.backdrops?.find(b => b.iso_639_1 === 'xx')
+          || details.images?.backdrops?.find(b => b.iso_639_1 === null)
+          || details.images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
+          || details.images?.backdrops?.[0];
         const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
         const fallbackImage = `${host}/missing_poster.png`;
         logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
@@ -316,7 +319,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        
+        parsed.app_extras = { releaseDates: details.release_dates };
         return { parsed, details }; // Return both for keyword filtering
     } catch (error) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
@@ -380,6 +383,14 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           return resultRatingIndex <= userRatingIndex;
       });
       logger.debug(`Age rating filter applied: ${hydratedMetas.length} -> ${filteredResults.length} results.`);
+  }
+  if (type === 'movie' && config.hideUnreleasedDigital) {
+    const beforeCount = filteredResults.length;
+    filteredResults = filteredResults.filter(meta => Utils.isReleasedDigitally(meta));
+    const afterCount = filteredResults.length;
+    if (beforeCount !== afterCount) {
+      logger.info(`Digital release filter (TMDB): filtered out ${beforeCount - afterCount} unreleased movies`);
+    }
   }
 
   logger.success(`Completed TMDB search for "${query}" in ${Date.now() - startTime}ms. Returning ${filteredResults.length} results.`);

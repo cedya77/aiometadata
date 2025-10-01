@@ -842,7 +842,10 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   
   // Get artwork based on art provider preference
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
-  const selectedBg = images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
+  const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
+    || images?.backdrops?.find(b => b.iso_639_1 === null)
+    || images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
+    || images?.backdrops?.[0];
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
@@ -940,7 +943,10 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   // Get artwork based on art provider preference
   const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
-  const selectedBg = images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0] || images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === language.split('-')[0])[0] || images?.backdrops?.[0];
+  const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
+    || images?.backdrops?.find(b => b.iso_639_1 === null)
+    || images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
+    || images?.backdrops?.[0];
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
@@ -1297,7 +1303,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `${host}/missing_poster.png`;
-  const tvdbBackgroundUrl = findArtwork(movieData.artworks, 15, langCode3, config);
+  const tvdbBackgroundUrl = findArtwork(movieData.artworks, 15, null, config);
   const tvdbLogoUrl = findArtwork(movieData.artworks, 25, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
   
@@ -1459,7 +1465,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : null;
-  const tvdbBackgroundUrl = findArtwork(tvdbShow.artworks, 3, langCode3, config);
+  const tvdbBackgroundUrl = findArtwork(tvdbShow.artworks, 3, null, config);
   const tvdbLogoUrl = findArtwork(tvdbShow.artworks, 23, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
 

@@ -425,6 +425,7 @@ function parseMedia(el, type, genreList = [], config = {}) {
     imdbRating: el.vote_average ? el.vote_average.toFixed(1) : 'N/A',
     year: type === 'movie' ? (el.release_date?.substring(0, 4) || '') : (el.first_air_date?.substring(0, 4) || ''),
     type: type === 'movie' ? type : 'series',
+    released: type === 'movie' ? new Date(el.release_date) : new Date(el.first_air_date),
     releaseInfo: type === 'movie' ? (el.release_date?.substring(0, 4) || '') : (el.first_air_date?.substring(0, 4) || ''),
     description: addMetaProviderAttribution(el.overview, 'TMDB', config),
     popularity: el.popularity, 
