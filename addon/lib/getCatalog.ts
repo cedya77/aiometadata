@@ -91,7 +91,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating as string, countryCode3, type === 'movie' ? 'movie' : 'episode');
   
   const params: any = {
-    country: countryCode3 || 'usa',
+    country:'usa',
     lang: 'eng',
     sort: 'score'
   };
