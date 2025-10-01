@@ -17,6 +17,8 @@ export const baseCatalogs: CatalogDefinition[] = [
   { id: 'tmdb.year', name: 'TMDB By Year', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tmdb.language', name: 'TMDB By Language', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tmdb.language', name: 'TMDB By Language', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.trending', name: 'TVDB Trending', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'tvdb.trending', name: 'TVDB Trending', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.genres', name: 'TVDB Genres', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.genres', name: 'TVDB Genres', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.collections', name: 'TVDB Collections', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },

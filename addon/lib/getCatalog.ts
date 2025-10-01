@@ -47,7 +47,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
       logger.info(`Routing to TVDB catalog handler for id: ${id}`);
-      const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config);
+      const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending');
       return { metas: tvdbResults };
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
@@ -71,11 +71,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
   }
 }
 
-async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig): Promise<any[]> {
+async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig, isTrending: boolean): Promise<any[]> {
   logger.info(`Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
   
   // Cache the raw TVDB API response using a cache key that doesn't include page
-  const cacheKey = `tvdb-filter:${type}:${genreName}:${language}`;
+  const cacheKey = `tvdb-filter:${type}:${genreName}:${language}:${isTrending}`;
   
   const allTvdbGenres = await getGenreList('tvdb', language, type as "movie" | "series", config);
   logger.debug(`TVDB genres fetched: ${allTvdbGenres.length} genres available`);
@@ -95,6 +95,9 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     lang: langCode3 || 'eng',
     sort: 'score'
   };
+  if (isTrending) {
+    params.year = new Date().getFullYear();
+  }
 
   if (tvdbContentRatingId) {
     logger.debug(`Using TVDB content rating ID ${tvdbContentRatingId} for TVDB filter`);
@@ -168,6 +171,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   }));
 
   let validMetas = metas.filter(meta => meta !== null);
+  validMetas.sort((a, b) => new Date(b.released).getTime() - new Date(a.released).getTime());
   
   // Apply digital release filter if enabled (movies only)
   if (type === 'movie' && config.hideUnreleasedDigital) {

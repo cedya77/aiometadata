@@ -23,6 +23,10 @@
       "nameKey": "tvdb_genres",
       "extraSupported": ["genre", "skip"]
     },
+    "trending": {
+      "nameKey": "tvdb_trending",
+      "extraSupported": ["genre", "skip"]
+    },
     "collections": {
       "nameKey": "tvdb_collections",
       "extraSupported": ["genre", "skip"]

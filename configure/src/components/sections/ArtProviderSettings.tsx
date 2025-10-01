@@ -30,7 +30,6 @@ const animeArtProviders = [
 
 export function ArtProviderSettings() {
   const { config, setConfig } = useConfig();
-  const isImdbForCatalog = !!config.mal?.useImdbIdForCatalogAndSearch;
 
   const handleArtProviderChange = (
     contentType: 'movie' | 'series' | 'anime',
@@ -321,16 +320,13 @@ export function ArtProviderSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
-                  {(isImdbForCatalog ? animeArtProviders.filter(p => p.value !== 'mal' && p.value !== 'anilist') : animeArtProviders).map(p => (
+                  {animeArtProviders.map(p => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {isImdbForCatalog && (
-                <p className="text-xs text-muted-foreground mt-2">MAL and AniList are disabled because "Use IMDb ID for Catalog/Search" is enabled in MAL settings.</p>
-              )}
             </CardContent>
           </Card>
 
@@ -349,7 +345,7 @@ export function ArtProviderSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
-                  {(isImdbForCatalog ? animeArtProviders.filter(p => p.value !== 'mal' && p.value !== 'anilist') : animeArtProviders).map(p => (
+                  {animeArtProviders.map(p => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
                     </SelectItem>
@@ -374,7 +370,7 @@ export function ArtProviderSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
-                  {(isImdbForCatalog ? animeArtProviders.filter(p => p.value !== 'mal' && p.value !== 'anilist') : animeArtProviders).map(p => (
+                  {animeArtProviders.map(p => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
                     </SelectItem>

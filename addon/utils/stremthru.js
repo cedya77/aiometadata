@@ -126,7 +126,7 @@ async function _processStandardItem(item, provider, language, config) {
  * @private
  */
 function _createFallbackMeta(item, language, config) {
-    const fallbackPosterUrl = item.poster || `https://artworks.thetvdb.com/banners/images/missing/${item.type}.jpg`;
+    const fallbackPosterUrl = item.poster || `${host}/missing_poster.png`;
     const posterProxyUrl = `${host}/poster/${item.type}/${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
     
     return {

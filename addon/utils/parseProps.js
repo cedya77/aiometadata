@@ -1475,7 +1475,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   } 
   
   const malPosterUrl = anime.images?.jpg?.large_image_url;
-  let finalPosterUrl = malPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+  let finalPosterUrl = malPosterUrl || `${host}/missing_poster.png`;
   
   // Check art provider preference
   const artProvider = resolveArtProvider('anime', 'poster', config);
@@ -1684,9 +1684,9 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         id= `${mapping.imdb_id}`;
       }
     } 
-    
+
     const malPosterUrl = anime.images?.jpg?.large_image_url;
-    let finalPosterUrl = malPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+    let finalPosterUrl = malPosterUrl || `${host}/missing_poster.png`;
     
     // Use batch-fetched AniList artwork if available
     if (useAniList && anilistArtworkMap.has(malId)) {
@@ -1768,17 +1768,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       }
     }
     
-    if (config.apiKeys?.rpdb) {
+    if (config.apiKeys?.rpdb && stremioType !== 'movie') {
       if (mapping) {
         const tvdbId = mapping.thetvdb_id;
         const tmdbId = mapping.themoviedb_id;
         let proxyId = null;
 
-        if (stremioType === 'series') {
-          proxyId = tvdbId ? `tvdb:${tvdbId}` : (tmdbId ? `tmdb:${tmdbId}` : null);
-        } else if (stremioType === 'movie') {
-          proxyId = tmdbId ? `tmdb:${tmdbId}` : null;
-        }
+        proxyId = tvdbId ? `tvdb:${tvdbId}` : (tmdbId ? `tmdb:${tmdbId}` : null);
 
         if (proxyId) {
           const fallback = encodeURIComponent(finalPosterUrl);

@@ -15,7 +15,7 @@ const fanart = require('../utils/fanart');
 const { isAnime: isAnimeFunc } = require('../utils/isAnime');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
-const { cacheWrapMeta } = require('./getCache');
+const { cacheWrapMeta, cacheWrapJikanApi } = require('./getCache');
 const kitsu = require('./kitsu');
 var nameToImdb = require("name-to-imdb");
 const consola = require('consola');
@@ -30,6 +30,18 @@ const logger = consola.create({ tag: 'Meta' });
 const processLogo = (logoUrl) => {
   if (!logoUrl) return null;
   return logoUrl.replace(/^http:/, "https:");
+};
+
+const findArtwork = (artworks, type, lang, config) => {
+  // If englishArtOnly is enabled, prefer English artwork first
+  if (config?.artProviders?.englishArtOnly) {
+    return artworks?.find(a => a.type === type && a.language === 'eng')?.image
+      || artworks?.find(a => a.type === type)?.image;
+  }
+  // Otherwise use preferred language fallback
+  return artworks?.find(a => a.type === type && a.language === lang)?.image
+    || artworks?.find(a => a.type === type && a.language === 'eng')?.image
+    || artworks?.find(a => a.type === type)?.image;
 };
 
 async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgroundUrl, type) {
@@ -672,11 +684,11 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     try {
       logger.info(`[AnimeMeta] Using native provider 'mal' for ${stremioId}`);
       
-      // Fetch all components (cacheWrapMetaSmart will handle caching)
+      // Fetch all components with caching
       const [details, characters, episodes] = await Promise.all([
-        jikan.getAnimeDetails(allIds?.malId),
-        jikan.getAnimeCharacters(allIds?.malId),
-        type === 'series' ? jikan.getAnimeEpisodes(allIds?.malId) : null,
+        cacheWrapJikanApi(`anime-details-${allIds?.malId}`, () => jikan.getAnimeDetails(allIds?.malId)),
+        includeVideos ? cacheWrapJikanApi(`anime-characters-${allIds?.malId}`, () => jikan.getAnimeCharacters(allIds?.malId)) : null,
+        includeVideos ? cacheWrapJikanApi(`anime-episodes-${allIds?.malId}`, () => jikan.getAnimeEpisodes(allIds?.malId), 24 * 60 * 60) : null,
       ]);
       
   
@@ -727,7 +739,9 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
 
   let poster, background, logoUrl;
 
-  if (isAnime) {
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, imdbPosterUrl, imdbBackgroundUrl, 'series');
     poster = artwork.poster;
     background = artwork.background;
@@ -827,7 +841,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const castCount = config.castCount === 0 ? undefined : config.castCount;
   
   // Get artwork based on art provider preference
-  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
+  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0];
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
@@ -925,7 +939,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const idProvider = config.providers?.anime_id_provider || 'imdb';
 
   // Get artwork based on art provider preference
-  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+  const tmdbPosterUrl = poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === null)[0] || images?.backdrops?.filter(backdrop => backdrop.iso_639_1 === language.split('-')[0])[0] || images?.backdrops?.[0];
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
@@ -1282,9 +1296,9 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
   // Get artwork based on art provider preference
-  const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
-  const tvdbBackgroundUrl = movieData.artworks?.find(a => a.type === 15)?.image;
-  const tvdbLogoUrl = movieData.artworks?.find(a => a.type === 25)?.image;
+  const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `${host}/missing_poster.png`;
+  const tvdbBackgroundUrl = findArtwork(movieData.artworks, 15, langCode3, config);
+  const tvdbLogoUrl = findArtwork(movieData.artworks, 25, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
   
   if (isAnime) {
@@ -1303,7 +1317,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   }
   const imdbRating = imdbRatingValue || "N/A";
   
-  const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/movie.jpg`;
+  const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
   const posterProxyUrl = `${host}/poster/movie/tvdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const movieCredits = {
     cast: (characters || []).filter(c => c.peopleType === 'Actor').map(c => ({
@@ -1445,14 +1459,15 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : null;
-  const tvdbBackgroundUrl = tvdbShow.artworks?.find(a => a.type === 3)?.image;
-  const tvdbLogoUrl = tvdbShow.artworks?.find(a => a.type === 23)?.image;
+  const tvdbBackgroundUrl = findArtwork(tvdbShow.artworks, 3, langCode3, config);
+  const tvdbLogoUrl = findArtwork(tvdbShow.artworks, 23, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
 
 
   // console log art provider preference
-  logger.debug(`[TvdbSeriesMeta] Art provider preference: ${JSON.stringify(config.artProviders?.series)}`);
-  if (isAnime) {
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, tvdbPosterUrl, tvdbBackgroundUrl, 'series');
     poster = artwork.poster;
     background = artwork.background;
@@ -1467,7 +1482,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   ]);
   }
   const imdbRating = imdbRatingValue || "N/A";
-  const fallbackPosterUrl = poster || tvdbPosterUrl || `https://artworks.thetvdb.com/banners/images/missing/series.jpg`;
+  const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
   const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const tvdbCredits = {
     cast: (characters || []).filter(c => c.peopleType === 'Actor').map(c => ({
@@ -1881,22 +1896,17 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     // Use AniList poster if available and configured
     let finalPosterUrl = enrichmentData.bestPosterUrl || posterUrl; 
 
-    if (config.apiKeys?.rpdb && mapping) {
+    if (config.apiKeys?.rpdb && mapping && stremioType !== 'movie') {
       const tvdbId = mapping.tvdbId;
       const tmdbId = mapping.tmdbId;
+      const imdbId = mapping.imdbId;
       let proxyId = null;
       let proxyType = stremioType;
 
-      if (stremioType === 'series') {
-        if (tvdbId) {
-          proxyId = `tvdb:${tvdbId}`;
-        } else if (tmdbId) {
-          proxyId = `tmdb:${tmdbId}`; 
-        }
-      } else if (stremioType === 'movie') {
-        if (tmdbId) {
-          proxyId = `tmdb:${tmdbId}`;
-        }
+      if (tvdbId) {
+        proxyId = `tvdb:${tvdbId}`;
+      } else if (tmdbId || imdbId) {
+        proxyId = tmdbId ? `tmdb:${tmdbId}` : `imdb:${imdbId}`; 
       }
 
       if (proxyId) {

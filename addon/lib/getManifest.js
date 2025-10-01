@@ -98,8 +98,16 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
     pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20;
   }
 
-  // Use custom name if provided, otherwise use translated name
-  const catalogName = customName || `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`;
+  // Get the default English name from translations to check if customName is just a placeholder
+  const defaultEnglishTranslations = catalogsTranslations[DEFAULT_LANGUAGE] || {};
+  const defaultEnglishName = defaultEnglishTranslations[catalogDef.nameKey];
+  
+  // Check if customName is just the default English translation (not a true custom name)
+  const isDefaultEnglishName = customName && customName.includes(defaultEnglishName);
+  
+  // Use custom name only if it's provided, not empty, and not just the default English name
+  const hasCustomName = customName && typeof customName === 'string' && customName.trim() !== '' && !isDefaultEnglishName;
+  const catalogName = hasCustomName ? customName : `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`;
 
   return {
     id,

@@ -413,17 +413,22 @@ async function cacheWrap(key, method, ttl, options = {}) {
         const classification = resultClassifier(null, error);
         const errorTtl = classification.ttl;
         
-        try {
-          const errorResult = { 
-            error: true, 
-            type: classification.type, 
-            message: error.message,
-            timestamp: new Date().toISOString()
-          };
-          await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
-          cacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
-        } catch (err) {
-            cacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
+        // Skip caching if classifier says so
+        if (classification.type === 'SKIP_CACHE') {
+          cacheLogger.info(`⏭️ Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
+        } else if (errorTtl > 0) {
+          try {
+            const errorResult = { 
+              error: true, 
+              type: classification.type, 
+              message: error.message,
+              timestamp: new Date().toISOString()
+            };
+            await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
+            cacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
+          } catch (err) {
+              cacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
+          }
         }
       }
       
@@ -536,17 +541,22 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
         const classification = resultClassifier(null, error);
         const errorTtl = classification.ttl;
         
-        try {
-          const errorResult = { 
-            error: true, 
-            type: classification.type, 
-            message: error.message,
-            timestamp: new Date().toISOString()
-          };
-          await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
-          globalCacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
-        } catch (err) {
-          globalCacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
+        // Skip caching if classifier says so
+        if (classification.type === 'SKIP_CACHE') {
+          globalCacheLogger.info(`⏭️ Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
+        } else if (errorTtl > 0) {
+          try {
+            const errorResult = { 
+              error: true, 
+              type: classification.type, 
+              message: error.message,
+              timestamp: new Date().toISOString()
+            };
+            await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
+            globalCacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
+          } catch (err) {
+            globalCacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
+          }
         }
       }
       
@@ -1408,9 +1418,28 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
   }
 }
 
-function cacheWrapJikanApi(key, method) {
+function cacheWrapJikanApi(key, method, customTTL = null) {
   const subkey = key.replace(/\s/g, '-');
-  return cacheWrapGlobal(`jikan-api:${subkey}`, method, JIKAN_API_TTL);
+  const ttl = customTTL !== null ? customTTL : JIKAN_API_TTL;
+  
+  // Custom result classifier for Jikan API - don't cache rate limit errors
+  const jikanResultClassifier = (result, error = null) => {
+    if (error) {
+      // Don't cache 429 rate limit errors - they're temporary
+      if (error.response?.status === 429 || error.message?.includes('429')) {
+        cacheLogger.debug(`Jikan Cache - Skipping cache for rate limit error: ${key}`);
+        return { type: 'SKIP_CACHE', ttl: 0 };
+      }
+      // Use default classification for other errors
+      return classifyResult(result, error);
+    }
+    
+    return classifyResult(result, error);
+  };
+  
+  return cacheWrapGlobal(`jikan-api:${subkey}`, method, ttl, {
+    resultClassifier: jikanResultClassifier
+  });
 }
 
 function cacheWrapMDBListGenres(listId, method) {
