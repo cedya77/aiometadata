@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.24.2.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.2.0...v1.0.0-beta.24.2.1.0) (2025-10-01)
+
+
+### Bug Fixes
+
+* **art && filters:** fix tmdb bg and digital release filter for search ([da56699](https://github.com/cedya77/aiometadata/commit/da56699ce5e1f5c8a36701074bb248e903c0204d))
+
 ## [1.0.0-beta.24.2.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.1.0...v1.0.0-beta.24.2.0) (2025-10-01)
 
 
