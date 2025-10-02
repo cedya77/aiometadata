@@ -304,6 +304,12 @@ export function ArtProviderSettings() {
       {/* Anime Art Providers */}
       <div>
         <h3 className="text-xl font-semibold mb-4">Anime</h3>
+        <div className="flex items-start gap-2 mb-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            These settings apply only to anime using MAL, AniList, Kitsu, or AniDB as metadata ID. Anime using IMDB IDs will use the Movie or Series art providers instead depending on the type.
+          </p>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader>
