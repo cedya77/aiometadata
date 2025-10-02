@@ -71,6 +71,18 @@ const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
+const findArtwork = (artworks, type, lang, config) => {
+  // If englishArtOnly is enabled, prefer English artwork first
+  if (config?.artProviders?.englishArtOnly) {
+    return artworks?.find(a => a.type === type && a.language === 'eng')?.image
+      || artworks?.find(a => a.type === type)?.image;
+  }
+  // Otherwise use preferred language fallback
+  return artworks?.find(a => a.type === type && a.language === lang)?.image
+    || artworks?.find(a => a.type === type && a.language === 'eng')?.image
+    || artworks?.find(a => a.type === type)?.image;
+};
+
 async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   if (!extendedRecord || !extendedRecord.id || !extendedRecord.name) return null;
 
@@ -92,7 +104,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const tvdbId = extendedRecord.id;
   logger.debug('Resolved IDs:', {tmdbId, imdbId, tvmazeId, tvdbId});
   
-  const rawPosterUrl = extendedRecord.image;
+  const rawPosterUrl = findArtwork(extendedRecord.artworks, type === 'movie' ? 14 : 2, langCode3, config);
 
   const fallbackImage = `${host}/missing_poster.png`;
   const posterUrl = rawPosterUrl || fallbackImage;
@@ -115,7 +127,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   
   let stremioId = `tvdb:${extendedRecord.id}`;
   if(imdbId) stremioId = imdbId;
-  const logoUrl = type === 'series' ? extendedRecord.artworks?.find(a => a.type === 23)?.image : extendedRecord.artworks?.find(a => a.type === 25)?.image;
+  const logoUrl = findArtwork(extendedRecord.artworks, type === 'movie' ? 25 : 23, langCode3, config);
   const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId? imdb.getLogoFromImdb(imdbId) : null;
   
   return {

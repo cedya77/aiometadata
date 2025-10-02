@@ -1311,7 +1311,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
   // Get artwork based on art provider preference
-  const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : `${host}/missing_poster.png`;
+  const tvdbPosterUrl = findArtwork(movieData.artworks, 14, langCode3, config) || `${host}/missing_poster.png`;
   const tvdbBackgroundUrl = findArtwork(movieData.artworks, 15, null, config);
   const tvdbLogoUrl = findArtwork(movieData.artworks, 25, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
@@ -1475,7 +1475,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
   // Get artwork based on art provider preference
-  const tvdbPosterUrl = tvdbPosterPath ? `${tvdbPosterPath}` : null;
+  const tvdbPosterUrl = findArtwork(tvdbShow.artworks, 2, langCode3, config) || `${host}/missing_poster.png`;
   const tvdbBackgroundUrl = findArtwork(tvdbShow.artworks, 3, null, config);
   const tvdbLogoUrl = findArtwork(tvdbShow.artworks, 23, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
