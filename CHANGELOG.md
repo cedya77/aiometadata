@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.24.2.2.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.2.1.0...v1.0.0-beta.24.2.2.0) (2025-10-02)
+
+
+### Bug Fixes
+
+* **meta:** fix anime movie meta when anime override is turned on as well as small meta issues fix. ([e1bcd5b](https://github.com/cedya77/aiometadata/commit/e1bcd5bd9e1077f2669bcb344b4b77336242813b))
+
 ## [1.0.0-beta.24.2.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.2.0...v1.0.0-beta.24.2.1.0) (2025-10-01)
 
 
