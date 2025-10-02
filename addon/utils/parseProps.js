@@ -1532,6 +1532,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   //const kitsuId = mapping?.kitsu_id;
   const imdbId = mapping?.imdb_id;
   const tmdbId = mapping?.themoviedb_id;
+  const kitsuId = mapping?.kitsu_id;
   const imdbRating = await getImdbRating(imdbId, stremioType);
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
   if (config.apiKeys?.rpdb) {
@@ -1582,7 +1583,11 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     runtime: parseRunTime(anime.duration),
     isAnime: true,
     trailers: trailers,
-    trailerStreams: trailerStreams
+    trailerStreams: trailerStreams,
+    behavioralHints: {
+      defaultVideoId: stremioType === 'movie' ? mapping?.imdb_id ? mapping?.imdb_id: (kitsuId ? `kitsu:${kitsuId}` : `mal:${malId}`): null,
+      hasScheduledVideos: stremioType === 'series',
+    },
   };
 }
 

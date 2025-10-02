@@ -101,8 +101,10 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     let preferredProvider;
     if (finalType === 'movie') {
       preferredProvider = config.providers?.movie || 'tmdb';
-    } else {
+    } else if (finalType === 'series') {
       preferredProvider = config.providers?.series || 'tvdb';
+    } else if (finalType === 'anime') {
+      preferredProvider = config.providers?.anime || 'mal';
     }
     const posterProvider = Utils.resolveArtProvider(finalType, 'poster', config);
     const backgroundProvider = Utils.resolveArtProvider(finalType, 'background', config);
@@ -147,6 +149,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     if(!targetProviders.has(preferredProvider)) {
       targetProviders.add(preferredProvider);
     }
+    logger.info(`[Meta] Target providers: ${Array.from(targetProviders)}`);
     const allIds =  await resolveAllIds(stremioId, type, config, {}, Array.from(targetProviders));
     switch (finalType) {
       case 'movie':
@@ -620,7 +623,9 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime, includeVideos) {
   logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
   
-  if(type !== 'movie'){
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (!(type === 'movie' && animeIdProviders.some(provider => stremioId.startsWith(provider)))) {
     try {
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
         const langCode = language.split('-')[0];
@@ -786,7 +791,9 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
 
   let poster, background, logoUrl;
 
-  if (isAnime) {
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, imdbPosterUrl, imdbBackgroundUrl, 'movie');
     poster = artwork.poster;
     background = artwork.background;
@@ -952,7 +959,9 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
   let poster, background, logoUrl, imdbRatingValue;
   
-  if (isAnime) {
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, tmdbPosterUrl, tmdbBackgroundUrl, 'series');
     poster = artwork.poster;
     background = artwork.background;
@@ -1307,7 +1316,9 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const tvdbLogoUrl = findArtwork(movieData.artworks, 25, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
   
-  if (isAnime) {
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, tvdbPosterUrl, tvdbBackgroundUrl, 'movie');
     poster = artwork.poster;
     background = artwork.background;
@@ -1748,7 +1759,9 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   const tvmazeLogoUrl = null;
   let poster, background, logoUrl, imdbRatingValue;
   
-  if (isAnime) {
+  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  // check if stremioId starts with one of the animeIdProviders
+  if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, tvmazePosterUrl, tvmazeBackgroundUrl, 'series');
     poster = artwork.poster;
     background = artwork.background;

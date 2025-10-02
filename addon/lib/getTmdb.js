@@ -5,7 +5,6 @@ const requestTracker = require('./requestTracker');
 const consola = require('consola');
 var nameToImdb = require("name-to-imdb");
 const timingMetrics = require('./timing-metrics');
-
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 
 
@@ -130,21 +129,31 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       const currentTmdbId = isMovieDetailEndpoint ? isMovieDetailEndpoint[1] : null;
       const isSeriesDetailEndpoint = endpoint.match(/^\/tv\/(\d+)$/);
       const type = isMovieDetailEndpoint ? 'movie' : isSeriesDetailEndpoint ? 'series' : null;
+      let nameToImdbTitle = data.original_title || data.title;
       if (!data.imdb_id && currentTmdbId && type) {
           const startTime = Date.now();
+          if (data.translations) {
+            consola.debug('Processing translations for:', data.original_title || data.title);
+            // Lazy-load to avoid circular dependency with parseProps
+            const Utils = require('../utils/parseProps');
+            const translation = Utils.processTitleTranslations(data.translations, 'en-US', data.original_title, type);
+            if (translation && translation.trim() !== '') {
+              nameToImdbTitle = translation;
+            }
+          }
           const imdbSearchResult = await new Promise((resolve) => {
             nameToImdb(
               {
-                name: data.original_title || data.title || "",
+                name: nameToImdbTitle || "",
                 type: type,
                 year: data.release_date ? data.release_date.substring(0, 4) : ""
               },
               (err, result) => {
                 if (err) {
-                  console.warn(`[TMDB] Failed to get IMDB ID for season name "${data.original_title || data.title}":`, err);
+                  console.warn(`[TMDB] Failed to get IMDB ID for season name "${nameToImdbTitle}":`, err);
                   resolve(null);
                 } else {
-                  console.log(`[TMDB] IMDB ID for season name "${data.original_title || data.title}":`, result);
+                  console.log(`[TMDB] IMDB ID for season name "${nameToImdbTitle}":`, result);
                   resolve(result);
                 }
               }
@@ -157,7 +166,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
             year: data.release_date ? data.release_date.substring(0, 4) : '',
             success: !!imdbSearchResult
           });
-          console.log(`[TMDB] nameToImdb lookup took ${duration}ms for "${data.original_title || data.title}" (${type})`);
+          console.log(`[TMDB] nameToImdb lookup took ${duration}ms for "${nameToImdbTitle}" (${type})`);
           if (imdbSearchResult) {
               data.imdb_id = imdbSearchResult;
               if (!data.external_ids) data.external_ids = {};
