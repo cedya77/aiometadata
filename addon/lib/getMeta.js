@@ -1071,7 +1071,26 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     }
     const isAnimeContent = isAnimeFunc(seriesData, seriesData.genres) || kitsuId || malId;
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
-    const imdbSeasons = [...new Set((cinemetaVideos || []).map(episode => episode.season).filter(season => season != 0))];
+    
+    const validImdbSeasons = new Set();
+    if (cinemetaVideos && cinemetaVideos.length > 0) {
+      const episodesBySeason = cinemetaVideos.reduce((acc, ep) => {
+        if (ep.season > 0) { // Ignore season 0 specials
+          if (!acc[ep.season]) acc[ep.season] = [];
+          acc[ep.season].push(ep);
+        }
+        return acc;
+      }, {});
+
+      for (const seasonNum in episodesBySeason) {
+        const hasReleasedEpisode = episodesBySeason[seasonNum].some(ep => ep.released || ep.firstAired);
+        if (hasReleasedEpisode) {
+          validImdbSeasons.add(parseInt(seasonNum, 10));
+        }
+      }
+    }
+    const imdbSeasons = Array.from(validImdbSeasons);
+    logger.debug(`[TMDB] Filtered IMDB seasons to valid ones: ${imdbSeasons.length}`);
     // get season posters
     const tmdbSeasonNames = tmdbSeasons.map(season => {
       // For anime, include series name for better specificity
