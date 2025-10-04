@@ -10,10 +10,12 @@ import { ArtProviderSettings } from './sections/ArtProviderSettings';
 import { FiltersSettings } from './sections/FiltersSettings';
 import { CatalogsSettings } from './sections/CatalogsSettings';
 import { SearchSettings } from './sections/SearchSettings';
+import { PresetManager } from './sections/PresetManager';
 import { ConfigurationManager } from './ConfigurationManager';
 import { Dashboard } from './Dashboard';
 
 const settingsPages = [
+  { value: 'presets', title: 'Presets', component: <PresetManager /> },
   { value: 'general', title: 'General', component: <GeneralSettings /> },
   { value: 'integrations', title: 'Integrations', component: <IntegrationsSettings /> },
   { value: 'providers', title: 'Meta Providers', component: <ProvidersSettings /> },
