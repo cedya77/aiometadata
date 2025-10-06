@@ -3,10 +3,14 @@ import { useConfig,  CatalogConfig} from '@/contexts/ConfigContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Loader2 } from 'lucide-react';
 import { toast } from "sonner";
+import { getGenresBySelection, GenreSelection } from '@/data/genres';
 
 interface MDBListIntegrationProps {
   isOpen: boolean;
@@ -19,9 +23,261 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [isValid, setIsValid] = useState(!!config.apiKeys.mdblist);
   const [isChecking, setIsChecking] = useState(false);
   const [customListUrl, setCustomListUrl] = useState("");
+  const [customUsername, setCustomUsername] = useState("");
+  const [customUserLists, setCustomUserLists] = useState<any[]>([]);
+  const [selectedCustomLists, setSelectedCustomLists] = useState<Set<string>>(new Set());
+  const [isLoadingCustomUser, setIsLoadingCustomUser] = useState(false);
   const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>('default');
   const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('asc');
   const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(86400); // Default to 24 hours
+  const [defaultGenreSelection, setDefaultGenreSelection] = useState<GenreSelection>('standard'); // Default to standard genres only
+  const [popularLists, setPopularLists] = useState<any[]>([]);
+  const [selectedPopularLists, setSelectedPopularLists] = useState<Set<string>>(new Set());
+  const [isLoadingPopularLists, setIsLoadingPopularLists] = useState(false);
+
+  const popularUsers = [
+    { username: 'tvgeniekodi', name: 'Mr. Professor', description: 'Curated TV and movie lists' },
+    { username: 'snoak', name: 'Snoak', description: 'Quality content collections' },
+    { username: 'garycrawfordgc', name: 'Gary Crawford', description: 'Expert curated lists' }
+  ];
+
+  const fetchPopularListsFromUser = useCallback(async (username: string, displayName: string) => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key first.");
+      return;
+    }
+
+    setIsLoadingPopularLists(true);
+    try {
+      const response = await fetch(`https://api.mdblist.com/lists/user/${username}?apikey=${tempKey}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`User "${username}" not found or has no public lists`);
+        }
+        throw new Error(`Failed to fetch lists (Status: ${response.status})`);
+      }
+
+      const userLists = await response.json();
+      if (!Array.isArray(userLists)) {
+        throw new Error("Invalid response format from MDBList API");
+      }
+
+      if (userLists.length === 0) {
+        toast.info("No lists found", {
+          description: `User "${displayName}" has no public lists available`
+        });
+        setPopularLists([]);
+      } else {
+        // Add user info to each list
+        const listsWithUser = userLists.map((list: any) => ({
+          ...list,
+          user: displayName,
+          username: username,
+          userDescription: popularUsers.find(u => u.username === username)?.description || ""
+        }));
+        
+        setPopularLists(listsWithUser);
+        setSelectedPopularLists(new Set());
+        
+        toast.success("Popular lists loaded", {
+          description: `Found ${userLists.length} list(s) from ${displayName}`
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching popular lists:", error);
+      toast.error("Failed to load popular lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+      setPopularLists([]);
+    } finally {
+      setIsLoadingPopularLists(false);
+    }
+  }, [tempKey]);
+
+  const handlePopularListSelection = (listId: string, checked: boolean) => {
+    const newSelection = new Set(selectedPopularLists);
+    if (checked) {
+      newSelection.add(listId);
+    } else {
+      newSelection.delete(listId);
+    }
+    setSelectedPopularLists(newSelection);
+  };
+
+  const fetchCustomUserLists = useCallback(async () => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key first.");
+      return;
+    }
+
+    if (!customUsername.trim()) {
+      toast.error("Please enter a username to fetch lists from.");
+      return;
+    }
+
+    setIsLoadingCustomUser(true);
+    try {
+      const response = await fetch(`https://api.mdblist.com/lists/user/${customUsername.trim()}?apikey=${tempKey}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`User "${customUsername}" not found or has no public lists`);
+        }
+        throw new Error(`Failed to fetch lists (Status: ${response.status})`);
+      }
+
+      const userLists = await response.json();
+      if (!Array.isArray(userLists)) {
+        throw new Error("Invalid response format from MDBList API");
+      }
+
+      if (userLists.length === 0) {
+        toast.info("No lists found", {
+          description: `User "${customUsername}" has no public lists available`
+        });
+        setCustomUserLists([]);
+      } else {
+        setCustomUserLists(userLists);
+        setSelectedCustomLists(new Set());
+        toast.success("User lists loaded", {
+          description: `Found ${userLists.length} list(s) from ${customUsername}`
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching custom user lists:", error);
+      toast.error("Failed to load user lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+      setCustomUserLists([]);
+    } finally {
+      setIsLoadingCustomUser(false);
+    }
+  }, [tempKey, customUsername]);
+
+  const handleCustomListSelection = (listId: string, checked: boolean) => {
+    const newSelection = new Set(selectedCustomLists);
+    if (checked) {
+      newSelection.add(listId);
+    } else {
+      newSelection.delete(listId);
+    }
+    setSelectedCustomLists(newSelection);
+  };
+
+  const importSelectedCustomLists = useCallback(async () => {
+    if (selectedCustomLists.size === 0) {
+      toast.error("Please select at least one list to import.");
+      return;
+    }
+
+    try {
+      setConfig(prev => {
+        let newCatalogs = [...prev.catalogs];
+        let newListsAddedCount = 0;
+
+        selectedCustomLists.forEach(listId => {
+          const list = customUserLists.find(l => l.id === listId);
+          if (!list) return;
+
+          const type = list.mediatype === "movie" ? "movie" : "series";
+          const catalogId = `mdblist.${list.id}`;
+          
+          // Check if catalog already exists
+          if (!newCatalogs.some(c => c.id === catalogId)) {
+            const newCatalog: CatalogConfig = {
+              id: catalogId,
+              type,
+              name: list.name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist',
+              sort: defaultSort,
+              order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
+            };
+            newCatalogs.push(newCatalog);
+            newListsAddedCount++;
+          }
+        });
+
+        return {
+          ...prev,
+          catalogs: newCatalogs,
+        };
+      });
+
+      toast.success("User lists imported successfully", {
+        description: `${selectedCustomLists.size} list(s) added to your catalogs`
+      });
+
+      // Reset selection
+      setSelectedCustomLists(new Set());
+      
+    } catch (error) {
+      console.error("Error importing custom user lists:", error);
+      toast.error("Failed to import user lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+    }
+  }, [selectedCustomLists, customUserLists, customUsername, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
+
+  const importSelectedPopularLists = useCallback(async () => {
+    if (selectedPopularLists.size === 0) {
+      toast.error("Please select at least one list to import.");
+      return;
+    }
+
+    try {
+      setConfig(prev => {
+        let newCatalogs = [...prev.catalogs];
+        let newListsAddedCount = 0;
+
+        selectedPopularLists.forEach(listId => {
+          const list = popularLists.find(l => l.id === listId);
+          if (!list) return;
+
+          const type = list.mediatype === "movie" ? "movie" : "series";
+          const catalogId = `mdblist.${list.id}`;
+          
+          // Check if catalog already exists
+          if (!newCatalogs.some(c => c.id === catalogId)) {
+            const newCatalog: CatalogConfig = {
+              id: catalogId,
+              type,
+              name: list.name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist',
+              sort: defaultSort,
+              order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
+            };
+            newCatalogs.push(newCatalog);
+            newListsAddedCount++;
+          }
+        });
+
+        return {
+          ...prev,
+          catalogs: newCatalogs,
+        };
+      });
+
+      toast.success("Popular lists imported successfully", {
+        description: `${selectedPopularLists.size} list(s) added to your catalogs`
+      });
+
+      // Reset selection
+      setSelectedPopularLists(new Set());
+      
+    } catch (error) {
+      console.error("Error importing popular lists:", error);
+      toast.error("Failed to import popular lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+    }
+  }, [selectedPopularLists, popularLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
 
   const validateApiKey = useCallback(async (isRefresh = false) => {
     if (!tempKey) {
@@ -74,6 +330,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               sort: defaultSort,
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -137,7 +394,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     } finally {
       setIsChecking(false);
     }
-  }, [setConfig, tempKey]);
+  }, [setConfig, tempKey, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
 
   const handleSave = () => {
     if (isValid) {
@@ -171,6 +428,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         sort: defaultSort,
         order: defaultOrder,
         cacheTTL: defaultCacheTTL,
+        genreSelection: defaultGenreSelection,
       };
 
       setConfig(prev => {
@@ -196,26 +454,44 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>MDBList Integration</DialogTitle>
           <DialogDescription>
             Import your public and private lists from MDBList.com to use as catalogs.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="mdblistkey">MDBList API Key</Label>
-            <Input id="mdblistkey" value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Enter your MDBList API key" />
-            <a href="https://mdblist.com/preferences/#api_key_uid" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">
-              Where do I get this?
-            </a>
-          </div>
+        <div className="space-y-6 py-4">
+          {/* API Key Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>MDBList API Key</CardTitle>
+              <CardDescription>
+                Enter your MDBList API key to access public and private lists
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mdblistkey">API Key</Label>
+                <Input id="mdblistkey" value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Enter your MDBList API key" />
+                <a href="https://mdblist.com/preferences/#api_key_uid" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">
+                  Where do I get this?
+                </a>
+              </div>
+            </CardContent>
+          </Card>
           
           {isValid && (
-            <div className="space-y-4 pt-4 border-t border-border">
-              <div className="space-y-2">
-                <Label>Default Sort Options</Label>
+            <Card>
+              <CardHeader>
+                <CardTitle>Default Settings</CardTitle>
+                <CardDescription>
+                  Configure default sort and cache settings for newly imported lists
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Default Sort Options</Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="sort-select">Sort By</Label>
@@ -290,19 +566,264 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                   How long to cache newly added lists before refreshing. Range: 5 minutes to 7 days.
                 </p>
               </div>
-              <div className="text-xs text-muted-foreground mt-2">
-                Note: Sort and cache settings will apply to newly added lists. Changes take effect after saving your configuration.
+              <div className="space-y-2">
+                <Label htmlFor="genre-selection">Default Genre Selection</Label>
+                <Select value={defaultGenreSelection} onValueChange={(value: GenreSelection) => setDefaultGenreSelection(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select genre set" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard Genres Only (44 genres)</SelectItem>
+                    <SelectItem value="anime">Anime Genres Only (22 genres)</SelectItem>
+                    <SelectItem value="all">All Genres (66 genres including anime)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose which genre set to use for newly added lists. Standard genres are recommended for most users.
+                </p>
               </div>
-            </div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  Note: Sort and cache settings will apply to newly added lists. Changes take effect after saving your configuration.
+                </div>
+              </CardContent>
+            </Card>
           )}
+          {/* Custom User Lists Section */}
           {isValid && (
-            <div className="space-y-2 pt-4 border-t border-border">
-              <Label htmlFor="customListUrl">Add Another User's Public List by URL</Label>
+            <Card>
+              <CardHeader>
+                <CardTitle>Import Lists from Any User</CardTitle>
+                <CardDescription>
+                  Enter any MDBList username to browse and import their public lists
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+              
               <div className="flex items-center space-x-2">
-                <Input id="customListUrl" value={customListUrl} onChange={(e) => setCustomListUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" />
-                <Button onClick={handleAddCustomList} variant="outline">Add</Button>
+                <Input 
+                  placeholder="Enter MDBList username (e.g., tvgeniekodi)" 
+                  value={customUsername}
+                  onChange={(e) => setCustomUsername(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      fetchCustomUserLists();
+                    }
+                  }}
+                />
+                <Button 
+                  onClick={fetchCustomUserLists} 
+                  disabled={isLoadingCustomUser || !customUsername.trim()} 
+                  variant="outline"
+                >
+                  {isLoadingCustomUser ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    "Load User Lists"
+                  )}
+                </Button>
               </div>
-            </div>
+
+              {/* Custom User Lists Display */}
+              {customUserLists.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                    <Switch
+                      id="select-all-custom"
+                      checked={selectedCustomLists.size === customUserLists.length && customUserLists.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedCustomLists(new Set(customUserLists.map(l => l.id)));
+                        } else {
+                          setSelectedCustomLists(new Set());
+                        }
+                      }}
+                    />
+                    <Label htmlFor="select-all-custom" className="font-medium cursor-pointer">
+                      Select all lists from {customUsername}
+                    </Label>
+                    <Badge variant="outline" className="ml-auto">
+                      {selectedCustomLists.size}/{customUserLists.length}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                    {customUserLists.map((list) => (
+                      <div key={list.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                        <Switch
+                          id={`custom-${list.id}`}
+                          checked={selectedCustomLists.has(list.id)}
+                          onCheckedChange={(checked) => handleCustomListSelection(list.id, checked)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <Label htmlFor={`custom-${list.id}`} className="font-medium cursor-pointer">
+                            {list.name}
+                          </Label>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {list.mediatype}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              by {customUsername}
+                            </Badge>
+                            {list.items && (
+                              <Badge variant="secondary" className="text-xs">
+                                {list.items} items
+                              </Badge>
+                            )}
+                          </div>
+                          {list.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                              {list.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedCustomLists.size > 0 && (
+                    <Button 
+                      onClick={importSelectedCustomLists} 
+                      className="w-full"
+                      disabled={selectedCustomLists.size === 0}
+                    >
+                      Import {selectedCustomLists.size} Selected List{selectedCustomLists.size !== 1 ? 's' : ''} from {customUsername}
+                    </Button>
+                  )}
+                </div>
+              )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Legacy: Add Single List by URL */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Add Single List by URL</CardTitle>
+                <CardDescription>
+                  Use this only for single lists. For multiple lists, use the "Import Lists from Any User" section above.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center space-x-2">
+                  <Input id="customListUrl" value={customListUrl} onChange={(e) => setCustomListUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" />
+                  <Button onClick={handleAddCustomList} variant="outline">Add</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Popular Lists Section */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Popular Lists from Featured Curators</CardTitle>
+                <CardDescription>
+                  Quick access to curated lists from popular MDBList curators
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                
+                {/* Individual Curator Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {popularUsers.map((user) => (
+                    <Button 
+                      key={user.username}
+                      onClick={() => fetchPopularListsFromUser(user.username, user.name)}
+                      disabled={isLoadingPopularLists}
+                      variant="outline"
+                      className="h-auto p-4 flex flex-col items-start space-y-2"
+                    >
+                      <div className="flex items-center space-x-2 w-full">
+                        {isLoadingPopularLists ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <div className="w-2 h-2 bg-green-500 rounded-full" />
+                        )}
+                        <span className="font-medium">{user.name}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground text-left">
+                        {user.description}
+                      </p>
+                    </Button>
+                  ))}
+                </div>
+
+              {/* Popular Lists Display */}
+              {popularLists.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                    <Switch
+                      id="select-all-popular"
+                      checked={selectedPopularLists.size === popularLists.length && popularLists.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedPopularLists(new Set(popularLists.map(l => l.id)));
+                        } else {
+                          setSelectedPopularLists(new Set());
+                        }
+                      }}
+                    />
+                    <Label htmlFor="select-all-popular" className="font-medium cursor-pointer">
+                      Select all popular lists
+                    </Label>
+                    <Badge variant="outline" className="ml-auto">
+                      {selectedPopularLists.size}/{popularLists.length}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                    {popularLists.map((list) => (
+                      <div key={list.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                        <Switch
+                          id={list.id}
+                          checked={selectedPopularLists.has(list.id)}
+                          onCheckedChange={(checked) => handlePopularListSelection(list.id, checked)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <Label htmlFor={list.id} className="font-medium cursor-pointer">
+                            {list.name}
+                          </Label>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {list.mediatype}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              by {list.user}
+                            </Badge>
+                            {list.items && (
+                              <Badge variant="secondary" className="text-xs">
+                                {list.items} items
+                              </Badge>
+                            )}
+                          </div>
+                          {list.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                              {list.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedPopularLists.size > 0 && (
+                    <Button 
+                      onClick={importSelectedPopularLists} 
+                      className="w-full"
+                      disabled={selectedPopularLists.size === 0}
+                    >
+                      Import {selectedPopularLists.size} Selected List{selectedPopularLists.size !== 1 ? 's' : ''}
+                    </Button>
+                  )}
+                </div>
+              )}
+              </CardContent>
+            </Card>
           )}
         </div>
         <DialogFooter className="sm:justify-between">

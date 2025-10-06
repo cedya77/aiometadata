@@ -69,8 +69,8 @@ class ConfigApi {
       // Use existing UUID if provided, otherwise generate a new one
       const userUUID = existingUUID || database.generateUserUUID();
       
-      // Hash the password
-      const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+      // Hash the password with bcrypt
+      const passwordHash = await database.hashPassword(password);
       
       // Add timestamp to track config changes
       const configWithTimestamp = {
@@ -490,8 +490,8 @@ class ConfigApi {
         return res.status(401).json({ error: 'Invalid UUID or password' });
       }
 
-      // Hash the password
-      const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+      // Hash the password with bcrypt
+      const passwordHash = await database.hashPassword(password);
       
       // Get old config to compare changes
       let oldConfig = null;

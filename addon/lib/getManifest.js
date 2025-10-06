@@ -3,6 +3,7 @@ const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
 const { getGenresFromMDBList } = require("../utils/mdbList");
 const { getGenresFromStremThruCatalog, fetchStremThruCatalog } = require("../utils/stremthru");
+const { getGenresBySelection } = require("../static/genres");
 const packageJson = require("../../package.json");
 const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
@@ -43,7 +44,7 @@ function loadTranslations(language) {
   return { ...defaultTranslations, ...selectedTranslations };
 }
 
-function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false, customName = null) {
+function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false, customName = null, displayType = null) {
   const extra = [];
 
   if (catalogDef.extraSupported.includes("genre")) {
@@ -109,9 +110,12 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
   const hasCustomName = customName && typeof customName === 'string' && customName.trim() !== '' && !isDefaultEnglishName;
   const catalogName = hasCustomName ? customName : `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`;
 
+  // Use displayType if defined, otherwise use original type
+  const catalogType = displayType || type;
+
   return {
     id,
-    type,
+    type: catalogType,
     name: catalogName,
     pageSize: pageSize,
     extra,
@@ -159,26 +163,20 @@ async function createMDBListCatalog(userCatalog, mdblistKey) {
     const listId = userCatalog.id.split(".")[1];
     console.log(`[Manifest] MDBList list ID: ${listId}, API key present: ${!!mdblistKey}`);
     
-    let genres = [];
-    try {
-      genres = await getGenresFromMDBList(listId, mdblistKey);
-      console.log(`[Manifest] MDBList genres fetched: ${genres.length} genres`);
-    } catch (genreError) {
-      console.warn(`[Manifest] Failed to fetch MDBList genres for ${listId}, using fallback:`, genreError.message);
-      // Use fallback genres if API call fails
-      genres = [
-        "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", 
-        "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", 
-        "Romance", "Science Fiction", "Thriller", "War", "Western"
-      ];
-    }
+    // Use static genres based on user's selection, defaulting to 'standard' if not specified
+    const genreSelection = userCatalog.genreSelection || 'standard';
+    const genres = getGenresBySelection(genreSelection);
+    console.log(`[Manifest] MDBList using ${genreSelection} genres: ${genres.length} genres`);
     
     // Add "None" option when showInHome is false to work around Stremio's genre requirement
     const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
     
+    // Use displayType if defined, otherwise use original type
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    
     const catalog = {
       id: userCatalog.id,
-      type: userCatalog.type,
+      type: catalogType,
       name: userCatalog.name,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
@@ -266,9 +264,12 @@ async function createStremThruCatalog(userCatalog) {
     // Add "None" option when showInHome is false to work around Stremio's genre requirement
     const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
     
+    // Use displayType if defined, otherwise use original type
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    
     const catalog = {
       id: userCatalog.id,
-      type: userCatalog.type,
+      type: catalogType,
       name: userCatalog.name,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
@@ -452,7 +453,8 @@ async function getManifest(config) {
           showPrefix,
           translatedCatalogs,
           userCatalog.showInHome,
-          userCatalog.name
+          userCatalog.name,
+          userCatalog.displayType
         );
       }
       else if (userCatalog.id === 'mal.genres') {
@@ -491,7 +493,8 @@ async function getManifest(config) {
           showPrefix,
           translatedCatalogs,
           userCatalog.showInHome,
-          userCatalog.name
+          userCatalog.name,
+          userCatalog.displayType
       );
       return catalog;   
     }));
@@ -525,7 +528,7 @@ async function getManifest(config) {
     // Anime Series Search
     if (engineEnabled[searchProviders.anime_series] !== false) {
       catalogs.push({
-        id: "search",
+        id: "anime_search",
         type: "anime.series",
         name: "Anime Search (Series)",
         extra: [{ name: "search", isRequired: true }]
@@ -534,7 +537,7 @@ async function getManifest(config) {
     // Anime Movies Search
     if (engineEnabled[searchProviders.anime_movie] !== false) {
       catalogs.push({
-        id: "search",
+        id: "anime_movie_search",
         type: "anime.movie",
         name: "Anime Search (Movies)",
         extra: [{ name: "search", isRequired: true }]

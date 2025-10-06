@@ -13,6 +13,10 @@ export interface CatalogConfig {
   order?: 'asc' | 'desc';
   // Custom cache TTL for MDBList catalogs (in seconds, defaults to 24 hours)
   cacheTTL?: number;
+  // Display type override - if defined, used in manifest instead of original type (free-form string)
+  displayType?: string;
+  // Genre selection for MDBList catalogs - which genre set to use
+  genreSelection?: 'standard' | 'anime' | 'all';
 }
 
 export interface SearchConfig {

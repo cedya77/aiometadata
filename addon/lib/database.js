@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const redisIdCache = require('./redis-id-cache');
 
 class Database {
@@ -10,6 +11,34 @@ class Database {
     this.db = null;
     this.type = null;
     this.initialized = false;
+  }
+
+  // Helper method to hash passwords with bcrypt
+  async hashPassword(password) {
+    const saltRounds = 12;
+    return await bcrypt.hash(password, saltRounds);
+  }
+
+  // Helper method to verify passwords (supports both SHA-256 and bcrypt)
+  async verifyPasswordHash(password, storedHash) {
+    // First try bcrypt verification (for new passwords)
+    try {
+      const bcryptMatch = await bcrypt.compare(password, storedHash);
+      if (bcryptMatch) return true;
+    } catch (error) {
+      // Not a bcrypt hash, continue to SHA-256 check
+    }
+
+    // Fallback to SHA-256 verification (for legacy passwords)
+    const hashRaw = crypto.createHash('sha256').update(password).digest('hex');
+    const hashTrim = crypto.createHash('sha256').update((password || '').trim()).digest('hex');
+    
+    return storedHash === hashRaw || storedHash === hashTrim;
+  }
+
+  // Helper method to check if a hash is bcrypt
+  isBcryptHash(hash) {
+    return hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$');
   }
 
   async initialize() {
@@ -353,12 +382,8 @@ class Database {
     return null;
   }
 
-  // Verify user password and get config (tolerant: tries raw and trimmed password)
+  // Verify user password and get config (supports both SHA-256 and bcrypt)
   async verifyUserAndGetConfig(userUUID, password) {
-    const crypto = require('crypto');
-    const hashRaw = crypto.createHash('sha256').update(password).digest('hex');
-    const hashTrim = crypto.createHash('sha256').update((password || '').trim()).digest('hex');
-
     const query = this.type === 'sqlite'
       ? 'SELECT password_hash, config_data FROM user_configs WHERE user_uuid = ?'
       : 'SELECT password_hash, config_data FROM user_configs WHERE user_uuid = $1';
@@ -366,8 +391,27 @@ class Database {
     if (!row) return null;
 
     const storedHash = row.password_hash;
-    if (storedHash !== hashRaw && storedHash !== hashTrim) {
+    
+    // Verify password using new method that supports both SHA-256 and bcrypt
+    const isValidPassword = await this.verifyPasswordHash(password, storedHash);
+    if (!isValidPassword) {
       return null;
+    }
+
+    // Background migration: If user has SHA-256 hash, upgrade to bcrypt
+    if (!this.isBcryptHash(storedHash)) {
+      try {
+        const newBcryptHash = await this.hashPassword(password);
+        const updateQuery = this.type === 'sqlite'
+          ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
+          : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
+        
+        await this.runQuery(updateQuery, [newBcryptHash, userUUID]);
+        console.log(`[Database] Migrated user ${userUUID} from SHA-256 to bcrypt hash`);
+      } catch (error) {
+        console.error(`[Database] Failed to migrate user ${userUUID} to bcrypt:`, error);
+        // Don't fail the login if migration fails
+      }
     }
 
     try {
@@ -382,10 +426,6 @@ class Database {
 
   // Verify user password only (returns boolean)
   async verifyPassword(userUUID, password) {
-    const crypto = require('crypto');
-    const hashRaw = crypto.createHash('sha256').update(password).digest('hex');
-    const hashTrim = crypto.createHash('sha256').update((password || '').trim()).digest('hex');
-
     const query = this.type === 'sqlite'
       ? 'SELECT password_hash FROM user_configs WHERE user_uuid = ?'
       : 'SELECT password_hash FROM user_configs WHERE user_uuid = $1';
@@ -393,7 +433,7 @@ class Database {
     if (!row) return false;
 
     const storedHash = row.password_hash;
-    return storedHash === hashRaw || storedHash === hashTrim;
+    return await this.verifyPasswordHash(password, storedHash);
   }
 
   // Delete user configuration

@@ -301,7 +301,7 @@ async function processCollectionEntities(movieEntities, seriesEntities, langCode
             episode: ep.number,
             overview: ep.overview,
             thumbnail: ep.image ? (ep.image.startsWith('http') ? ep.image : `${TVDB_IMAGE_BASE}${ep.image}`) : undefined,
-            released: ep.aired ? new Date(ep.aired).toISOString() : null,
+            released: ep.aired ? new Date(ep.aired + 'T12:00:00.000Z').toISOString() : null,
             available: ep.aired ? new Date(ep.aired) < new Date() : false
           });
         }
@@ -369,7 +369,7 @@ async function processMovieEntity(entity, langCode3, config) {
       episode: 0, // Will be set by caller
       overview: translatedOverview,
       thumbnail: movie.image ? (movie.image.startsWith('http') ? movie.image : `${TVDB_IMAGE_BASE}${movie.image}`) : undefined,
-      released: movie.first_release?.Date ? new Date(movie.first_release.Date).toISOString() : null,
+      released: movie.first_release?.Date ? new Date(movie.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
       available: movie.first_release?.Date ? new Date(movie.first_release.Date) < new Date() : false
     },
     genres: movie.genres?.map(g => g.name) || []
@@ -920,7 +920,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     director: Utils.parseDirector(credits).join(', '),
     writer: Utils.parseWriter(credits).join(', '),
     year: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
-    released: new Date(movieData.release_date),
+    released: movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null,
     releaseInfo: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
     runtime: Utils.parseRunTime(movieData.runtime),
     country: Utils.parseCoutry(movieData.production_countries),
@@ -1261,7 +1261,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           title: ep.name || `Episode ${ep.episode_number}`,
           season: ep.season_number,
           episode: ep.episode_number,
-          released: ep.air_date ? new Date(ep.air_date).toISOString() : null,
+          released: ep.air_date ? new Date(ep.air_date + 'T12:00:00.000Z').toISOString() : null,
           overview: ep.overview,
           thumbnail: finalThumbnail,
         };
@@ -1287,7 +1287,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     genres: Utils.parseGenres(seriesData.genres),
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
-    released: seriesData.first_air_date ? new Date(seriesData.first_air_date).toISOString() : null,
+    released: seriesData.first_air_date ? new Date(seriesData.first_air_date + 'T12:00:00.000Z').toISOString() : null,
     status: seriesData.status,
     imdbRating,
     poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
@@ -1425,7 +1425,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     writer: writers.join(', '),
     year: year,
     releaseInfo: year,
-    released: movieData.first_release.Date ? new Date(movieData.first_release.Date).toISOString() : null,
+    released: movieData.first_release.Date ? new Date(movieData.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
     runtime: Utils.parseRunTime(movieData.runtime),
     country: movieData.originalCountry,
     imdbRating,
@@ -1690,7 +1690,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               episode: episode.number,
               thumbnail: finalThumbnail,
               overview: episode.overview,
-              released: episode.aired ? new Date(episode.aired) : null,
+              released: episode.aired ? new Date(episode.aired + 'T12:00:00.000Z') : null,
               available: episode.aired ? new Date(episode.aired) < new Date() : false,
           };
         })
@@ -1715,7 +1715,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     writer: (tvdbShow.companies?.production || []).map(p => p.name).join(', '),
     year: year,
     releaseInfo: year,
-    released: new Date(tvdbShow.firstAired),
+    released: tvdbShow.firstAired ? new Date(tvdbShow.firstAired + 'T12:00:00.000Z') : null,
     runtime: Utils.parseRunTime(tvdbShow.averageRuntime),
     status: tvdbShow.status?.name,
     country: tvdbShow.originalCountry,
@@ -1846,7 +1846,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
           : episode.image?.original || tvmazeShow.image?.original,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
-        released: new Date(episode.airstamp),
+        released: new Date(episode.airstamp + 'T12:00:00.000Z'),
         available: new Date(episode.airstamp) < new Date(),
       };
       specialCount++;
@@ -1872,7 +1872,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
           : episode.image?.original || tvmazeShow.image?.original,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
-        released: new Date(episode.airstamp),
+        released: new Date(episode.airstamp + 'T12:00:00.000Z'),
         available: new Date(episode.airstamp) < new Date(),
       };
     });
@@ -1896,7 +1896,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     genres: tvmazeShow.genres || [],
     description: Utils.addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     year: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
-    released: new Date(premiered),
+    released: premiered ? new Date(premiered + 'T12:00:00.000Z') : null,
     runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
     status: tvmazeShow.status,
     country: tvmazeShow.network?.country?.name || null,
@@ -2039,7 +2039,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           title: episodeTitle,
           season: 1,
           episode: ep.mal_id,
-          released: ep.aired? new Date(ep.aired) : null,
+          released: ep.aired ? new Date(ep.aired + 'T12:00:00.000Z') : null,
           thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
           available: ep.aired ? new Date(ep.aired) < new Date() : false,
           overview: episodeSynopsis,
@@ -2130,7 +2130,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       slug: Utils.parseSlug('series', malData.title_english || malData.title, imdbId, malData.mal_id),
       genres: malData.genres?.map(g => g.name) || [],
       year: malData.year || malData.aired?.from?.substring(0, 4),
-      released: new Date(malData.aired?.from || malData.start_date),
+      released: (malData.aired?.from || malData.start_date) ? new Date((malData.aired?.from || malData.start_date) + 'T12:00:00.000Z') : null,
       runtime: Utils.parseRunTime(malData.duration),
       status: malData.status,
       imdbRating,

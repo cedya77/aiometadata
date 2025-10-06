@@ -509,6 +509,14 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   // Add userUUID to config for per-user token caching
   config.userUUID = userUUID;
   
+  // Find the catalog in config and use original type (not displayType)
+  // The 'type' parameter from URL could be either the original type or displayType from manifest
+  // Match by id AND either type matches original type OR displayType
+  const catalogConfig = config.catalogs?.find(c => 
+    c.id === id && (c.type === type || c.displayType === type)
+  );
+  const actualType = catalogConfig ? catalogConfig.type : type;
+  
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
 
@@ -526,7 +534,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   const cacheWrapper = cacheWrapCatalog;
 
-  const catalogKey = `${id}:${type}:${JSON.stringify(extraArgs || {})}`;
+  const catalogKey = `${id}:${actualType}:${JSON.stringify(extraArgs || {})}`;
   
   const cacheOptions = {
     enableErrorCaching: true,
@@ -538,10 +546,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       
       if (id.includes('search')) {
       // Use search-specific cache wrapper
-      const searchKey = `${id}:${type}:${JSON.stringify(extraArgs)}`;
+      const searchKey = `${id}:${actualType}:${JSON.stringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
-        const searchResult = await getSearch(id, type, language, extraArgs, config);
+        const searchResult = await getSearch(id, actualType, language, extraArgs, config);
         return { metas: searchResult.metas || [] };
       }, cacheOptions);
       } else {
@@ -553,10 +561,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
                          (id.startsWith('stremthru.') || id.startsWith('mdblist.')) ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
-        const args = [type, language, page];
+        const args = [actualType, language, page];
         switch (id) {
           case "tmdb.trending":
-            console.log(`[CATALOG ROUTE 2] tmdb.trending called with type=${type}, language=${language}, page=${page}`);
+            console.log(`[CATALOG ROUTE 2] tmdb.trending called with type=${actualType}, language=${language}, page=${page}`);
             metas = (await getTrending(...args, genreName, config, userUUID)).metas;
             break;
           case "tmdb.favorites":
@@ -566,13 +574,13 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
             break;
           case "tvdb.genres": {
-            metas = (await getCatalog(type, language, page, id, genreName, config, userUUID)).metas;
+            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID)).metas;
             break;
           }
           case "tvdb.collections": {
             // TVDB expects 0-based page
             const tvdbPage = Math.max(0, page - 1);
-            metas = (await getCatalog(type, language, tvdbPage, id, genreName, config, userUUID)).metas;
+            metas = (await getCatalog(actualType, language, tvdbPage, id, genreName, config, userUUID)).metas;
             break;
           }
           case 'mal.airing':
@@ -607,7 +615,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const animeResults = await jikan.getTopAnimeByType('tv', page, config);
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.most_popular') {
-              console.log(`[CATALOG ROUTE 2] mal.most_popular called with type=${type}, language=${language}, page=${page}`);
+              console.log(`[CATALOG ROUTE 2] mal.most_popular called with type=${actualType}, language=${language}, page=${page}`);
               const animeResults = await jikan.getTopAnimeByFilter('bypopularity', page, config);
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.most_favorites') {
@@ -679,7 +687,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             break;
           }
           default:
-            metas = (await getCatalog(type, language, page, id, genreName, config, userUUID)).metas;
+            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID)).metas;
             break;
       }
       return { metas: metas || [] };
@@ -690,7 +698,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     respond(req, res, responseData, httpCacheOpts);
 
   } catch (e) {
-    console.error(`Error in catalog route for id "${id}" and type "${type}":`, e);
+    console.error(`Error in catalog route for id "${id}" and type "${actualType}":`, e);
     return res.status(500).send("Internal Server Error");
   }
 });

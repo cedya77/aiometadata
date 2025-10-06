@@ -196,6 +196,8 @@ const presetConfigs: PresetConfig[] = [
 export function PresetManager() {
   const { config, setConfig } = useConfig();
   const [includeAdult, setIncludeAdult] = useState(config.includeAdult || false);
+  const [includePopularLists, setIncludePopularLists] = useState(false);
+  const [selectedCurators, setSelectedCurators] = useState<Set<string>>(new Set());
 
   const handleAdultContentToggle = (checked: boolean) => {
     setIncludeAdult(checked);
@@ -205,6 +207,120 @@ export function PresetManager() {
       includeAdult: checked,
       sfw: checked ? false : (prev.sfw || true)
     }));
+  };
+
+  const handleCuratorSelection = (username: string, checked: boolean) => {
+    const newSelection = new Set(selectedCurators);
+    if (checked) {
+      newSelection.add(username);
+    } else {
+      newSelection.delete(username);
+    }
+    setSelectedCurators(newSelection);
+  };
+
+  const popularUsers = [
+    { username: 'danaramapyjama', name: 'Dan Pyjama', description: 'Curated lists of films by a Pyjama wearer for Pyjama wearers' },
+    { username: 'tvgeniekodi', name: 'Mr. Professor', description: 'Curated TV and movie lists' },
+    { username: 'snoak', name: 'Snoak', description: 'Quality content collections' },
+    { username: 'garycrawfordgc', name: 'Gary Crawford', description: 'Expert curated lists' }
+  ];
+
+  const fetchAndImportPopularLists = async () => {
+    if (!config.apiKeys.mdblist) {
+      toast.error("MDBList API key is required to import popular lists. Please add it in the Integrations section first.");
+      return;
+    }
+
+    if (selectedCurators.size === 0) {
+      toast.error("Please select at least one curator to import lists from.");
+      return;
+    }
+
+    try {
+      const allLists: any[] = [];
+      const selectedUsers = popularUsers.filter(user => selectedCurators.has(user.username));
+      
+      for (const user of selectedUsers) {
+        try {
+          const response = await fetch(`https://api.mdblist.com/lists/user/${user.username}?apikey=${config.apiKeys.mdblist}`);
+          if (response.ok) {
+            const userLists = await response.json();
+            if (Array.isArray(userLists)) {
+              let filteredLists = userLists;
+              
+              // For danaramapyjama, only include lists containing "wearers" in the name
+              if (user.username === 'danaramapyjama') {
+                filteredLists = userLists.filter((list: any) => 
+                  list.name && list.name.toLowerCase().includes('wearers')
+                );
+              }
+              
+              const listsWithUser = filteredLists.map((list: any) => ({
+                ...list,
+                user: user.name
+              }));
+              allLists.push(...listsWithUser);
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch lists for user ${user.username}:`, error);
+        }
+      }
+
+      if (allLists.length > 0) {
+        setConfig(prev => {
+          let newCatalogs = [...prev.catalogs];
+          let newListsAddedCount = 0;
+
+          allLists.forEach(list => {
+            const type = list.mediatype === "movie" ? "movie" : "series";
+            const catalogId = `mdblist.${list.id}`;
+            
+            // Check if catalog already exists
+            if (!newCatalogs.some(c => c.id === catalogId)) {
+              // For danaramapyjama, use "film" instead of "movie" for display type
+              const displayType = (list.user === 'Dan Pyjama' && type === 'movie') ? 'film' : undefined;
+              
+              const newCatalog = {
+                id: catalogId,
+                type: type as 'movie' | 'series' | 'anime',
+                name: list.name,
+                enabled: true,
+                showInHome: true,
+                source: 'mdblist' as const,
+                sort: 'default' as const,
+                order: 'asc' as const,
+                cacheTTL: 86400,
+                genreSelection: 'standard' as const, // Default to standard genres for preset imports
+                displayType,
+              };
+              newCatalogs.push(newCatalog);
+              newListsAddedCount++;
+            }
+          });
+
+          return {
+            ...prev,
+            catalogs: newCatalogs,
+          };
+        });
+
+        const selectedNames = selectedUsers.map(u => u.name).join(', ');
+        toast.success("Popular lists added", {
+          description: `Added ${allLists.length} curated lists from ${selectedNames}`
+        });
+      } else {
+        toast.info("No popular lists found", {
+          description: "No public lists available from the featured curators"
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching popular lists:", error);
+      toast.error("Failed to import popular lists", {
+        description: "Make sure your MDBList API key is valid"
+      });
+    }
   };
 
   const applyPreset = (preset: PresetConfig) => {
@@ -262,8 +378,20 @@ export function PresetManager() {
 
       newConfig.catalogs = updatedCatalogs;
 
+      // Apply popular lists if enabled and curators are selected
+      if (includePopularLists && selectedCurators.size > 0) {
+        // Import popular lists after a short delay to allow preset to be applied first
+        setTimeout(() => {
+          fetchAndImportPopularLists();
+        }, 500);
+      }
+
+      const curatorNames = includePopularLists && selectedCurators.size > 0 
+        ? popularUsers.filter(u => selectedCurators.has(u.username)).map(u => u.name).join(', ')
+        : '';
+      
       toast.success('Preset applied successfully!', {
-        description: `Applied "${preset.name}" configuration. Don't forget to save in the Configuration Manager.`,
+        description: `Applied "${preset.name}" configuration.${curatorNames ? ` Popular lists from ${curatorNames} will be added shortly.` : ''} Don't forget to save in the Configuration Manager.`,
         duration: 5000,
       });
 
@@ -294,6 +422,56 @@ export function PresetManager() {
             checked={includeAdult} 
             onCheckedChange={handleAdultContentToggle} 
           />
+        </CardContent>
+      </Card>
+
+      {/* Popular Lists Section */}
+      <Card>
+        <CardContent className="p-4 pt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="include-popular-lists" className="text-lg font-medium">Include Popular Lists</Label>
+              <p className="text-sm text-muted-foreground">
+                When enabled, automatically imports curated lists from selected MDBList curators when applying presets.
+              </p>
+            </div>
+            <Switch 
+              id="include-popular-lists"
+              checked={includePopularLists} 
+              onCheckedChange={setIncludePopularLists} 
+            />
+          </div>
+
+          {/* Curator Selection */}
+          {includePopularLists && (
+            <div className="space-y-3 pt-4 border-t border-border">
+              <Label className="text-sm font-medium">Select Curators to Include:</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {popularUsers.map((user) => (
+                  <div key={user.username} className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                    <Switch
+                      id={`curator-${user.username}`}
+                      checked={selectedCurators.has(user.username)}
+                      onCheckedChange={(checked) => handleCuratorSelection(user.username, checked)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <Label htmlFor={`curator-${user.username}`} className="font-medium cursor-pointer">
+                        {user.name}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {user.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {selectedCurators.size === 0 && (
+                <p className="text-xs text-orange-600 dark:text-orange-400">
+                  Please select at least one curator to include popular lists.
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

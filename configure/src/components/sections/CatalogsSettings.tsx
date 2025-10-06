@@ -13,8 +13,10 @@ import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings } 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { streamingServices, regions } from "@/data/streamings";
 import { allCatalogDefinitions } from '@/data/catalogs';
+import { GenreSelection } from '@/data/genres';
 
 const groupBySource = (catalogs: CatalogConfig[]) => {
   return catalogs.reduce((acc, cat) => {
@@ -50,13 +52,14 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>(catalog.sort || 'default');
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || 86400); // Default to 24 hours
+  const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL }
+          ? { ...c, sort, order, cacheTTL, genreSelection }
           : c
       )
     }));
@@ -67,7 +70,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>MDBList Sort Settings</DialogTitle>
+          <DialogTitle>MDBList Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
@@ -140,6 +143,22 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               How long to cache this list before refreshing. Range: 5 minutes to 7 days.
             </p>
           </div>
+          <div className="space-y-2">
+            <Label>Genre Selection</Label>
+            <Select value={genreSelection} onValueChange={(value: GenreSelection) => setGenreSelection(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select genre set" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard">Standard Genres Only (44 genres)</SelectItem>
+                <SelectItem value="anime">Anime Genres Only (22 genres)</SelectItem>
+                <SelectItem value="all">All Genres (66 genres including anime)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Choose which genre set to use for this specific list.
+            </p>
+          </div>
         </div>
         <div className="text-xs text-muted-foreground mb-4">
           Note: Changes will take effect after you save your configuration in the Configuration Manager.
@@ -156,8 +175,9 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig } = useConfig();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
-  const [isEditing, setIsEditing] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
+  const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
 
   const style = {
@@ -192,19 +212,33 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     }));
   };
 
-  const handleNameChange = () => {
-    if (newName.trim() === '') {
-      setNewName(catalog.name); // revert if empty
-      setIsEditing(false);
+  const handleEditSave = () => {
+    const trimmedName = newName.trim();
+    const trimmedType = newType.trim();
+    
+    if (trimmedName === '' || trimmedType === '') {
+      // Revert to original values if either field is empty
+      setNewName(catalog.name);
+      setNewType(catalog.displayType || catalog.type);
+      setShowEditDialog(false);
       return;
     }
+    
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) ? { ...c, name: newName.trim() } : c
+        (c.id === catalog.id && c.type === catalog.type) 
+          ? { ...c, name: trimmedName, displayType: trimmedType }
+          : c
       )
     }));
-    setIsEditing(false);
+    setShowEditDialog(false);
+  };
+
+  const handleEditCancel = () => {
+    setNewName(catalog.name);
+    setNewType(catalog.displayType || catalog.type);
+    setShowEditDialog(false);
   };
 
   const handleDelete = () => {
@@ -266,32 +300,19 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         </div>
         <div>
           <div className="flex items-center gap-2">
-            {isEditing ? (
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onBlur={handleNameChange}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleNameChange();
-                  } else if (e.key === 'Escape') {
-                    setIsEditing(false);
-                    setNewName(catalog.name);
-                  }
-                }}
-                autoFocus
-                className="bg-transparent border-b border-foreground/50 focus:outline-none"
-              />
-            ) : (
-              <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
-            )}
-            <button onClick={() => setIsEditing(true)} className={`${isEditing ? 'hidden' : ''} text-muted-foreground hover:text-foreground`}>
+            <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            <button 
+              onClick={() => setShowEditDialog(true)} 
+              className="text-muted-foreground hover:text-foreground"
+            >
               <Pencil size={14} />
             </button>
           </div>
-          <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>{catalog.type}</p>
+          <div>
+            <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>
+              {catalog.displayType || catalog.type}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -376,6 +397,57 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         isOpen={showSettings} 
         onClose={() => setShowSettings(false)} 
       />
+      
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Catalog</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleEditSave();
+                  } else if (e.key === 'Escape') {
+                    handleEditCancel();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-type">Type</Label>
+              <Input
+                id="edit-type"
+                value={newType}
+                onChange={(e) => setNewType(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleEditSave();
+                  } else if (e.key === 'Escape') {
+                    handleEditCancel();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={handleEditCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditSave}>
+              Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };
