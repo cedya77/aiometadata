@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -153,12 +154,14 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
-const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
+const SortableCatalogItem = ({ catalog, originalId }: { catalog: CatalogConfig & { source?: string }; originalId: string }) => {
   const { setConfig } = useConfig();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: originalId });
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
+  const [newType, setNewType] = useState<'movie' | 'series' | 'anime'>(catalog.type);
   const [showSettings, setShowSettings] = useState(false);
+  const [originalType] = useState(catalog.type); // Store original type for reliable identification
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -173,7 +176,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c => {
-        if (c.id === catalog.id && c.type === catalog.type) {
+        if (c.id === catalog.id && c.type === originalType) {
           const isNowEnabled = !c.enabled;
           return { ...c, enabled: isNowEnabled, showInHome: isNowEnabled ? c.showInHome : false };
         }
@@ -187,21 +190,21 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) ? { ...c, showInHome: !c.showInHome } : c
+        (c.id === catalog.id && c.type === originalType) ? { ...c, showInHome: !c.showInHome } : c
       )
     }));
   };
 
   const handleNameChange = () => {
-    if (newName.trim() === '') {
-      setNewName(catalog.name); // revert if empty
-      setIsEditing(false);
-      return;
-    }
+    const finalName = newName.trim() || catalog.name;
+    const finalType = newType || catalog.type;
+
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) ? { ...c, name: newName.trim() } : c
+        (c.id === catalog.id && c.type === originalType)
+          ? { ...c, name: finalName, type: finalType }
+          : c
       )
     }));
     setIsEditing(false);
@@ -210,19 +213,19 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   const handleDelete = () => {
     setConfig(prev => ({
       ...prev,
-      catalogs: prev.catalogs.filter(c => !(c.id === catalog.id && c.type === catalog.type)),
+      catalogs: prev.catalogs.filter(c => !(c.id === catalog.id && c.type === originalType)),
     }));
   };
 
   const handleMoveToTop = () => {
     setConfig(prev => {
-      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
+      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === originalType);
       if (currentIndex <= 0) return prev; // Already at top or not found
-      
+
       const newCatalogs = [...prev.catalogs];
       const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
       newCatalogs.unshift(movedCatalog);
-      
+
       return {
         ...prev,
         catalogs: newCatalogs,
@@ -232,13 +235,13 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
   const handleMoveToBottom = () => {
     setConfig(prev => {
-      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
+      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === originalType);
       if (currentIndex === -1 || currentIndex === prev.catalogs.length - 1) return prev; // Not found or already at bottom
-      
+
       const newCatalogs = [...prev.catalogs];
       const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
       newCatalogs.push(movedCatalog);
-      
+
       return {
         ...prev,
         catalogs: newCatalogs,
@@ -267,31 +270,66 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         <div>
           <div className="flex items-center gap-2">
             {isEditing ? (
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onBlur={handleNameChange}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleNameChange();
-                  } else if (e.key === 'Escape') {
-                    setIsEditing(false);
-                    setNewName(catalog.name);
-                  }
+              <div
+                className="flex flex-col gap-1"
+                onBlur={(e) => {
+                  const container = e.currentTarget;
+                  setTimeout(() => {
+                    const activeElement = document.activeElement;
+                    if (isEditing &&
+                        !container.contains(activeElement) &&
+                        !document.querySelector('[role="listbox"]')) {
+                      handleNameChange();
+                    }
+                  }, 200);
                 }}
-                autoFocus
-                className="bg-transparent border-b border-foreground/50 focus:outline-none"
-              />
+              >
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleNameChange();
+                    } else if (e.key === 'Escape') {
+                      setIsEditing(false);
+                      setNewName(catalog.name);
+                      setNewType(catalog.type);
+                    }
+                  }}
+                  autoFocus
+                  className="h-7 text-sm"
+                />
+                <Select value={newType} onValueChange={(value) => setNewType(value as 'movie' | 'series' | 'anime')}>
+                  <SelectTrigger className="h-7 text-xs w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="movie">Movie</SelectItem>
+                    <SelectItem value="series">Series</SelectItem>
+                    <SelectItem value="anime">Anime</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             ) : (
-              <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+              <>
+                <div>
+                  <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+                  <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>{catalog.type}</p>
+                </div>
+              </>
             )}
-            <button onClick={() => setIsEditing(true)} className={`${isEditing ? 'hidden' : ''} text-muted-foreground hover:text-foreground`}>
+            <button
+              onClick={() => {
+                setNewName(catalog.name);
+                setNewType(catalog.type);
+                setIsEditing(true);
+              }}
+              className={`${isEditing ? 'hidden' : ''} text-muted-foreground hover:text-foreground`}
+            >
               <Pencil size={14} />
             </button>
           </div>
-          <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>{catalog.type}</p>
         </div>
       </div>
 
@@ -672,9 +710,16 @@ export function CatalogsSettings() {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
           <div className="space-y-4">
-            {filteredCatalogs.map((catalog) => (
-              <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
-            ))}
+            {filteredCatalogs.map((catalog) => {
+              const catalogId = `${catalog.id}-${catalog.type}`;
+              return (
+                <SortableCatalogItem
+                  key={catalogId}
+                  catalog={catalog}
+                  originalId={catalogId}
+                />
+              );
+            })}
           </div>
         </SortableContext>
       </DndContext>

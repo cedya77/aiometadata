@@ -4,11 +4,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Loader2, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { Loader2, ExternalLink, Plus, Trash2, Pencil } from 'lucide-react';
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface StremThruIntegrationProps {
   isOpen: boolean;
@@ -36,11 +37,11 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
   const [isLoading, setIsLoading] = useState(false);
   const [manifest, setManifest] = useState<StremThruManifest | null>(null);
   const [selectedCatalogs, setSelectedCatalogs] = useState<Set<string>>(new Set());
-  const [importedManifests, setImportedManifests] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<'movie' | 'series' | 'anime'>('movie');
 
-  // Get currently imported StremThru manifests
   const currentStremThruCatalogs = config.catalogs.filter(c => c.id.startsWith("stremthru."));
-  const currentManifestIds = [...new Set(currentStremThruCatalogs.map(c => c.id.split(".")[1]))];
 
   const fetchManifest = useCallback(async () => {
     if (!manifestUrl.trim()) {
@@ -96,50 +97,51 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
 
     try {
       setConfig(prev => {
-        const currentStremThruCatalogs = prev.catalogs.filter(c => c.id.startsWith("stremthru."));
-        const otherCatalogs = prev.catalogs.filter(c => !c.id.startsWith("stremthru."));
-        
-        let newCatalogs = [...otherCatalogs];
-        let newCatalogsAdded = 0;
+        const manifestId = manifest.id.replace(/[^a-zA-Z0-9]/g, '_');
+
+        // Multi-manifest support: Only remove catalogs from THIS manifest, keep all others
+        const catalogsFromOtherManifests = prev.catalogs.filter(c =>
+          !c.id.startsWith(`stremthru.${manifestId}.`)
+        );
+
+        const newCatalogs = [...catalogsFromOtherManifests];
 
         // Process each selected catalog
         selectedCatalogs.forEach(catalogId => {
           const catalog = manifest.catalogs.find(c => c.id === catalogId);
           if (!catalog) return;
 
-                     // Generate unique catalog ID: stremthru.{manifestId}.{catalogId}
-           const manifestId = manifest.id.replace(/[^a-zA-Z0-9]/g, '_');
-           const uniqueCatalogId = `stremthru.${manifestId}.${catalog.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-           
-           // Check if catalog already exists
-           const existingCatalog = newCatalogs.find(c => c.id === uniqueCatalogId);
-           
-           if (!existingCatalog) {
-             // Construct the full catalog URL with proper encoding
-             const encodedCatalogId = encodeURIComponent(catalog.id);
-             const catalogUrl = `${manifestUrl.replace('/manifest.json', '')}/catalog/${catalog.type}/${encodedCatalogId}.json`;
+          const uniqueCatalogId = `stremthru.${manifestId}.${catalog.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const existingCatalog = newCatalogs.find(c => c.id === uniqueCatalogId);
+
+          if (!existingCatalog) {
+            // Construct the full catalog URL with proper encoding
+            const encodedCatalogId = encodeURIComponent(catalog.id);
+            const catalogUrl = `${manifestUrl.replace('/manifest.json', '')}/catalog/${catalog.type}/${encodedCatalogId}.json`;
+
+            // Debug logging
+            console.log('Debug - manifestUrl:', manifestUrl);
+            console.log('Debug - catalog.type:', catalog.type);
+            console.log('Debug - catalog.id:', catalog.id);
+            console.log('Debug - constructed catalogUrl:', catalogUrl);
              
-             // Debug logging
-             console.log('Debug - manifestUrl:', manifestUrl);
-             console.log('Debug - catalog.type:', catalog.type);
-             console.log('Debug - catalog.id:', catalog.id);
-             console.log('Debug - constructed catalogUrl:', catalogUrl);
-             
-             // Add new catalog
-             const newCatalog: CatalogConfig = {
-               id: uniqueCatalogId,
-               type: catalog.type as 'movie' | 'series' | 'anime',
-               name: catalog.name,
-               enabled: true,
-               showInHome: true,
-               source: 'stremthru', // Keep source as the display label
-               sourceUrl: catalogUrl, // Store the actual catalog URL
-               genres: catalog.genres || [], // Store genres from manifest
-               manifestData: catalog, // Store full manifest data for advanced features
-             };
-             newCatalogs.push(newCatalog);
-             newCatalogsAdded++;
-           }
+            // Add new catalog
+            const newCatalog: CatalogConfig = {
+              id: uniqueCatalogId,
+              type: catalog.type as 'movie' | 'series' | 'anime',
+              name: catalog.name,
+              enabled: true,
+              showInHome: true,
+              source: 'stremthru', // Keep source as the display label
+              sourceUrl: catalogUrl, // Store the actual catalog URL
+              genres: catalog.genres || [], // Store genres from manifest
+              manifestData: catalog, // Store full manifest data for advanced features
+              manifestUrl: manifestUrl,
+              manifestId: manifestId,
+              manifestName: manifest.name,
+            };
+            newCatalogs.push(newCatalog);
+          }
         });
 
         return {
@@ -156,9 +158,6 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
       setManifest(null);
       setSelectedCatalogs(new Set());
       setManifestUrl("");
-      
-      // Close dialog
-      onClose();
 
     } catch (error) {
       console.error("Error importing StremThru catalogs:", error);
@@ -166,7 +165,7 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
         description: error instanceof Error ? error.message : "Unknown error occurred"
       });
     }
-  }, [manifest, selectedCatalogs, setConfig, manifestUrl, onClose]);
+  }, [manifest, selectedCatalogs, setConfig, manifestUrl]);
 
   const removeStremThruCatalog = (catalogId: string) => {
     setConfig(prev => ({
@@ -304,49 +303,168 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
           </Card>
 
           {/* Currently Imported Catalogs */}
-          {currentStremThruCatalogs.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Imported StremThru Catalogs</CardTitle>
-                <CardDescription>
-                  Manage your currently imported StremThru catalogs
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {currentStremThruCatalogs.map((catalog) => (
-                    <div key={catalog.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">{catalog.name}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="outline" className="text-xs capitalize">
-                            {catalog.type}
-                          </Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {catalog.enabled ? 'Enabled' : 'Disabled'}
-                          </Badge>
-                          {catalog.showInHome && (
-                            <Badge variant="default" className="text-xs">
-                              Home
-                            </Badge>
+          {currentStremThruCatalogs.length > 0 && (() => {
+            const catalogsByManifest = currentStremThruCatalogs.reduce((acc, catalog) => {
+              const manifestKey = catalog.manifestId || 'unknown';
+              if (!acc[manifestKey]) {
+                acc[manifestKey] = {
+                  manifestName: catalog.manifestName || 'Unknown Manifest',
+                  manifestUrl: catalog.manifestUrl,
+                  catalogs: []
+                };
+              }
+              acc[manifestKey].catalogs.push(catalog);
+              return acc;
+            }, {} as Record<string, { manifestName: string; manifestUrl?: string; catalogs: typeof currentStremThruCatalogs }>);
+
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Imported StremThru Catalogs</CardTitle>
+                  <CardDescription>
+                    Manage your currently imported StremThru catalogs ({Object.keys(catalogsByManifest).length} manifest{Object.keys(catalogsByManifest).length !== 1 ? 's' : ''})
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {Object.entries(catalogsByManifest).map(([manifestId, { manifestName, manifestUrl, catalogs }]) => (
+                    <div key={manifestId} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-start justify-between pb-2 border-b">
+                        <div>
+                          <h4 className="font-semibold">{manifestName}</h4>
+                          {manifestUrl && (
+                            <a
+                              href={manifestUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 mt-1"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              {manifestUrl}
+                            </a>
                           )}
                         </div>
+                        <Badge variant="outline">{catalogs.length} catalog{catalogs.length !== 1 ? 's' : ''}</Badge>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeStremThruCatalog(catalog.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Remove
-                      </Button>
+
+                      <div className="space-y-2">
+                        {catalogs.map((catalog) => {
+                          const isEditing = editingId === catalog.id;
+
+                          const handleNameChange = () => {
+                            const finalName = newName.trim() || catalog.name;
+                            const finalType = newType || catalog.type;
+
+                            setConfig(prev => ({
+                              ...prev,
+                              catalogs: prev.catalogs.map(c =>
+                                c.id === catalog.id ? { ...c, name: finalName, type: finalType } : c
+                              )
+                            }));
+                            setEditingId(null);
+                          };
+
+                          return (
+                            <div key={catalog.id} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                              {isEditing ? (
+                                <div
+                                  className="flex-1 flex items-center gap-2"
+                                  onBlur={(e) => {
+                                    // Capture container ref before setTimeout (React nulls e.currentTarget)
+                                    const container = e.currentTarget;
+                                    // Use setTimeout to allow browser to update document.activeElement
+                                    setTimeout(() => {
+                                      const activeElement = document.activeElement;
+                                      // Only save if focus moved outside AND no Select dropdown is open
+                                      if (editingId === catalog.id &&
+                                          !container.contains(activeElement) &&
+                                          !document.querySelector('[role="listbox"]')) {
+                                        handleNameChange();
+                                      }
+                                    }, 200);
+                                  }}
+                                >
+                                  <Input
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleNameChange();
+                                      } else if (e.key === 'Escape') {
+                                        setEditingId(null);
+                                        setNewName(catalog.name);
+                                        setNewType(catalog.type);
+                                      }
+                                    }}
+                                    autoFocus
+                                    className="h-7 text-sm flex-1"
+                                  />
+                                  <Select
+                                    value={newType}
+                                    onValueChange={(value: 'movie' | 'series' | 'anime') => setNewType(value)}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs w-28">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="movie">Movie</SelectItem>
+                                      <SelectItem value="series">Series</SelectItem>
+                                      <SelectItem value="anime">Anime</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              ) : (
+                                <div className="flex-1 min-w-0">
+                                  <h5 className="font-medium text-sm">{catalog.name}</h5>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge variant="outline" className="text-xs capitalize">
+                                      {catalog.type}
+                                    </Badge>
+                                    <Badge variant="secondary" className="text-xs">
+                                      {catalog.enabled ? 'Enabled' : 'Disabled'}
+                                    </Badge>
+                                    {catalog.showInHome && (
+                                      <Badge variant="default" className="text-xs">
+                                        Home
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1">
+                                {!isEditing && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingId(catalog.id);
+                                      setNewName(catalog.name);
+                                      setNewType(catalog.type);
+                                    }}
+                                    className="hover:bg-accent"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeStremThruCatalog(catalog.id)}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Help Section */}
           <Card>
