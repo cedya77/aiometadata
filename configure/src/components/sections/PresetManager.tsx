@@ -270,34 +270,33 @@ export function PresetManager() {
 
       if (allLists.length > 0) {
         setConfig(prev => {
-          let newCatalogs = [...prev.catalogs];
+          // Remove any existing MDBList catalogs to ensure clean slate
+          const catalogsWithoutMDBList = prev.catalogs.filter(c => !c.id.startsWith('mdblist.'));
+          let newCatalogs = [...catalogsWithoutMDBList];
           let newListsAddedCount = 0;
 
           allLists.forEach(list => {
             const type = list.mediatype === "movie" ? "movie" : "series";
             const catalogId = `mdblist.${list.id}`;
             
-            // Check if catalog already exists
-            if (!newCatalogs.some(c => c.id === catalogId)) {
-              // For danaramapyjama, use "film" instead of "movie" for display type
-              const displayType = (list.user === 'Dan Pyjama' && type === 'movie') ? 'film' : undefined;
-              
-              const newCatalog = {
-                id: catalogId,
-                type: type as 'movie' | 'series' | 'anime',
-                name: list.name,
-                enabled: true,
-                showInHome: true,
-                source: 'mdblist' as const,
-                sort: 'default' as const,
-                order: 'asc' as const,
-                cacheTTL: 86400,
-                genreSelection: 'standard' as const, // Default to standard genres for preset imports
-                displayType,
-              };
-              newCatalogs.push(newCatalog);
-              newListsAddedCount++;
-            }
+            // For danaramapyjama, use "film" instead of "movie" for display type
+            const displayType = (list.user === 'Dan Pyjama' && type === 'movie') ? 'film' : undefined;
+            
+            const newCatalog = {
+              id: catalogId,
+              type: type as 'movie' | 'series' | 'anime',
+              name: list.name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist' as const,
+              sort: 'default' as const,
+              order: 'asc' as const,
+              cacheTTL: 86400,
+              genreSelection: 'standard' as const, // Default to standard genres for preset imports
+              displayType,
+            };
+            newCatalogs.push(newCatalog);
+            newListsAddedCount++;
           });
 
           return {
@@ -349,34 +348,32 @@ export function PresetManager() {
       newConfig.includeAdult = includeAdult;
       newConfig.sfw = includeAdult ? false : (preset.config.sfw !== undefined ? preset.config.sfw : true);
 
-      // Handle catalog enabling/disabling based on preset
-      const updatedCatalogs = newConfig.catalogs.map(catalog => {
-        const isMalCatalog = catalog.source === 'mal';
-        const isAnimeCatalog = catalog.type === 'anime';
-        
-        // For "Movies & Shows Only" preset, disable all MAL and anime catalogs
-        if (preset.id === 'movies-shows-only' && (isMalCatalog || isAnimeCatalog)) {
-          return { ...catalog, enabled: false, showInHome: false };
-        }
-        
-        // For other presets, ensure MAL/anime catalogs are properly enabled based on defaults
-        if (isMalCatalog || isAnimeCatalog) {
-          const defaultCatalog = allCatalogDefinitions.find(def => 
-            def.id === catalog.id && def.type === catalog.type
-          );
-          if (defaultCatalog && defaultCatalog.isEnabledByDefault) {
-            return { 
-              ...catalog, 
-              enabled: true, 
-              showInHome: defaultCatalog.showOnHomeByDefault || false 
-            };
-          }
-        }
-        
-        return catalog;
-      });
+      // Reset catalogs to clean slate based on preset
+      let resetCatalogs = allCatalogDefinitions.map(def => ({
+        id: def.id,
+        name: def.name,
+        type: def.type,
+        source: def.source,
+        enabled: def.isEnabledByDefault || false,
+        showInHome: def.showOnHomeByDefault || false,
+        sort: 'default' as const,
+        order: 'asc' as const,
+      }));
 
-      newConfig.catalogs = updatedCatalogs;
+      // Apply preset-specific catalog modifications
+      if (preset.id === 'movies-shows-only') {
+        // Disable all MAL and anime catalogs for movies & shows only preset
+        resetCatalogs = resetCatalogs.map(catalog => {
+          const isMalCatalog = catalog.source === 'mal';
+          const isAnimeCatalog = catalog.type === 'anime';
+          if (isMalCatalog || isAnimeCatalog) {
+            return { ...catalog, enabled: false, showInHome: false };
+          }
+          return catalog;
+        });
+      }
+
+      newConfig.catalogs = resetCatalogs;
 
       // Apply popular lists if enabled and curators are selected
       if (includePopularLists && selectedCurators.size > 0) {
@@ -406,6 +403,27 @@ export function PresetManager() {
         <p className="text-muted-foreground">
           Choose a preset to quickly configure your addon for different use cases. Each preset optimizes settings for specific content preferences.
         </p>
+      </div>
+
+      {/* Important Disclaimer */}
+      <div className="p-4 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <svg className="h-5 w-5 text-orange-600 dark:text-orange-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">
+              Important: Presets Reset Your Configuration
+            </h3>
+            <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+              Applying a preset will <strong>completely reset</strong> your catalog configuration and replace it with the preset's settings. 
+              Any custom MDBList catalogs you've added will be removed. Make sure to save your current configuration 
+              in the Configuration Manager before applying a preset if you want to preserve your current setup.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Adult Content Toggle */}
@@ -477,37 +495,64 @@ export function PresetManager() {
 
 
       <div className="grid gap-4 md:grid-cols-2">
-        {presetConfigs.map((preset) => (
-          <Card key={preset.id} className="relative overflow-hidden">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 rounded-lg bg-muted">
-                    {preset.icon}
+        {presetConfigs.map((preset) => {
+          const hasPopularLists = includePopularLists && selectedCurators.size > 0;
+          const selectedCuratorNames = hasPopularLists 
+            ? popularUsers.filter(u => selectedCurators.has(u.username)).map(u => u.name).join(', ')
+            : '';
+          
+          return (
+            <Card key={preset.id} className={`relative overflow-hidden ${hasPopularLists ? 'ring-2 ring-blue-200 dark:ring-blue-800' : ''}`}>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 rounded-lg bg-muted">
+                      {preset.icon}
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{preset.name}</CardTitle>
+                      <Badge className={`mt-1 ${preset.badgeColor} text-white`}>
+                        {preset.badge}
+                      </Badge>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-lg">{preset.name}</CardTitle>
-                    <Badge className={`mt-1 ${preset.badgeColor} text-white`}>
-                      {preset.badge}
-                    </Badge>
-                  </div>
+                  {hasPopularLists && (
+                    <div className="flex items-center space-x-1 text-blue-600 dark:text-blue-400">
+                      <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-xs font-medium">+ Lists</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <CardDescription className="mb-4 text-sm leading-relaxed">
-                {preset.description}
-              </CardDescription>
-              <Button 
-                onClick={() => applyPreset(preset)}
-                className="w-full"
-                variant="outline"
-              >
-                Apply This Preset
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent className="pt-0">
+                <CardDescription className="mb-4 text-sm leading-relaxed">
+                  {preset.description}
+                </CardDescription>
+                
+                {hasPopularLists && (
+                  <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      <strong>Will also import:</strong> Popular lists from {selectedCuratorNames}
+                    </p>
+                  </div>
+                )}
+                
+                <Button 
+                  onClick={() => applyPreset(preset)}
+                  className="w-full"
+                  variant={hasPopularLists ? "default" : "outline"}
+                >
+                  {hasPopularLists 
+                    ? `Apply Preset + Import Lists` 
+                    : 'Apply This Preset'
+                  }
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <div className="mt-6 p-4 bg-muted/50 rounded-lg">
