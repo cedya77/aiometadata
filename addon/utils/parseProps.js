@@ -37,17 +37,21 @@ const isDebugEnabled = consola.level >= 4;
  * Normalizes a string for searching:
  * - Converts to lowercase
  * - Removes accents and diacritics
+ * - Converts & to 'and'
  * - Removes non-alphanumeric characters (except whitespace)
  * - Removes a leading "the "
+ * - Collapses multiple spaces
  */
 function normalize(str) {
   if (!str) return '';
   return str
-    .normalize("NFD") 
+    .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/\s*&\s*/g, ' and ')  // Convert & to 'and' before removing symbols
     .replace(/[^\p{L}\p{N}\s]/gu, "")
     .replace(/^the\s+/, "")
+    .replace(/\s+/g, ' ')  // Collapse multiple spaces
     .trim();
 }
 
@@ -96,66 +100,102 @@ function calculateSimilarity(s1, s2) {
 }
 
 
+/**
+ * Calculates Jaro-Winkler similarity between two strings.
+ * Returns a value between 0 and 1, where 1 is an exact match.
+ */
+function jaroWinklerSimilarity(s1, s2) {
+  if (!s1 || !s2) return 0;
+  if (s1 === s2) return 1;
+
+  const len1 = s1.length;
+  const len2 = s2.length;
+  const matchWindow = Math.max(Math.floor(Math.max(len1, len2) / 2) - 1, 0);
+
+  const s1Matches = new Array(len1).fill(false);
+  const s2Matches = new Array(len2).fill(false);
+
+  let matches = 0;
+  for (let i = 0; i < len1; i++) {
+    const low = Math.max(0, i - matchWindow);
+    const high = Math.min(len2 - 1, i + matchWindow);
+    for (let j = low; j <= high; j++) {
+      if (!s2Matches[j] && s1[i] === s2[j]) {
+        s1Matches[i] = s2Matches[j] = true;
+        matches++;
+        break;
+      }
+    }
+  }
+
+  if (matches === 0) return 0;
+
+  // Count transpositions
+  let k = 0;
+  let transpositions = 0;
+  for (let i = 0; i < len1; i++) {
+    if (!s1Matches[i]) continue;
+    while (!s2Matches[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+
+  const m = matches;
+  const jaro = (m / len1 + m / len2 + (m - transpositions / 2) / m) / 3;
+
+  // Winkler boost
+  let jw = jaro;
+  if (jaro > 0.7) {
+    let prefix = 0;
+    const maxPrefix = 4;
+    for (let i = 0; i < Math.min(len1, len2, maxPrefix); i++) {
+      if (s1[i] === s2[i]) prefix++;
+      else break;
+    }
+    jw = jaro + prefix * 0.1 * (1 - jaro);
+  }
+
+  return Math.min(1, jw);
+}
+
+
 function sortSearchResults(results, query) {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return results;
-
+  
   const queryWords = normalizedQuery.split(/\s+/).filter((w) => w);
-  const personMatchCount = results.filter(
-    (r) => r.matchType === "person"
-  ).length;
+  const personMatchCount = results.filter((r) => r.matchType === "person").length;
   const titleMatchCount = results.length - personMatchCount;
-  const isPersonSearchIntent =
-    personMatchCount > titleMatchCount && personMatchCount > 5;
+  const isPersonSearchIntent = personMatchCount > titleMatchCount && personMatchCount > 5;
 
   // 1. DECORATE
   const processedResults = results.map((item) => {
     const title = normalize(item.name || item.title || "");
     const score = Math.round((item.popularity || item.score || 0) * 10) / 10;
     const voteCount = item.vote_count || 0;
-
     const rawYearString = item.release_date || item.first_air_date;
-    const year = rawYearString
-      ? parseInt(rawYearString.substring(0, 4), 10) || 0
-      : 0;
-
+    const year = rawYearString ? parseInt(rawYearString.substring(0, 4), 10) || 0 : 0;
     const isPersonMatch = item.matchType === "person" && isPersonSearchIntent;
-
-    // Exact should be literal string equality, regardless of quality
     const isExact = title === normalizedQuery;
 
-    // 1. Truly established classic → huge vote count alone proves it
+    // Quality checks
     const isEstablishedClassic = voteCount >= 1000;
+    const isStandardHit = voteCount >= 200 && score >= 2.0 && year >= new Date().getFullYear() - 15;
+    const isRecentUpAndComer = item.year && item.year >= new Date().getFullYear() - 2 && voteCount >= 50 && score >= 1.5;
+    const passesExactQuality = isEstablishedClassic || isStandardHit || isRecentUpAndComer;
 
-    // 2. Solid mainstream hit → decent votes + some current engagement
-    const isStandardHit =
-      voteCount >= 200 && score >= 2.0 && year >= new Date().getFullYear() - 15; // only within ~15 years
-
-    // 3. Recent up-and-comer → early traction, but still has to show signs of life
-    const isRecentUpAndComer =
-      item.year &&
-      item.year >= new Date().getFullYear() - 2 &&
-      voteCount >= 50 &&
-      score >= 1.5;
-
-    const passesExactQuality =
-      isEstablishedClassic || isStandardHit || isRecentUpAndComer;
-
-    // Start/Contains logic tightened
-    const startsWith =
-      !isExact && !isPersonMatch && title.startsWith(normalizedQuery);
-
-    const contains =
-      !isExact &&
-      !isPersonMatch &&
-      !startsWith &&
-      queryWords.every((word) => title.includes(word));
-
-    const similarity = calculateSimilarity(title, normalizedQuery);
+    // Match types
+    // Use Jaro-Winkler for better typo tolerance (especially for prefix matches)
+    const similarity = jaroWinklerSimilarity(title, normalizedQuery);
+    
+    const isNearExact = similarity >= 0.97; //slight typo tolerance
+    
+    const startsWith = !isExact && !isNearExact && !isPersonMatch && title.startsWith(normalizedQuery);
+    const contains = !isExact && !isNearExact && !isPersonMatch && !startsWith && queryWords.every((word) => title.includes(word));
 
     let matchReason = "Other";
-    if (isExact && passesExactQuality) matchReason = "ExactHQ";
-    else if (isExact) matchReason = "Exact";
+    if ((isExact || isNearExact) && passesExactQuality) matchReason = "ExactHQ";
+    else if (isExact || isNearExact) matchReason = "Exact";
     else if (isPersonMatch) matchReason = "Person";
     else if (startsWith) matchReason = "StartsWith";
     else if (contains) matchReason = "Contains";
@@ -166,7 +206,7 @@ function sortSearchResults(results, query) {
       score,
       voteCount,
       voteAverage: item.vote_average || 0,
-      year: year,
+      year,
       isExact,
       passesExactQuality,
       isPersonMatch,
@@ -182,7 +222,6 @@ function sortSearchResults(results, query) {
   });
 
   // 2. FILTER
-
   const RULES = {
     CURRENT_YEAR: new Date().getFullYear(),
     HQ_VOTE_THRESHOLD: 100,
@@ -195,180 +234,135 @@ function sortSearchResults(results, query) {
       CURRENT_YEAR_MIN_POPULARITY: 0.5,
     },
     CONTAINS: { MIN_VOTES: 10, MIN_SIMILARITY: 0.4 },
-    OTHER: { MIN_VOTES: 20, MIN_POPULARITY: 2.0 },
-    OBSCURE: {
-      AGE_CUTOFF: 20, 
-      MAX_POPULARITY: 0.5,
-      MAX_VOTES: 5,
-    },
+    OTHER: { MIN_VOTES: 50, MIN_POPULARITY: 2.5 },
+    OBSCURE: { AGE_CUTOFF: 20, MAX_POPULARITY: 0.5, MAX_VOTES: 5 },
   };
 
-  // Perform the primary filtering. Use `let` so we can overwrite it with the safety net if needed.
   let filteredResults = processedResults.filter((item) => {
-
-    // --- Stage 1: Priority Pass (Always-Keep Rules) ---
-    // These items are so important they bypass all other checks.
-
-    //Give free pass to fighting events
+    // Stage 1: Priority Pass
     const isFightingEvent = /^(?=.*\b(UFC|LFA|PFL|Bellator)\b)(?=.*\b\w+\s+vs\.?\s+\w+\b).*/i.test(item.title);
-
     const isPriorityItem =
       (item.isExact && item.passesExactQuality) ||
       item.isPersonMatch ||
       isFightingEvent ||
       item.voteCount >= RULES.HQ_VOTE_THRESHOLD ||
       item.score >= RULES.HQ_POPULARITY_THRESHOLD;
+    
+    if (isPriorityItem) return true;
 
-    if (isPriorityItem) {
-      return true;
-    }
-
-    // --- Stage 2: Hard Fail (Universal Rejection Rules) ---
-    // These items have fundamental data quality issues and are always rejected.
-    const isMissingCoreData =
-      !item.year || item.year === 0 || !item.poster_path;
-
-    // Check for content that is verifiably old and has no engagement.
+    // Stage 2: Hard Fail
+    const isMissingCoreData = !item.year || item.year === 0 || !item.poster_path;
     const isObscureContent =
       item.year < (RULES.CURRENT_YEAR - RULES.OBSCURE.AGE_CUTOFF) &&
       item.score < RULES.OBSCURE.MAX_POPULARITY &&
       item.voteCount < RULES.OBSCURE.MAX_VOTES;
+    
+    if (isMissingCoreData || isObscureContent) return false;
 
-    if (isMissingCoreData || isObscureContent) {
-      return false;
-    }
-
-    // --- Stage 3: (Case-by-Case Rules) ---
+    // Stage 3: Case-by-Case Rules
     switch (item.matchReason) {
-      case "Exact": // A low-quality Exact match
-        const isRecent =
-          item.year >= RULES.CURRENT_YEAR - RULES.LQ_EXACT.RECENT_YEAR_SPAN;
-        const hasBasicEngagement =
-          item.voteCount >= RULES.LQ_EXACT.MIN_VOTES ||
-          item.score >= RULES.LQ_EXACT.MIN_POPULARITY;
-        const hasAnyRecentEngagement =
-          isRecent && (item.voteCount > 0 || item.score > 0);
+      case "Exact":
+        const isRecent = item.year >= RULES.CURRENT_YEAR - RULES.LQ_EXACT.RECENT_YEAR_SPAN;
+        const hasBasicEngagement = item.voteCount >= RULES.LQ_EXACT.MIN_VOTES || item.score >= RULES.LQ_EXACT.MIN_POPULARITY;
+        const hasAnyRecentEngagement = isRecent && (item.voteCount > 0 || item.score > 0);
         return hasBasicEngagement || hasAnyRecentEngagement;
 
       case "StartsWith":
         const isCurrentYear = item.year === RULES.CURRENT_YEAR;
         if (isCurrentYear) {
-          return (
-            item.voteCount >= RULES.STARTS_WITH.CURRENT_YEAR_MIN_VOTES ||
-            item.score >= RULES.STARTS_WITH.CURRENT_YEAR_MIN_POPULARITY
-          );
+          return item.voteCount >= RULES.STARTS_WITH.CURRENT_YEAR_MIN_VOTES || item.score >= RULES.STARTS_WITH.CURRENT_YEAR_MIN_POPULARITY;
         }
-        return (
-          item.voteCount >= RULES.STARTS_WITH.MIN_VOTES ||
-          item.score >= RULES.STARTS_WITH.MIN_POPULARITY
-        );
+        return item.voteCount >= RULES.STARTS_WITH.MIN_VOTES || item.score >= RULES.STARTS_WITH.MIN_POPULARITY;
 
       case "Contains":
-        return (
-          item.voteCount >= RULES.CONTAINS.MIN_VOTES &&
-          item.similarity >= RULES.CONTAINS.MIN_SIMILARITY
-        );
-      
+        return item.voteCount >= RULES.CONTAINS.MIN_VOTES && item.similarity >= RULES.CONTAINS.MIN_SIMILARITY;
+
       case "Other":
-        return (
-          item.voteCount >= RULES.OTHER.MIN_VOTES &&
-          item.score >= RULES.OTHER.MIN_POPULARITY
-        );
+        return item.voteCount >= RULES.OTHER.MIN_VOTES && item.score >= RULES.OTHER.MIN_POPULARITY;
 
       default:
-        // By default, if a reason is not handled, we reject it
         return false;
     }
   });
 
-  // --- Stage 4: Safety Net Fallback ---
-  // If our strict filtering removed everything, this block ensures the user still sees the
-  // most relevant possible results instead of an empty screen.
+  // Stage 4: Safety Net Fallback
   if (filteredResults.length === 0 && processedResults.length > 0) {
-    logger.warn(
-      "⚠️ Filtering removed all results. Falling back to top 3 most popular."
-    );
-
-    // We sort the original, unfiltered list to *select* the top 3 candidates.
+    logger.warn("⚠️ Filtering removed all results. Falling back to top 3 most popular.");
     filteredResults = [...processedResults]
       .sort((a, b) => {
-        // Sort primarily by popularity score, then by vote count as a tie-breaker.
         if (a.score !== b.score) return b.score - a.score;
-        return b.voteCount - b.voteCount;
+        return b.voteCount - a.voteCount;
       })
-      .slice(0, 3); // Take only the top 3.
+      .slice(0, 3);
   }
 
-  // 5. SORT
+  // 3. SIMPLIFIED SORT
+  // Person matches -> ExactHQ (by similarity) -> Quality Score (popularity + votes + recency) -> Release date
   filteredResults.sort((a, b) => {
-    // If this is a person search, sort purely by popularity → votes
+    // 1. Person matches first (only if person search intent detected)
     if (isPersonSearchIntent) {
-      if (a.score !== b.score) return b.score - a.score;
-      if (a.voteCount !== b.voteCount) return b.voteCount - a.voteCount;
-      if (a.year !== b.year) return b.year - a.year;
-      return 0;
+      const aIsPerson = a.isPersonMatch ? 1 : 0;
+      const bIsPerson = b.isPersonMatch ? 1 : 0;
+      if (aIsPerson !== bIsPerson) return bIsPerson - aIsPerson;
     }
 
-    // Helper function to assign a priority tier based on match type.
-    // Higher numbers are better and will be sorted first.
-    const getTier = (item) => {
-      switch (item.matchReason) {
-        case "ExactHQ":
-        case "Person":
-          return 3; // Tier 1: Highest priority for confirmed high-quality results.
-        case "Exact":
-        case "StartsWith":
-        case "Contains":
-          return 2; // Tier 2: All other text matches, to be sorted by quality metrics.
-        case "Other":
-        default:
-          return 1; // Tier 3: Lowest priority.
+    // 2. ExactHQ matches
+    const aIsExactHQ = a.matchReason === "ExactHQ" ? 1 : 0;
+    const bIsExactHQ = b.matchReason === "ExactHQ" ? 1 : 0;
+    if (aIsExactHQ !== bIsExactHQ) return bIsExactHQ - aIsExactHQ;
+
+    // 2a. If both are ExactHQ, prioritize by similarity
+    if (aIsExactHQ && bIsExactHQ && a.similarity !== b.similarity) {
+      return b.similarity - a.similarity;
+    
+    }
+    // 3. Composite Quality Score
+    // Combines popularity (engagement), votes (validation), recency, and similarity
+    const calculateQualityScore = (item) => {
+      const currentYear = new Date().getFullYear();
+      const age = currentYear - item.year;
+      
+      // Popularity component (0-100+ range)
+      const popularityScore = item.score;
+      
+      // Vote component using logarithmic scale (prevents low-vote items from ranking high)
+      // log10(10000) ≈ 4, log10(1000) ≈ 3, log10(100) ≈ 2, log10(10) ≈ 1, log10(1) = 0
+      const voteScore = Math.log10(item.voteCount + 1) * 5; // Scale up to ~20 for 10k votes
+      
+      // Recency bonus (newer content gets a small boost, older gets slight penalty)
+      // Content from last 5 years gets +5 to +1 bonus, 6-15 years neutral, older gets penalty
+      let recencyBonus = 0;
+      if (age <= 5) {
+        recencyBonus = (5 - age) * 1; // +5 for current year, +4 for 1 year old, etc.
+      } else if (age > 20) {
+        recencyBonus = -Math.min(age - 20, 10) * 0.5; // Penalty for very old content, capped at -5
       }
+      
+      // Similarity component
+      // "Other" matches don't get similarity boost - they're already weak
+      const similarityScore = 
+        (item.matchReason === "Other") ? 0 : item.similarity * 10;
+      
+      // Final score: popularity + vote validation + recency + similarity
+      return popularityScore + voteScore + recencyBonus + similarityScore;
     };
+    
+    const aQualityScore = calculateQualityScore(a);
+    const bQualityScore = calculateQualityScore(b);
+    if (aQualityScore !== bQualityScore) return bQualityScore - aQualityScore;
 
-    const aTier = getTier(a);
-    const bTier = getTier(b);
-
-    // 1. PRIMARY SORT: By tier. If tiers are different, the sort is decided.
-    if (aTier !== bTier) {
-      return bTier - aTier;
-    }
-
-    // 2. TIE-BREAKERS: If items are in the same tier, sort by other metrics.
-    // This provides logical ordering within each priority group.
-
-    // Then popularity/score
-    if (a.score !== b.score) return b.score - a.score;
-    if (a.voteCount !== b.voteCount) return b.voteCount - a.voteCount;
-
-    // Then similarity (especially useful for StartsWith/Contains)
-    if (a.similarity !== b.similarity) return b.similarity - a.similarity;
-
-    // Then by average rating (if enough votes exist)
-    const minVotesForAverageComparison = 50;
-    if (
-      a.voteCount >= minVotesForAverageComparison &&
-      b.voteCount >= minVotesForAverageComparison &&
-      a.voteAverage !== b.voteAverage
-    ) {
-      return b.voteAverage - a.voteAverage;
-    }
-
-    // Finally, by newer year
+    // 4. Release date as final tiebreaker (newer first)
     if (a.year !== b.year) return b.year - a.year;
 
     return 0;
   });
 
-// 6. LOGGING (debug only)
+  // 4. LOGGING (debug only)
   if (isDebugEnabled) {
     logger.debug(
-      `Intent: ${
-        isPersonSearchIntent ? "Persons" : "Title"
-      } | Query: "${query}" | Raw Matches: ${processedResults.length}`
+      `Intent: ${isPersonSearchIntent ? "Persons" : "Title"} | Query: "${query}" | Raw Matches: ${processedResults.length}`
     );
 
-    // Helper for table formatting is only needed for debugging.
     const formatForTable = (item) => ({
       Title: item.title.substring(0, 35),
       Year: item.year || "----",
@@ -378,30 +372,21 @@ function sortSearchResults(results, query) {
       Reason: item.matchReason,
     });
 
-    // Log final filtered results (top 20)
     if (filteredResults.length > 0) {
       logger.debug("✅ FINAL SORTED RESULTS (Top 20):");
-      console.table(
-        filteredResults.slice(0, 20).map((item) => formatForTable(item))
-      );
+      console.table(filteredResults.slice(0, 20).map((item) => formatForTable(item)));
     }
 
-    // The calculation of filtered-out items is expensive and should only happen in debug mode.
-    const filteredOutItems = processedResults.filter(
-      (item) => !filteredResults.includes(item)
-    );
-
+    const filteredOutItems = processedResults.filter((item) => !filteredResults.includes(item));
     if (filteredOutItems.length > 0) {
       logger.debug("❌ ITEMS FILTERED OUT (Top 20):");
-      console.table(
-        filteredOutItems.slice(0, 20).map((item) => formatForTable(item))
-      );
+      console.table(filteredOutItems.slice(0, 20).map((item) => formatForTable(item)));
     }
   }
 
-  // Return original items
   return filteredResults.map((p) => p.originalItem);
 }
+
 
 function parseMedia(el, type, genreList = [], config = {}) {
   const genres = Array.isArray(el.genre_ids) && genreList.length > 0
