@@ -2,7 +2,7 @@ interface CatalogDefinition {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime';
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru'; 
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; 
   isEnabledByDefault?: boolean;
   showOnHomeByDefault?: boolean;
 }

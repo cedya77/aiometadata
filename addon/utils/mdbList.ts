@@ -444,5 +444,46 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   return metas.filter(Boolean);
 }
 
-export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList };
+async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Promise<string[]> {
+  try {
+    const cacheKey = `genres-${isAnime ? 'anime' : 'standard'}`;
+    
+    return await cacheWrapMDBListGenres(cacheKey, async () => {
+      const animeParam = isAnime ? 1 : 0;
+      const url = `https://api.mdblist.com/genres/?apikey=${apiKey}&anime=${animeParam}`;
+      
+      return await makeRateLimitedRequest(async () => {
+        logger.debug(`Fetching MDBList genres from API (anime=${animeParam})`);
+        
+        const response = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(10000), // 10 second timeout
+        });
+
+        if (!response.ok) {
+          throw new Error(`MDBList genres API returned ${response.status}`);
+        }
+
+        const genresData = await response.json();
+        
+        if (!Array.isArray(genresData)) {
+          throw new Error('MDBList genres API returned invalid format');
+        }
+
+        // Extract titles from the genre objects
+        const genres = genresData.map(g => g.title).filter(Boolean);
+
+        logger.info(`Successfully fetched ${genres.length} ${isAnime ? 'anime' : 'standard'} genres from MDBList API`);
+        return genres;
+      }, `MDBList Genres API (anime=${animeParam})`);
+    });
+  } catch (err: any) {
+    logger.error(`Error fetching MDBList genres (anime=${isAnime}):`, err.message);
+    return [];
+  }
+}
+
+export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres };
 

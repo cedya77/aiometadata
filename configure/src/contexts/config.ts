@@ -3,8 +3,8 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru'; // Keep source as the display label
-  sourceUrl?: string; // Store the actual URL for StremThru catalogs
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; // Keep source as the display label
+  sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
   manifestData?: any; // Store original manifest data for advanced features like skip support
@@ -102,4 +102,8 @@ export interface AppConfig {
     };
   };
   streaming: string[];
+  displayTypeOverrides?: {
+    movie?: string;
+    series?: string;
+  };
 }

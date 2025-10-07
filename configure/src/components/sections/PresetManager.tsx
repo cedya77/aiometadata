@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { useConfig } from '@/contexts/ConfigContext';
 import { AppConfig } from '@/contexts/config';
 import { allCatalogDefinitions } from '@/data/catalogs';
@@ -198,6 +199,10 @@ export function PresetManager() {
   const [includeAdult, setIncludeAdult] = useState(config.includeAdult || false);
   const [includePopularLists, setIncludePopularLists] = useState(false);
   const [selectedCurators, setSelectedCurators] = useState<Set<string>>(new Set());
+  const [overrideMovieType, setOverrideMovieType] = useState(!!config.displayTypeOverrides?.movie);
+  const [movieDisplayType, setMovieDisplayType] = useState(config.displayTypeOverrides?.movie || '');
+  const [overrideSeriesType, setOverrideSeriesType] = useState(!!config.displayTypeOverrides?.series);
+  const [seriesDisplayType, setSeriesDisplayType] = useState(config.displayTypeOverrides?.series || '');
 
   const handleAdultContentToggle = (checked: boolean) => {
     setIncludeAdult(checked);
@@ -207,6 +212,54 @@ export function PresetManager() {
       includeAdult: checked,
       sfw: checked ? false : (prev.sfw || true)
     }));
+  };
+
+  const handleDisplayTypeOverrides = () => {
+    setConfig(prev => ({
+      ...prev,
+      displayTypeOverrides: {
+        movie: overrideMovieType && movieDisplayType.trim() ? movieDisplayType.trim() : undefined,
+        series: overrideSeriesType && seriesDisplayType.trim() ? seriesDisplayType.trim() : undefined,
+      }
+    }));
+  };
+
+  const applyDisplayTypeOverridesToCatalogs = () => {
+    setConfig(prev => {
+      const overrides = {
+        movie: overrideMovieType && movieDisplayType.trim() ? movieDisplayType.trim() : undefined,
+        series: overrideSeriesType && seriesDisplayType.trim() ? seriesDisplayType.trim() : undefined,
+      };
+
+      // Apply overrides to existing catalogs
+      const updatedCatalogs = prev.catalogs.map(catalog => {
+        let displayType = catalog.displayType;
+
+        // Apply movie override
+        if (overrides.movie && catalog.type === 'movie') {
+          displayType = overrides.movie;
+        }
+
+        // Apply series override
+        if (overrides.series && catalog.type === 'series') {
+          displayType = overrides.series;
+        }
+
+        return displayType !== catalog.displayType 
+          ? { ...catalog, displayType } 
+          : catalog;
+      });
+
+      toast.success('Display type overrides applied!', {
+        description: 'Your existing catalogs have been updated with the new display types.'
+      });
+
+      return {
+        ...prev,
+        displayTypeOverrides: overrides,
+        catalogs: updatedCatalogs,
+      };
+    });
   };
 
   const handleCuratorSelection = (username: string, checked: boolean) => {
@@ -279,8 +332,21 @@ export function PresetManager() {
             const type = list.mediatype === "movie" ? "movie" : "series";
             const catalogId = `mdblist.${list.id}`;
             
-            // For danaramapyjama, use "film" instead of "movie" for display type
-            const displayType = (list.user === 'Dan Pyjama' && type === 'movie') ? 'film' : undefined;
+            // Apply display type overrides
+            let displayType = undefined;
+            
+            // Special case: danaramapyjama always uses "film" for movies
+            if (list.user === 'Dan Pyjama' && type === 'movie') {
+              displayType = 'film';
+            } 
+            // Apply global display type overrides if configured
+            else if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (type === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
             
             const newCatalog = {
               id: catalogId,
@@ -373,6 +439,25 @@ export function PresetManager() {
         });
       }
 
+      // Apply display type overrides to all catalogs if configured
+      if (config.displayTypeOverrides) {
+        resetCatalogs = resetCatalogs.map(catalog => {
+          let displayType = undefined;
+          
+          // Apply movie override
+          if (config.displayTypeOverrides.movie && catalog.type === 'movie') {
+            displayType = config.displayTypeOverrides.movie;
+          }
+          
+          // Apply series override
+          if (config.displayTypeOverrides.series && catalog.type === 'series') {
+            displayType = config.displayTypeOverrides.series;
+          }
+          
+          return displayType ? { ...catalog, displayType } : catalog;
+        });
+      }
+      
       newConfig.catalogs = resetCatalogs;
 
       // Apply popular lists if enabled and curators are selected
@@ -443,20 +528,121 @@ export function PresetManager() {
         </CardContent>
       </Card>
 
-      {/* Popular Lists Section */}
+      {/* Display Type Overrides */}
       <Card>
         <CardContent className="p-4 pt-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="include-popular-lists" className="text-lg font-medium">Include Popular Lists</Label>
-              <p className="text-sm text-muted-foreground">
-                When enabled, automatically imports curated lists from selected MDBList curators when applying presets.
+          <div>
+            <Label className="text-lg font-medium">Display Type Overrides</Label>
+            <p className="text-sm text-muted-foreground">
+              Automatically override catalog display types. For example, display "film" instead of "movie" for all movie catalogs.
+            </p>
+          </div>
+
+          {/* Movie Override */}
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="override-movie" className="text-sm font-medium">Override "movie" catalogs</Label>
+              <Switch
+                id="override-movie"
+                checked={overrideMovieType}
+                onCheckedChange={(checked) => {
+                  setOverrideMovieType(checked);
+                  if (checked) handleDisplayTypeOverrides();
+                }}
+              />
+            </div>
+            {overrideMovieType && (
+              <div className="space-y-2">
+                <Label htmlFor="movie-display-type" className="text-sm">Display as:</Label>
+                <Input
+                  id="movie-display-type"
+                  value={movieDisplayType}
+                  onChange={(e) => setMovieDisplayType(e.target.value)}
+                  onBlur={handleDisplayTypeOverrides}
+                  placeholder="e.g., film, films, película"
+                  className="max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  All catalogs with type "movie" will display as "{movieDisplayType || 'movie'}"
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Series Override */}
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="override-series" className="text-sm font-medium">Override "series" catalogs</Label>
+              <Switch
+                id="override-series"
+                checked={overrideSeriesType}
+                onCheckedChange={(checked) => {
+                  setOverrideSeriesType(checked);
+                  if (checked) handleDisplayTypeOverrides();
+                }}
+              />
+            </div>
+            {overrideSeriesType && (
+              <div className="space-y-2">
+                <Label htmlFor="series-display-type" className="text-sm">Display as:</Label>
+                <Input
+                  id="series-display-type"
+                  value={seriesDisplayType}
+                  onChange={(e) => setSeriesDisplayType(e.target.value)}
+                  onBlur={handleDisplayTypeOverrides}
+                  placeholder="e.g., shows, tv shows, série"
+                  className="max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  All catalogs with type "series" will display as "{seriesDisplayType || 'series'}"
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Apply Button */}
+          {(overrideMovieType || overrideSeriesType) && (
+            <div className="pt-4 border-t border-border">
+              <Button 
+                onClick={applyDisplayTypeOverridesToCatalogs}
+                className="w-full"
+                disabled={
+                  (overrideMovieType && !movieDisplayType.trim()) ||
+                  (overrideSeriesType && !seriesDisplayType.trim())
+                }
+              >
+                Apply Display Type Overrides to Existing Catalogs
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                This will update all your existing catalogs with the configured display types.
               </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Popular Lists Section - Enhanced Visibility */}
+      <Card className="border-2 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/20">
+        <CardContent className="p-4 pt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-start space-x-3">
+              <div className="mt-0.5">
+                <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div>
+                <Label htmlFor="include-popular-lists" className="text-lg font-semibold text-blue-900 dark:text-blue-100">Include Popular Lists</Label>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  When enabled, automatically imports curated lists from selected MDBList curators when applying presets.
+                </p>
+              </div>
             </div>
             <Switch 
               id="include-popular-lists"
               checked={includePopularLists} 
-              onCheckedChange={setIncludePopularLists} 
+              onCheckedChange={setIncludePopularLists}
+              className="data-[state=checked]:bg-blue-600"
             />
           </div>
 

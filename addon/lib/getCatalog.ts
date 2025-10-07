@@ -60,6 +60,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
       return { metas: stremthruResults };
     }
+    else if (id.startsWith('custom.')) {
+      logger.info(`Routing to Custom Manifest catalog handler for id: ${id}`);
+      const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
+      return { metas: customResults };
+    }
 
     else {
       logger.warn(`Received request for unknown catalog prefix: ${id}`);

@@ -23,7 +23,7 @@ const JIKAN_API_TTL = 7 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
-const MDBLIST_GENRES_TTL = 7 * 24 * 60 * 60; // Cache MDBList genres for 7 days
+const MDBLIST_GENRES_TTL = 30 * 24 * 60 * 60; // Cache MDBList genres for 30 days
 const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60; // Cache StremThru genres for 7 days
 
 // Enhanced error caching strategy with self-healing
@@ -1442,9 +1442,10 @@ function cacheWrapJikanApi(key, method, customTTL = null) {
   });
 }
 
-function cacheWrapMDBListGenres(listId, method) {
-  cacheLogger.debug(`Caching MDBList genres for list ${listId}`);
-  return cacheWrapGlobal(`mdblist-genres:${listId}`, method, MDBLIST_GENRES_TTL);
+function cacheWrapMDBListGenres(genreType, method) {
+  // genreType should be 'genres-standard' or 'genres-anime'
+  cacheLogger.debug(`Caching MDBList genres for type: ${genreType}`);
+  return cacheWrapGlobal(`mdblist-${genreType}`, method, MDBLIST_GENRES_TTL);
 }
 
 function cacheWrapStremThruGenres(catalogUrl, method) {

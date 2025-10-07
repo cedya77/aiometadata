@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
 import { StremThruIntegration } from './StremThruIntegration';
+import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -33,6 +34,7 @@ const sourceBadgeStyles = {
   mal: "bg-indigo-800/80 text-indigo-200 border-indigo-600/50 hover:bg-indigo-800",
   mdblist: "bg-yellow-800/80 text-yellow-200 border-yellow-600/50 hover:bg-yellow-800",
   stremthru: "bg-purple-800/80 text-purple-200 border-purple-600/50 hover:bg-purple-800",
+  custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
 };
 
 const CollapsibleSection = ({ title, children }: { title: string, children: React.ReactNode }) => {
@@ -379,7 +381,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -532,6 +534,7 @@ export function CatalogsSettings() {
   const { config, setConfig } = useConfig();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isStremThruOpen, setIsStremThruOpen] = useState(false);
+  const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
@@ -729,6 +732,9 @@ export function CatalogsSettings() {
           <Button onClick={() => setIsStremThruOpen(true)} size="sm">
             Import StremThru Catalogs
           </Button>
+          <Button onClick={() => setIsCustomManifestOpen(true)} size="sm">
+            Import Custom Manifest
+          </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -764,6 +770,10 @@ export function CatalogsSettings() {
       <StremThruIntegration
         isOpen={isStremThruOpen}
         onClose={() => setIsStremThruOpen(false)}
+      />
+      <CustomManifestIntegration
+        isOpen={isCustomManifestOpen}
+        onClose={() => setIsCustomManifestOpen(false)}
       />
     </div>
   );

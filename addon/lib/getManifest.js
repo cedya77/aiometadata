@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
-const { getGenresFromMDBList } = require("../utils/mdbList");
+const { getGenresFromMDBList, fetchMDBListGenres } = require("../utils/mdbList");
 const { getGenresFromStremThruCatalog, fetchStremThruCatalog } = require("../utils/stremthru");
 const { getGenresBySelection } = require("../static/genres");
 const packageJson = require("../../package.json");
@@ -157,16 +157,31 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
   }
 }
 
-async function createMDBListCatalog(userCatalog, mdblistKey) {
+async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardGenres = [], prefetchedAnimeGenres = []) {
   try {
     console.log(`[Manifest] Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
     const listId = userCatalog.id.split(".")[1];
     console.log(`[Manifest] MDBList list ID: ${listId}, API key present: ${!!mdblistKey}`);
     
-    // Use static genres based on user's selection, defaulting to 'standard' if not specified
+    // Use pre-fetched genres or fall back to static
     const genreSelection = userCatalog.genreSelection || 'standard';
-    const genres = getGenresBySelection(genreSelection);
-    console.log(`[Manifest] MDBList using ${genreSelection} genres: ${genres.length} genres`);
+    let genres = [];
+    
+    // Use pre-fetched genres based on selection
+    if (genreSelection === 'standard' && prefetchedStandardGenres.length > 0) {
+      genres = prefetchedStandardGenres;
+      console.log(`[Manifest] MDBList using ${genres.length} pre-fetched standard genres`);
+    } else if (genreSelection === 'anime' && prefetchedAnimeGenres.length > 0) {
+      genres = prefetchedAnimeGenres;
+      console.log(`[Manifest] MDBList using ${genres.length} pre-fetched anime genres`);
+    } else if (genreSelection === 'all' && (prefetchedStandardGenres.length > 0 || prefetchedAnimeGenres.length > 0)) {
+      genres = [...prefetchedStandardGenres, ...prefetchedAnimeGenres];
+      console.log(`[Manifest] MDBList using ${genres.length} pre-fetched combined genres`);
+    } else {
+      // Fallback to static genres if pre-fetch failed
+      genres = getGenresBySelection(genreSelection);
+      console.log(`[Manifest] MDBList using ${genres.length} static fallback genres for selection: ${genreSelection}`);
+    }
     
     // Add "None" option when showInHome is false to work around Stremio's genre requirement
     const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
@@ -209,10 +224,10 @@ async function createStremThruCatalog(userCatalog) {
     const manifestId = parts[1];
     const catalogId = parts[2];
     
-    // Get the catalog URL from the user catalog source
-    const catalogUrl = userCatalog.source;
+    // Get the catalog URL from the user catalog (try sourceUrl first, fallback to source)
+    const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
     if (!catalogUrl) {
-      console.warn(`[Manifest] No source URL found for StremThru catalog: ${userCatalog.id}`);
+      console.warn(`[Manifest] No source URL found for catalog: ${userCatalog.id}`);
       return null;
     }
     
@@ -304,6 +319,7 @@ async function getManifest(config) {
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
   console.log(`[Manifest] Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
   console.log(`[Manifest] MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
+  console.log(`[Manifest] Custom catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('custom.')).map(c => c.id));
   //console.log(`[Manifest] StremThru catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('stremthru.')).map(c => c.id));
   
   const years = generateArrayOfYears(20);
@@ -400,6 +416,22 @@ async function getManifest(config) {
   const isMDBList = (id) => id.startsWith("mdblist.");
   const options = { years, genres_movie: genres_movie_names, genres_series: genres_series_names, filterLanguages };
 
+  // Pre-fetch MDBList genres once to avoid repeated API calls
+  let mdblistGenresStandard = [];
+  let mdblistGenresAnime = [];
+  if (enabledCatalogs.some(c => c.id.startsWith('mdblist.'))) {
+    console.log('[Manifest] Pre-fetching MDBList genres for all catalogs...');
+    try {
+      [mdblistGenresStandard, mdblistGenresAnime] = await Promise.all([
+        fetchMDBListGenres(config.apiKeys?.mdblist, false),
+        fetchMDBListGenres(config.apiKeys?.mdblist, true)
+      ]);
+      console.log(`[Manifest] Pre-fetched ${mdblistGenresStandard.length} standard genres and ${mdblistGenresAnime.length} anime genres`);
+    } catch (error) {
+      console.warn('[Manifest] Failed to pre-fetch MDBList genres, will use fallback:', error.message);
+    }
+  }
+
   let catalogs = await Promise.all(enabledCatalogs
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
@@ -409,6 +441,10 @@ async function getManifest(config) {
       }
       if (userCatalog.id.startsWith('stremthru.')) {
         //console.log(`[Manifest] StremThru catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
+      if (userCatalog.id.startsWith('custom.')) {
+        //console.log(`[Manifest] Custom catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (!catalogDef) {
@@ -424,7 +460,7 @@ async function getManifest(config) {
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
           console.log(`[Manifest] Processing MDBList catalog: ${userCatalog.id}`);
-          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist);
+          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime);
           console.log(`[Manifest] MDBList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
@@ -432,6 +468,12 @@ async function getManifest(config) {
           //console.log(`[Manifest] Processing StremThru catalog: ${userCatalog.id}`);
           const result = await createStremThruCatalog(userCatalog);
           //console.log(`[Manifest] StremThru catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('custom.')) {
+          console.log(`[Manifest] Processing Custom catalog: ${userCatalog.id}`);
+          const result = await createStremThruCatalog(userCatalog);
+          console.log(`[Manifest] Custom catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
