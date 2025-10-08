@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.25.0.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.25.0.0...v1.0.0-beta.25.0.1.0) (2025-10-08)
+
+
+### Bug Fixes
+
+* TMDB meta data edge case, Catalog id bug, and hide ST integration in the UI ([edf2e5c](https://github.com/cedya77/aiometadata/commit/edf2e5c030ddb3ac2f517e91cfdfbba5026c2f1b))
+
 ## [1.0.0-beta.25.0.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.2.3.0...v1.0.0-beta.25.0.0) (2025-10-08)
 
 
