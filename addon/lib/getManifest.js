@@ -570,7 +570,7 @@ async function getManifest(config) {
     // Anime Series Search
     if (engineEnabled[searchProviders.anime_series] !== false) {
       catalogs.push({
-        id: "anime_search",
+        id: "search",
         type: "anime.series",
         name: "Anime Search (Series)",
         extra: [{ name: "search", isRequired: true }]
@@ -579,7 +579,7 @@ async function getManifest(config) {
     // Anime Movies Search
     if (engineEnabled[searchProviders.anime_movie] !== false) {
       catalogs.push({
-        id: "anime_movie_search",
+        id: "search",
         type: "anime.movie",
         name: "Anime Search (Movies)",
         extra: [{ name: "search", isRequired: true }]
