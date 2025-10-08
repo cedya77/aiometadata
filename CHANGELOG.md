@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.25.0.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.2.3.0...v1.0.0-beta.25.0.0) (2025-10-08)
+
+
+### Features
+
+* add external manifests imports and improve presets ([dacbfa4](https://github.com/cedya77/aiometadata/commit/dacbfa49042d9e658123c9bc73afff4c1e08cac8))
+* implement static genre system and enhance MDBList integration ([dba5847](https://github.com/cedya77/aiometadata/commit/dba5847788cdcb1bd66886fe4a9b47d59d77b708))
+* improve preset system UX with clean slate behavior and visual enhancements ([62034bd](https://github.com/cedya77/aiometadata/commit/62034bd7741d3a99640be73914110dd5f87d7463))
+* **ui:** Add config presets ([307c434](https://github.com/cedya77/aiometadata/commit/307c4342dd18957a7a0f95b91383b0e4d7d728fc))
+
 ## [1.0.0-beta.24.2.3.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.24.2.2.0...v1.0.0-beta.24.2.3.0) (2025-10-02)
 
 
