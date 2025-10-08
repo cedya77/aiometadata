@@ -429,7 +429,6 @@ function parseMedia(el, type, genreList = [], config = {}) {
  * @returns {Array} The sorted and filtered search results.
  */
 function sortTvdbSearchResults(results, query) {
-  
   const normalizedQuery = normalize(query);
 
   if (!normalizedQuery) return results;
@@ -451,15 +450,9 @@ function sortTvdbSearchResults(results, query) {
     
     // Handle 'Upcoming' status for year parsing
     const year = item.status === 'Upcoming' ? 9999 : (parseInt(item.year, 10) || 0);
-    const similarity = calculateSimilarity(title, normalizedQuery);
     
-    // Check aliases and translations for matches, also cleaning them
-    const hasAliasMatch = (item.aliases || []).some(alias => 
-      alias && typeof alias.name === 'string' && normalize(alias.name.replace(yearRegex, '')) === normalizedQuery
-    );
-    const hasTranslationMatch = (item.translations || []).some(t => 
-      typeof t === 'string' && normalize(t.replace(yearRegex, '')) === normalizedQuery
-    );
+    // Use Jaro-Winkler for similarity calculation
+    const similarity = jaroWinklerSimilarity(title, normalizedQuery);
 
     // "StartsWith" logic
     const startsWith = title.startsWith(normalizedQuery) && (
@@ -476,8 +469,6 @@ function sortTvdbSearchResults(results, query) {
     let matchReason = "Other";
     if (title === normalizedQuery) {
       matchReason = "Exact";
-    } else if (hasAliasMatch || hasTranslationMatch) {
-      matchReason = "Alias/Translation";
     } else if (startsWith) {
       matchReason = "StartsWith";
     } else if (contains) {
@@ -501,7 +492,7 @@ function sortTvdbSearchResults(results, query) {
   });
   
   // 2. FILTER out the lowest quality results.
-  const filteredResults = processedResults.filter(item => {
+  let filteredResults = processedResults.filter(item => {
     // Filter out any item that doesn't have a direct match reason.
     if (item.matchReason === "Other") {
       return false;
@@ -528,6 +519,14 @@ function sortTvdbSearchResults(results, query) {
     
     return true;
   });
+
+  // Safety net: If filtering removed everything, fall back to top 3 in original API order
+  if (filteredResults.length === 0 && processedResults.length > 0) {
+    logger.warn(
+      "⚠️ Filtering removed all results. Falling back to top 3 in original order."
+    );
+    filteredResults = processedResults.slice(0, 3);
+  }
   
   // 3. SORT the filtered results based on our relevance hierarchy.
   filteredResults.sort((a, b) => {
@@ -541,45 +540,38 @@ function sortTvdbSearchResults(results, query) {
       return a.isUpcoming ? 1 : -1;
     }
 
-    // Give a higher score to more recent items to nudge them towards the top,
-    // otherwise maintain the original API order.
-    const getFreshnessScore = (item) => {
-      if (item.year === currentYear) return 1; // Boost for current year
-      return 0; // Everything else has a neutral score
-    };
-
-    const aScore = getFreshnessScore(a);
-    const bScore = getFreshnessScore(b);
-
-    if (aScore !== bScore) {
-      return bScore - aScore; // Higher score comes first
-    }
-
-    // If freshness is the same, we don't apply any other sorting,
-    // thus preserving the original API order as the primary tie-breaker.
+    // Preserve the original API order as the tie-breaker.
     return 0;
   });
   
   
   // 4. LOGGING for verification and debugging.
   if (isDebugEnabled) {
-    logger.debug("Sorted & Filtered TVDB Search Results:");
-    const formatForTable = (item) => {
-      const aliases = (item.originalItem.aliases || []).map(a => a.name).join(', ');
-      const translations = (item.originalItem.translations || []).join(', ');
-      const altNames = [aliases, translations].filter(Boolean).join(' | ');
+    logger.debug(
+      `[TVDB Sort] Query: "${query}" | Raw Matches: ${processedResults.length}`
+    );
 
-      return {
-        Title: item.originalItem.name.substring(0, 35),
-        Year: item.year === 9999 ? 'TBA' : item.year || "----",
-        Similarity: item.similarity.toFixed(2),
-        Reason: item.matchReason,
-        Status: item.originalItem.status || 'N/A',
-        HasPoster: item.hasPoster ? 'Yes' : 'No',
-        "Aliases/Translations": altNames.substring(0, 40) + (altNames.length > 40 ? '...' : '')
-      };
-    };
-    console.table(filteredResults.map(formatForTable));
+    const formatForTable = (item) => ({
+      Title: item.originalItem.name.substring(0, 35),
+      Year: item.year === 9999 ? 'TBA' : item.year || "----",
+      Similarity: item.similarity.toFixed(2),
+      Reason: item.matchReason,
+      Status: item.originalItem.status || 'N/A',
+      HasPoster: item.hasPoster ? 'Yes' : 'No',
+    });
+
+    if (filteredResults.length > 0) {
+      logger.debug("✅ FINAL SORTED RESULTS:");
+      console.table(filteredResults.map(formatForTable));
+    }
+
+    const filteredOut = processedResults.filter(
+      (item) => !filteredResults.includes(item)
+    );
+    if (filteredOut.length > 0) {
+      logger.debug("❌ ITEMS FILTERED OUT:");
+      console.table(filteredOut.map(formatForTable));
+    }
   }
 
   // 5. Return the original items in the newly sorted order.
