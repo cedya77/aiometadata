@@ -105,6 +105,14 @@ export function ArtProviderSettings() {
           Choose your preferred sources for different types of artwork. You can select different providers for posters, backgrounds, and logos.
         </p>
         
+        {/* Search Notice */}
+        <div className="flex items-start gap-2 mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance.
+          </p>
+        </div>
+        
         {/* English Art Only Toggle */}
         <Card className="mt-6">
           <CardContent className="pt-6">
@@ -304,6 +312,24 @@ export function ArtProviderSettings() {
       {/* Anime Art Providers */}
       <div>
         <h3 className="text-xl font-semibold mb-4">Anime</h3>
+        
+        {/* Warning when IMDb settings are affecting anime art providers */}
+        {(config.mal?.useImdbIdForCatalogAndSearch || config.providers?.forceAnimeForDetectedImdb) && (
+          <div className="flex items-start gap-2 mb-4 p-4 bg-amber-50 dark:bg-amber-950 border-2 border-amber-400 dark:border-amber-600 rounded-lg">
+            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-amber-800 dark:text-amber-200">
+              <p className="font-semibold mb-1">⚠️ Important: Anime Art Providers Limited</p>
+              <p>
+                {config.mal?.useImdbIdForCatalogAndSearch && config.providers?.forceAnimeForDetectedImdb 
+                  ? 'Both "Use IMDb ID for Catalog/Search" and "Anime Detection Override" are enabled. Most anime will use the Movie/Series art providers instead of these Anime art providers.'
+                  : config.mal?.useImdbIdForCatalogAndSearch
+                  ? '"Use IMDb ID for Catalog/Search" is enabled in MAL settings. Anime in catalogs/search will use the Movie/Series art providers instead of these Anime art providers.'
+                  : '"Anime Detection Override" is enabled in Providers settings. Detected anime with IMDb IDs will use the Movie/Series art providers instead of these Anime art providers.'}
+              </p>
+            </div>
+          </div>
+        )}
+        
         <div className="flex items-start gap-2 mb-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
           <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
           <p className="text-sm text-blue-800 dark:text-blue-200">

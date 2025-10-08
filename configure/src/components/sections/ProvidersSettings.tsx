@@ -177,6 +177,9 @@ export function ProvidersSettings() {
             <div>
               <Label htmlFor="force-anime-for-imdb" className="text-lg font-medium">Use Anime Meta for Detected Anime (IMDb)</Label>
               <p className="text-sm text-muted-foreground">Helps ensure correct metadata for anime that appear in non-anime catalogs after IMDb mapping.</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                ⚠️ Note: Detected anime with IMDb IDs will use Movie/Series art providers instead of Anime art providers.
+              </p>
             </div>
             <Switch
               id="force-anime-for-imdb"
@@ -242,6 +245,9 @@ export function ProvidersSettings() {
             <div>
               <Label htmlFor="mal-use-imdb" className="text-lg font-medium">Use IMDb ID for Catalog/Search for Series</Label>
               <p className="text-sm text-muted-foreground">Prefer IMDb IDs for anime items in catalogs and search (when available).</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                ⚠️ Note: Anime in catalogs/search will use Movie/Series art providers instead of Anime art providers when this is enabled.
+              </p>
             </div>
             <Switch
               id="mal-use-imdb"

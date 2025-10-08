@@ -163,7 +163,7 @@ const presetConfigs: PresetConfig[] = [
       },
       artProviders: {
         movie: { poster: 'meta', background: 'meta', logo: 'meta' },
-        series: { poster: 'meta', background: 'meta', logo: 'meta' },
+        series: { poster: 'meta', background: 'imdb', logo: 'imdb' },
         anime: { poster: 'tvdb', background: 'imdb', logo: 'imdb' },
         englishArtOnly: false,
       },

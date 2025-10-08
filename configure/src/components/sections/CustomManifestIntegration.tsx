@@ -76,12 +76,16 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
     }
   }, [manifestUrl]);
 
-  const handleCatalogSelection = (catalogId: string, checked: boolean) => {
+  const getCatalogKey = (catalog: CustomCatalog) => {
+    return `${catalog.type}:${catalog.id}`;
+  };
+
+  const handleCatalogSelection = (catalogKey: string, checked: boolean) => {
     const newSelection = new Set(selectedCatalogs);
     if (checked) {
-      newSelection.add(catalogId);
+      newSelection.add(catalogKey);
     } else {
-      newSelection.delete(catalogId);
+      newSelection.delete(catalogKey);
     }
     setSelectedCatalogs(newSelection);
   };
@@ -100,13 +104,15 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
         let newCatalogsAdded = 0;
 
         // Process each selected catalog
-        selectedCatalogs.forEach(catalogId => {
-          const catalog = manifest.catalogs.find(c => c.id === catalogId);
+        selectedCatalogs.forEach(catalogKey => {
+          // Parse the catalog key back into type and id
+          const [type, id] = catalogKey.split(':');
+          const catalog = manifest.catalogs.find(c => c.type === type && c.id === id);
           if (!catalog) return;
 
-          // Generate unique catalog ID: custom.{manifestId}.{catalogId}
+          // Generate unique catalog ID: custom.{manifestId}.{type}.{catalogId}
           const manifestId = manifest.id.replace(/[^a-zA-Z0-9]/g, '_');
-          const uniqueCatalogId = `custom.${manifestId}.${catalog.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const uniqueCatalogId = `custom.${manifestId}.${catalog.type}.${catalog.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
           
           // Check if catalog already exists
           const existingCatalog = newCatalogs.find(c => c.id === uniqueCatalogId);
@@ -253,7 +259,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                       checked={selectedCatalogs.size === manifest.catalogs.length && manifest.catalogs.length > 0}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedCatalogs(new Set(manifest.catalogs.map(c => c.id)));
+                          setSelectedCatalogs(new Set(manifest.catalogs.map(c => getCatalogKey(c))));
                         } else {
                           setSelectedCatalogs(new Set());
                         }
@@ -268,30 +274,33 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto">
-                    {manifest.catalogs.map((catalog) => (
-                      <div key={catalog.id} className="flex items-start space-x-3 p-3 border rounded-lg">
-                        <Switch
-                          id={catalog.id}
-                          checked={selectedCatalogs.has(catalog.id)}
-                          onCheckedChange={(checked) => handleCatalogSelection(catalog.id, checked)}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <Label htmlFor={catalog.id} className="font-medium cursor-pointer">
-                            {catalog.name}
-                          </Label>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs capitalize">
-                              {catalog.type}
-                            </Badge>
-                            {catalog.genres && catalog.genres.length > 0 && (
-                              <Badge variant="secondary" className="text-xs">
-                                {catalog.genres.length} genres
+                    {manifest.catalogs.map((catalog) => {
+                      const catalogKey = getCatalogKey(catalog);
+                      return (
+                        <div key={catalogKey} className="flex items-start space-x-3 p-3 border rounded-lg">
+                          <Switch
+                            id={catalogKey}
+                            checked={selectedCatalogs.has(catalogKey)}
+                            onCheckedChange={(checked) => handleCatalogSelection(catalogKey, checked)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <Label htmlFor={catalogKey} className="font-medium cursor-pointer">
+                              {catalog.name}
+                            </Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {catalog.type}
                               </Badge>
-                            )}
+                              {catalog.genres && catalog.genres.length > 0 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {catalog.genres.length} genres
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   
                   {selectedCatalogs.size > 0 && (

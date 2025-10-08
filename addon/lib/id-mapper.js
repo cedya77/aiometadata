@@ -1476,7 +1476,8 @@ async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
     const imdbEpisode = findImdbEpisodeByAirDate(
       tmdbAirDate,
       mappedImdbSeasons,
-      2 // ±2 days tolerance
+      2, // ±2 days tolerance
+      tmdbEpisodeNumber
     );
 
     if (imdbEpisode) {
@@ -1531,10 +1532,30 @@ function findImdbSeasonsForTmdbSeason(tmdbSeasonNumber, tmdbSeasonName, imdbSeas
 /**
  * Finds an IMDB episode by air date within the given IMDB seasons.
  */
-function findImdbEpisodeByAirDate(tmdbAirDate, mappedImdbSeasons, toleranceDays = 2) {
+function findImdbEpisodeByAirDate(tmdbAirDate, mappedImdbSeasons, toleranceDays = 2, tmdbEpisodeNumber = null) {
   const targetDate = new Date(tmdbAirDate);
   const toleranceMs = toleranceDays * 24 * 60 * 60 * 1000;
 
+  // First pass: try to find exact match by date and episode number
+  if (tmdbEpisodeNumber) {
+    for (const [imdbSeasonNum, imdbSeasonEpisodes] of mappedImdbSeasons) {
+      for (const episode of imdbSeasonEpisodes) {
+        if (!episode.released) continue;
+
+        const episodeDate = new Date(episode.released);
+        const dateDiff = Math.abs(targetDate - episodeDate);
+
+        if (dateDiff <= toleranceMs && episode.episode === tmdbEpisodeNumber) {
+          return {
+            season: imdbSeasonNum,
+            episode: episode.episode
+          };
+        }
+      }
+    }
+  }
+
+  // Second pass: just by date (fallback for when episode numbers don't align)
   for (const [imdbSeasonNum, imdbSeasonEpisodes] of mappedImdbSeasons) {
     for (const episode of imdbSeasonEpisodes) {
       if (!episode.released) continue;

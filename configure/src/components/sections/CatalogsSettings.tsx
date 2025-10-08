@@ -729,9 +729,10 @@ export function CatalogsSettings() {
           <Button onClick={() => setIsMdbListOpen(true)} size="sm">
             Manage MDBList Integration
           </Button>
-          <Button onClick={() => setIsStremThruOpen(true)} size="sm">
+          {/* Hidden - redundant with Custom Manifest */}
+          {/* <Button onClick={() => setIsStremThruOpen(true)} size="sm">
             Import StremThru Catalogs
-          </Button>
+          </Button> */}
           <Button onClick={() => setIsCustomManifestOpen(true)} size="sm">
             Import Custom Manifest
           </Button>

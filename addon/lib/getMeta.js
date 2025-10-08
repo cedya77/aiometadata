@@ -1178,6 +1178,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                   episodeId = `${imdbId}:${ep.season_number}:${ep.episode_number}`;
                 } else {
                   if (allTmdbSeasonsMapToSameImdb) {
+                    logger.debug(`[ID Builder] All TMDB seasons map to the same IMDB ID`);
                     // Case 1: All TMDB seasons map to the same IMDB ID
                     const commonImdbId = resolvedImdbResults[0];
                     if (commonImdbId) {
@@ -1207,6 +1208,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                       }
                   }
                   else {
+                    logger.debug(`[ID Builder] Different TMDB seasons map to different IMDB IDs`);
                     // Case 2: Different TMDB seasons map to different IMDB IDs
                     // Find the IMDB ID for this specific TMDB season
                     if(isAnimeContent) {
