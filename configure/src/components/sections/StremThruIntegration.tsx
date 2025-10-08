@@ -125,19 +125,32 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
              console.log('Debug - catalog.id:', catalog.id);
              console.log('Debug - constructed catalogUrl:', catalogUrl);
              
-             // Add new catalog
-             const newCatalog: CatalogConfig = {
-               id: uniqueCatalogId,
-               type: catalog.type as 'movie' | 'series' | 'anime',
-               name: catalog.name,
-               enabled: true,
-               showInHome: true,
-               source: 'stremthru', // Keep source as the display label
-               sourceUrl: catalogUrl, // Store the actual catalog URL
-               genres: catalog.genres || [], // Store genres from manifest
-               manifestData: catalog, // Store full manifest data for advanced features
-             };
-             newCatalogs.push(newCatalog);
+            // Add new catalog
+            const catalogType = catalog.type as 'movie' | 'series' | 'anime';
+            
+            // Apply display type overrides if configured
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (catalogType === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (catalogType === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
+            
+            const newCatalog: CatalogConfig = {
+              id: uniqueCatalogId,
+              type: catalogType,
+              name: catalog.name,
+              enabled: true,
+              showInHome: true,
+              source: 'stremthru', // Keep source as the display label
+              sourceUrl: catalogUrl, // Store the actual catalog URL
+              genres: catalog.genres || [], // Store genres from manifest
+              manifestData: catalog, // Store full manifest data for advanced features
+              ...(displayType && { displayType }), // Include displayType if defined
+            };
+            newCatalogs.push(newCatalog);
              newCatalogsAdded++;
            }
         });

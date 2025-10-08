@@ -235,7 +235,15 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
     const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
     logger.debug(`MDBList sorting - sort: ${sort}, order: ${order}`);
-    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genre);
+    
+    // Convert genre title to slug format for MDBList API (using the mapping from API)
+    const { convertGenreToSlug } = await import('../utils/mdbList');
+    const genreSlug = convertGenreToSlug(genre);
+    if (genreSlug !== genre) {
+      logger.debug(`Converted genre "${genre}" to slug "${genreSlug}"`);
+    }
+    
+    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug);
     
     // Smart pagination handling
     if (response.totalItems !== undefined && response.totalPages !== undefined) {

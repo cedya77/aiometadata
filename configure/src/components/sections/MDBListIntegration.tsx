@@ -38,7 +38,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const popularUsers = [
     { username: 'tvgeniekodi', name: 'Mr. Professor', description: 'Curated TV and movie lists' },
     { username: 'snoak', name: 'Snoak', description: 'Quality content collections' },
-    { username: 'garycrawfordgc', name: 'Gary Crawford', description: 'Expert curated lists' }
+    { username: 'garycrawfordgc', name: 'Gary Crawford', description: 'Expert curated lists' },
+    { username: 'danaramapyjama', name: 'Dan Pyjama', description: 'Curated film lists for Pyjama wearers' }
   ];
 
   const fetchPopularListsFromUser = useCallback(async (username: string, displayName: string) => {
@@ -183,6 +184,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           
           // Check if catalog already exists
           if (!newCatalogs.some(c => c.id === catalogId)) {
+            // Apply display type overrides if configured
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (type === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
+            
             const newCatalog: CatalogConfig = {
               id: catalogId,
               type,
@@ -194,6 +205,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
+              ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -241,6 +253,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           
           // Check if catalog already exists
           if (!newCatalogs.some(c => c.id === catalogId)) {
+            // Apply display type overrides if configured
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (type === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
+            
             const newCatalog: CatalogConfig = {
               id: catalogId,
               type,
@@ -252,6 +274,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
+              ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -319,6 +342,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           
           // Check if catalog already exists
           if (!existingMdbListIds.has(catalogKey)) {
+            // Apply display type overrides if configured
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (type === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
+            
             // Add new catalog at the end
             const newCatalog: CatalogConfig = {
               id: catalogId,
@@ -331,6 +364,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
+              ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -418,20 +452,32 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
       const [list] = await response.json();
       const type = list.mediatype === "movie" ? "movie" : "series";
-      const newCatalog: CatalogConfig = {
-        id: `mdblist.${list.id}`,
-        type,
-        name: list.name,
-        enabled: true,
-        showInHome: true,
-        source: 'mdblist',
-        sort: defaultSort,
-        order: defaultOrder,
-        cacheTTL: defaultCacheTTL,
-        genreSelection: defaultGenreSelection,
-      };
-
+      
       setConfig(prev => {
+        // Apply display type overrides if configured
+        let displayType = undefined;
+        if (prev.displayTypeOverrides) {
+          if (type === 'movie' && prev.displayTypeOverrides.movie) {
+            displayType = prev.displayTypeOverrides.movie;
+          } else if (type === 'series' && prev.displayTypeOverrides.series) {
+            displayType = prev.displayTypeOverrides.series;
+          }
+        }
+        
+        const newCatalog: CatalogConfig = {
+          id: `mdblist.${list.id}`,
+          type,
+          name: list.name,
+          enabled: true,
+          showInHome: true,
+          source: 'mdblist',
+          sort: defaultSort,
+          order: defaultOrder,
+          cacheTTL: defaultCacheTTL,
+          genreSelection: defaultGenreSelection,
+          ...(displayType && { displayType }),
+        };
+
         // Prevent duplicates
         if (prev.catalogs.some(c => c.id === newCatalog.id)) {
             toast.info(`List "${list.name}" is already in your catalog list.`);

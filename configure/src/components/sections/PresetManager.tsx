@@ -340,7 +340,7 @@ export function PresetManager() {
               displayType = 'film';
             } 
             // Apply global display type overrides if configured
-            else if (prev.displayTypeOverrides) {
+            if (prev.displayTypeOverrides) {
               if (type === 'movie' && prev.displayTypeOverrides.movie) {
                 displayType = prev.displayTypeOverrides.movie;
               } else if (type === 'series' && prev.displayTypeOverrides.series) {
@@ -611,7 +611,7 @@ export function PresetManager() {
                   (overrideSeriesType && !seriesDisplayType.trim())
                 }
               >
-                Apply Display Type Overrides to Existing Catalogs
+                Apply Display Type Overrides to Catalogs
               </Button>
               <p className="text-xs text-muted-foreground mt-2 text-center">
                 This will update all your existing catalogs with the configured display types.

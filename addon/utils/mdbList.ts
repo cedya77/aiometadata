@@ -250,10 +250,11 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
       const itemsReturned = items.length;
       const expectedItems = Math.min(pageSize, totalItems - offset);
       
-      logger.debug(`Smart pagination - listId: ${listId}, page: ${page}/${totalPages}, items: ${itemsReturned}/${expectedItems}, offset: ${offset}, totalItems: ${totalItems}, hasMore: ${hasMore}`);
+      logger.debug(`Smart pagination - listId: ${listId}, page: ${page}/${totalPages}, items: ${itemsReturned}/${expectedItems}, offset: ${offset}, totalItems: ${totalItems}, hasMore: ${hasMore}${genre && genre.toLowerCase() !== 'none' ? ` (filtered by: ${genre})` : ''}`);
       
-      // Validate response consistency
-      if (!hasMore && itemsReturned > 0 && offset + itemsReturned < totalItems) {
+      // Validate response consistency (but skip when genre filter is active as totalItems is unfiltered count)
+      const isFiltered = genre && genre.toLowerCase() !== 'none';
+      if (!hasMore && itemsReturned > 0 && offset + itemsReturned < totalItems && !isFiltered) {
         logger.warn(`Inconsistent pagination: hasMore=false but ${offset + itemsReturned} < ${totalItems}`);
       }
       
@@ -444,6 +445,9 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   return metas.filter(Boolean);
 }
 
+// Global genre mapping cache (title -> slug)
+let genreTitleToSlugMap: Map<string, string> | null = null;
+
 async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Promise<string[]> {
   try {
     const cacheKey = `genres-${isAnime ? 'anime' : 'standard'}`;
@@ -472,8 +476,18 @@ async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Pro
           throw new Error('MDBList genres API returned invalid format');
         }
 
-        // Extract titles from the genre objects
-        const genres = genresData.map(g => g.title).filter(Boolean);
+        // Build title->slug mapping for genre conversion
+        if (!genreTitleToSlugMap) {
+          genreTitleToSlugMap = new Map();
+        }
+        genresData.forEach((g: any) => {
+          if (g.title && g.slug) {
+            genreTitleToSlugMap!.set(g.title.toLowerCase(), g.slug);
+          }
+        });
+
+        // Extract slugs from the genre objects (MDBList API uses slugs for filtering)
+        const genres = genresData.map(g => g.slug).filter(Boolean);
 
         logger.info(`Successfully fetched ${genres.length} ${isAnime ? 'anime' : 'standard'} genres from MDBList API`);
         return genres;
@@ -485,5 +499,23 @@ async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Pro
   }
 }
 
-export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres };
+// Convert genre title to slug using the mapping from the API
+function convertGenreToSlug(genre: string): string {
+  if (!genre || genre.toLowerCase() === 'none') {
+    return genre;
+  }
+  
+  // If we have the mapping, use it
+  if (genreTitleToSlugMap) {
+    const slug = genreTitleToSlugMap.get(genre.toLowerCase());
+    if (slug) {
+      return slug;
+    }
+  }
+  
+  // Fallback: genre is already in slug format or direct conversion
+  return genre;
+}
+
+export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug };
 
