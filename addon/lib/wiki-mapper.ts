@@ -6,8 +6,8 @@ const { request } = require('undici');
 
 const REMOTE_SERIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidata-Fetcher/refs/heads/main/data/tv_mappings.csv';
 const REMOTE_MOVIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidata-Fetcher/refs/heads/main/data/movie_mappings.csv';
-const SERIES_CACHE = path.join(__dirname, '..', 'data', 'tv_mappings.csv.cache');
-const MOVIES_CACHE = path.join(__dirname, '..', 'data', 'movie_mappings.csv.cache');
+const SERIES_CACHE = path.join(process.cwd(), 'addon', 'data', 'tv_mappings.csv.cache');
+const MOVIES_CACHE = path.join(process.cwd(), 'addon', 'data', 'movie_mappings.csv.cache');
 
 interface IdMap {
   imdbId: string;

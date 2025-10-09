@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 // Anime-Lists XML file URL
 const REMOTE_ANIME_LIST_URL = 'https://raw.githubusercontent.com/Anime-Lists/anime-lists/refs/heads/master/anime-list-full.xml';
-const LOCAL_CACHE_PATH = path.join(__dirname, '..', 'data', 'anime-list-full.xml.cache');
+const LOCAL_CACHE_PATH = path.join(process.cwd(), 'addon', 'data', 'anime-list-full.xml.cache');
 const REDIS_ETAG_KEY = 'anime-list-xml-etag';
 const UPDATE_INTERVAL_HOURS = parseInt(process.env.ANIME_LIST_XML_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
 

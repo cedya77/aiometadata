@@ -1229,7 +1229,7 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
     }
   }
   
-  if (config.apiKeys.fanart) {
+  if (config.apiKeys.fanart && artProvider === 'fanart') {
     console.log(`[getAnimeBg] Fetching background from Fanart.tv for ${mediaType}`);
     let fanartUrl = null;
     if (mediaType === 'series') {
@@ -1306,7 +1306,7 @@ async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series
     }
   }
   // fallback to fanart
-  if (config.apiKeys.fanart) {
+  if (config.apiKeys.fanart && artProvider === 'fanart') {
     let fanartUrl = null;
     if (mediaType === 'series' && tvdbId) {
       const images = await fanart.getShowImages(tvdbId, config);
@@ -1388,7 +1388,7 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
       console.warn(`[getAnimePoster] TMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
-  if (config.apiKeys.fanart) {
+  if (config.apiKeys.fanart && artProvider === 'fanart') {
     let fanartUrl = null;
     console.log(`[getAnimePoster] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}`);
     if (mediaType === 'series' && tvdbId) {

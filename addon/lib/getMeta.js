@@ -1073,6 +1073,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
     
     const validImdbSeasons = new Set();
+    const validTmdbSeasonsSet = new Set();
     if (cinemetaVideos && cinemetaVideos.length > 0) {
       const episodesBySeason = cinemetaVideos.reduce((acc, ep) => {
         if (ep.season > 0) { // Ignore season 0 specials
@@ -1089,13 +1090,20 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
         }
       }
     }
+    for (const season of tmdbSeasons) {
+      if (season.season_number > 0 && season.air_date) {
+        validTmdbSeasonsSet.add(season.season_number);
+      }
+    }
     const imdbSeasons = Array.from(validImdbSeasons);
+    const validTmdbSeasons = Array.from(validTmdbSeasonsSet);
+
     logger.debug(`[TMDB] Filtered IMDB seasons to valid ones: ${imdbSeasons.length}`);
     // get season posters
-    const tmdbSeasonNames = tmdbSeasons.map(season => {
+    const tmdbSeasonNames = validTmdbSeasons.map(season => {
       // For anime, include series name for better specificity
       const seasonPattern = /^season\s+\d+$/i;
-      if (tmdbSeasons.length === 1) {
+      if (validTmdbSeasons.length === 1) {
         return seriesData.name;
       }
       else {
@@ -1111,7 +1119,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     let resolvedImdbResults = [];
     let allTmdbSeasonsMapToSameImdb = false;
     
-    if (tmdbSeasons.length !== imdbSeasons.length) {
+    if (validTmdbSeasons.length !== imdbSeasons.length) {
       // Only do name-to-imdb lookup when season counts don't match
       const imdbResults = tmdbSeasonNames.map(name => new Promise((resolve, reject) => {
         nameToImdb({ name: name, type: 'series' }, (err, result) => {
@@ -1128,7 +1136,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       resolvedImdbResults = await Promise.all(imdbResults);
       allTmdbSeasonsMapToSameImdb = resolvedImdbResults.every(id => id === resolvedImdbResults[0]);
     }
-    logger.debug(`[TMDB] TMDB seasons: ${tmdbSeasons.length}, IMDB seasons: ${imdbSeasons.length}`);
+    logger.debug(`[TMDB] TMDB seasons: ${validTmdbSeasons.length}, IMDB seasons: ${imdbSeasons.length}`);
     
     // Only fetch IMDB videos if we have resolved IMDB results
     const imdbVideos = resolvedImdbResults.length > 0 
@@ -1174,7 +1182,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
               if (imdbId && cinemetaVideos.length > 0) {
                 // check if tmdb and imdb have the same number of non 0 seasons and episodes
 
-                if (tmdbSeasons.length === imdbSeasons.length) {
+                if (validTmdbSeasons.length === imdbSeasons.length) {
                   episodeId = `${imdbId}:${ep.season_number}:${ep.episode_number}`;
                 } else {
                   if (allTmdbSeasonsMapToSameImdb) {
@@ -1183,7 +1191,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                     const commonImdbId = resolvedImdbResults[0];
                     if (commonImdbId) {
                       // Find which TMDB season this episode belongs to
-                      const tmdbSeason = tmdbSeasons.find(s => s.season_number === ep.season_number);
+                      const tmdbSeason = validTmdbSeasons.find(s => s.season_number === ep.season_number);
                       const tmdbSeasonName = tmdbSeason ? tmdbSeason.name : `Season ${ep.season_number}`;
                       
                       const imdbEpisodeId = await idMapper.getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
@@ -1212,8 +1220,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                     // Case 2: Different TMDB seasons map to different IMDB IDs
                     // Find the IMDB ID for this specific TMDB season
                     if(isAnimeContent) {
-                      const tmdbSeason = tmdbSeasons.find(s => s.season_number === ep.season_number);
-                      const tmdbSeasonIndex = tmdbSeasons.indexOf(tmdbSeason);
+                      const tmdbSeason = validTmdbSeasons.find(s => s.season_number === ep.season_number);
+                      const tmdbSeasonIndex = validTmdbSeasons.indexOf(tmdbSeason);
                       const seasonImdbId = resolvedImdbResults[tmdbSeasonIndex];
                       
                       if (seasonImdbId && imdbVideos[tmdbSeasonIndex]) {

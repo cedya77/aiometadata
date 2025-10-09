@@ -863,7 +863,7 @@ class ConfigApi {
       
       const fs = require('fs').promises;
       const path = require('path');
-      const correctionsPath = path.join(__dirname, '..', 'data', 'id-mapping-corrections.json');
+      const correctionsPath = path.join(process.cwd(), 'addon', 'data', 'id-mapping-corrections.json');
       
       try {
         const correctionsData = await fs.readFile(correctionsPath, 'utf-8');

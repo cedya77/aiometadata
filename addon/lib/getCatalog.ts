@@ -432,13 +432,14 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     // sparkle emoji
     logger.debug(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
     
-    // Calculate StremThru pagination (skip in multiples of 100, client-side paginate to 20)
+    // Calculate StremThru pagination. Upstream supports skip in steps of page size (typically 20)
+    // so request the correct page directly and avoid empty local slices.
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
-    const stremThruBatchSize = 100;
+    const stremThruBatchSize = pageSize;
     
-    // Determine which 100-item batch we need from StremThru
+    // Determine the global index for this page and use it as the skip value upstream
     const globalItemIndex = (page - 1) * pageSize; // 0-based index of first item on this page
-    const stremThruSkip = Math.floor(globalItemIndex / stremThruBatchSize) * stremThruBatchSize;
+    const stremThruSkip = globalItemIndex;
     
     // Fetch the 100-item batch from StremThru with server-side genre filtering
     let items = await fetchStremThruCatalog(catalogUrl, stremThruSkip, genre);

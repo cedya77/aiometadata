@@ -4,6 +4,7 @@ import { initializeMapper } from './lib/id-mapper.js';
 import { initializeAnimeListMapper } from './lib/anime-list-mapper.js';
 import { initializeMappings } from './lib/wiki-mapper.js';
 import { runCacheCleanup } from './cache-cleanup.js';
+import { runCachePathMigration } from './lib/cache-path-migration.js';
 import database from './lib/database.js';
 import consola from 'consola';
 
@@ -29,6 +30,9 @@ async function startServer(): Promise<void> {
     consola.error('Promise:', promise);
     consola.error('This rejection was not handled and could crash the application.');
   });
+  
+  // Run one-time cache path migration BEFORE initializing mappers
+  await runCachePathMigration();
   
   consola.info('Initializing ID Mapper...');
   await initializeMapper();

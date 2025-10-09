@@ -8,8 +8,8 @@ const { numberValueTypes } = require('framer-motion');
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
 const REMOTE_KITSU_TO_IMDB_MAPPING_URL = 'https://raw.githubusercontent.com/TheBeastLT/stremio-kitsu-anime/bbf149474f610885629b95b1b9ce4408c3c1353d/static/data/imdb_mapping.json';
-const LOCAL_CACHE_PATH = path.join(__dirname, '..', 'data', 'anime-list-full.json.cache');
-const LOCAL_KITSU_TO_IMDB_MAPPING_PATH = path.join(__dirname, '..', 'data', 'imdb_mapping.json.cache');
+const LOCAL_CACHE_PATH = path.join(process.cwd(), 'addon', 'data', 'anime-list-full.json.cache');
+const LOCAL_KITSU_TO_IMDB_MAPPING_PATH = path.join(process.cwd(), 'addon', 'data', 'imdb_mapping.json.cache');
 const REDIS_ETAG_KEY = 'anime-list-etag'; 
 const REDIS_KITSU_TO_IMDB_ETAG_KEY = 'kitsu-to-imdb-etag';
 const UPDATE_INTERVAL_HOURS = parseInt(process.env.ANIME_LIST_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
