@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0-beta.25.0.2.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.25.0.1.0...v1.0.0-beta.25.0.2.0) (2025-10-09)
+
+
+### Bug Fixes
+
+* Wrong file cache path, MAL poster bg, further tmdb meta edge cases and pagination for custom imported catalogs ([bdbc21b](https://github.com/cedya77/aiometadata/commit/bdbc21b9a5724ee8ba1aec0c8a2de7e406abdc43))
+
 ## [1.0.0-beta.25.0.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.25.0.0...v1.0.0-beta.25.0.1.0) (2025-10-08)
 
 
