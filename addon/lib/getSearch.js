@@ -411,7 +411,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
 
 async function performAiSearch(type, query, language, config) {
-  const aiSuggestions = await performGeminiSearch(config.geminikey, query, type, language);
+  const geminiKey = config.apiKeys?.gemini;
+  const aiSuggestions = await performGeminiSearch(geminiKey, query, type, language);
   if (!aiSuggestions || aiSuggestions.length === 0) {
     logger.info('Gemini returned no suggestions.');
     return [];
@@ -457,13 +458,13 @@ async function performAiSearch(type, query, language, config) {
           }
         }
       } 
-      else if (type === 'movie') {
+      /*else if (type === 'movie') {
         const searchTitle = suggestion.title;
         if (searchTitle) {
           const results = await performMovieSearch(type, searchTitle, language, config, false);
           parsedResult = results?.[0] || null;
         }
-      }
+      }*/
 
       if (parsedResult && !seenIds.has(parsedResult.id)) {
         finalMetas.push(parsedResult);
@@ -862,7 +863,7 @@ async function getSearch(id, type, language, extra, config) {
           }
           
           providerId = providerId || getDefaultProvider(type);
-          if (config.search?.ai_enabled && config.geminikey) {
+          if (config.search?.ai_enabled && config.apiKeys?.gemini) {
             logger.info(`Performing AI-enhanced search for type '${type}'`);
             metas = await performAiSearch(type, query, language, config);
           } else {

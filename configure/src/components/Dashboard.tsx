@@ -100,24 +100,33 @@ function DashboardOverview({ data, systemData, loading }) {
           </CardHeader>
           <CardContent>
             <div className="flex items-center space-x-2">
-              <Badge variant={systemStatus.status === 'healthy' ? 'default' : 'destructive'}>
+              <Badge variant={
+                systemStatus.status === 'healthy' ? 'default' : 
+                systemStatus.status === 'warning' ? 'secondary' : 
+                'destructive'
+              }>
                 {systemStatus.status}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Uptime: {systemStatus.uptime}
             </p>
+            {data?.systemOverview?.issues && data.systemOverview.issues.length > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                {data.systemOverview.issues.join(', ')}
+              </p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+            <CardTitle className="text-sm font-medium">User Requests</CardTitle>
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{quickStats.totalRequests.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Today</p>
+            <p className="text-xs text-muted-foreground">Today (excludes dashboard/config)</p>
           </CardContent>
         </Card>
 
@@ -305,24 +314,29 @@ function DashboardAnalytics({ data, loading }) {
         <Card>
           <CardHeader>
             <CardTitle>Request Success Rate</CardTitle>
-            <CardDescription>Overall request success vs failure</CardDescription>
+            <CardDescription>Success vs failure for tracked responses</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Success</span>
+                <span className="text-sm font-medium">Success (HTTP 2xx-3xx)</span>
                 <span className="text-2xl font-bold text-green-600">{Number(requestMetrics.successRate).toFixed(1)}%</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Failure</span>
+                <span className="text-sm font-medium">Failure (HTTP 4xx-5xx)</span>
                 <span className="text-2xl font-bold text-red-600">{Number(requestMetrics.failureRate).toFixed(1)}%</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div 
                   className="bg-green-600 h-2 rounded-full" 
                   style={{ width: `${Number(requestMetrics.successRate)}%` }}
                 ></div>
               </div>
+              {data?.quickStats?.trackingCoverage !== undefined && data.quickStats.trackingCoverage < 95 && (
+                <div className="pt-2 border-t text-xs text-amber-600 dark:text-amber-400">
+                  ⚠️ Tracking coverage: {data.quickStats.trackingCoverage}% ({data.quickStats.trackedResponses}/{data.quickStats.todayRequests} requests tracked)
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

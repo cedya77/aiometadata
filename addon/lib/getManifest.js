@@ -570,7 +570,7 @@ async function getManifest(config) {
     // TVDB Collections Search
     if (engineEnabled['tvdb.collections.search'] !== false) {
       catalogs.push({ 
-        id: 'tvdb_collections_search', 
+        id: 'search', 
         type: 'collection', 
         name: `${prefix}TVDB Collections`, 
         extra: [{ name: 'search', isRequired: true }] 
@@ -618,7 +618,7 @@ async function getManifest(config) {
     }
   }
 
-  if (config.geminikey) {
+  if (config.apiKeys?.gemini && config.search?.ai_enabled) {
     const aiSearchCatalogMovie = {
       id: "gemini.search", 
       type: "movie",
@@ -646,9 +646,9 @@ async function getManifest(config) {
   const activeConfigs = [
     `Language: ${language}`,
     `TMDB Account: ${sessionId ? 'Connected' : 'Not Connected'}`,
-    `MDBList Integration: ${config.mdblistkey ? 'Connected' : 'Not Connected'}`,
+    `MDBList Integration: ${config.apiKeys?.mdblist ? 'Connected' : 'Not Connected'}`,
     `IMDb Integration: ${provideImdbId ? 'Enabled' : 'Disabled'}`,
-    `RPDB Integration: ${config.rpdbkey ? 'Enabled' : 'Disabled'}`,
+    `RPDB Integration: ${config.apiKeys?.rpdb } ? 'Enabled' : 'Disabled'}`,
     `Search: ${config.searchEnabled !== "false" ? 'Enabled' : 'Disabled'}`,
     `Active Catalogs: ${catalogs.length}`
   ].join(' | ');

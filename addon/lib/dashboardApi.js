@@ -9,9 +9,14 @@ class DashboardAPI {
     this.database = database || null;
     this.requestTracker = requestTracker || null;
     this.startTime = Date.now();
+    this.uptimeInitialized = false;
     
-    // Initialize persistent uptime tracking
-    this.initializePersistentUptime();
+    // Initialize persistent uptime tracking (async, don't await in constructor)
+    this.initializePersistentUptime().then(() => {
+      this.uptimeInitialized = true;
+    }).catch(err => {
+      console.error('[Dashboard API] Failed to initialize uptime:', err);
+    });
   }
 
   // Initialize persistent uptime tracking in Redis
@@ -33,7 +38,7 @@ class DashboardAPI {
   // Get persistent uptime (survives process restarts)
   async getPersistentUptime() {
     try {
-      if (this.cache) {
+      if (this.cache && this.cache.status === 'ready') {
         const startTimeStr = await this.cache.get('addon:start_time');
         if (startTimeStr) {
           const startTime = parseInt(startTimeStr);
@@ -48,10 +53,26 @@ class DashboardAPI {
             uptimeSeconds,
             startTime: new Date(startTime).toISOString()
           };
+        } else {
+          // Key doesn't exist yet, initialize it
+          console.log('[Dashboard API] addon:start_time not found, initializing now');
+          await this.cache.set('addon:start_time', Date.now().toString());
+          
+          // Return process uptime for now
+          const processUptime = process.uptime();
+          const hours = Math.floor(processUptime / 3600);
+          const minutes = Math.floor((processUptime % 3600) / 60);
+          
+          return {
+            uptime: `${hours}h ${minutes}m`,
+            uptimeSeconds: Math.floor(processUptime),
+            startTime: new Date(Date.now() - processUptime * 1000).toISOString()
+          };
         }
       }
       
-      // Fallback to process uptime
+      // Fallback to process uptime when Redis not ready
+      console.warn('[Dashboard API] Redis not ready, using process uptime');
       const processUptime = process.uptime();
       const hours = Math.floor(processUptime / 3600);
       const minutes = Math.floor((processUptime % 3600) / 60);
@@ -63,10 +84,15 @@ class DashboardAPI {
       };
     } catch (error) {
       console.warn('[Dashboard API] Failed to get persistent uptime:', error.message);
+      // Return process uptime instead of 0h 0m
+      const processUptime = process.uptime();
+      const hours = Math.floor(processUptime / 3600);
+      const minutes = Math.floor((processUptime % 3600) / 60);
+      
       return {
-        uptime: '0h 0m',
-        uptimeSeconds: 0,
-        startTime: new Date().toISOString()
+        uptime: `${hours}h ${minutes}m`,
+        uptimeSeconds: Math.floor(processUptime),
+        startTime: new Date(Date.now() - processUptime * 1000).toISOString()
       };
     }
   }
@@ -83,17 +109,26 @@ class DashboardAPI {
     let overallStatus = 'healthy';
     const issues = [];
     
-    // Check Redis connection
+    // Check Redis connection (critical - mark as error if unavailable)
     try {
-      if (this.cache) {
+      if (this.cache && this.cache.status === 'ready') {
         await this.cache.ping();
         healthChecks.redis = true;
-      } else {
-        issues.push('Redis not available');
-        overallStatus = 'warning';
+      } else if (this.cache && this.cache.status) {
+        console.log(`[Dashboard API] Redis status: ${this.cache.status}`);
+        if (this.cache.status === 'connecting' || this.cache.status === 'reconnecting') {
+          issues.push(`Redis ${this.cache.status}...`);
+          overallStatus = 'warning';
+        } else if (this.cache.status === 'end' || this.cache.status === 'close') {
+          issues.push('Redis connection closed');
+          overallStatus = 'error';
+        }
+      } else if (!this.cache) {
+        // NO_CACHE mode - don't show as issue
+        console.log('[Dashboard API] Redis disabled (NO_CACHE mode)');
       }
     } catch (error) {
-      issues.push('Redis connection failed');
+      issues.push(`Redis error: ${error.message}`);
       overallStatus = 'error';
     }
     
@@ -104,12 +139,12 @@ class DashboardAPI {
         await this.database.getQuery('SELECT 1');
         healthChecks.database = true;
       } else {
-        issues.push('Database not available');
-        overallStatus = 'warning';
+        // Database is optional - don't mark as warning
+        healthChecks.database = false;
       }
     } catch (error) {
       issues.push('Database connection failed');
-      overallStatus = 'error';
+      overallStatus = 'warning'; // Only warning for connection failure, not missing
     }
     
     // Check memory usage
@@ -191,26 +226,33 @@ class DashboardAPI {
   async getQuickStats() {
     try {
       // Get real request tracking data
-      const requestStats = this.requestTracker ? await this.requestTracker.getStats() : { totalRequests: 0, errorRate: 0 };
+      const requestStats = this.requestTracker ? await this.requestTracker.getStats() : { totalRequests: 0, todayRequests: 0, errorRate: 0 };
       const activeUsers = this.requestTracker ? await this.requestTracker.getActiveUsers() : 0;
       
       // Get real cache hit rate from request tracker
       const cacheHitRate = this.requestTracker ? await this.requestTracker.getCacheHitRate() : 0;
       
       return {
-        totalRequests: requestStats.totalRequests,
+        totalRequests: requestStats.todayRequests || requestStats.totalRequests, // Use today's requests for dashboard
+        todayRequests: requestStats.todayRequests || 0,
+        trackedResponses: requestStats.trackedResponses || 0,
         cacheHitRate: cacheHitRate,
         activeUsers: activeUsers,
         errorRate: parseFloat(requestStats.errorRate),
-        successRate: parseFloat(requestStats.successRate)
+        successRate: parseFloat(requestStats.successRate),
+        trackingCoverage: requestStats.trackingCoverage || 100
       };
     } catch (error) {
       console.error('[Dashboard API] Error getting quick stats:', error);
       return {
         totalRequests: 0,
+        todayRequests: 0,
+        trackedResponses: 0,
         cacheHitRate: 0,
         activeUsers: 0,
-        errorRate: 0
+        errorRate: 0,
+        successRate: 0,
+        trackingCoverage: 100
       };
     }
   }

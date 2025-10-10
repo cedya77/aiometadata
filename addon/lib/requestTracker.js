@@ -36,23 +36,65 @@ class RequestTracker {
     return async (req, res, next) => {
       const startTime = Date.now();
       const originalSend = res.send;
+      const originalJson = res.json;
+      const originalEnd = res.end;
+      let responseTracked = false;
       
       // Track request start
       tracker.trackRequest(req);
       
-      // Override res.send to capture response data
+      // Helper to track response once
+      const trackOnce = function() {
+        if (!responseTracked) {
+          responseTracked = true;
+          const responseTime = Date.now() - startTime;
+          tracker.trackResponse(req, res, responseTime);
+        }
+      };
+      
+      // Override res.send
       res.send = function(data) {
-        const responseTime = Date.now() - startTime;
-        
-        // Track response
-        tracker.trackResponse(req, res, responseTime);
-        
-        // Call original send
+        trackOnce();
         return originalSend.call(this, data);
       };
       
+      // Override res.json
+      res.json = function(data) {
+        trackOnce();
+        return originalJson.call(this, data);
+      };
+      
+      // Override res.end as final fallback
+      res.end = function(data) {
+        trackOnce();
+        return originalEnd.call(this, data);
+      };
+      
+      // Handle errors that happen before response is sent
+      res.on('finish', () => {
+        trackOnce();
+      });
+      
       next();
     };
+  }
+
+  // Check if request should be tracked (filter out internal requests)
+  shouldTrackRequest(req) {
+    const path = req.path;
+    
+    // Skip internal/admin API requests
+    const internalPaths = [
+      '/api/dashboard',
+      '/api/config',
+      '/api/test-keys',
+      '/health',
+      '/favicon.ico',
+      '/background.png',
+      '/logo.png'
+    ];
+    
+    return !internalPaths.some(prefix => path.startsWith(prefix));
   }
 
   // Track incoming request
@@ -67,14 +109,18 @@ class RequestTracker {
       // Track content requests (meta requests)
       this.trackContentRequest(req);
       
-      // Increment counters (don't await to avoid blocking)
-      redis.incr(`requests:total`).catch(() => {});
-      redis.incr(`requests:${today}`).catch(() => {});
-      redis.incr(`requests:${hour}`).catch(() => {});
-      redis.incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`).catch(() => {});
+      // Only increment counters for actual user-facing requests
+      if (this.shouldTrackRequest(req)) {
+        redis.incr(`requests:total`).catch(() => {});
+        redis.incr(`requests:${today}`).catch(() => {});
+        redis.incr(`requests:${hour}`).catch(() => {});
+        redis.incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`).catch(() => {});
+      }
       
-      // Track active users with improved methodology
-      await this.trackActiveUser(userIdentifier, req);
+      // Track active users only for user-facing requests
+      if (this.shouldTrackRequest(req)) {
+        await this.trackActiveUser(userIdentifier, req);
+      }
       
       // Set expiration for time-based keys (don't await)
       redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
@@ -107,6 +153,7 @@ class RequestTracker {
       const today = new Date().toISOString().split('T')[0];
       const endpoint = this.normalizeEndpoint(req.path);
       const statusCode = res.statusCode;
+      const shouldTrack = this.shouldTrackRequest(req);
       
       // Track response times by endpoint (don't await to avoid blocking)
       redis.lpush(`response_times:${endpoint}`, responseTime).catch(() => {});
@@ -118,16 +165,19 @@ class RequestTracker {
       redis.ltrim(`response_times:${hour}`, 0, 999).catch(() => {}); // Keep last 1000 for hourly averages
       redis.expire(`response_times:${hour}`, 86400 * 7).catch(() => {}); // 7 days expiration
       
-      // Track status codes
-      redis.incr(`status:${statusCode}:${today}`).catch(() => {});
-      
-      // Track errors
-      if (statusCode >= 400) {
-        redis.incr(`errors:total`).catch(() => {});
-        redis.incr(`errors:${today}`).catch(() => {});
-        redis.incr(`errors:${statusCode}:${today}`).catch(() => {});
-      } else {
-        redis.incr(`success:${today}`).catch(() => {});
+      // Only track status codes and success/errors for user-facing requests
+      if (shouldTrack) {
+        // Track status codes
+        redis.incr(`status:${statusCode}:${today}`).catch(() => {});
+        
+        // Track errors
+        if (statusCode >= 400) {
+          redis.incr(`errors:total`).catch(() => {});
+          redis.incr(`errors:${today}`).catch(() => {});
+          redis.incr(`errors:${statusCode}:${today}`).catch(() => {});
+        } else {
+          redis.incr(`success:${today}`).catch(() => {});
+        }
       }
       
       // Set expiration (don't await)
@@ -950,10 +1000,18 @@ class RequestTracker {
       const todayErr = parseInt(todayErrors) || 0;
       const todaySucc = parseInt(todaySuccess) || 0;
       
-      // Ensure success rate doesn't exceed 100% due to tracking inconsistencies
-      const actualTotal = Math.max(todayReq, todaySucc + todayErr);
-      const successRate = actualTotal > 0 ? parseFloat(((todaySucc / actualTotal) * 100).toFixed(1)) : 0;
-      const errorRate = actualTotal > 0 ? parseFloat(((todayErr / actualTotal) * 100).toFixed(1)) : 0;
+      // Calculate rates based on tracked responses (success + errors)
+      // This avoids showing misleading percentages when some requests aren't tracked
+      const trackedResponses = todaySucc + todayErr;
+      const successRate = trackedResponses > 0 ? parseFloat(((todaySucc / trackedResponses) * 100).toFixed(1)) : 0;
+      const errorRate = trackedResponses > 0 ? parseFloat(((todayErr / trackedResponses) * 100).toFixed(1)) : 0;
+      
+      // Log warning if there's a significant tracking gap
+      if (todayReq > 0 && trackedResponses < todayReq * 0.9) {
+        logger.warn(`[Request Tracker] Tracking gap detected: ${todayReq} requests but only ${trackedResponses} tracked responses (${Math.round((trackedResponses/todayReq)*100)}% coverage)`);
+      }
+      
+      const trackingCoverage = todayReq > 0 ? parseFloat(((trackedResponses / todayReq) * 100).toFixed(1)) : 100;
       
       return {
         totalRequests: parseInt(totalRequests) || 0,
@@ -961,8 +1019,11 @@ class RequestTracker {
         yesterdayRequests: parseInt(yesterdayRequests) || 0,
         totalErrors: parseInt(totalErrors) || 0,
         todayErrors: todayErr,
+        todaySuccess: todaySucc,
+        trackedResponses: trackedResponses,
         successRate: Math.min(successRate, 100), // Cap at 100%
-        errorRate: Math.min(errorRate, 100) // Cap at 100%
+        errorRate: Math.min(errorRate, 100), // Cap at 100%
+        trackingCoverage: trackingCoverage // % of requests that were tracked
       };
     } catch (error) {
       logger.error('[Request Tracker] Failed to get stats:', error);
@@ -972,8 +1033,11 @@ class RequestTracker {
         yesterdayRequests: 0,
         totalErrors: 0,
         todayErrors: 0,
+        todaySuccess: 0,
+        trackedResponses: 0,
         successRate: 0,
-        errorRate: 0
+        errorRate: 0,
+        trackingCoverage: 100
       };
     }
   }

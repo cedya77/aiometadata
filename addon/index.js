@@ -545,7 +545,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   try {
     let responseData;
       
-      if (id.includes('search')) {
+      if (id === 'search') {
       // Use search-specific cache wrapper
       const searchKey = `${id}:${actualType}:${JSON.stringify(extraArgs)}`;
       

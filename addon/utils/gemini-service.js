@@ -110,10 +110,11 @@ Example response if the target language was Spanish:
 
 User's search: "${query}"
 Media Type: ${type}
+imdb_id: ${imdb_id}
 
 Instructions:
 1.  Analyze the context, intent, genre, theme, mood, style, time period, and specific plot elements mentioned in the query.
-2.  For each relevant ${type} you find, provide its exact and original **English title**.
+2.  For each relevant ${type} you find, provide its exact and original **English title** and its imdb_id.
 3.  Return the results as a valid JSON array of objects, where each object has a "title" key.
 4.  Do not include any explanations, markdown formatting, or any text outside of the final JSON array.
 5.  Prioritize popular and critically acclaimed results that are highly relevant to the search intent.
@@ -122,13 +123,16 @@ Instructions:
 Example response for a search like "murder mystery in a small village":
 [
   {
-    "title": "Broadchurch"
+    "title": "Broadchurch",
+    "imdb_id": "tt2249364"
   },
   {
-    "title": "Hot Fuzz"
+    "title": "Hot Fuzz",
+    "imdb_id": "tt0425112"
   },
   {
-    "title": "Mare of Easttown"
+    "title": "Mare of Easttown",
+    "imdb_id": "tt10155688"
   }
 ]
 `;
