@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-
+const { request } = require("undici");
 const database = require('./database');
 
 class ConfigApi {
@@ -968,6 +968,131 @@ class ConfigApi {
       res.status(500).json({ error: 'Failed to remove correction' });
     }
   }
+
+    async testApiKeys(req, res) {
+    try {
+      await this.initialize();
+      const { apiKeys } = req.body;
+      if (!apiKeys) {
+        return res.status(400).json({ error: "apiKeys object is required" });
+      }
+
+      const serviceRequest = async (url, options = {}, retries = 2) => {
+        for (let i = 0; i <= retries; i++) {
+          try {
+            const response = await request(url, {
+              ...options,
+              headers: { "User-Agent": "AIOMetadata/1.0", ...options.headers },
+              signal: AbortSignal.timeout(5000),
+            });
+
+            // Fail immediately on authorization errors.
+            if (response.statusCode === 401 || response.statusCode === 403) {
+              return { statusCode: response.statusCode, data: null };
+            }
+
+            // For other errors, allow retrying.
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+              throw new Error(
+                `Request failed with status code ${response.statusCode}`,
+              );
+            }
+
+            const body = await response.body.json().catch(() => ({}));
+            return { statusCode: response.statusCode, data: body };
+          } catch (error) {
+            if (i === retries) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        }
+      };
+
+      const testFunctions = {
+        gemini: async (key) => {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return response && response.statusCode === 200;
+        },
+
+        tmdb: async (key) => {
+          const url = `https://api.themoviedb.org/3/configuration?api_key=${key}`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return response && response.statusCode === 200;
+        },
+
+        tvdb: async (key) => {
+          const url = "https://api4.thetvdb.com/v4/login";
+          const bodyContent = JSON.stringify({ apikey: key });
+
+          const options = {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: Buffer.from(bodyContent),
+          };
+
+          const response = await serviceRequest(url, options).catch((err) => {
+            return null;
+          });
+
+          const isValid = !!(
+            response &&
+            response.statusCode === 200 &&
+            response.data?.data?.token
+          );
+          return isValid;
+        },
+
+        fanart: async (key) => {
+          const url = `https://webservice.fanart.tv/v3/movies/603?api_key=${key}`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return response && response.statusCode === 200;
+        },
+
+        rpdb: async (key) => {
+          const url = `https://api.ratingposterdb.com/${key}/isValid`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return (
+            response &&
+            response.statusCode === 200 &&
+            response.data?.valid === true
+          );
+        },
+
+        mdblist: async (key) => {
+          const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return response && response.statusCode === 200;
+        },
+      };
+
+      const promises = Object.entries(apiKeys)
+        .filter(([key, value]) => value && testFunctions[key])
+        .map(async ([key, value]) => {
+          const isValid = await testFunctions[key](value);
+          return [key, isValid];
+        });
+
+      const resultsArray = await Promise.all(promises);
+      const results = Object.fromEntries(resultsArray);
+
+      res.json({ success: true, results });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to test API keys" });
+    }
+  }
 }
 
 const configApi = new ConfigApi();
@@ -983,6 +1108,6 @@ module.exports = {
   loadConfigFromDatabase: configApi.loadConfigFromDatabase.bind(configApi),
   getCorrections: configApi.getCorrections.bind(configApi),
   addCorrection: configApi.addCorrection.bind(configApi),
-  removeCorrection: configApi.removeCorrection.bind(configApi)
+  removeCorrection: configApi.removeCorrection.bind(configApi),
+  testApiKeys: configApi.testApiKeys.bind(configApi)
 };
-
