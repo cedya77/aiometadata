@@ -204,11 +204,9 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     const metas = await Promise.all(collections.map(async col => {
       const extended = await cacheWrapTvdbApi(`collection-extended:${col.id}`, () => tvdb.getCollectionDetails(col.id, config));
       if (!extended) return null;
-      // Try to get translation in user language, fallback to English, then fallback to default
-      let translation = await tvdb.getCollectionTranslations(col.id, langCode, config);
-      if (!translation || !translation.name) {
-        translation = await tvdb.getCollectionTranslations(col.id, 'eng', config);
-      }
+      const langCode3 = await to3LetterCode(langCode, config);
+      let translation = await tvdb.getCollectionTranslations(col.id, langCode3, config);
+
       const name = translation && translation.name ? translation.name : extended.name;
       if (!name) return null;
       const overview = translation && translation.overview ? translation.overview : extended.overview;

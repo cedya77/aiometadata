@@ -142,6 +142,29 @@ export function SearchSettings() {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* TVDB Collections Search */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>TVDB Collections Search</CardTitle>
+                    <CardDescription>Search for curated TVDB lists and collections</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+                        <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
+                                TVDB Collections
+                            </div>
+                            <Switch
+                                checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange('tvdb.collections.search', checked)}
+                                aria-label="Enable TVDB Collections search"
+                            />
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
       )}
     </div>

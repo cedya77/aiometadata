@@ -567,6 +567,15 @@ async function getManifest(config) {
     if (engineEnabled[searchProviders.series] !== false) {
       catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
     }
+    // TVDB Collections Search
+    if (engineEnabled['tvdb.collections.search'] !== false) {
+      catalogs.push({ 
+        id: 'tvdb_collections_search', 
+        type: 'collection', 
+        name: `${prefix}TVDB Collections`, 
+        extra: [{ name: 'search', isRequired: true }] 
+      });
+    }
     // Anime Series Search
     if (engineEnabled[searchProviders.anime_series] !== false) {
       catalogs.push({
@@ -654,7 +663,7 @@ async function getManifest(config) {
     name: "AIOMetadata",
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
     resources: ["catalog", "meta"],
-    types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt"],
+    types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:"],
     //stremioAddonsConfig,
     behaviorHints: {

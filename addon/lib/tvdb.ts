@@ -508,6 +508,34 @@ async function searchPeople(query: string, config: UserConfig): Promise<TvdbSear
   }
 }
 
+async function searchCollections(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+  if (!token) return [];
+  
+  const startTime = Date.now();
+  try {
+    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=list`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    
+    // Track successful request
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, true);
+    
+    return (response.data as any)?.data || [];
+  } catch (error) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('tvdb', responseTime, false);
+    
+    console.error(`[searchCollections] Error searching TVDB for collections "${query}":`, (error as Error).message);
+    return [];
+  }
+}
+
 async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<TvdbSeriesExtended | null> {
   return cacheWrapTvdbApi(`series-extended:${seriesId}`, async () => {
     const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
@@ -953,7 +981,17 @@ async function getCollectionTranslations(collectionId: string, language: string,
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;
       const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      return (response.data as any)?.data;
+      const data = (response.data as any)?.data;
+      
+      // If no data found and language is not English, fallback to English
+      if ((!data || !data.name) && language !== 'eng') {
+        console.log(`[TVDB] No translations found for collection ${collectionId} in ${language}, falling back to English`);
+        const engUrl = `${TVDB_API_URL}/lists/${collectionId}/translations/eng`;
+        const engResponse = await httpGet(engUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+        return (engResponse.data as any)?.data;
+      }
+      
+      return data;
     } catch (error) {
       console.error(`[TVDB] Error fetching collection translations for ID ${collectionId}:`, (error as Error).message);
       return null;
@@ -965,6 +1003,7 @@ export {
   searchSeries,
   searchMovies,
   searchPeople,
+  searchCollections,
   getSeriesExtended,
   getMovieExtended,
   getPersonExtended,
@@ -990,6 +1029,7 @@ module.exports = {
   searchSeries,
   searchMovies,
   searchPeople,
+  searchCollections,
   getSeriesExtended,
   getMovieExtended,
   getPersonExtended,

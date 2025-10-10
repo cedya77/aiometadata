@@ -480,6 +480,69 @@ async function performAiSearch(type, query, language, config) {
   return finalMetas;
 }
 
+async function performTvdbCollectionsSearch(query, language, config) {
+  const sanitizedQuery = sanitizeQuery(query);
+  if (!sanitizedQuery) return [];
+  const langCode = language.split('-')[0];
+  const langCode3 = await to3LetterCode(langCode, config);
+
+  logger.info(`Starting TVDB collections search for: "${sanitizedQuery}"`);
+
+  try {
+    // Search for collections
+    const collectionsResults = await tvdb.searchCollections(sanitizedQuery, config);
+    
+    if (!collectionsResults || collectionsResults.length === 0) {
+      logger.info('No TVDB collections found for query.');
+      return [];
+    }
+
+    logger.debug(`Found ${collectionsResults.length} collection results.`);
+
+    // Parse collection results into metas
+    const metas = await Promise.all(
+      collectionsResults.map(async (collection) => {
+        try {
+          const collectionId = collection.tvdb_id || collection.id;
+          if (!collectionId) return null;
+
+          // Get collection details with translations
+          let [details, translations] = await Promise.all([
+            tvdb.getCollectionDetails(String(collectionId), config),
+            tvdb.getCollectionTranslations(String(collectionId), langCode3, config)
+          ]);
+
+          if (!details) return null;
+
+          const translatedName = translations?.name || details.name;
+          const translatedOverview = translations?.overview || details.overview;
+
+          return {
+            id: `tvdbc:${collectionId}`,
+            type: 'series', // Collections are typically series-focused
+            name: translatedName || details.name,
+            poster: details.image || collection.image_url,
+            description: translatedOverview || details.overview || '',
+            genres: [],
+            releaseInfo: details.entities?.length ? `${details.entities.length} items` : ''
+          };
+        } catch (error) {
+          logger.warn(`Error parsing collection ${collection.id}:`, error.message);
+          return null;
+        }
+      })
+    );
+
+    const finalMetas = metas.filter(Boolean);
+    logger.info(`Successfully parsed ${finalMetas.length} collections into Stremio metas.`);
+    
+    return finalMetas;
+  } catch (error) {
+    logger.error('Error in TVDB collections search:', error.message);
+    return [];
+  }
+}
+
 async function performTvdbSearch(type, query, language, config) {
   const sanitizedQuery = sanitizeQuery(query);
   if (!sanitizedQuery) return [];
@@ -777,6 +840,12 @@ async function getSearch(id, type, language, extra, config) {
         }
         break;*/
 
+      case 'tvdb_collections_search':
+        if (extra.search) {
+          metas = await performTvdbCollectionsSearch(extra.search, language, config);
+        }
+        break;
+
       case 'search':
         if (extra.search) {
           const query = extra.search;
@@ -811,6 +880,9 @@ async function getSearch(id, type, language, extra, config) {
                 break;
               case 'tvdb.search':
                 metas = await performTvdbSearch(type, query, language, config);
+                break;
+              case 'tvdb.collections.search':
+                metas = await performTvdbCollectionsSearch(query, language, config);
                 break;
               case 'tvmaze.search':
                 metas = await performTvmazeSearch(query, language, config);

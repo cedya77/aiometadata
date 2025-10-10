@@ -407,6 +407,18 @@ async function processSeriesLink(entity, langCode3, config, genreSet) {
   };
 }
 
+function collectGenresFromItems(items) {
+  const genreSet = new Set();
+  for (const item of items) {
+    if (item?.genres) {
+      for (const g of item.genres) {
+        if (g?.name) genreSet.add(g.name);
+      }
+    }
+  }
+  return genreSet;
+}
+
 // --- Movie Worker ---
 async function getMovieMeta(stremioId, preferredProvider, language, config, userUUID, allIds) {
   logger.info(`[MovieMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
