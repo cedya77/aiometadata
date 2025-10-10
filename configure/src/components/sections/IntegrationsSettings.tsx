@@ -78,15 +78,17 @@ export function IntegrationsSettings() {
   const handleTestAllKeys = async () => {
     setIsTesting(true);
 
-    const keysToTest = Object.entries(config.apiKeys)
-      .filter(([_, value]) => value && value.trim() !== "")
-      .reduce((obj, [key, value]) => {
-        obj[key] = value as string;
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+
+    const keysToTest = apiKeyFields
+      .filter(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "")
+      .reduce((obj, key) => {
+        obj[key] = config.apiKeys[key]!;
         return obj;
       }, {} as Record<string, string>);
 
     if (Object.keys(keysToTest).length === 0) {
-      toast.info("No API keys to test.", { description: "Please enter at least one API key." });
+      toast.info("No API keys to test.", { description: "Please enter at least one API key to validate." });
       setIsTesting(false);
       return;
     }
