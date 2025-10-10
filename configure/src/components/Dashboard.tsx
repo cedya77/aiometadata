@@ -1183,6 +1183,77 @@ function DashboardPerformance({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* IMDb Ratings Stats */}
+      {data?.imdbRatingsStats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              IMDb Ratings Performance
+            </CardTitle>
+            <CardDescription>
+              Dataset vs Cinemeta fallback statistics
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div>
+                  <h4 className="font-medium">Dataset Hits</h4>
+                  <p className="text-sm text-muted-foreground">
+                    From IMDb official dataset
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-green-600">
+                    {data.imdbRatingsStats.datasetHits.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {data.imdbRatingsStats.datasetPercentage}% • Avg: {data.imdbRatingsStats.datasetAvgTime.toFixed(2)}ms
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div>
+                  <h4 className="font-medium">Cinemeta Fallback</h4>
+                  <p className="text-sm text-muted-foreground">
+                    From Cinemeta API
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-orange-600">
+                    {data.imdbRatingsStats.cinemetaFallbackHits.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {data.imdbRatingsStats.cinemetaPercentage}% • Avg: {data.imdbRatingsStats.cinemetaAvgTime.toFixed(2)}ms
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total Requests:</span>
+                  <span className="font-medium">{data.imdbRatingsStats.totalRequests.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span className="text-muted-foreground">Ratings Loaded:</span>
+                  <span className="font-medium">{data.imdbRatingsStats.ratingsLoaded.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span className="text-muted-foreground">Speed Difference:</span>
+                  <span className="font-medium text-green-600">
+                    {data.imdbRatingsStats.cinemetaAvgTime > 0 && data.imdbRatingsStats.datasetAvgTime > 0
+                      ? `${(data.imdbRatingsStats.cinemetaAvgTime / data.imdbRatingsStats.datasetAvgTime).toFixed(0)}x faster with dataset`
+                      : 'N/A'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

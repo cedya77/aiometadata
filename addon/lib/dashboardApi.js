@@ -1124,6 +1124,26 @@ class DashboardAPI {
     }
   }
 
+  // Get IMDb ratings statistics
+  async getImdbRatingsStats() {
+    try {
+      const { getRatingsStats } = require('./imdbRatings.js');
+      return getRatingsStats();
+    } catch (error) {
+      console.error('[Dashboard API] Error getting IMDb ratings stats:', error);
+      return {
+        totalRequests: 0,
+        datasetHits: 0,
+        cinemetaFallbackHits: 0,
+        datasetPercentage: 0,
+        cinemetaPercentage: 0,
+        datasetAvgTime: 0,
+        cinemetaAvgTime: 0,
+        ratingsLoaded: 0
+      };
+    }
+  }
+
   // Get all dashboard data
   async getAllDashboardData() {
     try {
@@ -1135,7 +1155,8 @@ class DashboardAPI {
         systemConfig,
         resourceUsage,
         errorLogs,
-        maintenanceTasks
+        maintenanceTasks,
+        imdbRatingsStats
       ] = await Promise.all([
         this.getSystemOverview(),
         this.getQuickStats(),
@@ -1144,7 +1165,8 @@ class DashboardAPI {
         this.getSystemConfig(),
         this.getResourceUsage(),
         this.getErrorLogs(),
-        this.getMaintenanceTasks()
+        this.getMaintenanceTasks(),
+        this.getImdbRatingsStats()
       ]);
 
       return {
@@ -1156,6 +1178,7 @@ class DashboardAPI {
         resourceUsage,
         errorLogs,
         maintenanceTasks,
+        imdbRatingsStats,
         timestamp: new Date().toISOString()
       };
     } catch (error) {

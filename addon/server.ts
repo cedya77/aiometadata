@@ -3,6 +3,7 @@ import { startServerWithCacheWarming } from './index.js';
 import { initializeMapper } from './lib/id-mapper.js';
 import { initializeAnimeListMapper } from './lib/anime-list-mapper.js';
 import { initializeMappings } from './lib/wiki-mapper.js';
+import { initializeRatings } from './lib/imdbRatings.js';
 import { runCacheCleanup } from './cache-cleanup.js';
 import { runCachePathMigration } from './lib/cache-path-migration.js';
 import database from './lib/database.js';
@@ -45,6 +46,10 @@ async function startServer(): Promise<void> {
   consola.info('Initializing Wiki Mappings...');
   await initializeMappings();
   consola.success('Wiki Mappings initialization complete.');
+
+  consola.info('Initializing IMDb Ratings...');
+  await initializeRatings();
+  consola.success('IMDb Ratings initialization complete.');
 
   consola.info('Initializing Database...');
   await database.initialize();

@@ -1452,11 +1452,21 @@ addon.get("/api/dashboard/timing", async (req, res) => {
       timingTrends[metric] = await timingMetrics.getTimingTrends(metric);
     }
     
+    // Add IMDb ratings stats
+    let imdbRatingsStats = null;
+    try {
+      const { getRatingsStats } = require('./lib/imdbRatings.js');
+      imdbRatingsStats = getRatingsStats();
+    } catch (err) {
+      console.warn('[Dashboard API] Failed to get IMDb ratings stats:', err);
+    }
+    
     res.json({
       dashboard: dashboardData,
       providerBreakdown,
       resolutionBreakdown,
       timingTrends,
+      imdbRatingsStats,
       lastUpdated: new Date().toISOString()
     });
   } catch (error) {
@@ -1572,17 +1582,6 @@ addon.post("/api/dashboard/test-errors", (req, res) => {
   } catch (error) {
     console.error('[Dashboard API] Error generating test errors:', error);
     res.status(500).json({ error: 'Failed to generate test errors' });
-  }
-});
-
-addon.get("/api/dashboard/timing", async (req, res) => {
-  try {
-    const timingMetrics = require('./lib/timing-metrics');
-    const data = await timingMetrics.getDashboardData();
-    res.json(data);
-  } catch (error) {
-    console.error('[Dashboard API] Timing metrics error:', error);
-    res.status(500).json({ error: 'Failed to fetch timing metrics' });
   }
 });
 

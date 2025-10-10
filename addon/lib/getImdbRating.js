@@ -1,7 +1,8 @@
-const axios = require('axios');
+const { getImdbRatingString } = require('./imdbRatings.js');
 
 /**
- * Fetches the official IMDb rating for a given IMDb ID from Cinemeta. 
+ * Fetches the official IMDb rating for a given IMDb ID from the IMDb dataset cache.
+ * Falls back to Cinemeta if not found in dataset.
  * 
  * @param {string} imdbId - The IMDb ID of the movie or series (e.g., 'tt0133093').
  * @param {'movie'|'series'} type - The content type.
@@ -12,16 +13,7 @@ async function getImdbRating(imdbId, type) {
     return undefined;
   }
 
-  const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
-  try {
-    const response = await axios.get(url);
-    const rating = response.data?.meta?.imdbRating;
-    return rating ? String(rating) : undefined;
-
-  } catch (error) {
-    console.warn(`Could not fetch IMDb rating for ${imdbId} from Cinemeta. Error: ${error.message}`);
-    return undefined;
-  }
+  return await getImdbRatingString(imdbId, type);
 }
 
 module.exports = { getImdbRating };
