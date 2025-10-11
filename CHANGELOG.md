@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.25.0.2.0...v1.0.0) (2025-10-11)
+
+
+### Features
+
+* add tvdb collections search ([7db7c2f](https://github.com/cedya77/aiometadata/commit/7db7c2fcb36b9070d1009ce9cd9666f0b458a960))
+* fetch imdb ratings from imdb dataset ([70b0ab2](https://github.com/cedya77/aiometadata/commit/70b0ab23212ec38cba8ff1592285308cbbb89513))
+
 ## [1.0.0-beta.25.0.2.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.25.0.1.0...v1.0.0-beta.25.0.2.0) (2025-10-09)
 
 
