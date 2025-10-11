@@ -157,7 +157,7 @@ export function SearchSettings() {
                                 TVDB Collections
                             </div>
                             <Switch
-                                checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? true}
+                                checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? false}
                                 onCheckedChange={checked => handleEngineEnabledChange('tvdb.collections.search', checked)}
                                 aria-label="Enable TVDB Collections search"
                             />

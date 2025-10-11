@@ -56,7 +56,7 @@ const presetConfigs: PresetConfig[] = [
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
-          'tvdb.collections.search': true,
+          'tvdb.collections.search': false,
           'tvmaze.search': true,
           'mal.search.movie': false, // Disabled
           'mal.search.series': false, // Disabled
@@ -98,7 +98,7 @@ const presetConfigs: PresetConfig[] = [
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
-          'tvdb.collections.search': true,
+          'tvdb.collections.search': false,
           'tvmaze.search': true,
           'mal.search.movie': true,
           'mal.search.series': true,
@@ -140,7 +140,7 @@ const presetConfigs: PresetConfig[] = [
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
-          'tvdb.collections.search': true,
+          'tvdb.collections.search': false,
           'tvmaze.search': true,
           'mal.search.movie': true,
           'mal.search.series': true,
@@ -188,7 +188,7 @@ const presetConfigs: PresetConfig[] = [
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
-          'tvdb.collections.search': true,
+          'tvdb.collections.search': false,
           'tvmaze.search': true,
           'mal.search.movie': true,
           'mal.search.series': true,

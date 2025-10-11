@@ -135,6 +135,7 @@ const initialConfig: AppConfig = {
     engineEnabled: {
       'tmdb.search': true,
       'tvdb.search': true,
+      'tvdb.collections.search': false,
       'tvmaze.search': true,
       'mal.search.movie': true,
       'mal.search.series': true,
