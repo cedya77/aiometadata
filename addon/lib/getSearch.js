@@ -860,6 +860,8 @@ async function getSearch(id, type, language, extra, config) {
             providerId = config.search?.providers?.anime_movie;
           } else if (type === 'anime.series') {
             providerId = config.search?.providers?.anime_series;
+          } else if (type === 'collection') {
+            providerId = 'tvdb.collections.search';
           }
           
           providerId = providerId || getDefaultProvider(type);
