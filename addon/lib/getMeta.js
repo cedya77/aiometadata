@@ -1297,6 +1297,20 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   let finalName = seriesData.name;
   finalName = Utils.processTitleTranslations(seriesData.translations, language, finalName, 'series');
 
+  // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
+  let releaseInfo = "";
+  if (seriesData.first_air_date) {
+    const firstYear = seriesData.first_air_date.substring(0, 4);
+    const isOngoing = seriesData.status === 'Returning Series' || seriesData.status === 'In Production' || seriesData.status === 'Planned';
+    
+    if (isOngoing || !seriesData.last_air_date) {
+      releaseInfo = `${firstYear}-`;
+    } else {
+      const lastYear = seriesData.last_air_date.substring(0, 4);
+      releaseInfo = firstYear === lastYear ? firstYear : `${firstYear}-${lastYear}`;
+    }
+  }
+
   const meta = {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
     type: 'series',
@@ -1306,6 +1320,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     genres: Utils.parseGenres(seriesData.genres),
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
+    releaseInfo: releaseInfo,
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date + 'T12:00:00.000Z').toISOString() : null,
     status: seriesData.status,
     imdbRating,
@@ -1720,6 +1735,20 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
   imdbId = imdbId || remoteIds?.find(id => id.sourceName === 'IMDB')?.id 
  
+  // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
+  let tvdbReleaseInfo = year || "";
+  if (tvdbShow.firstAired) {
+    const firstYear = tvdbShow.firstAired.substring(0, 4);
+    const isOngoing = tvdbShow.status?.name === 'Continuing' || !tvdbShow.lastAired;
+    
+    if (isOngoing) {
+      tvdbReleaseInfo = `${firstYear}-`;
+    } else {
+      const lastYear = tvdbShow.lastAired.substring(0, 4);
+      tvdbReleaseInfo = firstYear === lastYear ? firstYear : `${firstYear}-${lastYear}`;
+    }
+  }
+
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
     id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
@@ -1733,7 +1762,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     writer: (tvdbShow.companies?.production || []).map(p => p.name).join(', '),
     year: year,
-    releaseInfo: year,
+    releaseInfo: tvdbReleaseInfo,
     released: tvdbShow.firstAired ? new Date(tvdbShow.firstAired + 'T12:00:00.000Z') : null,
     runtime: Utils.parseRunTime(tvdbShow.averageRuntime),
     status: tvdbShow.status?.name,
@@ -1914,7 +1943,8 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     slug: Utils.parseSlug('series', name, stremioId),
     genres: tvmazeShow.genres || [],
     description: Utils.addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
-    year: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
+    year: premiered ? premiered.substring(0, 4) : "",
+    releaseInfo: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
     released: premiered ? new Date(premiered + 'T12:00:00.000Z') : null,
     runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
     status: tvmazeShow.status,
@@ -2139,6 +2169,22 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
 
     let watchProviders = malData.streaming;
  
+    // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
+    let malReleaseInfo = malData.year || (malData.aired?.from ? malData.aired.from.substring(0, 4) : "");
+    if (stremioType === 'series' && malData.aired) {
+      const firstYear = malData.aired.from ? malData.aired.from.substring(0, 4) : "";
+      if (firstYear) {
+        const isOngoing = malData.status === 'Currently Airing' || !malData.aired.to;
+        
+        if (isOngoing) {
+          malReleaseInfo = `${firstYear}-`;
+        } else if (malData.aired.to) {
+          const lastYear = malData.aired.to.substring(0, 4);
+          malReleaseInfo = firstYear === lastYear ? firstYear : `${firstYear}-${lastYear}`;
+        }
+      }
+    }
+
     const meta = {
       id: stremioId,
       type: stremioType,
@@ -2159,7 +2205,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       links: links.filter(Boolean),
       trailers: trailers,
       trailerStreams: trailerStreams,
-      releaseInfo: malData.year,
+      releaseInfo: malReleaseInfo,
       director: [],
       writers: [],
       behaviorHints: {

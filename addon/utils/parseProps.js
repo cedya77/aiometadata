@@ -853,10 +853,19 @@ function parseGenres(genres) {
 
 function parseYear(status, first_air_date, last_air_date) {
   const startYear = first_air_date ? first_air_date.substring(0, 4) : '';
+  if (!startYear) return '';
+  
+  // If series has ended and we have a last air date, show year range
   if (status === "Ended" && last_air_date) {
     const endYear = last_air_date.substring(0, 4);
     return startYear === endYear ? startYear : `${startYear}-${endYear}`;
   }
+  
+  // If series is ongoing (Running, In Development, etc.), show "year-"
+  if (status && status !== "Ended" && status !== "Canceled") {
+    return `${startYear}-`;
+  }
+  
   return startYear;
 }
 
@@ -1790,6 +1799,20 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType))?.meta || null;
     }
     else {
+      let malReleaseInfo = anime.year || (anime.aired?.from ? anime.aired.from.substring(0, 4) : "");
+      if (stremioType === 'series' && anime.aired) {
+        const firstYear = anime.aired.from ? anime.aired.from.substring(0, 4) : "";
+        if (firstYear) {
+          const isOngoing = anime.status === 'Currently Airing' || !anime.aired.to;
+          
+          if (isOngoing) {
+            malReleaseInfo = `${firstYear}-`;
+          } else if (anime.aired.to) {
+            const lastYear = anime.aired.to.substring(0, 4);
+            malReleaseInfo = firstYear === lastYear ? firstYear : `${firstYear}-${lastYear}`;
+          }
+        }
+      }
       return {
         id: `mal:${malId}`,
         type: stremioType,
@@ -1799,7 +1822,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
         year: anime.year,
         imdb_id: mapping?.imdb_id,
-        releaseInfo: anime.year,
+        releaseInfo: malReleaseInfo,
         runtime: parseRunTime(anime.duration),
         imdbRating: imdbRating,
         trailers: trailers,
