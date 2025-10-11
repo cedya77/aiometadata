@@ -355,7 +355,8 @@ async function processMovieEntity(entity, langCode3, config) {
   const movie = await tvdb.getMovieExtended(entity.movieId, config);
   if (!movie) return null;
 
-  const allIds = await resolveAllIds(`tvdb:${entity.movieId}`, 'movie', config);
+  const allIds = await resolveAllIds(`tvdb:${entity.movieId}`, 'movie', config, {}, ['imdb']);
+
   const overviewTranslations = movie.translations?.overviewTranslations || [];
   const translatedOverview = overviewTranslations.find(t => t.language === langCode3)?.overview
     || overviewTranslations.find(t => t.language === 'eng')?.overview
@@ -388,16 +389,10 @@ async function processSeriesLink(entity, langCode3, config, genreSet) {
     || nameTranslations.find(t => t.language === 'eng')?.name
     || series.name;
 
-  const allIds = await resolveAllIds(`tvdb:${entity.seriesId}`, 'series', config);
-  const preferredProvider = config.providers?.series || 'tvdb';
-  
+  const allIds = await resolveAllIds(`tvdb:${entity.seriesId}`, 'series', config, {}, ['imdb']);
   let stremioId = `tvdb:${entity.seriesId}`;
-  if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
-    stremioId = `tmdb:${allIds.tmdbId}`;
-  } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
+  if(allIds.imdbId) {
     stremioId = allIds.imdbId;
-  } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-    stremioId = `tvmaze:${allIds.tvmazeId}`;
   }
 
   return {
