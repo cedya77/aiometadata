@@ -27,27 +27,101 @@ Visit your hosted instance's `/configure` page.
 Configure your catalogs, providers, and preferences.  
 Save your config and install the generated Stremio addon URL.
 
-### 2. Self-Hosting (Docker)
+### 2. Self-Hosting (Docker Compose)
 
-```bash
-git clone https://github.com/cedya77/aiometadata.git
-cd aiometadata
-cp .env.example .env   # Edit with your API keys and settings
-docker compose up -d
+```yaml
+services:
+  aiometadata:
+    image: ghcr.io/cedya77/aiometadata:latest
+    container_name: aiometadata
+    restart: unless-stopped
+    ports:
+      - "3232:3232"  # Remove this if using Traefik
+    # expose:  # Uncomment if using Traefik
+    #   - 3232
+    environment:
+      - PORT=3232
+      - TMDB_API=${TMDB_API_KEY?}
+      - TVDB_API_KEY=${TVDB_API_KEY?}
+      - FANART_API_KEY=${FANART_API_KEY?}
+      - MDBLIST_API_KEY=${MDBLIST_API_KEY?}
+      - RPDB_API_KEY=${RPDB_API_KEY?}
+      - HOST_NAME=${AIOMETADATA_HOSTNAME?}
+      - REDIS_URL=redis://aiometadata_redis:6379
+      - META_TTL=604800
+      - CATALOG_TTL=86400
+      - CATALOG_LIST_ITEMS_SIZE=20
+      - NO_CACHE=false
+      - LOG_LEVEL=debug
+      - ADMIN_KEY=${ADMIN_KEY?}
+      - TMDB_SOCKS_PROXY_URL=${TMDB_SOCKS_PROXY_URL?}
+      - DATABASE_URI=sqlite://addon/data/db.sqlite
+    # labels:  # Optional: Remove if not using Traefik
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.aiometadata.rule=Host(`${AIOMETADATA_HOSTNAME?}`)"
+    #   - "traefik.http.routers.aiometadata.entrypoints=websecure"
+    #   - "traefik.http.routers.aiometadata.tls.certresolver=letsencrypt"
+    #   - "traefik.http.routers.aiometadata.middlewares=authelia@docker"
+    #   - "traefik.http.services.aiometadata.loadbalancer.server.port=3232"
+    volumes:
+      - ${DOCKER_DATA_DIR}/aiometadata/data:/app/addon/data
+    depends_on:
+      aiometadata_redis:
+        condition: service_healthy
+    tty: true
+
+  aiometadata_redis:
+    image: redis:latest
+    container_name: aiometadata_redis
+    restart: unless-stopped
+    volumes:
+      - ${DOCKER_DATA_DIR}/aiometadata/cache:/data
+    command: redis-server --appendonly yes --save 60 1
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  #aiometadata_postgres:
+  #  image: postgres:latest
+  #  container_name: aiometadata_postgres
+  #  restart: unless-stopped
+  #  environment:
+  #    - POSTGRES_DB=aiometadata
+  #    - POSTGRES_USER=postgres
+  #    - POSTGRES_PASSWORD=password
+  #  volumes:
+  #    - ${DOCKER_DATA_DIR}/aiometadata/postgres:/var/lib/postgresql/data
+  #  healthcheck:
+  #    test: ["CMD-SHELL", "pg_isready -U postgres -d aiometadata"]
+  #    interval: 10s
+  #    timeout: 5s
+  #    retries: 5
 ```
 
-Or, standalone:
+Create a `.env` file with your API keys and settings:
 
 ```bash
-docker run -d \
-  --name aiometadata \
-  -p 1337:1337 \
-  -e TMDB_API=your_tmdb_key \
-  -e TVDB_API_KEY=your_tvdb_key \
-  -e FANART_API_KEY=your_fanart_key \
-  -e HOST_NAME=https://your-host:1337 \
-  -e REDIS_URL=redis://your_redis:6379 \
-  cedya77/aiometadata:latest
+# Required API Keys
+TMDB_API_KEY=your_tmdb_api_key
+TVDB_API_KEY=your_tvdb_api_key
+FANART_API_KEY=your_fanart_api_key
+MDBLIST_API_KEY=your_mdblist_api_key
+RPDB_API_KEY=your_rpdb_api_key
+
+# Host Configuration
+AIOMETADATA_HOSTNAME=aiometadata.yourdomain.com
+ADMIN_KEY=your_secure_admin_key
+
+# Optional
+TMDB_SOCKS_PROXY_URL=your_socks_proxy_url
+DOCKER_DATA_DIR=/opt/docker
+```
+
+Then run:
+```bash
+docker compose up -d
 ```
 
 ---
