@@ -15,8 +15,7 @@
     "start:backend:ts": "ts-node addon/server.ts",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node addon/server.js",
-    "release": "standard-version"
+    "start": "node addon/server.js"
   },
   "repository": {
     "type": "git",
@@ -117,7 +116,6 @@
     "lovable-tagger": "^1.0.19",
     "nodemon": "^3.0.2",
     "postcss": "^8.5.6",
-    "standard-version": "^9.5.0",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
     "ts-node": "^10.9.2",
