@@ -48,55 +48,14 @@ function normalize(str) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/\s*&\s*/g, ' and ')  // Convert & to 'and' before removing symbols
-    .replace(/[^\p{L}\p{N}\s]/gu, "")
-    .replace(/^the\s+/, "")
-    .replace(/\s+/g, ' ')  // Collapse multiple spaces
+    .replace(/\s*&\s*/g, ' and ')
+    // Convert dashes, underscores, slashes to spaces
+    .replace(/[\u2010-\u2015–—−_\/]+/g, ' ')
+    // Remove all other non-alphanumeric characters
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/^the\s+/, '')
+    .replace(/\s+/g, ' ')
     .trim();
-}
-
-/**
- * Calculates the Levenshtein distance between two strings.
- * This implementation is optimized to use only two rows of the matrix to save memory.
- * @param {string} s1 The first string.
- * @param {string} s2 The second string.
- * @returns {number} The edit distance between the two strings.
- */
-function levenshteinDistance(s1, s2) {
-  if (s1.length < s2.length) {
-    return levenshteinDistance(s2, s1);
-  }
-  if (s2.length === 0) {
-    return s1.length;
-  }
-
-  let previousRow = Array.from({ length: s2.length + 1 }, (_, i) => i);
-
-  for (let i = 0; i < s1.length; i++) {
-    let currentRow = [i + 1];
-    for (let j = 0; j < s2.length; j++) {
-      let insertions = previousRow[j + 1] + 1;
-      let deletions = currentRow[j] + 1;
-      let substitutions = previousRow[j] + (s1[i] !== s2[j]);
-      currentRow.push(Math.min(insertions, deletions, substitutions));
-    }
-    previousRow = currentRow;
-  }
-  
-  return previousRow[previousRow.length - 1];
-}
-
-/**
- * Calculates a similarity score between 0 and 1 based on Levenshtein distance.
- * @param {string} s1 The first string.
- * @param {string} s2 The second string.
- * @returns {number} A similarity score from 0.0 (completely different) to 1.0 (identical).
- */
-function calculateSimilarity(s1, s2) {
-  const maxLength = Math.max(s1.length, s2.length);
-  if (maxLength === 0) return 1.0; // Both are empty
-  const distance = levenshteinDistance(s1, s2);
-  return 1.0 - distance / maxLength;
 }
 
 
@@ -287,13 +246,13 @@ function sortSearchResults(results, query) {
 
   // Stage 4: Safety Net Fallback
   if (filteredResults.length === 0 && processedResults.length > 0) {
-    logger.warn("⚠️ Filtering removed all results. Falling back to top 3 most popular.");
+    logger.warn("⚠️ Filtering removed all results. Falling back to top 5 most popular.");
     filteredResults = [...processedResults]
       .sort((a, b) => {
         if (a.score !== b.score) return b.score - a.score;
         return b.voteCount - a.voteCount;
       })
-      .slice(0, 3);
+      .slice(0, 5);
   }
 
   // 3. SIMPLIFIED SORT
@@ -463,7 +422,16 @@ function sortTvdbSearchResults(results, query) {
     // "Contains" logic to match whole words.
     const queryWords = normalizedQuery.split(/\s+/);
     const titleWords = new Set(title.split(/\s+/));
-    const contains = queryWords.every(word => titleWords.has(word));
+
+    // Check 1: All query words exist as separate words in title
+    const containsAsWords = queryWords.every(word => titleWords.has(word));
+
+    // Check 2: Query exists when both have spaces removed (handles "spiderman" vs "spider man")
+    const queryNoSpaces = normalizedQuery.replace(/\s+/g, '');
+    const titleNoSpaces = title.replace(/\s+/g, '');
+    const containsAsString = titleNoSpaces.includes(queryNoSpaces);
+
+    const contains = containsAsWords || containsAsString;
 
     // Determine match reason with a clear hierarchy
     let matchReason = "Other";
@@ -493,8 +461,9 @@ function sortTvdbSearchResults(results, query) {
   
   // 2. FILTER out the lowest quality results.
   let filteredResults = processedResults.filter(item => {
-    // Filter out any item that doesn't have a direct match reason.
-    if (item.matchReason === "Other") {
+
+    // Only filter out "Other" if it's NOT similar enough
+    if (item.matchReason === "Other" && item.similarity < 0.80) {
       return false;
     }
 
@@ -523,9 +492,9 @@ function sortTvdbSearchResults(results, query) {
   // Safety net: If filtering removed everything, fall back to top 3 in original API order
   if (filteredResults.length === 0 && processedResults.length > 0) {
     logger.warn(
-      "⚠️ Filtering removed all results. Falling back to top 3 in original order."
+      "⚠️ Filtering removed all results. Falling back to top 5 in original order."
     );
-    filteredResults = processedResults.slice(0, 3);
+    filteredResults = processedResults.slice(0, 5);
   }
   
   // 3. SORT the filtered results based on our relevance hierarchy.
