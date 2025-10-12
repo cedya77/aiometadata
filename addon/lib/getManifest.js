@@ -669,7 +669,10 @@ async function getManifest(config) {
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:"],
-    //stremioAddonsConfig,
+    stremioAddonsConfig: {
+      "issuer": "https://stremio-addons.net",
+      "signature": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..VJFjvTcvqlJop2kbFUdeFA.ckfSDAih0yUmD8GTj4C_hYrxvYImoBGh-VJKkBYkgZxkAZFDmQcjNjdMuSq0bNk1tqU78RPXboLQfzCFr5hQBh9APhNbSnhKrMlU7QztcSX2ThuQN63twerppZfcDTgX.IqRpac7qKYCicFL1P8DFNg"
+    },  
     behaviorHints: {
       configurable: true,
       configurationRequired: false,
