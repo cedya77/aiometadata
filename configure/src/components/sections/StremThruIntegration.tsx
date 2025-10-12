@@ -108,8 +108,10 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
 
         // Process each selected catalog
         selectedCatalogs.forEach(catalogKey => {
-          // Parse the catalog key back into type and id
-          const [type, id] = catalogKey.split(':');
+          // Parse the catalog key back into type and id (split only on first colon)
+          const colonIndex = catalogKey.indexOf(':');
+          const type = catalogKey.substring(0, colonIndex);
+          const id = catalogKey.substring(colonIndex + 1);
           const catalog = manifest.catalogs.find(c => c.type === type && c.id === id);
           if (!catalog) return;
 
