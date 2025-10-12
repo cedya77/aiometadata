@@ -87,7 +87,7 @@ export function IntegrationsSettings() {
   
   // Check if any keys have changed since last successful validation
   useEffect(() => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
     
     let changed = false;
     for (const key of apiKeyFields) {
@@ -119,7 +119,7 @@ export function IntegrationsSettings() {
   
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -222,7 +222,7 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -253,19 +253,20 @@ export function IntegrationsSettings() {
       <div>
         <h2 className="text-2xl font-semibold">Integrations & API Keys</h2>
         <p className="text-muted-foreground mt-1">
-          Connect to external services. AI Search requires a Google Gemini key.
+          Connect to external services to enhance metadata quality.
         </p>
       </div>
       
       {/* Inputs */}
       <div className="space-y-4 max-w-2xl">
-        <ApiKeyInput 
+        {/* Gemini AI Search - Temporarily hidden */}
+        {/* <ApiKeyInput 
           id="gemini" 
           label="Google Gemini API Key" 
           linkHref="https://aistudio.google.com/app/apikey" 
           validationStatus={validationStatus.gemini || 'idle'} 
           onKeyChange={handleKeyChange}
-        />
+        /> */}
         <ApiKeyInput 
           id="tmdb" 
           label="TMDB API Key" 
