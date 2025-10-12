@@ -654,14 +654,23 @@ async function getManifest(config) {
   ].join(' | ');
   
 
+  // Support custom name suffix (e.g., "| ElfHosted")
+  const nameSuffix = process.env.ADDON_NAME_SUFFIX || "";
+  const addonName = nameSuffix ? `AIOMetadata ${nameSuffix}` : "AIOMetadata";
+  
+  // Support custom description blurb (HTML supported)
+  const defaultDescription = "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.";
+  const customBlurb = process.env.CUSTOM_DESCRIPTION_BLURB || "";
+  const addonDescription = customBlurb ? `${defaultDescription}\n\n${customBlurb}` : defaultDescription;
+
   const manifest = {
     id: packageJson.name,
     version: packageJson.version,
     favicon: `${host}/favicon.png`,
     logo: `${host}/logo.png`,
     background: `${host}/background.png`,
-    name: "AIOMetadata",
-    description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source. Also includes an optional AI search powered by Gemini.",
+    name: addonName,
+    description: addonDescription,
     resources: ["catalog", "meta"],
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:"],
