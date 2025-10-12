@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.0.1](https://github.com/cedya77/aiometadata/compare/v1.0.0...v1.0.1) (2025-10-12)
+
+
+### Bug Fixes
+
+* handle catalog IDs with colons in custom manifest imports ([14dcc2b](https://github.com/cedya77/aiometadata/commit/14dcc2b1ab5fd24c33607d077bf558e07d66efe1))
+
 ## [1.0.0](https://github.com/cedya77/aiometadata/compare/v1.0.0-beta.25.0.2.0...v1.0.0) (2025-10-11)
 
 
