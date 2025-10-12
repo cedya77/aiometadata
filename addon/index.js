@@ -244,6 +244,7 @@ addon.get("/api/config", (req, res) => {
     rpdb: process.env.RPDB_API_KEY || "",
     mdblist: process.env.MDBLIST_API_KEY || "",
     gemini: process.env.GEMINI_API_KEY || "",
+    customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
     addonVersion: ADDON_VERSION,
   };
   

@@ -77,6 +77,7 @@ export interface AppConfig {
     fanart: string;
     rpdb: string;
     mdblist: string;
+    customDescriptionBlurb?: string;
   };
   ageRating: string;
   sfw: boolean;
