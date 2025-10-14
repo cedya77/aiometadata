@@ -688,6 +688,32 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             break;
           }
+          case 'mal.seasons': {
+            // Parse season string like "Winter 2024" into season and year
+            let seasonString = genreName;
+            
+            // If no season specified, calculate current season based on today's date
+            if (!seasonString) {
+              const currentDate = new Date();
+              const currentYear = currentDate.getFullYear();
+              const currentMonth = currentDate.getMonth(); // 0-11
+              
+              let currentSeason;
+              if (currentMonth <= 2) currentSeason = 'Winter'; // Jan-Mar
+              else if (currentMonth <= 5) currentSeason = 'Spring'; // Apr-Jun
+              else if (currentMonth <= 8) currentSeason = 'Summer'; // Jul-Sep
+              else currentSeason = 'Fall'; // Oct-Dec
+              
+              seasonString = `${currentSeason} ${currentYear}`;
+            }
+            
+            const parts = seasonString.split(' ');
+            const season = parts[0].toLowerCase(); // winter, spring, summer, fall
+            const year = parseInt(parts[1]);
+            const animeResults = await jikan.getAnimeBySeason(year, season, page, config);
+            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            break;
+          }
           default:
             metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID)).metas;
             break;

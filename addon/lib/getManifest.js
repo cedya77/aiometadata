@@ -407,6 +407,36 @@ async function getManifest(config) {
         studioNames = []; // Fallback to empty list
       }
     }
+
+    // Fetch available seasons if we have a seasons catalog
+    const hasSeasonsCatalog = enabledCatalogs.some(cat => cat.id === 'mal.seasons');
+    if (hasSeasonsCatalog) {
+      try {
+        const seasonsData = await cacheWrapJikanApi('mal-available-seasons', async () => {
+          console.log('[Cache Miss] Fetching available seasons from Jikan...');
+          return await jikan.getAvailableSeasons();
+        }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
+        
+        // Build season options from API data
+        const seasonOptions = [];
+        const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+        
+        for (const yearData of seasonsData) {
+          const availableSeasons = yearData.seasons || [];
+          for (const season of availableSeasons) {
+            const capitalizedSeason = season.charAt(0).toUpperCase() + season.slice(1);
+            seasonOptions.push(`${capitalizedSeason} ${yearData.year}`);
+          }
+        }
+        
+        // Store for later use
+        global.availableSeasons = seasonOptions;
+        console.log(`[Manifest] Available seasons fetched successfully (${seasonOptions.length} seasons)`);
+      } catch (error) {
+        console.warn('[Manifest] Available seasons fetch failed, will use fallback:', error.message);
+        global.availableSeasons = null;
+      }
+    }
   }
   
   const genres_movie_names = genres_movie.map(g => g.name).sort();
@@ -508,6 +538,37 @@ async function getManifest(config) {
       }
       else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      }
+      else if (userCatalog.id === 'mal.seasons') {
+        // Use fetched available seasons from API, or fallback to generated list
+        if (global.availableSeasons && global.availableSeasons.length > 0) {
+          catalogOptions = global.availableSeasons;
+        } else {
+          // Fallback: Generate season options from Winter 2000 to current season
+          const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+          const currentDate = new Date();
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth(); // 0-11
+          
+          // Determine current season based on month
+          let currentSeasonIndex;
+          if (currentMonth <= 2) currentSeasonIndex = 0; // Winter (Jan-Mar)
+          else if (currentMonth <= 5) currentSeasonIndex = 1; // Spring (Apr-Jun)
+          else if (currentMonth <= 8) currentSeasonIndex = 2; // Summer (Jul-Sep)
+          else currentSeasonIndex = 3; // Fall (Oct-Dec)
+          
+          const seasonOptions = [];
+          
+          // Generate from current season down to Winter 2000
+          for (let year = currentYear; year >= 2000; year--) {
+            const maxSeasonIndex = (year === currentYear) ? currentSeasonIndex : 3;
+            for (let s = maxSeasonIndex; s >= 0; s--) {
+              seasonOptions.push(`${seasons[s]} ${year}`);
+            }
+          }
+          
+          catalogOptions = seasonOptions;
+        }
       } 
       else if (userCatalog.id === 'mal.airing' || userCatalog.id === 'mal.upcoming' || 
                userCatalog.id === 'mal.top_movies' || userCatalog.id === 'mal.top_series' || 
@@ -516,7 +577,7 @@ async function getManifest(config) {
         // Provide "None" option to work around Stremio's genre requirement
         catalogOptions = ['None'];
       }
-      else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular'].includes(userCatalog.id)) {
+      else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.seasons', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular'].includes(userCatalog.id)) {
         // Use pre-fetched anime genres for decade catalogs
         catalogOptions = animeGenreNames;
       }

@@ -29,6 +29,7 @@ export const animeCatalogs: CatalogDefinition[] = [
   { id: 'mal.airing', name: 'MAL Airing Now', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.upcoming', name: 'MAL Upcoming Season', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.schedule', name: 'MAL Airing Schedule', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false },
+  { id: 'mal.seasons', name: 'MAL Seasons', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'mal.80sDecade', name: 'MAL Best of 80s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.90sDecade', name: 'MAL Best of 90s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.00sDecade', name: 'MAL Best of 2000s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },

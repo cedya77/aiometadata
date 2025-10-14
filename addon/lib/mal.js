@@ -576,6 +576,46 @@ async function getAnimeByStudio(studioId, page = 1, limit = 25) {
     });
 }
 
+/**
+ * Fetches anime for a specific season (e.g., winter 2024).
+ * @param {number} year - The year (e.g., 2024)
+ * @param {string} season - The season ('winter', 'spring', 'summer', 'fall')
+ * @param {number} [page=1] - Page number
+ * @param {object} [config={}] - Configuration object for age rating
+ * @returns {Promise<Array>} - Array of anime objects
+ */
+async function getAnimeBySeason(year, season, page = 1, config = {}) {
+  const queryParams = {
+    page: page
+  };
+  if (config.sfw) {
+    queryParams.sfw = true;
+  }
+  const params = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/seasons/${year}/${season}?${params.toString()}`;
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch anime for ${season} ${year}, page ${page}:`, e.message);
+      return [];
+    });
+}
+
+/**
+ * Fetches available seasons from Jikan API.
+ * Returns data in format: [{ year: 2024, seasons: ['winter', 'spring', 'summer', 'fall'] }, ...]
+ * @returns {Promise<Array>} - Array of season objects with year and available seasons
+ */
+async function getAvailableSeasons() {
+  const url = `${JIKAN_API_BASE}/seasons`;
+  return enqueueRequest(() => _makeJikanRequest(url), url)
+    .then(response => response.data?.data || [])
+    .catch(e => {
+      console.error(`Could not fetch available seasons:`, e.message);
+      return [];
+    });
+}
+
 
 module.exports = {
   searchAnime,
@@ -594,4 +634,6 @@ module.exports = {
   getAiringSchedule,
   getStudios,
   getAnimeByStudio,
+  getAnimeBySeason,
+  getAvailableSeasons,
 };

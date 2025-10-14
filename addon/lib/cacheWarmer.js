@@ -41,6 +41,11 @@ async function warmEssentialContent() {
       return await mal.getStudios(100);
     }, 30 * 24 * 60 * 1000); // Cache for 30 days
     
+    // Warm MAL available seasons
+    await cacheWrapJikanApi('mal-available-seasons', async () => {
+      return await mal.getAvailableSeasons();
+    }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
+    
     // Warm TVDB collections (first page)
     await cacheWrapTvdbApi('collections-list:0', async () => {
       return await tvdb.getCollectionsList({}, 0);
