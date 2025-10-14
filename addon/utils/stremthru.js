@@ -213,7 +213,23 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
 
   const metaPromises = items.map(async item => {
     try {
-      const [provider, id] = item.id.startsWith('tt') ? ['imdb', item.id] : item.id.split(':');
+      let provider, id;
+      
+      // Handle tun_ prefix (Trakt Up Next)
+      if (item.id.startsWith('tun_')) {
+        provider = 'imdb';
+        id = item.id.replace(/^tun_/, ''); // Strip tun_ prefix
+      }
+      // Handle standard IMDB IDs
+      else if (item.id.startsWith('tt')) {
+        provider = 'imdb';
+        id = item.id;
+      }
+      // Handle provider:id format
+      else {
+        [provider, id] = item.id.split(':');
+      }
+      
       if (!provider || !id) {
         console.warn(`[StremThru] Invalid ID format: ${item.id}`);
         return _createFallbackMeta(item, language, config);

@@ -28,6 +28,7 @@ interface StremThruManifest {
   name: string;
   description: string;
   catalogs: StremThruCatalog[];
+  idPrefixes?: string[];
 }
 
 export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationProps) {
@@ -155,7 +156,10 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
               source: 'stremthru', // Keep source as the display label
               sourceUrl: catalogUrl, // Store the actual catalog URL
               genres: catalog.genres || [], // Store genres from manifest
-              manifestData: catalog, // Store full manifest data for advanced features
+              manifestData: { 
+                ...catalog, 
+                idPrefixes: manifest.idPrefixes // Store manifest idPrefixes for tun_ detection
+              },
               ...(displayType && { displayType }), // Include displayType if defined
             };
             newCatalogs.push(newCatalog);
