@@ -223,6 +223,10 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
               </CardTitle>
               <CardDescription>
                 Enter any Stremio-compatible manifest URL to see available catalogs
+                <br />
+                <span className="text-xs text-muted-foreground mt-1">
+                  Supported ID prefixes: tmdb:, tt, tvdb:, mal:, tvmaze:, kitsu:, anidb:, anilist:, tvdbc:, tun_
+                </span>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
