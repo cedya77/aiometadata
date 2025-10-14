@@ -1,0 +1,25 @@
+# Bun configuration file
+# https://bun.sh/docs/runtime/bunfig
+
+[install]
+# Use package-lock.json if it exists, otherwise create bun.lockb
+auto = "auto"
+
+# Faster installs with local cache
+cache = true
+
+# Disable telemetry
+telemetry = false
+
+[install.scopes]
+# Configure registry for scoped packages if needed
+
+[test]
+# Test configuration
+preload = []
+
+[run]
+# Automatically install dependencies when running files
+# bun-types = "bundled"
+
+
