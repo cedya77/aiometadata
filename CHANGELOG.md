@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.1...v1.1.0) (2025-10-14)
+
+
+### Features
+
+* add MAL Seasons catalog with dynamic season fetching ([3c4c42b](https://github.com/cedya77/aiometadata/commit/3c4c42bd2b6a195bae74719929ada3e62b2440a7))
+* add support for Trakt Up Next and tun_ ID prefix ([97d55a2](https://github.com/cedya77/aiometadata/commit/97d55a2e43aecdf8858d21d9a080afb70f3acf7e))
+* filter out most YT videos from TVDB ([3133a40](https://github.com/cedya77/aiometadata/commit/3133a40acf2b41d9c002072ed0aea6bbc2795f98))
+
+
+### Bug Fixes
+
+* improve metadata handling for anime episodes and TMDB images ([f0a371b](https://github.com/cedya77/aiometadata/commit/f0a371b49c23c6bb1f263a86b0f978a2f388b6d1))
+* improve tvdb multilingual handling ([63fd49a](https://github.com/cedya77/aiometadata/commit/63fd49ae2d4d984f26e69f7edef519374bdf4d25))
+
 ## [1.0.1](https://github.com/cedya77/aiometadata/compare/v1.0.0...v1.0.1) (2025-10-12)
 
 
