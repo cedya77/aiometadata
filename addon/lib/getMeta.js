@@ -856,14 +856,14 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   
   // Get artwork based on art provider preference
   const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config);
-  const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : `${host}/missing_poster.png`;
+  const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
     || images?.backdrops?.[0];
-  const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
+  const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
-  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
+  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   
   let poster, background, logoUrl, imdbRatingValue;
   
@@ -958,14 +958,14 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   // Get artwork based on art provider preference
   const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config);
-  const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : `${host}/missing_poster.png`;
+  const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
     || images?.backdrops?.[0];
-  const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
+  const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
-  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
+  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   let poster, background, logoUrl, imdbRatingValue;
   
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
@@ -2088,7 +2088,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           title: episodeTitle,
           season: 1,
           episode: ep.mal_id,
-          released: ep.aired ? new Date(ep.aired + 'T12:00:00.000Z') : null,
+          released: ep.aired ? new Date(ep.aired.substring(0, 10)) : null,
           thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
           available: ep.aired ? new Date(ep.aired) < new Date() : false,
           overview: episodeSynopsis,
