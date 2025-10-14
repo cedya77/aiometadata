@@ -389,88 +389,100 @@ function parseMedia(el, type, genreList = [], config = {}) {
  */
 function sortTvdbSearchResults(results, query) {
   const normalizedQuery = normalize(query);
-
   if (!normalizedQuery) return results;
-
   logger.debug(`[TVDB Sort] Processing ${results.length} results for query: "${normalizedQuery}"`);
-
   // Regex to remove trailing years in parentheses, e.g., " (2023)"
   const yearRegex = /\s\(\d{4}\)$/;
   const currentYear = new Date().getFullYear();
   
   // Threshold for 'Contains' matches
   const CONTAINS_SIMILARITY_THRESHOLD = 0.20;
-
+  
   // 1. DECORATE results with properties needed for sorting and filtering.
   const processedResults = results.map((item) => {
-    // Clean the title by removing the year before normalizing
+    // Clean the primary title by removing the year before normalizing
     const cleanedTitle = (item.name || "").replace(yearRegex, '');
     const title = normalize(cleanedTitle);
+    
+    // Collect all possible names (primary, aliases, translations) for matching
+    const allTitles = [
+      title,
+      ...(item.aliases || []),
+      ...(item.translations || [])
+    ]
+      .filter(t => t && typeof t === 'string') // Only keep non-empty strings
+      .map(t => normalize(t.replace(yearRegex, '')));
     
     // Handle 'Upcoming' status for year parsing
     const year = item.status === 'Upcoming' ? 9999 : (parseInt(item.year, 10) || 0);
     
-    // Use Jaro-Winkler for similarity calculation
+    // Use Jaro-Winkler for similarity calculation (only on primary title)
     const similarity = jaroWinklerSimilarity(title, normalizedQuery);
-
-    // "StartsWith" logic
-    const startsWith = title.startsWith(normalizedQuery) && (
-      title.length === normalizedQuery.length ||
-      [' ', ':'].includes(title[normalizedQuery.length]) // The next character is a separator
-    );
-
-    // "Contains" logic to match whole words.
+    
+    // Pre-compute query components for matching logic
     const queryWords = normalizedQuery.split(/\s+/);
-    const titleWords = new Set(title.split(/\s+/));
-
-    // Check 1: All query words exist as separate words in title
-    const containsAsWords = queryWords.every(word => titleWords.has(word));
-
-    // Check 2: Query exists when both have spaces removed (handles "spiderman" vs "spider man")
     const queryNoSpaces = normalizedQuery.replace(/\s+/g, '');
-    const titleNoSpaces = title.replace(/\s+/g, '');
-    const containsAsString = titleNoSpaces.includes(queryNoSpaces);
-
-    const contains = containsAsWords || containsAsString;
-
-    // Determine match reason with a clear hierarchy
-    let matchReason = "Other";
-    if (title === normalizedQuery) {
-      matchReason = "Exact";
-    } else if (startsWith) {
-      matchReason = "StartsWith";
-    } else if (contains) {
-      matchReason = "Contains";
+    
+    // Find the best match type across all title variants
+    let bestMatchReason = "Other";
+    
+    for (const currentTitle of allTitles) {
+      // Check for exact match
+      if (currentTitle === normalizedQuery) {
+        bestMatchReason = "Exact";
+        break; // Can't get better than exact
+      }
+      
+      // Check for startsWith match
+      const startsWith = currentTitle.startsWith(normalizedQuery) && (
+        currentTitle.length === normalizedQuery.length ||
+        [' ', ':'].includes(currentTitle[normalizedQuery.length])
+      );
+      
+      if (startsWith && bestMatchReason !== "Exact") {
+        bestMatchReason = "StartsWith";
+        continue; // Keep checking for potential exact match
+      }
+      
+      // Check for contains match (whole words or substring without spaces)
+      const titleWords = new Set(currentTitle.split(/\s+/));
+      const containsAsWords = queryWords.every(word => titleWords.has(word));
+      
+      const titleNoSpaces = currentTitle.replace(/\s+/g, '');
+      const containsAsString = titleNoSpaces.includes(queryNoSpaces);
+      
+      const contains = containsAsWords || containsAsString;
+      
+      if (contains && bestMatchReason === "Other") {
+        bestMatchReason = "Contains";
+      }
     }
-
+    
     // A real poster exists if the raw URL from the API was not null/undefined.
     const hasRealPoster = !!item._rawPosterUrl;
-
+    
     return {
       originalItem: item,
-      title, // Use the cleaned and normalized title for all comparisons
+      title, // Use the cleaned and normalized primary title for display
       year,
       similarity,
-      matchReason,
+      matchReason: bestMatchReason,
       hasPoster: hasRealPoster,
       hasOverview: !!(item.description && item.description.trim() !== ''),
       isContinuing: item.status === "Continuing",
-      isUpcoming: item.status === "Upcoming", // Add a flag for 'Upcoming'
+      isUpcoming: item.status === "Upcoming",
     };
   });
   
   // 2. FILTER out the lowest quality results.
   let filteredResults = processedResults.filter(item => {
-
     // Only filter out "Other" if it's NOT similar enough
     if (item.matchReason === "Other" && item.similarity < 0.80) {
       return false;
     }
-
     if (!item.year && !item.isUpcoming) {
         return false;
     }
-
     if (item.matchReason === "Contains") {
       const isRecent = item.year >= currentYear - 2;
       const isSimilarEnough = item.similarity >= CONTAINS_SIMILARITY_THRESHOLD;
@@ -479,7 +491,6 @@ function sortTvdbSearchResults(results, query) {
         return false;
       }
     }
-
     // Only remove if it's missing BOTH a poster AND an overview.
     const isLowQuality = !item.hasPoster && !item.hasOverview;
     if (isLowQuality) {
@@ -488,8 +499,8 @@ function sortTvdbSearchResults(results, query) {
     
     return true;
   });
-
-  // Safety net: If filtering removed everything, fall back to top 3 in original API order
+  
+  // Safety net: If filtering removed everything, fall back to top 5 in original API order
   if (filteredResults.length === 0 && processedResults.length > 0) {
     logger.warn(
       "⚠️ Filtering removed all results. Falling back to top 5 in original order."
@@ -503,12 +514,10 @@ function sortTvdbSearchResults(results, query) {
     if (a.hasPoster !== b.hasPoster) {
       return a.hasPoster ? -1 : 1;
     }
-
     // De-prioritize "Upcoming" items below all other released content.
     if (a.isUpcoming !== b.isUpcoming) {
       return a.isUpcoming ? 1 : -1;
     }
-
     // Preserve the original API order as the tie-breaker.
     return 0;
   });
@@ -519,7 +528,6 @@ function sortTvdbSearchResults(results, query) {
     logger.debug(
       `[TVDB Sort] Query: "${query}" | Raw Matches: ${processedResults.length}`
     );
-
     const formatForTable = (item) => ({
       Title: item.originalItem.name.substring(0, 35),
       Year: item.year === 9999 ? 'TBA' : item.year || "----",
@@ -528,12 +536,10 @@ function sortTvdbSearchResults(results, query) {
       Status: item.originalItem.status || 'N/A',
       HasPoster: item.hasPoster ? 'Yes' : 'No',
     });
-
     if (filteredResults.length > 0) {
       logger.debug("✅ FINAL SORTED RESULTS:");
       console.table(filteredResults.map(formatForTable));
     }
-
     const filteredOut = processedResults.filter(
       (item) => !filteredResults.includes(item)
     );
@@ -542,7 +548,7 @@ function sortTvdbSearchResults(results, query) {
       console.table(filteredOut.map(formatForTable));
     }
   }
-
+  
   // 5. Return the original items in the newly sorted order.
   return filteredResults.map(p => p.originalItem);
 }

@@ -424,6 +424,29 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
   }
 }
 
+function _filterTvdbSearchResults(results: TvdbSearchResult[], query: string): TvdbSearchResult[] {
+  if (!results || results.length === 0) {
+    return [];
+  }
+
+  const filteredResults = results.filter((item: TvdbSearchResult) => {
+    // Rule 1: Filter out items with "YouTube" as the network.
+    if (item.network === 'YouTube') {
+      return false;
+    }
+
+    // Rule 2: Filter out items that have no network AND a missing/placeholder poster.
+    const hasMissingPoster = !item.image_url || item.image_url.includes('/images/missing/');
+    if (!item.network && hasMissingPoster) {
+      return false;
+    }
+    
+    return true;
+  });
+
+  return filteredResults;
+}
+
 async function searchSeries(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
@@ -440,7 +463,9 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    return (response.data as any)?.data || [];
+    const results = (response.data as any)?.data || [];
+    return _filterTvdbSearchResults(results, query);
+    
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -468,7 +493,9 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
-    return (response.data as any)?.data || [];
+    const results = (response.data as any)?.data || [];
+    return _filterTvdbSearchResults(results, query);
+
   } catch (error) {
     // Track failed request
     const responseTime = Date.now() - startTime;
