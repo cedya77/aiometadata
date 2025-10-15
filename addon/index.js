@@ -12,7 +12,7 @@ const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
 const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth } = require("./lib/getCache");
 const redis = require("./lib/redisClient");
-const { warmEssentialContent, warmRelatedContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
+const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
 
@@ -34,17 +34,8 @@ async function warmUserContent(userUUID, contentType) {
     // Warm popular content based on user's preferences
     const language = config.language || DEFAULT_LANGUAGE;
     
-    // Warm trending content for user's preferred providers
-    if (config.providers?.tmdb) {
-      await warmRelatedContent('tmdb.trending', 'movie');
-      await warmRelatedContent('tmdb.trending', 'series');
-    }
-    
-    // Warm anime content if user has MAL configured
-    if (config.mal?.enabled) {
-      await warmRelatedContent('mal.top', 'anime');
-      await warmRelatedContent('mal.seasonal', 'anime');
-    }
+    // Note: Popular content warming is now handled globally by warmPopularContent()
+    // which runs every 6 hours and caches trending content for all users
     
     consola.success(`[Cache Warming] User content warmed for ${userUUID} (${contentType})`);
   } catch (error) {
@@ -84,6 +75,20 @@ if (ENABLE_CACHE_WARMING && !NO_CACHE) {
   
   // Schedule periodic warming (non-blocking)
   scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
+  
+  // Schedule popular content warming (runs every 6 hours in the background)
+  consola.info('[Cache Warming] Scheduling popular content warming (every 6 hours)');
+  setInterval(async () => {
+    consola.info('[Cache Warming] Running scheduled popular content warming...');
+    await warmPopularContent().catch(error => {
+      consola.warn('[Cache Warming] Popular content warming failed:', error.message);
+    });
+  }, 6 * 60 * 60 * 1000); // 6 hours
+  
+  // Run initial popular content warming in background (don't block startup)
+  warmPopularContent().catch(error => {
+    consola.warn('[Cache Warming] Initial popular content warming failed:', error.message);
+  });
 } else {
   consola.info('[Cache Warming] Cache warming disabled or cache disabled');
 }
@@ -779,13 +784,8 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       }
     }
     
-    // Warm related content in the background for public instances
-    if (ENABLE_CACHE_WARMING && !NO_CACHE) {
-      // Don't await this - let it run in background
-      warmRelatedContent(stremioId, type).catch(error => {
-        console.warn(`[Cache Warming] Background warming failed for ${stremioId}:`, error.message);
-      });
-    }
+    // Note: Popular content warming is now handled globally by warmPopularContent()
+    // which runs every 6 hours in the background
     
     // Warm user's frequently accessed content in background
     if (!NO_CACHE) {

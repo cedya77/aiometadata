@@ -117,6 +117,12 @@ ADMIN_KEY=your_secure_admin_key
 # Optional
 TMDB_SOCKS_PROXY_URL=your_socks_proxy_url
 DOCKER_DATA_DIR=/opt/docker
+
+# Cache Warming (Optional)
+# Dedicated TMDB API key for background cache warming of popular/trending content
+# This helps improve performance by pre-caching frequently accessed items
+BUILT_IN_TMDB_API_KEY=your_dedicated_tmdb_api_key
+BUILT_IN_TVDB_API_KEY=your_dedicated_tmdb_api_key
 ```
 
 Then run:

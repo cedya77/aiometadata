@@ -71,18 +71,167 @@ async function warmEssentialContent() {
 }
 
 /**
+ * Ensure system cache warmer config exists in database
+ */
+async function ensureSystemConfig() {
+  const database = require('./database');
+  const crypto = require('crypto');
+  const systemUUID = 'system-cache-warmer';
+  
+  try {
+    // Check if system config already exists
+    const existingConfig = await database.getUserConfig(systemUUID);
+    if (existingConfig) {
+      return systemUUID;
+    }
+    
+    // Create default system config
+    const systemConfig = {
+      language: 'en-US',
+      includeAdult: false,
+      blurThumbs: false,
+      showPrefix: false,
+      showMetaProviderAttribution: false,
+      castCount: 10,
+      sfw: false,
+      hideUnreleasedDigital: false,
+      providers: { 
+        movie: 'tmdb', 
+        series: 'tvdb', 
+        anime: 'mal', 
+        anime_id_provider: 'kitsu',
+        forceAnimeForDetectedImdb: false 
+      },
+      artProviders: { 
+        movie: { poster: 'meta', background: 'meta', logo: 'meta' },
+        series: { poster: 'meta', background: 'meta', logo: 'meta' },
+        anime: { poster: 'tvdb', background: 'tvdb', logo: 'tvdb' },
+        englishArtOnly: false
+      },
+      tvdbSeasonType: 'default',
+      mal: {
+        skipFiller: false, 
+        skipRecap: false,
+        allowEpisodeMarking: false,
+        useImdbIdForCatalogAndSearch: false,
+      },
+      tmdb: {
+        scrapeImdb: false,
+      },
+      apiKeys: { 
+        tmdb: process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '',
+        tvdb: process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '',
+        fanart: process.env.FANART_API_KEY || process.env.BUILT_IN_FANART_API_KEY || '',
+        rpdb: process.env.RPDB_API_KEY || process.env.BUILT_IN_RPDB_API_KEY || '',
+        mdblist: '' 
+      },
+      ageRating: 'None',
+      catalogs: [],
+      search: {
+        enabled: true,
+        ai_enabled: false,
+        providers: {},
+        engineEnabled: {}
+      },
+      streaming: []
+    };
+    
+    // Use a system password hash (not used for authentication, just for database consistency)
+    const systemPasswordHash = crypto.createHash('sha256').update('system-internal').digest('hex');
+    
+    await database.saveUserConfig(systemUUID, systemPasswordHash, systemConfig);
+    await database.trustUUID(systemUUID);
+    
+    logger.success(`[Cache Warming] System config created with UUID: ${systemUUID}`);
+    return systemUUID;
+  } catch (error) {
+    logger.error('[Cache Warming] Failed to create system config:', error.message);
+    throw error;
+  }
+}
+
+/**
  * Warm related content based on popular items
  */
-async function warmRelatedContent() {
+async function warmPopularContent() {
   try {
-    logger.info('[Cache Warming] Warming related content...');
+    const builtInApiKey = process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
+    if (!builtInApiKey) {
+      logger.warn('[Cache Warming] BUILT_IN_TMDB_API_KEY not set, skipping popular content warming');
+      return;
+    }
+
+    logger.info('[Cache Warming] Warming popular content from TMDB...');
     
-    // This could be expanded to warm content based on popular movies/series
-    // For now, just log that it's called
+    // Ensure system config exists in database
+    const systemUUID = await ensureSystemConfig();
     
-    logger.success('[Cache Warming] Related content warming completed');
+    const moviedb = require('./getTmdb.js');
+    const { cacheWrapMetaSmart } = require('./getCache.js');
+    const { loadConfigFromDatabase } = require('./configApi.js');
+    
+    // Load the system config from database
+    const warmingConfig = await loadConfigFromDatabase(systemUUID);
+    
+    let totalWarmed = 0;
+
+    // Warm trending movies (day) - fetch 10 pages for better coverage
+    try {
+      for (let page = 1; page <= 10; page++) {
+        const trendingMovies = await moviedb.trending(
+          { media_type: 'movie', time_window: 'day', page }, 
+          warmingConfig
+        );
+        
+        if (trendingMovies?.results) {
+          for (const movie of trendingMovies.results) {
+            try {
+              const stremioId = `tmdb:${movie.id}`;
+              await cacheWrapMetaSmart(systemUUID, stremioId, async () => {
+                const { getMeta } = require('./getMeta.js');
+                return await getMeta('movie', 'en-US', stremioId, warmingConfig, systemUUID, false);
+              }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'movie');
+              totalWarmed++;
+            } catch (err) {
+              logger.debug(`[Cache Warming] Failed to warm movie ${movie.id}: ${err.message}`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(`[Cache Warming] Failed to fetch trending movies: ${err.message}`);
+    }
+
+    // Warm trending series (day) - fetch 10 pages for better coverage
+    try {
+      for (let page = 1; page <= 10; page++) {
+        const trendingSeries = await moviedb.trending(
+          { media_type: 'tv', time_window: 'day', page }, 
+          warmingConfig
+        );
+        
+        if (trendingSeries?.results) {
+          for (const series of trendingSeries.results) {
+            try {
+              const stremioId = `tmdb:${series.id}`;
+              await cacheWrapMetaSmart(systemUUID, stremioId, async () => {
+                const { getMeta } = require('./getMeta.js');
+                return await getMeta('series', 'en-US', stremioId, warmingConfig, systemUUID, false);
+              }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'series');
+              totalWarmed++;
+            } catch (err) {
+              logger.debug(`[Cache Warming] Failed to warm series ${series.id}: ${err.message}`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(`[Cache Warming] Failed to fetch trending series: ${err.message}`);
+    }
+    
+    logger.success(`[Cache Warming] Popular content warming completed (${totalWarmed} items cached)`);
   } catch (error) {
-    logger.error('[Cache Warming] Error warming related content:', error.message);
+    logger.error('[Cache Warming] Error warming popular content:', error.message);
   }
 }
 
@@ -140,7 +289,7 @@ function isInitialWarmingComplete() {
 
 module.exports = {
   warmEssentialContent,
-  warmRelatedContent,
+  warmPopularContent,
   warmFromUserActivity,
   scheduleEssentialWarming,
   isInitialWarmingComplete,
