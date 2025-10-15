@@ -59,6 +59,14 @@ const SELF_HEALING_CONFIG = {
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
 
+// Helper: stable stringify to ensure consistent cache keys regardless of property insertion order
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(v => stableStringify(v)).join(',') + ']';
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+}
+
 // Helper to resolve art provider for specific art type
 function resolveArtProvider(contentType, artType, config) {
   const artProviderConfig = config.artProviders?.[contentType];
@@ -775,8 +783,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
 
    }
    
-   // Create cache key from context-aware meta config (no UUID for shared caching)
-   const metaConfigString = JSON.stringify(metaConfig);
+  // Create cache key from context-aware meta config (no UUID for shared caching)
+  const metaConfigString = stableStringify(metaConfig);
    const key = `meta:${metaConfigString}:${metaId}`;
    
        cacheLogger.debug(`Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
@@ -843,6 +851,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
+    // Keep keys identical to reconstructMetaFromComponents
+    metaConfig.tmdb = {
+     scrapeImdb: config.tmdb?.scrapeImdb || false
+    };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
      metaConfig.artProvider = {
@@ -857,12 +869,12 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       scrapeImdb: config.tmdb?.scrapeImdb || false
      };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-   }
-   
-   const metaConfigString = JSON.stringify(metaConfig);
-   
-   // Define component cache keys
-   const componentCacheKeys = {
+ }
+ 
+const metaConfigString = stableStringify(metaConfig);
+ 
+ // Define component cache keys
+  const componentCacheKeys = {
      basic: `meta-basic:${metaConfigString}:${metaId}`,
      poster: `meta-poster:${metaConfigString}:${metaId}`,
      background: `meta-background:${metaConfigString}:${metaId}`,
@@ -1018,16 +1030,16 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    let config;
    try {
      config = await loadConfigFromDatabase(userUUID);
-   } catch (error) {
-     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
-     // Return null for invalid UUIDs instead of crashing
-     return null;
-   }
+  } catch (error) {
+    cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
+    // Return reason for invalid UUIDs instead of crashing
+    return { errorReason: `load config failed: ${error.message}` };
+  }
    
-   if (!config) {
-     cacheLogger.warn(`No config found for user ${userUUID}`);
-     return null;
-   }
+  if (!config) {
+    cacheLogger.warn(`No config found for user ${userUUID}`);
+    return { errorReason: 'no config for user' };
+  }
    
    // Parse metaId to determine context
    const [prefix, sourceId] = metaId.split(':');
@@ -1069,29 +1081,29 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        logo: resolveArtProvider('movie', 'logo', config)
      };
      metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false
-     };
-   } else if (metaType === 'series') {
-     metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-     metaConfig.artProvider = {
-       poster: resolveArtProvider('series', 'poster', config),
-       background: resolveArtProvider('series', 'background', config),
-       logo: resolveArtProvider('series', 'logo', config)
-     };
-     if (prefix === 'tvdb') {
-       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-     }
-     metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false
-     };
+     scrapeImdb: config.tmdb?.scrapeImdb || false
+    };
+  } else if (metaType === 'series') {
+    metaConfig.metaProvider = config.providers?.series || 'tvdb';
+    metaConfig.artProvider = {
+      poster: resolveArtProvider('series', 'poster', config),
+      background: resolveArtProvider('series', 'background', config),
+      logo: resolveArtProvider('series', 'logo', config)
+    };
+   if (prefix === 'tvdb') {
+     metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
    }
-   
-   const metaConfigString = JSON.stringify(metaConfig);
-   
-   // Define component cache keys
-   const componentCacheKeys = {
-     basic: `meta-basic:${metaConfigString}:${metaId}`,
+   metaConfig.tmdb = {
+    scrapeImdb: config.tmdb?.scrapeImdb || false
+   };
+   metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
+ }
+ 
+ const metaConfigString = stableStringify(metaConfig);
+  
+  // Define component cache keys
+  const componentCacheKeys = {
+    basic: `meta-basic:${metaConfigString}:${metaId}`,
      poster: `meta-poster:${metaConfigString}:${metaId}`,
      background: `meta-background:${metaConfigString}:${metaId}`,
      logo: `meta-logo:${metaConfigString}:${metaId}`,
@@ -1122,11 +1134,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      }
    });
    
-   const componentResults = await Promise.all(componentPromises);
-   const availableComponents = componentResults.filter(result => result.data !== null);
-   
-     if (availableComponents.length === 0) {
-    return null;
+  const componentResults = await Promise.all(componentPromises);
+  const availableComponents = componentResults.filter(result => result.data !== null);
+  
+  if (availableComponents.length === 0) {
+    return { errorReason: 'no cached components' };
   }
    
    // Reconstruct meta object from available components
@@ -1173,7 +1185,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   // Validate the reconstructed meta
   if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
     cacheLogger.warn(`Reconstructed meta missing required fields for ${metaId}`);
-    return null;
+    return { errorReason: 'missing required fields' };
   }
   
   // For series, check if videos array is empty or doesn't contain episodes
@@ -1181,7 +1193,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     const videos = reconstructedMeta.videos;
     if (!videos || !Array.isArray(videos) || videos.length === 0) {
       cacheLogger.info(`Series ${metaId} has empty videos array, forcing full reconstruction`);
-      return null;
+      return { errorReason: 'empty videos for series' };
     }
   }
   
@@ -1206,14 +1218,15 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
    cacheLogger.info(`Smart meta caching for ${metaId} (type: ${type})`);
    
    // First, try to reconstruct from cached components
-   const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type);
-   
-     if (reconstructedMeta && reconstructedMeta.meta) {
+  const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type);
+  
+  if (reconstructedMeta && reconstructedMeta.meta) {
     return reconstructedMeta;
   }
    
    // If reconstruction failed, generate full meta and cache components
-   cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta`);
+  const failureReason = reconstructedMeta && reconstructedMeta.errorReason ? ` (reason: ${reconstructedMeta.errorReason})` : '';
+  cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
    return await cacheWrapMetaComponents(userUUID, metaId, method, ttl, options, type);
 }
 
@@ -1309,7 +1322,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       };
     }
     
-    const metaConfigString = JSON.stringify(metaConfig);
+    const metaConfigString = stableStringify(metaConfig);
     const cacheKey = `meta-${componentName}:${metaConfigString}:${metaId}`;
     
     // Cache the component
@@ -1398,7 +1411,7 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       };
     }
     
-    const metaConfigString = JSON.stringify(metaConfig);
+    const metaConfigString = stableStringify(metaConfig);
     const cacheKey = `meta-${componentName}:${metaConfigString}:${metaId}`;
     
     // Get the cached component
