@@ -104,7 +104,7 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
   const defaultEnglishName = defaultEnglishTranslations[catalogDef.nameKey];
   
   // Check if customName is just the default English translation (not a true custom name)
-  const isDefaultEnglishName = customName && customName.includes(defaultEnglishName);
+  const isDefaultEnglishName = customName && customName === defaultEnglishName;
   
   // Use custom name only if it's provided, not empty, and not just the default English name
   const hasCustomName = customName && typeof customName === 'string' && customName.trim() !== '' && !isDefaultEnglishName;
