@@ -167,7 +167,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, config.userUUID, false);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
     
     if (result && result.meta) {
       return result.meta;
@@ -296,7 +296,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, userUUID, false);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
     if (result && result.meta) {
       return result.meta;
     }

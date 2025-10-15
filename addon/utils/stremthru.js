@@ -58,7 +58,7 @@ async function _processAnimeItem(item, provider, id, language, config) {
   if(config.mal?.useImdbIdForCatalogAndSearch && item.type === 'series' && mapping.imdb_id){
     return (await cacheWrapMetaSmart(config.userUUID, imdbId, async () => {
       return await getMeta(item.type, language, imdbId, config, config.userUUID, false);
-    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type))?.meta || null;
+    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, false))?.meta || null;
   }
   else if(!config.mal?.useImdbIdForCatalogAndSearch || !imdbId){
     const posterUrl = mapping.mal_id
@@ -116,7 +116,7 @@ async function _processStandardItem(item, provider, language, config) {
       // Use the potentially translated ID to get the meta.
       // Note: Your getMeta function must be able to handle these different ID formats.
       return await getMeta(item.type, language, stremioId, config, config.userUUID, false);
-  }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type);
+  }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, false);
   
   return result?.meta || null;
 }

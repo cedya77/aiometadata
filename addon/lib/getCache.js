@@ -1024,8 +1024,9 @@ const metaConfigString = stableStringify(metaConfig);
 /**
  * Reconstruct meta object from cached components
  * This allows for partial cache hits and graceful degradation
+ * @param {boolean} includeVideos - Whether videos component is required for this request
  */
-async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null) {
+async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
    // Load config from database
    let config;
    try {
@@ -1188,8 +1189,17 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     return { errorReason: 'missing required fields' };
   }
   
-  // For series, check if videos array is empty or doesn't contain episodes
-  if (reconstructedMeta.type === 'series') {
+  // Context-aware videos check: only require videos if the caller needs them
+  if ((reconstructedMeta.type === 'series') && includeVideos) {
+    const videosComponent = availableComponents.find(c => c.componentName === 'videos');
+    
+    // If videos are required but not found in cache, fail the reconstruction
+    if (!videosComponent) {
+      cacheLogger.info(`Required 'videos' component missing for ${metaId}. Forcing full fetch.`);
+      return { errorReason: 'required videos component missing' };
+    }
+    
+    // Also check if videos array is valid
     const videos = reconstructedMeta.videos;
     if (!videos || !Array.isArray(videos) || videos.length === 0) {
       cacheLogger.info(`Series ${metaId} has empty videos array, forcing full reconstruction`);
@@ -1213,12 +1223,13 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
 /**
  * meta cache wrapper that tries component reconstruction first, then falls back to full generation
  * This provides granular caching with graceful degradation
+ * @param {boolean} includeVideos - Whether videos are required for this request (default: true)
  */
-async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
-   cacheLogger.info(`Smart meta caching for ${metaId} (type: ${type})`);
+async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
+   cacheLogger.info(`Smart meta caching for ${metaId} (type: ${type}, videos: ${includeVideos})`);
    
-   // First, try to reconstruct from cached components
-  const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type);
+   // First, try to reconstruct from cached components, passing the includeVideos context
+  const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos);
   
   if (reconstructedMeta && reconstructedMeta.meta) {
     return reconstructedMeta;

@@ -1771,7 +1771,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
         const { getMeta } = await import("../lib/getMeta");
         return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, false);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType))?.meta || null;
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, false))?.meta || null;
     }
     else {
       let malReleaseInfo = anime.year || (anime.aired?.from ? anime.aired.from.substring(0, 4) : "");

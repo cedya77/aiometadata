@@ -39,7 +39,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
       let stremioId = `tmdb:${item.id}`;
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
         return await getMeta(type, language, stremioId, config, userUUID, false);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
       
       if (result && result.meta) {
         

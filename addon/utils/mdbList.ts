@@ -430,7 +430,7 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
           return await getMeta(type, language, stremioId, config, config.userUUID, false);
-        }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any);
+        }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
         
         if (result && result.meta) {
           return result.meta;

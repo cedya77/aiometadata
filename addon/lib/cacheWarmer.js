@@ -190,7 +190,7 @@ async function warmPopularContent() {
               await cacheWrapMetaSmart(systemUUID, stremioId, async () => {
                 const { getMeta } = require('./getMeta.js');
                 return await getMeta('movie', 'en-US', stremioId, warmingConfig, systemUUID, false);
-              }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'movie');
+              }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'movie', false);
               totalWarmed++;
             } catch (err) {
               logger.debug(`[Cache Warming] Failed to warm movie ${movie.id}: ${err.message}`);
@@ -217,7 +217,7 @@ async function warmPopularContent() {
               await cacheWrapMetaSmart(systemUUID, stremioId, async () => {
                 const { getMeta } = require('./getMeta.js');
                 return await getMeta('series', 'en-US', stremioId, warmingConfig, systemUUID, false);
-              }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'series');
+              }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'series', false);
               totalWarmed++;
             } catch (err) {
               logger.debug(`[Cache Warming] Failed to warm series ${series.id}: ${err.message}`);

@@ -762,7 +762,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   try {
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, fullConfig, userUUID, true);
-    }, undefined, cacheOptions, type);
+    }, undefined, cacheOptions, type, true);
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
