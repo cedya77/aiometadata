@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useConfig } from '@/contexts/ConfigContext';
-import { AppConfig } from '@/contexts/config';
+import { AppConfig, CatalogConfig } from '@/contexts/config';
 import { allCatalogDefinitions } from '@/data/catalogs';
 import { Film, Tv, Sparkles, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -237,21 +237,23 @@ export function PresetManager() {
 
       // Apply overrides to existing catalogs
       const updatedCatalogs = prev.catalogs.map(catalog => {
-        let displayType = catalog.displayType;
+        // Determine what the displayType should be for this catalog
+        let newDisplayType: string | undefined = catalog.displayType;
 
-        // Apply movie override
-        if (overrides.movie && catalog.type === 'movie') {
-          displayType = overrides.movie;
+        if (catalog.type === 'movie') {
+          newDisplayType = overrides.movie;
+        } else if (catalog.type === 'series') {
+          newDisplayType = overrides.series;
         }
 
-        // Apply series override
-        if (overrides.series && catalog.type === 'series') {
-          displayType = overrides.series;
+        // If newDisplayType is undefined, remove the property entirely
+        if (newDisplayType === undefined) {
+          const { displayType: _, ...catalogWithoutDisplayType } = catalog;
+          return catalogWithoutDisplayType as CatalogConfig;
         }
-
-        return displayType !== catalog.displayType 
-          ? { ...catalog, displayType } 
-          : catalog;
+        
+        // Otherwise, set the displayType
+        return { ...catalog, displayType: newDisplayType };
       });
 
       toast.success('Display type overrides applied!', {
@@ -551,7 +553,9 @@ export function PresetManager() {
                 checked={overrideMovieType}
                 onCheckedChange={(checked) => {
                   setOverrideMovieType(checked);
-                  if (checked) handleDisplayTypeOverrides();
+                  handleDisplayTypeOverrides();
+                  // Auto-apply when toggling on or off
+                  setTimeout(() => applyDisplayTypeOverridesToCatalogs(), 100);
                 }}
               />
             </div>
@@ -582,7 +586,9 @@ export function PresetManager() {
                 checked={overrideSeriesType}
                 onCheckedChange={(checked) => {
                   setOverrideSeriesType(checked);
-                  if (checked) handleDisplayTypeOverrides();
+                  handleDisplayTypeOverrides();
+                  // Auto-apply when toggling on or off
+                  setTimeout(() => applyDisplayTypeOverridesToCatalogs(), 100);
                 }}
               />
             </div>
