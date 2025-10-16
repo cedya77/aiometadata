@@ -1945,7 +1945,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
           : episode.image?.original || tvmazeShow.image?.original,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
-        released: new Date(episode.airstamp + 'T12:00:00.000Z'),
+        released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
       };
       specialCount++;
@@ -1971,7 +1971,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
           : episode.image?.original || tvmazeShow.image?.original,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
-        released: new Date(episode.airstamp + 'T12:00:00.000Z'),
+        released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
       };
     });
