@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -378,6 +378,35 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Sort Settings</TooltipContent>
+            </Tooltip>
+          )}
+
+          {catalog.source === 'custom' && catalog.sourceUrl && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => {
+                    try {
+                      // Extract base URL and construct /configure endpoint
+                      const url = new URL(catalog.sourceUrl!);
+                      // Remove the last path segment (e.g., manifest.json or catalog/...)
+                      const pathParts = url.pathname.split('/').filter(Boolean);
+                      // Keep everything up to the user/token part (typically first 1-2 segments)
+                      const basePath = pathParts.length > 0 ? '/' + pathParts[0] : '';
+                      const configureUrl = `${url.origin}${basePath}/configure`;
+                      window.open(configureUrl, '_blank', 'noopener,noreferrer');
+                    } catch (error) {
+                      console.error('Failed to open configure URL:', error);
+                    }
+                  }}
+                  aria-label="Open Manifest Configuration"
+                >
+                  <ExternalLink className="h-5 w-5 text-blue-500" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open manifest configuration page</TooltipContent>
             </Tooltip>
           )}
 
