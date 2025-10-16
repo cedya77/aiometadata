@@ -52,6 +52,14 @@ async function httpRequest(url, options = {}) {
         status: statusCode,
         headers
       };
+    } else if (statusCode === 304) {
+      // 304 Not Modified - throw with special status for cache handling
+      const error = new Error(`Not Modified`);
+      error.response = {
+        status: 304,
+        headers
+      };
+      throw error;
     } else {
       // It's still a successful HTTP transaction, just not a 2xx one. Fail fast.
       const errorText = await body.text();

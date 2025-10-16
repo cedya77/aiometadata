@@ -5,6 +5,27 @@ const { Agent } = require('undici');
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
 
+// ETag cache for Jikan API responses (in-memory cache)
+const etagCache = new Map(); // { url: { etag: string, data: any, timestamp: number } }
+
+// Clean up ETag cache every hour (remove entries older than 24 hours)
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000; // 24 hours (matches Jikan's cache duration)
+  let cleaned = 0;
+  
+  for (const [url, entry] of etagCache.entries()) {
+    if (now - entry.timestamp > maxAge) {
+      etagCache.delete(url);
+      cleaned++;
+    }
+  }
+  
+  if (cleaned > 0) {
+    console.log(`[MAL] Cleaned ${cleaned} expired ETag entries. Cache size: ${etagCache.size}`);
+  }
+}, 60 * 60 * 1000); // Run every hour
+
 // Proxy configuration for MAL requests
 const MAL_SOCKS_PROXY_URL = process.env.MAL_SOCKS_PROXY_URL;
 let malDispatcher;
@@ -34,9 +55,9 @@ if (MAL_SOCKS_PROXY_URL) {
   console.log('[MAL] undici agent is enabled for direct connections.');
 }
 
-const BASE_REQUEST_DELAY = 200;
+const BASE_REQUEST_DELAY = 350;  // 350ms = ~2.85 req/sec (just under 3 req/sec limit)
 const MAX_RETRIES = 3;
-const RATE_LIMIT_DELAY = 1000;    
+const RATE_LIMIT_DELAY = 1500;    // 1.5s for faster recovery    
 
 let requestQueue = [];
 let isProcessing = false;
@@ -63,7 +84,7 @@ async function processQueue() {
   
   if (requestsToProcess <= 0) {
     // Wait a bit and try again
-    setTimeout(processQueue, 50);
+    setTimeout(processQueue, 25);
     return;
   }
   
@@ -95,7 +116,7 @@ async function processRequest(requestTask) {
       
       // Track recent rate limit hits
       const now = Date.now();
-      if (now - lastRateLimitTime < 30000) { // Within last 30 seconds
+      if (now - lastRateLimitTime < 60000) { // Within last 60 seconds
         recentRateLimitHits++;
       } else {
         recentRateLimitHits = 1; // Reset counter
@@ -104,11 +125,15 @@ async function processRequest(requestTask) {
 
       // Increase backoff time if we're hitting rate limits frequently
       let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
-      if (recentRateLimitHits > 3) {
-        baseBackoffTime *= 2; // Double the delay if we're hitting rate limits frequently
+      if (recentRateLimitHits > 15) {
+        baseBackoffTime *= 3; // 3x delay if hitting rate limits very frequently
+      } else if (recentRateLimitHits > 8) {
+        baseBackoffTime *= 2; // 2x delay if hitting frequently
+      } else if (recentRateLimitHits > 3) {
+        baseBackoffTime *= 1.5; // 1.5x delay if hitting moderately
       }
       
-      const jitter = Math.random() * 200;
+      const jitter = Math.random() * 300;
       const totalDelay = baseBackoffTime + jitter;
 
       console.warn(
@@ -162,12 +187,34 @@ function enqueueRequest(task, url) {
 }
 
 async function _makeJikanRequest(url) {
-  console.log(`Jikan request for: ${url}`);
   const startTime = Date.now();
   
   try {
-    const response = await httpGet(url, { dispatcher: malDispatcher });
+    // Check if we have a cached ETag for this URL
+    const cached = etagCache.get(url);
+    const headers = {};
+    
+    if (cached && cached.etag) {
+      headers['If-None-Match'] = cached.etag;
+      console.log(`Jikan request for: ${url} (with ETag validation)`);
+    } else {
+      console.log(`Jikan request for: ${url}`);
+    }
+    
+    const response = await httpGet(url, { 
+      dispatcher: malDispatcher,
+      headers: headers
+    });
     const responseTime = Date.now() - startTime;
+    
+    // Store ETag if present
+    if (response.headers?.etag) {
+      etagCache.set(url, {
+        etag: response.headers.etag,
+        data: response,
+        timestamp: Date.now()
+      });
+    }
     
     // Track successful request
     const requestTracker = require('./requestTracker');
@@ -177,6 +224,17 @@ async function _makeJikanRequest(url) {
     return response;
   } catch (error) {
     const responseTime = Date.now() - startTime;
+    
+    // Handle 304 Not Modified - return cached data
+    if (error.response?.status === 304) {
+      const cached = etagCache.get(url);
+      if (cached && cached.data) {
+        console.log(`[MAL] Cache hit (304) for: ${url} in ${responseTime}ms`);
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('mal', responseTime, true);
+        return cached.data;
+      }
+    }
     
     // Track failed request
     const requestTracker = require('./requestTracker');
@@ -302,12 +360,14 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
   const actualTotalPagesToFetch = Math.min(desiredPages, lastVisiblePage);
 
   if (actualTotalPagesToFetch > 1) {
-    const pagePromises = [];
+    // Fetch pages sequentially instead of in parallel to respect rate limits
     for (let page = 2; page <= actualTotalPagesToFetch; page++) {
-      pagePromises.push(_fetchPage(page).then(result => result?.data || []));
+      const result = await _fetchPage(page);
+      const pageData = result?.data || [];
+      if (pageData.length > 0) {
+        allItems.push(...pageData);
+      }
     }
-    const resultsByPage = await Promise.all(pagePromises);
-    allItems = allItems.concat(resultsByPage.flat());
   }
 
   return allItems.slice(0, totalItemsToFetch);
