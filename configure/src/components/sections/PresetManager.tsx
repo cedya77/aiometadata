@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useConfig } from '@/contexts/ConfigContext';
 import { AppConfig, CatalogConfig } from '@/contexts/config';
 import { allCatalogDefinitions } from '@/data/catalogs';
@@ -203,6 +204,7 @@ export function PresetManager() {
   const [includeAdult, setIncludeAdult] = useState(config.includeAdult || false);
   const [includePopularLists, setIncludePopularLists] = useState(false);
   const [selectedCurators, setSelectedCurators] = useState<Set<string>>(new Set());
+  const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [overrideMovieType, setOverrideMovieType] = useState(!!config.displayTypeOverrides?.movie);
   const [movieDisplayType, setMovieDisplayType] = useState(config.displayTypeOverrides?.movie || '');
   const [overrideSeriesType, setOverrideSeriesType] = useState(!!config.displayTypeOverrides?.series);
@@ -302,7 +304,7 @@ export function PresetManager() {
       
       for (const user of selectedUsers) {
         try {
-          const response = await fetch(`https://api.mdblist.com/lists/user/${user.username}?apikey=${config.apiKeys.mdblist}`);
+          const response = await fetch(`https://api.mdblist.com/lists/user/${user.username}?apikey=${config.apiKeys.mdblist}&sort=${userListSort}`);
           if (response.ok) {
             const userLists = await response.json();
             if (Array.isArray(userLists)) {
@@ -683,6 +685,26 @@ export function PresetManager() {
                 <p className="text-xs text-orange-600 dark:text-orange-400">
                   Please select at least one curator to include popular lists.
                 </p>
+              )}
+              
+              {/* Sort selector for curator lists */}
+              {selectedCurators.size > 0 && (
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor="curator-list-sort">Sort Curator Lists By</Label>
+                  <Select value={userListSort} onValueChange={(value: 'ranked' | 'name' | 'created') => setUserListSort(value)}>
+                    <SelectTrigger id="curator-list-sort" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ranked">Ranked (Default)</SelectItem>
+                      <SelectItem value="name">Name</SelectItem>
+                      <SelectItem value="created">Date Created</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    This affects how lists are sorted when importing from selected curators
+                  </p>
+                </div>
               )}
             </div>
           )}
