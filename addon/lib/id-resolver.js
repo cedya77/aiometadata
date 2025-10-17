@@ -565,8 +565,38 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
                     return { tvmazeId: null };
                 })
         );
-    } else if (!allIds.tvmazeId && allIds.imdbId && type === 'series' && !shouldCallTvmaze) {
-        logger.debug(`[Secondary API] Skipping TVMaze lookup - not in targetProviders: [${targetProviders.join(', ')}]`);
+    } else if (!allIds.tvmazeId && allIds.tvdbId && type === 'series' && shouldCallTvmaze) {
+        const tvmazeFindTvdbStartTime = Date.now();
+        logger.debug(`[Secondary API] TVMaze lookup requested - targetProviders: [${targetProviders.join(', ')}]`);
+        secondaryPromises.push(
+            tvmaze.getShowByTvdbId(allIds.tvdbId)
+                .then(res => {
+                    const duration = Date.now() - tvmazeFindTvdbStartTime;
+                    const tvmazeId = res?.id || null;
+                    secondaryTimings.push({
+                        operation: 'tvmaze_find_by_tvdb',
+                        duration,
+                        success: !!tvmazeId,
+                        provider: 'tvmaze',
+                        sourceId: allIds.tvdbId,
+                        type
+                    });
+                    return { tvmazeId };
+                })
+                .catch(error => {
+                    const duration = Date.now() - tvmazeFindTvdbStartTime;
+                    secondaryTimings.push({
+                        operation: 'tvmaze_find_by_tvdb',
+                        duration,
+                        success: false,
+                        provider: 'tvmaze',
+                        sourceId: allIds.tvdbId,
+                        type,
+                        error: error.message
+                    });
+                    return { tvmazeId: null };
+                })
+        );
     }
 
     if (secondaryPromises.length > 0) {

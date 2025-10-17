@@ -1,32 +1,32 @@
 
-FROM oven/bun:1.3-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 
-COPY package*.json bun.lock* ./
+COPY package*.json package-lock.json* ./
 
-RUN bun install --frozen-lockfile
+RUN npm ci
 
 COPY . .
 
 
-RUN bun run build
+RUN npm run build
 
 # Build do backend TypeScript
-RUN bun run build:backend
+RUN npm run build:backend
 
-FROM oven/bun:1.3-alpine AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
 # Install CA certificates for SSL/TLS verification
 RUN apk add --no-cache ca-certificates
 
-COPY package*.json bun.lock* ./
+COPY package*.json package-lock.json* ./
 
 
-RUN bun install --production --frozen-lockfile
+RUN npm ci --production
 
 
 COPY --from=builder /app/addon ./addon
@@ -38,4 +38,4 @@ COPY --from=builder /app/public ./public
 
 EXPOSE 1337
 
-ENTRYPOINT ["bun", "run", "dist/server.js"] 
+ENTRYPOINT ["node", "dist/server.js"] 

@@ -215,7 +215,7 @@ async function warmPopularContent(force = false) {
       return;
     }
     
-    const builtInApiKey = process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
+    const builtInApiKey = /*process.env.TMDB_API ||*/ process.env.BUILT_IN_TMDB_API_KEY;
     if (!builtInApiKey) {
       logger.warn('[Cache Warming] BUILT_IN_TMDB_API_KEY not set, skipping popular content warming');
       return;
