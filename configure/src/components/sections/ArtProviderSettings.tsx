@@ -22,10 +22,28 @@ const seriesArtProviders = [
 const animeArtProviders = [
   { value: 'mal', label: 'MyAnimeList' },
   { value: 'anilist', label: 'AniList' },
-  { value: 'tvdb', label: 'TheTVDB (Recommended)' },
+  { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
   { value: 'imdb', label: 'Internet Movie Database (IMDB)' },
+];
+
+const animeBackgroundArtProviders = [
+  { value: 'mal', label: 'MyAnimeList' },
+  { value: 'anilist', label: 'AniList' },
+  { value: 'tvdb', label: 'TheTVDB' },
+  { value: 'tmdb', label: 'The Movie Database (TMDB)' },
+  { value: 'fanart', label: 'Fanart.tv' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB) (Recommended)' },
+];
+
+const animeLogoArtProviders = [
+  { value: 'mal', label: 'MyAnimeList' },
+  { value: 'anilist', label: 'AniList' },
+  { value: 'tvdb', label: 'TheTVDB' },
+  { value: 'tmdb', label: 'The Movie Database (TMDB)' },
+  { value: 'fanart', label: 'Fanart.tv' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB) (Recommended)' },
 ];
 
 export function ArtProviderSettings() {
@@ -73,14 +91,20 @@ export function ArtProviderSettings() {
 
   const hasFanartKey = config.apiKeys.fanart && config.apiKeys.fanart.trim() !== '';
 
-  const getArtProviders = (contentType: 'movie' | 'series' | 'anime') => {
+  const getArtProviders = (contentType: 'movie' | 'series' | 'anime', artType: 'poster' | 'background' | 'logo') => {
     switch (contentType) {
       case 'movie':
         return movieArtProviders;
       case 'series':
         return seriesArtProviders;
       case 'anime':
-        return animeArtProviders;
+        if (artType === 'background') {
+          return animeBackgroundArtProviders;
+        } else if (artType === 'logo') {
+          return animeLogoArtProviders;
+        } else {
+          return animeArtProviders;
+        }
       default:
         return [];
     }
@@ -353,7 +377,7 @@ export function ArtProviderSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
-                  {animeArtProviders.map(p => (
+                  {getArtProviders('anime', 'poster').map(p => (
                     <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
                       {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
@@ -378,7 +402,7 @@ export function ArtProviderSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
-                  {animeArtProviders.map(p => (
+                  {getArtProviders('anime', 'background').map(p => (
                     <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
                       {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
@@ -403,7 +427,7 @@ export function ArtProviderSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
-                  {animeArtProviders.map(p => (
+                  {getArtProviders('anime', 'logo').map(p => (
                     <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
                       {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>

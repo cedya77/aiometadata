@@ -92,7 +92,7 @@ const initialConfig: AppConfig = {
   artProviders: { 
     movie: { poster: 'meta', background: 'meta', logo: 'meta' },
     series: { poster: 'meta', background: 'meta', logo: 'meta' },
-    anime: { poster: 'tvdb', background: 'tvdb', logo: 'tvdb' },
+    anime: { poster: 'meta', background: 'imdb', logo: 'imdb' },
     englishArtOnly: false
   },
   tvdbSeasonType: 'default',
