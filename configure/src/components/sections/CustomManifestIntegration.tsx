@@ -99,9 +99,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
 
     try {
       setConfig(prev => {
-        const otherCatalogs = prev.catalogs.filter(c => !c.id.startsWith("custom."));
-        
-        let newCatalogs = [...otherCatalogs, ...currentCustomCatalogs];
+        let newCatalogs = [...prev.catalogs];
         let newCatalogsAdded = 0;
 
         // Process each selected catalog

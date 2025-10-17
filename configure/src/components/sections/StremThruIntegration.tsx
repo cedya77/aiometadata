@@ -101,10 +101,7 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
 
     try {
       setConfig(prev => {
-        const currentStremThruCatalogs = prev.catalogs.filter(c => c.id.startsWith("stremthru."));
-        const otherCatalogs = prev.catalogs.filter(c => !c.id.startsWith("stremthru."));
-        
-        let newCatalogs = [...otherCatalogs];
+        let newCatalogs = [...prev.catalogs];
         let newCatalogsAdded = 0;
 
         // Process each selected catalog
@@ -163,7 +160,7 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
               ...(displayType && { displayType }), // Include displayType if defined
             };
             newCatalogs.push(newCatalog);
-             newCatalogsAdded++;
+            newCatalogsAdded++;
            }
         });
 
