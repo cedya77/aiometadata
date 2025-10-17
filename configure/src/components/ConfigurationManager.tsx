@@ -20,7 +20,7 @@ interface SavedConfig {
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
-  const { config, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb } = useConfig();
+  const { config, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading } = useConfig();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -74,6 +74,11 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
   }, [savedConfig?.userUUID]);
 
   const validateRequiredKeys = () => {
+    // Don't validate until context is loaded
+    if (contextLoading) {
+      return { valid: true };
+    }
+    
     const requiredKeys = ['tmdb'];
     
     // Check if fanart is selected in any art provider (handles both legacy and new formats)
@@ -261,21 +266,27 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
           <div className="space-y-2">
             <Label>Required API Keys</Label>
             <div className="space-y-2">
-              {['tmdb'].map(key => (
-                <div key={key} className="flex items-center gap-2">
-                  {config.apiKeys?.[key] ? (
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-red-500" />
-                  )}
-                  <span className="text-sm font-medium">{key.toUpperCase()}</span>
-                  {config.apiKeys?.[key] ? (
-                    <span className="text-sm text-green-600">✓ Configured</span>
-                  ) : (
-                    <span className="text-sm text-red-600">✗ Missing</span>
-                  )}
-                </div>
-              ))}
+              {['tmdb'].map(key => {
+                const hasUserKey = config.apiKeys?.[key]?.trim();
+                const hasBuiltInKey = key === 'tmdb' ? hasBuiltInTmdb : (key === 'tvdb' ? hasBuiltInTvdb : false);
+                const isConfigured = hasUserKey || hasBuiltInKey;
+                
+                return (
+                  <div key={key} className="flex items-center gap-2">
+                    {isConfigured ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                    )}
+                    <span className="text-sm font-medium">{key.toUpperCase()}</span>
+                    {isConfigured ? (
+                      <span className="text-sm text-green-600">✓ Configured</span>
+                    ) : (
+                      <span className="text-sm text-red-600">✗ Missing</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

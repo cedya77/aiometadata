@@ -19,6 +19,7 @@ interface ConfigContextType {
   setAuth: React.Dispatch<React.SetStateAction<AuthState>>;
   hasBuiltInTvdb: boolean;
   hasBuiltInTmdb: boolean;
+  isLoading: boolean;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -300,7 +301,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading }}>
       {children}
     </ConfigContext.Provider>
   );
