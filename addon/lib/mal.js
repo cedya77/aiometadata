@@ -55,7 +55,7 @@ if (MAL_SOCKS_PROXY_URL) {
   console.log('[MAL] undici agent is enabled for direct connections.');
 }
 
-const BASE_REQUEST_DELAY = 350;  // 350ms = ~2.85 req/sec (just under 3 req/sec limit)
+const BASE_REQUEST_DELAY = 400;  // 400ms = ~2.5 req/sec (safer margin under 3 req/sec limit)
 const MAX_RETRIES = 3;
 const RATE_LIMIT_DELAY = 1500;    // 1.5s for faster recovery    
 
@@ -63,8 +63,7 @@ let requestQueue = [];
 let isProcessing = false;
 let activeRequests = 0;
 const MAX_CONCURRENT_REQUESTS = 1;
-let recentRateLimitHits = 0;
-let lastRateLimitTime = 0;
+let rateLimitHitTimestamps = []; // Track timestamps of rate limit hits
 console.log(`[Jikan] Keep-Alive is enabled with optimized rate limiting.`);
 
 
@@ -114,30 +113,30 @@ async function processRequest(requestTask) {
     if (error.response && error.response.status === 429 && requestTask.retries < MAX_RETRIES) {
       requestTask.retries++; 
       
-      // Track recent rate limit hits
+      // Track rate limit hits using a sliding window (last 60 seconds)
       const now = Date.now();
-      if (now - lastRateLimitTime < 60000) { // Within last 60 seconds
-        recentRateLimitHits++;
-      } else {
-        recentRateLimitHits = 1; // Reset counter
-      }
-      lastRateLimitTime = now;
+      rateLimitHitTimestamps.push(now);
+      
+      // Remove hits older than 60 seconds
+      rateLimitHitTimestamps = rateLimitHitTimestamps.filter(timestamp => now - timestamp < 60000);
+      
+      const recentHitCount = rateLimitHitTimestamps.length;
 
       // Increase backoff time if we're hitting rate limits frequently
       let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
-      if (recentRateLimitHits > 15) {
-        baseBackoffTime *= 3; // 3x delay if hitting rate limits very frequently
-      } else if (recentRateLimitHits > 8) {
-        baseBackoffTime *= 2; // 2x delay if hitting frequently
-      } else if (recentRateLimitHits > 3) {
-        baseBackoffTime *= 1.5; // 1.5x delay if hitting moderately
+      if (recentHitCount > 10) {
+        baseBackoffTime *= 2.5; // 2.5x delay if hitting rate limits very frequently
+      } else if (recentHitCount > 5) {
+        baseBackoffTime *= 1.8; // 1.8x delay if hitting frequently
+      } else if (recentHitCount > 2) {
+        baseBackoffTime *= 1.3; // 1.3x delay if hitting moderately
       }
       
       const jitter = Math.random() * 300;
       const totalDelay = baseBackoffTime + jitter;
 
       console.warn(
-        `Jikan rate limit hit (${recentRateLimitHits} recent hits). Retrying in ${Math.round(totalDelay)}ms. ` +
+        `Jikan rate limit hit (${recentHitCount} hits in last 60s). Retrying in ${Math.round(totalDelay)}ms. ` +
         `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
       );
       
@@ -147,7 +146,7 @@ async function processRequest(requestTask) {
         retries: requestTask.retries,
         maxRetries: MAX_RETRIES,
         backoffTime: Math.round(totalDelay),
-        recentHits: recentRateLimitHits,
+        recentHits: recentHitCount,
         url: requestTask.url
       });
 

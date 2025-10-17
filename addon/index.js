@@ -76,19 +76,23 @@ if (ENABLE_CACHE_WARMING && !NO_CACHE) {
   // Schedule periodic warming (non-blocking)
   scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
   
-  // Schedule popular content warming (runs every 6 hours in the background)
-  consola.info('[Cache Warming] Scheduling popular content warming (every 6 hours)');
-  setInterval(async () => {
-    consola.info('[Cache Warming] Running scheduled popular content warming...');
-    await warmPopularContent().catch(error => {
-      consola.warn('[Cache Warming] Popular content warming failed:', error.message);
-    });
-  }, 6 * 60 * 60 * 1000); // 6 hours
+  // Schedule popular content warming based on CACHE_WARM_INTERVAL_HOURS env (default 24h)
+  const POPULAR_WARM_INTERVAL_HOURS = parseInt(process.env.CACHE_WARM_INTERVAL_HOURS || '24', 10);
+  const POPULAR_WARM_CHECK_INTERVAL = 15 * 60 * 1000; // Check every 15 minutes
   
-  // Run initial popular content warming in background (don't block startup)
+  consola.info(`[Cache Warming] Scheduling popular content warming (interval: ${POPULAR_WARM_INTERVAL_HOURS}h, check every 15min)`);
+  
+  // Check immediately on startup
   warmPopularContent().catch(error => {
-    consola.warn('[Cache Warming] Initial popular content warming failed:', error.message);
+    consola.warn('[Cache Warming] Initial popular content warming check failed:', error.message);
   });
+  
+  // Then check periodically (the function itself will decide if warming is needed)
+  setInterval(async () => {
+    await warmPopularContent().catch(error => {
+      consola.warn('[Cache Warming] Popular content warming check failed:', error.message);
+    });
+  }, POPULAR_WARM_CHECK_INTERVAL);
 } else {
   consola.info('[Cache Warming] Cache warming disabled or cache disabled');
 }

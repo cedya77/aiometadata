@@ -123,6 +123,10 @@ DOCKER_DATA_DIR=/opt/docker
 # This helps improve performance by pre-caching frequently accessed items
 BUILT_IN_TMDB_API_KEY=your_dedicated_tmdb_api_key
 BUILT_IN_TVDB_API_KEY=your_dedicated_tmdb_api_key
+
+# Cache warming interval in hours (default: 24)
+# Controls how often popular content is re-cached
+CACHE_WARM_INTERVAL_HOURS=24
 ```
 
 Then run:
