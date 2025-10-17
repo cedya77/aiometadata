@@ -221,6 +221,18 @@ Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
 - **Description**: Hours between TMDB popular content warming cycles
 - **Example**: `CACHE_WARM_INTERVAL_HOURS=12`
 
+### `CACHE_WARM_LANGUAGE`
+- **Default**: `en-US`
+- **Description**: Language code to use when warming popular content cache. Determines which language metadata will be cached during background warming operations.
+- **Example**: `CACHE_WARM_LANGUAGE=fr-FR`
+- **Common Values**:
+  - `en-US` - English (United States)
+  - `fr-FR` - French (France)
+  - `de-DE` - German (Germany)
+  - `es-ES` - Spanish (Spain)
+  - `ja-JP` - Japanese (Japan)
+  - `pt-BR` - Portuguese (Brazil)
+
 ### `CACHE_WARMUP_ON_STARTUP`
 - **Default**: `true`
 - **Description**: Run cache warming during server startup

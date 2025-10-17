@@ -86,11 +86,24 @@ async function ensureSystemConfig() {
       // Only auto-update if using the default system config (not a user's custom UUID)
       const isSystemConfig = systemUUID === 'system-cache-warmer';
       if (isSystemConfig) {
+        let configUpdated = false;
+        
         // Update anime art providers if they're outdated (tvdb -> mal/imdb)
-        const needsUpdate = existingConfig.artProviders?.anime?.poster === 'tvdb';
-        if (needsUpdate) {
+        if (existingConfig.artProviders?.anime?.poster === 'tvdb') {
           logger.info('[System Config] Updating anime art providers to use MAL posters and IMDb backgrounds/logos');
           existingConfig.artProviders.anime = { poster: 'mal', background: 'imdb', logo: 'imdb' };
+          configUpdated = true;
+        }
+        
+        // Update language if env variable changed
+        const envLanguage = process.env.CACHE_WARM_LANGUAGE || 'en-US';
+        if (existingConfig.language !== envLanguage) {
+          logger.info(`[System Config] Updating cache warming language from ${existingConfig.language} to ${envLanguage}`);
+          existingConfig.language = envLanguage;
+          configUpdated = true;
+        }
+        
+        if (configUpdated) {
           await database.saveUserConfig(systemUUID, systemPasswordHash, existingConfig);
         }
       }
@@ -99,7 +112,7 @@ async function ensureSystemConfig() {
     
     // Create default system config
     const systemConfig = {
-      language: 'en-US',
+      language: process.env.CACHE_WARM_LANGUAGE || 'en-US',
       includeAdult: false,
       blurThumbs: false,
       showPrefix: false,
@@ -253,7 +266,7 @@ async function warmPopularContent(force = false) {
               const stremioId = `tmdb:${movie.id}`;
               await cacheWrapMetaSmart(systemUUID, stremioId, async () => {
                 const { getMeta } = require('./getMeta.js');
-                return await getMeta('movie', 'en-US', stremioId, warmingConfig, systemUUID, false);
+                return await getMeta('movie', warmingConfig.language, stremioId, warmingConfig, systemUUID, false);
               }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'movie', false);
               totalWarmed++;
             } catch (err) {
@@ -280,7 +293,7 @@ async function warmPopularContent(force = false) {
               const stremioId = `tmdb:${series.id}`;
               await cacheWrapMetaSmart(systemUUID, stremioId, async () => {
                 const { getMeta } = require('./getMeta.js');
-                return await getMeta('series', 'en-US', stremioId, warmingConfig, systemUUID, false);
+                return await getMeta('series', warmingConfig.language, stremioId, warmingConfig, systemUUID, false);
               }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'series', false);
               totalWarmed++;
             } catch (err) {

@@ -127,6 +127,11 @@ BUILT_IN_TVDB_API_KEY=your_dedicated_tmdb_api_key
 # Cache warming interval in hours (default: 24)
 # Controls how often popular content is re-cached
 CACHE_WARM_INTERVAL_HOURS=24
+
+# Cache warming language (default: en-US)
+# Language to use when warming popular content cache
+# Examples: en-US, fr-FR, de-DE, es-ES, ja-JP, pt-BR
+CACHE_WARM_LANGUAGE=en-US
 ```
 
 Then run:
