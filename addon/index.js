@@ -1664,6 +1664,18 @@ addon.get("/api/dashboard/users", (req, res) => {
   }
 });
 
+// MAL Catalog Warmup Stats endpoint
+addon.get("/api/dashboard/mal-warmup", (req, res) => {
+  try {
+    const { getWarmupStats } = require('./lib/malCatalogWarmer');
+    const stats = getWarmupStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('[MAL Warmer API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch MAL warmup stats' });
+  }
+});
+
 // Blocking startup function that waits for cache warming
 async function startServerWithCacheWarming() {
   if (ENABLE_CACHE_WARMING && !NO_CACHE) {

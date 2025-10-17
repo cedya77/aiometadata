@@ -77,11 +77,19 @@ async function ensureSystemConfig() {
   const database = require('./database');
   const crypto = require('crypto');
   const systemUUID = 'system-cache-warmer';
+  const systemPasswordHash = crypto.createHash('sha256').update('system-internal').digest('hex');
   
   try {
     // Check if system config already exists
     const existingConfig = await database.getUserConfig(systemUUID);
     if (existingConfig) {
+      // Update anime art providers if they're outdated (tvdb -> mal/imdb)
+      const needsUpdate = existingConfig.artProviders?.anime?.poster === 'tvdb';
+      if (needsUpdate) {
+        logger.info('[System Config] Updating anime art providers to use MAL posters and IMDb backgrounds/logos');
+        existingConfig.artProviders.anime = { poster: 'mal', background: 'imdb', logo: 'imdb' };
+        await database.saveUserConfig(systemUUID, systemPasswordHash, existingConfig);
+      }
       return systemUUID;
     }
     
@@ -105,7 +113,7 @@ async function ensureSystemConfig() {
       artProviders: { 
         movie: { poster: 'meta', background: 'meta', logo: 'meta' },
         series: { poster: 'meta', background: 'meta', logo: 'meta' },
-        anime: { poster: 'tvdb', background: 'tvdb', logo: 'tvdb' },
+        anime: { poster: 'mal', background: 'imdb', logo: 'imdb' },
         englishArtOnly: false
       },
       tvdbSeasonType: 'default',
@@ -135,9 +143,6 @@ async function ensureSystemConfig() {
       },
       streaming: []
     };
-    
-    // Use a system password hash (not used for authentication, just for database consistency)
-    const systemPasswordHash = crypto.createHash('sha256').update('system-internal').digest('hex');
     
     await database.saveUserConfig(systemUUID, systemPasswordHash, systemConfig);
     await database.trustUUID(systemUUID);
@@ -199,6 +204,12 @@ async function markPopularContentWarmed() {
  */
 async function warmPopularContent(force = false) {
   try {
+    // Check if popular warming is disabled
+    if (process.env.TMDB_POPULAR_WARMING_ENABLED === 'false') {
+      logger.debug('[Cache Warming] TMDB popular content warming is disabled');
+      return;
+    }
+    
     // Check if warming is needed
     if (!force && !(await shouldWarmPopularContent())) {
       return;

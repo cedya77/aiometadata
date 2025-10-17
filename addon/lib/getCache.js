@@ -610,10 +610,16 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     return method(); // Execute without caching
   }
   
+  // Check if this is a MAL catalog with MAL as anime provider
+  const isMALCatalog = idOnly.startsWith('mal.');
+  const isMALAnimeProvider = config.providers?.anime === 'mal';
+  const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
+  
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
-    // Language (affects all catalogs)
-    language: config.language || 'en-US',
+    // Language (affects all catalogs except MAL when MAL is the anime provider)
+    // MAL/Jikan doesn't return multilingual data, so language doesn't affect results
+    ...(shouldExcludeLanguageForMAL ? {} : { language: config.language || 'en-US' }),
     
     // Provider settings (affect catalog content)
     providers: config.providers || {},
@@ -648,6 +654,14 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   // Use custom cache TTL for MDBList catalogs if specified
   let cacheTTL = CATALOG_TTL;
+  
+  // Decade catalogs use 30-day cache since historical data doesn't change
+  // Note: 2020s decade still active, but older decades are stable
+  const decadeCatalogs = ['mal.80sDecade', 'mal.90sDecade', 'mal.00sDecade', 'mal.10sDecade', 'mal.20sDecade'];
+  if (decadeCatalogs.includes(idOnly)) {
+    cacheTTL = STATIC_CATALOG_TTL; // 30 days
+    cacheLogger.info(`Using extended cache TTL for decade catalog ${idOnly}: 30 days`);
+  }
   
   if (idOnly.startsWith('mdblist.')) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);

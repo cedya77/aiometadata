@@ -20,6 +20,8 @@ FROM oven/bun:1.3-alpine AS runner
 
 WORKDIR /app
 
+# Install CA certificates for SSL/TLS verification
+RUN apk add --no-cache ca-certificates
 
 COPY package*.json bun.lock* ./
 
