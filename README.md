@@ -51,7 +51,6 @@ services:
       - META_TTL=604800
       - CATALOG_TTL=86400
       - CATALOG_LIST_ITEMS_SIZE=20
-      - NO_CACHE=false
       - LOG_LEVEL=debug
       - ADMIN_KEY=${ADMIN_KEY?}
       - TMDB_SOCKS_PROXY_URL=${TMDB_SOCKS_PROXY_URL?}

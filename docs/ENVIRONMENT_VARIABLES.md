@@ -53,14 +53,9 @@ cp .env.example .env
 ## Redis Cache Configuration
 
 ### `REDIS_URL`
-- **Required**: Yes (unless NO_CACHE=true)
-- **Description**: Redis connection URL for caching
+- **Required**: Yes
+- **Description**: Redis connection URL for caching (required for the app to function)
 - **Example**: `REDIS_URL=redis://localhost:6379`
-
-### `NO_CACHE`
-- **Default**: `false`
-- **Description**: Disable all caching (not recommended for production)
-- **Example**: `NO_CACHE=true`
 
 ---
 

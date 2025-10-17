@@ -268,7 +268,7 @@ async function getAccountDetails(sessionId, apiKey) {
     return details;
 }
 function getApiKey(config) {
-    const key = config.apiKeys?.tmdb || process.env.TMDB_API;
+    const key = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
     if (!key) throw new Error("TMDB API key not found in config or environment.");
     return key;
 }

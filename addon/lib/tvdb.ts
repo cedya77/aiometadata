@@ -6,7 +6,7 @@ import { httpGet, httpPost } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
 
 const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
-const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY;
+const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY;
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com/banners/images/';
 
 // Type definitions for TVDB API responses
