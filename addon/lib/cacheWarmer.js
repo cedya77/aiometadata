@@ -83,12 +83,16 @@ async function ensureSystemConfig() {
     // Check if system config already exists
     const existingConfig = await database.getUserConfig(systemUUID);
     if (existingConfig) {
-      // Update anime art providers if they're outdated (tvdb -> mal/imdb)
-      const needsUpdate = existingConfig.artProviders?.anime?.poster === 'tvdb';
-      if (needsUpdate) {
-        logger.info('[System Config] Updating anime art providers to use MAL posters and IMDb backgrounds/logos');
-        existingConfig.artProviders.anime = { poster: 'mal', background: 'imdb', logo: 'imdb' };
-        await database.saveUserConfig(systemUUID, systemPasswordHash, existingConfig);
+      // Only auto-update if using the default system config (not a user's custom UUID)
+      const isSystemConfig = systemUUID === 'system-cache-warmer';
+      if (isSystemConfig) {
+        // Update anime art providers if they're outdated (tvdb -> mal/imdb)
+        const needsUpdate = existingConfig.artProviders?.anime?.poster === 'tvdb';
+        if (needsUpdate) {
+          logger.info('[System Config] Updating anime art providers to use MAL posters and IMDb backgrounds/logos');
+          existingConfig.artProviders.anime = { poster: 'mal', background: 'imdb', logo: 'imdb' };
+          await database.saveUserConfig(systemUUID, systemPasswordHash, existingConfig);
+        }
       }
       return systemUUID;
     }
