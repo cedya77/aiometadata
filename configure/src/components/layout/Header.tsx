@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 export function Header() {
-  const { addonVersion, config, setConfig, resetConfig, auth, setAuth } = useConfig();
+  const { addonVersion, config, setConfig, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb } = useConfig();
   const isLoggedIn = auth.authenticated;
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [manifestUrl, setManifestUrl] = useState('');
@@ -90,7 +90,8 @@ export function Header() {
   const openInstall = () => {
     const tmdbKey = config.apiKeys.tmdb?.trim();
     const tvdbKey = config.apiKeys.tvdb?.trim();
-    if (!tmdbKey) {
+    const hasTmdbAvailable = tmdbKey || hasBuiltInTmdb;
+    if (!hasTmdbAvailable) {
       toast.error('TMDB API Key is Required', {
         description:
           "Please go to the 'Integrations' tab and enter your TMDB API key. This is the primary data source for the addon.",
@@ -98,10 +99,33 @@ export function Header() {
       });
       return;
     }
-    if (!tvdbKey) {
-      toast.error('TVDB API Key is Required', {
+    
+    // Only require TVDB key if it's actually selected as a provider
+    const isTvdbUsedInProviders = 
+      config.providers?.movie === 'tvdb' ||
+      config.providers?.series === 'tvdb' ||
+      config.providers?.anime === 'tvdb';
+      
+    const isTvdbUsedInArt = ['movie', 'series', 'anime'].some(contentType => {
+      const provider = config.artProviders?.[contentType];
+      if (typeof provider === 'string') {
+        return provider === 'tvdb';
+      }
+      if (typeof provider === 'object' && provider !== null) {
+        return provider.poster === 'tvdb' || 
+               provider.background === 'tvdb' || 
+               provider.logo === 'tvdb';
+      }
+      return false;
+    });
+    
+    const isTvdbUsed = isTvdbUsedInProviders || isTvdbUsedInArt;
+    const hasTvdbAvailable = tvdbKey || hasBuiltInTvdb;
+      
+    if (!hasTvdbAvailable && isTvdbUsed) {
+      toast.error('TVDB API Key Required', {
         description:
-          "Please go to the 'Integrations' tab and enter your TVDB API key. This is required for series and anime metadata.",
+          "You've selected TVDB as a provider, but haven't entered your TVDB API key. Please add it in the 'Integrations' tab or choose a different provider.",
         duration: 5000,
       });
       return;

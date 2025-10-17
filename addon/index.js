@@ -255,6 +255,8 @@ addon.get("/api/config", (req, res) => {
     gemini: process.env.GEMINI_API_KEY || "",
     customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
     addonVersion: ADDON_VERSION,
+    hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
+    hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
   };
   
   res.json(publicEnvConfig);

@@ -29,7 +29,8 @@ const animeArtProviders = [
 ];
 
 export function ArtProviderSettings() {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, hasBuiltInTvdb } = useConfig();
+  const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
 
   const handleArtProviderChange = (
     contentType: 'movie' | 'series' | 'anime',
@@ -167,8 +168,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {movieArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -192,8 +193,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {movieArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -217,8 +218,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {movieArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -248,8 +249,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {seriesArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -273,8 +274,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {seriesArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -298,8 +299,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {seriesArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -353,8 +354,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {animeArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -378,8 +379,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {animeArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -403,8 +404,8 @@ export function ArtProviderSettings() {
                 <SelectContent>
                   <SelectItem value="meta">Meta Provider (default)</SelectItem>
                   {animeArtProviders.map(p => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
                     </SelectItem>
                   ))}
                 </SelectContent>

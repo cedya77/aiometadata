@@ -41,8 +41,9 @@ const tvdbSeasonTypes = [
 
 
 export function ProvidersSettings() {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, hasBuiltInTvdb } = useConfig();
   const isImdbForCatalog = !!config.mal?.useImdbIdForCatalogAndSearch;
+  const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
 
   const handleProviderChange = (type: 'movie' | 'series' | 'anime', value: string) => {
     setConfig(prev => ({ ...prev, providers: { ...prev.providers, [type]: value } }));
@@ -127,7 +128,11 @@ export function ProvidersSettings() {
             <Select value={config.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {movieProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                {movieProviders.map(p => (
+                  <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                    {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </CardContent>
@@ -139,7 +144,11 @@ export function ProvidersSettings() {
             <Select value={config.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {seriesProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                {seriesProviders.map(p => (
+                  <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                    {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </CardContent>
@@ -153,7 +162,9 @@ export function ProvidersSettings() {
               <SelectContent>
                 {(isImdbForCatalog ? animeProviders.filter(p => p.value !== 'mal') : animeProviders)
                   .map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
+                      {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}
+                    </SelectItem>
                   ))}
               </SelectContent>
             </Select>
@@ -192,14 +203,18 @@ export function ProvidersSettings() {
 
 
       {/* TVDB Specific Settings */}
-      <Card>
+      <Card className={!hasTvdbKey ? 'opacity-50' : ''}>
         <CardHeader>
           <CardTitle>TheTVDB Settings</CardTitle>
-          <CardDescription>Customize how episode data is fetched from TheTVDB.</CardDescription>
+          <CardDescription>
+            {hasTvdbKey 
+              ? 'Customize how episode data is fetched from TheTVDB.'
+              : 'Add your TVDB API key in the Integrations tab to enable these settings.'}
+          </CardDescription>
         </CardHeader>
         <CardContent className="max-w-md">
             <Label className="text-lg font-medium">Season Order</Label>
-            <Select value={config.tvdbSeasonType} onValueChange={handleSeasonTypeChange}>
+            <Select value={config.tvdbSeasonType} onValueChange={handleSeasonTypeChange} disabled={!hasTvdbKey}>
               <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {tvdbSeasonTypes.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
