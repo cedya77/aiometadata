@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.2.0](https://github.com/cedya77/aiometadata/compare/v1.1.0...v1.2.0) (2025-10-17)
+
+
+### Features
+
+* add CACHE_WARMUP_UUID env var for custom user config ([5f44698](https://github.com/cedya77/aiometadata/commit/5f44698c61c0b432029d31c7dcc5490f3e0c7eab))
+* add external link icon for custom manifest catalogs that opens the manifest's /configure page in new tab when clicked ([559d139](https://github.com/cedya77/aiometadata/commit/559d1396d0bc8710e43fe7c568a3b7596f081321))
+* add MAL catalog background warming ([cd19f5b](https://github.com/cedya77/aiometadata/commit/cd19f5b6015095234f763b91d289a8e4579e6b9f))
+* add popular content cache warming system ([b3c8a23](https://github.com/cedya77/aiometadata/commit/b3c8a23449c9d5a08364019358ad8db97767cccd))
+* add user list sort options for MDBList API ([6ee5d57](https://github.com/cedya77/aiometadata/commit/6ee5d576a73eebf721ab4ea494898079bd96f596))
+* implement context-aware cache reconstruction ([56d5289](https://github.com/cedya77/aiometadata/commit/56d5289690aaac68f9f336deda6b3cc2d2eefa9b))
+* make TVDB API key optional ([002e28e](https://github.com/cedya77/aiometadata/commit/002e28eb4cb4994cfd8016d1778bb7a691d558f9))
+* parallelize server startup ([8380e2d](https://github.com/cedya77/aiometadata/commit/8380e2d4ea9b48ef3a6e591584d3b4ee1ca0a413))
+
+
+### Bug Fixes
+
+* add new custom catalogs at end of list to preserve existing catalog order ([ef9ad6e](https://github.com/cedya77/aiometadata/commit/ef9ad6eafe9fe78ddf0026bc99c12691bd560e6c))
+* default catalogs name change not working ([5c77331](https://github.com/cedya77/aiometadata/commit/5c773315995851a5484a7292b4731737469c8d42))
+* display type override revert and Dan Pyjama list filtering ([2fe4f39](https://github.com/cedya77/aiometadata/commit/2fe4f390eba6c78b59f22727d57c07b2db312d8c))
+* improve MAL rate limiting and add configurable cache warming interval ([d465570](https://github.com/cedya77/aiometadata/commit/d465570b084b761391bbe9b23994fea5b27b5a44))
+* meta reconstruction failing due to missing component during write and different components order in write and read ([bc9812f](https://github.com/cedya77/aiometadata/commit/bc9812f8cbc88a31163b79e73ca042eb817fcbf4))
+* tvmaze air date not getting parsed properly ([625ee40](https://github.com/cedya77/aiometadata/commit/625ee40b70780121178c9c8ecb0d5cbfdf0ef41f))
+
+
+### Reverts
+
+* switch back to npm from Bun ([900e2df](https://github.com/cedya77/aiometadata/commit/900e2df589a8a6cdda13413e761899dfcba06d3b))
+
 ## [1.1.0](https://github.com/cedya77/aiometadata/compare/v1.0.1...v1.1.0) (2025-10-14)
 
 
