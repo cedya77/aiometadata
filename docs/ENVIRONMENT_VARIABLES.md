@@ -77,7 +77,7 @@ cp .env.example .env
 - **Get it**: https://www.themoviedb.org/settings/api
 
 ### `TVDB_API_KEY`
-- **Required**: Yes
+- **Required**: No
 - **Description**: TheTVDB API key (v4)
 - **Get it**: https://thetvdb.com/dashboard/account/apikeys
 
@@ -312,6 +312,8 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/aiometadata
 REDIS_URL=redis://localhost:6379
 HOST_NAME=my-addon.com
 TMDB_API=your_key_here
+
+# Optional (but recommended)
 TVDB_API_KEY=your_key_here
 
 # Recommended
@@ -334,8 +336,8 @@ REDIS_URL=redis://localhost:6379
 ADMIN_KEY=your_secure_random_key
 
 # API Keys
-TMDB_API_KEY=your_key_here
-TVDB_API_KEY=your_key_here
+TMDB_API=your_key_here
+TVDB_API_KEY=your_key_here  # Optional
 FANART_API_KEY=your_key_here
 MDBLIST_API_KEY=your_key_here
 
@@ -358,7 +360,7 @@ HOST_NAME=my-addon.com
 DATABASE_URL=sqlite:./data/aiometadata.db
 REDIS_URL=redis://localhost:6379
 TMDB_API=your_key_here
-TVDB_API_KEY=your_key_here
+TVDB_API_KEY=your_key_here  # Optional
 
 # Conservative MAL Warmup
 MAL_WARMUP_ENABLED=true
@@ -389,7 +391,7 @@ MAL_WARMUP_LOG_LEVEL=silent
 | Service | URL | Free Tier | Required |
 |---------|-----|-----------|----------|
 | TMDB | https://www.themoviedb.org/settings/api | Yes | Yes |
-| TVDB | https://thetvdb.com/dashboard/account/apikeys | Yes | Yes |
+| TVDB | https://thetvdb.com/dashboard/account/apikeys | Yes | No |
 | Fanart.tv | https://fanart.tv/get-an-api-key/ | Yes | No |
 | RPDB | https://ratingposterdb.com/ | Yes | No |
 | MDBList | https://mdblist.com/ | Yes | No |
