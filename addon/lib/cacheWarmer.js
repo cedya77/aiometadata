@@ -76,7 +76,7 @@ async function warmEssentialContent() {
 async function ensureSystemConfig() {
   const database = require('./database');
   const crypto = require('crypto');
-  const systemUUID = 'system-cache-warmer';
+  const systemUUID = process.env.CACHE_WARMUP_UUID || 'system-cache-warmer';
   const systemPasswordHash = crypto.createHash('sha256').update('system-internal').digest('hex');
   
   try {

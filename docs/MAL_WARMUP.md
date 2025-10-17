@@ -35,6 +35,10 @@ All configuration is done via environment variables in your `.env` file.
 # Enable/disable warmup (default: true)
 MAL_WARMUP_ENABLED=true
 
+# User UUID to use for cache warming (default: system-cache-warmer)
+# Set this to your own UUID to warm caches with your preferred providers/language
+CACHE_WARMUP_UUID=system-cache-warmer
+
 # Run warmup every N hours (default: 6)
 MAL_WARMUP_INTERVAL_HOURS=6
 
@@ -96,6 +100,27 @@ MAL_WARMUP_DECADES=false
 # Options: silent, normal, verbose
 MAL_WARMUP_LOG_LEVEL=normal
 ```
+
+### Using Your Own UUID for Warming
+
+By default, the warmer uses a system configuration (`system-cache-warmer`) with predefined settings. However, you can specify your own user UUID to warm caches with your preferred providers and language settings:
+
+```bash
+# Use your own UUID (find it in your addon URL or dashboard)
+CACHE_WARMUP_UUID=550e8400-e29b-41d4-a716-446655440000
+```
+
+**Benefits:**
+- Warm caches with **your preferred metadata providers** (TMDB, AniList, etc.)
+- Use **your preferred language** for titles and descriptions
+- Match **your art provider preferences** (MAL posters, IMDb backgrounds, etc.)
+- Ensure warmed content matches what you'll actually see
+
+**How to find your UUID:**
+1. Check your addon URL: `http://localhost:1337/{uuid}/manifest.json`
+2. Or check the dashboard at `http://localhost:1337/api/dashboard`
+
+**Note:** The UUID must exist in the database (i.e., you must have configured it at least once via the addon interface).
 
 ## What Gets Warmed?
 

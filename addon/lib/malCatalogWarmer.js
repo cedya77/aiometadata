@@ -4,6 +4,9 @@ const { parseAnimeCatalogMetaBatch } = require('../utils/parseProps');
 
 // Environment variable configuration with sensible defaults
 const WARMUP_CONFIG = {
+  // UUID to use for cache warming (uses this user's config for providers, language, etc.)
+  uuid: process.env.CACHE_WARMUP_UUID || 'system-cache-warmer', // Default: system-cache-warmer
+  
   // Enable/disable warmup entirely
   enabled: process.env.MAL_WARMUP_ENABLED !== 'false', // Default: true
   
@@ -266,8 +269,8 @@ class MALCatalogWarmer {
     // Import required functions
     const { loadConfigFromDatabase } = require('./configApi.js');
     
-    // Use system UUID for warming
-    const systemUUID = 'system-cache-warmer';
+    // Use configured UUID for warming
+    const systemUUID = WARMUP_CONFIG.uuid;
     let warmingConfig;
     
     try {
@@ -349,7 +352,7 @@ class MALCatalogWarmer {
     
     const { loadConfigFromDatabase } = require('./configApi.js');
     
-    const systemUUID = 'system-cache-warmer';
+    const systemUUID = WARMUP_CONFIG.uuid;
     let warmingConfig;
     
     try {
@@ -403,7 +406,7 @@ class MALCatalogWarmer {
     
     const { loadConfigFromDatabase } = require('./configApi.js');
     
-    const systemUUID = 'system-cache-warmer';
+    const systemUUID = WARMUP_CONFIG.uuid;
     let warmingConfig;
     
     try {

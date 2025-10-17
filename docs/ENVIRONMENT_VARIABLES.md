@@ -127,6 +127,12 @@ cp .env.example .env
 
 Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
 
+### `CACHE_WARMUP_UUID`
+- **Default**: `system-cache-warmer`
+- **Description**: User UUID to use for cache warming operations (uses that user's config for providers, language, etc.)
+- **Example**: `CACHE_WARMUP_UUID=550e8400-e29b-41d4-a716-446655440000`
+- **Note**: If not set, uses a default system config. You can set this to your own UUID to warm caches with your preferred settings.
+
 ### `MAL_WARMUP_ENABLED`
 - **Default**: `true`
 - **Description**: Enable/disable automatic background warming of MAL catalogs
@@ -328,6 +334,7 @@ MDBLIST_API_KEY=your_key_here
 
 # MAL Warmup (optimized for VPS)
 MAL_WARMUP_ENABLED=true
+CACHE_WARMUP_UUID=system-cache-warmer  # or use your own UUID
 MAL_WARMUP_INTERVAL_HOURS=6
 MAL_WARMUP_PRIORITY_PAGES=3
 MAL_WARMUP_DECADES=true
@@ -348,6 +355,7 @@ TVDB_API_KEY=your_key_here
 
 # Conservative MAL Warmup
 MAL_WARMUP_ENABLED=true
+CACHE_WARMUP_UUID=system-cache-warmer  # or use your own UUID
 MAL_WARMUP_INTERVAL_HOURS=12
 MAL_WARMUP_QUIET_HOURS_ENABLED=true
 MAL_WARMUP_QUIET_HOURS_RANGE=2-8
