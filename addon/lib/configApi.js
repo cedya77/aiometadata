@@ -15,8 +15,45 @@ class ConfigApi {
 
   // Validate required API keys
   validateRequiredKeys(config) {
-    const requiredKeys = ['tmdb', 'tvdb'];
-    const missingKeys = requiredKeys.filter(key => !config.apiKeys?.[key]);
+    const requiredKeys = ['tmdb'];
+    
+    // Check if fanart is selected in any art provider (handles both legacy and new formats)
+    const isFanartSelected = (() => {
+      const artProviders = config.artProviders;
+      if (!artProviders) return false;
+      
+      return ['movie', 'series', 'anime'].some(contentType => {
+        const provider = artProviders[contentType];
+        
+        // Handle legacy string format
+        if (typeof provider === 'string') {
+          return provider === 'fanart';
+        }
+        
+        // Handle new nested object format
+        if (typeof provider === 'object' && provider !== null) {
+          return provider.poster === 'fanart' || 
+                 provider.background === 'fanart' || 
+                 provider.logo === 'fanart';
+        }
+        
+        return false;
+      });
+    })();
+    
+    if (isFanartSelected && !requiredKeys.includes('fanart')) {
+      requiredKeys.push('fanart');
+    }
+    
+    const missingKeys = requiredKeys.filter(key => {
+      if (key === 'tmdb') {
+        // TMDB is required unless there's a built-in key
+        const hasUserKey = config.apiKeys?.tmdb?.trim();
+        const hasBuiltInKey = !!(process.env.BUILT_IN_TMDB_API_KEY);
+        return !hasUserKey && !hasBuiltInKey;
+      }
+      return !config.apiKeys?.[key] || config.apiKeys[key].trim() === '';
+    });
     
     if (missingKeys.length > 0) {
       return {

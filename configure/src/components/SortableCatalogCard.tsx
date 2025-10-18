@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { type Catalog } from "@/data/catalogs";
 import { streamingServices } from "@/data/streamings";
 import { integrations } from "@/data/integrations";
+import { useConfig } from "@/contexts/ConfigContext";
 
 interface SortableCatalogCardProps {
   catalog: Catalog;
@@ -29,6 +30,7 @@ const getIntegrationInfo = (catalogId: string) => {
 };
 
 export function SortableCatalogCard({ catalog, config, onChange, id }: SortableCatalogCardProps) {
+  const { config: appConfig, hasBuiltInTvdb } = useConfig();
   const {
     attributes,
     listeners,
@@ -47,6 +49,11 @@ export function SortableCatalogCard({ catalog, config, onChange, id }: SortableC
   const isEnabled = config?.enabled || false;
   const showInHome = config?.showInHome || false;
   let integration = getIntegrationInfo(catalog.id);
+
+  // Check if this is a TVDB catalog and if TVDB key is available
+  const isTvdbCatalog = catalog.source === 'tvdb';
+  const hasTvdbKey = !!appConfig.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+  const isTvdbDisabled = isTvdbCatalog && !hasTvdbKey;
 
   if (integration.id === "streaming") {
     const streamindId = catalog.id.split(".")[1];
@@ -86,6 +93,7 @@ export function SortableCatalogCard({ catalog, config, onChange, id }: SortableC
               <Switch
                 checked={isEnabled}
                 onCheckedChange={(checked) => onChange(checked, checked ? showInHome : false)}
+                disabled={isTvdbDisabled}
               />
               <span className={`text-sm ${!isEnabled ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
                 Home
@@ -93,8 +101,13 @@ export function SortableCatalogCard({ catalog, config, onChange, id }: SortableC
               <Switch
                 checked={showInHome}
                 onCheckedChange={(checked) => onChange(isEnabled, checked)}
-                disabled={!isEnabled}
+                disabled={!isEnabled || isTvdbDisabled}
               />
+              {isTvdbDisabled && (
+                <span className="text-xs text-muted-foreground">
+                  (TVDB API key required)
+                </span>
+              )}
             </div>
           </div>
         </CardHeader>

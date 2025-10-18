@@ -560,7 +560,7 @@ const StreamingProvidersSettings = ({ open, onClose, selectedProviders, setSelec
 };
 
 export function CatalogsSettings() {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, hasBuiltInTvdb } = useConfig();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isStremThruOpen, setIsStremThruOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
@@ -569,16 +569,37 @@ export function CatalogsSettings() {
   const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
+  // Check if TVDB key is available
+  const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+
+  // Auto-disable TVDB catalogs when no TVDB key is available
+  React.useEffect(() => {
+    if (!hasTvdbKey) {
+      const hasEnabledTvdbCatalogs = config.catalogs.some(cat => cat.source === 'tvdb' && cat.enabled);
+      if (hasEnabledTvdbCatalogs) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(cat => 
+            cat.source === 'tvdb' ? { ...cat, enabled: false } : cat
+          )
+        }));
+      }
+    }
+  }, [hasTvdbKey, config.catalogs, setConfig]);
+
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
       // Filter out disabled catalogs if hideDisabledCatalogs is true
       if (hideDisabledCatalogs && !cat.enabled) return false;
       
+      // Filter out TVDB catalogs if no TVDB key is available
+      if (cat.source === 'tvdb' && !hasTvdbKey) return false;
+      
       if (cat.source !== "streaming") return true;
       const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
       return Array.isArray(config.streaming) && config.streaming.includes(serviceId);
     }),
-    [config.catalogs, config.streaming, hideDisabledCatalogs]
+    [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey]
   );
 
   const handleDragEnd = (event: DragEndEvent) => {

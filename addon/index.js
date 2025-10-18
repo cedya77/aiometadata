@@ -775,18 +775,36 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     } else if (result && result.meta) {
       // cache wrap the ratings
       if(result.meta.mal_id) {
-        const ratings = await cacheWrapGlobal(`mdblist-ratings:mal:${type}:${result.meta.mal_id}`, async () => {
-            return await getMediaRatingFromMDBList('mal', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.mal_id, config.apiKeys?.mdblist);
-          }, 7 * 24 * 60 * 60); // 7 days TTL
-        result.meta.app_extras = result.meta.app_extras || {};
-        result.meta.app_extras.ratings = ratings;
+        try {
+          const ratings = await cacheWrapGlobal(`mdblist-ratings:mal:${type}:${result.meta.mal_id}`, async () => {
+              return await getMediaRatingFromMDBList('mal', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.mal_id, config.apiKeys?.mdblist);
+            }, 7 * 24 * 60 * 60); // 7 days TTL
+          result.meta.app_extras = result.meta.app_extras || {};
+          result.meta.app_extras.ratings = ratings;
+        } catch (error) {
+          // Skip MDBList ratings if rate limited (429) or any other error
+          if (error.response?.status === 429) {
+            console.warn(`[MDBList] Rate limited for MAL ID ${result.meta.mal_id}, skipping ratings`);
+          } else {
+            console.warn(`[MDBList] Error fetching ratings for MAL ID ${result.meta.mal_id}:`, error.message);
+          }
+        }
       }
       else if(result.meta.imdb_id) {
-        const ratings = await cacheWrapGlobal(`mdblist-ratings:imdb:${type}:${result.meta.imdb_id}`, async () => {
-            return await getMediaRatingFromMDBList('imdb', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.imdb_id, config.apiKeys?.mdblist);
-          }, 7 * 24 * 60 * 60); // 7 days TTL
-        result.meta.app_extras = result.meta.app_extras || {};
-        result.meta.app_extras.ratings = ratings;
+        try {
+          const ratings = await cacheWrapGlobal(`mdblist-ratings:imdb:${type}:${result.meta.imdb_id}`, async () => {
+              return await getMediaRatingFromMDBList('imdb', type === 'movie' ? 'movie' : type === 'series' ? 'show' : 'any', result.meta.imdb_id, config.apiKeys?.mdblist);
+            }, 7 * 24 * 60 * 60); // 7 days TTL
+          result.meta.app_extras = result.meta.app_extras || {};
+          result.meta.app_extras.ratings = ratings;
+        } catch (error) {
+          // Skip MDBList ratings if rate limited (429) or any other error
+          if (error.response?.status === 429) {
+            console.warn(`[MDBList] Rate limited for IMDb ID ${result.meta.imdb_id}, skipping ratings`);
+          } else {
+            console.warn(`[MDBList] Error fetching ratings for IMDb ID ${result.meta.imdb_id}:`, error.message);
+          }
+        }
       }
     }
     

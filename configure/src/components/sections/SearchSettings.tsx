@@ -1,3 +1,4 @@
+import React from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
@@ -6,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { allSearchProviders } from '@/data/catalogs';
 
 export function SearchSettings() {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, hasBuiltInTvdb } = useConfig();
 
   const handleSearchEnabledChange = (checked: boolean) => {
     setConfig(prev => ({ ...prev, search: { ...prev.search, enabled: checked } }));
@@ -45,11 +46,64 @@ export function SearchSettings() {
     }));
   };
 
-  const movieSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('movie'));
-  const seriesSearchProviders = allSearchProviders.filter(p => p.mediaType.includes('series'));
+  // Check if TVDB key is available
+  const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+  
+  const movieSearchProviders = allSearchProviders.filter(p => {
+    if (p.mediaType.includes('movie')) {
+      // Filter out TVDB search if no TVDB key is available
+      if (p.value === 'tvdb.search' && !hasTvdbKey) {
+        return false;
+      }
+      return true;
+    }
+    return false;
+  });
+  
+  const seriesSearchProviders = allSearchProviders.filter(p => {
+    if (p.mediaType.includes('series')) {
+      // Filter out TVDB search if no TVDB key is available
+      if (p.value === 'tvdb.search' && !hasTvdbKey) {
+        return false;
+      }
+      return true;
+    }
+    return false;
+  });
+  
   const animeSearchProviders = allSearchProviders.filter(
     p => p.mediaType.includes('anime_movie') || p.mediaType.includes('anime_series')
   );
+
+  // Auto-switch from TVDB if no key is available
+  React.useEffect(() => {
+    if (!hasTvdbKey) {
+      if (config.search.providers.movie === 'tvdb.search') {
+        setConfig(prev => ({
+          ...prev,
+          search: {
+            ...prev.search,
+            providers: {
+              ...prev.search.providers,
+              movie: 'tmdb.search'
+            }
+          }
+        }));
+      }
+      if (config.search.providers.series === 'tvdb.search') {
+        setConfig(prev => ({
+          ...prev,
+          search: {
+            ...prev.search,
+            providers: {
+              ...prev.search.providers,
+              series: 'tmdb.search'
+            }
+          }
+        }));
+      }
+    }
+  }, [hasTvdbKey, config.search.providers.movie, config.search.providers.series, setConfig]);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -143,28 +197,30 @@ export function SearchSettings() {
                 </CardContent>
             </Card>
 
-            {/* TVDB Collections Search */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>TVDB Collections Search</CardTitle>
-                    <CardDescription>Search for curated TVDB lists and collections</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
-                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
-                            <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
-                                TVDB Collections
+            {/* TVDB Collections Search - only show if TVDB key is available */}
+            {hasTvdbKey && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>TVDB Collections Search</CardTitle>
+                        <CardDescription>Search for curated TVDB lists and collections</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+                            <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
+                            <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                                <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
+                                    TVDB Collections
+                                </div>
+                                <Switch
+                                    checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? false}
+                                    onCheckedChange={checked => handleEngineEnabledChange('tvdb.collections.search', checked)}
+                                    aria-label="Enable TVDB Collections search"
+                                />
                             </div>
-                            <Switch
-                                checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? false}
-                                onCheckedChange={checked => handleEngineEnabledChange('tvdb.collections.search', checked)}
-                                aria-label="Enable TVDB Collections search"
-                            />
                         </div>
-                    </div>
-                </CardContent>
-            </Card>
+                    </CardContent>
+                </Card>
+            )}
         </div>
       )}
     </div>

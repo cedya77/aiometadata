@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useConfig } from "@/contexts/ConfigContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +78,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     if (contextLoading) {
       return { valid: true };
     }
+    
     
     const requiredKeys = ['tmdb'];
     
@@ -248,7 +249,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     }
   };
 
-  const validation = validateRequiredKeys();
+  const validation = useMemo(() => validateRequiredKeys(), [config, hasBuiltInTmdb, hasBuiltInTvdb, contextLoading]);
 
   return (
     <div className="space-y-6">
@@ -264,26 +265,92 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Required API Keys</Label>
+            <Label>API Keys Status</Label>
             <div className="space-y-2">
-              {['tmdb'].map(key => {
+              {[
+                { key: 'tmdb', name: 'TMDB' },
+                { key: 'tvdb', name: 'TVDB' },
+                { key: 'mdblist', name: 'MDBList' },
+                { key: 'fanart', name: 'Fanart' }
+              ].map(({ key, name }) => {
                 const hasUserKey = config.apiKeys?.[key]?.trim();
                 const hasBuiltInKey = key === 'tmdb' ? hasBuiltInTmdb : (key === 'tvdb' ? hasBuiltInTvdb : false);
                 const isConfigured = hasUserKey || hasBuiltInKey;
                 
+                // Check if this key is actually being used
+                const isInUse = (() => {
+                  if (key === 'tmdb') return true; // Always required
+                  if (key === 'tvdb') {
+                    // Check if TVDB is used in providers or art providers
+                    const isTvdbInProviders = 
+                      config.providers?.movie === 'tvdb' ||
+                      config.providers?.series === 'tvdb' ||
+                      config.providers?.anime === 'tvdb';
+                    
+                    const isTvdbInArt = ['movie', 'series', 'anime'].some(contentType => {
+                      const provider = config.artProviders?.[contentType];
+                      if (typeof provider === 'string') {
+                        return provider === 'tvdb';
+                      }
+                      if (typeof provider === 'object' && provider !== null) {
+                        return provider.poster === 'tvdb' || 
+                               provider.background === 'tvdb' || 
+                               provider.logo === 'tvdb';
+                      }
+                      return false;
+                    });
+                    
+                    return isTvdbInProviders || isTvdbInArt;
+                  }
+                  if (key === 'mdblist') {
+                    // Check if MDBList is used in catalogs
+                    return config.catalogs?.some(c => c.id.startsWith('mdblist.'));
+                  }
+                  if (key === 'fanart') {
+                    // Check if fanart is used in art providers
+                    const artProviders = config.artProviders;
+                    if (!artProviders) return false;
+                    
+                    return ['movie', 'series', 'anime'].some(contentType => {
+                      const provider = artProviders[contentType];
+                      if (typeof provider === 'string') {
+                        return provider === 'fanart';
+                      }
+                      if (typeof provider === 'object' && provider !== null) {
+                        return provider.poster === 'fanart' || 
+                               provider.background === 'fanart' || 
+                               provider.logo === 'fanart';
+                      }
+                      return false;
+                    });
+                  }
+                  return false;
+                })();
+                
+                const isRequired = key === 'tmdb' || isInUse;
+                
                 return (
-                  <div key={key} className="flex items-center gap-2">
-                    {isConfigured ? (
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                    )}
-                    <span className="text-sm font-medium">{key.toUpperCase()}</span>
-                    {isConfigured ? (
-                      <span className="text-sm text-green-600">✓ Configured</span>
-                    ) : (
-                      <span className="text-sm text-red-600">✗ Missing</span>
-                    )}
+                  <div key={key} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
+                    <div className="flex items-center gap-3">
+                      {isConfigured ? (
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 text-red-500" />
+                      )}
+                      <div>
+                        <span className="text-sm font-medium">{name}</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {isRequired ? 'Required' : 'Optional'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-sm">
+                      {isConfigured ? (
+                        <span className="text-green-600 font-medium">Configured</span>
+                      ) : (
+                        <span className="text-red-600 font-medium">Missing</span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -314,27 +381,29 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                   
                   setError("");
                   
-                  const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
-                  if (!hasTvdbKey) {
-                    const isTvdbInProviders = 
-                      config.providers?.movie === 'tvdb' ||
-                      config.providers?.series === 'tvdb' ||
-                      config.providers?.anime === 'tvdb';
-                    
-                    const isTvdbInArt = ['movie', 'series', 'anime'].some(contentType => {
-                      const provider = config.artProviders?.[contentType];
-                      if (typeof provider === 'string') {
-                        return provider === 'tvdb';
-                      }
-                      if (typeof provider === 'object' && provider !== null) {
-                        return provider.poster === 'tvdb' || 
-                               provider.background === 'tvdb' || 
-                               provider.logo === 'tvdb';
-                      }
-                      return false;
-                    });
-                    
-                    if (isTvdbInProviders || isTvdbInArt) {
+                  // Check if TVDB is being used anywhere
+                  const isTvdbInProviders = 
+                    config.providers?.movie === 'tvdb' ||
+                    config.providers?.series === 'tvdb' ||
+                    config.providers?.anime === 'tvdb';
+                  
+                  const isTvdbInArt = ['movie', 'series', 'anime'].some(contentType => {
+                    const provider = config.artProviders?.[contentType];
+                    if (typeof provider === 'string') {
+                      return provider === 'tvdb';
+                    }
+                    if (typeof provider === 'object' && provider !== null) {
+                      return provider.poster === 'tvdb' || 
+                             provider.background === 'tvdb' || 
+                             provider.logo === 'tvdb';
+                    }
+                    return false;
+                  });
+                  
+                  // Only validate TVDB key if TVDB is actually being used
+                  if (isTvdbInProviders || isTvdbInArt) {
+                    const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+                    if (!hasTvdbKey) {
                       setError("TVDB is selected as a provider but no TVDB API key is configured. Please add your TVDB API key in the Integrations tab or choose a different provider.");
                       return;
                     }
