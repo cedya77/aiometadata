@@ -29,6 +29,7 @@ import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 import { isReleasedDigitally } from "../utils/parseProps.js";
+import { filterMetasByRegex } from "../utils/regexFilter.js";
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
@@ -43,27 +44,32 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     if (id === 'tvdb.collections') {
       logger.info(`Fetching TVDB collections catalog: ${id}`);
       const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
-      return { metas: metas };
+      const filteredMetas = filterMetasByRegex(metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredMetas };
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
       logger.info(`Routing to TVDB catalog handler for id: ${id}`);
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending');
-      return { metas: tvdbResults };
+      const filteredResults = filterMetasByRegex(tvdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       logger.info(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID);
-      return { metas: tmdbResults };
+      const filteredResults = filterMetasByRegex(tmdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
     }
     else if (id.startsWith('stremthru.')) {
       logger.info(`Routing to StremThru catalog handler for id: ${id}`);
       const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
-      return { metas: stremthruResults };
+      const filteredResults = filterMetasByRegex(stremthruResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
     }
     else if (id.startsWith('custom.')) {
       logger.info(`Routing to Custom Manifest catalog handler for id: ${id}`);
       const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
-      return { metas: customResults };
+      const filteredResults = filterMetasByRegex(customResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
     }
 
     else {

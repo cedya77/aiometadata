@@ -82,6 +82,8 @@ export interface AppConfig {
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;
+  exclusionKeywords?: string;
+  regexExclusionFilter?: string;
   searchEnabled: boolean;
   sessionId: string;
   catalogs: CatalogConfig[];

@@ -630,6 +630,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
     hideUnreleasedDigital: config.hideUnreleasedDigital || false,
+    exclusionKeywords: config.exclusionKeywords || null,
+    regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     
@@ -1525,6 +1527,8 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
     hideUnreleasedDigital: config.hideUnreleasedDigital || false,
+    exclusionKeywords: config.exclusionKeywords || null,
+    regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     

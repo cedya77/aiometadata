@@ -1,6 +1,7 @@
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
@@ -27,6 +28,14 @@ export function FiltersSettings() {
 
   const handleHideUnreleasedDigitalChange = (checked: boolean) => {
     setConfig(prev => ({ ...prev, hideUnreleasedDigital: checked }));
+  };
+
+  const handleExclusionKeywordsChange = (value: string) => {
+    setConfig(prev => ({ ...prev, exclusionKeywords: value }));
+  };
+
+  const handleRegexExclusionFilterChange = (value: string) => {
+    setConfig(prev => ({ ...prev, regexExclusionFilter: value }));
   };
 
   return (
@@ -94,6 +103,50 @@ export function FiltersSettings() {
               onCheckedChange={handleHideUnreleasedDigitalChange}
             />
             <Label htmlFor="hide-unreleased-digital">Hide Unreleased Movies</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Content Exclusion Filter Card */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Content Exclusion Filter</CardTitle>
+          <CardDescription>
+            Exclude content by keywords or advanced patterns. Perfect for kid-safe filtering.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Simple Keywords */}
+          <div className="space-y-2">
+            <Label htmlFor="exclusion-keywords">Simple Keywords (Easy)</Label>
+            <Input
+              id="exclusion-keywords"
+              placeholder="naked, sex, porn, adult, horror, scary, violence"
+              value={config.exclusionKeywords || ''}
+              onChange={(e) => handleExclusionKeywordsChange(e.target.value)}
+            />
+            <p className="text-sm text-muted-foreground">
+              Comma-separated keywords. Example: "naked, sex, porn, adult"
+            </p>
+          </div>
+
+          {/* Advanced Regex */}
+          <div className="space-y-2">
+            <Label htmlFor="regex-exclusion-filter">Advanced Pattern (Regex)</Label>
+            <Input
+              id="regex-exclusion-filter"
+              placeholder="naked|sex|porn|adult|horror|scary"
+              value={config.regexExclusionFilter || ''}
+              onChange={(e) => handleRegexExclusionFilterChange(e.target.value)}
+            />
+            <p className="text-sm text-muted-foreground">
+              Advanced users only. Use | to separate patterns. Example: "naked|sex|porn"
+            </p>
+          </div>
+
+          <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
+            <strong>Tip:</strong> Use simple keywords for easy filtering, or advanced regex for precise control. 
+            Both work together - content matching either will be excluded.
           </div>
         </CardContent>
       </Card>

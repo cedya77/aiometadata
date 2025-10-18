@@ -12,6 +12,7 @@ const tvmaze = require('./tvmaze');
 const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
+const { filterMetasByRegex } = require('../utils/regexFilter');
 const consola = require('consola');
 
 const logger = consola.create({ 
@@ -943,6 +944,16 @@ async function getSearch(id, type, language, extra, config) {
       queryText: queryText,
       resultCount: metas.length
     });
+    
+    // Apply content exclusion filters if configured
+    if (config.exclusionKeywords || config.regexExclusionFilter) {
+      const beforeCount = metas.length;
+      metas = filterMetasByRegex(metas, config.exclusionKeywords, config.regexExclusionFilter);
+      const afterCount = metas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Content filter excluded ${beforeCount - afterCount} search results`);
+      }
+    }
     
     return { metas };
   } catch (error) {

@@ -152,6 +152,8 @@ const respond = function (req, res, data, opts) {
           includeAdult: req.userConfig.includeAdult,
           ageRating: req.userConfig.ageRating,
           hideUnreleasedDigital: req.userConfig.hideUnreleasedDigital,
+          exclusionKeywords: req.userConfig.exclusionKeywords,
+          regexExclusionFilter: req.userConfig.regexExclusionFilter,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
           apiKeys: { 
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',

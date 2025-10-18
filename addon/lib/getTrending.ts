@@ -6,6 +6,7 @@ import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 import { isReleasedDigitally } from "../utils/parseProps.js";
+import { filterMetasByRegex } from "../utils/regexFilter.js";
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
@@ -113,6 +114,16 @@ async function getTrending(type: string, language: string, page: number, genre: 
       const afterCount = filteredMetas.length;
       if (beforeCount !== afterCount) {
         console.log(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    // Apply content exclusion filters if configured
+    if (config.exclusionKeywords || config.regexExclusionFilter) {
+      const beforeCount = filteredMetas.length;
+      filteredMetas = filterMetasByRegex(filteredMetas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      const afterCount = filteredMetas.length;
+      if (beforeCount !== afterCount) {
+        console.log(`[getTrending] Content filter excluded ${beforeCount - afterCount} trending items`);
       }
     }
     
