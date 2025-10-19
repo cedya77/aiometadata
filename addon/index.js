@@ -261,6 +261,8 @@ addon.get("/api/config", (req, res) => {
     hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
   };
   
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  
   res.json(publicEnvConfig);
 });
 
@@ -1073,6 +1075,8 @@ addon.get("/dashboard/", (req, res) => {
 });
 
 addon.get('/api/config/addon-info', (req, res) => {
+  res.setHeader('Cache-Control', 'private, max-age=300');
+
   res.json({
     requiresAddonPassword: !!process.env.ADDON_PASSWORD,
     addonVersion: ADDON_VERSION
