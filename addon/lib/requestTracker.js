@@ -1504,15 +1504,9 @@ class RequestTracker {
     return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
   }
 
-  // Get improved user identifier using multiple factors
+  // Get improved user identifier using simplified factors
   getImprovedUserIdentifier(req) {
     const crypto = require("crypto");
-
-    // Get various identifiers
-    const userAgent = req.get("User-Agent") || "unknown";
-    const acceptLanguage = req.get("Accept-Language") || "";
-    const acceptEncoding = req.get("Accept-Encoding") || "";
-    const sessionId = req.get("X-Session-ID") || "";
 
     // Get anonymized IP (first 3 octets only for privacy)
     let anonymizedIP = "unknown";
@@ -1539,8 +1533,19 @@ class RequestTracker {
       anonymizedIP = "unknown";
     }
 
-    // Create a composite identifier that's more unique but still anonymous
-    const compositeId = `${userAgent}:${acceptLanguage}:${acceptEncoding}:${anonymizedIP}:${sessionId}`;
+    // Get basic browser info (just browser name, not version)
+    const userAgent = req.get("User-Agent") || "unknown";
+    let browserType = "unknown";
+    if (userAgent.includes("Chrome")) browserType = "chrome";
+    else if (userAgent.includes("Firefox")) browserType = "firefox";
+    else if (userAgent.includes("Safari")) browserType = "safari";
+    else if (userAgent.includes("Edge")) browserType = "edge";
+    else if (userAgent.includes("Stremio")) browserType = "stremio";
+    else browserType = "other";
+
+    // Create a simplified identifier that groups users more reasonably
+    // Only use IP + basic browser type to avoid over-fragmenting users
+    const compositeId = `${anonymizedIP}:${browserType}`;
 
     // Hash the composite identifier
     return crypto
@@ -1607,6 +1612,31 @@ class RequestTracker {
         error.message,
       );
       return 0;
+    }
+  }
+
+  // Clear inflated active user data (run once to reset after fixing the ID logic)
+  async clearActiveUserData() {
+    try {
+      const patterns = [
+        "active_users:*",
+        "unique_users:*", 
+        "user_activities"
+      ];
+
+      for (const pattern of patterns) {
+        const keys = await redis.keys(pattern);
+        if (keys.length > 0) {
+          await redis.del(...keys);
+          logger.info(`[Request Tracker] Cleared ${keys.length} keys matching ${pattern}`);
+        }
+      }
+
+      logger.info("[Request Tracker] Active user data cleared - new tracking will be more accurate");
+      return { success: true, message: "Active user data cleared successfully" };
+    } catch (error) {
+      logger.error("[Request Tracker] Failed to clear active user data:", error);
+      return { success: false, message: error.message };
     }
   }
 

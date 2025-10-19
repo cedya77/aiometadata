@@ -1553,6 +1553,32 @@ addon.post("/api/dashboard/cache/clear", (req, res) => {
   }
 });
 
+addon.post("/api/dashboard/users/clear", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const dashboardApi = getDashboardAPI();
+    
+    // Call the new method to clear inflated user data
+    if (dashboardApi.requestTracker && dashboardApi.requestTracker.clearActiveUserData) {
+      dashboardApi.requestTracker.clearActiveUserData()
+        .then(result => res.json(result))
+        .catch(error => {
+          console.error('[Dashboard API] User data clear error:', error);
+          res.status(500).json({ error: 'Failed to clear user data' });
+        });
+    } else {
+      res.status(500).json({ error: 'Request tracker not available' });
+    }
+  } catch (error) {
+    console.error('[Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to clear user data' });
+  }
+});
+
 addon.get("/api/dashboard/analytics", async (req, res) => {
   
   try {

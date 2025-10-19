@@ -52,6 +52,7 @@ import {
   Key,
   LogOut,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import {
   LineChart as RechartsLineChart,
@@ -2647,6 +2648,55 @@ function DashboardUsers({ data, loading }) {
   });
 
   const [error, setError] = useState(null);
+  const [clearingUserData, setClearingUserData] = useState(false);
+
+  // Clear inflated user data
+  const handleClearUserData = async () => {
+    if (!adminKey) {
+      toast.error("Admin key required", {
+        description: "You need admin access to clear user data",
+      });
+      return;
+    }
+
+    setClearingUserData(true);
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-admin-key': adminKey
+      };
+
+      const response = await fetch('/api/dashboard/users/clear', {
+        method: 'POST',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success("User Data Cleared", {
+          description: "Inflated user data has been cleared. New tracking will be more accurate.",
+        });
+        // Refresh the page to show updated data
+        window.location.reload();
+      } else {
+        toast.error("Clear Failed", {
+          description: result.message || "Failed to clear user data",
+        });
+      }
+    } catch (error) {
+      console.error('Error clearing user data:', error);
+      toast.error("Clear Error", {
+        description: error.message,
+      });
+    } finally {
+      setClearingUserData(false);
+    }
+  };
 
   // Update state when data prop changes
   useEffect(() => {
@@ -2858,7 +2908,9 @@ function DashboardUsers({ data, loading }) {
         <Card>
           <CardHeader>
             <CardTitle>User Management</CardTitle>
-            <CardDescription>Administrative actions</CardDescription>
+            <CardDescription>
+              Administrative actions for user data and tracking
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -2878,6 +2930,22 @@ function DashboardUsers({ data, loading }) {
                 <Settings className="h-4 w-4 mr-2" />
                 User Settings
               </Button>
+              <Button 
+                variant="destructive" 
+                className="w-full"
+                onClick={handleClearUserData}
+                disabled={clearingUserData}
+              >
+                {clearingUserData ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                {clearingUserData ? "Clearing..." : "Clear User Data"}
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Clears inflated active user data to reset tracking accuracy
+              </p>
             </div>
           </CardContent>
         </Card>
