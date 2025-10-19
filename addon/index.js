@@ -1404,6 +1404,22 @@ function getDashboardAPI() {
   return dashboardApiInstance;
 }
 
+// Middleware to prevent caching on dynamic, instance-specific routes
+const noCache = (req, res, next) => {
+  // Instructs not to store the response in any cache.
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  // For older HTTP/1.0 caches.
+  res.setHeader('Pragma', 'no-cache');
+  // Tells proxies the response is immediately stale.
+  res.setHeader('Expires', '0');
+  next();
+};
+
+// Apply the no-cache middleware to all dashboard and dashboard API routes
+addon.use('/dashboard', noCache);
+addon.use('/api/dashboard', noCache);
+
+
 addon.get("/api/dashboard/overview", (req, res) => {
   
   try {
