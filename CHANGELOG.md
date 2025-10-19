@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.3.0](https://github.com/cedya77/aiometadata/compare/v1.2.1...v1.3.0) (2025-10-19)
+
+
+### Features
+
+* filter out TVDB features when no API key is available ([f9dd85e](https://github.com/cedya77/aiometadata/commit/f9dd85ec7694ded99765704b54b6947b89429b5c))
+* implement dual content filtering system with cache invalidation ([b4b50ff](https://github.com/cedya77/aiometadata/commit/b4b50ffed4c0ac8144c5e5da27c7d5770874850c))
+
 ## [1.2.1](https://github.com/cedya77/aiometadata/compare/v1.2.0...v1.2.1) (2025-10-17)
 
 
