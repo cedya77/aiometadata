@@ -381,17 +381,27 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
       filteredResults = filteredResults.filter(result => {
-          if (!result.certification || result.certification.toLowerCase() === 'nr' || result.certification === "") return true;
+          const cert = result.certification;
           
+          // If rating is PG-13 or lower, exclude items without certification as they could be inappropriate
           const isTvRating = type === 'series';
-          const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
           const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+          const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                         (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                          movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                         (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                          tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
           
+          if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+              return !isUserRatingRestrictive; // Exclude items without certification if user rating is restrictive
+          }
+          
+          const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
           const userRatingIndex = ratingHierarchy.indexOf(userRating);
-          const resultRatingIndex = ratingHierarchy.indexOf(result.certification);
+          const resultRatingIndex = ratingHierarchy.indexOf(cert);
           
           if (userRatingIndex === -1) return true;
-          if (resultRatingIndex === -1) return false;
+          if (resultRatingIndex === -1) return true; // Allow items with unknown ratings
           
           return resultRatingIndex <= userRatingIndex;
       });
@@ -646,17 +656,27 @@ async function performTvdbSearch(type, query, language, config) {
     const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
     ageFilteredResults = sortedResults.filter(result => {
-      if (!result.certification) return true;
+      const cert = result.certification;
       
+      // If rating is PG-13 or lower, exclude items without certification as they could be inappropriate
       const isTvRating = type === 'series';
-      const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
       const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+      const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                     (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                      movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                     (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                      tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
       
+      if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+        return !isUserRatingRestrictive; // Exclude items without certification if user rating is restrictive
+      }
+      
+      const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
       const userRatingIndex = ratingHierarchy.indexOf(userRating);
-      const resultRatingIndex = ratingHierarchy.indexOf(result.certification);
+      const resultRatingIndex = ratingHierarchy.indexOf(cert);
       
       if (userRatingIndex === -1) return true; // If user rating is invalid, don't filter
-      if (resultRatingIndex === -1) return false; // Filter out items with unrecognized ratings
+      if (resultRatingIndex === -1) return true; // Allow items with unknown ratings
       
       return resultRatingIndex <= userRatingIndex;
     });

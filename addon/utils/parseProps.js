@@ -553,6 +553,26 @@ function sortTvdbSearchResults(results, query) {
   return filteredResults.map(p => p.originalItem);
 }
 
+function getTvdbCertification(contentRatings, countryCode, contentType) {
+  if (!contentRatings || !Array.isArray(contentRatings)) {
+    return null;
+  }
+
+  let certification = contentRatings.find(rating => 
+    rating.country?.toLowerCase() === countryCode?.toLowerCase() && 
+    (!contentType || rating.contentType === contentType || rating.contentType === '')
+  );
+  
+  if (!certification) {
+    certification = contentRatings.find(rating => 
+      rating.country?.toLowerCase() === 'usa' && 
+      (!contentType || rating.contentType === contentType || rating.contentType === '')
+    );
+  }
+  
+  return certification?.name || null;
+}
+
 function processOverviewTranslations(translations, language, overview) {
   if(language === 'pt-PT'){
     let translation = tmdb.getTranslations(translations, 'pt-PT');
@@ -2703,5 +2723,6 @@ module.exports = {
   processOverviewTranslations,
   processTitleTranslations,
   genSeasonsString,
-  isReleasedDigitally
+  isReleasedDigitally,
+  getTvdbCertification
 };

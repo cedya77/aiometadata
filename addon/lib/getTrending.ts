@@ -87,8 +87,15 @@ async function getTrending(type: string, language: string, page: number, genre: 
         filteredMetas = validMetas.filter(meta => {
           const cert = meta.app_extras?.certification;
           
-          if (!cert || cert.toLowerCase() === 'nr' || cert === "") {
-            return true;
+          // If rating is PG-13 or lower, exclude items without certification as they could be inappropriate
+          const isUserRatingRestrictive = finalUserRating === 'PG-13' || 
+                                         (movieRatingHierarchy.indexOf(finalUserRating) !== -1 && 
+                                          movieRatingHierarchy.indexOf(finalUserRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                         (tvRatingHierarchy.indexOf(finalUserRating) !== -1 && 
+                                          tvRatingHierarchy.indexOf(finalUserRating) <= tvRatingHierarchy.indexOf('TV-14'));
+          
+          if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+            return !isUserRatingRestrictive; // Exclude items without certification if user rating is restrictive
           }
           
           const resultRatingIndex = ratingHierarchy.indexOf(cert);

@@ -18,6 +18,7 @@ const logger = consola.create({
 });
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
+import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
@@ -37,6 +38,79 @@ const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
 const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
+
+/**
+ * Apply age rating filter to metas based on user configuration
+ * @param metas - Array of meta objects to filter
+ * @param type - Content type ('movie' or 'series')
+ * @param config - User configuration
+ * @returns Filtered array of metas
+ */
+function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
+  if (!config.ageRating || config.ageRating.toLowerCase() === 'none') {
+    return metas;
+  }
+
+  logger.info(`[StremThru] Applying age rating filter: ${config.ageRating} for type: ${type}`);
+  const beforeCount = metas.length;
+  const filterStartTime = performance.now();
+  
+  const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+  const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+  
+  const movieToTvMap: { [key: string]: string } = {
+    'G': 'TV-G',
+    'PG': 'TV-PG', 
+    'PG-13': 'TV-14',
+    'R': 'TV-MA',
+    'NC-17': 'TV-MA'
+  };
+  
+  const isTvRating = type === 'series';
+  const finalUserRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+  const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+  const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
+
+  if (userRatingIndex === -1) {
+    return metas;
+  }
+
+  const filteredMetas = metas.filter(meta => {
+    let cert: string | null = null;
+    
+    if (meta.app_extras?.certification) {
+      cert = meta.app_extras.certification;
+    } else {
+      logger.debug(`[StremThru] ${type} ${meta.name}: No certification data available`);
+    }
+
+    // If rating is PG-13 or lower, exclude NR content as it could be inappropriate
+    const isUserRatingRestrictive = finalUserRating === 'PG-13' || 
+                                   (movieRatingHierarchy.indexOf(finalUserRating) !== -1 && 
+                                    movieRatingHierarchy.indexOf(finalUserRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                   (tvRatingHierarchy.indexOf(finalUserRating) !== -1 && 
+                                    tvRatingHierarchy.indexOf(finalUserRating) <= tvRatingHierarchy.indexOf('TV-14'));
+    
+    if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+      return !isUserRatingRestrictive; // Exclude NR if user rating is restrictive
+    }
+      
+    const resultRatingIndex = ratingHierarchy.indexOf(cert);
+    if (resultRatingIndex === -1) {
+      return true; // Allow items with unknown ratings
+    }
+    
+    return resultRatingIndex <= userRatingIndex;
+  });
+  
+  const afterCount = filteredMetas.length;
+  const filterTime = performance.now() - filterStartTime;
+  if (beforeCount !== afterCount) {
+    logger.info(`Age rating filter (StremThru): filtered out ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
+  }
+
+  return filteredMetas;
+}
 
 
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
@@ -281,6 +355,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         logger.info(`Digital release filter (MDBList): filtered out ${beforeCount - afterCount} unreleased movies`);
       }
     }
+    metas = applyAgeRatingFilter(metas, type, config);
     
     return metas;
   }
@@ -514,6 +589,9 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
         logger.info(`Digital release filter (StremThru): filtered out ${beforeCount - afterCount} unreleased movies`);
       }
     }
+
+    // Apply age rating filter if enabled
+    metas = applyAgeRatingFilter(metas, type, config);
     
     logger.success(`[StremThru] Successfully processed ${metas.length} items for catalog: ${catalogId} (page: ${page})`);
     return metas;

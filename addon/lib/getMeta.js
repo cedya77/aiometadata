@@ -153,6 +153,9 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     if(!targetProviders.has('imdb')) {
       targetProviders.add('imdb');
     }
+    if(preferredProvider === 'tvmaze' && config.ageRating.toLowerCase() !== 'none' && !targetProviders.has('tmdb')) {
+      targetProviders.add('tmdb');
+    }
     if(!targetProviders.has(preferredProvider)) {
       targetProviders.add(preferredProvider);
     }
@@ -504,8 +507,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
       const movieData = await moviedb.movieInfo({ 
         id: allIds.tmdbId, 
         language, 
-        append_to_response: config.hideUnreleasedDigital ? "videos,credits,external_ids,images,translations,watch/providers,release_dates" : 
-                                "videos,credits,external_ids,images,translations,watch/providers", 
+        append_to_response: "videos,credits,external_ids,images,translations,watch/providers,release_dates", 
         include_image_language: imageLanguages 
       }, config);
       
@@ -560,7 +562,7 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
       const seriesData = await moviedb.tvInfo({ 
         id: allIds.tmdbId, 
         language, 
-        append_to_response: "videos,credits,external_ids,images,translations,watch/providers", 
+        append_to_response: "videos,credits,external_ids,images,translations,watch/providers,content_ratings", 
         include_image_language: imageLanguages 
       }, config);
       
@@ -832,6 +834,11 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
+  if (tmdbId){
+    const seriesData = await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "content_ratings" }, config);
+    imdbData.app_extras = imdbData.app_extras || {};
+    imdbData.app_extras.certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+  }
 
   return imdbData;
 }
@@ -878,10 +885,11 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
-  if (tmdbId && config.hideUnreleasedDigital){
+  if (tmdbId){
     const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
     imdbData.app_extras = imdbData.app_extras || {};
     imdbData.app_extras.releaseDates = movieData.release_dates;
+    imdbData.app_extras.certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   }
 
   return imdbData;
@@ -966,7 +974,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
   finalTitle = Utils.processTitleTranslations(movieData.translations, language, title, 'movie');
-  
+  const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
 
   return {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
@@ -992,7 +1000,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailerStreams: Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language).length > 0 ? Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language) : Utils.parseTrailerStream(movieData.videos),
     links: Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID),
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: movieData.release_dates }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: movieData.release_dates, certification: certification }
   };
 }
 
@@ -1362,6 +1370,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     }
   }
 
+  const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+
   const meta = {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
     type: 'series',
@@ -1385,7 +1395,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, watchProviders: watchProviders }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, watchProviders: watchProviders, certification: certification }
   };
   if (runtime) {
     meta.runtime = Utils.parseRunTime(runtime);
@@ -1492,9 +1502,11 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   tmdbId = tmdbId || remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id 
 
   let release_dates = null;
-  if(tmdbId && config.hideUnreleasedDigital){
+  let certification = null;
+  if(tmdbId){
     const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
-    release_dates = movieData.release_dates;
+    release_dates = movieData.release_dates;  
+    certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   }
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
@@ -1524,7 +1536,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
-    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: release_dates }
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: release_dates, certification: certification }
   };
 }
 
@@ -1800,6 +1812,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     }
   }
 
+  const certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
+
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
     id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
@@ -1827,7 +1841,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     trailerStreams: trailerStreams,
     links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, watchProviders: watchProviders }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, watchProviders: watchProviders, certification: certification }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -1981,6 +1995,11 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   if(tmdbId && includeVideos){
      watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
   }
+  let certification = null;
+  if(tmdbId){
+    const seriesData = await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "content_ratings" }, config);
+    certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+  }
   videos = [... specialVideos, ... videos];
   if(!logoUrl && imdbId){
     logoUrl =  imdb.getLogoFromImdb(imdbId);
@@ -2007,7 +2026,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     videos,
     links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks],
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails, watchProviders: watchProviders }
+    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails, watchProviders: watchProviders, certification: certification }
   };
 
   return meta;
