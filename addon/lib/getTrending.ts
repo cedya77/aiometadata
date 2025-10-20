@@ -1,23 +1,31 @@
 require("dotenv").config();
 import * as moviedb from "./getTmdb.js";
 import * as Utils from '../utils/parseProps.js';
-import { resolveAllIds } from './id-resolver.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 import { isReleasedDigitally } from "../utils/parseProps.js";
 import { filterMetasByRegex } from "../utils/regexFilter.js";
+const consola = require('consola');
 
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
-
-const host = process.env.HOST_NAME?.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+const logger = consola.create({ 
+  level: process.env.LOG_LEVEL ? 
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+    (process.env.NODE_ENV === 'production' ? 3 : 4),
+  fancy: true,
+  colors: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  },
+  tag: 'GetTrending'
+}); 
 
 async function getTrending(type: string, language: string, page: number, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
   const startTime = performance.now();
   try {
-    console.log(`[getTrending] Fetching trending for type=${type}, language=${language}, page=${page}, genre=${genre}`);
+    logger.debug(`[getTrending] Fetching trending for type=${type}, language=${language}, page=${page}, genre=${genre}`);
     const media_type = type === "series" ? "tv" : type;
     const time_window = genre && ['day', 'week'].includes(genre.toLowerCase()) ? genre.toLowerCase() : "day";
     
@@ -26,7 +34,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
     const tmdbStartTime = performance.now();
     const res: any = await moviedb.trending(parameters, config);
     const tmdbTime = performance.now() - tmdbStartTime;
-    console.log(`[getTrending] TMDB trending fetch took ${tmdbTime.toFixed(2)}ms`);
+    logger.debug(`[getTrending] TMDB trending fetch took ${tmdbTime.toFixed(2)}ms`);
     
     const metasStartTime = performance.now();
     let preferredProvider;
@@ -58,7 +66,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
     }));
     const metasTime = performance.now() - metasStartTime;
     const validMetas = metas.filter(meta => meta !== null);
-    console.log(`[getTrending] ${validMetas.length} Metas processing took ${metasTime.toFixed(2)}ms`);
+    logger.debug(`[getTrending] ${validMetas.length} Metas processing took ${metasTime.toFixed(2)}ms`);
 
     const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
     const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
@@ -110,11 +118,11 @@ async function getTrending(type: string, language: string, page: number, genre: 
         const afterCount = filteredMetas.length;
         const filterTime = performance.now() - filterStartTime;
         if (beforeCount !== afterCount) {
-          console.log(`[getTrending] Age rating filter removed ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
+          logger.debug(`[getTrending] Age rating filter removed ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
         }
       }
     } else {
-      console.log(`[getTrending] No age rating filtering applied (ageRating: ${userRating})`);
+      logger.debug(`[getTrending] No age rating filtering applied (ageRating: ${userRating})`);
     }
 
     // Apply digital release filter if enabled (movies only)
@@ -123,7 +131,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
       filteredMetas = filteredMetas.filter(meta => isReleasedDigitally(meta));
       const afterCount = filteredMetas.length;
       if (beforeCount !== afterCount) {
-        console.log(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+        logger.debug(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
       }
     }
     
@@ -133,12 +141,12 @@ async function getTrending(type: string, language: string, page: number, genre: 
       filteredMetas = filterMetasByRegex(filteredMetas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       const afterCount = filteredMetas.length;
       if (beforeCount !== afterCount) {
-        console.log(`[getTrending] Content filter excluded ${beforeCount - afterCount} trending items`);
+        logger.debug(`[getTrending] Content filter excluded ${beforeCount - afterCount} trending items`);
       }
     }
     
     const totalTime = performance.now() - startTime;
-    console.log(`[getTrending] Total function execution took ${totalTime.toFixed(2)}ms`);
+    logger.debug(`[getTrending] Total function execution took ${totalTime.toFixed(2)}ms`);
     
     return { metas: filteredMetas };
 
