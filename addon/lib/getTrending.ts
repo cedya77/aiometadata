@@ -22,12 +22,12 @@ async function getTrending(type: string, language: string, page: number, genre: 
     const time_window = genre && ['day', 'week'].includes(genre.toLowerCase()) ? genre.toLowerCase() : "day";
     
     const parameters = { media_type, time_window, language, page };
-    //const genreList = await getGenreList(language, type);
     
     const tmdbStartTime = performance.now();
     const res: any = await moviedb.trending(parameters, config);
     const tmdbTime = performance.now() - tmdbStartTime;
     console.log(`[getTrending] TMDB trending fetch took ${tmdbTime.toFixed(2)}ms`);
+    
     const metasStartTime = performance.now();
     let preferredProvider;
     if (type === 'movie') {
@@ -60,11 +60,9 @@ async function getTrending(type: string, language: string, page: number, genre: 
     const validMetas = metas.filter(meta => meta !== null);
     console.log(`[getTrending] ${validMetas.length} Metas processing took ${metasTime.toFixed(2)}ms`);
 
-
     const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
     const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
     
-    // Pre-compute rating mappings and indices for performance
     const movieToTvMap: { [key: string]: string } = {
       'G': 'TV-G',
       'PG': 'TV-PG', 
@@ -81,28 +79,33 @@ async function getTrending(type: string, language: string, page: number, genre: 
       const finalUserRating = isTvRating ? (movieToTvMap[userRating] || userRating) : userRating;
       const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
       const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
-      const filterStartTime = performance.now();
-      filteredMetas = metas.filter(meta => {
+
+      if (userRatingIndex !== -1) {
+        const beforeCount = filteredMetas.length;
+        const filterStartTime = performance.now();
         
-        if (!meta.certification) {
-          return true;
-        }
-        
-        const resultRatingIndex = ratingHierarchy.indexOf(meta.certification);
-        if (userRatingIndex !== -1 && resultRatingIndex !== -1) {
+        filteredMetas = validMetas.filter(meta => {
+          const cert = meta.app_extras?.certification;
+          
+          if (!cert || cert.toLowerCase() === 'nr' || cert === "") {
+            return true;
+          }
+          
+          const resultRatingIndex = ratingHierarchy.indexOf(cert);
+
+          if (resultRatingIndex === -1) {
+            return true;
+          }
+          
           return resultRatingIndex <= userRatingIndex;
+        });
+
+        const afterCount = filteredMetas.length;
+        const filterTime = performance.now() - filterStartTime;
+        if (beforeCount !== afterCount) {
+          console.log(`[getTrending] Age rating filter removed ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
         }
-        
-        // If result rating is not in hierarchy (like NR), filter it out when age filtering is enabled
-        if (resultRatingIndex === -1) {
-          return false;
-        }
-        
-        return true;
-      });
-      
-      const filterTime = performance.now() - filterStartTime;
-      console.log(`[getTrending] ${filteredMetas.length} Age rating filtering took ${filterTime.toFixed(2)}ms`);
+      }
     } else {
       console.log(`[getTrending] No age rating filtering applied (ageRating: ${userRating})`);
     }
