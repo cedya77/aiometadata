@@ -763,7 +763,6 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         throw new Error(`Kitsu returned no details for Kitsu ID ${allIds?.kitsuId}.`);
       }
       const details = kitsuDetails.data[0];
-      logger.info(`[AnimeMeta] Kitsu details: ${JSON.stringify(details)}`);
       
       // Fetch artwork (cacheWrapMetaSmart will handle caching)
       const artwork = await getAnimeArtwork(allIds, config, details.attributes?.posterImage?.original, details.attributes?.coverImage?.original, type);
