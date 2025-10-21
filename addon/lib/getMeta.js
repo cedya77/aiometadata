@@ -15,7 +15,8 @@ const fanart = require('../utils/fanart');
 const { isAnime: isAnimeFunc } = require('../utils/isAnime');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
-const { cacheWrapMeta, cacheWrapJikanApi } = require('./getCache');
+const { cacheWrapMeta, cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
+const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
 const kitsu = require('./kitsu');
 var nameToImdb = require("name-to-imdb");
 const consola = require('consola');
@@ -745,6 +746,44 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       logger.error(`[AnimeMeta] Full error details:`, e);
     }
   }
+
+  if(allIds?.kitsuId && preferredProvider === 'kitsu') {
+    try {
+      logger.info(`[AnimeMeta] Using native provider 'kitsu' for ${stremioId} with Kitsu ID ${allIds?.kitsuId}`);
+      
+      // Fetch Kitsu anime details with caching
+      const kitsuDetails = await cacheWrapGlobal(
+        `kitsu-anime-${allIds?.kitsuId}-genres,episodes,mediaRelationships.destination`,
+        () => kitsu.getMultipleAnimeDetails([allIds?.kitsuId], 'genres,episodes,mediaRelationships.destination'),
+        CATALOG_TTL
+      );
+
+      
+      if (!kitsuDetails) {
+        throw new Error(`Kitsu returned no details for Kitsu ID ${allIds?.kitsuId}.`);
+      }
+      const details = kitsuDetails.data[0];
+      logger.info(`[AnimeMeta] Kitsu details: ${JSON.stringify(details)}`);
+      
+      // Fetch artwork (cacheWrapMetaSmart will handle caching)
+      const artwork = await getAnimeArtwork(allIds, config, details.attributes?.posterImage?.original, details.attributes?.coverImage?.original, type);
+      const { background, poster, logo } = artwork;
+
+      let episodes = kitsuDetails.included?.filter(item => item.type === 'episodes') || [];
+      let genres = kitsuDetails.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
+    
+      return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, { 
+        mapping: allIds, 
+        bestBackgroundUrl: background,
+        bestPosterUrl: poster,
+        bestLogoUrl: logo
+      });
+  
+    } catch (error) {
+      logger.error(`[AnimeMeta] CRITICAL: Native provider 'kitsu' also failed for ${stremioId}: ${error.message}`);
+    }
+  }
+
   if(allIds?.malId) {
     try {
       logger.info(`[AnimeMeta] Using native provider 'mal' for ${stremioId}`);
@@ -781,6 +820,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       logger.error(`[AnimeMeta] CRITICAL: Native provider 'mal' also failed for ${stremioId}: ${error.message}`);
     }
   }
+
 
   
   
@@ -2233,7 +2273,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       links.push(Utils.parseImdbLink(imdbRating, imdbId));
       links.push(Utils.parseShareLink(malData.title, imdbId, stremioType));
     }
-    links.push(...Utils.parseAnimeGenreLink(malData.genres, stremioType, userUUID));
+    links.push(...Utils.parseAnimeGenreLink(malData.genres?.map(g => g.name), stremioType, userUUID));
     links.push(...Utils.parseAnimeCreditsLink(characterData, userUUID, castCount));
     links.push(...Utils.parseAnimeRelationsLink(malData.relations, stremioType, userUUID));
 
@@ -2296,6 +2336,156 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
   } catch (err) {
     logger.error(`Error processing MAL ID ${malData?.mal_id}: ${err?.message || err}`);
     return null;
+  }
+}
+
+
+async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObject, episodeData, config, userUUID, enrichmentData = {}) {
+  try {
+    const { mapping, bestBackgroundUrl, bestPosterUrl, bestLogoUrl } = enrichmentData
+
+    const stremioType =
+      kitsuData.attributes.subtype?.toLowerCase() === 'movie' ? 'movie' : 'series'
+
+    let relationships = includeObject?.filter(item => item.type === 'mediaRelationships' && ['prequel', 'sequel'].some(role => item.attributes?.role.toLowerCase().includes(role)) && item.relationships?.destination?.data?.type === 'anime') || [];
+
+
+    const imdbId = mapping?.imdbId
+    const malId = mapping?.malId
+    const seriesId = `kitsu:${kitsuData.id}`
+    const idProvider = config.providers?.anime_id_provider || 'kitsu'
+
+    let kitsuReleaseInfo = kitsuData.attributes.startDate ? kitsuData.attributes.startDate.substring(0, 4) : null;
+    if (stremioType === 'series' && kitsuData.attributes.startDate) {
+      const firstYear = kitsuData.attributes.startDate ? kitsuData.attributes.startDate.substring(0, 4) : "";
+      if (firstYear) {
+        const isOngoing = kitsuData.attributes.status === 'current' || !kitsuData.attributes.endDate;
+        
+        if (isOngoing) {
+          kitsuReleaseInfo = `${firstYear}-`;
+        } else if (kitsuData.attributes.endDate) {
+          const lastYear = kitsuData.attributes.endDate.substring(0, 4);
+          kitsuReleaseInfo = firstYear === lastYear ? firstYear : `${firstYear}-${lastYear}`;
+        }
+      }
+    }
+    const imdbRating = imdbId ? await getImdbRating(imdbId, stremioType) : 'N/A';
+    const kitsuTitle = Utils.getKitsuLocalizedTitle(kitsuData.attributes.titles, config.language) || kitsuData.attributes.canonicalTitle;
+    const links = [];
+    if (imdbId) {
+      links.push(Utils.parseImdbLink(imdbRating, imdbId));
+      links.push(Utils.parseShareLink(kitsuTitle, imdbId, stremioType));
+    }
+
+    links.push(...Utils.parseAnimeGenreLink(genres, stremioType, userUUID));
+    const relatedLinks = relationships.map(relationship => {
+      const relationshipData = includeObject?.find(item => item.id === relationship.relationships?.destination?.data?.id);
+      if (!relationshipData) {
+        return null;
+      }
+      return {
+        name: Utils.getKitsuLocalizedTitle(relationshipData?.attributes?.titles, config.language) || relationshipData?.attributes?.canonicalTitle,
+        category: relationship.attributes?.role,
+        url: `stremio:///detail/series/kitsu:${relationshipData?.id}`
+      }
+    });
+    links.push(...relatedLinks.filter(Boolean));
+
+    // 🔹 base meta object
+    const meta = {
+      id: stremioId,
+      type: stremioType,
+      imdb_id: imdbId,
+      name: kitsuTitle,
+      description: Utils.addMetaProviderAttribution(
+        kitsuData.attributes.synopsis || kitsuData.attributes.description || '',
+        'KITSU',
+        config
+      ),
+      genres,
+      year: kitsuData.attributes.startDate
+        ? kitsuData.attributes.startDate.substring(0, 4) : null,
+      released: kitsuData.attributes.startDate
+        ? new Date(kitsuData.attributes.startDate + 'T12:00:00.000Z')
+        : null,
+      releaseInfo: kitsuReleaseInfo,
+      runtime: kitsuData.attributes.episodeLength
+        ? Utils.parseRunTime(kitsuData.attributes.episodeLength)
+        : null,
+      status: kitsuData.attributes.status || 'unknown',
+      imdbRating: imdbRating,
+      poster:
+        bestPosterUrl ||
+        kitsuData.attributes.posterImage?.original ||
+        `${config.host}/missing_poster.png`,
+      background:
+        bestBackgroundUrl ||
+        kitsuData.attributes.coverImage?.original,
+      logo: bestLogoUrl,
+      links: links,
+      trailers: [],
+      trailerStreams: [],
+      director: [],
+      writers: [],
+      behaviorHints: {
+        defaultVideoId: stremioType === 'movie' ? stremioId : null,
+        hasScheduledVideos: stremioType === 'series'
+      },
+      videos: [],
+      app_extras: {
+        cast: [],
+        director: [],
+        writers: [],
+        watchProviders: [],
+        certification: kitsuData.attributes.ageRating
+      }
+    }
+
+    // 🔹 episodes for series
+    if (stremioType === 'series' && Array.isArray(episodeData) && episodeData.length > 0) {
+      meta.videos = episodeData.map((item) => {
+        const ep = item.attributes;
+        let episodeId = `${seriesId}:${ep.number}`
+        if (idProvider === 'mal' && malId) {
+          episodeId = `mal:${malId}:${ep.number}`
+        }
+        return {
+          id: episodeId,
+          title: ep.canonicalTitle || ep.title || `Episode ${ep.number || ep.id}`,
+          released: ep.airdate
+            ? new Date(ep.airdate + 'T12:00:00.000Z')
+            : null,
+          overview: ep.synopsis || '',
+          thumbnail:ep.thumbnail?.original,
+          season: 1,
+          episode: ep.number,
+          available: ep.airdate ? new Date(ep.airdate) < new Date() : false,
+        }
+      })
+
+      if (idProvider === 'imdb') {
+        try {
+          const enrichedVideos = await idMapper.enrichMalEpisodes(meta.videos, kitsuData.id);
+          if (enrichedVideos && Array.isArray(enrichedVideos) && enrichedVideos.length > 0) {
+            meta.videos = enrichedVideos;
+            
+            logger.debug(`[buildKitsuAnimeResponse] Successfully enriched ${enrichedVideos.length} episodes with IMDB data`);
+          } else {
+            logger.warn(`[buildKitsuAnimeResponse] enrichMalEpisodes returned invalid data: ${JSON.stringify(enrichedVideos)}`);
+          }
+        } catch (error) {
+          logger.error(`[buildKitsuAnimeResponse] Error enriching MAL episodes: ${error.message}`);
+          // Keep original videos if enrichment fails
+        }
+      }
+    }
+
+    return meta
+  } catch (err) {
+    logger.error(
+      `Error processing Kitsu ID ${kitsuData?.id}: ${err?.message || err}`
+    )
+    return null
   }
 }
 

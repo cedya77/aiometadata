@@ -22,6 +22,7 @@ const seriesArtProviders = [
 const animeArtProviders = [
   { value: 'mal', label: 'MyAnimeList' },
   { value: 'anilist', label: 'AniList' },
+  { value: 'kitsu', label: 'Kitsu' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
@@ -31,6 +32,7 @@ const animeArtProviders = [
 const animeBackgroundArtProviders = [
   { value: 'mal', label: 'MyAnimeList' },
   { value: 'anilist', label: 'AniList' },
+  { value: 'kitsu', label: 'Kitsu' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
@@ -38,12 +40,10 @@ const animeBackgroundArtProviders = [
 ];
 
 const animeLogoArtProviders = [
-  { value: 'mal', label: 'MyAnimeList' },
-  { value: 'anilist', label: 'AniList' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB) (Recommended)' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
-  { value: 'imdb', label: 'Internet Movie Database (IMDB) (Recommended)' },
 ];
 
 export function ArtProviderSettings() {

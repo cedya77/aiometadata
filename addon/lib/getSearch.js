@@ -9,6 +9,8 @@ const jikan = require('./mal');
 const moviedb = require('./getTmdb');
 const imdb = require('./imdb');
 const tvmaze = require('./tvmaze');
+const idMapper = require('./id-mapper');
+const kitsu = require('./kitsu');
 const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
@@ -186,6 +188,77 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
   //console.log(metas); 
   return metas;
 }
+
+async function performKitsuSearch(type, query, language, config, page = 1) {
+  logger.debug(`Performing Kitsu search for ${type}:`, query);
+  
+  try {
+    const KITSU_RATING_MAP = {
+      'G': 'G',
+      'PG': 'PG',
+      'PG-13': 'PG-13',  
+      'R': 'R',
+      'NC-17': 'R18',
+      'NONE': 'none'
+    };
+    const searchResults = await kitsu.searchByName(
+      query,
+      type === 'movie'
+        ? ['movie']
+        : ['tv','ona', 'ova', 'special'],
+        KITSU_RATING_MAP[config.ageRating.toUpperCase()]
+    );
+    
+    if (!searchResults || searchResults.length === 0) {
+      logger.info(`No Kitsu results found for query: "${query}"`);
+      return [];
+    }
+    
+    logger.debug(`Found ${searchResults.length} Kitsu results for query: "${query}" of type ${type}`);
+    
+    // Parse Kitsu results into Stremio meta format
+    const metas = await Promise.all(
+      searchResults.map(async (item) => {
+        try {
+          const kitsuId = item.id;
+          const mapping = await idMapper.getMappingByKitsuId(kitsuId);
+          const imdbId = mapping?.imdb_id;
+          const imdbRating = imdbId ? await getImdbRating(imdbId, type) : 'N/A';
+          
+          const background = await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.coverImage?.original}, config);
+          const poster = await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.posterImage?.original}, config);
+          const logo = type === 'movie' ? mapping?.themoviedb_id ? await moviedb.getTmdbMovieLogo(mapping?.themoviedb_id, config) : null : await Utils.getAnimeLogo({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series'}, config);
+          return {
+            id: `kitsu:${kitsuId}`,
+            type: type === 'movie' ? 'movie' : 'series',
+            name: Utils.getKitsuLocalizedTitle(item.titles, language) || item.canonicalTitle, 
+            poster: type === 'movie' ? item.posterImage?.original : poster || `${host}/missing_poster.png`,
+            logo: logo || null,
+            background: type === 'movie' ? item.coverImage?.original : background || null,
+            description: Utils.addMetaProviderAttribution(item.synopsis || item.description || '', 'Kitsu', config),
+            genres: [], // Kitsu genres would need to be fetched separately
+            year: item.startDate ? item.startDate.substring(0, 4) : null,
+            imdbRating: imdbRating,
+            status: item.status || 'unknown',
+            episodeCount: item.episodeCount || null,
+            runtime: Utils.parseRunTime(item.episodeLength),
+            certification: item.ageRating,
+          };
+        } catch (error) {
+          logger.error(`Error parsing Kitsu result for ${item.id}:`, error.message);
+          return null;
+        }
+      })
+    );
+    
+    return metas.filter(Boolean);
+    
+  } catch (error) {
+    logger.error(`Kitsu search failed for "${query}":`, error.message);
+    return [];
+  }
+}
+
 
 
 async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1) {
@@ -795,6 +868,8 @@ async function parseTvmazeResult(show, config) {
 function getProviderFromSearchId(searchId) {
   if (searchId.includes('mal.')) {
     return 'mal';
+  } else if (searchId.includes('kitsu.')) {
+    return 'kitsu';
   } else if (searchId.includes('tmdb.')) {
     return 'tmdb';
   } else if (searchId.includes('tvdb.')) {
@@ -899,6 +974,12 @@ async function getSearch(id, type, language, extra, config) {
               case 'mal.search.movie':
                 metas = await performAnimeSearch('movie', query, language, config, page);
                 break;
+              case 'kitsu.search.series':
+                metas = await performKitsuSearch('series', query, language, config, page);
+                break;
+              case 'kitsu.search.movie':
+                metas = await performKitsuSearch('movie', query, language, config, page);
+                break;
               case 'tmdb.search':
                 metas = await performTmdbSearch(type, query, language, config, true, page);
                 break;
@@ -943,6 +1024,7 @@ async function getSearch(id, type, language, extra, config) {
       if (providerId) {
         // Extract the actual provider name from the provider ID
         if (providerId.includes('mal.')) actualProvider = 'mal';
+        else if (providerId.includes('kitsu.')) actualProvider = 'kitsu';
         else if (providerId.includes('tmdb.')) actualProvider = 'tmdb';
         else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
@@ -999,6 +1081,7 @@ async function getSearch(id, type, language, extra, config) {
       if (providerId) {
         // Extract the actual provider name from the provider ID
         if (providerId.includes('mal.')) actualProvider = 'mal';
+        else if (providerId.includes('kitsu.')) actualProvider = 'kitsu';
         else if (providerId.includes('tmdb.')) actualProvider = 'tmdb';
         else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';

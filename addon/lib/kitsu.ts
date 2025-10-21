@@ -6,7 +6,7 @@ import { cacheWrapGlobal } from './getCache.js';
 const kitsu = new Kitsu();
 
 // Type definitions for Kitsu API responses
-interface KitsuAnimeAttributes {
+export interface KitsuAnimeAttributes {
   canonicalTitle: string;
   titles: {
     en_us?: string;
@@ -52,7 +52,7 @@ interface KitsuAnimeAttributes {
   } | null;
 }
 
-interface KitsuAnime {
+export interface KitsuAnime {
   id: string;
   type: string;
   attributes: KitsuAnimeAttributes;
@@ -78,7 +78,7 @@ interface KitsuAnime {
   };
 }
 
-interface KitsuEpisodeAttributes {
+export interface KitsuEpisodeAttributes {
   number: number;
   seasonNumber: number;
   relativeNumber: number;
@@ -98,7 +98,7 @@ interface KitsuEpisodeAttributes {
   updatedAt: string;
 }
 
-interface KitsuEpisode {
+export interface KitsuEpisode {
   id: string;
   type: string;
   attributes: KitsuEpisodeAttributes;
@@ -133,36 +133,69 @@ interface KitsuDirectApiResponse {
  * @param query - The name of the anime to search for.
  * @returns A promise that resolves to an array of Kitsu anime resource objects.
  */
-async function searchByName(query: string): Promise<KitsuAnime[]> {
-  if (!query) return [];
-  
+async function searchByName(query: string, subtypes: string[] = [], ageRating: string = 'G'): Promise<KitsuAnime[]> {
+  if (!query.trim()) return [];
+
+  const results: KitsuAnime[] = [];
+
   try {
-    const response = await kitsu.fetch('anime', {
-      filter: { text: query },
-      page: { limit: 20 }
-    } as any);
-    return response.data || [];
-  } catch (error) {
-    console.error(`[Kitsu Client] Error searching for "${query}":`, (error as Error).message);
-    return [];
+    // Loop over all provided subtypes
+    for (const subtype of subtypes.length ? subtypes : ['tv']) {
+      let nextUrl: string | undefined;
+      let params: any = {
+        'filter[text]': query,
+        'filter[subtype]': subtype,
+        'page[limit]': 20,
+        include: 'genres'
+      };
+      if(ageRating.toLowerCase() !== 'none') {
+        params['filter[ageRating]'] = ageRating;
+      }
+
+      // 🔹 Fetch first page for this subtype
+      let response = await kitsu.fetch('anime', {
+        params: params
+      });
+
+      // Add results
+      results.push(...(response.data ?? []));
+      nextUrl = response.links?.next;
+
+      // 🔁 Paginate until no next page
+      while (nextUrl) {
+        const nextResponse = await fetch(nextUrl);
+        if (!nextResponse.ok) break;
+
+        const nextData = await nextResponse.json() as KitsuApiResponse<KitsuAnime>;
+        results.push(...(nextData.data ?? []));
+        nextUrl = nextData.links?.next;
+      }
+    }
+
+    return results;
+  } catch (error: any) {
+    console.error(`[Kitsu Client] Error searching for "${query}":`, error.message);
+    return results;
   }
 }
+
+
 
 /**
  * Fetches the full details for multiple anime by their Kitsu IDs in a single request.
  * @param ids - An array of Kitsu IDs.
  * @returns A promise that resolves to an array of Kitsu anime resource objects.
  */
-async function getMultipleAnimeDetails(ids: (string | number)[]): Promise<KitsuAnime[]> {
+async function getMultipleAnimeDetails(ids: (string | number)[], appends: string = 'genres') {
   if (!ids || ids.length === 0) {
-    return [];
+    return null;
   }
   
   try {
     console.log(`[Kitsu Client] Fetching details for IDs: ${ids.join(',')}`);
     
     // Use direct API call to bypass Kitsu library filter issues
-    const url = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}`;
+    const url = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}&include=${appends}`;
     
     console.log(`[Kitsu Client] Direct API URL: ${url}`);
     
@@ -178,11 +211,11 @@ async function getMultipleAnimeDetails(ids: (string | number)[]): Promise<KitsuA
     const receivedIds = response.data?.data?.map(item => item.id) || [];
     console.log(`[Kitsu Client] Received IDs: ${receivedIds.join(',')}`);
     
-    return response.data?.data || [];
+    return response.data || null;
     
   } catch (error) {
     console.error(`[Kitsu Client] Error fetching details for IDs ${ids.join(',')}:`, (error as Error).message);
-    return [];
+    return null;
   }
 }
 
@@ -236,24 +269,52 @@ async function _fetchEpisodesRecursively(
   return response.data;
 }
 
-/**
- * Fetches detailed anime information including relationships and episodes.
- * @param kitsuId - The Kitsu anime ID.
- * @returns A promise that resolves to detailed anime object.
- */
-async function getAnimeDetails(kitsuId: string | number): Promise<KitsuAnime | null> {
-  if (!kitsuId) return null;
-  
+// -------------------- Helpers --------------------
+
+async function fetchRelationshipList(url?: string): Promise<string[]> {
+  if (!url) return []
   try {
-    const response = await kitsu.fetch('anime', {
-      filter: { id: kitsuId },
-      include: 'episodes,genres,mediaRelationships.destination'
-    } as any);
-    
-    return response.data[0] || null;
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const json = await res.json()
+    return ((json as any).data || []).map((i: any) => i.attributes.name)
+  } catch {
+    return []
+  }
+}
+
+// -------------------- Main fetch --------------------
+
+/**
+ * Fetches a Kitsu anime by ID, including genres and characters.
+ */
+ async function getAnimeDetails(kitsuId: string | number) {
+  if (!kitsuId) return null
+
+  try {
+    const response = await kitsu.get(`anime/${kitsuId}`, {
+      params: {
+        include: 'episodes,genres,characters,mediaRelationships.destination'
+      }
+    })
+
+    const anime = response.data
+    const included = response.included || []
+
+    // try to read from included first
+    let genres = included.filter(i => i.type === 'genres').map(i => i.attributes.name)
+    let characters = included.filter(i => i.type === 'characters').map(i => i.attributes.name)
+
+    // fallback if missing
+    if (!genres.length)
+      genres = await fetchRelationshipList(anime.relationships?.genres?.links?.related)
+    if (!characters.length)
+      characters = await fetchRelationshipList(anime.relationships?.characters?.links?.related)
+
+    return { data: anime, included, genres, characters }
   } catch (error) {
-    console.error(`[Kitsu Client] Error fetching anime details for ID ${kitsuId}:`, (error as Error).message);
-    return null;
+    console.error(`[Kitsu Client] Error fetching anime details for ID ${kitsuId}:`, (error as Error).message)
+    return null
   }
 }
 

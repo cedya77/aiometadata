@@ -245,7 +245,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       const delay = error.retryDelay || (1000 * Math.pow(2, attempt - 1));
 
       // Decide if we should retry
-      if (attempt < maxRetries && (error.isRetryable || error.code?.startsWith('UND_ERR_'))) {
+      if (attempt < maxRetries && (error.isRetryable || (typeof error.code === 'string' && error.code.startsWith('UND_ERR_')))) {
         console.log(`[TMDB] Request to ${endpoint} failed. Retrying in ${delay}ms (attempt ${attempt}/${maxRetries}). Error: ${error.message}`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {

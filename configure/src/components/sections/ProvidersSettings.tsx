@@ -18,7 +18,8 @@ const seriesProviders = [
 ];
 
 const animeProviders = [
-  { value: 'mal', label: 'MyAnimeList (Recommended)' },
+  { value: 'kitsu', label: 'Kitsu (Recommended)' },
+  { value: 'mal', label: 'MyAnimeList' },
   { value: 'tvdb', label: 'TheTVDB' },
   // { value: 'tmdb', label: 'The Movie Database' },
   { value: 'imdb', label: 'IMDb' },
@@ -73,7 +74,7 @@ export function ProvidersSettings() {
       providers: {
         ...prev.providers,
         // If enabling, ensure MAL isn't selected as anime meta provider
-        anime: checked && prev.providers.anime === 'mal' ? 'imdb' : prev.providers.anime,
+        anime: checked && (prev.providers.anime === 'mal' || prev.providers.anime === 'kitsu') ? 'imdb' : prev.providers.anime,
         // No automatic switching of anime_id_provider
       }
     }));
@@ -160,7 +161,7 @@ export function ProvidersSettings() {
             <Select value={config.providers.anime} onValueChange={(val) => handleProviderChange('anime', val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(isImdbForCatalog ? animeProviders.filter(p => p.value !== 'mal') : animeProviders)
+                {(isImdbForCatalog ? animeProviders.filter(p => p.value !== 'mal' && p.value !== 'kitsu') : animeProviders)
                   .map(p => (
                     <SelectItem key={p.value} value={p.value} disabled={p.value === 'tvdb' && !hasTvdbKey}>
                       {p.label}{p.value === 'tvdb' && !hasTvdbKey && ' (API key required)'}

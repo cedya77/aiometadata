@@ -96,8 +96,8 @@ export interface AppConfig {
     providers: {
         movie: 'tmdb.search' | 'tvdb.search' | 'mal.search.movie';
         series: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'mal.search.series';
-        anime_movie: string;
-        anime_series: string;
+        anime_movie: 'mal.search.movie' | 'kitsu.search.movie';
+        anime_series: 'mal.search.series' | 'kitsu.search.series';
     };
     // New: per-engine enable/disable
     engineEnabled?: {

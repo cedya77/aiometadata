@@ -5,12 +5,14 @@ const anilist = require('../lib/anilist');
 const tvdb = require('../lib/tvdb');
 const tmdb = require('../lib/getTmdb');
 const imdb = require('../lib/imdb');
+const kitsu = require('../lib/kitsu');
 const { resolveAllIds } = require('../lib/id-resolver');
 const idMapper = require('../lib/id-mapper');
 const { selectFanartImageByLang } = require('./fanart');
 const { getImdbRating } = require('../lib/getImdbRating');
 const consola = require('consola');
-const { cacheWrapMetaSmart } = require('../lib/getCache');
+const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
+const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
 // Dynamic import to avoid circular dependency
 
 const host = process.env.HOST_NAME.startsWith('http')
@@ -742,14 +744,12 @@ function parseAnimeGenreLink(genres, type, userUUID) {
   const manifestUrl = `${host}/${manifestPath}`;  
 
   return genres.map((genre) => {
-    if (!genre || !genre.name) return null;
+    if (!genre) return null;
 
     let searchUrl;
-    const genreId = genre.mal_id;
-    if (!genreId) return null;
     let url = `stremio:///discover/${encodeURIComponent(
       manifestUrl
-    )}/anime/mal.genres?genre=${genre.name}`;
+    )}/anime/mal.genres?genre=${genre}`;
     if (type === 'movie') {
       url += `&type_filter=movie`;
     } else if (type === 'series') {
@@ -758,7 +758,7 @@ function parseAnimeGenreLink(genres, type, userUUID) {
     searchUrl = url;
 
     return {
-      name: genre.name,
+      name: genre,
       category: "Genres",
       url: searchUrl,
     };
@@ -1187,6 +1187,26 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
     }
   }
   
+  if (artProvider === 'kitsu' && mapping?.kitsu_id && config.providers?.anime !== 'kitsu') {
+    try {
+      const kitsuData = await kitsu.getMultipleAnimeDetails([mapping.kitsu_id]);
+      console.log(`[getAnimeBg] Kitsu data for MAL ID ${malId}:`, {
+        hasData: !!kitsuData,
+        hasCoverImage: !!kitsuData?.data?.[0]?.attributes?.coverImage,
+        coverImage: kitsuData?.data?.[0]?.attributes?.coverImage?.original?.substring(0, 50) + '...'
+      });
+      
+      if (kitsuData?.data?.[0]?.attributes?.coverImage?.original) {
+        console.log(`[getAnimeBg] Found Kitsu background for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
+        return kitsuData.data[0].attributes.coverImage.original;
+      } else {
+        console.log(`[getAnimeBg] No Kitsu background URL found for MAL ID: ${malId}`);
+      }
+    } catch (error) {
+      console.warn(`[getAnimeBg] Kitsu background fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+  
   if (artProvider === 'tvdb' && tvdbId) {
     try {
       // Use the appropriate TVDB function based on media type
@@ -1354,6 +1374,18 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
     }
   }
   
+  if (artProvider === 'kitsu' && malId && mapping?.kitsu_id && config.providers?.anime !== 'kitsu') {
+    try {
+      const kitsuData = await kitsu.getMultipleAnimeDetails([mapping.kitsu_id]);
+      if (kitsuData?.data?.[0]?.attributes?.posterImage?.original) {
+        console.log(`[getAnimePoster] Found Kitsu poster for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
+        return kitsuData.data[0].attributes.posterImage.original;
+      }
+    } catch (error) {
+      console.warn(`[getAnimePoster] Kitsu poster fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+  
   if (artProvider === 'tvdb' && tvdbId) {
     try {
       const tvdbPoster = mediaType === 'movie' 
@@ -1427,6 +1459,26 @@ async function getBatchAnimeArtwork(malIds, config) {
       return artworkData;
     } catch (error) {
       console.warn(`[getBatchAnimeArtwork] AniList batch fetch failed:`, error.message);
+    }
+  }
+  
+  if (artProvider === 'kitsu' && malIds && malIds.length > 0) {
+    try {
+      // Get Kitsu IDs from mappings
+      const kitsuIds = malIds
+        .map(malId => {
+          const mapping = idMapper.getMappingByMalId(malId);
+          return mapping?.kitsu_id;
+        })
+        .filter(id => id);
+      
+      if (kitsuIds.length > 0) {
+        const kitsuData = await kitsu.getMultipleAnimeDetails(kitsuIds);
+        console.log(`[getBatchAnimeArtwork] Retrieved ${kitsuData?.data?.length || 0} Kitsu artworks for ${kitsuIds.length} Kitsu IDs`);
+        return kitsuData?.data || [];
+      }
+    } catch (error) {
+      console.warn(`[getBatchAnimeArtwork] Kitsu batch fetch failed:`, error.message);
     }
   }
   
@@ -1556,7 +1608,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
     name: anime.title_english || anime.title,
     poster: finalPosterUrl,
-    description: descriptionFallback || anime.synopsis,
+    description: descriptionFallback || addMetaProviderAttribution(anime.synopsis, 'MAL', config),
     year: anime.year,
     imdb_id: mapping?.imdb_id,
     releaseInfo: anime.year,
@@ -1580,6 +1632,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
 
   const artProvider = resolveArtProvider('anime', 'poster', config);
   const useAniList = artProvider === 'anilist';
+  const useKitsu = artProvider === 'kitsu';
   const useTvdb = artProvider === 'tvdb';
   const useImdb = artProvider === 'imdb';
   const useTmdb = artProvider === 'tmdb';
@@ -1589,6 +1642,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
   // Extract MAL IDs and try to get AniList IDs from mappings
   const malIds = animes.map(anime => anime.mal_id).filter(id => id && typeof id === 'number' && id > 0);
   let anilistArtworkMap = new Map();
+  const kitsuMalMap = new Map();
   
   if (useAniList && malIds.length > 0) {
     try {
@@ -1598,7 +1652,9 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       // First, try to get AniList IDs from mappings
       const malToAnilistMap = new Map();
       const anilistIds = [];
+      const kitsuIds = [];
       const malIdsWithoutAnilist = [];
+      const malIdsWithoutKitsu = [];
       
       malIds.forEach(malId => {
         const mapping = idMapper.getMappingByMalId(malId);
@@ -1643,14 +1699,135 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       console.warn(`[parseAnimeCatalogMetaBatch] AniList batch fetch failed:`, error.message);
     }
   }
+  
+  // Fetch Kitsu artwork if configured as art provider
+  let kitsuArtworkMap = new Map();
+  if (useKitsu && malIds.length > 0) {
+    try {
+      // Get Kitsu IDs from mappings
+      const kitsuIds = malIds
+        .map(malId => {
+          const mapping = idMapper.getMappingByMalId(malId);
+          return mapping?.kitsu_id;
+        })
+        .filter(id => id);
+      
+      if (kitsuIds.length > 0) {
+        const kitsuData = await kitsu.getMultipleAnimeDetails(kitsuIds);
+        if (kitsuData?.data) {
+          // Create a map for quick lookup using MAL ID as key
+          kitsuArtworkMap = new Map();
+          kitsuData.data.forEach(item => {
+            const mapping = idMapper.getMappingByKitsuId(item.id);
+            if (mapping?.mal_id) {
+              kitsuArtworkMap.set(mapping.mal_id, item);
+            }
+          });
+          console.log(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuData.data.length} Kitsu artworks`);
+        }
+      }
+    } catch (error) {
+      console.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
+    }
+  }
+  
+  const preferredProvider = config.providers?.anime || 'mal';
+  consola.log(`[parseAnimeCatalogMetaBatch] Preferred provider: ${preferredProvider}`);
 
+  if(preferredProvider === 'kitsu') {
+    try {
+      let metas = await Promise.all(malIds.map(async id => {
+        consola.log(`[parseAnimeCatalogMetaBatch] Fetching Kitsu data for ID: ${id}`);
+        const mapping = idMapper.getMappingByMalId(id);
+        if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animes.find(anime => anime.mal_id === id), config, language);
+        const kitsuData = await cacheWrapGlobal(
+          `kitsu-anime-${mapping.kitsu_id}-genres`,
+          () => kitsu.getMultipleAnimeDetails([mapping.kitsu_id]),
+          CATALOG_TTL
+        );
+        const item = kitsuData.data[0];
+        const stremioType = item.attributes.subtype === 'movie' ? 'movie' : 'series';
+        let finalPosterUrl = await getAnimePosterUrl(id, mapping, stremioType, config, language, anilistArtworkMap, item.attributes.posterImage?.original, kitsuArtworkMap);
+        let kitsuReleaseInfo = item.attributes.startDate ? item.attributes.startDate.substring(0, 4) : null;
+        if (stremioType === 'series' && item.attributes.startDate) {
+          const firstYear = item.attributes.startDate ? item.attributes.startDate.substring(0, 4) : "";
+          if (firstYear) {
+            const isOngoing = item.attributes.status === 'current' || !item.attributes.endDate;
+            
+            if (isOngoing) {
+              kitsuReleaseInfo = `${firstYear}-`;
+            } else if (item.attributes.endDate) {
+              const lastYear = item.attributes.endDate.substring(0, 4);
+              kitsuReleaseInfo = firstYear === lastYear ? firstYear : `${firstYear}-${lastYear}`;
+            }
+          }
+        }
+        let genres = item.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
+        return {
+          id: `kitsu:${item.id}`,
+          type: stremioType,
+          name: getKitsuLocalizedTitle(item.attributes.titles, language) || item.attributes.canonicalTitle,
+          background: await getAnimeBg({malId: id, imdbId: mapping?.imdb_id, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: stremioType, malPosterUrl: item.attributes.coverImage?.original}, config),
+          logo: await getAnimeLogo({malId: id, imdbId: mapping?.imdb_id, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: stremioType}, config),
+          poster: finalPosterUrl,
+          description: addMetaProviderAttribution(item.attributes.synopsis, 'KITSU', config),
+          year: item.attributes.startDate ? item.attributes.startDate.substring(0, 4) : null,
+          imdb_id: mapping?.imdb_id,
+          genres: genres,
+          releaseInfo: kitsuReleaseInfo,
+          runtime: parseRunTime(item.attributes.episodeLength),
+          certification: item.attributes.ageRating,
+          imdbRating: mapping?.imdb_id ? await getImdbRating(mapping?.imdb_id, stremioType) : 'N/A',
+          trailers: item.attributes.youtubeVideoId ? [{
+            source: item.attributes.youtubeVideoId,
+            type: "Trailer"
+          }] : [],
+        };
+      }));
+      if(config.ageRating.toLowerCase() !== 'none') {
+        // Map user ratings to Kitsu ratings
+        const KITSU_RATING_MAP = {
+          'G': 'G',
+          'PG': 'PG',
+          'PG-13': 'PG-13',  
+          'R': 'R',
+          'NC-17': 'R18',  // Kitsu doesn't have NC-17, map to R18
+          'NONE': 'none'
+        };
+        
+        // Define age rating hierarchy (from most restrictive to least restrictive)
+        const AGE_RATING_LEVELS = {
+          'G': 1,
+          'PG': 2,
+          'PG-13': 3,
+          'R': 4,
+          'R18': 5
+        };
+        
+        const userKitsuRating = KITSU_RATING_MAP[config.ageRating.toUpperCase()];
+        const userRatingLevel = AGE_RATING_LEVELS[userKitsuRating] || 5;
+        
+        metas = metas.filter(meta => {
+          // If certification is null/undefined, don't filter out the anime
+          if (!meta.certification) return true;
+          
+          const metaRatingLevel = AGE_RATING_LEVELS[meta.certification] || 5;
+          // Only show content that is at or below the user's preferred rating level
+          return metaRatingLevel <= userRatingLevel;
+        });
+      }
+      return metas;
+    } catch (error) {
+      console.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
+    }
+  }
   // Process each anime
   const results = await Promise.all(animes.map(async anime => {
     if (!anime || !anime.mal_id) return null;
 
     const malId = anime.mal_id;
     const stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
-    const preferredProvider = config.providers?.anime || 'mal';
+    
 
     const mapping = idMapper.getMappingByMalId(malId);
     /*if(mapping && !mapping.imdb_id && mapping.themoviedb_id){
@@ -1670,105 +1847,17 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       if (mapping && mapping.imdb_id) {
         id= `${mapping.imdb_id}`;
       }
-    } 
+    } else if (preferredProvider === 'kitsu') {
+      if (mapping && mapping.kitsu_id) {
+        id = `kitsu:${mapping.kitsu_id}`;
+      }
+    }
 
     const malPosterUrl = anime.images?.jpg?.large_image_url;
     let finalPosterUrl = malPosterUrl || `${host}/missing_poster.png`;
     
     // Use batch-fetched AniList artwork if available
-    if (useAniList && anilistArtworkMap.has(malId)) {
-      const anilistData = anilistArtworkMap.get(malId);
-      const anilistPoster = anilist.getPosterUrl(anilistData);
-      if (anilistPoster) {
-        //console.log(`[parseAnimeCatalogMetaBatch] Using AniList poster for MAL ID: ${malId}`);
-        finalPosterUrl = anilistPoster;
-      } else {
-        //console.log(`[parseAnimeCatalogMetaBatch] AniList data found but no poster URL for MAL ID: ${malId}`);
-      }
-    } else if (useAniList) {
-      //console.log(`[parseAnimeCatalogMetaBatch] No AniList data found for MAL ID: ${malId}`);
-    }
-    
-    // Check for TVDB poster if configured as art provider
-    if (useTvdb && mapping && mapping.thetvdb_id) {
-      try {
-        // Use the appropriate TVDB function based on media type
-        const tvdbPoster = await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
-        
-        if (tvdbPoster) {
-          //console.log(`[parseAnimeCatalogMetaBatch] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);
-          finalPosterUrl = tvdbPoster;
-        }
-      } catch (error) {
-        console.warn(`[parseAnimeCatalogMetaBatch] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
-      }
-    }
-    
-    // Check for TMDB poster if configured as art provider
-    if (useTmdb && mapping && mapping.themoviedb_id) {
-      try {
-        // Use TMDB poster for anime
-        const tmdbPoster = stremioType === 'movie' 
-          ? await tmdb.getTmdbMoviePoster(mapping.themoviedb_id, config)
-          : await tmdb.getTmdbSeriesPoster(mapping.themoviedb_id, config);
-        
-        if (tmdbPoster) {
-          //console.log(`[parseAnimeCatalogMetaBatch] Using TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${stremioType})`);
-          finalPosterUrl = tmdbPoster;
-        }
-      } catch (error) {
-        console.warn(`[parseAnimeCatalogMetaBatch] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
-      }
-    }
-
-    if (useImdb && mapping && mapping.imdb_id) {
-      try {
-        finalPosterUrl = imdb.getPosterFromImdb(mapping.imdb_id);
-      } catch (error) {
-        console.warn(`[parseAnimeCatalogMetaBatch] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
-      }
-    }
-    //console.log(`[parseAnimeCatalogMetaBatch] useFanart: ${useFanart} mapping: ${JSON.stringify(mapping)}`);
-    if (useFanart && mapping) {
-      try {
-        if(mapping.themoviedb_id && stremioType === 'movie') {
-          const images = await fanart.getMovieImages(mapping.themoviedb_id, config);
-          const poster = selectFanartImageByLang(images?.movieposter, config);
-          if (poster) {
-            finalPosterUrl = poster.url;
-          }
-        } else if (mapping.imdb_id && stremioType === 'movie') {
-          const images = await fanart.getMovieImages(mapping.imdb_id, config);
-          const poster = selectFanartImageByLang(images?.movieposter, config);
-          if (poster) {
-            finalPosterUrl = poster.url;
-          }
-        } else if (mapping.thetvdb_id && stremioType === 'series') {
-          const images = await fanart.getShowImages(mapping.thetvdb_id, config);
-          const poster = selectFanartImageByLang(images?.tvposter, config);
-          if (poster) {
-            finalPosterUrl = poster.url;
-          }
-        }
-      } catch (error) {
-        console.warn(`[parseAnimeCatalogMetaBatch] Fanart poster fetch failed for MAL ID ${malId}:`, error.message);
-      }
-    }
-    
-    if (config.apiKeys?.rpdb && stremioType !== 'movie') {
-      if (mapping) {
-        const tvdbId = mapping.thetvdb_id;
-        const tmdbId = mapping.themoviedb_id;
-        let proxyId = null;
-
-        proxyId = tvdbId ? `tvdb:${tvdbId}` : (tmdbId ? `tmdb:${tmdbId}` : null);
-
-        if (proxyId) {
-          const fallback = encodeURIComponent(finalPosterUrl);
-          finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-        }
-      }
-    }
+    finalPosterUrl = await getAnimePosterUrl(malId, mapping, stremioType, config, language, anilistArtworkMap, anime.images?.jpg?.large_image_url, kitsuArtworkMap);
     const imdbId = mapping?.imdb_id;
     const tmdbId = mapping?.themoviedb_id;
     const imdbRating = await getImdbRating(imdbId, stremioType);
@@ -1787,7 +1876,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         name: anime.title_english || anime.title
       });
     }
-    if(config.mal?.useImdbIdForCatalogAndSearch && stremioType === 'series'){
+    if((config.mal?.useImdbIdForCatalogAndSearch && stremioType === 'series')){
       return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
         const { getMeta } = await import("../lib/getMeta");
         return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, false);
@@ -2584,12 +2673,11 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1') {
   const targetCountry = config.language.split('-')[1]?.toUpperCase() || 'US';
   
   // Sort by vote_average descending
-  const sorted = images.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
   return (
-    sorted.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||
-    sorted.find(img => img[key] === targetLang) ||
-    sorted.find(img => img[key] === 'en') ||
-    sorted[0]
+    images.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||
+    images.find(img => img[key] === targetLang) ||
+    images.find(img => img[key] === 'en') ||
+    images[0]
   );
 }
 
@@ -2673,6 +2761,31 @@ function isReleasedDigitally(meta) {
   return false;
 }
 
+function getKitsuLocalizedTitle(titles, language = '') {
+  if (!titles) return 'Unknown';
+
+  // Normalize the locale (e.g., "fr-FR" -> "fr_fr", "en-US" -> "en_us")
+  const normalized = language.toLowerCase().replace('-', '_');
+  const baseLang = normalized.split('_')[0]; // e.g. "fr"
+
+  // Priority lookup order — most specific to general
+  const candidates = [
+    normalized,             // e.g. "fr_fr"
+    `${baseLang}_jp`,       // e.g. "en_jp"
+    `${baseLang}_us`,       // e.g. "en_us"
+    baseLang,               // e.g. "fr"
+    'en',
+    'en_jp',                // common English-Japanese hybrid
+  ];
+
+  for (const key of candidates) {
+    if (titles[key]) return titles[key];
+  }
+
+  // Fallback to canonical title or "Unknown"
+  return titles.canonicalTitle || 'Unknown';
+}
+
 module.exports = {
   parseMedia,
   parseCast,
@@ -2724,5 +2837,140 @@ module.exports = {
   processTitleTranslations,
   genSeasonsString,
   isReleasedDigitally,
-  getTvdbCertification
+  getTvdbCertification,
+  getAnimePosterUrl,
+  getKitsuLocalizedTitle
 };
+
+/**
+ * Gets anime poster URL from various art providers
+ */
+async function getAnimePosterUrl(malId, mapping, stremioType, config, language, anilistArtworkMap, posterUrl, kitsuArtworkMap = null) {
+  const artProvider = resolveArtProvider('anime', 'poster', config);
+  const useAniList = artProvider === 'anilist';
+  const useKitsu = artProvider === 'kitsu';
+  const useTvdb = artProvider === 'tvdb';
+  const useImdb = artProvider === 'imdb';
+  const useTmdb = artProvider === 'tmdb';
+  const useFanart = (artProvider === 'fanart' && !!config.apiKeys?.fanart);
+  let finalPosterUrl = posterUrl || `${host}/missing_poster.png`;
+
+  if (useAniList && anilistArtworkMap.has(malId)) {
+    const anilistData = anilistArtworkMap.get(malId);
+    const anilistPoster = anilist.getPosterUrl(anilistData);
+    if (anilistPoster) {
+      //console.log(`[parseAnimeCatalogMetaBatch] Using AniList poster for MAL ID: ${malId}`);
+      finalPosterUrl = anilistPoster;
+    } else {
+      //console.log(`[parseAnimeCatalogMetaBatch] AniList data found but no poster URL for MAL ID: ${malId}`);
+    }
+  } else if (useAniList) {
+    //console.log(`[parseAnimeCatalogMetaBatch] No AniList data found for MAL ID: ${malId}`);
+  }
+  
+  // Check for Kitsu poster if configured as art provider
+  if (useKitsu && mapping && mapping.kitsu_id) {
+    // First try to use batch-fetched Kitsu artwork if available
+    if (kitsuArtworkMap && kitsuArtworkMap.has(malId)) {
+      const kitsuData = kitsuArtworkMap.get(malId);
+      if (kitsuData?.attributes?.posterImage?.original) {
+        //console.log(`[parseAnimeCatalogMetaBatch] Using batch-fetched Kitsu poster for MAL ID: ${malId}`);
+        finalPosterUrl = kitsuData.attributes.posterImage.original;
+      }
+    } else {
+      // Fallback to individual API call
+      try {
+        const kitsuData = await kitsu.getAnimeDetails(mapping.kitsu_id);
+        if (kitsuData?.attributes?.posterImage?.original) {
+          //console.log(`[parseAnimeCatalogMetaBatch] Using Kitsu poster for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
+          finalPosterUrl = kitsuData.attributes.posterImage.original;
+        }
+      } catch (error) {
+        console.warn(`[parseAnimeCatalogMetaBatch] Kitsu poster fetch failed for MAL ID ${malId}:`, error.message);
+      }
+    }
+  }
+  
+  // Check for TVDB poster if configured as art provider
+  if (useTvdb && mapping && mapping.thetvdb_id) {
+    try {
+      // Use the appropriate TVDB function based on media type
+      const tvdbPoster = await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
+      
+      if (tvdbPoster) {
+        //console.log(`[parseAnimeCatalogMetaBatch] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);
+        finalPosterUrl = tvdbPoster;
+      }
+    } catch (error) {
+      console.warn(`[parseAnimeCatalogMetaBatch] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+  
+  // Check for TMDB poster if configured as art provider
+  if (useTmdb && mapping && mapping.themoviedb_id) {
+    try {
+      // Use TMDB poster for anime
+      const tmdbPoster = stremioType === 'movie' 
+        ? await tmdb.getTmdbMoviePoster(mapping.themoviedb_id, config)
+        : await tmdb.getTmdbSeriesPoster(mapping.themoviedb_id, config);
+      
+      if (tmdbPoster) {
+        //console.log(`[parseAnimeCatalogMetaBatch] Using TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${stremioType})`);
+        finalPosterUrl = tmdbPoster;
+      }
+    } catch (error) {
+      console.warn(`[parseAnimeCatalogMetaBatch] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+
+  if (useImdb && mapping && mapping.imdb_id) {
+    try {
+      finalPosterUrl = imdb.getPosterFromImdb(mapping.imdb_id);
+    } catch (error) {
+      console.warn(`[parseAnimeCatalogMetaBatch] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+  //console.log(`[parseAnimeCatalogMetaBatch] useFanart: ${useFanart} mapping: ${JSON.stringify(mapping)}`);
+  if (useFanart && mapping) {
+    try {
+      if(mapping.themoviedb_id && stremioType === 'movie') {
+        const images = await fanart.getMovieImages(mapping.themoviedb_id, config);
+        const poster = selectFanartImageByLang(images?.movieposter, config);
+        if (poster) {
+          finalPosterUrl = poster.url;
+        }
+      } else if (mapping.imdb_id && stremioType === 'movie') {
+        const images = await fanart.getMovieImages(mapping.imdb_id, config);
+        const poster = selectFanartImageByLang(images?.movieposter, config);
+        if (poster) {
+          finalPosterUrl = poster.url;
+        }
+      } else if (mapping.thetvdb_id && stremioType === 'series') {
+        const images = await fanart.getShowImages(mapping.thetvdb_id, config);
+        const poster = selectFanartImageByLang(images?.tvposter, config);
+        if (poster) {
+          finalPosterUrl = poster.url;
+        }
+      }
+    } catch (error) {
+      console.warn(`[parseAnimeCatalogMetaBatch] Fanart poster fetch failed for MAL ID ${malId}:`, error.message);
+    }
+  }
+  
+  if (config.apiKeys?.rpdb && stremioType !== 'movie') {
+    if (mapping) {
+      const tvdbId = mapping.thetvdb_id;
+      const tmdbId = mapping.themoviedb_id;
+      let proxyId = null;
+
+      proxyId = tvdbId ? `tvdb:${tvdbId}` : (tmdbId ? `tmdb:${tmdbId}` : null);
+
+      if (proxyId) {
+        const fallback = encodeURIComponent(finalPosterUrl);
+        finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+      }
+    }
+  }
+
+  return finalPosterUrl;
+}

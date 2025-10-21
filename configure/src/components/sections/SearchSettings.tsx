@@ -171,12 +171,15 @@ export function SearchSettings() {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
-                            <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
-                                {animeSearchProviders.find(p => p.value === 'mal.search.series')?.label || 'MAL Keyword (Series)'}
-                            </div>
+                            <Select value={config.search.providers.anime_series} onValueChange={(val) => handleProviderChange('anime_series', val)}>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {animeSearchProviders.filter(p => p.mediaType.includes('anime_series')).map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
                             <Switch
-                                checked={config.search.engineEnabled?.['mal.search.series'] ?? true}
-                                onCheckedChange={checked => handleEngineEnabledChange('mal.search.series', checked)}
+                                checked={config.search.engineEnabled?.[config.search.providers.anime_series] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_series, checked)}
                                 aria-label="Enable this engine"
                             />
                         </div>
@@ -184,12 +187,15 @@ export function SearchSettings() {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
-                            <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
-                                {animeSearchProviders.find(p => p.value === 'mal.search.movie')?.label || 'MAL Keyword (Movies)'}
-                            </div>
+                            <Select value={config.search.providers.anime_movie} onValueChange={(val) => handleProviderChange('anime_movie', val)}>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {animeSearchProviders.filter(p => p.mediaType.includes('anime_movie')).map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
                             <Switch
-                                checked={config.search.engineEnabled?.['mal.search.movie'] ?? true}
-                                onCheckedChange={checked => handleEngineEnabledChange('mal.search.movie', checked)}
+                                checked={config.search.engineEnabled?.[config.search.providers.anime_movie] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_movie, checked)}
                                 aria-label="Enable this engine"
                             />
                         </div>

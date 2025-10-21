@@ -229,7 +229,7 @@ async function buildFranchiseMapFromTvdbId(tvdbId) {
 
   try {
     const kitsuIds = franchiseSiblings.map(s => s.kitsu_id).filter(Boolean);
-    const kitsuDetails = await kitsu.getMultipleAnimeDetails(kitsuIds);
+    const kitsuDetails = (await kitsu.getMultipleAnimeDetails(kitsuIds))?.data || [];
     const desiredTvTypes = new Set(['tv', 'ova', 'ona']);
     const kitsuTvSeasons = kitsuDetails.filter(item => 
         desiredTvTypes.has(item.attributes?.subtype.toLowerCase())
@@ -567,7 +567,7 @@ async function resolveImdbSeasonFromKitsu(kitsuId) {
     }
 
     const siblingKitsuIds = siblings.map(s => s.kitsu_id);
-    const kitsuDetails = await kitsu.getMultipleAnimeDetails(siblingKitsuIds);
+    const kitsuDetails = (await kitsu.getMultipleAnimeDetails(siblingKitsuIds))?.data || [];
 
     const sortedKitsuSeasons = kitsuDetails
       .filter(k => k.attributes?.subtype === 'TV')
@@ -887,7 +887,7 @@ async function getFranchiseInfoFromTvdbId(tvdbId) {
   if (!franchiseSiblings) return null;
   
   const kitsuIds = franchiseSiblings.map(s => s.kitsu_id).filter(Boolean);
-  const kitsuDetails = await kitsu.getMultipleAnimeDetails(kitsuIds);
+  const kitsuDetails = (await kitsu.getMultipleAnimeDetails(kitsuIds))?.data || [];
   
   const seasonInfo = {};
   for (const [seasonNumber, kitsuId] of franchiseMap.entries()) {
@@ -940,7 +940,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     }
     
     // Fetch detailed information for all Kitsu entries
-    const kitsuDetails = await kitsu.getMultipleAnimeDetails(kitsuIds);
+    const kitsuDetails = (await kitsu.getMultipleAnimeDetails(kitsuIds))?.data || [];
     
     // Filter for TV series and sort by start date
     const tvSeries = kitsuDetails
@@ -1045,7 +1045,7 @@ async function getFranchiseInfoFromImdbId(imdbId) {
     }
 
     // Fetch detailed information for all Kitsu entries
-    const kitsuDetails = await kitsu.getMultipleAnimeDetails(kitsuIds);
+    const kitsuDetails = (await kitsu.getMultipleAnimeDetails(kitsuIds))?.data || [];
 
     // Filter for TV series and sort by start date
     const tvSeries = kitsuDetails

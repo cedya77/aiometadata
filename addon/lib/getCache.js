@@ -706,6 +706,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
+    exclusionKeywords: config.exclusionKeywords || null,
+    regexExclusionFilter: config.regexExclusionFilter || null,
     // Add meta and art providers since they affect search results
     metaProviders: config.providers || {},
     artProviders: config.artProviders || {},

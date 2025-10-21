@@ -101,8 +101,10 @@ export const allSearchProviders: SearchProviderDefinition[] = [
   { value: 'tvmaze.search', label: 'TVmaze Search', mediaType: ['series'] },
 
   // Anime-Specific Providers
-  { value: 'mal.search.movie', label: 'MAL Keyword (Movies)', mediaType: ['movie', 'anime_movie'] },
-  { value: 'mal.search.series', label: 'MAL Keyword (Series)', mediaType: ['series', 'anime_series'] },
+  { value: 'mal.search.movie', label: 'MAL (Movies)', mediaType: ['movie', 'anime_movie'] },
+  { value: 'mal.search.series', label: 'MAL (Series)', mediaType: ['series', 'anime_series'] },
+  { value: 'kitsu.search.movie', label: 'Kitsu (Movies)', mediaType: ['movie', 'anime_movie'] },
+  { value: 'kitsu.search.series', label: 'Kitsu (Series)', mediaType: ['series', 'anime_series'] },
 ];
 
 export const allCatalogDefinitions: CatalogDefinition[] = [
