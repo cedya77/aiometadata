@@ -1097,6 +1097,125 @@ addon.post('/api/admin/prune-id-mappings', async (req, res) => {
   }
 });
 
+// --- Admin: User Management Endpoints ---
+
+// Get all users with basic info
+addon.get('/api/admin/users', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const users = await database.getAllUsersWithStats();
+    res.json({ users });
+  } catch (error) {
+    console.error('[Admin API] Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Get detailed user information
+addon.get('/api/admin/users/:userUUID', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { userUUID } = req.params;
+    const userDetails = await database.getUserDetails(userUUID);
+    
+    if (!userDetails) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ user: userDetails });
+  } catch (error) {
+    console.error('[Admin API] Error fetching user details:', error);
+    res.status(500).json({ error: 'Failed to fetch user details' });
+  }
+});
+
+// Reset user password
+addon.post('/api/admin/users/:userUUID/reset-password', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { userUUID } = req.params;
+    const newPassword = await database.resetUserPassword(userUUID);
+    
+    if (!newPassword) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ newPassword });
+  } catch (error) {
+    console.error('[Admin API] Error resetting password:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// Delete user
+addon.delete('/api/admin/users/:userUUID', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { userUUID } = req.params;
+    const success = await database.deleteUser(userUUID);
+    
+    if (!success) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('[Admin API] Error deleting user:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// Export all user data
+addon.get('/api/admin/users/export', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const userData = await database.exportAllUserData();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=users-export-${new Date().toISOString().split('T')[0]}.json`);
+    res.json(userData);
+  } catch (error) {
+    console.error('[Admin API] Error exporting user data:', error);
+    res.status(500).json({ error: 'Failed to export user data' });
+  }
+});
+
+// Bulk delete inactive users
+addon.post('/api/admin/users/bulk-delete-inactive', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { days = 30 } = req.body;
+    const deletedCount = await database.deleteInactiveUsers(days);
+    res.json({ deletedCount, message: `${deletedCount} inactive users deleted` });
+  } catch (error) {
+    console.error('[Admin API] Error deleting inactive users:', error);
+    res.status(500).json({ error: 'Failed to delete inactive users' });
+  }
+});
+
 // Debug endpoint to help troubleshoot catalog issues
 addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
   const { userUUID } = req.params;

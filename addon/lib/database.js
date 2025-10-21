@@ -245,18 +245,28 @@ class Database {
     const configJson = typeof configData === 'string' ? configData : JSON.stringify(configData);
     
     if (this.type === 'sqlite') {
-      await this.runQuery(
-        `INSERT OR REPLACE INTO user_configs (user_uuid, password_hash, config_data, updated_at) 
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+      // First try to insert as new user
+      const insertResult = await this.runQuery(
+        `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at) 
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [userUUID, passwordHash, configJson]
       );
+      
+      // If insert failed (user already exists), update only the necessary fields
+      if (insertResult.changes === 0) {
+        await this.runQuery(
+          `UPDATE user_configs SET password_hash = ?, config_data = ?, updated_at = CURRENT_TIMESTAMP 
+           WHERE user_uuid = ?`,
+          [passwordHash, configJson, userUUID]
+        );
+      }
     } else {
       await this.runQuery(
-        `INSERT INTO user_configs (user_uuid, password_hash, config_data, updated_at) 
-         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at) 
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          ON CONFLICT (user_uuid) 
          DO UPDATE SET password_hash = $2, config_data = $3, updated_at = CURRENT_TIMESTAMP`,
-        [userUUID, passwordHash, configData]
+        [userUUID, passwordHash, configJson]
       );
     }
   }
@@ -572,6 +582,220 @@ class Database {
       } else {
         await this.db.end();
       }
+    }
+  }
+
+  // --- User Management Methods ---
+
+  // Get all users with basic statistics
+  async getAllUsersWithStats() {
+    try {
+      const query = this.type === 'sqlite'
+        ? `SELECT 
+             user_uuid,
+             created_at,
+             updated_at,
+             config_data
+           FROM user_configs 
+           ORDER BY created_at DESC`
+        : `SELECT 
+             user_uuid,
+             created_at,
+             updated_at,
+             config_data
+           FROM user_configs 
+           ORDER BY created_at DESC`;
+
+      const rows = await this.allQuery(query);
+
+      return rows.map(row => {
+        let configData = null;
+        try {
+          configData = typeof row.config_data === 'string' 
+            ? JSON.parse(row.config_data) 
+            : row.config_data;
+        } catch (error) {
+          console.warn('[Database] Error parsing config data for user:', row.user_uuid);
+        }
+
+        // Check if user has API keys configured
+        const hasApiKeys = configData?.apiKeys && (
+          configData.apiKeys.tmdb || 
+          configData.apiKeys.tvdb || 
+          configData.apiKeys.imdb || 
+          configData.apiKeys.kitsu
+        );
+
+        // Determine if user is active (updated in last 7 days)
+        const lastUpdated = new Date(row.updated_at);
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const isActive = lastUpdated > sevenDaysAgo;
+
+        return {
+          uuid: row.user_uuid,
+          created_at: row.created_at,
+          last_updated: row.updated_at,
+          last_activity: null, // This would need to come from request tracker
+          total_requests: 0, // This would need to be tracked separately
+          has_api_keys: !!hasApiKeys,
+          config_status: configData ? 'configured' : 'empty',
+          is_active: isActive
+        };
+      });
+    } catch (error) {
+      console.error('[Database] Error getting all users with stats:', error);
+      return [];
+    }
+  }
+
+  // Get detailed user information
+  async getUserDetails(userUUID) {
+    try {
+      const query = this.type === 'sqlite'
+        ? 'SELECT * FROM user_configs WHERE user_uuid = ?'
+        : 'SELECT * FROM user_configs WHERE user_uuid = $1';
+      
+      const row = await this.getQuery(query, [userUUID]);
+      
+      if (!row) return null;
+
+      let configData = null;
+      try {
+        configData = typeof row.config_data === 'string' 
+          ? JSON.parse(row.config_data) 
+          : row.config_data;
+      } catch (error) {
+        console.warn('[Database] Error parsing config data for user:', userUUID);
+        return null;
+      }
+
+      return {
+        uuid: row.user_uuid,
+        created_at: row.created_at,
+        last_updated: row.updated_at,
+        last_activity: null, // This would need to come from request tracker
+        total_requests: 0, // This would need to be tracked separately
+        api_keys: {
+          tmdb: !!configData?.apiKeys?.tmdb,
+          tvdb: !!configData?.apiKeys?.tvdb,
+          imdb: !!configData?.apiKeys?.imdb,
+          kitsu: !!configData?.apiKeys?.kitsu
+        },
+        streaming_services: configData?.streaming || [],
+        catalogs_count: configData?.catalogs?.length || 0,
+        language: configData?.language || 'en-US',
+        region: configData?.region || 'US'
+      };
+    } catch (error) {
+      console.error('[Database] Error getting user details:', error);
+      return null;
+    }
+  }
+
+  // Reset user password (generate new one)
+  async resetUserPassword(userUUID) {
+    try {
+      // Generate a new random password
+      const newPassword = Math.random().toString(36).slice(-8);
+      const hashedPassword = this.hashPassword(newPassword);
+
+      const query = this.type === 'sqlite'
+        ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
+        : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
+
+      const result = await this.runQuery(query, [hashedPassword, userUUID]);
+      
+      if (this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0) {
+        return newPassword;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[Database] Error resetting user password:', error);
+      return null;
+    }
+  }
+
+  // Delete user
+  async deleteUser(userUUID) {
+    try {
+      const query = this.type === 'sqlite'
+        ? 'DELETE FROM user_configs WHERE user_uuid = ?'
+        : 'DELETE FROM user_configs WHERE user_uuid = $1';
+
+      const result = await this.runQuery(query, [userUUID]);
+      
+      return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+    } catch (error) {
+      console.error('[Database] Error deleting user:', error);
+      return false;
+    }
+  }
+
+  // Export all user data
+  async exportAllUserData() {
+    try {
+      const query = this.type === 'sqlite'
+        ? `SELECT 
+             user_uuid,
+             created_at,
+             updated_at,
+             config_data
+           FROM user_configs 
+           ORDER BY created_at DESC`
+        : `SELECT 
+             user_uuid,
+             created_at,
+             updated_at,
+             config_data
+           FROM user_configs 
+           ORDER BY created_at DESC`;
+
+      const rows = await this.allQuery(query);
+
+      return {
+        exportDate: new Date().toISOString(),
+        totalUsers: rows.length,
+        users: rows.map(row => {
+          let configData = null;
+          try {
+            configData = typeof row.config_data === 'string' 
+              ? JSON.parse(row.config_data) 
+              : row.config_data;
+          } catch (error) {
+            console.warn('[Database] Error parsing config data for export:', row.user_uuid);
+          }
+
+          return {
+            uuid: row.user_uuid,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            config: configData
+          };
+        })
+      };
+    } catch (error) {
+      console.error('[Database] Error exporting user data:', error);
+      return { exportDate: new Date().toISOString(), totalUsers: 0, users: [] };
+    }
+  }
+
+  // Delete inactive users (older than specified days)
+  async deleteInactiveUsers(daysOld = 30) {
+    try {
+      const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+      const cutoffDateStr = cutoffDate.toISOString();
+
+      const query = this.type === 'sqlite'
+        ? 'DELETE FROM user_configs WHERE updated_at < ?'
+        : 'DELETE FROM user_configs WHERE updated_at < $1';
+
+      const result = await this.runQuery(query, [cutoffDateStr]);
+      
+      return this.type === 'sqlite' ? result.changes : result.rowCount;
+    } catch (error) {
+      console.error('[Database] Error deleting inactive users:', error);
+      return 0;
     }
   }
 }

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/accordion";
 import { useAdmin } from "@/contexts/AdminContext";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { UserManagementModal } from "./UserManagementModal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -2649,6 +2650,7 @@ function DashboardUsers({ data, loading }) {
 
   const [error, setError] = useState(null);
   const [clearingUserData, setClearingUserData] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false);
 
   // Clear inflated user data
   const handleClearUserData = async () => {
@@ -2914,7 +2916,11 @@ function DashboardUsers({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <Button variant="outline" className="w-full">
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => setShowUserManagement(true)}
+              >
                 <Users className="h-4 w-4 mr-2" />
                 Manage Users
               </Button>
@@ -2967,6 +2973,13 @@ function DashboardUsers({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* User Management Modal */}
+      <UserManagementModal
+        isOpen={showUserManagement}
+        onClose={() => setShowUserManagement(false)}
+        adminKey={adminKey}
+      />
     </div>
   );
 }
