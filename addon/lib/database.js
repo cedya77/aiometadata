@@ -245,20 +245,24 @@ class Database {
     const configJson = typeof configData === 'string' ? configData : JSON.stringify(configData);
     
     if (this.type === 'sqlite') {
-      // First try to insert as new user
-      const insertResult = await this.runQuery(
-        `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at) 
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [userUUID, passwordHash, configJson]
-      );
-      
-      // If insert failed (user already exists), update only the necessary fields
-      if (insertResult.changes === 0) {
+      try {
+        // First try to insert as new user
         await this.runQuery(
-          `UPDATE user_configs SET password_hash = ?, config_data = ?, updated_at = CURRENT_TIMESTAMP 
-           WHERE user_uuid = ?`,
-          [passwordHash, configJson, userUUID]
+          `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at) 
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [userUUID, passwordHash, configJson]
         );
+      } catch (error) {
+        // If insert failed (user already exists), update only the necessary fields
+        if (error.code === 'SQLITE_CONSTRAINT_UNIQUE' || error.message.includes('UNIQUE constraint failed')) {
+          await this.runQuery(
+            `UPDATE user_configs SET password_hash = ?, config_data = ?, updated_at = CURRENT_TIMESTAMP 
+             WHERE user_uuid = ?`,
+            [passwordHash, configJson, userUUID]
+          );
+        } else {
+          throw error; // Re-throw if it's not a constraint violation
+        }
       }
     } else {
       await this.runQuery(
