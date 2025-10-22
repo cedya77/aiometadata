@@ -649,10 +649,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   };
   
   const catalogConfigString = JSON.stringify(catalogConfig);
-  // Only include userUUID for MDBList catalogs since they are user-specific
-  const key = idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.')
-    ? `catalog:${userUUID}:${catalogConfigString}:${catalogKey}`
-    : `catalog:${catalogConfigString}:${catalogKey}`;
   
   // Use custom cache TTL for MDBList catalogs if specified
   let cacheTTL = CATALOG_TTL;
@@ -672,6 +668,20 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       cacheLogger.info(`Using custom cache TTL for MDBList catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
     }
   }
+  
+  // Handle custom TTL for custom manifest catalogs
+  if (idOnly.startsWith('custom.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.info(`Using custom cache TTL for custom manifest catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+    }
+  }
+  
+  // Include TTL in cache key to ensure proper cache invalidation when TTL changes
+  const key = idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')
+    ? `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`
+    : `catalog:${catalogConfigString}:${catalogKey}`;
   
   cacheLogger.info(`Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
     

@@ -37,6 +37,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
   const [isLoading, setIsLoading] = useState(false);
   const [manifest, setManifest] = useState<CustomManifest | null>(null);
   const [selectedCatalogs, setSelectedCatalogs] = useState<Set<string>>(new Set());
+  const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(86400); // Default to 24 hours
 
   // Get currently imported custom manifests
   const currentCustomCatalogs = config.catalogs.filter(c => c.id.startsWith("custom."));
@@ -151,6 +152,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
               source: 'custom', // Use 'custom' source for custom manifests
               sourceUrl: catalogUrl, // Store the actual catalog URL
               genres: catalog.genres || [], // Store genres from manifest
+              cacheTTL: defaultCacheTTL, // Add custom TTL support
               manifestData: { 
                 ...catalog, 
                 idPrefixes: manifest.idPrefixes // Store manifest idPrefixes for tun_ detection
@@ -238,6 +240,30 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                 <Button onClick={fetchManifest} disabled={isLoading || !manifestUrl.trim()}>
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Load Manifest"}
                 </Button>
+              </div>
+
+              {/* TTL Configuration */}
+              <div className="space-y-2">
+                <Label htmlFor="default-cache-ttl">Default Cache TTL (seconds)</Label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    id="default-cache-ttl"
+                    type="number"
+                    value={defaultCacheTTL}
+                    onChange={(e) => setDefaultCacheTTL(parseInt(e.target.value) || 86400)}
+                    min="300"
+                    max="604800"
+                    step="3600"
+                    className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                    placeholder="86400"
+                  />
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    ({Math.floor(defaultCacheTTL / 3600)}h {Math.floor((defaultCacheTTL % 3600) / 60)}m)
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  How long to cache newly added catalogs before refreshing. Range: 5 minutes to 7 days.
+                </p>
               </div>
 
               {/* Manifest Info */}

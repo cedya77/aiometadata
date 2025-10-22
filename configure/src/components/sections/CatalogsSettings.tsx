@@ -174,6 +174,61 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
+const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig } = useConfig();
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || 86400); // Default to 24 hours
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, cacheTTL }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Custom Manifest Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="custom-cache-ttl">Cache TTL (seconds)</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                id="custom-cache-ttl"
+                type="number"
+                value={cacheTTL}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || 86400)}
+                min="300"
+                max="604800"
+                step="3600"
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder="86400"
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig } = useConfig();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
@@ -381,6 +436,17 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
+          {catalog.source === 'custom' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Cache Settings">
+                  <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Cache Settings</TooltipContent>
+            </Tooltip>
+          )}
+
           {catalog.source === 'custom' && catalog.sourceUrl && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -425,7 +491,13 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       
       <MDBListSettingsDialog 
         catalog={catalog} 
-        isOpen={showSettings} 
+        isOpen={showSettings && catalog.source === 'mdblist'} 
+        onClose={() => setShowSettings(false)} 
+      />
+      
+      <CustomManifestSettingsDialog 
+        catalog={catalog} 
+        isOpen={showSettings && catalog.source === 'custom'} 
         onClose={() => setShowSettings(false)} 
       />
       
