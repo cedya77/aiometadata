@@ -16,7 +16,7 @@ function AppContent() {
       {/* Custom Description Blurb - Outside main card */}
       {config.apiKeys.customDescriptionBlurb && (
         <div 
-          className="mb-6 p-4 bg-muted/50 border rounded-lg w-full max-w-5xl"
+          className="mb-6 p-4 bg-black border rounded-lg w-full max-w-5xl"
           dangerouslySetInnerHTML={{ __html: config.apiKeys.customDescriptionBlurb }}
         />
       )}

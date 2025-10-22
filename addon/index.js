@@ -453,6 +453,30 @@ addon.get("/session_id", async function (req, res) { const s = await getSessionI
 
 
 
+// --- Basic Manifest Route ---
+addon.get("/stremio/manifest.json", function (req, res) {
+  const host = process.env.HOST_NAME.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
+    const basicManifest = {
+        id: "com.aio.metadata",
+        version: "1.0.0",
+        name: "AIO Metadata",
+        description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
+        favicon: `${host}/favicon.png`,
+        logo: `${host}/logo.png`,
+        types: ["movie", "series"],
+        catalogs: [],
+        resources: [],
+        idPrefixes: [],
+        configurationRequired: true
+    };
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json(basicManifest);
+});
+
 // --- Database-Only Manifest Route ---
 addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
     const { userUUID } = req.params;
