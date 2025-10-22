@@ -874,7 +874,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
   if (tmdbId){
-    const seriesData = await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "content_ratings" }, config);
+    const seriesData = await moviedb.tvInfo({ id: tmdbId, language: config.language, append_to_response: "content_ratings" }, config);
     imdbData.app_extras = imdbData.app_extras || {};
     imdbData.app_extras.certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
   }
@@ -925,7 +925,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
   if (tmdbId){
-    const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
+    const movieData = await moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates" }, config);
     imdbData.app_extras = imdbData.app_extras || {};
     imdbData.app_extras.releaseDates = movieData.release_dates;
     imdbData.app_extras.certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);

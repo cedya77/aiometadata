@@ -3,12 +3,13 @@ const { cacheWrapJikanApi, cacheWrapCatalog } = require('./getCache');
 const { parseAnimeCatalogMetaBatch } = require('../utils/parseProps');
 
 // Environment variable configuration with sensible defaults
+const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive', 'both'
 const WARMUP_CONFIG = {
   // UUID to use for cache warming (uses this user's config for providers, language, etc.)
   uuid: process.env.CACHE_WARMUP_UUID || 'system-cache-warmer', // Default: system-cache-warmer
   
   // Enable/disable warmup entirely
-  enabled: process.env.MAL_WARMUP_ENABLED !== 'false', // Default: true
+  enabled: process.env.MAL_WARMUP_ENABLED !== 'false' && (WARMUP_MODE === 'essential' || WARMUP_MODE === 'both'), // Default: true
   
   // Run warmup every N hours (default: 6 hours)
   intervalHours: parseInt(process.env.MAL_WARMUP_INTERVAL_HOURS) || 6,
@@ -81,11 +82,13 @@ class MALCatalogWarmer {
 
   async startBackgroundWarming() {
     if (!WARMUP_CONFIG.enabled) {
-      this.log('info', 'Background warming is disabled via MAL_WARMUP_ENABLED=false');
+      const mode = process.env.CACHE_WARMUP_MODE || 'essential';
+      this.log('info', `MAL catalog warming disabled (CACHE_WARMUP_MODE=${mode})`);
+      this.log('info', 'MAL warming runs in essential mode only. Set CACHE_WARMUP_MODE=essential or CACHE_WARMUP_MODE=both to enable');
       return;
     }
 
-    this.log('info', 'Starting background catalog warming...');
+    this.log('info', `Starting MAL background catalog warming (mode: ${WARMUP_MODE})...`);
     
     // Check if we need to warm immediately (on startup)
     const intervalMs = WARMUP_CONFIG.intervalHours * 60 * 60 * 1000;
@@ -312,7 +315,7 @@ class MALCatalogWarmer {
           const pageSize = 25;
           const skip = page > 1 ? (page - 1) * pageSize : 0;
           const extraArgs = skip > 0 ? { skip: skip.toString() } : {};
-          const catalogKey = `${catalog.catalogId}:anime:${JSON.stringify(extraArgs)}`;
+          const catalogKey = `${catalog.catalogId}:anime:${JSON.stringify(extraArgs || {})}`;
           
           // Wrap in cacheWrapCatalog just like the catalog route
           const result = await cacheWrapCatalog(systemUUID, catalogKey, async () => {
@@ -376,7 +379,7 @@ class MALCatalogWarmer {
         // Capitalize day name to match route (Monday, not monday)
         const dayCapitalized = day.charAt(0).toUpperCase() + day.slice(1);
         const extraArgs = { genre: dayCapitalized };
-        const catalogKey = `mal.schedule:anime:${JSON.stringify(extraArgs)}`;
+        const catalogKey = `mal.schedule:anime:${JSON.stringify(extraArgs || {})}`;
         
         const result = await cacheWrapCatalog(systemUUID, catalogKey, async () => {
           // getAiringSchedule(day, page, config)

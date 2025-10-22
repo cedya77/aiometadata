@@ -117,9 +117,12 @@ async function startServer(): Promise<void> {
   consola.info('Starting server with cache warming...');
   const addon: any = await startServerWithCacheWarming();
   
-  // PHASE 4: Start MAL catalog background warming (after server initialization)
+  // PHASE 4: Start background catalog warming (after server initialization)
   const { startMALWarmup } = require('./lib/malCatalogWarmer.js');
   startMALWarmup();
+  
+  const { startComprehensiveCatalogWarming } = require('./lib/comprehensiveCatalogWarmer.js');
+  startComprehensiveCatalogWarming();
   
   addon.listen(PORT, () => {
     consola.success(`Addon active and listening on port ${PORT}.`);

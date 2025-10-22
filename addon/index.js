@@ -1863,6 +1863,18 @@ addon.get("/api/dashboard/mal-warmup", (req, res) => {
   }
 });
 
+// Comprehensive Catalog Warmup Stats endpoint
+addon.get("/api/dashboard/catalog-warmup", (req, res) => {
+  try {
+    const { getWarmupStats } = require('./lib/comprehensiveCatalogWarmer');
+    const stats = getWarmupStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('[Catalog Warmer API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch catalog warmup stats' });
+  }
+});
+
 // Blocking startup function that waits for cache warming
 async function startServerWithCacheWarming() {
   if (ENABLE_CACHE_WARMING && !NO_CACHE) {

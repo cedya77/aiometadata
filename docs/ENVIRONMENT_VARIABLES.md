@@ -118,15 +118,29 @@ cp .env.example .env
 
 ---
 
-## MAL Catalog Background Warming
-
-Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
+## Cache Warming Configuration
 
 ### `CACHE_WARMUP_UUID`
 - **Default**: `system-cache-warmer`
 - **Description**: User UUID to use for cache warming operations (uses that user's config for providers, language, etc.)
 - **Example**: `CACHE_WARMUP_UUID=550e8400-e29b-41d4-a716-446655440000`
-- **Note**: If not set, uses a default system config. You can set this to your own UUID to warm caches with your preferred settings.
+- **Note**: If not set, uses a default system config. Set this to your own UUID to warm caches with your preferred settings.
+
+### `CACHE_WARMUP_MODE`
+- **Default**: `essential`
+- **Options**: `essential`, `comprehensive`, `both`
+- **Description**: Choose which warming strategy to use
+  - `essential`: Warm only essential content (genres, studios, trending items) - lightweight
+  - `comprehensive`: Warm ALL enabled catalogs in your config - thorough but resource-intensive
+  - `both`: Run both essential and comprehensive warming
+- **Example**: `CACHE_WARMUP_MODE=comprehensive`
+- **Note**: Comprehensive mode requires `CACHE_WARMUP_UUID` to be explicitly set
+
+---
+
+## MAL Catalog Background Warming
+
+Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
 
 ### `MAL_WARMUP_ENABLED`
 - **Default**: `true`
@@ -196,6 +210,57 @@ Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
 - **Options**: `silent`, `normal`, `verbose`
 - **Description**: Log verbosity for warmup process
 - **Example**: `MAL_WARMUP_LOG_LEVEL=verbose`
+
+---
+
+## Comprehensive Catalog Warming
+
+This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifests, etc.) in your user config, across all pages until empty.
+
+**⚠️ Important**: Set `CACHE_WARMUP_MODE=comprehensive` or `CACHE_WARMUP_MODE=both` to enable this feature. Also requires `CACHE_WARMUP_UUID` to be explicitly set.
+
+### `CATALOG_WARMUP_INTERVAL_HOURS`
+- **Default**: `24` (daily)
+- **Description**: How often to run comprehensive catalog warmup (in hours)
+- **Example**: `CATALOG_WARMUP_INTERVAL_HOURS=48`
+- **Recommended**: 24-72 hours depending on number of catalogs and server resources
+
+### `CATALOG_WARMUP_INITIAL_DELAY_SECONDS`
+- **Default**: `300` (5 minutes)
+- **Description**: Delay before first warmup after server start (in seconds)
+- **Example**: `CATALOG_WARMUP_INITIAL_DELAY_SECONDS=600`
+
+### `CATALOG_WARMUP_MAX_PAGES_PER_CATALOG`
+- **Default**: `100`
+- **Description**: Maximum number of pages to warm per catalog (safety limit)
+- **Example**: `CATALOG_WARMUP_MAX_PAGES_PER_CATALOG=50`
+- **Note**: Actual pages warmed depends on catalog size; stops when no more results
+
+### `CATALOG_WARMUP_RESUME_ON_RESTART`
+- **Default**: `true`
+- **Description**: Resume from last checkpoint on container restart
+- **Example**: `CATALOG_WARMUP_RESUME_ON_RESTART=false`
+
+### `CATALOG_WARMUP_QUIET_HOURS_ENABLED`
+- **Default**: `false`
+- **Description**: Only run warmup outside specific UTC hours
+- **Example**: `CATALOG_WARMUP_QUIET_HOURS_ENABLED=true`
+
+### `CATALOG_WARMUP_QUIET_HOURS`
+- **Default**: `02:00-06:00`
+- **Description**: UTC time range to avoid warming (format: "HH:MM-HH:MM")
+- **Example**: `CATALOG_WARMUP_QUIET_HOURS=22:00-06:00`
+
+### `CATALOG_WARMUP_TASK_DELAY_MS`
+- **Default**: `100`
+- **Description**: Delay between catalog page requests (in milliseconds)
+- **Example**: `CATALOG_WARMUP_TASK_DELAY_MS=200`
+
+### `CATALOG_WARMUP_LOG_LEVEL`
+- **Default**: `info`
+- **Options**: `debug`, `info`, `success`, `warn`, `error`
+- **Description**: Log verbosity for catalog warmup process
+- **Example**: `CATALOG_WARMUP_LOG_LEVEL=debug`
 
 ---
 
@@ -341,9 +406,16 @@ TVDB_API_KEY=your_key_here  # Optional
 FANART_API_KEY=your_key_here
 MDBLIST_API_KEY=your_key_here
 
-# MAL Warmup (optimized for VPS)
+# Cache Warmup Configuration
+CACHE_WARMUP_UUID=your-user-uuid-here  # Set to your UUID
+CACHE_WARMUP_MODE=comprehensive  # 'essential', 'comprehensive', or 'both'
+
+# Comprehensive Catalog Warmup Settings (when mode is 'comprehensive' or 'both')
+CATALOG_WARMUP_INTERVAL_HOURS=24  # Daily
+CATALOG_WARMUP_MAX_PAGES_PER_CATALOG=100
+
+# MAL Warmup (optional - can run independently)
 MAL_WARMUP_ENABLED=true
-CACHE_WARMUP_UUID=system-cache-warmer  # or use your own UUID
 MAL_WARMUP_INTERVAL_HOURS=6
 MAL_WARMUP_PRIORITY_PAGES=3
 MAL_WARMUP_DECADES=true
@@ -362,15 +434,20 @@ REDIS_URL=redis://localhost:6379
 TMDB_API=your_key_here
 TVDB_API_KEY=your_key_here  # Optional
 
+# Cache Warmup (essential mode - lightweight)
+CACHE_WARMUP_UUID=system-cache-warmer
+CACHE_WARMUP_MODE=essential  # Use 'essential' for lightweight warming only
+
 # Conservative MAL Warmup
 MAL_WARMUP_ENABLED=true
-CACHE_WARMUP_UUID=system-cache-warmer  # or use your own UUID
 MAL_WARMUP_INTERVAL_HOURS=12
 MAL_WARMUP_QUIET_HOURS_ENABLED=true
 MAL_WARMUP_QUIET_HOURS_RANGE=2-8
 MAL_WARMUP_PRIORITY_PAGES=1
 MAL_WARMUP_DECADES=false
 MAL_WARMUP_LOG_LEVEL=silent
+
+# Note: Comprehensive mode not recommended for shared hosting due to resource usage
 ```
 
 ---
