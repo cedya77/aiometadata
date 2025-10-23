@@ -52,23 +52,23 @@ async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgr
       tmdbId: allIds?.tmdbId,
       malId: allIds?.malId,
       imdbId: allIds?.imdbId,
-    malPosterUrl: fallbackBackgroundUrl,
-    mediaType: type
+      malPosterUrl: fallbackBackgroundUrl,
+      mediaType: type
     }, config),
     Utils.getAnimePoster({
       malId: allIds?.malId,
       imdbId: allIds?.imdbId,
       tvdbId: allIds?.tvdbId,
       tmdbId: allIds?.tmdbId,
-    malPosterUrl: fallbackPosterUrl,
-    mediaType: type
+      malPosterUrl: fallbackPosterUrl,
+      mediaType: type
     }, config),
     Utils.getAnimeLogo({
       malId: allIds?.malId,
       imdbId: allIds?.imdbId,
       tvdbId: allIds?.tvdbId,
       tmdbId: allIds?.tmdbId,
-    mediaType: type
+      mediaType: type
     }, config),
     getImdbRating(allIds?.imdbId, type)
   ]);
