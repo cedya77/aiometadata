@@ -507,11 +507,38 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
                   size="icon"
                   onClick={() => {
                     try {
-                      // Extract base URL and construct /configure endpoint
-                      const url = new URL(catalog.sourceUrl!);
-                      // Remove the last path segment (e.g., manifest.json or catalog/...)
+                      // For StremThru catalogs, use the manifest URL instead of sourceUrl
+                      let urlToUse = catalog.sourceUrl;
+                      
+                      // If this is a StremThru catalog, extract the manifest URL from the sourceUrl
+                      if (catalog.source === 'stremthru' && catalog.sourceUrl) {
+                        // Extract manifest URL from the full catalog URL
+                        // e.g., /stremio/list/CONFIG_STRING/catalog/series/CATALOG_ID.json -> /stremio/list/CONFIG_STRING/manifest.json
+                        const url = new URL(catalog.sourceUrl);
+                        const pathParts = url.pathname.split('/').filter(Boolean);
+                        const stremioIndex = pathParts.indexOf('stremio');
+                        
+                        if (stremioIndex !== -1) {
+                          // Keep only: stremio, list, and the config string (3 segments total)
+                          const baseParts = pathParts.slice(0, stremioIndex + 3);
+                          const basePath = '/' + baseParts.join('/');
+                          urlToUse = `${url.origin}${basePath}/manifest.json`;
+                        }
+                      }
+                      
+                      // Now construct the configure URL
+                      const url = new URL(urlToUse!);
                       const pathParts = url.pathname.split('/').filter(Boolean);
-                      // Keep everything up to the user/token part (typically first 1-2 segments)
+                      
+                      // Handle StremThru URLs specifically - simple approach
+                      if (url.hostname.includes('stremthru') || pathParts.includes('stremio')) {
+                        // For StremThru: just replace 'manifest.json' with 'configure'
+                        const configureUrl = urlToUse!.replace('/manifest.json', '/configure');
+                        window.open(configureUrl, '_blank', 'noopener,noreferrer');
+                        return;
+                      }
+                      
+                      // Default behavior for other URLs
                       const basePath = pathParts.length > 0 ? '/' + pathParts[0] : '';
                       const configureUrl = `${url.origin}${basePath}/configure`;
                       window.open(configureUrl, '_blank', 'noopener,noreferrer');

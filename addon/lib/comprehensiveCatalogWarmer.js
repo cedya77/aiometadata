@@ -18,7 +18,7 @@ const WARMUP_CONFIG = {
   enabled: !!process.env.CACHE_WARMUP_UUID && WARMUP_MODE === 'comprehensive',
   uuid: process.env.CACHE_WARMUP_UUID,
   intervalHours: parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24, // Daily default
-  initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 120,
+  initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,
   maxPagesPerCatalog: parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100,
   resumeOnRestart: process.env.CATALOG_WARMUP_RESUME_ON_RESTART !== 'false',
   quietHoursEnabled: process.env.CATALOG_WARMUP_QUIET_HOURS_ENABLED === 'true',
