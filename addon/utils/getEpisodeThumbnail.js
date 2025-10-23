@@ -3,7 +3,7 @@ const host = process.env.HOST_NAME.startsWith('http')
     : `https://${process.env.HOST_NAME}`;
 function getEpisodeThumbnail(imageUrl, hideEpisodeThumbnails) {
   if (!imageUrl) {
-    return null;
+    return `${host}/missing_thumbnail.png`;
   }
   
   if (hideEpisodeThumbnails) {

@@ -24,7 +24,7 @@ function genSeasonsString(seasons) {
 }
 
 function getThumbnailUrl(stillPath, hideEpisodeThumbnails) {
-  if (!stillPath) return null;
+  if (!stillPath) return `${host}/missing_thumbnail.png`;
   
   const baseImageUrl = `https://image.tmdb.org/t/p/w500${stillPath}`;
   
