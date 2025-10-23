@@ -19,7 +19,7 @@ const ADDON_VERSION = packageJson.version;
 // --- Time To Live (TTL) constants in seconds ---
 const META_TTL = parseInt(process.env.META_TTL || 7 * 24 * 60 * 60, 10);
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
-const JIKAN_API_TTL = 7 * 24 * 60 * 60;
+const JIKAN_API_TTL = 1 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
@@ -655,7 +655,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   // Decade catalogs use 30-day cache since historical data doesn't change
   // Note: 2020s decade still active, but older decades are stable
-  const decadeCatalogs = ['mal.80sDecade', 'mal.90sDecade', 'mal.00sDecade', 'mal.10sDecade', 'mal.20sDecade'];
+  const decadeCatalogs = ['mal.80sDecade', 'mal.90sDecade', 'mal.00sDecade', 'mal.10sDecade'];
   if (decadeCatalogs.includes(idOnly)) {
     cacheTTL = STATIC_CATALOG_TTL; // 30 days
     cacheLogger.info(`Using extended cache TTL for decade catalog ${idOnly}: 30 days`);

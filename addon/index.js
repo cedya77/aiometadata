@@ -644,26 +644,40 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               'mal.20sDecade': ['2020-01-01', '2029-12-31'],
             };
             if (id === 'mal.airing') {
-              const animeResults = await jikan.getAiringNow(page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
+                return await jikan.getAiringNow(page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.upcoming') {
-              const animeResults = await jikan.getUpcoming(page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
+                return await jikan.getUpcoming(page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.top_movies') {
-              const animeResults = await jikan.getTopAnimeByType('movie', page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {
+                return await jikan.getTopAnimeByType('movie', page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.top_series') {
-              const animeResults = await jikan.getTopAnimeByType('tv', page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-top-series-${page}-${config.sfw}`, async () => {
+                return await jikan.getTopAnimeByType('tv', page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.most_popular') {
               console.log(`[CATALOG ROUTE 2] mal.most_popular called with type=${actualType}, language=${language}, page=${page}`);
-              const animeResults = await jikan.getTopAnimeByFilter('bypopularity', page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
+                return await jikan.getTopAnimeByFilter('bypopularity', page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.most_favorites') {
-              const animeResults = await jikan.getTopAnimeByFilter('favorite', page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-most-favorites-${page}-${config.sfw}`, async () => {
+                return await jikan.getTopAnimeByFilter('favorite', page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.top_anime') {
-              const animeResults = await jikan.getTopAnimeByType('anime', page, config);
+              const animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
+                return await jikan.getTopAnimeByType('anime', page, config);
+              });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else {
             const [startDate, endDate] = decadeMap[id];
@@ -676,7 +690,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
               if (selectedGenre) {
                 const genreId = selectedGenre.mal_id;
-                    const animeResults = await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+                    const animeResults = await cacheWrapJikanApi(`mal-${id}-${page}-${genreId}-${config.sfw}`, async () => {
+                  return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+                });
                     metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 }
               }
@@ -695,7 +711,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
               if (selectedGenre) {
                 const genreId = selectedGenre.mal_id;
-                const animeResults = await jikan.getAnimeByGenre(genreId, mediaType, page, config);
+                const animeResults = await cacheWrapJikanApi(`mal-genre-${genreId}-${mediaType}-${page}-${config.sfw}`, async () => {
+                  return await jikan.getAnimeByGenre(genreId, mediaType, page, config);
+                });
                 metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
               }
             }
@@ -713,7 +731,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         
                 if (selectedStudio) {
                     const studioId = selectedStudio.mal_id;
-                    const animeResults = await jikan.getAnimeByStudio(studioId, page);
+                    const animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
+                      return await jikan.getAnimeByStudio(studioId, page);
+                    });
                     metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 } else {
                     console.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
@@ -723,7 +743,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           }
           case 'mal.schedule': {
             const dayOfWeek = genreName || 'Monday';
-            const animeResults = await jikan.getAiringSchedule(dayOfWeek, page, config);
+            const animeResults = await cacheWrapJikanApi(`mal-schedule-${dayOfWeek}-${page}-${config.sfw}`, async () => {
+              return await jikan.getAiringSchedule(dayOfWeek, page, config);
+            });
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             break;
           }
@@ -749,7 +771,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             const parts = seasonString.split(' ');
             const season = parts[0].toLowerCase(); // winter, spring, summer, fall
             const year = parseInt(parts[1]);
-            const animeResults = await jikan.getAnimeBySeason(year, season, page, config);
+            const animeResults = await cacheWrapJikanApi(`mal-season-${year}-${season}-${page}-${config.sfw}`, async () => {
+              return await jikan.getAnimeBySeason(year, season, page, config);
+            });
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             break;
           }

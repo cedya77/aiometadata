@@ -531,7 +531,8 @@ async function getManifest(config) {
       }
       else if (userCatalog.id === 'mal.genres') {
           // Use pre-fetched anime genres
-          catalogOptions = animeGenreNames;
+          // Add "None" option when showInHome is false to work around Stremio's genre requirement
+          catalogOptions = userCatalog.showInHome ? animeGenreNames : ['None', ...animeGenreNames];
       } else if (userCatalog.id === 'mal.studios'){
         // Use pre-fetched studio names, fallback to empty if not available
         catalogOptions = studioNames.length > 0 ? studioNames : ['None'];
@@ -579,7 +580,8 @@ async function getManifest(config) {
       }
       else if (userCatalog.id.startsWith('mal.') && !['mal.airing', 'mal.upcoming', 'mal.schedule', 'mal.seasons', 'mal.top_movies', 'mal.top_series', 'mal.most_favorites', 'mal.top_anime', 'mal.most_popular'].includes(userCatalog.id)) {
         // Use pre-fetched anime genres for decade catalogs
-        catalogOptions = animeGenreNames;
+        // Add "None" option when showInHome is false to work around Stremio's genre requirement
+        catalogOptions = userCatalog.showInHome ? animeGenreNames : ['None', ...animeGenreNames];
       }
       else {
         catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
