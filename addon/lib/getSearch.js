@@ -368,10 +368,11 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           || details.images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
           || details.images?.backdrops?.[0];
         const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
+        const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
         const fallbackImage = `${host}/missing_poster.png`;
         logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
         backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : null;
-        posterUrl = media.poster_path ? `${TMDB_IMAGE_BASE}${media.poster_path}` : fallbackImage;
+        posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster?.file_path}` : fallbackImage;
 
         // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
         const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null;
