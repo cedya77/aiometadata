@@ -457,6 +457,24 @@ class DashboardAPI {
     return date.toLocaleDateString();
   }
 
+  // Helper method to format time until (for future dates)
+  getTimeUntil(date) {
+    const now = new Date();
+    const diffMs = date - now;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Now";
+    if (diffMins < 60)
+      return `In ${diffMins} minute${diffMins > 1 ? "s" : ""}`;
+    if (diffHours < 24)
+      return `In ${diffHours} hour${diffHours > 1 ? "s" : ""}`;
+    if (diffDays < 7) return `In ${diffDays} day${diffDays > 1 ? "s" : ""}`;
+
+    return date.toLocaleDateString();
+  }
+
   // Get provider API key status and rate limits
   async getProviderStatus() {
     try {
@@ -1330,6 +1348,93 @@ class DashboardAPI {
           lastRun: "Unknown",
           description: "Preloads essential content into cache",
           nextRun: "Now",
+        });
+      }
+
+      // 7. Essential Cache Warming task
+      try {
+        const { getWarmupStats: getEssentialStats } = require('./cacheWarmer');
+        const essentialStats = getEssentialStats();
+        
+        tasks.push({
+          id: 7,
+          name: "Essential Cache Warming",
+          status: essentialStats.enabled ? "completed" : "disabled",
+          lastRun: essentialStats.lastRun ? this.getTimeAgo(new Date(essentialStats.lastRun)) : "Never",
+          description: "Warms essential content (genres, studios, TMDB popular)",
+          nextRun: essentialStats.enabled ? "Continuous" : "Disabled",
+          action: essentialStats.enabled ? "restart" : "enable",
+          category: "warming"
+        });
+      } catch (error) {
+        console.warn("[Dashboard API] Failed to get essential warming status:", error.message);
+        tasks.push({
+          id: 7,
+          name: "Essential Cache Warming",
+          status: "error",
+          lastRun: "Unknown",
+          description: "Warms essential content (genres, studios, TMDB popular)",
+          nextRun: "Unknown",
+          action: "restart",
+          category: "warming"
+        });
+      }
+
+      // 8. MAL Catalog Warming task
+      try {
+        const { getWarmupStats: getMALStats } = require('./malCatalogWarmer');
+        const malStats = getMALStats();
+        
+        tasks.push({
+          id: 8,
+          name: "MAL Catalog Warming",
+          status: malStats.enabled ? (malStats.isWarming ? "running" : "completed") : "disabled",
+          lastRun: malStats.lastRun ? this.getTimeAgo(new Date(malStats.lastRun)) : "Never",
+          description: `Warms MAL anime catalogs (${malStats.totalItems || 0} items warmed)`,
+          nextRun: malStats.enabled ? (malStats.nextRun ? this.getTimeUntil(new Date(malStats.nextRun)) : "Scheduled") : "Disabled",
+          action: malStats.enabled ? (malStats.isWarming ? "stop" : "restart") : "enable",
+          category: "warming"
+        });
+      } catch (error) {
+        console.warn("[Dashboard API] Failed to get MAL warming status:", error.message);
+        tasks.push({
+          id: 8,
+          name: "MAL Catalog Warming",
+          status: "error",
+          lastRun: "Unknown",
+          description: "Warms MAL anime catalogs",
+          nextRun: "Unknown",
+          action: "restart",
+          category: "warming"
+        });
+      }
+
+      // 9. Comprehensive Catalog Warming task
+      try {
+        const { getWarmupStats: getCatalogStats } = require('./comprehensiveCatalogWarmer');
+        const catalogStats = await getCatalogStats();
+        
+        tasks.push({
+          id: 9,
+          name: "Comprehensive Catalog Warming",
+          status: catalogStats.enabled ? (catalogStats.isRunning ? "running" : "completed") : "disabled",
+          lastRun: catalogStats.lastRun ? this.getTimeAgo(new Date(catalogStats.lastRun)) : "Never",
+          description: `Warms all user catalogs (${catalogStats.catalogsWarmed || 0} catalogs, ${catalogStats.totalItems || 0} items)`,
+          nextRun: catalogStats.enabled ? (catalogStats.nextRun ? this.getTimeUntil(new Date(catalogStats.nextRun)) : "Scheduled") : "Disabled",
+          action: catalogStats.enabled ? (catalogStats.isRunning ? "stop" : "restart") : "enable",
+          category: "warming"
+        });
+      } catch (error) {
+        console.warn("[Dashboard API] Failed to get comprehensive warming status:", error.message);
+        tasks.push({
+          id: 9,
+          name: "Comprehensive Catalog Warming",
+          status: "error",
+          lastRun: "Unknown",
+          description: "Warms all user catalogs",
+          nextRun: "Unknown",
+          action: "restart",
+          category: "warming"
         });
       }
 

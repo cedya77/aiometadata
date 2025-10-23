@@ -3,13 +3,13 @@ const { cacheWrapJikanApi, cacheWrapCatalog } = require('./getCache');
 const { parseAnimeCatalogMetaBatch } = require('../utils/parseProps');
 
 // Environment variable configuration with sensible defaults
-const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive', 'both'
+const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive'
 const WARMUP_CONFIG = {
   // UUID to use for cache warming (uses this user's config for providers, language, etc.)
   uuid: process.env.CACHE_WARMUP_UUID || 'system-cache-warmer', // Default: system-cache-warmer
   
   // Enable/disable warmup entirely
-  enabled: process.env.MAL_WARMUP_ENABLED !== 'false' && (WARMUP_MODE === 'essential' || WARMUP_MODE === 'both'), // Default: true
+  enabled: process.env.MAL_WARMUP_ENABLED !== 'false' && WARMUP_MODE === 'essential', // Default: true
   
   // Run warmup every N hours (default: 6 hours)
   intervalHours: parseInt(process.env.MAL_WARMUP_INTERVAL_HOURS) || 6,

@@ -149,7 +149,7 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
 
     const res = await fetchFunction();
 
-    const sortedResults = sortResults(res.results, genre);
+    const sortedResults = sortResults(res?.results || [], genre);
     const metas = sortedResults.map(el => parseMedia(el, type, genreList));
 
     return { metas };

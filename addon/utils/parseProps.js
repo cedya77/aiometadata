@@ -2745,7 +2745,7 @@ function isReleasedDigitally(meta) {
   }
 
   // Type 4 = Digital, Type 5 = Physical, Type 6 = TV
-  const hasDigitalRelease = meta.app_extras.releaseDates.results.some((country) =>
+  const hasDigitalRelease = meta.app_extras?.releaseDates?.results?.some((country) =>
     country.release_dates?.some((release) =>
       release.type >= 4 && release.type <= 6 && new Date(release.release_date) <= now
     )

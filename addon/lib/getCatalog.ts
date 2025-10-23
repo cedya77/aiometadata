@@ -371,8 +371,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   // define preferred provider as string
   
   //sort res.results by vote count in descending order
-  res.results.sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
-  const metas = await Promise.all(res.results.map(async item => {
+  if (res?.results) {
+    res.results.sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
+    const metas = await Promise.all(res.results.map(async item => {
     let stremioId = `tmdb:${item.id}`;
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
@@ -397,6 +398,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }
   
   return validMetas;
+  } else {
+    return [];
+  }
 }
 
 async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {

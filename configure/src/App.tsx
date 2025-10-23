@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from './components/layout/Header';
 import { SettingsLayout } from './components/SettingsLayout';
+import { ChangelogModal } from './components/ChangelogBox';
 import { ConfigProvider } from './contexts/ConfigContext';
 import { AdminProvider } from './contexts/AdminContext';
 import { Toaster } from "@/components/ui/sonner";

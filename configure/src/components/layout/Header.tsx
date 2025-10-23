@@ -9,6 +9,7 @@ import { LogIn, LogOut, Eye, EyeOff, BarChart3 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ChangelogModal } from '../ChangelogBox';
 export function Header() {
   const { addonVersion, config, setConfig, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb } = useConfig();
   const isLoggedIn = auth.authenticated;
@@ -195,24 +196,26 @@ export function Header() {
     }
   };
   return (
-    <header className="w-full max-w-5xl flex items-center justify-between py-6 sm:py-8">
-      <div className="flex items-center space-x-4">
-        <img 
-          src="/logo.png"
-          alt="AIO-Metadata Addon Logo" 
-          className="h-12 w-12 sm:h-16 sm:w-16"
-        />
-        <div className="text-left">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-            AIOMetadata <span className="text-sm text-muted-foreground">v{addonVersion}</span>
-          </h1>
-          <p className="text-md text-muted-foreground mt-1">
-            Your one-stop-shop for Stremio metadata.
-          </p>
+    <header className="w-full max-w-5xl py-6 sm:py-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center space-x-4">
+          <img 
+            src="/logo.png"
+            alt="AIO-Metadata Addon Logo" 
+            className="h-12 w-12 sm:h-16 sm:w-16"
+          />
+          <div className="text-left">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+              AIOMetadata <span className="text-sm text-muted-foreground">v{addonVersion}</span>
+            </h1>
+            <p className="text-md text-muted-foreground mt-1">
+              Your one-stop-shop for Stremio metadata.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <ChangelogModal version={`v${addonVersion}`} />
         <button
           onClick={() => {
             window.open('https://buymeacoffee.com/cedya', '_blank');
@@ -272,6 +275,7 @@ export function Header() {
           </Button>
         )}
         <ThemeToggle />
+        </div>
       </div>
 
       <Dialog

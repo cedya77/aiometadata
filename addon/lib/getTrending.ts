@@ -44,7 +44,7 @@ async function getTrending(type: string, language: string, page: number, genre: 
       preferredProvider = config.providers?.series || 'tvdb';
     }
 
-    const metas = await Promise.all(res.results.map(async (item: any) => {
+    const metas = await Promise.all((res?.results || []).map(async (item: any) => {
       let stremioId = `tmdb:${item.id}`;
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
         return await getMeta(type, language, stremioId, config, userUUID, false);

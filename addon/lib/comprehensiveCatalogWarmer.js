@@ -13,9 +13,9 @@ const logger = consola.create({
 });
 
 // Configuration from environment variables
-const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive', 'both'
+const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive'
 const WARMUP_CONFIG = {
-  enabled: !!process.env.CACHE_WARMUP_UUID && (WARMUP_MODE === 'comprehensive' || WARMUP_MODE === 'both'),
+  enabled: !!process.env.CACHE_WARMUP_UUID && WARMUP_MODE === 'comprehensive',
   uuid: process.env.CACHE_WARMUP_UUID,
   intervalHours: parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24, // Daily default
   initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 120,
@@ -113,7 +113,21 @@ class ComprehensiveCatalogWarmer {
   async markWarmed() {
     try {
       const lastWarmupKey = `catalog-warmup:last-run:${this.config.uuid}`;
+      const statsKey = `catalog-warmup:stats:${this.config.uuid}`;
+      
+      // Save timestamp
       await redis.set(lastWarmupKey, Date.now().toString());
+      
+      // Save stats for persistence
+      await redis.set(statsKey, JSON.stringify({
+        catalogsWarmed: this.stats.catalogsWarmed,
+        totalCatalogs: this.stats.totalCatalogs,
+        totalPages: this.stats.totalPages,
+        totalItems: this.stats.totalItems,
+        duration: this.stats.duration,
+        errors: this.stats.errors
+      }));
+      
       const nextRunTime = Date.now() + (this.config.intervalHours * 60 * 60 * 1000);
       this.stats.nextRun = new Date(nextRunTime).toISOString();
       this.log('debug', `Marked warmup complete, next run: ${this.stats.nextRun}`);
@@ -343,7 +357,7 @@ class ComprehensiveCatalogWarmer {
     return { pages: page - 1, items: totalItems };
   }
 
-  async runWarmup() {
+  async runWarmup(force = false) {
     if (this.isRunning) {
       this.log('warn', 'Warmup already running, skipping');
       return;
@@ -359,10 +373,14 @@ class ComprehensiveCatalogWarmer {
       return;
     }
 
-    // Check if we should run
-    const shouldRun = await this.shouldWarmup();
-    if (!shouldRun) {
-      return;
+    // Check if we should run (skip if force is true)
+    if (!force) {
+      const shouldRun = await this.shouldWarmup();
+      if (!shouldRun) {
+        return;
+      }
+    } else {
+      this.log('info', 'Force restart requested - bypassing interval check');
     }
 
     // Check quiet hours
@@ -462,7 +480,21 @@ class ComprehensiveCatalogWarmer {
     }, this.config.intervalHours * 60 * 60 * 1000);
   }
 
-  getStats() {
+  async getStats() {
+    try {
+      // Load persisted stats from Redis
+      const statsKey = `catalog-warmup:stats:${this.config.uuid}`;
+      const persistedStats = await redis.get(statsKey);
+      
+      if (persistedStats) {
+        const parsedStats = JSON.parse(persistedStats);
+        // Merge persisted stats with current stats
+        this.stats = { ...this.stats, ...parsedStats };
+      }
+    } catch (error) {
+      this.log('error', `Failed to load persisted stats: ${error.message}`);
+    }
+    
     return {
       ...this.stats,
       config: {
@@ -483,12 +515,17 @@ function startComprehensiveCatalogWarming() {
   return warmer.startBackgroundWarming();
 }
 
-function getWarmupStats() {
-  return warmer.getStats();
+async function getWarmupStats() {
+  return await warmer.getStats();
+}
+
+function forceRestartWarmup() {
+  return warmer.runWarmup(true);
 }
 
 module.exports = {
   startComprehensiveCatalogWarming,
-  getWarmupStats
+  getWarmupStats,
+  forceRestartWarmup
 };
 

@@ -128,11 +128,10 @@ cp .env.example .env
 
 ### `CACHE_WARMUP_MODE`
 - **Default**: `essential`
-- **Options**: `essential`, `comprehensive`, `both`
+- **Options**: `essential`, `comprehensive`
 - **Description**: Choose which warming strategy to use
-  - `essential`: Warm only essential content (genres, studios, trending items) - lightweight
+  - `essential`: Warm only essential content (genres, studios, trending items, TMDB popular content) - lightweight
   - `comprehensive`: Warm ALL enabled catalogs in your config - thorough but resource-intensive
-  - `both`: Run both essential and comprehensive warming
 - **Example**: `CACHE_WARMUP_MODE=comprehensive`
 - **Note**: Comprehensive mode requires `CACHE_WARMUP_UUID` to be explicitly set
 
@@ -217,7 +216,7 @@ Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
 
 This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifests, etc.) in your user config, across all pages until empty.
 
-**⚠️ Important**: Set `CACHE_WARMUP_MODE=comprehensive` or `CACHE_WARMUP_MODE=both` to enable this feature. Also requires `CACHE_WARMUP_UUID` to be explicitly set.
+**⚠️ Important**: Set `CACHE_WARMUP_MODE=comprehensive` to enable this feature. Also requires `CACHE_WARMUP_UUID` to be explicitly set.
 
 ### `CATALOG_WARMUP_INTERVAL_HOURS`
 - **Default**: `24` (daily)
@@ -408,9 +407,9 @@ MDBLIST_API_KEY=your_key_here
 
 # Cache Warmup Configuration
 CACHE_WARMUP_UUID=your-user-uuid-here  # Set to your UUID
-CACHE_WARMUP_MODE=comprehensive  # 'essential', 'comprehensive', or 'both'
+CACHE_WARMUP_MODE=comprehensive  # 'essential' or 'comprehensive'
 
-# Comprehensive Catalog Warmup Settings (when mode is 'comprehensive' or 'both')
+# Comprehensive Catalog Warmup Settings (when mode is 'comprehensive')
 CATALOG_WARMUP_INTERVAL_HOURS=24  # Daily
 CATALOG_WARMUP_MAX_PAGES_PER_CATALOG=100
 

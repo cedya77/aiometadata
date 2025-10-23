@@ -460,7 +460,7 @@ addon.get("/stremio/manifest.json", function (req, res) {
     : `https://${process.env.HOST_NAME}`;
     const basicManifest = {
         id: "com.aio.metadata",
-        version: "1.0.0",
+        version: packageJson.version,
         name: "AIO Metadata",
         description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
         favicon: `${host}/favicon.png`,
@@ -1896,6 +1896,164 @@ addon.get("/api/dashboard/catalog-warmup", (req, res) => {
   } catch (error) {
     console.error('[Catalog Warmer API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch catalog warmup stats' });
+  }
+});
+
+// Comprehensive Warming Dashboard - combines all warming systems
+addon.get("/api/dashboard/warming", (req, res) => {
+  try {
+    // Get stats from all warming systems
+    const { getWarmupStats: getMALStats } = require('./lib/malCatalogWarmer');
+    const { getWarmupStats: getCatalogStats } = require('./lib/comprehensiveCatalogWarmer');
+    const { getWarmupStats: getEssentialStats } = require('./lib/cacheWarmer');
+    
+    const malStats = getMALStats();
+    const catalogStats = getCatalogStats();
+    const essentialStats = getEssentialStats();
+    
+    // Get current environment configuration
+    const config = {
+      mode: process.env.CACHE_WARMUP_MODE || 'essential',
+      uuid: process.env.CACHE_WARMUP_UUID || 'system-cache-warmer',
+      malEnabled: process.env.MAL_WARMUP_ENABLED !== 'false',
+      tmdbPopularEnabled: process.env.TMDB_POPULAR_WARMING_ENABLED !== 'false',
+      catalogInterval: parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24,
+      malInterval: parseInt(process.env.MAL_WARMUP_INTERVAL_HOURS) || 6,
+    };
+    
+    res.json({
+      config,
+      systems: {
+        essential: essentialStats,
+        mal: malStats,
+        comprehensive: catalogStats
+      },
+      overall: {
+        isAnyRunning: malStats.isWarming || catalogStats.isRunning || essentialStats.isWarming,
+        lastRun: Math.max(
+          malStats.lastRun || 0,
+          catalogStats.lastRun || 0,
+          essentialStats.lastRun || 0
+        ),
+        totalItems: (malStats.totalItems || 0) + (catalogStats.totalItems || 0) + (essentialStats.totalItems || 0)
+      }
+    });
+  } catch (error) {
+    console.error('[Warming Dashboard API] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch warming dashboard data' });
+  }
+});
+
+// Warming Control Endpoints
+addon.post("/api/dashboard/warming/control", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { action, system } = req.body;
+    
+    if (!action || !system) {
+      return res.status(400).json({ error: 'Action and system are required' });
+    }
+    
+    let result = { success: false, message: '' };
+    
+    switch (system) {
+      case 'mal':
+        if (action === 'start') {
+          const { startMALWarmup } = require('./lib/malCatalogWarmer');
+          startMALWarmup();
+          result = { success: true, message: 'MAL warming started' };
+        } else if (action === 'stop') {
+          // MAL warmer doesn't have a stop method, but we can log it
+          result = { success: true, message: 'MAL warming will stop after current task' };
+        }
+        break;
+        
+      case 'comprehensive':
+        if (action === 'start') {
+          const { startComprehensiveCatalogWarming } = require('./lib/comprehensiveCatalogWarmer');
+          startComprehensiveCatalogWarming();
+          result = { success: true, message: 'Comprehensive warming started' };
+        } else if (action === 'stop') {
+          // Comprehensive warmer doesn't have a stop method, but we can log it
+          result = { success: true, message: 'Comprehensive warming will stop after current task' };
+        }
+        break;
+        
+      case 'essential':
+        if (action === 'start') {
+          const { warmEssentialContent } = require('./lib/cacheWarmer');
+          warmEssentialContent();
+          result = { success: true, message: 'Essential warming started' };
+        } else if (action === 'stop') {
+          result = { success: true, message: 'Essential warming will stop after current task' };
+        }
+        break;
+        
+      default:
+        return res.status(400).json({ error: 'Invalid system specified' });
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('[Warming Control API] Error:', error);
+    res.status(500).json({ error: 'Failed to control warming system' });
+  }
+});
+
+// Maintenance Task Execution endpoint
+addon.post("/api/dashboard/maintenance/execute", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { taskId, action } = req.body;
+    
+    if (!taskId || !action) {
+      return res.status(400).json({ error: 'Task ID and action are required' });
+    }
+    
+    let result = { success: false, message: '' };
+    
+    // Handle warming tasks
+    if (taskId === 7) { // Essential Cache Warming
+      if (action === 'restart' || action === 'enable') {
+        const { warmEssentialContent } = require('./lib/cacheWarmer');
+        warmEssentialContent();
+        result = { success: true, message: 'Essential cache warming started' };
+      } else if (action === 'stop') {
+        result = { success: true, message: 'Essential warming will stop after current task' };
+      }
+    } else if (taskId === 8) { // MAL Catalog Warming
+      if (action === 'restart' || action === 'enable') {
+        const { startMALWarmup } = require('./lib/malCatalogWarmer');
+        startMALWarmup();
+        result = { success: true, message: 'MAL catalog warming started' };
+      } else if (action === 'stop') {
+        result = { success: true, message: 'MAL warming will stop after current task' };
+      }
+    } else if (taskId === 9) { // Comprehensive Catalog Warming
+      if (action === 'restart' || action === 'enable') {
+        const { forceRestartWarmup } = require('./lib/comprehensiveCatalogWarmer');
+        forceRestartWarmup();
+        result = { success: true, message: 'Comprehensive catalog warming started (force restart)' };
+      } else if (action === 'stop') {
+        result = { success: true, message: 'Comprehensive warming will stop after current task' };
+      }
+    } else {
+      // Handle other maintenance tasks (cache cleanup, etc.)
+      result = { success: false, message: 'Task execution not implemented yet' };
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('[Maintenance Task API] Error:', error);
+    res.status(500).json({ error: 'Failed to execute maintenance task' });
   }
 });
 

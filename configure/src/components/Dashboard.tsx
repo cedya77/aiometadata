@@ -2401,6 +2401,74 @@ function DashboardOperations({ data, loading }) {
     }
   };
 
+  const handleMaintenanceTask = async (taskId, action) => {
+    try {
+      console.log(`Executing maintenance task ${taskId} with action ${action}...`);
+
+      const headers = {
+        "Content-Type": "application/json",
+      };
+
+      // Add admin key if available
+      if (adminKey) {
+        headers["x-admin-key"] = adminKey;
+      }
+
+      const response = await fetch("/api/dashboard/maintenance/execute", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ taskId, action }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log("Maintenance task result:", result);
+      
+      if (result.success) {
+        toast.success(result.message);
+        // Refresh the maintenance tasks data by refetching operations data
+        try {
+          const headers = {
+            "Content-Type": "application/json",
+          };
+          if (adminKey) {
+            headers["x-admin-key"] = adminKey;
+          }
+          
+          const operationsResponse = await fetch("/api/dashboard/operations", {
+            headers,
+          });
+          
+          if (operationsResponse.ok) {
+            const newData = await operationsResponse.json();
+            setMaintenanceTasks(newData.maintenanceTasks || []);
+            setErrorLogs(newData.errorLogs || []);
+            if (newData.cacheStats) {
+              setCacheStats({
+                totalKeys: newData.cacheStats.totalKeys || 0,
+                memoryUsage: newData.cacheStats.memoryUsage
+                  ? `${newData.cacheStats.memoryUsage}%`
+                  : "0%",
+                hitRate: newData.cacheStats.hitRate || 0,
+                evictionRate: newData.cacheStats.evictionRate || 0,
+              });
+            }
+          }
+        } catch (refreshError) {
+          console.error("Error refreshing data:", refreshError);
+        }
+      } else {
+        toast.error(result.message || 'Failed to execute task');
+      }
+    } catch (error) {
+      console.error("Error executing maintenance task:", error);
+      toast.error(`Failed to execute task: ${error.message}`);
+    }
+  };
+
   const handleRetryError = (errorId) => {
     // TODO: Implement error retry logic
     console.log(`Retrying error ${errorId}...`);
@@ -2559,23 +2627,34 @@ function DashboardOperations({ data, loading }) {
             {maintenanceTasks.map((task) => (
               <div
                 key={task.id}
-                className="flex items-center justify-between p-3 border rounded-lg"
+                className="flex items-center justify-between p-4 border rounded-lg"
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-3 flex-1">
                   <div
                     className={`w-3 h-3 rounded-full ${
                       task.status === "completed"
                         ? "bg-green-500"
                         : task.status === "running"
                           ? "bg-blue-500"
-                          : "bg-gray-500"
+                          : task.status === "disabled"
+                            ? "bg-gray-400"
+                            : "bg-yellow-500"
                     }`}
                   ></div>
-                  <div>
-                    <p className="font-medium">{task.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Last run: {task.lastRun}
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <p className="font-medium">{task.name}</p>
+                      {task.category === "warming" && (
+                        <Badge variant="secondary" className="text-xs">🔥 Warming</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-1">
+                      {task.description}
                     </p>
+                    <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                      <span>Last run: {task.lastRun}</span>
+                      <span>Next: {task.nextRun}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -2585,14 +2664,26 @@ function DashboardOperations({ data, loading }) {
                         ? "default"
                         : task.status === "running"
                           ? "secondary"
-                          : "outline"
+                          : task.status === "disabled"
+                            ? "outline"
+                            : "destructive"
                     }
                   >
                     {task.status}
                   </Badge>
-                  {task.status === "scheduled" && (
-                    <Button size="sm" variant="outline">
-                      Run Now
+                  {task.action && (
+                    <Button 
+                      size="sm" 
+                      variant={
+                        task.action === "stop" ? "destructive" : 
+                        task.action === "enable" ? "default" : "outline"
+                      }
+                      onClick={() => handleMaintenanceTask(task.id, task.action)}
+                      disabled={task.status === "error"}
+                    >
+                      {task.action === "stop" ? "Stop" :
+                       task.action === "enable" ? "Enable" :
+                       task.action === "restart" ? "Restart" : "Run Now"}
                     </Button>
                   )}
                 </div>
@@ -2606,22 +2697,60 @@ function DashboardOperations({ data, loading }) {
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common administrative tasks</CardDescription>
+          <CardDescription>Common administrative tasks and warming controls</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Button variant="outline" className="h-20 flex-col">
+            <Button 
+              variant="outline" 
+              className="h-20 flex-col"
+              onClick={() => handleMaintenanceTask(7, 'restart')}
+            >
               <Database className="h-6 w-6 mb-2" />
-              <span className="text-sm">Warm Cache</span>
+              <span className="text-sm">Essential Warming</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col">
+            <Button 
+              variant="outline" 
+              className="h-20 flex-col"
+              onClick={() => handleMaintenanceTask(8, 'restart')}
+            >
               <RefreshCw className="h-6 w-6 mb-2" />
-              <span className="text-sm">Refresh Data</span>
+              <span className="text-sm">MAL Warming</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col">
+            <Button 
+              variant="outline" 
+              className="h-20 flex-col"
+              onClick={() => handleMaintenanceTask(9, 'restart')}
+            >
               <Settings className="h-6 w-6 mb-2" />
-              <span className="text-sm">System Check</span>
+              <span className="text-sm">Comprehensive</span>
             </Button>
+          </div>
+          <div className="mt-4 pt-4 border-t">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Button 
+                variant="destructive" 
+                className="h-16 flex-col"
+                onClick={() => {
+                  handleMaintenanceTask(7, 'stop');
+                  handleMaintenanceTask(8, 'stop');
+                  handleMaintenanceTask(9, 'stop');
+                }}
+              >
+                <span className="text-sm font-medium">🛑 Stop All Warming</span>
+              </Button>
+              <Button 
+                variant="default" 
+                className="h-16 flex-col"
+                onClick={() => {
+                  handleMaintenanceTask(7, 'restart');
+                  handleMaintenanceTask(8, 'restart');
+                  handleMaintenanceTask(9, 'restart');
+                }}
+              >
+                <span className="text-sm font-medium">🔥 Start All Warming</span>
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -323,10 +323,12 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   ]);
 
   // Add all found items to our raw results map, tagging them by source
-  titleRes.results.forEach(media => {
-      media.matchType = 'title'; // Tag as a direct title match
-      addRawResult(media);
-  });
+  if (titleRes?.results) {
+    titleRes.results.forEach(media => {
+        media.matchType = 'title'; // Tag as a direct title match
+        addRawResult(media);
+    });
+  }
   personCredits.forEach(media => {
       media.matchType = 'person'; // Tag as a match from a person's filmography
       addRawResult(media);
@@ -820,7 +822,7 @@ async function performTvmazeSearch(query, language, config) {
   }*/
   
   const tmdbResults = await moviedb.searchTv({ query: query, language }, config);
-  if (tmdbResults.results.length > 0) {
+  if (tmdbResults?.results?.length > 0) {
     const topTmdbResult = tmdbResults.results[0];
     const tmdbInfo = await moviedb.tvInfo({ id: topTmdbResult.id, append_to_response: 'external_ids' });
     const imdbId = tmdbInfo.external_ids?.imdb_id;

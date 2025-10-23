@@ -374,11 +374,26 @@ function isInitialWarmingComplete() {
 
 
 
+/**
+ * Get warming stats for dashboard
+ */
+function getWarmupStats() {
+  return {
+    enabled: process.env.MAL_WARMUP_ENABLED !== 'false',
+    isWarming: false, // Essential warming is typically quick and not tracked
+    lastRun: null, // Could be enhanced to track this
+    totalItems: 0, // Could be enhanced to track this
+    mode: process.env.CACHE_WARMUP_MODE || 'essential',
+    tmdbPopularEnabled: process.env.TMDB_POPULAR_WARMING_ENABLED !== 'false'
+  };
+}
+
 module.exports = {
   warmEssentialContent,
   warmPopularContent,
   warmFromUserActivity,
   scheduleEssentialWarming,
   isInitialWarmingComplete,
+  getWarmupStats,
   WARMING_STRATEGIES
 };
