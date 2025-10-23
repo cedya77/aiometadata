@@ -2181,7 +2181,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         }
 
         if (!thumbnailUrl) {
-          thumbnailUrl = posterUrl || `${host}/missing_thumbnail.png`;
+          thumbnailUrl = `${host}/missing_thumbnail.png`;
         }
         if (config.mal?.allowEpisodeMarking) {
           if (ep.filler) {
