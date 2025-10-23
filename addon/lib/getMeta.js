@@ -355,7 +355,7 @@ async function processCollectionEntities(movieEntities, seriesEntities, langCode
             season: ep.seasonNumber,
             episode: ep.number,
             overview: ep.overview,
-            thumbnail: ep.image ? (ep.image.startsWith('http') ? ep.image : `${TVDB_IMAGE_BASE}${ep.image}`) : undefined,
+            thumbnail: ep.image ? (ep.image.startsWith('http') ? ep.image : `${TVDB_IMAGE_BASE}${ep.image}`) : `${host}/missing_thumbnail.png`,
             released: ep.aired ? new Date(ep.aired + 'T12:00:00.000Z').toISOString() : null,
             available: ep.aired ? new Date(ep.aired) < new Date() : false
           });
@@ -424,7 +424,7 @@ async function processMovieEntity(entity, langCode3, config) {
       season: 1,
       episode: 0, // Will be set by caller
       overview: translatedOverview,
-      thumbnail: movie.image ? (movie.image.startsWith('http') ? movie.image : `${TVDB_IMAGE_BASE}${movie.image}`) : undefined,
+      thumbnail: movie.image ? (movie.image.startsWith('http') ? movie.image : `${TVDB_IMAGE_BASE}${movie.image}`) : `${host}/missing_thumbnail.png`,
       released: movie.first_release?.Date ? new Date(movie.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
       available: movie.first_release?.Date ? new Date(movie.first_release.Date) < new Date() : false
     },
@@ -1368,8 +1368,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
         }
 
-        const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : null;
-        const finalThumbnail = config.blurThumbs && thumbnailUrl
+        const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : `${host}/missing_thumbnail.png`;
+        const finalThumbnail = config.blurThumbs && ep.still_path
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
         
@@ -1750,8 +1750,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
     videos = await Promise.all(
       (tvdbEpisodes.episodes || []).map(async (episode) => {
-          const thumbnailUrl = episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : null;
-          const finalThumbnail = config.blurThumbs && thumbnailUrl
+          const thumbnailUrl = episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : `${host}/missing_thumbnail.png`;
+          const finalThumbnail = config.blurThumbs && episode.image
               ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
               : thumbnailUrl;
           let episodeId;
@@ -1996,7 +1996,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
         episode: specialCount,
         thumbnail: config.blurThumbs && episode.image?.original
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
-          : episode.image?.original || tvmazeShow.image?.original,
+          : episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
         released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
@@ -2022,7 +2022,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
         episode: episode.number,
         thumbnail: config.blurThumbs && episode.image?.original
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
-          : episode.image?.original || tvmazeShow.image?.original,
+          : episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
         released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
@@ -2181,7 +2181,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         }
 
         if (!thumbnailUrl) {
-          thumbnailUrl = posterUrl;
+          thumbnailUrl = `${host}/missing_thumbnail.png`;
         }
         if (config.mal?.allowEpisodeMarking) {
           if (ep.filler) {
@@ -2198,7 +2198,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           season: 1,
           episode: ep.mal_id,
           released: ep.aired ? new Date(ep.aired.substring(0, 10)) : null,
-          thumbnail: config.blurThumbs? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
+          thumbnail: config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png` ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
           available: ep.aired ? new Date(ep.aired) < new Date() : false,
           overview: episodeSynopsis,
           isFiller: ep.filler,
@@ -2455,7 +2455,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
             ? new Date(ep.airdate + 'T12:00:00.000Z')
             : null,
           overview: ep.synopsis || '',
-          thumbnail:ep.thumbnail?.original,
+          thumbnail: ep.thumbnail?.original || `${host}/missing_thumbnail.png`,
           season: 1,
           episode: ep.number,
           available: ep.airdate ? new Date(ep.airdate) < new Date() : false,
