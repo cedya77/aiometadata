@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { AppConfig, CatalogConfig } from '@/contexts/config';
 import { allCatalogDefinitions } from '@/data/catalogs';
 import { Film, Tv, Sparkles, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { MDBListAPIKeyModal } from '@/components/MDBListAPIKeyModal';
 
 interface PresetConfig {
   id: string;
@@ -209,6 +210,12 @@ export function PresetManager() {
   const [movieDisplayType, setMovieDisplayType] = useState(config.displayTypeOverrides?.movie || '');
   const [overrideSeriesType, setOverrideSeriesType] = useState(!!config.displayTypeOverrides?.series);
   const [seriesDisplayType, setSeriesDisplayType] = useState(config.displayTypeOverrides?.series || '');
+  
+  // MDBList API key modal state
+  const [showMDBListModal, setShowMDBListModal] = useState(false);
+  const [isValidatingApiKey, setIsValidatingApiKey] = useState(false);
+  const mdblistModalResolve = useRef<((apiKey: string) => void) | null>(null);
+  const mdblistModalReject = useRef<((error: Error) => void) | null>(null);
 
   const handleAdultContentToggle = (checked: boolean) => {
     setIncludeAdult(checked);
@@ -287,24 +294,99 @@ export function PresetManager() {
     { username: 'garycrawfordgc', name: 'Gary Crawford', description: 'Expert curated lists' }
   ];
 
-  const fetchAndImportPopularLists = async () => {
-    if (!config.apiKeys.mdblist) {
-      toast.error("MDBList API key is required to import popular lists. Please add it in the Integrations section first.");
-      return;
-    }
+  /**
+   * Prompts the user to enter their MDBList API key via a modal dialog.
+   * Returns a promise that resolves with the API key or rejects if cancelled.
+   */
+  const promptForMDBListAPIKey = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      // Store the resolve/reject functions for later use
+      mdblistModalResolve.current = resolve;
+      mdblistModalReject.current = reject;
+      
+      // Show the modal
+      setShowMDBListModal(true);
+    });
+  };
 
+  /**
+   * Handles submission of the MDBList API key from the modal.
+   * Saves the key to config and resolves the promise.
+   */
+  const handleMDBListAPIKeySubmit = (apiKey: string) => {
+    setIsValidatingApiKey(true);
+    
+    // Save API key to config
+    setConfig(prev => ({
+      ...prev,
+      apiKeys: {
+        ...prev.apiKeys,
+        mdblist: apiKey
+      }
+    }));
+    
+    // Close modal and resolve promise
+    setShowMDBListModal(false);
+    setIsValidatingApiKey(false);
+    
+    if (mdblistModalResolve.current) {
+      mdblistModalResolve.current(apiKey);
+      mdblistModalResolve.current = null;
+      mdblistModalReject.current = null;
+    }
+  };
+
+  /**
+   * Handles cancellation of the MDBList API key modal.
+   * Rejects the promise with a cancellation error.
+   */
+  const handleMDBListAPIKeyCancel = () => {
+    setShowMDBListModal(false);
+    setIsValidatingApiKey(false);
+    
+    if (mdblistModalReject.current) {
+      mdblistModalReject.current(new Error('User cancelled API key input'));
+      mdblistModalResolve.current = null;
+      mdblistModalReject.current = null;
+    }
+  };
+
+  const fetchAndImportPopularLists = async () => {
     if (selectedCurators.size === 0) {
       toast.error("Please select at least one curator to import lists from.");
       return;
     }
 
+    // Validate MDBList API key - prompt if missing
+    let apiKey = config.apiKeys.mdblist;
+    if (!apiKey) {
+      try {
+        apiKey = await promptForMDBListAPIKey();
+      } catch (error) {
+        // User cancelled the modal
+        toast.info("Popular lists import cancelled", {
+          description: "MDBList API key is required to import popular lists."
+        });
+        return;
+      }
+    }
+
     try {
       const allLists: any[] = [];
       const selectedUsers = popularUsers.filter(user => selectedCurators.has(user.username));
+      let hasAuthError = false;
       
       for (const user of selectedUsers) {
         try {
-          const response = await fetch(`https://api.mdblist.com/lists/user/${user.username}?apikey=${config.apiKeys.mdblist}&sort=${userListSort}`);
+          const response = await fetch(`https://api.mdblist.com/lists/user/${user.username}?apikey=${apiKey}&sort=${userListSort}`);
+          
+          // Check for authentication/authorization errors
+          if (response.status === 401 || response.status === 403) {
+            hasAuthError = true;
+            console.error(`Authentication failed for MDBList API (status ${response.status})`);
+            break; // Stop trying other users if API key is invalid
+          }
+          
           if (response.ok) {
             const userLists = await response.json();
             if (Array.isArray(userLists)) {
@@ -323,10 +405,29 @@ export function PresetManager() {
               }));
               allLists.push(...listsWithUser);
             }
+          } else {
+            console.warn(`Failed to fetch lists for user ${user.username}: HTTP ${response.status}`);
           }
         } catch (error) {
           console.warn(`Failed to fetch lists for user ${user.username}:`, error);
         }
+      }
+      
+      // Check if we had an authentication error
+      if (hasAuthError) {
+        // Remove the invalid API key from config so user can retry
+        setConfig(prev => ({
+          ...prev,
+          apiKeys: {
+            ...prev.apiKeys,
+            mdblist: ''
+          }
+        }));
+        
+        toast.error("Invalid MDBList API key", {
+          description: "The API key you provided is not valid. Please check your key and try again."
+        });
+        return;
       }
 
       if (allLists.length > 0) {
@@ -787,6 +888,18 @@ export function PresetManager() {
           <li>Anime-specific settings (compatibility IDs, overrides)</li>
         </ul>
       </div>
+
+      {/* MDBList API Key Modal */}
+      <MDBListAPIKeyModal
+        open={showMDBListModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleMDBListAPIKeyCancel();
+          }
+        }}
+        onSubmit={handleMDBListAPIKeySubmit}
+        isLoading={isValidatingApiKey}
+      />
     </div>
   );
 }
