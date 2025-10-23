@@ -57,3 +57,87 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Checkbox ripple effect */
+  @keyframes checkbox-ripple {
+    0% {
+      transform: scale(0);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  .checkbox-ripple {
+    position: relative;
+    overflow: visible;
+  }
+
+  .checkbox-ripple::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: currentColor;
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .checkbox-ripple.ripple-active::after {
+    animation: checkbox-ripple 0.6s ease-out;
+  }
+
+  /* Fade-in animation for selection counter */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.2s ease-out;
+  }
+
+  /* Slide-down animation for BulkActionBar */
+  @keyframes slide-down {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-down {
+    animation: slide-down 0.2s ease-out;
+  }
+
+  /* Respect prefers-reduced-motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .checkbox-ripple::after {
+      animation: none !important;
+    }
+  }
+}

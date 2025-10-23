@@ -9,6 +9,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -18,15 +19,19 @@ import { Input } from "@/components/ui/input";
 import { streamingServices, regions } from "@/data/streamings";
 import { allCatalogDefinitions } from '@/data/catalogs';
 import { GenreSelection } from '@/data/genres';
-
-const groupBySource = (catalogs: CatalogConfig[]) => {
-  return catalogs.reduce((acc, cat) => {
-    const key = cat.source || 'Other';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(cat);
-    return acc;
-  }, {} as Record<string, CatalogConfig[]>);
-};
+import { SelectionProvider, useSelection } from '@/contexts/SelectionContext';
+import { BulkActionBar } from '@/components/BulkActionBar';
+import { SelectAllControl } from '@/components/SelectAllControl';
+import { SelectBySourceControl } from '@/components/SelectBySourceControl';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import {
+  showBulkEnableSuccess,
+  showBulkDisableSuccess,
+  showBulkAddToHomeSuccess,
+  showBulkRemoveFromHomeSuccess,
+  showBulkDeleteSuccess,
+  showBulkActionError
+} from '@/utils/toastHelpers';
 
 const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
@@ -37,17 +42,7 @@ const sourceBadgeStyles = {
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
 };
 
-const CollapsibleSection = ({ title, children }: { title: string, children: React.ReactNode }) => {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="mb-4">
-      <button onClick={() => setOpen((o) => !o)} className="font-bold text-lg mb-2">
-        {open ? "\u25bc" : "\u25ba"} {title}
-      </button>
-      {open && <div className="pl-4">{children}</div>}
-    </div>
-  );
-};
+
 
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig } = useConfig();
@@ -231,20 +226,35 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
 
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig } = useConfig();
+  const { toggleSelection, isSelected } = useSelection();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
 
+  const catalogKey = `${catalog.id}-${catalog.type}`;
+  const selected = isSelected(catalogKey);
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : 'auto',
   };
-  
+
   const badgeSource = catalog.source || 'custom';
   const badgeStyle = sourceBadgeStyles[badgeSource as keyof typeof sourceBadgeStyles] || "bg-gray-700";
+
+  const [isRippling, setIsRippling] = useState(false);
+
+  const handleCheckboxClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleSelection(catalogKey);
+    
+    // Trigger ripple effect
+    setIsRippling(true);
+    setTimeout(() => setIsRippling(false), 600);
+  };
 
   const handleToggleEnabled = () => {
     setConfig(prev => ({
@@ -272,7 +282,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   const handleEditSave = () => {
     const trimmedName = newName.trim();
     const trimmedType = newType.trim();
-    
+
     if (trimmedName === '' || trimmedType === '') {
       // Revert to original values if either field is empty
       setNewName(catalog.name);
@@ -280,11 +290,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       setShowEditDialog(false);
       return;
     }
-    
+
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) 
+        (c.id === catalog.id && c.type === catalog.type)
           ? { ...c, name: trimmedName, displayType: trimmedType }
           : c
       )
@@ -309,11 +319,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     setConfig(prev => {
       const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
       if (currentIndex <= 0) return prev; // Already at top or not found
-      
+
       const newCatalogs = [...prev.catalogs];
       const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
       newCatalogs.unshift(movedCatalog);
-      
+
       return {
         ...prev,
         catalogs: newCatalogs,
@@ -325,11 +335,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     setConfig(prev => {
       const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
       if (currentIndex === -1 || currentIndex === prev.catalogs.length - 1) return prev; // Not found or already at bottom
-      
+
       const newCatalogs = [...prev.catalogs];
       const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
       newCatalogs.push(movedCatalog);
-      
+
       return {
         ...prev,
         catalogs: newCatalogs,
@@ -341,25 +351,66 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     <Card
       ref={setNodeRef}
       style={style}
-      className={`flex items-center justify-between p-4 transition-all duration-200
-        ${isDragging ? 'opacity-50 scale-105 shadow-lg' : ''}
-        ${!catalog.enabled ? 'opacity-60' : ''}
-      `}
+      className={cn(
+        "flex flex-col md:flex-row md:items-center md:justify-between p-4",
+        // Smooth transitions for all properties
+        "transition-all duration-200 ease-out",
+        // Dragging state
+        isDragging && "opacity-50 scale-105 shadow-lg",
+        // Disabled state
+        !catalog.enabled && "opacity-60",
+        // Selected state with smooth background transition
+        selected && "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700",
+        // Hover effect for selected items (slightly darker)
+        selected && "hover:bg-blue-100 dark:hover:bg-blue-950/50",
+        // Hover effect for non-selected items
+        !selected && "hover:bg-accent/50"
+      )}
     >
-      <div className="flex items-center space-x-4">
+      {/* Row 1: Catalog info (checkbox, drag, name) */}
+      <div className="flex items-center space-x-4 w-full md:w-auto">
+        <div
+          onClick={handleCheckboxClick}
+          className="flex items-center cursor-pointer p-2 -ml-2 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label="Select catalog"
+        >
+          <div className={cn(
+            "w-5 h-5 border-2 rounded flex items-center justify-center",
+            // Smooth color transitions
+            "transition-all duration-200 ease-out",
+            // Ripple effect container
+            "checkbox-ripple",
+            isRippling && "ripple-active",
+            // Selected state
+            selected && "bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500",
+            // Unselected state with hover
+            !selected && "border-gray-400 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 hover:scale-110"
+          )}>
+            {selected && (
+              <svg
+                className="w-3.5 h-3.5 text-white transition-transform duration-200 ease-out"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.5"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+        </div>
         <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none" aria-label="Drag to reorder">
           <GripVertical />
         </button>
-        <div className="flex-shrink-0">
-          <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
-            {badgeSource.toUpperCase()}
-          </Badge>
-        </div>
         <div>
           <div className="flex items-center gap-2">
             <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
-            <button 
-              onClick={() => setShowEditDialog(true)} 
+            <button
+              onClick={() => setShowEditDialog(true)}
               className="text-muted-foreground hover:text-foreground"
             >
               <Pencil size={14} />
@@ -373,7 +424,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         </div>
       </div>
 
-      <div className="flex items-center space-x-2">
+      {/* Row 2: Action buttons + Source badge */}
+      <div className="flex items-center space-x-2 mt-3 md:mt-0 md:ml-auto justify-start md:justify-end">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -423,7 +475,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </TooltipTrigger>
             <TooltipContent>Move to bottom of list</TooltipContent>
           </Tooltip>
-         
+
 
           {catalog.source === 'mdblist' && (
             <Tooltip>
@@ -450,9 +502,9 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           {catalog.source === 'custom' && catalog.sourceUrl && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => {
                     try {
                       // Extract base URL and construct /configure endpoint
@@ -487,20 +539,25 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
         </TooltipProvider>
+        <div className="flex-shrink-0">
+          <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
+            {badgeSource.toUpperCase()}
+          </Badge>
+        </div>
       </div>
-      
-      <MDBListSettingsDialog 
-        catalog={catalog} 
-        isOpen={showSettings && catalog.source === 'mdblist'} 
-        onClose={() => setShowSettings(false)} 
+
+      <MDBListSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'mdblist'}
+        onClose={() => setShowSettings(false)}
       />
-      
-      <CustomManifestSettingsDialog 
-        catalog={catalog} 
-        isOpen={showSettings && catalog.source === 'custom'} 
-        onClose={() => setShowSettings(false)} 
+
+      <CustomManifestSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'custom'}
+        onClose={() => setShowSettings(false)}
       />
-      
+
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>
           <DialogHeader>
@@ -599,11 +656,10 @@ const StreamingProvidersSettings = ({ open, onClose, selectedProviders, setSelec
                 <button
                   key={service.id}
                   onClick={() => toggleService(service.id)}
-                  className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl border transition-opacity ${
-                    Array.isArray(selectedProviders) && selectedProviders.includes(service.id)
+                  className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl border transition-opacity ${Array.isArray(selectedProviders) && selectedProviders.includes(service.id)
                       ? "border-primary bg-primary/5"
                       : "border-border opacity-50 hover:opacity-100"
-                  }`}
+                    }`}
                   title={service.name}
                 >
                   <img
@@ -631,14 +687,32 @@ const StreamingProvidersSettings = ({ open, onClose, selectedProviders, setSelec
   );
 };
 
-export function CatalogsSettings() {
+// Inner component that consumes SelectionContext
+function CatalogsSettingsContent({
+  hideDisabledCatalogs,
+  setHideDisabledCatalogs
+}: {
+  hideDisabledCatalogs: boolean;
+  setHideDisabledCatalogs: (value: boolean) => void;
+}) {
   const { config, setConfig, hasBuiltInTvdb } = useConfig();
+  const {
+    selectAll,
+    deselectAll,
+    selectBySource,
+    deselectBySource,
+    invertSelection,
+    selectionCount,
+    selectedIds
+  } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isStremThruOpen, setIsStremThruOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
-  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
+  const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState<'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | null>(null);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   // Check if TVDB key is available
@@ -651,7 +725,7 @@ export function CatalogsSettings() {
       if (hasEnabledTvdbCatalogs) {
         setConfig(prev => ({
           ...prev,
-          catalogs: prev.catalogs.map(cat => 
+          catalogs: prev.catalogs.map(cat =>
             cat.source === 'tvdb' ? { ...cat, enabled: false } : cat
           )
         }));
@@ -663,10 +737,10 @@ export function CatalogsSettings() {
     config.catalogs.filter(cat => {
       // Filter out disabled catalogs if hideDisabledCatalogs is true
       if (hideDisabledCatalogs && !cat.enabled) return false;
-      
+
       // Filter out TVDB catalogs if no TVDB key is available
       if (cat.source === 'tvdb' && !hasTvdbKey) return false;
-      
+
       if (cat.source !== "streaming") return true;
       const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
       return Array.isArray(config.streaming) && config.streaming.includes(serviceId);
@@ -691,12 +765,12 @@ export function CatalogsSettings() {
   const getActualSelectedStreamingServices = (): string[] => {
     const streamingCatalogs = config.catalogs?.filter(c => c.source === 'streaming' && c.enabled) || [];
     const serviceIds = new Set<string>();
-    
+
     streamingCatalogs.forEach(catalog => {
       const serviceId = catalog.id.replace('streaming.', '');
       serviceIds.add(serviceId);
     });
-    
+
     return Array.from(serviceIds);
   };
 
@@ -711,9 +785,9 @@ export function CatalogsSettings() {
     console.log('🔗 [Streaming] Saving with selectedServices:', tempSelectedProviders);
     setConfig(prev => {
       const selectedServices = tempSelectedProviders;
-      
+
       let newCatalogs = [...prev.catalogs];
-      
+
       // Get all streaming services that currently have catalogs
       const currentStreamingServices = new Set<string>();
       prev.catalogs.forEach(catalog => {
@@ -722,26 +796,26 @@ export function CatalogsSettings() {
           currentStreamingServices.add(serviceId);
         }
       });
-      
+
       // Remove catalogs for services that are no longer selected
       currentStreamingServices.forEach(serviceId => {
         if (!selectedServices.includes(serviceId)) {
           ['movie', 'series'].forEach(type => {
             const catalogId = `streaming.${serviceId}`;
-            
+
             // Remove from catalogs
             newCatalogs = newCatalogs.filter(c => !(c.id === catalogId && c.type === type));
           });
         }
       });
-      
+
       // Add catalogs for newly selected services
       selectedServices.forEach(serviceId => {
         if (!currentStreamingServices.has(serviceId)) {
           // Add new catalogs
           ['movie', 'series'].forEach(type => {
             const catalogId = `streaming.${serviceId}`;
-            
+
             // Add new catalog - always enable when user explicitly adds it
             const def = allCatalogDefinitions.find(c => c.id === catalogId && c.type === type);
             if (def) {
@@ -771,7 +845,7 @@ export function CatalogsSettings() {
           });
         }
       });
-      
+
       return {
         ...prev,
         streaming: selectedServices,
@@ -814,8 +888,225 @@ export function CatalogsSettings() {
     });
   };
 
+  // Get selected catalogs for bulk actions
+  const selectedCatalogs = useMemo(() => {
+    return filteredCatalogs.filter(catalog =>
+      selectedIds.has(`${catalog.id}-${catalog.type}`)
+    );
+  }, [filteredCatalogs, selectedIds]);
+
+  // Bulk action handlers
+  const handleBulkEnable = async () => {
+    setIsLoading(true);
+    setLoadingAction('enable');
+
+    try {
+      // Filter selected catalogs to only those that can be enabled
+      const catalogsToEnable = selectedCatalogs.filter(catalog => {
+        // Check if TVDB catalogs have required API key
+        if (catalog.source === 'tvdb' && !hasTvdbKey) {
+          return false;
+        }
+        // Only enable catalogs that are currently disabled
+        return !catalog.enabled;
+      });
+
+      // Count skipped catalogs
+      const skippedDueToApiKey = selectedCatalogs.filter(catalog =>
+        catalog.source === 'tvdb' && !hasTvdbKey && !catalog.enabled
+      ).length;
+
+      // Update config state to enable applicable catalogs
+      if (catalogsToEnable.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldEnable = catalogsToEnable.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldEnable ? { ...c, enabled: true } : c;
+          })
+        }));
+      }
+
+      // Show toast notifications using helper
+      showBulkEnableSuccess({
+        affectedCount: catalogsToEnable.length,
+        skippedCount: skippedDueToApiKey,
+        skippedReason: skippedDueToApiKey > 0 ? 'missing TVDB API key' : undefined
+      });
+    } catch (error) {
+      showBulkActionError('enable catalogs', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkDisable = async () => {
+    setIsLoading(true);
+    setLoadingAction('disable');
+
+    try {
+      // Filter selected catalogs to only those that are currently enabled
+      const catalogsToDisable = selectedCatalogs.filter(catalog => catalog.enabled);
+
+      // Update config state to disable applicable catalogs
+      if (catalogsToDisable.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldDisable = catalogsToDisable.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            // When disabling, also set showInHome to false
+            return shouldDisable ? { ...c, enabled: false, showInHome: false } : c;
+          })
+        }));
+      }
+
+      // Show toast notification using helper
+      showBulkDisableSuccess({
+        affectedCount: catalogsToDisable.length
+      });
+    } catch (error) {
+      showBulkActionError('disable catalogs', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkAddToHome = async () => {
+    setIsLoading(true);
+    setLoadingAction('addToHome');
+
+    try {
+      // Filter selected catalogs to only enabled ones
+      const catalogsToAddToHome = selectedCatalogs.filter(catalog => catalog.enabled && !catalog.showInHome);
+
+      // Count skipped catalogs (disabled ones)
+      const skippedCount = selectedCatalogs.filter(catalog => !catalog.enabled).length;
+
+      // Update config state to set showInHome: true for enabled catalogs
+      if (catalogsToAddToHome.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldAddToHome = catalogsToAddToHome.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldAddToHome ? { ...c, showInHome: true } : c;
+          })
+        }));
+      }
+
+      // Show toast notifications using helper
+      showBulkAddToHomeSuccess({
+        affectedCount: catalogsToAddToHome.length,
+        skippedCount: skippedCount
+      });
+    } catch (error) {
+      showBulkActionError('add catalogs to home', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkRemoveFromHome = async () => {
+    setIsLoading(true);
+    setLoadingAction('removeFromHome');
+
+    try {
+      // Filter selected catalogs to only those that are currently on home
+      const catalogsToRemoveFromHome = selectedCatalogs.filter(catalog => catalog.showInHome);
+
+      // Update config state to set showInHome: false for selected catalogs
+      if (catalogsToRemoveFromHome.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldRemoveFromHome = catalogsToRemoveFromHome.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldRemoveFromHome ? { ...c, showInHome: false } : c;
+          })
+        }));
+      }
+
+      // Show toast notification using helper
+      showBulkRemoveFromHomeSuccess({
+        affectedCount: catalogsToRemoveFromHome.length
+      });
+    } catch (error) {
+      showBulkActionError('remove catalogs from home', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    // Show confirmation dialog
+    setShowDeleteConfirmDialog(true);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    setShowDeleteConfirmDialog(false);
+    setIsLoading(true);
+    setLoadingAction('delete');
+
+    try {
+      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom)
+      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom'];
+      const catalogsToDelete = selectedCatalogs.filter(catalog =>
+        removableSources.includes(catalog.source)
+      );
+
+      // Count skipped catalogs (non-removable ones)
+      const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
+
+      // Remove catalogs from config state
+      if (catalogsToDelete.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.filter(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldDelete = catalogsToDelete.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return !shouldDelete;
+          })
+        }));
+      }
+
+      // Show toast notifications using helper
+      showBulkDeleteSuccess({
+        affectedCount: catalogsToDelete.length,
+        skippedCount: skippedCount
+      });
+
+      // Clear selection after deletion
+      deselectAll();
+    } catch (error) {
+      showBulkActionError('delete catalogs', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className={cn(
+      "space-y-8 animate-fade-in",
+      // Add bottom padding on mobile when items are selected to prevent overlap with bottom sheet
+      selectionCount > 0 && "pb-[280px] md:pb-0"
+    )}>
       <div className="space-y-4">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold">Catalog Management</h2>
@@ -824,16 +1115,16 @@ export function CatalogsSettings() {
           </p>
           <div className="flex items-center space-x-6 pt-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <Eye className="h-4 w-4 text-green-500 dark:text-green-400"/> Enabled
+              <Eye className="h-4 w-4 text-green-500 dark:text-green-400" /> Enabled
             </div>
             <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <Home className="h-4 w-4 text-blue-500 dark:text-blue-400"/> On Home Board
+              <Home className="h-4 w-4 text-blue-500 dark:text-blue-400" /> On Home Board
             </div>
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               {hideDisabledCatalogs ? (
-                <EyeOff className="h-4 w-4 text-orange-500 dark:text-orange-400"/> 
+                <EyeOff className="h-4 w-4 text-orange-500 dark:text-orange-400" />
               ) : (
-                <Eye className="h-4 w-4 text-muted-foreground"/>
+                <Eye className="h-4 w-4 text-muted-foreground" />
               )}
               <button
                 onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
@@ -870,15 +1161,57 @@ export function CatalogsSettings() {
           </TooltipProvider>
         </div>
       </div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
-          <div className="space-y-4">
-            {filteredCatalogs.map((catalog) => (
-              <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+
+      {/* Bulk Action Bar - shown when items are selected */}
+      {selectionCount > 0 && (
+        <BulkActionBar
+          selectedCatalogs={selectedCatalogs}
+          onEnableSelected={handleBulkEnable}
+          onDisableSelected={handleBulkDisable}
+          onAddToHome={handleBulkAddToHome}
+          onRemoveFromHome={handleBulkRemoveFromHome}
+          onDeleteSelected={handleBulkDelete}
+          onInvertSelection={invertSelection}
+          onClearSelection={deselectAll}
+          isLoading={isLoading}
+          loadingAction={loadingAction}
+        />
+      )}
+
+      {/* Selection Controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SelectAllControl
+          totalVisible={filteredCatalogs.length}
+          selectedCount={selectionCount}
+          onSelectAll={selectAll}
+          onDeselectAll={deselectAll}
+        />
+        <SelectBySourceControl
+          catalogs={filteredCatalogs}
+          onSelectBySource={selectBySource}
+          onDeselectBySource={deselectBySource}
+        />
+      </div>
+
+      <div className="relative">
+        {/* Loading overlay to prevent interaction during bulk operations */}
+        {isLoading && (
+          <div
+            className="absolute inset-0 bg-background/50 backdrop-blur-sm z-20 cursor-wait"
+            aria-hidden="true"
+          />
+        )}
+        
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2">
+              {filteredCatalogs.map((catalog) => (
+                <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
       <StreamingProvidersSettings
         open={streamingDialogOpen}
         onClose={() => setStreamingDialogOpen(false)}
@@ -898,6 +1231,74 @@ export function CatalogsSettings() {
         isOpen={isCustomManifestOpen}
         onClose={() => setIsCustomManifestOpen(false)}
       />
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirmDialog}
+        onClose={() => setShowDeleteConfirmDialog(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Selected Catalogs"
+        description={(() => {
+          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom'];
+          const catalogsToDelete = selectedCatalogs.filter(catalog =>
+            removableSources.includes(catalog.source)
+          );
+          const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
+
+          let message = `Are you sure you want to delete ${catalogsToDelete.length} catalog${catalogsToDelete.length === 1 ? '' : 's'}?`;
+
+          if (catalogsToDelete.length > 0 && catalogsToDelete.length <= 10) {
+            const catalogNames = catalogsToDelete.map(c => `• ${c.name}`).join('\n');
+            message += `\n\n${catalogNames}`;
+          } else if (catalogsToDelete.length > 10) {
+            const firstTen = catalogsToDelete.slice(0, 10).map(c => `• ${c.name}`).join('\n');
+            message += `\n\n${firstTen}\n• ...and ${catalogsToDelete.length - 10} more`;
+          }
+
+          if (skippedCount > 0) {
+            message += `\n\nNote: ${skippedCount} non-removable catalog${skippedCount === 1 ? '' : 's'} will be skipped.`;
+          }
+
+          return message;
+        })()}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
     </div>
+  );
+}
+
+// Main export component that wraps with SelectionProvider
+export function CatalogsSettings() {
+  const { config, hasBuiltInTvdb } = useConfig();
+  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
+
+  // Check if TVDB key is available
+  const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+
+  // Compute filtered catalogs to pass to SelectionProvider
+  const filteredCatalogs = useMemo(() =>
+    config.catalogs.filter(cat => {
+      // Filter out disabled catalogs if hideDisabledCatalogs is true
+      if (hideDisabledCatalogs && !cat.enabled) return false;
+
+      // Filter out TVDB catalogs if no TVDB key is available
+      if (cat.source === 'tvdb' && !hasTvdbKey) return false;
+
+      if (cat.source !== "streaming") return true;
+      const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
+      return Array.isArray(config.streaming) && config.streaming.includes(serviceId);
+    }),
+    [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey]
+  );
+
+  return (
+    <SelectionProvider catalogs={filteredCatalogs}>
+      <CatalogsSettingsContent
+        hideDisabledCatalogs={hideDisabledCatalogs}
+        setHideDisabledCatalogs={setHideDisabledCatalogs}
+      />
+    </SelectionProvider>
   );
 }
