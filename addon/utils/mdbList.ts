@@ -235,8 +235,15 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     let totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
     const hasMore = response.headers?.['x-has-more'] === 'true';
     
-    // Calculate total pages from headers
-    let totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
+    // For watchlist, we can only rely on X-Has-More header
+    let totalPages: number | undefined;
+    if (listId === 'watchlist') {
+      totalItems = undefined; // Watchlist doesn't provide total items
+      totalPages = undefined; // Can't calculate pages without total items
+    } else {
+      // Calculate total pages from headers for regular lists
+      totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
+    }
     
     let items: any[];
     
@@ -262,15 +269,9 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     }
     
     // Smart pagination validation and logging
-    if (totalItems !== undefined) {
-      // For watchlist, if we have items but totalItems is 0, use the actual item count
-      if (listId === 'watchlist' && totalItems === 0 && items.length > 0) {
-        logger.debug(`Watchlist: Using actual item count ${items.length} instead of header totalItems ${totalItems}`);
-        totalItems = items.length;
-        totalPages = Math.ceil(totalItems / pageSize);
-      }
-      
-      // Validate request didn't exceed available items
+    if (listId === 'watchlist') {
+      logger.debug(`Watchlist pagination - page: ${page}, items: ${items.length}, hasMore: ${hasMore}`);
+    } else if (totalItems !== undefined) {
       if (offset >= totalItems) {
         logger.warn(`Requested offset ${offset} exceeds total items ${totalItems} for list ${listId}`);
         return { 

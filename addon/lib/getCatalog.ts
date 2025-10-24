@@ -341,7 +341,19 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug, unified, type);
     
     // Smart pagination handling
-    if (response.totalItems !== undefined && response.totalPages !== undefined) {
+    if (listId === 'watchlist') {
+      // For watchlist, we only have hasMore information
+      const itemInfo = `${response.items.length} items`;
+      const statusInfo = response.hasMore ? 'more available' : 'end reached';
+      
+      logger.debug(`MDBList watchlist pagination - page ${page}, ${itemInfo}, ${statusInfo}`);
+      
+      // Early exit for empty pages beyond list end
+      if (!response.hasMore && response.items.length === 0) {
+        logger.debug(`MDBList watchlist early exit - no more items at page ${page}`);
+        return [];
+      }
+    } else if (response.totalItems !== undefined && response.totalPages !== undefined) {
       const pageInfo = `page ${page}/${response.totalPages}`;
       const itemInfo = `${response.items.length} items`;
       const totalInfo = `${response.totalItems} total`;

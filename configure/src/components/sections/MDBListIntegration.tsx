@@ -534,7 +534,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         const newCatalog: CatalogConfig = {
           id: 'mdblist.watchlist',
           type: 'all', // Unified watchlist shows both movies and series
-          name: 'My MDBList Watchlist',
+          name: 'Watchlist',
           enabled: true,
           showInHome: true,
           source: 'mdblist',
@@ -563,35 +563,49 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         });
       } else {
         // Non-unified format: create separate catalogs for movies and series
-        const movieCatalog: CatalogConfig = {
-          id: 'mdblist.watchlist.movies',
-          type: 'movie',
-          name: 'Watchlist (Movies)',
-          enabled: true,
-          showInHome: true,
-          source: 'mdblist',
-          sourceUrl: `https://api.mdblist.com/watchlist/items?unified=false`,
-          sort: defaultSort,
-          order: defaultOrder,
-          cacheTTL: defaultCacheTTL,
-          genreSelection: defaultGenreSelection
-        };
-
-        const seriesCatalog: CatalogConfig = {
-          id: 'mdblist.watchlist.series',
-          type: 'series',
-          name: 'Watchlist (Series)',
-          enabled: true,
-          showInHome: true,
-          source: 'mdblist',
-          sourceUrl: `https://api.mdblist.com/watchlist/items?unified=false`,
-          sort: defaultSort,
-          order: defaultOrder,
-          cacheTTL: defaultCacheTTL,
-          genreSelection: defaultGenreSelection
-        };
-
         setConfig(prev => {
+          // Apply display type overrides if configured
+          let movieDisplayType = undefined;
+          let seriesDisplayType = undefined;
+          if (prev.displayTypeOverrides) {
+            if (prev.displayTypeOverrides.movie) {
+              movieDisplayType = prev.displayTypeOverrides.movie;
+            }
+            if (prev.displayTypeOverrides.series) {
+              seriesDisplayType = prev.displayTypeOverrides.series;
+            }
+          }
+
+          const movieCatalog: CatalogConfig = {
+            id: 'mdblist.watchlist.movies',
+            type: 'movie',
+            name: 'Watchlist (Movies)',
+            enabled: true,
+            showInHome: true,
+            source: 'mdblist',
+            sourceUrl: `https://api.mdblist.com/watchlist/items?unified=false`,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            ...(movieDisplayType && { displayType: movieDisplayType }),
+          };
+
+          const seriesCatalog: CatalogConfig = {
+            id: 'mdblist.watchlist.series',
+            type: 'series',
+            name: 'Watchlist (Series)',
+            enabled: true,
+            showInHome: true,
+            source: 'mdblist',
+            sourceUrl: `https://api.mdblist.com/watchlist/items?unified=false`,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            ...(seriesDisplayType && { displayType: seriesDisplayType }),
+          };
+
           // Check for existing catalogs
           const hasMovies = prev.catalogs.some(c => c.id === movieCatalog.id);
           const hasSeries = prev.catalogs.some(c => c.id === seriesCatalog.id);
