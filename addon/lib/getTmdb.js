@@ -774,6 +774,18 @@ module.exports = {
     
     return result;
   },
+  personInfo: async (params, config) => {
+    const startTime = Date.now();
+    const personId = params.id || 'unknown';
+    consola.info(`[TMDB] Fetching person info for ID: ${personId}`);
+    
+    const result = await makeTmdbRequest(`/person/${personId}`, getApiKey(config), params, 'GET', null, config);
+    
+    const fetchTime = Date.now() - startTime;
+    consola.info(`[TMDB] Person info fetched in ${fetchTime}ms`);
+    
+    return result;
+  },
   find: (params, config) => makeTmdbRequest(`/find/${params.id}`, getApiKey(config), { external_source: params.external_source }, 'GET', null, config),
   languages: (config) => makeTmdbRequest('/configuration/languages', getApiKey(config), {}, 'GET', null, config),
   primaryTranslations: (config) => makeTmdbRequest('/configuration/primary_translations', getApiKey(config), {}, 'GET', null, config),

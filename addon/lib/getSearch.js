@@ -261,6 +261,21 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
 
 
 
+/**
+ * Normalizes a string for comparison by removing accents, diacritics, and converting to lowercase
+ * @param {string} str - The string to normalize
+ * @returns {string} - The normalized string
+ */
+function normalizeForComparison(str) {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD') // Decompose combined characters
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+    .replace(/[^\w\s]/g, '') // Remove special characters except word chars and spaces
+    .trim();
+}
+
 async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1) {
   const startTime = Date.now();
   const rawResults = new Map();
@@ -302,15 +317,30 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 
                 logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
                 
-                const personName = topPerson.name.toLowerCase();
-                const queryLower = query.toLowerCase();
-                const isExactMatch = personName === queryLower;
-                const isContainedWithPopularity = personName.includes(queryLower) && (topPerson.popularity || 0) > 3;
+                // Fetch full person details to get also_known_as names
+                const personDetails = await moviedb.personInfo({ id: topPerson.id, language }, config);
                 
-                if (!isExactMatch && !isContainedWithPopularity) {
-                  logger.debug(`Skipping person ${topPerson.name} - not exact match and doesn't meet popularity threshold (${topPerson.popularity || 0} <= 3)`);
+                const queryNormalized = normalizeForComparison(query);
+                const personNameNormalized = normalizeForComparison(topPerson.name);
+                const alsoKnownAs = personDetails.also_known_as || [];
+                
+                // Check if query matches the primary name
+                const isExactMatch = personNameNormalized === queryNormalized;
+                const isContainedWithPopularity = personNameNormalized.includes(queryNormalized) && (topPerson.popularity || 0) > 3;
+                
+                // Check if query matches any of the also_known_as names
+                const matchesAlsoKnownAs = alsoKnownAs.some(aka => {
+                  const akaNormalized = normalizeForComparison(aka);
+                  return akaNormalized === queryNormalized || (akaNormalized.includes(queryNormalized) && (topPerson.popularity || 0) > 3);
+                });
+                
+                if (!isExactMatch && !isContainedWithPopularity && !matchesAlsoKnownAs) {
+                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name or also_known_as (${alsoKnownAs.join(', ')}) with sufficient popularity (${topPerson.popularity || 0} <= 3)`);
                   return [];
                 }
+                
+                logger.debug(`Person match confirmed: ${topPerson.name} (also known as: ${alsoKnownAs.join(', ')})`);
+                
                 const credits = type === 'movie'
                     ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
                     : await moviedb.personTvCredits({ id: topPerson.id, language }, config);
