@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.4.0](https://github.com/cedya77/aiometadata/compare/v1.3.0...v1.4.0) (2025-10-24)
+
+
+### Features
+
+* add bulk editing actions to catalogs ([0f89eac](https://github.com/cedya77/aiometadata/commit/0f89eacf82feb8b580634846aef5279af97ef06c))
+* add changelog modal and cache warming controls to ops tab with mobile responsiveness ([f74ad69](https://github.com/cedya77/aiometadata/commit/f74ad6940093ed092588273e18f05983f464c37a))
+* add custom missing episode thumbnail ([f790504](https://github.com/cedya77/aiometadata/commit/f7905047e32d77ee6d8ae191cee96b7676c33660))
+* Add custom TTL support for custom manifest integration ([4b274f5](https://github.com/cedya77/aiometadata/commit/4b274f5e5cc4f28691b15dc416c345544e018a78))
+* add kitsu as anime meta/art provider ([79f6204](https://github.com/cedya77/aiometadata/commit/79f62047e46347627c1154a49327af7d5079ae8f))
+* add MDBList watchlist integration with unified/non-unified support ([36daa55](https://github.com/cedya77/aiometadata/commit/36daa556369437f6bf343d40f88bc3f973277619))
+* add prompt for missing mdblist api key in presets ([cde11ed](https://github.com/cedya77/aiometadata/commit/cde11edcea335837c501dbf4d2b63f591bad101e))
+* Add user management system with admin controls ([351047f](https://github.com/cedya77/aiometadata/commit/351047f4fb4ec4186a6c59aee9b0bb4634fc9e2e))
+* implement comprehensive catalog warming system ([ac5f0b9](https://github.com/cedya77/aiometadata/commit/ac5f0b97bc3195b736dd15059f18c74ddba567e4))
+* support aliases for person's search ([6569cda](https://github.com/cedya77/aiometadata/commit/6569cda5906cba211e86c0591fc453ad4ecf68e0))
+
+
+### Bug Fixes
+
+* -tmdb should now respect language priority when getting posters during search. - Added release year condition to nameToImdb ([daa08cc](https://github.com/cedya77/aiometadata/commit/daa08cc795dfd45b14347e2cb97b246822d14e7b))
+* age rating filtering ([d16c024](https://github.com/cedya77/aiometadata/commit/d16c02431a2ae9c513825573faafe42befbf79f0))
+* apply content rating on trending tmdb catalog ([d0d5513](https://github.com/cedya77/aiometadata/commit/d0d5513c183b4dbe745ca2490bd95b238cf3b991))
+* apply content rating on trending tmdb catalog ([8c27189](https://github.com/cedya77/aiometadata/commit/8c27189c0bc8b0a0b232ab407d5662a1e81a3d76))
+* apply same logic to dashboard ([fc2260b](https://github.com/cedya77/aiometadata/commit/fc2260b5076c4601dca6662e007abe9bffb9e301))
+* apply same logic to dashboard ([41f0bfe](https://github.com/cedya77/aiometadata/commit/41f0bfe121d635d9d6a23adfa5482d7b09be0075))
+* **custom catalogs:** correct pagination logic to handle any page size and prevent repeated results ([89f5d35](https://github.com/cedya77/aiometadata/commit/89f5d357c1927706acad959c4ad45f1dadc63db7))
+* make cache private for specific endpoints ([afa7967](https://github.com/cedya77/aiometadata/commit/afa796716d02cab62b1b9cf72f2cb7b028584e66))
+* make cache private for specific endpoints ([5396976](https://github.com/cedya77/aiometadata/commit/5396976e1b12a386a6af1b4455f1cffdd51f3451))
+* **stremthru:** correct configure URL generation for external button ([d25cf46](https://github.com/cedya77/aiometadata/commit/d25cf46810d2bbd8217a689bb30f13367cbbb743))
+
 ## [1.3.0](https://github.com/cedya77/aiometadata/compare/v1.2.1...v1.3.0) (2025-10-19)
 
 
