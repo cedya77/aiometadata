@@ -329,13 +329,21 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 const isContainedWithPopularity = personNameNormalized.includes(queryNormalized) && (topPerson.popularity || 0) > 3;
                 
                 // Check if query matches any of the also_known_as names
+                // Aliases must ALWAYS pass the popularity check (no bypass for exact matches)
                 const matchesAlsoKnownAs = alsoKnownAs.some(aka => {
                   const akaNormalized = normalizeForComparison(aka);
-                  return akaNormalized === queryNormalized || (akaNormalized.includes(queryNormalized) && (topPerson.popularity || 0) > 3);
+                  const isMatch = akaNormalized === queryNormalized || akaNormalized.includes(queryNormalized);
+                  
+                  if (!isMatch) return false;
+                  
+                  // For alias matches, ALWAYS require minimum popularity
+                  // This prevents low-popularity people with famous aliases (e.g., "Superman") from hijacking searches
+                  const minPopularityForAlias = 3.0;
+                  return (topPerson.popularity || 0) >= minPopularityForAlias;
                 });
                 
                 if (!isExactMatch && !isContainedWithPopularity && !matchesAlsoKnownAs) {
-                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name or also_known_as (${alsoKnownAs.join(', ')}) with sufficient popularity (${topPerson.popularity || 0} <= 3)`);
+                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name or also_known_as (${alsoKnownAs.join(', ')}) with sufficient popularity (${topPerson.popularity || 0} < 3.0)`);
                   return [];
                 }
                 
