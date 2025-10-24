@@ -35,6 +35,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [selectedPopularLists, setSelectedPopularLists] = useState<Set<string>>(new Set());
   const [isLoadingPopularLists, setIsLoadingPopularLists] = useState(false);
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
+  const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
 
   const popularUsers = [
     { username: 'tvgeniekodi', name: 'Mr. Professor', description: 'Curated TV and movie lists' },
@@ -520,6 +521,105 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       toast.error("Error Adding List", { description: message });
     }
   };
+
+  const handleImportWatchlist = async () => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key first.");
+      return;
+    }
+
+    try {
+      if (watchlistUnified) {
+        // Unified format: create single catalog
+        const newCatalog: CatalogConfig = {
+          id: 'mdblist.watchlist',
+          type: 'all', // Unified watchlist shows both movies and series
+          name: 'My MDBList Watchlist',
+          enabled: true,
+          showInHome: true,
+          source: 'mdblist',
+          sourceUrl: `https://api.mdblist.com/watchlist/items?unified=true`,
+          sort: defaultSort,
+          order: defaultOrder,
+          cacheTTL: defaultCacheTTL,
+          genreSelection: defaultGenreSelection
+        };
+
+        setConfig(prev => {
+          // Prevent duplicates
+          if (prev.catalogs.some(c => c.id === newCatalog.id)) {
+            toast.info("Your MDBList watchlist is already in your catalog list.");
+            return prev;
+          }
+          
+          return { 
+            ...prev, 
+            catalogs: [...prev.catalogs, newCatalog],
+          };
+        });
+
+        toast.success("Watchlist Added", { 
+          description: "Your MDBList watchlist has been added to your catalogs." 
+        });
+      } else {
+        // Non-unified format: create separate catalogs for movies and series
+        const movieCatalog: CatalogConfig = {
+          id: 'mdblist.watchlist.movies',
+          type: 'movie',
+          name: 'Watchlist (Movies)',
+          enabled: true,
+          showInHome: true,
+          source: 'mdblist',
+          sourceUrl: `https://api.mdblist.com/watchlist/items?unified=false`,
+          sort: defaultSort,
+          order: defaultOrder,
+          cacheTTL: defaultCacheTTL,
+          genreSelection: defaultGenreSelection
+        };
+
+        const seriesCatalog: CatalogConfig = {
+          id: 'mdblist.watchlist.series',
+          type: 'series',
+          name: 'Watchlist (Series)',
+          enabled: true,
+          showInHome: true,
+          source: 'mdblist',
+          sourceUrl: `https://api.mdblist.com/watchlist/items?unified=false`,
+          sort: defaultSort,
+          order: defaultOrder,
+          cacheTTL: defaultCacheTTL,
+          genreSelection: defaultGenreSelection
+        };
+
+        setConfig(prev => {
+          // Check for existing catalogs
+          const hasMovies = prev.catalogs.some(c => c.id === movieCatalog.id);
+          const hasSeries = prev.catalogs.some(c => c.id === seriesCatalog.id);
+          
+          if (hasMovies && hasSeries) {
+            toast.info("Your MDBList watchlist catalogs are already in your catalog list.");
+            return prev;
+          }
+          
+          const newCatalogs = [];
+          if (!hasMovies) newCatalogs.push(movieCatalog);
+          if (!hasSeries) newCatalogs.push(seriesCatalog);
+          
+          return { 
+            ...prev, 
+            catalogs: [...prev.catalogs, ...newCatalogs],
+          };
+        });
+
+        toast.success("Watchlist Catalogs Added", { 
+          description: "Your MDBList watchlist has been added as separate movie and series catalogs." 
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "An unknown error occurred.";
+      toast.error("Error Adding Watchlist", { description: message });
+    }
+  };
   
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -799,6 +899,52 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 <div className="flex items-center space-x-2">
                   <Input id="customListUrl" value={customListUrl} onChange={(e) => setCustomListUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" />
                   <Button onClick={handleAddCustomList} variant="outline">Add</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Import My Watchlist Section */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Import My Watchlist</CardTitle>
+                <CardDescription>
+                  Import your personal MDBList watchlist as a catalog. This will create a catalog that shows items from your watchlist.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="watchlist-unified" className="text-sm font-medium">
+                        Unified Format
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {watchlistUnified 
+                          ? "Creates one catalog with all items (movies and shows mixed)"
+                          : "Creates separate catalogs for movies and series"
+                        }
+                      </p>
+                    </div>
+                    <Switch
+                      id="watchlist-unified"
+                      checked={watchlistUnified}
+                      onCheckedChange={setWatchlistUnified}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button 
+                      onClick={handleImportWatchlist} 
+                      disabled={!tempKey}
+                      className="w-full"
+                    >
+                      Import My Watchlist
+                    </Button>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    This will create a catalog showing items from your personal MDBList watchlist.
+                  </div>
                 </div>
               </CardContent>
             </Card>

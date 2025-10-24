@@ -1,7 +1,7 @@
 export interface CatalogConfig {
   id: string;
   name: string;
-  type: 'movie' | 'series' | 'anime';
+  type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
   source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs

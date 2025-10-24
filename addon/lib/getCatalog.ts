@@ -308,7 +308,6 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
 async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
   if (id.startsWith("mdblist.")) {
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
-    const listId = id.split(".")[1];
     const catalogConfig = config.catalogs?.find(c => c.id === id);
     const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
     const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
@@ -321,7 +320,25 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       logger.debug(`Converted genre "${genre}" to slug "${genreSlug}"`);
     }
     
-    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug);
+    // Handle different watchlist catalog IDs
+    let listId: string;
+    let unified: boolean | undefined;
+    
+    if (id === 'mdblist.watchlist') {
+      // Unified watchlist
+      listId = 'watchlist';
+      unified = true;
+    } else if (id === 'mdblist.watchlist.movies' || id === 'mdblist.watchlist.series') {
+      // Non-unified watchlist (separate movies/series catalogs)
+      listId = 'watchlist';
+      unified = false;
+    } else {
+      // Regular MDBList catalog
+      listId = id.split(".")[1];
+      unified = undefined;
+    }
+    
+    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug, unified, type);
     
     // Smart pagination handling
     if (response.totalItems !== undefined && response.totalPages !== undefined) {

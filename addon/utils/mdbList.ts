@@ -197,13 +197,20 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
-async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string, genre?: string): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
+async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string, genre?: string, unified?: boolean, catalogType?: string): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
   // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
   const offset = (page * pageSize) - pageSize;
   
   try {
-    let url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
+    let url: string;
+    
+    // Special handling for watchlist
+    if (listId === 'watchlist') {
+      url = `https://api.mdblist.com/watchlist/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
+    } else {
+      url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
+    }
     
     // Add sort and order parameters if provided and not empty
     if (sort && sort.trim() !== '') {
@@ -216,25 +223,53 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
       url += `&filter_genre=${genre}`;
     }
     
+    // Log the final URL for debugging
+    logger.debug(`MDBList request URL: ${url}`);
+    
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { dispatcher: mdblistDispatcher }),
       `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
     );
     
     // Extract pagination metadata from headers
-    const totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
+    let totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
     const hasMore = response.headers?.['x-has-more'] === 'true';
     
     // Calculate total pages from headers
-    const totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
+    let totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
     
-    const items = [
-      ...(response.data.movies || []),
-      ...(response.data.shows || [])
-    ];
+    let items: any[];
+    
+    // Handle different response formats based on unified parameter
+    if (listId === 'watchlist' && unified === false) {
+      // Non-unified format: response has separate movies and shows arrays
+      // Extract the appropriate array based on catalog type
+      if (catalogType === 'series') {
+        items = response.data.shows || [];
+      } else {
+        items = response.data.movies || [];
+      }
+    } else {
+      // Unified format: response is a flat array or has movies/shows arrays
+      if (Array.isArray(response.data)) {
+        items = response.data;
+      } else {
+        items = [
+          ...(response.data.movies || []),
+          ...(response.data.shows || [])
+        ];
+      }
+    }
     
     // Smart pagination validation and logging
     if (totalItems !== undefined) {
+      // For watchlist, if we have items but totalItems is 0, use the actual item count
+      if (listId === 'watchlist' && totalItems === 0 && items.length > 0) {
+        logger.debug(`Watchlist: Using actual item count ${items.length} instead of header totalItems ${totalItems}`);
+        totalItems = items.length;
+        totalPages = Math.ceil(totalItems / pageSize);
+      }
+      
       // Validate request didn't exceed available items
       if (offset >= totalItems) {
         logger.warn(`Requested offset ${offset} exceeds total items ${totalItems} for list ${listId}`);
@@ -422,14 +457,15 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   
  
   const metas = await Promise.all(filteredItems
-    .filter(item => item.mediatype === targetMediaType)
+
     .map(async (item: any) => {
       try {
         let stremioId = `tmdb:${item.id}`;
         
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-          return await getMeta(type, language, stremioId, config, config.userUUID, false);
+          const mdblistType = item.mediatype === 'movie' ? 'movie' : 'series';
+          return await getMeta(mdblistType, language, stremioId, config, config.userUUID, false);
         }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
         
         if (result && result.meta) {
