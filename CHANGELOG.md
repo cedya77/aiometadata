@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.4.1](https://github.com/cedya77/aiometadata/compare/v1.4.0...v1.4.1) (2025-10-24)
+
+
+### Bug Fixes
+
+* persons search logic ([269e9d1](https://github.com/cedya77/aiometadata/commit/269e9d1da51337e7ec8cc13bbbbd2c6299f04013))
+* persons search logic ([2b7535e](https://github.com/cedya77/aiometadata/commit/2b7535ea6fe3a302510ee828f827fa27a19b7219))
+
 ## [1.4.0](https://github.com/cedya77/aiometadata/compare/v1.3.0...v1.4.0) (2025-10-24)
 
 
