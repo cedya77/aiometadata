@@ -76,8 +76,8 @@ if (ENABLE_CACHE_WARMING && !NO_CACHE) {
   // Schedule periodic warming (non-blocking)
   scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
   
-  // Schedule popular content warming based on CACHE_WARM_INTERVAL_HOURS env (default 24h)
-  const POPULAR_WARM_INTERVAL_HOURS = parseInt(process.env.CACHE_WARM_INTERVAL_HOURS || '24', 10);
+  // Schedule popular content warming based on CACHE_WARM_INTERVAL_HOURS env (default 24h, minimum 12h)
+  const POPULAR_WARM_INTERVAL_HOURS = Math.max(12, parseInt(process.env.CACHE_WARM_INTERVAL_HOURS || '24', 10));
   const POPULAR_WARM_CHECK_INTERVAL = 15 * 60 * 1000; // Check every 15 minutes
   
   consola.info(`[Cache Warming] Scheduling popular content warming (interval: ${POPULAR_WARM_INTERVAL_HOURS}h, check every 15min)`);
