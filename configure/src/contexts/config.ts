@@ -33,6 +33,7 @@ export interface AppConfig {
   showPrefix: boolean;
   showMetaProviderAttribution: boolean;
   castCount: number;
+  displayAgeRating: boolean;
   providers: {
     movie: string;
     series: string;

@@ -1014,6 +1014,16 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
   finalTitle = Utils.processTitleTranslations(movieData.translations, language, title, 'movie');
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
+  let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
+  if (certification && config.displayAgeRating) {
+    const certificationLink = {
+      name: certification,
+      category: 'Genres',
+      url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
+    };
+    // add certification link to links as first genre link
+    links.unshift(certificationLink);
+  }
 
   return {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
@@ -1037,7 +1047,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     // filter out trailers with lang !== language. if none left return full array,
     trailers: Utils.parseTrailers(movieData.videos).filter(trailer => trailer.lang === language).length > 0 ? Utils.parseTrailers(movieData.videos).filter(trailer => trailer.lang === language) : Utils.parseTrailers(movieData.videos),
     trailerStreams: Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language).length > 0 ? Utils.parseTrailerStream(movieData.videos).filter(trailer => trailer.lang === language) : Utils.parseTrailerStream(movieData.videos),
-    links: Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID),
+    links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
     app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: movieData.release_dates, certification: certification }
   };
@@ -1410,6 +1420,15 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   }
 
   const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+  let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID), ...directorLinks, ...writerLinks];
+  if (certification && config.displayAgeRating) {
+    const certificationLink = {
+      name: certification,
+      category: 'Genres',
+      url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${language}`
+    };
+    links.unshift(certificationLink);
+  }
 
   const meta = {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
@@ -1428,7 +1447,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     background: background,
     logo: logoUrl,
     trailers: Utils.parseTrailers(trailers),
-            links: [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID), ...directorLinks, ...writerLinks],
+    links: links,
     videos: videos,
     behaviorHints: {
       defaultVideoId: null,
@@ -1547,6 +1566,15 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     release_dates = movieData.release_dates;  
     certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   }
+  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks];
+  if(certification && config.displayAgeRating){
+    const certificationLink = {
+      name: certification,
+      category: 'Genres',
+      url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.thetvdb.com/movies/${movieData.slug}`
+    };
+    links.unshift(certificationLink);
+  }
  
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   return {
@@ -1574,7 +1602,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       defaultVideoId: imdbId ? imdbId : kitsuId ? `kitsu:${kitsuId}` : stremioId,
       hasScheduledVideos: false
     },
-    links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
+    links: links,
     app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: release_dates, certification: certification }
   };
 }
@@ -1852,6 +1880,15 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
 
   const certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
+  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks];
+  if(certification && config.displayAgeRating){
+    const certificationLink = {
+      name: certification,
+      category: 'Genres',
+      url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.thetvdb.com/series/${tvdbShow.slug}`
+    };
+    links.unshift(certificationLink);
+  }
 
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
   const meta = {
@@ -1878,7 +1915,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     videos: videos,
     trailers: trailers,
     trailerStreams: trailerStreams,
-    links: [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks],
+    links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
     app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, watchProviders: watchProviders, certification: certification }
   };
@@ -2044,6 +2081,16 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     logoUrl =  imdb.getLogoFromImdb(imdbId);
   }
 
+  let links = [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks];
+  if(certification && config.displayAgeRating){
+    const certificationLink = {
+      name: certification,
+      category: 'Genres',
+      url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.tvmaze.com/shows/${tvmazeShow.id}`
+    };
+    links.unshift(certificationLink);
+  }
+
   const meta = {
     id: isAnime ? stremioId : imdbId || stremioId,
     type: 'series', 
@@ -2063,7 +2110,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     background: background,
     logo: processLogo(logoUrl), 
     videos,
-    links: [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks],
+    links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
     app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails, watchProviders: watchProviders, certification: certification }
   };
@@ -2293,6 +2340,14 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         }
       }
     }
+    if(malData.rating && config.displayAgeRating){
+      const ageRatingLink = {
+        name: malData.rating,
+        category: 'Genres',
+        url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://myanimelist.net/anime/${malData.mal_id}`
+      };
+      links.unshift(ageRatingLink);
+    }
 
     const meta = {
       id: stremioId,
@@ -2389,6 +2444,14 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       }
     });
     links.push(...relatedLinks.filter(Boolean));
+    if(kitsuData.attributes.ageRating && config.displayAgeRating){
+      const ageRatingLink = {
+        name: kitsuData.attributes.ageRating,
+        category: 'Genres',
+        url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://kitsu.app/anime/${kitsuData.attributes.slug}`
+      };
+      links.unshift(ageRatingLink);
+    }
 
     // 🔹 base meta object
     const meta = {

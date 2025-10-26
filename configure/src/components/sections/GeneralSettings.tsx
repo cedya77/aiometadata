@@ -246,6 +246,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, castCount: count }));
   };
 
+  const handleDisplayAgeRatingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, displayAgeRating: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -347,6 +351,19 @@ export function GeneralSettings() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Display Age Rating Setting */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="display-age-rating" className="text-lg font-medium">Display Age Rating</Label>
+            <p className="text-sm text-muted-foreground">Show age rating/certification as the first link in the genres section.</p>
+          </div>
+          <Switch
+            id="display-age-rating"
+            checked={config.displayAgeRating}
+            onCheckedChange={handleDisplayAgeRatingChange}
+          />
         </div>
         
       </div>

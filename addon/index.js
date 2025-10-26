@@ -155,6 +155,7 @@ const respond = function (req, res, data, opts) {
           exclusionKeywords: req.userConfig.exclusionKeywords,
           regexExclusionFilter: req.userConfig.regexExclusionFilter,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
+          displayAgeRating: req.userConfig.displayAgeRating,
           apiKeys: { 
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
             mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
@@ -171,6 +172,7 @@ const respond = function (req, res, data, opts) {
           castCount: req.userConfig.castCount,
           blurThumbs: req.userConfig.blurThumbs,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
+          displayAgeRating: req.userConfig.displayAgeRating,
           apiKeys: { 
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
             mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''

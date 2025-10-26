@@ -634,6 +634,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+    displayAgeRating: config.displayAgeRating || false,
     
     // API keys (affect catalog posters and content)
     apiKeys: { 
@@ -725,6 +726,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     blurThumbs: config.blurThumbs || false,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+    displayAgeRating: config.displayAgeRating || false,
     useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
   };
   
@@ -767,7 +769,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      // Display settings (affect all meta)
      castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
-     showMetaProviderAttribution: config.showMetaProviderAttribution || false, 
+     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+     displayAgeRating: config.displayAgeRating || false,
      
    };
    
@@ -851,6 +854,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+     displayAgeRating: config.displayAgeRating || false,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
      }
@@ -1081,6 +1085,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      blurThumbs: config.blurThumbs || false,
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+     displayAgeRating: config.displayAgeRating || false,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || ''
      }
@@ -1322,6 +1327,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
       blurThumbs: config.blurThumbs || false,
       showPrefix: config.showPrefix || false,
       showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+      displayAgeRating: config.displayAgeRating || false,
     };
     
     // Add context-specific settings
@@ -1411,6 +1417,7 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
       blurThumbs: config.blurThumbs || false,
       showPrefix: config.showPrefix || false,
       showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+      displayAgeRating: config.displayAgeRating || false,
     };
     
     // Add context-specific settings
@@ -1549,6 +1556,7 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+    displayAgeRating: config.displayAgeRating || false,
     
     // Anime-specific settings (for MAL catalogs)
     mal: config.mal || {}

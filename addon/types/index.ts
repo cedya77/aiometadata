@@ -36,6 +36,7 @@ export interface UserConfig {
   tvdbSeasonType?: string;
   castCount?: number;
   blurThumbs?: boolean;
+  displayAgeRating?: boolean;
   configVersion?: number;
   userUUID?: string;
   sessionId?: string;

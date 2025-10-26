@@ -117,6 +117,7 @@ async function ensureSystemConfig() {
       blurThumbs: false,
       showPrefix: false,
       showMetaProviderAttribution: false,
+      displayAgeRating: false,
       castCount: 10,
       sfw: false,
       hideUnreleasedDigital: false,
