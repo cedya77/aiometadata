@@ -22,7 +22,7 @@ const logger = consola.create({
   tag: 'GetTrending'
 }); 
 
-async function getTrending(type: string, language: string, page: number, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
+async function getTrending(type: string, language: string, page: number, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   const startTime = performance.now();
   try {
     logger.debug(`[getTrending] Fetching trending for type=${type}, language=${language}, page=${page}, genre=${genre}`);
@@ -47,8 +47,8 @@ async function getTrending(type: string, language: string, page: number, genre: 
     const metas = await Promise.all((res?.results || []).map(async (item: any) => {
       let stremioId = `tmdb:${item.id}`;
       const result =  await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-        return await getMeta(type, language, stremioId, config, userUUID, false);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
+        return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
       
       if (result && result.meta) {
         

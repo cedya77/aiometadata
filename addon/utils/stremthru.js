@@ -35,7 +35,7 @@ async function _makeRequest(url) {
  * Processes a single anime item by finding its TMDB mapping and enriching it.
  * @private
  */
-async function _processAnimeItem(item, provider, id, language, config) {
+async function _processAnimeItem(item, provider, id, language, config, includeVideos = false) {
   const mappingFunctions = {
     kitsu: idMapper.getMappingByKitsuId,
     mal: idMapper.getMappingByMalId,
@@ -57,8 +57,8 @@ async function _processAnimeItem(item, provider, id, language, config) {
 
   if(config.mal?.useImdbIdForCatalogAndSearch && item.type === 'series' && mapping.imdb_id){
     return (await cacheWrapMetaSmart(config.userUUID, imdbId, async () => {
-      return await getMeta(item.type, language, imdbId, config, config.userUUID, false);
-    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, false))?.meta || null;
+      return await getMeta(item.type, language, imdbId, config, config.userUUID, includeVideos);
+    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, includeVideos))?.meta || null;
   }
   else if(!config.mal?.useImdbIdForCatalogAndSearch || !imdbId){
     const posterUrl = mapping.mal_id
@@ -99,7 +99,7 @@ async function _processAnimeItem(item, provider, id, language, config) {
  * Processes a standard movie or series item using the addon's core getMeta function.
  * @private
  */
-async function _processStandardItem(item, provider, language, config) {
+async function _processStandardItem(item, provider, language, config, includeVideos = false) {
   const result = await cacheWrapMetaSmart(config.userUUID, item.id, async () => {
       let stremioId = item.id;
       //  if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
@@ -115,8 +115,8 @@ async function _processStandardItem(item, provider, language, config) {
       
       // Use the potentially translated ID to get the meta.
       // Note: Your getMeta function must be able to handle these different ID formats.
-      return await getMeta(item.type, language, stremioId, config, config.userUUID, false);
-  }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, false);
+      return await getMeta(item.type, language, stremioId, config, config.userUUID, includeVideos);
+  }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, includeVideos);
   
   return result?.meta || null;
 }
@@ -205,7 +205,7 @@ async function getGenresFromStremThruCatalog(items) {
   }
 }
 
-async function parseStremThruItems(items, type, genreFilter, language, config) {
+async function parseStremThruItems(items, type, genreFilter, language, config, includeVideos = false) {
   const animeProviders = new Set(['mal', 'kitsu', 'anidb', 'anilist']);
   
   
@@ -237,9 +237,9 @@ async function parseStremThruItems(items, type, genreFilter, language, config) {
 
       let meta;
       if (animeProviders.has(provider)) {
-        meta = await _processAnimeItem(item, provider, id, language, config);
+        meta = await _processAnimeItem(item, provider, id, language, config, includeVideos);
       } else {
-        meta = await _processStandardItem(item, provider, language, config);
+        meta = await _processStandardItem(item, provider, language, config, includeVideos);
       }
       
       // If a processor returns null (e.g., anime mapping failed), use the fallback.

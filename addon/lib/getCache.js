@@ -942,7 +942,7 @@ const metaConfigString = stableStringify(metaConfig);
    const componentPromises = [];
    
    const basicMeta = {
-     id: meta.id,
+     id: metaId,
      name: meta.name,
      type: meta.type,
      description: meta.description,
@@ -1256,17 +1256,23 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
    cacheLogger.info(`Smart meta caching for ${metaId} (type: ${type}, videos: ${includeVideos})`);
    
-   // First, try to reconstruct from cached components, passing the includeVideos context
-  const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos);
+   // First, try to reconstruct from cached components BEFORE calling method
+   const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos);
   
   if (reconstructedMeta && reconstructedMeta.meta) {
+    cacheLogger.info(`Component reconstruction successful for ${metaId}`);
     return reconstructedMeta;
   }
    
-   // If reconstruction failed, generate full meta and cache components
+  // If reconstruction failed, generate full meta by calling method
   const failureReason = reconstructedMeta && reconstructedMeta.errorReason ? ` (reason: ${reconstructedMeta.errorReason})` : '';
   cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
-   return await cacheWrapMetaComponents(userUUID, metaId, method, ttl, options, type);
+  
+  const result = await method();
+  const meta = result?.meta || result;
+  
+  // Cache the generated components with the resolved meta.id
+  return await cacheWrapMetaComponents(userUUID, meta.id || metaId, async () => result, ttl, options, type);
 }
 
 /**

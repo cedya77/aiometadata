@@ -1,6 +1,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { httpGet } = require('../utils/httpClient.js');
+const { cacheWrapGlobal } = require('./getCache.js');
 
 const imdbAxiosInstance = axios.create();
 
@@ -40,23 +41,28 @@ async function getMetaFromImdb(imdbId, type, stremioId) {
         return undefined;
     }
 
-    const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
-    try {
-        const response = await httpGet(url);
-        const meta = response.data?.meta;
-        if (meta) {
-            if(stremioId) {
-        meta.id = stremioId;
+    const cacheKey = `cinemeta-meta:${type}:${imdbId}`;
+    const TTL_24H = 24 * 60 * 60; // 24 hours in seconds
+    
+    return await cacheWrapGlobal(cacheKey, async () => {
+        const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
+        try {
+            const response = await httpGet(url);
+            const meta = response.data?.meta;
+            if (meta) {
+                if(stremioId) {
+                    meta.id = stremioId;
+                }
+                return meta;
             }
-        return meta;
+            return undefined;
+        } catch (error) {
+            console.warn(
+                `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
+            );
+            return undefined;
         }
-        return undefined;
-    } catch (error) {
-        console.warn(
-            `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
-        );
-        return undefined;
-    }
+    }, TTL_24H);
 }
 
 async function getMetaFromImdbIo(imdbId, type, stremioId) {
@@ -64,23 +70,28 @@ async function getMetaFromImdbIo(imdbId, type, stremioId) {
         return undefined;
     }
 
-    const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
-    try {
-        const response = await httpGet(url);
-        const meta = response.data?.meta;
-        if (meta) {
-            if(stremioId) {
-                meta.id = stremioId;
+    const cacheKey = `cinemeta-live-meta:${type}:${imdbId}`;
+    const TTL_24H = 24 * 60 * 60; // 24 hours in seconds
+    
+    return await cacheWrapGlobal(cacheKey, async () => {
+        const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
+        try {
+            const response = await httpGet(url);
+            const meta = response.data?.meta;
+            if (meta) {
+                if(stremioId) {
+                    meta.id = stremioId;
+                }
+                return meta;
             }
-            return meta;
+            return undefined;
+        } catch (error) {
+            console.warn(
+                `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
+            );
+            return undefined;
         }
-        return undefined;
-    } catch (error) {
-        console.warn(
-            `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
-        );
-        return undefined;
-    }
+    }, TTL_24H);
 }
 
 function getLogoFromImdb(imdbId) {

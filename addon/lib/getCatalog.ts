@@ -113,7 +113,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
 }
 
 
-async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string): Promise<{ metas: any[] }> {
+async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
       logger.info(`Fetching TVDB collections catalog: ${id}`);
@@ -123,25 +123,25 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
       logger.info(`Routing to TVDB catalog handler for id: ${id}`);
-      const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending');
+      const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
       const filteredResults = filterMetasByRegex(tvdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       logger.info(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
-      const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID);
+      const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(tmdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
     else if (id.startsWith('stremthru.')) {
       logger.info(`Routing to StremThru catalog handler for id: ${id}`);
-      const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
+      const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(stremthruResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
     else if (id.startsWith('custom.')) {
       logger.info(`Routing to Custom Manifest catalog handler for id: ${id}`);
-      const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID);
+      const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(customResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
@@ -156,7 +156,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
   }
 }
 
-async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig, isTrending: boolean): Promise<any[]> {
+async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig, isTrending: boolean, includeVideos: boolean = false): Promise<any[]> {
   logger.info(`Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
   
   // Cache the raw TVDB API response using a cache key that doesn't include page
@@ -246,8 +246,8 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     //}
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, config.userUUID, false);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
+      return await getMeta(type, language, stremioId, config, config.userUUID, includeVideos);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
     
     if (result && result.meta) {
       return result.meta;
@@ -305,7 +305,7 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
   return [];
 }
 
-async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
+async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
   if (id.startsWith("mdblist.")) {
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const catalogConfig = config.catalogs?.find(c => c.id === id);
@@ -373,7 +373,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     
-    let metas = await parseMDBListItems(response.items, type, language, config);
+    let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
     
     // Apply digital release filter if enabled (movies only)
     if (type === 'movie' && config.hideUnreleasedDigital) {
@@ -406,8 +406,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     let stremioId = `tmdb:${item.id}`;
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, userUUID, false);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
+      return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
     if (result && result.meta) {
       return result.meta;
     }
@@ -528,7 +528,7 @@ function findProvider(providerId: string): any {
   return provider;
 }
 
-async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string): Promise<any[]> {
+async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
   try {
     logger.info(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
     
@@ -596,7 +596,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     logger.info(`[✨ StremThru] Batch caching: fetched ${batchesNeeded} batch(es) for page ${page}, total items: ${allItems.length}`);
 
     // --- Parse and filter metas ---
-    let metas = await parseStremThruItems(paginatedItems, type, genre, language, config);
+    let metas = await parseStremThruItems(paginatedItems, type, genre, language, config, includeVideos);
 
     // Filter unreleased content if configured
     if (type === 'movie' && config.hideUnreleasedDigital) {

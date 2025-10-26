@@ -448,7 +448,7 @@ async function getGenresFromMDBList(listId: string, apiKey: string): Promise<str
 }
 
 
-async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig): Promise<any[]> {
+async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig, includeVideos: boolean = false): Promise<any[]> {
   let filteredItems = items;
   //console.log(`[MDBList] Filtered items: ${JSON.stringify(filteredItems)}`);
 
@@ -466,8 +466,8 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
           const mdblistType = item.mediatype === 'movie' ? 'movie' : 'series';
-          return await getMeta(mdblistType, language, stremioId, config, config.userUUID, false);
-        }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, false);
+          return await getMeta(mdblistType, language, stremioId, config, config.userUUID, includeVideos);
+        }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
         
         if (result && result.meta) {
           return result.meta;

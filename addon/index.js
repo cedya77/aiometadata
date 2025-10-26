@@ -606,7 +606,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         switch (id) {
           case "tmdb.trending":
             console.log(`[CATALOG ROUTE 2] tmdb.trending called with type=${actualType}, language=${language}, page=${page}`);
-            metas = (await getTrending(...args, genreName, config, userUUID)).metas;
+            metas = (await getTrending(...args, genreName, config, userUUID, config.providers?.series !== 'tmdb')).metas;
             break;
           case "tmdb.favorites":
             metas = (await getFavorites(...args, genreName, sessionId, config)).metas;
@@ -615,7 +615,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
             break;
           case "tvdb.genres": {
-            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID)).metas;
+            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, config.providers?.series !== 'tmdb')).metas;
             break;
           }
           case "tvdb.collections": {
@@ -778,7 +778,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             break;
           }
           default:
-            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID)).metas;
+            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, config.providers?.series !== 'tmdb')).metas;
             break;
       }
       return { metas: metas || [] };
