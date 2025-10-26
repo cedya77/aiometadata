@@ -104,6 +104,12 @@ export interface AppConfig {
     engineEnabled?: {
       [engine: string]: boolean;
     };
+    // Custom names for search providers
+    providerNames?: {
+      [providerId: string]: string;
+    };
+    // Order of search catalogs
+    searchOrder?: string[];
   };
   streaming: string[];
   displayTypeOverrides?: {

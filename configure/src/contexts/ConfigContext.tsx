@@ -144,6 +144,8 @@ const initialConfig: AppConfig = {
       'mal.search.movie': true,
       'mal.search.series': true,
     },
+    providerNames: {},
+    searchOrder: ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'],
   },
   streaming: [], // Added to satisfy AppConfig interface
 };

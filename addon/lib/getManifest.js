@@ -617,46 +617,92 @@ async function getManifest(config) {
   const isSearchEnabled = config.search?.enabled ?? true;
   const engineEnabled = config.search?.engineEnabled || {};
   const searchProviders = config.search?.providers || {};
-  const movieSearchProviderName = searchProviders.movie.split('.')[0].toUpperCase();
-  const seriesSearchProviderName = searchProviders.series.split('.')[0].toUpperCase();
+  const providerNames = config.search?.providerNames || {};
+  const searchOrder = config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'];
+  
+  // Helper function to get display name for search provider
+  const getSearchProviderDisplayName = (providerId) => {
+    const customName = providerNames[providerId];
+    if (customName) return customName;
+    
+    // Fallback to provider ID formatted nicely
+    return providerId.split('.')[0].toUpperCase();
+  };
+
+  // Helper function to get search catalog name (handles custom names vs default names)
+  const getSearchCatalogName = (providerId, prefix = '', suffix = 'Search') => {
+    const customName = providerNames[providerId];
+    if (customName) {
+      // If custom name is provided, use it as-is (no suffix)
+      return `${prefix}${customName}`;
+    }
+    
+    // Fallback to provider ID formatted nicely with suffix
+    const providerName = providerId.split('.')[0].toUpperCase();
+    return `${prefix}${providerName} ${suffix}`;
+  };
+
+  const movieSearchProviderName = getSearchProviderDisplayName(searchProviders.movie);
+  const seriesSearchProviderName = getSearchProviderDisplayName(searchProviders.series);
 
   if (isSearchEnabled) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
-    // Movie Search
-    if (engineEnabled[searchProviders.movie] !== false) {
-      catalogs.push({ id: 'search', type: 'movie', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
-    }
-    // Series Search
-    if (engineEnabled[searchProviders.series] !== false) {
-      catalogs.push({ id: 'search', type: 'series', name: `${prefix}Search`, extra: [{ name: 'search', isRequired: true }] });
-    }
-    // TVDB Collections Search
-    if (engineEnabled['tvdb.collections.search'] !== false) {
-      catalogs.push({ 
-        id: 'search', 
-        type: 'collection', 
-        name: `${prefix}TVDB Collections`, 
-        extra: [{ name: 'search', isRequired: true }] 
+    
+    // Generate search catalogs in the specified order
+    const searchCatalogConfigs = [
+      {
+        id: 'movie',
+        type: 'movie',
+        provider: searchProviders.movie,
+        enabled: engineEnabled[searchProviders.movie] !== false,
+        suffix: 'Search'
+      },
+      {
+        id: 'series',
+        type: 'series',
+        provider: searchProviders.series,
+        enabled: engineEnabled[searchProviders.series] !== false,
+        suffix: 'Search'
+      },
+      {
+        id: 'tvdb.collections.search',
+        type: 'collection',
+        provider: 'tvdb.collections.search',
+        enabled: engineEnabled['tvdb.collections.search'] !== false,
+        suffix: 'Collections'
+      },
+      {
+        id: 'anime_series',
+        type: 'anime.series',
+        provider: searchProviders.anime_series,
+        enabled: engineEnabled[searchProviders.anime_series] !== false,
+        suffix: 'Anime Search'
+      },
+      {
+        id: 'anime_movie',
+        type: 'anime.movie',
+        provider: searchProviders.anime_movie,
+        enabled: engineEnabled[searchProviders.anime_movie] !== false,
+        suffix: 'Anime Search'
+      }
+    ];
+    
+    // Sort by searchOrder and add enabled catalogs
+    searchCatalogConfigs
+      .sort((a, b) => {
+        const aIndex = searchOrder.indexOf(a.id);
+        const bIndex = searchOrder.indexOf(b.id);
+        return aIndex - bIndex;
+      })
+      .filter(config => config.enabled)
+      .forEach(config => {
+        catalogs.push({
+          id: 'search',
+          type: config.type,
+          name: getSearchCatalogName(config.provider, prefix, config.suffix),
+          extra: [{ name: 'search', isRequired: true }]
+        });
       });
-    }
-    // Anime Series Search
-    if (engineEnabled[searchProviders.anime_series] !== false) {
-      catalogs.push({
-        id: "search",
-        type: "anime.series",
-        name: "Anime Search (Series)",
-        extra: [{ name: "search", isRequired: true }]
-      });
-    }
-    // Anime Movies Search
-    if (engineEnabled[searchProviders.anime_movie] !== false) {
-      catalogs.push({
-        id: "search",
-        type: "anime.movie",
-        name: "Anime Search (Movies)",
-        extra: [{ name: "search", isRequired: true }]
-      });
-    }
     // MAL special search catalogs (only if any mal.search engine is enabled)
     const isMalSearchInUse = Object.entries(searchProviders).some(
       ([key, providerId]) =>
