@@ -826,7 +826,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
-    } else if (result && result.meta) {
+    } /*else if (result && result.meta) {
       // cache wrap the ratings
       if(result.meta.mal_id) {
         try {
@@ -860,7 +860,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
           }
         }
       }
-    }
+    }*/
     
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
