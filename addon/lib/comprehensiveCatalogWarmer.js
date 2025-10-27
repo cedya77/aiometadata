@@ -44,7 +44,18 @@ let warmupStats = {
 class ComprehensiveCatalogWarmer {
   constructor() {
     this.config = WARMUP_CONFIG;
-    this.stats = warmupStats;
+    this.stats = {
+      enabled: WARMUP_CONFIG.enabled,
+      lastRun: null,
+      nextRun: null,
+      isRunning: false,
+      totalCatalogs: 0,
+      catalogsWarmed: 0,
+      totalPages: 0,
+      totalItems: 0,
+      duration: null,
+      errors: []
+    };
     this.isRunning = false;
   }
 
@@ -515,14 +526,16 @@ class ComprehensiveCatalogWarmer {
 
   async getStats() {
     try {
-      // Load persisted stats from Redis
-      const statsKey = `catalog-warmup:stats:${this.config.uuid}`;
-      const persistedStats = await redis.get(statsKey);
-      
-      if (persistedStats) {
-        const parsedStats = JSON.parse(persistedStats);
-        // Merge persisted stats with current stats
-        this.stats = { ...this.stats, ...parsedStats };
+      // Only load persisted stats if we don't have current stats (i.e., at startup)
+      if (!this.stats || this.stats.totalCatalogs === 0) {
+        const statsKey = `catalog-warmup:stats:${this.config.uuid}`;
+        const persistedStats = await redis.get(statsKey);
+        
+        if (persistedStats) {
+          const parsedStats = JSON.parse(persistedStats);
+          // Only merge if we don't have current stats
+          this.stats = { ...this.stats, ...parsedStats };
+        }
       }
     } catch (error) {
       this.log('error', `Failed to load persisted stats: ${error.message}`);
