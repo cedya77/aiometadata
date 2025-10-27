@@ -118,6 +118,10 @@ async function _processStandardItem(item, provider, language, config, includeVid
       return await getMeta(item.type, language, stremioId, config, config.userUUID, includeVideos);
   }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, includeVideos);
   
+  if (result?.meta && item.behaviorHints && Object.keys(item.behaviorHints).length > 0) {
+    result.meta.behaviorHints = item.behaviorHints;
+  }
+  
   return result?.meta || null;
 }
 
