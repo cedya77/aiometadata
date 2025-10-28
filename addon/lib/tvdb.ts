@@ -2,7 +2,7 @@ import { config } from 'dotenv';
 config();
 import { cacheWrapTvdbApi } from './getCache.js';
 import { to3LetterCode } from './language-map.js';
-import { httpPost } from '../utils/httpClient.js';
+import { httpPost, httpGet } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
 
 // TVDB-specific HTTP client with 429 rate limit handling
@@ -14,7 +14,7 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
       if (options.method === 'POST') {
         return await httpPost(url, options.data, options);
       } else {
-        return await tvdbHttpRequest(url, options);
+        return await httpGet(url, options);
       }
     } catch (error: any) {
       lastError = error;
