@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.5.0](https://github.com/cedya77/aiometadata/compare/v1.4.1...v1.5.0) (2025-10-28)
+
+
+### Features
+
+* **config:** Update CACHE_WARMUP_UUID to CACHE_WARMUP_UUIDS for multi-UUID support ([61d6cb6](https://github.com/cedya77/aiometadata/commit/61d6cb6503c6566d697b7a406a5d763606f2a628))
+* **search:** Add search provider renaming and reordering functionality ([0512bc8](https://github.com/cedya77/aiometadata/commit/0512bc8d45156fe0697243c01cff635655c32c27))
+
+
+### Bug Fixes
+
+* catalog warmer stats accumulation ([fb9cc26](https://github.com/cedya77/aiometadata/commit/fb9cc26b4a681b78cd3fad00b1a23a3b7b3ad22e))
+* poster fallback logic on tmdb ([6a6938e](https://github.com/cedya77/aiometadata/commit/6a6938ea9c43383d0028aec9063c9e5222253287))
+* poster fallback logic on tmdb ([e7a9bef](https://github.com/cedya77/aiometadata/commit/e7a9bef6574150740707d15e95661c27a6e4813a))
+
 ## [1.4.1](https://github.com/cedya77/aiometadata/compare/v1.4.0...v1.4.1) (2025-10-24)
 
 
