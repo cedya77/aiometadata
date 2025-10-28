@@ -2,8 +2,44 @@ import { config } from 'dotenv';
 config();
 import { cacheWrapTvdbApi } from './getCache.js';
 import { to3LetterCode } from './language-map.js';
-import { httpGet, httpPost } from '../utils/httpClient.js';
+import { httpPost } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
+
+// TVDB-specific HTTP client with 429 rate limit handling
+async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: number = 3): Promise<any> {
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (options.method === 'POST') {
+        return await httpPost(url, options.data, options);
+      } else {
+        return await tvdbHttpRequest(url, options);
+      }
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a 429 rate limit error
+      if (error.response?.status === 429) {
+        if (attempt < maxRetries) {
+          // Calculate exponential backoff delay: 1s, 2s, 4s, 8s...
+          const delay = Math.min(1000 * Math.pow(2, attempt), 30000); // Cap at 30 seconds
+          console.log(`[TVDB] Rate limited (429), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        } else {
+          console.error(`[TVDB] Rate limited (429), max retries exceeded for ${url}`);
+          throw error;
+        }
+      } else {
+        // Not a 429 error, throw immediately
+        throw error;
+      }
+    }
+  }
+  
+  throw lastError;
+}
 
 const TVDB_API_URL = 'https://api4.thetvdb.com/v4';
 const GLOBAL_TVDB_KEY = process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY;
@@ -385,7 +421,7 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
     }
 
     try {
-      const response = await httpPost(`${TVDB_API_URL}/login`, { apikey: key });
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/login`, { method: 'POST', data: { apikey: key } });
       const token = response.data.data?.token;
       if (!token) {
         console.error(`[TVDB] No token in login response for user ${userUUID}`);
@@ -408,7 +444,7 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
   }
 
   try {
-    const response = await httpPost(`${TVDB_API_URL}/login`, { apikey: key });
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/login`, { method: 'POST', data: { apikey: key } });
     const token = response.data.data?.token;
     if (!token) {
       console.error(`[TVDB] No token in global login response`);
@@ -453,7 +489,7 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -483,7 +519,7 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -513,7 +549,7 @@ async function searchPeople(query: string, config: UserConfig): Promise<TvdbSear
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -541,7 +577,7 @@ async function searchCollections(query: string, config: UserConfig): Promise<Tvd
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=list`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=list`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -572,7 +608,7 @@ async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<
     const startTime = Date.now();
     
     try {
-      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
       const responseTime = Date.now() - startTime;
       
       // Track successful request
@@ -601,7 +637,7 @@ async function getMovieExtended(movieId: string, config: UserConfig): Promise<Tv
     const startTime = Date.now();
     
     try {
-      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
       const responseTime = Date.now() - startTime;
       
       // Track successful request
@@ -627,7 +663,7 @@ async function getPersonExtended(personId: string, config: UserConfig): Promise<
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/people/${personId}/extended`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/people/${personId}/extended`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -657,7 +693,7 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
   while(hasNextPage) {
     const url = `${TVDB_API_URL}/series/${tvdbId}/episodes/${seasonType}/${langCode3}?page=${page}`;
     try {
-      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
       const data = response.data as any;
       if (data.data && data.data.episodes) {
         allEpisodes.push(...data.data.episodes);
@@ -699,7 +735,7 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -729,7 +765,7 @@ async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSea
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -759,7 +795,7 @@ async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {
   
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/genres`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/genres`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -796,7 +832,7 @@ async function filter(type: 'movies' | 'series', params: any, config: UserConfig
       }
     });
     
-    const response = await httpGet(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -829,7 +865,7 @@ async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<
     const startTime = Date.now();
     
     try {
-      const response = await httpGet(url, { 
+      const response = await tvdbHttpRequest(url, { 
         headers: { 'Authorization': `Bearer ${token}` } 
       });
       
@@ -962,7 +998,7 @@ async function getCollectionsList(config: UserConfig, page: number = 0): Promise
   console.log(`[TVDB getCollectionsList] Getting collections list for page ${page}`);
   const startTime = Date.now();
   try {
-    const response = await httpGet(`${TVDB_API_URL}/lists?page=${page}`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/lists?page=${page}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -992,7 +1028,7 @@ async function getCollectionDetails(collectionId: string, config: UserConfig): P
     if (!token) return null;
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/extended`;
-      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
       return (response.data as any)?.data;
     } catch (error) {
       console.error(`[TVDB] Error fetching collection details for ID ${collectionId}:`, (error as Error).message);
@@ -1007,14 +1043,14 @@ async function getCollectionTranslations(collectionId: string, language: string,
     if (!token) return null;
     try {
       const url = `${TVDB_API_URL}/lists/${collectionId}/translations/${language}`;
-      const response = await httpGet(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
       const data = (response.data as any)?.data;
       
       // If no data found and language is not English, fallback to English
       if ((!data || !data.name) && language !== 'eng') {
         console.log(`[TVDB] No translations found for collection ${collectionId} in ${language}, falling back to English`);
         const engUrl = `${TVDB_API_URL}/lists/${collectionId}/translations/eng`;
-        const engResponse = await httpGet(engUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+        const engResponse = await tvdbHttpRequest(engUrl, { headers: { 'Authorization': `Bearer ${token}` } });
         return (engResponse.data as any)?.data;
       }
       

@@ -14,9 +14,19 @@ const logger = consola.create({
 
 // Configuration from environment variables
 const WARMUP_MODE = process.env.CACHE_WARMUP_MODE || 'essential'; // 'essential', 'comprehensive'
+
+// Parse UUIDs from environment variable (supports single UUID or comma-separated list)
+const parseWarmupUUIDs = () => {
+  const uuidString = process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID; // Support both for backward compatibility
+  if (!uuidString) return [];
+  
+  const uuids = uuidString.split(',').map(uuid => uuid.trim()).filter(uuid => uuid.length > 0);
+  return uuids.slice(0, 3); // Limit to 3 UUIDs max
+};
+
 const WARMUP_CONFIG = {
-  enabled: !!process.env.CACHE_WARMUP_UUID && WARMUP_MODE === 'comprehensive',
-  uuid: process.env.CACHE_WARMUP_UUID,
+  enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && WARMUP_MODE === 'comprehensive',
+  uuids: parseWarmupUUIDs(),
   intervalHours: Math.max(12, parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h
   initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,
   maxPagesPerCatalog: parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100,
@@ -27,12 +37,14 @@ const WARMUP_CONFIG = {
   logLevel: process.env.CATALOG_WARMUP_LOG_LEVEL || 'info'
 };
 
-// Stats tracking
+// Stats tracking - now supports multiple UUIDs
 let warmupStats = {
   enabled: WARMUP_CONFIG.enabled,
   lastRun: null,
   nextRun: null,
   isRunning: false,
+  totalUUIDs: WARMUP_CONFIG.uuids.length,
+  uuidStats: {}, // Will store stats per UUID
   totalCatalogs: 0,
   catalogsWarmed: 0,
   totalPages: 0,
@@ -49,6 +61,8 @@ class ComprehensiveCatalogWarmer {
       lastRun: null,
       nextRun: null,
       isRunning: false,
+      totalUUIDs: WARMUP_CONFIG.uuids.length,
+      uuidStats: {},
       totalCatalogs: 0,
       catalogsWarmed: 0,
       totalPages: 0,
@@ -94,56 +108,59 @@ class ComprehensiveCatalogWarmer {
 
   async shouldWarmup() {
     try {
-      const lastWarmupKey = `catalog-warmup:last-run:${this.config.uuid}`;
-      const lastRun = await redis.get(lastWarmupKey);
+      // Check if any UUID needs warming
+      for (const uuid of this.config.uuids) {
+        const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
+        const lastRun = await redis.get(lastWarmupKey);
 
-      if (!lastRun) {
-        this.log('info', 'No previous warmup found - will run');
-        return true;
+        if (!lastRun) {
+          this.log('info', `No previous warmup found for UUID ${uuid} - will run`);
+          return true;
+        }
+
+        const lastRunTime = parseInt(lastRun);
+        const now = Date.now();
+        const hoursSinceLastRun = (now - lastRunTime) / (1000 * 60 * 60);
+        const shouldRun = hoursSinceLastRun >= this.config.intervalHours;
+
+        if (shouldRun) {
+          this.log('info', `UUID ${uuid} last warmup was ${hoursSinceLastRun.toFixed(1)}h ago - will run`);
+          return true;
+        }
       }
 
-      const lastRunTime = parseInt(lastRun);
-      const now = Date.now();
-      const hoursSinceLastRun = (now - lastRunTime) / (1000 * 60 * 60);
-      const shouldRun = hoursSinceLastRun >= this.config.intervalHours;
-
-      if (shouldRun) {
-        this.log('info', `Last warmup was ${hoursSinceLastRun.toFixed(1)}h ago - will run`);
-      } else {
-        const hoursUntilNext = this.config.intervalHours - hoursSinceLastRun;
-        this.log('info', `Last warmup was ${hoursSinceLastRun.toFixed(1)}h ago - skipping (next in ${hoursUntilNext.toFixed(1)}h)`);
-      }
-
-      return shouldRun;
+      // If we get here, no UUIDs need warming
+      this.log('info', `All UUIDs warmed recently - skipping (next in ${this.config.intervalHours}h)`);
+      return false;
     } catch (error) {
       this.log('error', `Failed to check warmup status: ${error.message}`);
       return true;
     }
   }
 
-  async markWarmed() {
+  async markWarmed(uuid) {
     try {
-      const lastWarmupKey = `catalog-warmup:last-run:${this.config.uuid}`;
-      const statsKey = `catalog-warmup:stats:${this.config.uuid}`;
+      const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
+      const statsKey = `catalog-warmup:stats:${uuid}`;
       
-      // Save timestamp
+      // Save timestamp for this specific UUID
       await redis.set(lastWarmupKey, Date.now().toString());
       
-      // Save stats for persistence
+      // Save stats for this UUID
       await redis.set(statsKey, JSON.stringify({
-        catalogsWarmed: this.stats.catalogsWarmed,
-        totalCatalogs: this.stats.totalCatalogs,
-        totalPages: this.stats.totalPages,
-        totalItems: this.stats.totalItems,
-        duration: this.stats.duration,
-        errors: this.stats.errors
+        catalogsWarmed: this.stats.uuidStats[uuid]?.catalogsWarmed || 0,
+        totalCatalogs: this.stats.uuidStats[uuid]?.totalCatalogs || 0,
+        totalPages: this.stats.uuidStats[uuid]?.totalPages || 0,
+        totalItems: this.stats.uuidStats[uuid]?.totalItems || 0,
+        duration: this.stats.uuidStats[uuid]?.duration || null,
+        errors: this.stats.uuidStats[uuid]?.errors || []
       }));
       
       const nextRunTime = Date.now() + (this.config.intervalHours * 60 * 60 * 1000);
       this.stats.nextRun = new Date(nextRunTime).toISOString();
-      this.log('debug', `Marked warmup complete, next run: ${this.stats.nextRun}`);
+      this.log('debug', `Marked warmup complete for UUID ${uuid}, next run: ${this.stats.nextRun}`);
     } catch (error) {
-      this.log('error', `Failed to mark warmup complete: ${error.message}`);
+      this.log('error', `Failed to mark warmup complete for UUID ${uuid}: ${error.message}`);
     }
   }
 
@@ -403,8 +420,8 @@ class ComprehensiveCatalogWarmer {
       return;
     }
 
-    if (!this.config.uuid) {
-      this.log('error', 'Cannot run comprehensive warmup: CACHE_WARMUP_UUID is not set');
+    if (!this.config.uuids || this.config.uuids.length === 0) {
+      this.log('error', 'Cannot run comprehensive warmup: CACHE_WARMUP_UUIDS is not set');
       return;
     }
 
@@ -429,54 +446,79 @@ class ComprehensiveCatalogWarmer {
     const startTime = Date.now();
 
     try {
-      this.log('success', `Starting comprehensive catalog warmup for ${this.config.uuid}...`);
+      this.log('success', `Starting comprehensive catalog warmup for ${this.config.uuids.length} UUID(s)...`);
 
-      // Load user config
-      const config = await database.getUserConfig(this.config.uuid);
-      if (!config) {
-        throw new Error(`Config not found for UUID: ${this.config.uuid}`);
-      }
-
-      // Get enabled catalogs from user config
-      const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled);
-      
-      // Reset stats completely for this run
-      this.stats = {
-        enabled: WARMUP_CONFIG.enabled,
-        lastRun: this.stats.lastRun,
-        nextRun: this.stats.nextRun,
-        isRunning: true,
-        totalCatalogs: enabledCatalogs.length,
-        catalogsWarmed: 0,
-        totalPages: 0,
-        totalItems: 0,
-        duration: null,
-        errors: []
-      };
-
-      this.log('info', `Found ${enabledCatalogs.length} enabled catalogs to warm`);
-
-      // Warm each catalog
-      for (const catalog of enabledCatalogs) {
+      // Process each UUID sequentially
+      for (const uuid of this.config.uuids) {
         try {
-          this.log('info', `Warming catalog: ${catalog.id} (${catalog.name})`);
-          const result = await this.warmCatalog(catalog, config, this.config.uuid);
-          this.stats.catalogsWarmed++;
-          this.log('success', `✓ ${catalog.id}: ${result.pages} pages, ${result.items} items`);
+          this.log('info', `Processing UUID: ${uuid}`);
+          const uuidStartTime = Date.now();
+
+          // Load user config for this UUID
+          const config = await database.getUserConfig(uuid);
+          if (!config) {
+            this.log('error', `Config not found for UUID: ${uuid}`);
+            this.stats.errors.push({ uuid, error: 'Config not found' });
+            continue;
+          }
+
+          // Get enabled catalogs from user config
+          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled);
+          
+          // Initialize stats for this UUID
+          this.stats.uuidStats[uuid] = {
+            totalCatalogs: enabledCatalogs.length,
+            catalogsWarmed: 0,
+            totalPages: 0,
+            totalItems: 0,
+            duration: null,
+            errors: []
+          };
+
+          this.log('info', `Found ${enabledCatalogs.length} enabled catalogs for UUID ${uuid}`);
+
+          // Warm each catalog for this UUID
+          for (const catalog of enabledCatalogs) {
+            try {
+              this.log('info', `Warming catalog: ${catalog.id} (${catalog.name}) for UUID ${uuid}`);
+              const result = await this.warmCatalog(catalog, config, uuid);
+              this.stats.uuidStats[uuid].catalogsWarmed++;
+              this.stats.uuidStats[uuid].totalPages += result.pages;
+              this.stats.uuidStats[uuid].totalItems += result.items;
+              this.log('success', `✓ ${catalog.id}: ${result.pages} pages, ${result.items} items`);
+            } catch (error) {
+              this.log('error', `✗ ${catalog.id}: ${error.message}`);
+              this.stats.uuidStats[uuid].errors.push({ catalog: catalog.id, error: error.message });
+            }
+          }
+
+          // Calculate duration for this UUID
+          const uuidDuration = Date.now() - uuidStartTime;
+          this.stats.uuidStats[uuid].duration = `${Math.floor(uuidDuration / 60000)}m ${Math.floor((uuidDuration % 60000) / 1000)}s`;
+
+          // Mark this UUID as complete
+          await this.markWarmed(uuid);
+
+          // Update overall stats
+          this.stats.totalCatalogs += this.stats.uuidStats[uuid].totalCatalogs;
+          this.stats.catalogsWarmed += this.stats.uuidStats[uuid].catalogsWarmed;
+          this.stats.totalPages += this.stats.uuidStats[uuid].totalPages;
+          this.stats.totalItems += this.stats.uuidStats[uuid].totalItems;
+
+          this.log('success', `UUID ${uuid} complete: ${this.stats.uuidStats[uuid].catalogsWarmed}/${this.stats.uuidStats[uuid].totalCatalogs} catalogs, ${this.stats.uuidStats[uuid].totalPages} pages, ${this.stats.uuidStats[uuid].totalItems} items in ${this.stats.uuidStats[uuid].duration}`);
+
         } catch (error) {
-          this.log('error', `✗ ${catalog.id}: ${error.message}`);
-          this.stats.errors.push({ catalog: catalog.id, error: error.message });
+          this.log('error', `Failed to process UUID ${uuid}: ${error.message}`);
+          this.stats.errors.push({ uuid, error: error.message });
         }
       }
 
-      // Mark as complete
-      await this.markWarmed();
-
-      const duration = Date.now() - startTime;
-      this.stats.duration = `${Math.floor(duration / 60000)}m ${Math.floor((duration % 60000) / 1000)}s`;
+      // Calculate overall duration
+      const overallDuration = Date.now() - startTime;
+      this.stats.duration = `${Math.floor(overallDuration / 60000)}m ${Math.floor((overallDuration % 60000) / 1000)}s`;
       this.stats.lastRun = new Date().toISOString();
 
-      this.log('success', `Warmup complete! Warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
+      this.log('success', `Warmup complete! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
     } catch (error) {
       this.log('error', `Warmup failed: ${error.message}`);
       this.stats.errors.push({ global: error.message });
@@ -487,8 +529,8 @@ class ComprehensiveCatalogWarmer {
   }
 
   async startBackgroundWarming() {
-    if (!process.env.CACHE_WARMUP_UUID) {
-      this.log('info', 'Comprehensive catalog warming disabled - CACHE_WARMUP_UUID not set');
+    if (!process.env.CACHE_WARMUP_UUIDS && !process.env.CACHE_WARMUP_UUID) {
+      this.log('info', 'Comprehensive catalog warming disabled - CACHE_WARMUP_UUIDS not set');
       return;
     }
 
@@ -499,17 +541,26 @@ class ComprehensiveCatalogWarmer {
       return;
     }
 
-    this.log('success', `Comprehensive catalog warming enabled for ${this.config.uuid}`);
+    this.log('success', `Comprehensive catalog warming enabled for ${this.config.uuids.length} UUID(s): ${this.config.uuids.join(', ')}`);
     this.log('info', `Mode: ${WARMUP_MODE}, Interval: ${this.config.intervalHours}h, Initial delay: ${this.config.initialDelaySeconds}s`);
 
-    // Calculate next run time
-    const lastWarmupKey = `catalog-warmup:last-run:${this.config.uuid}`;
-    const lastRun = await redis.get(lastWarmupKey);
-    if (lastRun) {
-      const lastRunTime = parseInt(lastRun);
-      const nextRunTime = lastRunTime + (this.config.intervalHours * 60 * 60 * 1000);
-      this.stats.lastRun = new Date(lastRunTime).toISOString();
-      this.stats.nextRun = new Date(nextRunTime).toISOString();
+    // Calculate next run time based on the earliest UUID that needs warming
+    let earliestNextRun = null;
+    for (const uuid of this.config.uuids) {
+      const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
+      const lastRun = await redis.get(lastWarmupKey);
+      if (lastRun) {
+        const lastRunTime = parseInt(lastRun);
+        const nextRunTime = lastRunTime + (this.config.intervalHours * 60 * 60 * 1000);
+        if (!earliestNextRun || nextRunTime < earliestNextRun) {
+          earliestNextRun = nextRunTime;
+          this.stats.lastRun = new Date(lastRunTime).toISOString();
+        }
+      }
+    }
+    
+    if (earliestNextRun) {
+      this.stats.nextRun = new Date(earliestNextRun).toISOString();
     }
 
     // Initial delay
@@ -528,13 +579,15 @@ class ComprehensiveCatalogWarmer {
     try {
       // Only load persisted stats if we don't have current stats (i.e., at startup)
       if (!this.stats || this.stats.totalCatalogs === 0) {
-        const statsKey = `catalog-warmup:stats:${this.config.uuid}`;
-        const persistedStats = await redis.get(statsKey);
-        
-        if (persistedStats) {
-          const parsedStats = JSON.parse(persistedStats);
-          // Only merge if we don't have current stats
-          this.stats = { ...this.stats, ...parsedStats };
+        // Load stats for each UUID
+        for (const uuid of this.config.uuids) {
+          const statsKey = `catalog-warmup:stats:${uuid}`;
+          const persistedStats = await redis.get(statsKey);
+          
+          if (persistedStats) {
+            const parsedStats = JSON.parse(persistedStats);
+            this.stats.uuidStats[uuid] = parsedStats;
+          }
         }
       }
     } catch (error) {
@@ -544,7 +597,7 @@ class ComprehensiveCatalogWarmer {
     return {
       ...this.stats,
       config: {
-        uuid: this.config.uuid,
+        uuids: this.config.uuids,
         intervalHours: this.config.intervalHours,
         maxPagesPerCatalog: this.config.maxPagesPerCatalog,
         resumeOnRestart: this.config.resumeOnRestart

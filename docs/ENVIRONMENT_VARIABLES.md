@@ -120,11 +120,17 @@ cp .env.example .env
 
 ## Cache Warming Configuration
 
-### `CACHE_WARMUP_UUID`
+### `CACHE_WARMUP_UUIDS`
+- **Default**: None
+- **Description**: Comma-separated list of user UUIDs to use for cache warming operations (up to 3 UUIDs). Each UUID will be warmed sequentially using that user's config for providers, language, etc.
+- **Example**: `CACHE_WARMUP_UUIDS=550e8400-e29b-41d4-a716-446655440000,660f9511-f30c-52e5-b827-557766551111`
+- **Note**: If not set, falls back to `CACHE_WARMUP_UUID` for backward compatibility. Set this to warm caches for multiple user configurations.
+
+### `CACHE_WARMUP_UUID` (Legacy)
 - **Default**: `system-cache-warmer`
-- **Description**: User UUID to use for cache warming operations (uses that user's config for providers, language, etc.)
+- **Description**: **Legacy**: Single user UUID for cache warming operations. Use `CACHE_WARMUP_UUIDS` for multiple UUIDs.
 - **Example**: `CACHE_WARMUP_UUID=550e8400-e29b-41d4-a716-446655440000`
-- **Note**: If not set, uses a default system config. Set this to your own UUID to warm caches with your preferred settings.
+- **Note**: Still supported for backward compatibility. If `CACHE_WARMUP_UUIDS` is set, this is ignored.
 
 ### `CACHE_WARMUP_MODE`
 - **Default**: `essential`
@@ -214,9 +220,9 @@ Complete documentation: [MAL_WARMUP.md](./MAL_WARMUP.md)
 
 ## Comprehensive Catalog Warming
 
-This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifests, etc.) in your user config, across all pages until empty.
+This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifests, etc.) for each configured user, across all pages until empty.
 
-**⚠️ Important**: Set `CACHE_WARMUP_MODE=comprehensive` to enable this feature. Also requires `CACHE_WARMUP_UUID` to be explicitly set.
+**⚠️ Important**: Set `CACHE_WARMUP_MODE=comprehensive` to enable this feature. Also requires `CACHE_WARMUP_UUIDS` (or legacy `CACHE_WARMUP_UUID`) to be explicitly set.
 
 ### `CATALOG_WARMUP_INTERVAL_HOURS`
 - **Default**: `24` (daily)
@@ -406,7 +412,7 @@ FANART_API_KEY=your_key_here
 MDBLIST_API_KEY=your_key_here
 
 # Cache Warmup Configuration
-CACHE_WARMUP_UUID=your-user-uuid-here  # Set to your UUID
+CACHE_WARMUP_UUIDS=your-user-uuid-here,another-user-uuid  # Multiple UUIDs (up to 3)
 CACHE_WARMUP_MODE=comprehensive  # 'essential' or 'comprehensive'
 
 # Comprehensive Catalog Warmup Settings (when mode is 'comprehensive')
@@ -434,7 +440,7 @@ TMDB_API=your_key_here
 TVDB_API_KEY=your_key_here  # Optional
 
 # Cache Warmup (essential mode - lightweight)
-CACHE_WARMUP_UUID=system-cache-warmer
+CACHE_WARMUP_UUID=system-cache-warmer  # Legacy single UUID (still supported)
 CACHE_WARMUP_MODE=essential  # Use 'essential' for lightweight warming only
 
 # Conservative MAL Warmup
