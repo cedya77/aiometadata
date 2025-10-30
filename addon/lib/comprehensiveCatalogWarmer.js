@@ -21,14 +21,14 @@ const parseWarmupUUIDs = () => {
   if (!uuidString) return [];
   
   const uuids = uuidString.split(',').map(uuid => uuid.trim()).filter(uuid => uuid.length > 0);
-  return uuids.slice(0, 3); // Limit to 3 UUIDs max
+  return uuids.slice(0, 5); // Limit to 5 UUIDs max
 };
 
 const WARMUP_CONFIG = {
   enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && WARMUP_MODE === 'comprehensive',
   uuids: parseWarmupUUIDs(),
   intervalHours: Math.max(12, parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h
-  initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,
+  initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 30000,
   maxPagesPerCatalog: parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100,
   resumeOnRestart: process.env.CATALOG_WARMUP_RESUME_ON_RESTART !== 'false',
   quietHoursEnabled: process.env.CATALOG_WARMUP_QUIET_HOURS_ENABLED === 'true',
@@ -368,7 +368,8 @@ class ComprehensiveCatalogWarmer {
         const result = await cacheWrapCatalog(uuid, catalogKey, async () => {
           // Check if this is a MAL catalog
           if (catalogId.startsWith('mal.')) {
-            return await this.warmMALCatalog(catalogId, page, config, extraArgs);
+            const configWithUUID = { ...config, userUUID: uuid };
+            return await this.warmMALCatalog(catalogId, page, configWithUUID, extraArgs);
           } else if (catalogId === 'tmdb.trending') {
             // Special handling for tmdb.trending - call getTrending directly
             if (!uuid) {

@@ -214,7 +214,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
           }
         }
       } catch (error) {
-        logger.warn(`[Meta] Failed to fetch Trakt Up Next videos: ${error.message}`);
+        logger.warn(`[Meta] Failed to fetch Trakt Up Next videos:`, error.message || error || 'Unknown error');
       }
     }
     return { meta };
@@ -1156,7 +1156,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           logger.debug(`[ID Builder] Fetched ${cinemetaVideos.length} Cinemeta videos for IMDB ${imdbId}`);
         }
       } catch (error) {
-        logger.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}: ${error.message}`);
+        logger.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message || error || 'Unknown error');
     }
 
     
@@ -2180,7 +2180,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
               });
             })
             .catch(error => {
-              logger.warn(`[Anime Meta] Failed to fetch Kitsu episodes for enhancement: ${error.message}`);
+              logger.warn(`[Anime Meta] Failed to fetch Kitsu episodes for enhancement:`, error.message || error || 'Unknown error');
             })
         );
       }

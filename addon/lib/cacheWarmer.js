@@ -67,6 +67,9 @@ async function warmEssentialContent() {
     logger.success('[Cache Warming] Essential content warming completed');
   } catch (error) {
     logger.error('[Cache Warming] Error warming essential content:', error.message);
+    if (error && error.stack) {
+      logger.error('[Cache Warming] Stack:', error.stack);
+    }
   }
 }
 

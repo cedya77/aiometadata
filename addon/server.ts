@@ -124,6 +124,14 @@ async function startServer(): Promise<void> {
   const { startComprehensiveCatalogWarming } = require('./lib/comprehensiveCatalogWarmer.js');
   startComprehensiveCatalogWarming();
   
+  // PHASE 5: Start cache cleanup scheduler
+  consola.info('Starting cache cleanup scheduler...');
+  const { startCacheCleanupScheduler } = require('./lib/cacheCleanupScheduler.js');
+  
+  const indexModule = require('./index.js');
+  const dashboardApi = indexModule.getDashboardAPI();
+  startCacheCleanupScheduler(dashboardApi);
+  
   addon.listen(PORT, () => {
     consola.success(`Addon active and listening on port ${PORT}.`);
     consola.info(`Open http://127.0.0.1:${PORT} in your browser.`);

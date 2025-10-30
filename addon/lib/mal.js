@@ -401,7 +401,7 @@ async function jikanGetAllPages(endpoint, initialParams = {}) {
         hasNextPage = false;
       }
     } catch (error) {
-      console.error(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message);
+      console.error(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message || error || 'Unknown error');
       hasNextPage = false; 
     }
     page++;

@@ -1738,6 +1738,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     try {
       let metas = await Promise.all(malIds.map(async id => {
         consola.log(`[parseAnimeCatalogMetaBatch] Fetching Kitsu data for ID: ${id}`);
+        
         const mapping = idMapper.getMappingByMalId(id);
         if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animes.find(anime => anime.mal_id === id), config, language);
         const kitsuData = await cacheWrapGlobal(
@@ -1747,6 +1748,12 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         );
         const item = kitsuData.data[0];
         const stremioType = item.attributes.subtype === 'movie' ? 'movie' : 'series';
+        if((config.mal?.useImdbIdForCatalogAndSearch && stremioType === 'series')){
+          return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
+            const { getMeta } = await import("../lib/getMeta");
+            return await getMeta(stremioType, language, `kitsu:${mapping.kitsu_id}`, config, config.userUUID, false);
+          }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, false))?.meta || null;
+        }
         let finalPosterUrl = await getAnimePosterUrl(id, mapping, stremioType, config, language, anilistArtworkMap, item.attributes.posterImage?.original, kitsuArtworkMap);
         let kitsuReleaseInfo = item.attributes.startDate ? item.attributes.startDate.substring(0, 4) : null;
         if (stremioType === 'series' && item.attributes.startDate) {

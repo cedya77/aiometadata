@@ -67,6 +67,20 @@ function stableStringify(value) {
   return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
 }
 
+// Lightweight stable hash for short log signatures
+function shortSignature(input) {
+  try {
+    let hash = 5381;
+    for (let i = 0; i < input.length; i++) {
+      hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
+    }
+    // convert to unsigned and base36 for compactness
+    return (hash >>> 0).toString(36);
+  } catch {
+    return 'na';
+  }
+}
+
 // Helper to resolve art provider for specific art type
 function resolveArtProvider(contentType, artType, config) {
   const artProviderConfig = config.artProviders?.[contentType];
@@ -684,7 +698,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     ? `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`
     : `catalog:${catalogConfigString}:${catalogKey}`;
   
-  cacheLogger.info(`Catalog cache key (${idOnly}): ${key.substring(0, 120)}...`);
+  const catalogSig = shortSignature(`${userUUID || ''}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
+  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')} ttl:${cacheTTL}s key:${key}`);
     
   return cacheWrap(key, method, cacheTTL, options);
   }
@@ -734,8 +749,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
   
   const searchConfigString = JSON.stringify(searchConfig);
   const key = `search:${searchConfigString}:${searchKey}`;
-  
-      cacheLogger.info(`Search cache key: ${key.substring(0, 120)}...`);
+  const searchSig = shortSignature(`${searchConfigString}`);
+  cacheLogger.info(`Search key detail [sig:${searchSig}] key:${key}`);
   
   // Shorter TTL for search results since they're more dynamic
   const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
@@ -819,8 +834,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
   // Create cache key from context-aware meta config (no UUID for shared caching)
   const metaConfigString = stableStringify(metaConfig);
    const key = `meta:${metaConfigString}:${metaId}`;
-   
-       cacheLogger.debug(`Meta cache key (${prefix}/${metaType}): ${key.substring(0, 120)}...`);
+   const metaSig = shortSignature(`${metaConfigString}`);
+  cacheLogger.info(`Meta key detail (${prefix}/${metaType}) [sig:${metaSig}] key:${key}`);
    
    return cacheWrap(key, method, ttl, options);
 }
@@ -903,6 +918,9 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       scrapeImdb: config.tmdb?.scrapeImdb || false
      };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
+     if (metaConfig.forceAnimeForDetectedImdb) {
+      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+     }
  }
  
 const metaConfigString = stableStringify(metaConfig);
@@ -1133,9 +1151,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     scrapeImdb: config.tmdb?.scrapeImdb || false
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
+   if (metaConfig.forceAnimeForDetectedImdb) {
+    metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+   }
  }
  
  const metaConfigString = stableStringify(metaConfig);
+  const debugSig = shortSignature(`${userUUID}|${metaConfigString}`);
+  cacheLogger.info(`TRACE reconstruct start for ${metaId} [sig:${debugSig}] (type:${metaType}, lang:${metaConfig.language}, videosRequired:${includeVideos}, redis:${REDIS_URL})`);
   
   // Define component cache keys
   const componentCacheKeys = {
@@ -1153,7 +1176,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    };
    
    // Try to fetch all components from cache
-   const componentPromises = Object.entries(componentCacheKeys).map(async ([componentName, cacheKey]) => {
+  const componentPromises = Object.entries(componentCacheKeys).map(async ([componentName, cacheKey]) => {
      try {
        const cached = await redis.get(cacheKey);
        if (cached) {
@@ -1172,8 +1195,12 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
   const componentResults = await Promise.all(componentPromises);
   const availableComponents = componentResults.filter(result => result.data !== null);
+  const present = availableComponents.map(c => c.componentName).sort();
+  const missing = Object.keys(componentCacheKeys).filter(k => !present.includes(k)).sort();
+  cacheLogger.info(`TRACE components for ${metaId} [sig:${debugSig}] present:[${present.join(',')}] missing:[${missing.join(',')}]`);
   
   if (availableComponents.length === 0) {
+    cacheLogger.info(`TRACE fail ${metaId} [sig:${debugSig}] reason:no cached components`);
     return { errorReason: 'no cached components' };
   }
    
@@ -1230,14 +1257,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     
     // If videos are required but not found in cache, fail the reconstruction
     if (!videosComponent) {
-      cacheLogger.info(`Required 'videos' component missing for ${metaId}. Forcing full fetch.`);
+      cacheLogger.info(`TRACE fail ${metaId} [sig:${debugSig}] reason:required videos component missing`);
       return { errorReason: 'required videos component missing' };
     }
     
     // Also check if videos array is valid
     const videos = reconstructedMeta.videos;
     if (!videos || !Array.isArray(videos) || videos.length === 0) {
-      cacheLogger.info(`Series ${metaId} has empty videos array, forcing full reconstruction`);
+      cacheLogger.info(`TRACE fail ${metaId} [sig:${debugSig}] reason:empty videos for series`);
       return { errorReason: 'empty videos for series' };
     }
   }
@@ -1250,7 +1277,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     cacheLogger.warn(`Failed to capture reconstructed metadata for dashboard: ${error.message}`);
   }
   
-  cacheLogger.info(`Successfully reconstructed meta for ${metaId} from ${availableComponents.length} components`);
+  cacheLogger.info(`TRACE success reconstruct for ${metaId} [sig:${debugSig}] components:${availableComponents.length}`);
   
   return { meta: reconstructedMeta };
 }
@@ -1261,7 +1288,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  * @param {boolean} includeVideos - Whether videos are required for this request (default: true)
  */
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
-   cacheLogger.info(`Smart meta caching for ${metaId} (type: ${type}, videos: ${includeVideos})`);
+  cacheLogger.info(`Smart meta caching for ${metaId} (type:${type}, videos:${includeVideos})`);
    
    // First, try to reconstruct from cached components BEFORE calling method
    const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos);

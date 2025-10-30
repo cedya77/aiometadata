@@ -16,7 +16,7 @@ const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
 const { filterMetasByRegex } = require('../utils/regexFilter');
 const consola = require('consola');
-
+const { cacheWrapMetaSmart } = require('./getCache');
 const logger = consola.create({ 
   level: process.env.LOG_LEVEL ? 
     (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
@@ -234,10 +234,24 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           const mapping = await idMapper.getMappingByKitsuId(kitsuId);
           const imdbId = mapping?.imdb_id;
           const imdbRating = imdbId ? await getImdbRating(imdbId, type) : 'N/A';
+          let id = imdbId;
+          const preferredProvider = config.providers?.anime || 'mal';
+          if(preferredProvider === 'kitsu') {
+            id = `kitsu:${kitsuId}`;
+          } else if(preferredProvider === 'mal') {
+            id = `mal:${mapping?.mal_id}`;
+          } 
+          
           
           const background = await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.coverImage?.original}, config);
           const poster = await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.posterImage?.original}, config);
           const logo = type === 'movie' ? mapping?.themoviedb_id ? await moviedb.getTmdbMovieLogo(mapping?.themoviedb_id, config) : null : await Utils.getAnimeLogo({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series'}, config);
+          if((config.mal?.useImdbIdForCatalogAndSearch && type === 'series')){
+            return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
+              const { getMeta } = await import("../lib/getMeta");
+              return await getMeta(type, language, `kitsu:${kitsuId}`, config, config.userUUID, false);
+            }, undefined, {enableErrorCaching: true, maxRetries: 2}, type, false))?.meta || null;
+          }
           return {
             id: `kitsu:${kitsuId}`,
             type: type === 'movie' ? 'movie' : 'series',

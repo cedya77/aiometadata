@@ -1113,13 +1113,41 @@ class DashboardAPI {
             ? this.getTimeAgo(new Date(parseInt(lastCleanup)))
             : "Never";
 
+          // Calculate next run time (6 hours after last cleanup)
+          let nextRunTime = "Now";
+          let isScheduled = false;
+          
+          // Check if automatic scheduling is enabled
+          const schedulerEnabled = process.env.CACHE_CLEANUP_AUTO_ENABLED !== 'false'; // Default to enabled
+          
+          if (lastCleanup) {
+            const lastCleanupTime = parseInt(lastCleanup);
+            const nextRunTimestamp = lastCleanupTime + (6 * 60 * 60 * 1000); // 6 hours in milliseconds
+            const now = Date.now();
+            
+            if (nextRunTimestamp > now) {
+              const timeUntilNext = nextRunTimestamp - now;
+              const hours = Math.floor(timeUntilNext / (60 * 60 * 1000));
+              const minutes = Math.floor((timeUntilNext % (60 * 60 * 1000)) / (60 * 1000));
+              nextRunTime = hours > 0 ? `In ${hours}h ${minutes}m` : `In ${minutes}m`;
+              isScheduled = schedulerEnabled;
+            } else {
+              nextRunTime = schedulerEnabled ? "Scheduled" : "Now";
+              isScheduled = schedulerEnabled;
+            }
+          } else {
+            nextRunTime = schedulerEnabled ? "Scheduled" : "Now";
+            isScheduled = schedulerEnabled;
+          }
+
           tasks.push({
             id: 1,
             name: "Clear expired cache entries",
             status: cacheCleanupStatus,
             lastRun: cacheCleanupTime,
-            description: "Removes expired keys from Redis cache",
-            nextRun: cacheCleanupStatus === "completed" ? "In 6 hours" : "Now",
+            description: `Removes expired keys from Redis cache${isScheduled ? ' (auto-scheduled every 6h)' : ''}`,
+            nextRun: nextRunTime,
+            category: "cleanup"
           });
         }
       } catch (error) {
@@ -1137,7 +1165,30 @@ class DashboardAPI {
         });
       }
 
-      // 2. Anime-list update task - check actual update timestamps
+      // 2. Cache cleanup scheduler status
+      try {
+        const { getCacheCleanupScheduler } = require('./cacheCleanupScheduler');
+        const scheduler = getCacheCleanupScheduler();
+        
+        if (scheduler) {
+          const schedulerStatus = scheduler.getStatus();
+          const schedulerEnabled = process.env.CACHE_CLEANUP_AUTO_ENABLED !== 'false';
+          
+          tasks.push({
+            id: 10,
+            name: "Cache Cleanup Scheduler",
+            status: schedulerEnabled ? "running" : "disabled",
+            lastRun: schedulerStatus.lastRun || "Never",
+            description: "Automatic scheduling of expired cache cleanup (every 6 hours)",
+            nextRun: schedulerStatus.nextRun ? new Date(schedulerStatus.nextRun).toLocaleString() : "Not scheduled",
+            category: "scheduler"
+          });
+        }
+      } catch (error) {
+        console.warn("[Dashboard API] Failed to get cache cleanup scheduler status:", error.message);
+      }
+
+      // 3. Anime-list update task - check actual update timestamps
       try {
         if (this.cache) {
           const animeListLastUpdate = await this.cache.get(
@@ -1442,6 +1493,115 @@ class DashboardAPI {
     } catch (error) {
       console.error("[Dashboard API] Error getting maintenance tasks:", error);
       return [];
+    }
+  }
+
+  // Check how many keys are expiring soon (without actually deleting them)
+  async checkExpiredKeysCount() {
+    try {
+      if (!this.cache) {
+        return { count: 0, error: "Cache not available" };
+      }
+
+      const allKeys = await this.cache.keys("*");
+      let expiredCount = 0;
+
+      // Count keys that will expire within the next hour
+      for (const key of allKeys) {
+        const ttl = await this.cache.ttl(key);
+        if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
+          expiredCount++;
+        }
+      }
+
+      return { count: expiredCount, totalKeys: allKeys.length };
+    } catch (error) {
+      console.error("[Cache Cleanup Scheduler] Error checking expired keys:", error);
+      return { count: 0, error: error.message };
+    }
+  }
+
+  // Smart cache cleanup scheduler
+  async runScheduledCacheCleanup() {
+    try {
+      console.log("[Cache Cleanup Scheduler] Starting scheduled cleanup check...");
+      
+      // Check if cleanup is needed
+      const checkResult = await this.checkExpiredKeysCount();
+      
+      if (checkResult.error) {
+        console.error("[Cache Cleanup Scheduler] Failed to check keys:", checkResult.error);
+        return;
+      }
+
+      if (checkResult.count === 0) {
+        console.log("[Cache Cleanup Scheduler] No expired keys found, skipping cleanup");
+        return;
+      }
+
+      console.log(`[Cache Cleanup Scheduler] Found ${checkResult.count} expired keys out of ${checkResult.totalKeys} total keys`);
+      
+      // Run the actual cleanup
+      const cleanupResult = await this.clearExpiredCacheEntries();
+      
+      if (cleanupResult.success) {
+        console.log(`[Cache Cleanup Scheduler] Scheduled cleanup completed: ${cleanupResult.message}`);
+      } else {
+        console.error(`[Cache Cleanup Scheduler] Scheduled cleanup failed: ${cleanupResult.message}`);
+      }
+      
+    } catch (error) {
+      console.error("[Cache Cleanup Scheduler] Error in scheduled cleanup:", error);
+    }
+  }
+
+  // Clear expired cache entries (for maintenance task)
+  async clearExpiredCacheEntries() {
+    try {
+      if (!this.cache) {
+        throw new Error("Cache not available");
+      }
+
+      console.log("[Maintenance Task] Starting expired cache cleanup...");
+      
+      // Get all keys
+      const allKeys = await this.cache.keys("*");
+      const expiredKeys = [];
+      const totalKeys = allKeys.length;
+
+      console.log(`[Maintenance Task] Checking ${totalKeys} keys for expiration...`);
+
+      // Check each key's TTL
+      for (const key of allKeys) {
+        const ttl = await this.cache.ttl(key);
+        if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
+          expiredKeys.push(key);
+        }
+      }
+
+      console.log(`[Maintenance Task] Found ${expiredKeys.length} expired keys to clear`);
+
+      // Delete expired keys in batches to avoid overwhelming Redis
+      if (expiredKeys.length > 0) {
+        const batchSize = 100;
+        for (let i = 0; i < expiredKeys.length; i += batchSize) {
+          const batch = expiredKeys.slice(i, i + batchSize);
+          await this.cache.del(...batch);
+          console.log(`[Maintenance Task] Cleared batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(expiredKeys.length / batchSize)}`);
+        }
+      }
+
+      // Update maintenance task status
+      await this.cache.set("maintenance:last_cache_cleanup", Date.now().toString());
+
+      const finalKeyCount = await this.cache.dbsize();
+      const message = `Expired cache cleanup completed. Cleared ${expiredKeys.length} expired keys. ${finalKeyCount} keys remain.`;
+
+      console.log(`[Maintenance Task] ${message}`);
+      return { success: true, message, clearedCount: expiredKeys.length, remainingCount: finalKeyCount };
+    } catch (error) {
+      console.error("[Maintenance Task] Error clearing expired cache entries:", error);
+      return { success: false, message: error.message };
     }
   }
 

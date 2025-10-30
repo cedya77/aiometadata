@@ -134,7 +134,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
       error: error.message
     });
     
-    logger.warn(`[API Fetch] Failed to fetch from TMDB ${tmdbId}: ${error.message}`);
+    logger.warn(`[API Fetch] Failed to fetch from TMDB ${tmdbId}:`, error.message || error || 'Unknown error');
     return {};
   }
 }
@@ -190,7 +190,7 @@ async function _fetchFromTvdb(tvdbId, type, config) {
       error: error.message
     });
     
-    logger.warn(`[API Fetch] Failed to fetch from TVDB ${tvdbId}: ${error.message}`);
+    logger.warn(`[API Fetch] Failed to fetch from TVDB ${tvdbId}:`, error.message || error || 'Unknown error');
     return {};
   }
 }
@@ -239,7 +239,7 @@ async function _fetchFromTvmaze(tvmazeId, config) {
       error: error.message
     });
     
-    logger.warn(`[API Fetch] Failed to fetch from TVmaze ${tvmazeId}: ${error.message}`);
+    logger.warn(`[API Fetch] Failed to fetch from TVmaze ${tvmazeId}:`, error.message || error || 'Unknown error');
     return {};
   }
 }

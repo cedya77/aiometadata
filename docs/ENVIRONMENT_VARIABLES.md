@@ -269,6 +269,27 @@ This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifest
 
 ---
 
+## Cache Cleanup Scheduler
+
+### `CACHE_CLEANUP_AUTO_ENABLED`
+- **Default**: `true`
+- **Description**: Enable/disable automatic cache cleanup scheduling
+- **Example**: `CACHE_CLEANUP_AUTO_ENABLED=false`
+- **Note**: When disabled, cache cleanup can still be triggered manually via the dashboard
+
+### `CACHE_CLEANUP_QUIET_HOURS_ENABLED`
+- **Default**: `false`
+- **Description**: Enable quiet hours for cache cleanup (avoids running during specific hours)
+- **Example**: `CACHE_CLEANUP_QUIET_HOURS_ENABLED=true`
+
+### `CACHE_CLEANUP_QUIET_HOURS`
+- **Default**: `02:00-06:00`
+- **Description**: Time range to avoid cache cleanup (format: "HH:MM-HH:MM")
+- **Example**: `CACHE_CLEANUP_QUIET_HOURS=22:00-06:00`
+- **Note**: Uses 24-hour format. Cache cleanup runs every 6 hours but skips during quiet hours
+
+---
+
 ## Cache Warming Configuration (TMDB/TVDB)
 
 ### `ENABLE_CACHE_WARMING`
@@ -427,6 +448,11 @@ MAL_WARMUP_DECADES=true
 
 # Cache
 ENABLE_CACHE_WARMING=true
+
+# Cache Cleanup Scheduler
+CACHE_CLEANUP_AUTO_ENABLED=true
+CACHE_CLEANUP_QUIET_HOURS_ENABLED=false
+CACHE_CLEANUP_QUIET_HOURS=02:00-06:00
 ```
 
 ### Shared Hosting Setup (.env)

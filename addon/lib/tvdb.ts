@@ -888,11 +888,29 @@ async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<
   });
 }
 
+const findArtwork = (artworks, type, lang, config) => {
+  // If englishArtOnly is enabled, prefer English artwork first
+  if (config?.artProviders?.englishArtOnly) {
+    return artworks?.find(a => a.type === type && a.language === 'eng')?.image
+      || artworks?.find(a => a.type === type)?.image;
+  }
+  // Otherwise use preferred language fallback
+  return artworks?.find(a => a.type === type && a.language === lang)?.image
+    || artworks?.find(a => a.type === type && a.language === 'eng')?.image
+    || artworks?.find(a => a.type === type)?.image;
+};
+
 async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<string | null> {
   try {
     const seriesData = await getSeriesExtended(seriesId, config);
-    if (seriesData && seriesData.image) {
-      return seriesData.image.startsWith('http') ? seriesData.image : `${TVDB_IMAGE_BASE}${seriesData.image}`;
+    const langCode = config.language?.split('-')[0];
+    let langCode3 = 'eng';
+    if (langCode) {
+       langCode3 = await to3LetterCode(langCode, config);
+    }
+    if (seriesData && seriesData.artworks) {
+      const posterArtwork = findArtwork(seriesData.artworks, 2, langCode3, config);
+      return posterArtwork;
     }
     return null;
   } catch (error) {
@@ -901,15 +919,15 @@ async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<st
   }
 }
 
+
 async function getSeriesBackground(seriesId: string, config: UserConfig): Promise<string | null> {
   try {
     const seriesData = await getSeriesExtended(seriesId, config);
     if (seriesData && seriesData.artworks) {
       // Look for background artwork (type 3 is typically background)
-      const backgroundArtwork = seriesData.artworks.find(art => art.type === 3);
-      if (backgroundArtwork && backgroundArtwork.image) {
-        return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;
-      }
+      const backgroundArtwork = findArtwork(seriesData.artworks, 3, null, config);
+      console.log(`[getSeriesBackground] Found background artwork for series ${seriesId}: ${backgroundArtwork}`);
+      return backgroundArtwork;
     }
     return null;
   } catch (error) {
@@ -921,8 +939,14 @@ async function getSeriesBackground(seriesId: string, config: UserConfig): Promis
 async function getMoviePoster(movieId: string, config: UserConfig): Promise<string | null> {
   try {
     const movieData = await getMovieExtended(movieId, config);
-    if (movieData && movieData.image) {
-      return movieData.image.startsWith('http') ? movieData.image : `${TVDB_IMAGE_BASE}${movieData.image}`;
+    const langCode = config.language?.split('-')[0];
+    let langCode3 = 'eng';
+    if (langCode) {
+       langCode3 = await to3LetterCode(langCode, config);
+    }
+    if (movieData && movieData.artworks) {
+      const posterArtwork = findArtwork(movieData.artworks, 14, langCode3, config);
+      return posterArtwork;
     }
     return null;
   } catch (error) {
@@ -936,20 +960,16 @@ async function getMovieBackground(movieId: string, config: UserConfig): Promise<
     const movieData = await getMovieExtended(movieId, config);
     if (movieData && movieData.artworks) {
       // Look for background artwork (type 15 is background for movies)
-      const backgroundArtwork = movieData.artworks.find(art => art.type === 15 && art.includesText === false);
-      if (backgroundArtwork && backgroundArtwork.image) {
-        console.log(`[TVDB] Found movie background (type 15) for TVDB ID ${movieId}: ${backgroundArtwork.image}`);
-        return backgroundArtwork.image.startsWith('http') ? backgroundArtwork.image : `${TVDB_IMAGE_BASE}${backgroundArtwork.image}`;
+      const backgroundArtwork = findArtwork(movieData.artworks, 15, null, config);
+      if (backgroundArtwork) {
+        return backgroundArtwork;
       }
       
       // Fallback to type 3 if type 15 not found
-      const fallbackBackground = movieData.artworks.find(art => art.type === 3);
-      if (fallbackBackground && fallbackBackground.image) {
-        console.log(`[TVDB] Found movie background (type 3 fallback) for TVDB ID ${movieId}: ${fallbackBackground.image}`);
-        return fallbackBackground.image.startsWith('http') ? fallbackBackground.image : `${TVDB_IMAGE_BASE}${fallbackBackground.image}`;
+      const fallbackBackground = findArtwork(movieData.artworks, 3, null, config);
+      if (fallbackBackground) {
+        return fallbackBackground;
       }
-      
-      console.log(`[TVDB] No background artwork found for movie ${movieId}. Available types:`, movieData.artworks.map(art => art.type));
     }
     return null;
   } catch (error) {
@@ -961,11 +981,16 @@ async function getMovieBackground(movieId: string, config: UserConfig): Promise<
 async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<string | null> {
   try {
     const seriesData = await getSeriesExtended(seriesId, config);
+    const langCode = config.language?.split('-')[0];
+    let langCode3 = 'eng';
+    if (langCode) {
+       langCode3 = await to3LetterCode(langCode, config);
+    }
     if (seriesData && seriesData.artworks) {
       // Look for clear logo artwork (type 23 is clear logo for series)
-      const logoArtwork = seriesData.artworks.find(art => art.type === 23);
-      if (logoArtwork && logoArtwork.image) {
-        return logoArtwork.image.startsWith('http') ? logoArtwork.image : `${TVDB_IMAGE_BASE}${logoArtwork.image}`;
+      const logoArtwork = findArtwork(seriesData.artworks, 23, langCode3, config);
+      if (logoArtwork) {
+        return logoArtwork;
       }
     }
     return null;
@@ -978,11 +1003,16 @@ async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<stri
 async function getMovieLogo(movieId: string, config: UserConfig): Promise<string | null> {
   try {
     const movieData = await getMovieExtended(movieId, config);
+    const langCode = config.language?.split('-')[0];
+    let langCode3 = 'eng';
+    if (langCode) {
+       langCode3 = await to3LetterCode(langCode, config);
+    }
     if (movieData && movieData.artworks) {
       // Look for clear logo artwork (type 25 is clear logo for movies)
-      const logoArtwork = movieData.artworks.find(art => art.type === 25);
-      if (logoArtwork && logoArtwork.image) {
-        return logoArtwork.image.startsWith('http') ? logoArtwork.image : `${TVDB_IMAGE_BASE}${logoArtwork.image}`;
+      const logoArtwork = findArtwork(movieData.artworks, 25, langCode3, config);
+      if (logoArtwork) {
+        return logoArtwork;
       }
     }
     return null;
