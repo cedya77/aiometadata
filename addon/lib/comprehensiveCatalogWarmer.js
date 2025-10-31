@@ -351,7 +351,9 @@ class ComprehensiveCatalogWarmer {
     }
     
     const catalogId = catalog.id;
-    const pageSize = catalogId.startsWith('mal.') ? 25 : 20;
+    const pageSize = catalogId.startsWith('mal.') ? 25 : 
+                     (catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.')) ? 
+                     parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
     let page = 1;
     let totalItems = 0;
     const maxPages = this.config.maxPagesPerCatalog;
