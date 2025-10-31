@@ -10,7 +10,7 @@ const { getCatalog } = require("./lib/getCatalog");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
-const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth } = require("./lib/getCache");
+const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth, stableStringify } = require("./lib/getCache");
 const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
@@ -577,7 +577,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   const cacheWrapper = cacheWrapCatalog;
 
-  const catalogKey = `${id}:${actualType}:${JSON.stringify(extraArgs || {})}`;
+  const catalogKey = `${id}:${actualType}:${stableStringify(extraArgs || {})}`;
   
   const cacheOptions = {
     enableErrorCaching: true,
@@ -589,7 +589,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       
       if (id === 'search') {
       // Use search-specific cache wrapper
-      const searchKey = `${id}:${actualType}:${JSON.stringify(extraArgs)}`;
+      const searchKey = `${id}:${actualType}:${stableStringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
         const searchResult = await getSearch(id, actualType, language, extraArgs, config);

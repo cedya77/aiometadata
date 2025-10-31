@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { cacheWrapCatalog, cacheWrapJikanApi } = require('./getCache');
+const { cacheWrapCatalog, cacheWrapJikanApi, stableStringify } = require('./getCache');
 const { parseAnimeCatalogMetaBatch } = require('../utils/parseProps');
 const jikan = require('./mal');
 const database = require('./database');
@@ -354,24 +354,45 @@ class ComprehensiveCatalogWarmer {
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
                      (catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.')) ? 
                      parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
-    let page = 1;
+    // Determine if manifest will include a "None" genre option for this catalog
+    // When showInHome=false and catalog type adds "None", Stremio will send genre=None
+    const shouldIncludeGenreNone = (
+      catalog.showInHome === false && (
+        catalogId.startsWith('mdblist.') ||
+        catalogId.startsWith('stremthru.') ||
+        catalogId.startsWith('custom.') ||
+        catalogId.startsWith('streaming.') ||
+        catalogId === 'tmdb.top'
+      )
+    );
+
+    // Use the genre value that Stremio will actually send
+    const genreValue = shouldIncludeGenreNone ? 'None' : null;
+
     let totalItems = 0;
+
+    this.log('debug', `Starting to warm catalog: ${catalogId} with UUID: ${uuid}${shouldIncludeGenreNone ? ' (with genre=None)' : ''}`);
+
+    // Real-world Stremio skip: accumulate items seen so far
+    let totalSeen = 0;
+    let iterations = 0; // used for maxPages safety cap
     const maxPages = this.config.maxPagesPerCatalog;
 
-    this.log('debug', `Starting to warm catalog: ${catalogId} with UUID: ${uuid}`);
-
-    while (page <= maxPages) {
+    while (iterations < maxPages) {
       try {
-        const skip = page > 1 ? (page - 1) * pageSize : 0;
-        const extraArgs = skip > 0 ? { skip: skip.toString() } : {};
-        const actualType = catalog.type;
-        const catalogKey = `${catalogId}:${actualType}:${JSON.stringify(extraArgs || {})}`;
+        // Construct extraArgs in the exact order Stremio sends: skip first, then genre
+        const extraArgs = {};
+        if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
+        if (genreValue) extraArgs.genre = genreValue;
+          const derivedPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
+          const actualType = catalog.type;
+          const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;
 
-        const result = await cacheWrapCatalog(uuid, catalogKey, async () => {
+          const result = await cacheWrapCatalog(uuid, catalogKey, async () => {
           // Check if this is a MAL catalog
           if (catalogId.startsWith('mal.')) {
             const configWithUUID = { ...config, userUUID: uuid };
-            return await this.warmMALCatalog(catalogId, page, configWithUUID, extraArgs);
+             return await this.warmMALCatalog(catalogId, derivedPage, configWithUUID, extraArgs);
           } else if (catalogId === 'tmdb.trending') {
             // Special handling for tmdb.trending - call getTrending directly
             if (!uuid) {
@@ -379,7 +400,8 @@ class ComprehensiveCatalogWarmer {
             }
             const configWithUUID = { ...config, userUUID: uuid };
             const { getTrending } = require('./getTrending');
-            return await getTrending(catalog.type, config.language, page, extraArgs.genre || null, configWithUUID, uuid, config.providers?.series !== 'tmdb');
+            // getTrending is page-based; derive page from totalSeen/pageSize to keep behavior aligned
+             return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, config.providers?.series !== 'tmdb');
           } else {
             // Everything else goes through getCatalog
             if (!uuid) {
@@ -388,28 +410,29 @@ class ComprehensiveCatalogWarmer {
             // Add userUUID to config object for parseStremThruItems
             const configWithUUID = { ...config, userUUID: uuid };
             const { getCatalog } = require('./getCatalog');
-            return await getCatalog(catalog.type, config.language, page, catalogId, extraArgs.genre || null, configWithUUID, uuid, config.providers?.series !== 'tmdb');
+            // getCatalog is page-based; derive page from totalSeen/pageSize to mirror Stremio skip accumulation
+             return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, config.providers?.series !== 'tmdb');
           }
-        }, undefined, { enableErrorCaching: false, maxRetries: 1 });
+          }, undefined, { enableErrorCaching: false, maxRetries: 1 });
 
-        if (!result?.metas || result.metas.length === 0) {
-          this.log('debug', `Catalog ${catalogId} complete at page ${page}`);
-          break;
-        }
+          if (!result?.metas || result.metas.length === 0) {
+            this.log('debug', `Catalog ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} complete at page ${derivedPage}`);
+            break;
+          }
 
-        totalItems += result.metas.length;
-        this.stats.totalPages++;
-        this.stats.totalItems += result.metas.length;
-        page++;
+          totalItems += result.metas.length;
+          totalSeen += result.metas.length;
+          iterations++;
 
-        await this.delay(this.config.taskDelayMs);
+          await this.delay(this.config.taskDelayMs);
       } catch (error) {
-        this.log('error', `Error warming ${catalogId} page ${page}: ${error.message}`);
-        break;
+          const currentPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
+          this.log('error', `Error warming ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} page ${currentPage}: ${error.message}`);
+          break;
       }
     }
 
-    return { pages: page - 1, items: totalItems };
+    return { pages: iterations, items: totalItems };
   }
 
   async runWarmup(force = false) {

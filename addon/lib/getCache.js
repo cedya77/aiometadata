@@ -1713,5 +1713,6 @@ module.exports = {
   clearCache,
   logCacheHealth,
   cacheWrapTvdbApi,
-  cacheWrapTvmazeApi
+  cacheWrapTvmazeApi,
+  stableStringify
 };
