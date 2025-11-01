@@ -2,6 +2,7 @@ require("dotenv").config();
 const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
+const { isRPDBEnabled } = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { getImdbRating } = require("./getImdbRating");
 const { to3LetterCode } = require("./language-map"); 
@@ -17,6 +18,7 @@ const { performGeminiSearch } = require('../utils/gemini-service');
 const { filterMetasByRegex } = require('../utils/regexFilter');
 const consola = require('consola');
 const { cacheWrapMetaSmart } = require('./getCache');
+const wikiMappings = require('./wiki-mapper.js');
 const logger = consola.create({ 
   level: process.env.LOG_LEVEL ? 
     (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
@@ -147,7 +149,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     id: stremioId,
     type: type,
     name: translatedName, 
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl,
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl,
     _rawPosterUrl: rawPosterUrl, 
     year: extendedRecord.year,
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
@@ -232,7 +234,8 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
         try {
           const kitsuId = item.id;
           const mapping = await idMapper.getMappingByKitsuId(kitsuId);
-          const imdbId = mapping?.imdb_id;
+          let imdbId = mapping?.imdb_id;
+          const malId = mapping?.mal_id;
           const imdbRating = imdbId ? await getImdbRating(imdbId, type) : 'N/A';
           let id = imdbId;
           const preferredProvider = config.providers?.anime || 'mal';
@@ -246,6 +249,26 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           const background = await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.coverImage?.original}, config);
           const poster = await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.posterImage?.original}, config);
           const logo = type === 'movie' ? mapping?.themoviedb_id ? await moviedb.getTmdbMovieLogo(mapping?.themoviedb_id, config) : null : await Utils.getAnimeLogo({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: mapping?.thetvdb_id, tmdbId: mapping?.themoviedb_id, mediaType: type === 'movie' ? 'movie' : 'series'}, config);
+          
+          // Apply RPDB for series (non-movies)
+          let finalPoster = poster || `${host}/missing_poster.png`;
+          if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
+            const tmdbId = type === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
+            imdbId = type === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : imdbId;
+            const tvdbId = type === 'movie' ? (await wikiMappings.getByImdbId(imdbId, type))?.tvdbId || null : mapping?.thetvdb_id;
+            let proxyId = null;
+            if (imdbId) {
+              proxyId = imdbId;
+            } else if (tvdbId) {
+              proxyId = `tvdb:${tvdbId}`;
+            } else if (tmdbId) {
+              proxyId = `tmdb:${tmdbId}`;
+            }
+            if (proxyId) {
+              finalPoster = `${host}/poster/series/${proxyId}?fallback=${encodeURIComponent(finalPoster)}&lang=${language}&key=${config.apiKeys.rpdb}`;
+            }
+          }
+          
           if((config.mal?.useImdbIdForCatalogAndSearch && type === 'series')){
             return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
               const { getMeta } = await import("../lib/getMeta");
@@ -256,7 +279,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
             id: `kitsu:${kitsuId}`,
             type: type === 'movie' ? 'movie' : 'series',
             name: Utils.getKitsuLocalizedTitle(item.titles, language) || item.canonicalTitle, 
-            poster: type === 'movie' ? item.posterImage?.original : poster || `${host}/missing_poster.png`,
+            poster: finalPoster,
             logo: logo || null,
             background: type === 'movie' ? item.coverImage?.original : background || null,
             description: Utils.addMetaProviderAttribution(item.synopsis || item.description || '', 'Kitsu', config),
@@ -458,7 +481,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const parsed = Utils.parseMedia(details, mediaType, [], config);
         if (!parsed) return null; // In case parsing fails
         parsed.id = stremioId;
-        parsed.poster = config.apiKeys?.rpdb ? posterProxyUrl : validPosterUrl;
+        parsed.poster = (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl;
         parsed.imdbRating = imdbRating;
         parsed.logo = logoUrl;
         parsed.background = backgroundUrl;
@@ -919,7 +942,7 @@ async function parseTvmazeResult(show, config) {
     id: stremioId,
     type: 'series',
     name: show.name,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : fallbackImage,
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : fallbackImage,
     background: show.image?.original ? `${show.image.original}` : null,
     description: Utils.addMetaProviderAttribution(show.summary ? show.summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     genres: show.genres || [],

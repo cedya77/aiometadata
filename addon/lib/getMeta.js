@@ -1,5 +1,6 @@
 require("dotenv").config();
 const Utils = require("../utils/parseProps");
+const { isRPDBEnabled } = require("../utils/parseProps");
 const moviedb = require("./getTmdb");
 const tvdb = require("./tvdb");
 const imdb = require("./imdb");
@@ -21,6 +22,7 @@ const kitsu = require('./kitsu');
 var nameToImdb = require("name-to-imdb");
 const consola = require('consola');
 const { cp } = require("fs");
+const wikiMappings = require('./wiki-mapper.js');
 
 // Configure logging level based on environment (consistent with other modules)
 const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
@@ -685,8 +687,21 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
   
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
+  if(type === 'movie') {
+    if(allIds?.malId) {
+      allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
+      allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
+      allIds.tvdbId =  (await wikiMappings.getByImdbId(allIds.imdbId, type))?.tvdbId || null;
+
+    } else {
+      allIds.tvdbId = null
+      allIds.tvmazeId = null
+      allIds.imdbId = null
+      allIds.tmdbId = null
+    }
+  }
   // check if stremioId starts with one of the animeIdProviders
-  if (!(type === 'movie' && animeIdProviders.some(provider => stremioId.startsWith(provider)))) {
+  if (!(animeIdProviders.some(provider => stremioId.startsWith(provider)))) {
     try {
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
         const langCode = language.split('-')[0];
@@ -858,7 +873,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     ]);
   }
 
-  const posterProxyUrl = config.apiKeys?.rpdb 
+  const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
     ? `${host}/poster/series/imdb:${imdbId}?fallback=${encodeURIComponent(poster)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
     : poster;
 
@@ -910,7 +925,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     ]);
   }
 
-  const posterProxyUrl = config.apiKeys?.rpdb
+  const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
     ? `${host}/poster/movie/imdb:${imdbId}?fallback=${encodeURIComponent(poster)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
     : poster;
 
@@ -1041,7 +1056,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     runtime: Utils.parseRunTime(movieData.runtime),
     country: Utils.parseCoutry(movieData.production_countries),
     imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
     background: background,
     logo: processLogo(logoUrl),
     // filter out trailers with lang !== language. if none left return full array,
@@ -1092,7 +1107,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   ]);
   }
   // log arts 
-  logger.debug(`[TmdbSeriesMeta] poster: ${poster}, background: ${background}, logoUrl: ${logoUrl}`);
+  l//ogger.debug(`[TmdbSeriesMeta] poster: ${poster}, background: ${background}, logoUrl: ${logoUrl}`);
   
   const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
@@ -1443,7 +1458,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date + 'T12:00:00.000Z').toISOString() : null,
     status: seriesData.status,
     imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
     background: background,
     logo: logoUrl,
     trailers: Utils.parseTrailers(trailers),
@@ -1593,7 +1608,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     runtime: Utils.parseRunTime(movieData.runtime),
     country: movieData.originalCountry,
     imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
     background: background,
     logo: processLogo(logoUrl),
     trailers: trailers,
@@ -1909,7 +1924,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     status: tvdbShow.status?.name,
     country: tvdbShow.originalCountry,
     imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster,
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
     background: background, 
     logo: logoUrl,
     videos: videos,
@@ -2106,7 +2121,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     status: tvmazeShow.status,
     country: tvmazeShow.network?.country?.name || null,
     imdbRating,
-    poster: config.apiKeys?.rpdb ? posterProxyUrl : poster, 
+    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster, 
     background: background,
     logo: processLogo(logoUrl), 
     videos,
@@ -2139,7 +2154,8 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     // Use AniList poster if available and configured
     let finalPosterUrl = enrichmentData.bestPosterUrl || posterUrl; 
 
-    if (config.apiKeys?.rpdb && mapping && stremioType !== 'movie') {
+    // Check if RPDB is enabled (check catalog-specific setting if available, otherwise default to true)
+    if (config.apiKeys?.rpdb && isRPDBEnabled(config) && mapping && stremioType !== 'movie') {
       const tvdbId = mapping.tvdbId;
       const tmdbId = mapping.tmdbId;
       const imdbId = mapping.imdbId;

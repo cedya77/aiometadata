@@ -19,6 +19,7 @@ interface ConfigContextType {
   setAuth: React.Dispatch<React.SetStateAction<AuthState>>;
   hasBuiltInTvdb: boolean;
   hasBuiltInTmdb: boolean;
+  catalogTTL: number;
   isLoading: boolean;
 }
 
@@ -248,6 +249,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasBuiltInTvdb, setHasBuiltInTvdb] = useState(false);
   const [hasBuiltInTmdb, setHasBuiltInTmdb] = useState(false);
+  const [catalogTTL, setCatalogTTL] = useState(86400); // Default to 24 hours
 
   // --- THIS IS THE CORRECTED EFFECT ---
   useEffect(() => {
@@ -260,6 +262,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         setAddonVersion(envApiKeys.addonVersion || ' ');
         setHasBuiltInTvdb(!!envApiKeys.hasBuiltInTvdb);
         setHasBuiltInTmdb(!!envApiKeys.hasBuiltInTmdb);
+        setCatalogTTL(envApiKeys.catalogTTL || 86400);
 
         // Layer in the server keys with the correct priority.
         // We use `preloadedConfig` because it holds the user's saved data.
@@ -304,7 +307,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading }}>
       {children}
     </ConfigContext.Provider>
   );

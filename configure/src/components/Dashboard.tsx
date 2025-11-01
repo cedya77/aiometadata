@@ -2299,6 +2299,10 @@ function DashboardOperations({ data, loading }) {
     memoryUsage: "0 MB",
     hitRate: 0,
     evictionRate: 0,
+    hits: 0,
+    misses: 0,
+    cachedErrors: 0,
+    byType: {},
   });
 
   const [errorLogs, setErrorLogs] = useState([]);
@@ -2320,6 +2324,10 @@ function DashboardOperations({ data, loading }) {
             : "0%",
           hitRate: data.cacheStats.hitRate || 0,
           evictionRate: data.cacheStats.evictionRate || 0,
+          hits: data.cacheStats.hits || 0,
+          misses: data.cacheStats.misses || 0,
+          cachedErrors: data.cacheStats.cachedErrors || 0,
+          byType: data.cacheStats.byType || {},
         });
       }
     }
@@ -2370,6 +2378,10 @@ function DashboardOperations({ data, loading }) {
                   : "0%",
                 hitRate: data.cacheStats.hitRate || 0,
                 evictionRate: data.cacheStats.evictionRate || 0,
+                hits: data.cacheStats.hits || 0,
+                misses: data.cacheStats.misses || 0,
+                cachedErrors: data.cacheStats.cachedErrors || 0,
+                byType: data.cacheStats.byType || {},
               });
             }
           }
@@ -2454,6 +2466,10 @@ function DashboardOperations({ data, loading }) {
                   : "0%",
                 hitRate: newData.cacheStats.hitRate || 0,
                 evictionRate: newData.cacheStats.evictionRate || 0,
+                hits: newData.cacheStats.hits || 0,
+                misses: newData.cacheStats.misses || 0,
+                cachedErrors: newData.cacheStats.cachedErrors || 0,
+                byType: newData.cacheStats.byType || {},
               });
             }
           }
@@ -2503,10 +2519,49 @@ function DashboardOperations({ data, loading }) {
                 <span className="font-medium">{cacheStats.memoryUsage}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm font-medium">Hit Rate</span>
+                <span className="text-sm font-medium">Hit Rate (Successful Only)</span>
                 <span className="font-medium">{cacheStats.hitRate}%</span>
               </div>
               <Progress value={cacheStats.hitRate} className="mt-2" />
+              <div className="pt-2 border-t space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Cache Hits</span>
+                  <span className="font-medium text-green-600">{cacheStats.hits.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Cache Misses</span>
+                  <span className="font-medium text-amber-600">{cacheStats.misses.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Cached Errors</span>
+                  <span className="font-medium text-red-600">{cacheStats.cachedErrors.toLocaleString()}</span>
+                </div>
+              </div>
+              {/* Per-type hit rates */}
+              {cacheStats.byType && Object.keys(cacheStats.byType).length > 0 && (
+                <div className="pt-2 border-t space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground mb-1">By Type:</div>
+                  {Object.entries(cacheStats.byType).map(([type, stats]: [string, any]) => {
+                    const typeTotal = stats.totalRequests || 0;
+                    if (typeTotal === 0) return null;
+                    return (
+                      <div key={type} className="flex justify-between items-center">
+                        <span className="text-xs capitalize">{type}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium">{stats.hitRate}%</span>
+                          <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-primary"
+                              style={{ width: `${stats.hitRate}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">({stats.hits}/{typeTotal})</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="space-y-3">
               <Button

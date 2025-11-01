@@ -18,7 +18,7 @@ interface MDBListIntegrationProps {
 }
 
 export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps) {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, catalogTTL } = useConfig();
   const [tempKey, setTempKey] = useState(config.apiKeys.mdblist || "");
   const [isValid, setIsValid] = useState(!!config.apiKeys.mdblist);
   const [isChecking, setIsChecking] = useState(false);
@@ -29,7 +29,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [isLoadingCustomUser, setIsLoadingCustomUser] = useState(false);
   const [defaultSort, setDefaultSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>('default');
   const [defaultOrder, setDefaultOrder] = useState<'asc' | 'desc'>('asc');
-  const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(86400); // Default to 24 hours
+  const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(catalogTTL);
   const [defaultGenreSelection, setDefaultGenreSelection] = useState<GenreSelection>('standard'); // Default to standard genres only
   const [popularLists, setPopularLists] = useState<any[]>([]);
   const [selectedPopularLists, setSelectedPopularLists] = useState<Set<string>>(new Set());
@@ -229,6 +229,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
+              enableRPDB: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -298,6 +299,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
+              enableRPDB: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -388,6 +390,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
+              enableRPDB: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -542,7 +545,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           sort: defaultSort,
           order: defaultOrder,
           cacheTTL: defaultCacheTTL,
-          genreSelection: defaultGenreSelection
+          genreSelection: defaultGenreSelection,
+          enableRPDB: true
         };
 
         setConfig(prev => {
@@ -588,6 +592,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
             genreSelection: defaultGenreSelection,
+            enableRPDB: true,
             ...(movieDisplayType && { displayType: movieDisplayType }),
           };
 
@@ -603,6 +608,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
             genreSelection: defaultGenreSelection,
+            enableRPDB: true,
             ...(seriesDisplayType && { displayType: seriesDisplayType }),
           };
 
@@ -734,12 +740,12 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                     id="default-cache-ttl"
                     type="number"
                     value={defaultCacheTTL}
-                    onChange={(e) => setDefaultCacheTTL(parseInt(e.target.value) || 86400)}
+                    onChange={(e) => setDefaultCacheTTL(parseInt(e.target.value) || catalogTTL)}
                     min="300"
                     max="604800"
                     step="3600"
                     className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                    placeholder="86400"
+                    placeholder={catalogTTL.toString()}
                   />
                   <span className="text-sm text-muted-foreground whitespace-nowrap">
                     ({Math.floor(defaultCacheTTL / 3600)}h {Math.floor((defaultCacheTTL % 3600) / 60)}m)

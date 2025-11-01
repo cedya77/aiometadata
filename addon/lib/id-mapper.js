@@ -8,12 +8,16 @@ const { numberValueTypes } = require('framer-motion');
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
 const REMOTE_KITSU_TO_IMDB_MAPPING_URL = 'https://raw.githubusercontent.com/TheBeastLT/stremio-kitsu-anime/bbf149474f610885629b95b1b9ce4408c3c1353d/static/data/imdb_mapping.json';
+const REMOTE_TRAKT_ANIME_MOVIES_URL = 'https://raw.githubusercontent.com/rensetsu/db.trakt.extended-anitrakt/refs/heads/main/movies_ex.json';
 const LOCAL_CACHE_PATH = path.join(process.cwd(), 'addon', 'data', 'anime-list-full.json.cache');
 const LOCAL_KITSU_TO_IMDB_MAPPING_PATH = path.join(process.cwd(), 'addon', 'data', 'imdb_mapping.json.cache');
+const LOCAL_TRAKT_ANIME_MOVIES_PATH = path.join(process.cwd(), 'addon', 'data', 'trakt-anime-movies.json.cache');
 const REDIS_ETAG_KEY = 'anime-list-etag'; 
 const REDIS_KITSU_TO_IMDB_ETAG_KEY = 'kitsu-to-imdb-etag';
+const REDIS_TRAKT_ANIME_MOVIES_ETAG_KEY = 'trakt-anime-movies-etag';
 const UPDATE_INTERVAL_HOURS = parseInt(process.env.ANIME_LIST_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
 const UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS = parseInt(process.env.KITSU_TO_IMDB_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
+const UPDATE_INTERVAL_TRAKT_ANIME_MOVIES_HOURS = parseInt(process.env.TRAKT_ANIME_MOVIES_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
 
 let animeIdMap = new Map();
 let tvdbIdToAnimeListMap = new Map();
@@ -26,6 +30,11 @@ let imdbIdToAnimeListMap = new Map();
 let updateInterval = null;
 let kitsuToImdbMapping = null;
 let isKitsuToImdbInitialized = false;
+let traktAnimeMovies = null;
+let isTraktAnimeMoviesInitialized = false;
+let malIdToTraktMovieMap = new Map();
+let tmdbIdToTraktMovieMap = new Map();
+let imdbIdToTraktMovieMap = new Map();
 
 function processAndIndexData(jsonData) {
   const animeList = JSON.parse(jsonData);
@@ -117,6 +126,96 @@ async function downloadAndProcessAnimeList() {
 }
 
 /**
+ * Downloads and processes the Trakt anime movies mapping file.
+ * It uses Redis and ETags to check if the remote file has changed,
+ * avoiding a full download if the local cache is up-to-date.
+ */
+async function downloadAndProcessTraktAnimeMovies() {
+  const useRedisCache = redis; 
+
+  try {
+    if (useRedisCache) {
+      const savedEtag = await redis.get(REDIS_TRAKT_ANIME_MOVIES_ETAG_KEY);
+      const headers = (await httpHead(REMOTE_TRAKT_ANIME_MOVIES_URL)).headers;
+      const remoteEtag = headers.etag;
+
+      console.log(`[ID Mapper] [Trakt-Anime-Movies] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+
+      if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
+        try {
+          console.log('[ID Mapper] [Trakt-Anime-Movies] No changes detected. Loading from local disk cache...');
+          const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
+          traktAnimeMovies = JSON.parse(fileContent);
+          processAndIndexTraktAnimeMovies(traktAnimeMovies);
+          isTraktAnimeMoviesInitialized = true;
+          console.log(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings from local cache.`);
+          return;
+        } catch (e) {
+          console.warn('[ID Mapper] [Trakt-Anime-Movies] ETag matched, but local cache was unreadable. Forcing re-download.');
+        }
+      }
+    } else {
+      console.log('[ID Mapper] [Trakt-Anime-Movies] Redis cache is disabled. Proceeding to download.');
+    }
+
+    console.log('[ID Mapper] [Trakt-Anime-Movies] Downloading Trakt anime movies mapping...');
+    const response = await httpGet(REMOTE_TRAKT_ANIME_MOVIES_URL);
+    traktAnimeMovies = response.data;
+    const jsonData = JSON.stringify(traktAnimeMovies);
+
+    await fs.mkdir(path.dirname(LOCAL_TRAKT_ANIME_MOVIES_PATH), { recursive: true });
+    await fs.writeFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, jsonData, 'utf-8');
+    
+    if (useRedisCache) {
+      await redis.set(REDIS_TRAKT_ANIME_MOVIES_ETAG_KEY, response.headers.etag);
+    }
+    
+    processAndIndexTraktAnimeMovies(traktAnimeMovies);
+    isTraktAnimeMoviesInitialized = true;
+    console.log(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings.`);
+
+  } catch (error) {
+    console.error(`[ID Mapper] [Trakt-Anime-Movies] An error occurred during remote download: ${error.message}`);
+    console.log('[ID Mapper] [Trakt-Anime-Movies] Attempting to fall back to local disk cache...');
+    
+    try {
+      const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
+      traktAnimeMovies = JSON.parse(fileContent);
+      processAndIndexTraktAnimeMovies(traktAnimeMovies);
+      isTraktAnimeMoviesInitialized = true;
+      console.log('[ID Mapper] [Trakt-Anime-Movies] Successfully loaded data from local cache on fallback.');
+    } catch (fallbackError) {
+      console.error('[ID Mapper] [Trakt-Anime-Movies] CRITICAL: Fallback to local cache also failed. Trakt anime movies mapping will be empty.');
+      traktAnimeMovies = [];
+      isTraktAnimeMoviesInitialized = true;
+    }
+  }
+}
+
+/**
+ * Processes and indexes the Trakt anime movies mapping for fast lookups.
+ */
+function processAndIndexTraktAnimeMovies(moviesArray) {
+  malIdToTraktMovieMap.clear();
+  tmdbIdToTraktMovieMap.clear();
+  imdbIdToTraktMovieMap.clear();
+  
+  for (const movie of moviesArray) {
+    if (movie.myanimelist?.id) {
+      malIdToTraktMovieMap.set(movie.myanimelist.id, movie);
+    }
+    if (movie.externals?.tmdb) {
+      tmdbIdToTraktMovieMap.set(movie.externals.tmdb, movie);
+    }
+    if (movie.externals?.imdb) {
+      imdbIdToTraktMovieMap.set(movie.externals.imdb, movie);
+    }
+  }
+  
+  console.log(`[ID Mapper] [Trakt-Anime-Movies] Indexed ${malIdToTraktMovieMap.size} MAL, ${tmdbIdToTraktMovieMap.size} TMDB, ${imdbIdToTraktMovieMap.size} IMDB mappings.`);
+}
+
+/**
  * Downloads and processes the Kitsu to IMDB mapping file.
  * It uses Redis and ETags to check if the remote file has changed,
  * avoiding a full download if the local cache is up-to-date.
@@ -186,11 +285,12 @@ async function downloadAndProcessKitsuToImdbMapping() {
  * avoiding a full download if the local cache is up-to-date.
  */
 async function initializeMapper() {
-  if (isInitialized && isKitsuToImdbInitialized) return;
+  if (isInitialized && isKitsuToImdbInitialized && isTraktAnimeMoviesInitialized) return;
 
   await Promise.all([
     downloadAndProcessAnimeList(),
-    downloadAndProcessKitsuToImdbMapping()
+    downloadAndProcessKitsuToImdbMapping(),
+    downloadAndProcessTraktAnimeMovies()
   ]);
   
   // Schedule periodic updates
@@ -201,7 +301,8 @@ async function initializeMapper() {
       try {
         await Promise.all([
           downloadAndProcessAnimeList(),
-          downloadAndProcessKitsuToImdbMapping()
+          downloadAndProcessKitsuToImdbMapping(),
+          downloadAndProcessTraktAnimeMovies()
         ]);
         console.log('[ID Mapper] Scheduled update completed successfully.');
       } catch (error) {
@@ -1575,6 +1676,47 @@ function findImdbEpisodeByAirDate(tmdbAirDate, mappedImdbSeasons, toleranceDays 
   return null;
 }
 
+/**
+ * Gets the Trakt anime movie mapping for a MAL ID
+ * @param {string|number} malId - The MyAnimeList ID
+ * @returns {Object|null} The Trakt mapping object or null if not found
+ */
+function getTraktAnimeMovieByMalId(malId) {
+  if (!isTraktAnimeMoviesInitialized) {
+    console.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
+    return null;
+  }
+  const numericMalId = parseInt(malId, 10);
+  return malIdToTraktMovieMap.get(numericMalId) || null;
+}
+
+/**
+ * Gets the Trakt anime movie mapping for a TMDB ID
+ * @param {string|number} tmdbId - The TMDB ID
+ * @returns {Object|null} The Trakt mapping object or null if not found
+ */
+function getTraktAnimeMovieByTmdbId(tmdbId) {
+  if (!isTraktAnimeMoviesInitialized) {
+    console.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
+    return null;
+  }
+  const numericTmdbId = parseInt(tmdbId, 10);
+  return tmdbIdToTraktMovieMap.get(numericTmdbId) || null;
+}
+
+/**
+ * Gets the Trakt anime movie mapping for an IMDB ID
+ * @param {string} imdbId - The IMDB ID (e.g., 'tt0275277')
+ * @returns {Object|null} The Trakt mapping object or null if not found
+ */
+function getTraktAnimeMovieByImdbId(imdbId) {
+  if (!isTraktAnimeMoviesInitialized) {
+    console.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
+    return null;
+  }
+  return imdbIdToTraktMovieMap.get(imdbId) || null;
+}
+
 module.exports = {
   initializeMapper,
   getMappingByMalId,
@@ -1605,5 +1747,8 @@ module.exports = {
   getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb,
   getAllMappings,
   cleanup,
-  getCinemetaVideosForImdbIoSeries
+  getCinemetaVideosForImdbIoSeries,
+  getTraktAnimeMovieByMalId,
+  getTraktAnimeMovieByTmdbId,
+  getTraktAnimeMovieByImdbId
 };

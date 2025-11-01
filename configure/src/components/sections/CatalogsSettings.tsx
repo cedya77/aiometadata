@@ -11,11 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { streamingServices, regions } from "@/data/streamings";
 import { allCatalogDefinitions } from '@/data/catalogs';
 import { GenreSelection } from '@/data/genres';
@@ -32,6 +33,7 @@ import {
   showBulkDeleteSuccess,
   showBulkActionError
 } from '@/utils/toastHelpers';
+import { toast } from 'sonner';
 
 const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
@@ -45,18 +47,19 @@ const sourceBadgeStyles = {
 
 
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig } = useConfig();
+  const { setConfig, catalogTTL, config } = useConfig();
   const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>(catalog.sort || 'default');
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
-  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || 86400); // Default to 24 hours
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
+  const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL, genreSelection }
+          ? { ...c, sort, order, cacheTTL, genreSelection, enableRPDB }
           : c
       )
     }));
@@ -125,12 +128,12 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               <input
                 type="number"
                 value={cacheTTL}
-                onChange={(e) => setCacheTTL(parseInt(e.target.value) || 86400)}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
                 min="300"
                 max="604800"
                 step="3600"
                 className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="86400"
+                placeholder={catalogTTL.toString()}
               />
               <span className="text-sm text-muted-foreground whitespace-nowrap">
                 ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
@@ -156,6 +159,23 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               Choose which genre set to use for this specific list.
             </p>
           </div>
+          {config.apiKeys?.rpdb && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="mdblist-rpdb-toggle">Enable RPDB</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Use RatingPosterDB for enhanced posters
+                  </p>
+                </div>
+                <Switch
+                  id="mdblist-rpdb-toggle"
+                  checked={enableRPDB}
+                  onCheckedChange={setEnableRPDB}
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div className="text-xs text-muted-foreground mb-4">
           Note: Changes will take effect after you save your configuration in the Configuration Manager.
@@ -170,15 +190,16 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 };
 
 const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig } = useConfig();
-  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || 86400); // Default to 24 hours
+  const { setConfig, catalogTTL, config } = useConfig();
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL }
+          ? { ...c, cacheTTL, enableRPDB }
           : c
       )
     }));
@@ -199,12 +220,12 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
                 id="custom-cache-ttl"
                 type="number"
                 value={cacheTTL}
-                onChange={(e) => setCacheTTL(parseInt(e.target.value) || 86400)}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
                 min="300"
                 max="604800"
                 step="3600"
                 className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="86400"
+                placeholder={catalogTTL.toString()}
               />
               <span className="text-sm text-muted-foreground whitespace-nowrap">
                 ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
@@ -214,6 +235,23 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
               How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
             </p>
           </div>
+          {config.apiKeys?.rpdb && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="custom-rpdb-toggle">Enable RPDB</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Use RatingPosterDB for enhanced posters
+                  </p>
+                </div>
+                <Switch
+                  id="custom-rpdb-toggle"
+                  checked={enableRPDB}
+                  onCheckedChange={setEnableRPDB}
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -225,7 +263,7 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
 };
 
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
-  const { setConfig } = useConfig();
+  const { setConfig, config } = useConfig();
   const { toggleSelection, isSelected } = useSelection();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -275,6 +313,15 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       ...prev,
       catalogs: prev.catalogs.map(c =>
         (c.id === catalog.id && c.type === catalog.type) ? { ...c, showInHome: !c.showInHome } : c
+      )
+    }));
+  };
+
+  const handleToggleRPDB = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRPDB: !c.enableRPDB } : c
       )
     }));
   };
@@ -454,6 +501,23 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </TooltipTrigger>
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
+
+          {config.apiKeys?.rpdb && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleToggleRPDB}
+                  disabled={!catalog.enabled}
+                  className="disabled:opacity-20 disabled:cursor-not-allowed"
+                >
+                  <Star className={`h-5 w-5 transition-colors ${catalog.enableRPDB !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p>{catalog.enableRPDB !== false && catalog.enabled ? 'RPDB Enabled' : 'RPDB Disabled'}</p></TooltipContent>
+            </Tooltip>
+          )}
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -739,7 +803,7 @@ function CatalogsSettingsContent({
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingAction, setLoadingAction] = useState<'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | null>(null);
+  const [loadingAction, setLoadingAction] = useState<'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | 'enableRPDB' | 'disableRPDB' | null>(null);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   // Check if TVDB key is available
@@ -1078,6 +1142,70 @@ function CatalogsSettingsContent({
     }
   };
 
+  const handleBulkEnableRPDB = async () => {
+    setIsLoading(true);
+    setLoadingAction('enableRPDB');
+
+    try {
+      // Filter selected catalogs to only those with RPDB disabled
+      const catalogsToEnableRPDB = selectedCatalogs.filter(catalog => catalog.enableRPDB === false);
+
+      // Update config state to enable RPDB for selected catalogs
+      if (catalogsToEnableRPDB.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldEnableRPDB = catalogsToEnableRPDB.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldEnableRPDB ? { ...c, enableRPDB: true } : c;
+          })
+        }));
+      }
+
+      // Show toast notification
+      toast.success(`RPDB enabled for ${catalogsToEnableRPDB.length} catalog${catalogsToEnableRPDB.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('enable RPDB', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkDisableRPDB = async () => {
+    setIsLoading(true);
+    setLoadingAction('disableRPDB');
+
+    try {
+      // Filter selected catalogs to only those with RPDB enabled
+      const catalogsToDisableRPDB = selectedCatalogs.filter(catalog => catalog.enableRPDB !== false);
+
+      // Update config state to disable RPDB for selected catalogs
+      if (catalogsToDisableRPDB.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldDisableRPDB = catalogsToDisableRPDB.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldDisableRPDB ? { ...c, enableRPDB: false } : c;
+          })
+        }));
+      }
+
+      // Show toast notification
+      toast.success(`RPDB disabled for ${catalogsToDisableRPDB.length} catalog${catalogsToDisableRPDB.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('disable RPDB', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
   const handleBulkDelete = () => {
     // Show confirmation dialog
     setShowDeleteConfirmDialog(true);
@@ -1200,6 +1328,9 @@ function CatalogsSettingsContent({
           onDeleteSelected={handleBulkDelete}
           onInvertSelection={invertSelection}
           onClearSelection={deselectAll}
+          onEnableRPDB={handleBulkEnableRPDB}
+          onDisableRPDB={handleBulkDisableRPDB}
+          hasRPDBKey={!!config.apiKeys?.rpdb}
           isLoading={isLoading}
           loadingAction={loadingAction}
         />

@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { AlertCircle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff, List } from "lucide-react";
 import { toast } from "sonner";
 import { InstallDialog } from "@/components/InstallDialog";
 import { ConfigImportExport } from "@/components/ConfigImportExport";
+import { Switch } from "@/components/ui/switch";
 
 interface ConfigurationManagerProps {
   children?: React.ReactNode;
@@ -20,7 +21,7 @@ interface SavedConfig {
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
-  const { config, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading } = useConfig();
+  const { config, setConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading } = useConfig();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -371,6 +372,32 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                 </div>
               </div>
             )}
+            
+            {/* Catalog Mode Only Toggle */}
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
+              <div className="flex items-center gap-3">
+                <List className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <Label htmlFor="catalog-mode-only" className="text-sm font-medium cursor-pointer">
+                    Catalog Mode Only
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Remove metadata resource from manifest (catalogs only, no item details). Useful when adding multiple instances of AIOMetadata to an app.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                id="catalog-mode-only"
+                checked={config.catalogModeOnly ?? false}
+                onCheckedChange={(checked) => {
+                  setConfig(prev => ({
+                    ...prev,
+                    catalogModeOnly: checked
+                  }));
+                }}
+              />
+            </div>
+            
             <div className="flex justify-end">
               <Dialog open={!auth.authenticated && showPasswordDialog} onOpenChange={setShowPasswordDialog}>
               <Button

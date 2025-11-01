@@ -17,6 +17,8 @@ export interface CatalogConfig {
   displayType?: string;
   // Genre selection for MDBList catalogs - which genre set to use
   genreSelection?: 'standard' | 'anime' | 'all';
+  // Enable RPDB for this catalog (for poster enhancements)
+  enableRPDB?: boolean;
 }
 
 export interface SearchConfig {
@@ -104,6 +106,10 @@ export interface AppConfig {
     engineEnabled?: {
       [engine: string]: boolean;
     };
+    // RPDB enable/disable per search engine
+    engineRPDB?: {
+      [engine: string]: boolean;
+    };
     // Custom names for search providers
     providerNames?: {
       [providerId: string]: string;
@@ -116,4 +122,5 @@ export interface AppConfig {
     movie?: string;
     series?: string;
   };
+  catalogModeOnly?: boolean;
 }

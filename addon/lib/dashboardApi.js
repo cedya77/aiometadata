@@ -299,9 +299,14 @@ class DashboardAPI {
         try {
           // Use dbsize() for consistency with clearCache method
           const totalKeys = await this.cache.dbsize();
-          const cacheHitRate = this.requestTracker
-            ? await this.requestTracker.getCacheHitRate()
-            : 0;
+          
+          // Get cache health stats (hits, misses, cachedErrors) - this gives us the accurate current session stats
+          const { getCacheHealth } = require('./getCache');
+          const cacheHealth = getCacheHealth();
+          
+          // Use the hit rate from cacheHealth instead of requestTracker for consistency with byType breakdown
+          const hitRate = parseFloat(cacheHealth.hitRate) || 0;
+          const missRate = hitRate > 0 ? 100 - hitRate : 0;
 
           // Get real Redis memory usage
           let memoryUsage = 0;
@@ -337,15 +342,16 @@ class DashboardAPI {
             memoryUsage = 0;
           }
 
-          const hitRate = Number(cacheHitRate) || 0;
-          const missRate = hitRate > 0 ? 100 - hitRate : 0;
-
           return {
             hitRate: hitRate,
             missRate: missRate,
             memoryUsage: memoryUsage,
             evictionRate: 2.1, // TODO: Calculate real eviction rate from Redis stats
             totalKeys: totalKeys,
+            hits: cacheHealth.hits || 0,
+            misses: cacheHealth.misses || 0,
+            cachedErrors: cacheHealth.cachedErrors || 0,
+            byType: cacheHealth.byType || {},
           };
         } catch (redisError) {
           console.warn(
@@ -358,6 +364,10 @@ class DashboardAPI {
             memoryUsage: 0,
             evictionRate: 0,
             totalKeys: 0,
+            hits: 0,
+            misses: 0,
+            cachedErrors: 0,
+            byType: {},
           };
         }
       }
@@ -367,6 +377,10 @@ class DashboardAPI {
         memoryUsage: 0,
         evictionRate: 0,
         totalKeys: 0,
+        hits: 0,
+        misses: 0,
+        cachedErrors: 0,
+        byType: {},
       };
     } catch (error) {
       console.error("[Dashboard API] Error getting cache performance:", error);
@@ -376,6 +390,10 @@ class DashboardAPI {
         memoryUsage: 0,
         evictionRate: 0,
         totalKeys: 0,
+        hits: 0,
+        misses: 0,
+        cachedErrors: 0,
+        byType: {},
       };
     }
   }

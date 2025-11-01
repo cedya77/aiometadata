@@ -41,10 +41,18 @@ const cacheHealth = {
   hits: 0,
   misses: 0,
   errors: 0,
+  cachedErrors: 0, // Track cached errors separately (not counted as hits)
   corruptedEntries: 0,
   lastHealthCheck: Date.now(),
   errorCounts: {},
-  keyAccessCounts: new Map()
+  keyAccessCounts: new Map(),
+  // Per-cache-type stats for detailed insights
+  byType: {
+    catalog: { hits: 0, misses: 0, cachedErrors: 0 },
+    meta: { hits: 0, misses: 0, cachedErrors: 0 },
+    search: { hits: 0, misses: 0, cachedErrors: 0 },
+    other: { hits: 0, misses: 0, cachedErrors: 0 }
+  }
 };
 
 // Self-healing configuration
@@ -173,14 +181,32 @@ function safeParseConfigString(configString) {
 }
 
 /**
+ * Detect cache type from key
+ */
+function getCacheType(key) {
+  // Remove version prefix if present (e.g., "v1:catalog:..." or "v1:meta:...")
+  const cleanKey = key.includes(':') && key.startsWith('v') ? key.split(':').slice(1).join(':') : key;
+  
+  if (cleanKey.startsWith('catalog:')) return 'catalog';
+  if (cleanKey.startsWith('meta:')) return 'meta';
+  if (cleanKey.startsWith('search:')) return 'search';
+  if (cleanKey.startsWith('meta-')) return 'meta'; // meta-basic, meta-poster, etc.
+  return 'other';
+}
+
+/**
  * Self-healing cache health monitoring
  */
 function updateCacheHealth(key, type, success = true) {
   cacheHealth.keyAccessCounts.set(key, (cacheHealth.keyAccessCounts.get(key) || 0) + 1);
   
+  // Determine cache type for per-type stats
+  const cacheType = getCacheType(key);
+  
   if (success) {
     if (type === 'hit') {
       cacheHealth.hits++;
+      cacheHealth.byType[cacheType].hits++;
       // Also track in requestTracker for dashboard metrics
       try {
         const requestTracker = require('./requestTracker');
@@ -190,10 +216,22 @@ function updateCacheHealth(key, type, success = true) {
       }
     } else if (type === 'miss') {
       cacheHealth.misses++;
+      cacheHealth.byType[cacheType].misses++;
       // Also track in requestTracker for dashboard metrics
       try {
         const requestTracker = require('./requestTracker');
         requestTracker.trackCacheMiss().catch(() => {}); // Don't let this fail silently
+      } catch (error) {
+        // Ignore if requestTracker is not available
+      }
+    } else if (type === 'cached-error') {
+      // Track cached errors separately - these are NOT counted as hits
+      cacheHealth.cachedErrors++;
+      cacheHealth.byType[cacheType].cachedErrors++;
+      // Track as cache miss for hit rate calculation since these are essentially failed responses
+      try {
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackCacheMiss().catch(() => {}); // Count as miss for accurate hit rate
       } catch (error) {
         // Ignore if requestTracker is not available
       }
@@ -219,7 +257,20 @@ function logCacheHealth() {
   const errorRate = total > 0 ? ((cacheHealth.errors / total) * 100).toFixed(2) : '0.00';
   
   cacheHealthLogger.info(`Hit Rate: ${hitRate}%, Error Rate: ${errorRate}%, Total: ${total}`);
-  cacheHealthLogger.info(`Hits: ${cacheHealth.hits}, Misses: ${cacheHealth.misses}, Errors: ${cacheHealth.errors}`);
+  cacheHealthLogger.info(`Hits: ${cacheHealth.hits}, Misses: ${cacheHealth.misses}, Errors: ${cacheHealth.errors}, Cached Errors: ${cacheHealth.cachedErrors}`);
+  
+  // Log per-type hit rates
+  const typeStats = [];
+  for (const [type, stats] of Object.entries(cacheHealth.byType)) {
+    const typeTotal = stats.hits + stats.misses;
+    if (typeTotal > 0) {
+      const typeHitRate = ((stats.hits / typeTotal) * 100).toFixed(1);
+      typeStats.push(`${type}:${typeHitRate}% (${stats.hits}/${typeTotal})`);
+    }
+  }
+  if (typeStats.length > 0) {
+    cacheHealthLogger.info(`By Type: ${typeStats.join(', ')}`);
+  }
   
   // Log most accessed keys
   const topKeys = Array.from(cacheHealth.keyAccessCounts.entries())
@@ -352,13 +403,13 @@ async function cacheWrap(key, method, ttl, options = {}) {
               cacheLogger.info(`Retrying expired temporary error for ${versionedKey}`);
               await redis.del(versionedKey);
             } else {
-              cacheLogger.info(`HIT (cached error) for ${versionedKey}`);
-              updateCacheHealth(versionedKey, 'hit', true);
+              cacheLogger.info(`❌ CACHED ERROR for ${versionedKey}`);
+              updateCacheHealth(versionedKey, 'cached-error', true);
               return parsed;
             }
           } else if (parsed.error) {
-            cacheLogger.info(`HIT (cached error) for ${versionedKey}`);
-            updateCacheHealth(versionedKey, 'hit', true);
+            cacheLogger.info(`❌ CACHED ERROR for ${versionedKey}`);
+            updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
           } else {
             cacheLogger.info(`⚡ HIT for ${versionedKey}`);
@@ -499,13 +550,13 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
               globalCacheLogger.info(`Retrying expired temporary error for ${truncateCacheKey(versionedKey)}`);
               await redis.del(versionedKey);
             } else {
-              globalCacheLogger.info(`❌ HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
-              updateCacheHealth(versionedKey, 'hit', true);
+              globalCacheLogger.info(`❌ CACHED ERROR for ${truncateCacheKey(versionedKey)}`);
+              updateCacheHealth(versionedKey, 'cached-error', true);
               return parsed;
             }
           } else if (parsed.error) {
-            globalCacheLogger.info(`❌ HIT (cached error) for ${truncateCacheKey(versionedKey)}`);
-            updateCacheHealth(versionedKey, 'hit', true);
+            globalCacheLogger.info(`❌ CACHED ERROR for ${truncateCacheKey(versionedKey)}`);
+            updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
           } else {
             globalCacheLogger.info(`⚡ HIT for ${truncateCacheKey(versionedKey)}`);
@@ -627,7 +678,13 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Check if this is a MAL catalog with MAL as anime provider
   const isMALCatalog = idOnly.startsWith('mal.');
   const isMALAnimeProvider = config.providers?.anime === 'mal';
+  const isMDBListCatalog = idOnly.startsWith('mdblist.');
+  const isStreamingCatalog = idOnly.startsWith('streaming.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
+  
+  // Find the catalog config to get per-catalog settings (like enableRPDB)
+  const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly);
+  const enableRPDB = catalogFromConfig?.enableRPDB !== false; // Default to true if not explicitly disabled
   
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
@@ -650,18 +707,26 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
     
-    // API keys (affect catalog posters and content)
-    apiKeys: { 
-      rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
-      mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
-    },
-    
-    // Streaming configuration (affects streaming catalog results)
-    streaming: config.streaming || [],
-    
-    // Anime-specific settings (for MAL catalogs)
-    mal: config.mal || {}
+    // RPDB enablement state (boolean, affects poster generation)
+    rpdbEnabled: enableRPDB
   };
+  
+  // Only include MDBList API key for MDBList catalogs
+  if (isMDBListCatalog) {
+    catalogConfig.apiKeys = {
+      mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
+    };
+  }
+  
+  // Only include MAL config for MAL catalogs
+  if (isMALCatalog) {
+    catalogConfig.mal = config.mal || {};
+  }
+  
+  // Only include streaming config for streaming catalogs
+  if (isStreamingCatalog) {
+    catalogConfig.streaming = config.streaming || [];
+  }
   
   const catalogConfigString = JSON.stringify(catalogConfig);
   
@@ -708,7 +773,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
  * Search-specific cache wrapper with context-aware cache keys
  * Search results depend on different config parameters than catalogs
  */
-async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
+async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null, options = {}) {
   // Load config from database
   let config;
   try {
@@ -723,6 +788,9 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     cacheLogger.warn(`No config found for user ${userUUID}`);
     return { metas: [] };
   }
+  
+  // Get RPDB enablement state for this search engine
+  const rpdbEnabled = searchEngine ? (config.search?.engineRPDB?.[searchEngine] !== false) : true;
   
   // Search-specific config (only relevant parameters for search results)
   const searchConfig = {
@@ -744,7 +812,9 @@ async function cacheWrapSearch(userUUID, searchKey, method, options = {}) {
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
-    useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
+    useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
+    // RPDB enablement state (boolean, affects poster generation)
+    rpdbEnabled: rpdbEnabled
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
@@ -1158,7 +1228,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  
  const metaConfigString = stableStringify(metaConfig);
   const debugSig = shortSignature(`${userUUID}|${metaConfigString}`);
-  cacheLogger.info(`TRACE reconstruct start for ${metaId} [sig:${debugSig}] (type:${metaType}, lang:${metaConfig.language}, videosRequired:${includeVideos}, redis:${REDIS_URL})`);
   
   // Define component cache keys
   const componentCacheKeys = {
@@ -1195,12 +1264,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
   const componentResults = await Promise.all(componentPromises);
   const availableComponents = componentResults.filter(result => result.data !== null);
-  const present = availableComponents.map(c => c.componentName).sort();
-  const missing = Object.keys(componentCacheKeys).filter(k => !present.includes(k)).sort();
-  cacheLogger.info(`TRACE components for ${metaId} [sig:${debugSig}] present:[${present.join(',')}] missing:[${missing.join(',')}]`);
   
   if (availableComponents.length === 0) {
-    cacheLogger.info(`TRACE fail ${metaId} [sig:${debugSig}] reason:no cached components`);
     return { errorReason: 'no cached components' };
   }
    
@@ -1257,14 +1322,12 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     
     // If videos are required but not found in cache, fail the reconstruction
     if (!videosComponent) {
-      cacheLogger.info(`TRACE fail ${metaId} [sig:${debugSig}] reason:required videos component missing`);
       return { errorReason: 'required videos component missing' };
     }
     
     // Also check if videos array is valid
     const videos = reconstructedMeta.videos;
     if (!videos || !Array.isArray(videos) || videos.length === 0) {
-      cacheLogger.info(`TRACE fail ${metaId} [sig:${debugSig}] reason:empty videos for series`);
       return { errorReason: 'empty videos for series' };
     }
   }
@@ -1276,8 +1339,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   } catch (error) {
     cacheLogger.warn(`Failed to capture reconstructed metadata for dashboard: ${error.message}`);
   }
-  
-  cacheLogger.info(`TRACE success reconstruct for ${metaId} [sig:${debugSig}] components:${availableComponents.length}`);
   
   return { meta: reconstructedMeta };
 }
@@ -1318,6 +1379,8 @@ async function cacheComponent(cacheKey, componentData, ttl) {
   
   try {
     await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
+    // Track as cache write (miss equivalent) since this is being cached
+    updateCacheHealth(cacheKey, 'miss', true);
   } catch (error) {
     cacheLogger.warn(`Failed to cache component for ${cacheKey}:`, error);
   }
@@ -1407,6 +1470,8 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     
     // Cache the component
     await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
+    // Track as cache write (miss equivalent) since this is being cached
+    updateCacheHealth(cacheKey, 'miss', true);
     
   } catch (error) {
     cacheLogger.warn(`Failed to cache component ${componentName} for ${metaId}:`, error);
@@ -1500,9 +1565,11 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
     if (cached) {
       const parsed = JSON.parse(cached);
       //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
+      updateCacheHealth(cacheKey, 'hit', true);
       return parsed;
     } else {
       //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
+      updateCacheHealth(cacheKey, 'miss', true);
       return null;
     }
     
@@ -1645,14 +1712,30 @@ function cacheWrapTvmazeApi(key, method) {
  */
 function getCacheHealth() {
   const total = cacheHealth.hits + cacheHealth.misses;
+  
+  // Calculate per-type hit rates
+  const byTypeStats = {};
+  for (const [type, stats] of Object.entries(cacheHealth.byType)) {
+    const typeTotal = stats.hits + stats.misses;
+    byTypeStats[type] = {
+      hits: stats.hits,
+      misses: stats.misses,
+      cachedErrors: stats.cachedErrors,
+      hitRate: typeTotal > 0 ? ((stats.hits / typeTotal) * 100).toFixed(2) : '0.00',
+      totalRequests: typeTotal
+    };
+  }
+  
   return {
     hits: cacheHealth.hits,
     misses: cacheHealth.misses,
     errors: cacheHealth.errors,
+    cachedErrors: cacheHealth.cachedErrors,
     corruptedEntries: cacheHealth.corruptedEntries,
     hitRate: total > 0 ? ((cacheHealth.hits / total) * 100).toFixed(2) : '0.00',
     errorRate: total > 0 ? ((cacheHealth.errors / total) * 100).toFixed(2) : '0.00',
     totalRequests: total,
+    byType: byTypeStats,
     mostAccessedKeys: Array.from(cacheHealth.keyAccessCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
@@ -1667,9 +1750,17 @@ function clearCacheHealth() {
   cacheHealth.hits = 0;
   cacheHealth.misses = 0;
   cacheHealth.errors = 0;
+  cacheHealth.cachedErrors = 0;
   cacheHealth.corruptedEntries = 0;
   cacheHealth.errorCounts = {};
   cacheHealth.keyAccessCounts.clear();
+  // Reset per-type stats
+  cacheHealth.byType = {
+    catalog: { hits: 0, misses: 0, cachedErrors: 0 },
+    meta: { hits: 0, misses: 0, cachedErrors: 0 },
+    search: { hits: 0, misses: 0, cachedErrors: 0 },
+    other: { hits: 0, misses: 0, cachedErrors: 0 }
+  };
   cacheHealthLogger.info('Statistics cleared');
 }
 

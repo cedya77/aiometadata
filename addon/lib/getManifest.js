@@ -767,6 +767,12 @@ async function getManifest(config) {
   const nameSuffix = process.env.ADDON_NAME_SUFFIX || "";
   const addonName = nameSuffix ? `AIOMetadata ${nameSuffix}` : "AIOMetadata";
 
+  // Build resources array - exclude "meta" if catalogModeOnly is enabled
+  const resources = ["catalog"];
+  if (!config.catalogModeOnly) {
+    resources.push("meta");
+  }
+  
   const manifest = {
     id: packageJson.name,
     version: packageJson.version,
@@ -775,7 +781,7 @@ async function getManifest(config) {
     background: `${host}/background.png`,
     name: addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
-    resources: ["catalog", "meta"],
+    resources,
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
     idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "tun_"],
     stremioAddonsConfig: {

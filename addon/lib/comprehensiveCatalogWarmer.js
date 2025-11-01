@@ -27,7 +27,7 @@ const parseWarmupUUIDs = () => {
 const WARMUP_CONFIG = {
   enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && WARMUP_MODE === 'comprehensive',
   uuids: parseWarmupUUIDs(),
-  intervalHours: Math.max(12, parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h
+  intervalHours: Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h (supports fractional hours like 0.5)
   initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,
   maxPagesPerCatalog: parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100,
   resumeOnRestart: process.env.CATALOG_WARMUP_RESUME_ON_RESTART !== 'false',
@@ -350,6 +350,9 @@ class ComprehensiveCatalogWarmer {
       throw new Error('UUID is required for catalog warming');
     }
     
+    // Set current catalog config for per-catalog settings (like enableRPDB)
+    config._currentCatalogConfig = catalog;
+    
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
                      (catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.')) ? 
@@ -592,13 +595,28 @@ class ComprehensiveCatalogWarmer {
     // Initial delay
     await this.delay(this.config.initialDelaySeconds * 1000);
 
-    // Run warmup immediately
-    await this.runWarmup();
+    // Schedule warmup with proper sequencing
+    await this.scheduleNextWarmup();
+  }
 
-    // Schedule recurring warmups
-    setInterval(async () => {
-      await this.runWarmup();
-    }, this.config.intervalHours * 60 * 60 * 1000);
+  async scheduleNextWarmup() {
+    // Run warmup and schedule the next one after it completes
+    this.log('info', 'Starting warmup cycle...');
+    await this.runWarmup();
+    
+    // After warmup completes, calculate when to run next
+    const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
+    this.log('info', `Scheduling next warmup in ${this.config.intervalHours} hours`);
+    
+    // Schedule the next warmup to occur after the interval
+    setTimeout(async () => {
+      await this.scheduleNextWarmup();
+    }, intervalMs);
+    
+    // Calculate and log when the next run will occur
+    const nextRunTime = Date.now() + intervalMs;
+    this.stats.nextRun = new Date(nextRunTime).toISOString();
+    this.log('success', `Next warmup scheduled for ${this.stats.nextRun}`);
   }
 
   async getStats() {

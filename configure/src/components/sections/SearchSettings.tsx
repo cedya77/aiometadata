@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Edit2, GripVertical } from 'lucide-react';
+import { Edit2, GripVertical, Star } from 'lucide-react';
 import { allSearchProviders } from '@/data/catalogs';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -15,11 +15,14 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 // Sortable Search Provider Item Component
-function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, getProviderDisplayName }: {
+function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, onEngineRPDBChange, getProviderDisplayName, hasRPDBKey, engineRPDBEnabled }: {
   provider: { id: string; type: string; provider: string };
   onEditProviderName: (providerId: string) => void;
   onEngineEnabledChange: (engine: string, checked: boolean) => void;
+  onEngineRPDBChange: (engine: string, checked: boolean) => void;
   getProviderDisplayName: (providerId: string) => string;
+  hasRPDBKey: boolean;
+  engineRPDBEnabled: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: provider.id });
 
@@ -55,6 +58,17 @@ function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnab
       >
         <Edit2 className="h-4 w-4" />
       </Button>
+      {hasRPDBKey && provider.provider !== 'tvdb.collections.search' && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onEngineRPDBChange(provider.provider, !engineRPDBEnabled)}
+          className="px-2"
+          title={engineRPDBEnabled ? 'RPDB Enabled' : 'RPDB Disabled'}
+        >
+          <Star className={`h-4 w-4 ${engineRPDBEnabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+        </Button>
+      )}
       <Switch
         checked={true}
         onCheckedChange={checked => onEngineEnabledChange(provider.provider, checked)}
@@ -214,8 +228,22 @@ export function SearchSettings() {
     }));
   };
 
-  // Check if TVDB key is available
+  const handleEngineRPDBChange = (engine: string, checked: boolean) => {
+    setConfig(prev => ({
+      ...prev,
+      search: {
+        ...prev.search,
+        engineRPDB: {
+          ...prev.search.engineRPDB,
+          [engine]: checked,
+        },
+      },
+    }));
+  };
+
+  // Check if TVDB key and RPDB key are available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+  const hasRPDBKey = !!config.apiKeys?.rpdb;
   
   const movieSearchProviders = allSearchProviders.filter(p => {
     if (p.mediaType.includes('movie')) {
@@ -321,6 +349,17 @@ export function SearchSettings() {
                             >
                                 <Edit2 className="h-4 w-4" />
                             </Button>
+                            {hasRPDBKey && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEngineRPDBChange(config.search.providers.movie, !(config.search.engineRPDB?.[config.search.providers.movie] ?? true))}
+                                    className="px-2"
+                                    title={(config.search.engineRPDB?.[config.search.providers.movie] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                >
+                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                </Button>
+                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.movie] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.movie, checked)}
@@ -345,6 +384,17 @@ export function SearchSettings() {
                             >
                                 <Edit2 className="h-4 w-4" />
                             </Button>
+                            {hasRPDBKey && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEngineRPDBChange(config.search.providers.series, !(config.search.engineRPDB?.[config.search.providers.series] ?? true))}
+                                    className="px-2"
+                                    title={(config.search.engineRPDB?.[config.search.providers.series] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                >
+                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                </Button>
+                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.series] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.series, checked)}
@@ -369,6 +419,17 @@ export function SearchSettings() {
                             >
                                 <Edit2 className="h-4 w-4" />
                             </Button>
+                            {hasRPDBKey && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEngineRPDBChange(config.search.providers.anime_series, !(config.search.engineRPDB?.[config.search.providers.anime_series] ?? true))}
+                                    className="px-2"
+                                    title={(config.search.engineRPDB?.[config.search.providers.anime_series] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                >
+                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.anime_series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                </Button>
+                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.anime_series] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_series, checked)}
@@ -393,6 +454,17 @@ export function SearchSettings() {
                             >
                                 <Edit2 className="h-4 w-4" />
                             </Button>
+                            {hasRPDBKey && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEngineRPDBChange(config.search.providers.anime_movie, !(config.search.engineRPDB?.[config.search.providers.anime_movie] ?? true))}
+                                    className="px-2"
+                                    title={(config.search.engineRPDB?.[config.search.providers.anime_movie] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                >
+                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.anime_movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                </Button>
+                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.anime_movie] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_movie, checked)}
@@ -459,7 +531,10 @@ export function SearchSettings() {
                                         provider={provider}
                                         onEditProviderName={handleEditProviderName}
                                         onEngineEnabledChange={handleEngineEnabledChange}
+                                        onEngineRPDBChange={handleEngineRPDBChange}
                                         getProviderDisplayName={getProviderDisplayName}
+                                        hasRPDBKey={hasRPDBKey}
+                                        engineRPDBEnabled={config.search.engineRPDB?.[provider.provider] ?? true}
                                     />
                                 ))}
                             </div>

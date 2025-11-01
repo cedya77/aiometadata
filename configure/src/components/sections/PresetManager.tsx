@@ -69,7 +69,7 @@ const presetConfigs: PresetConfig[] = [
   {
     id: 'movies-shows-anime-mal',
     name: 'Movies & Shows + Anime (MAL)',
-    description: 'Best of both worlds - traditional content plus anime with MAL as the anime meta provider. Anime poster provider is MAL, background and logo are IMDb.',
+    description: 'Best of both worlds - traditional content plus anime with Kitsu as the anime meta provider. Anime poster provider is MAL, background and logo are IMDb.',
     icon: <Sparkles className="h-6 w-6" />,
     badge: 'Hybrid',
     badgeColor: 'bg-purple-500',
@@ -78,14 +78,14 @@ const presetConfigs: PresetConfig[] = [
       providers: {
         movie: 'tmdb',
         series: 'tvdb',
-        anime: 'mal',
+        anime: 'kitsu',
         anime_id_provider: 'kitsu',
         forceAnimeForDetectedImdb: false,
       },
       artProviders: {
         movie: { poster: 'meta', background: 'meta', logo: 'meta' },
         series: { poster: 'meta', background: 'meta', logo: 'meta' },
-        anime: { poster: 'mal', background: 'imdb', logo: 'imdb' },
+        anime: { poster: 'meta', background: 'imdb', logo: 'imdb' },
         englishArtOnly: false,
       },
       search: {
@@ -94,16 +94,16 @@ const presetConfigs: PresetConfig[] = [
         providers: {
           movie: 'tmdb.search',
           series: 'tvdb.search',
-          anime_movie: 'mal.search.movie',
-          anime_series: 'mal.search.series',
+          anime_movie: 'kitsu.search.movie',
+          anime_series: 'kitsu.search.series',
         },
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
           'tvdb.collections.search': false,
           'tvmaze.search': true,
-          'mal.search.movie': true,
-          'mal.search.series': true,
+          'kitsu.search.movie': true,
+          'kitsu.search.series': true,
         },
       },
     }
@@ -136,16 +136,16 @@ const presetConfigs: PresetConfig[] = [
         providers: {
           movie: 'tmdb.search',
           series: 'tvdb.search',
-          anime_movie: 'mal.search.movie',
-          anime_series: 'mal.search.series',
+          anime_movie: 'kitsu.search.movie',
+          anime_series: 'kitsu.search.series',
         },
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
           'tvdb.collections.search': false,
           'tvmaze.search': true,
-          'mal.search.movie': true,
-          'mal.search.series': true,
+          'kitsu.search.movie': true,
+          'kitsu.search.series': true,
         },
       },
     }
@@ -184,16 +184,16 @@ const presetConfigs: PresetConfig[] = [
         providers: {
           movie: 'tmdb.search',
           series: 'tvdb.search',
-          anime_movie: 'mal.search.movie',
-          anime_series: 'mal.search.series',
+          anime_movie: 'kitsu.search.movie',
+          anime_series: 'kitsu.search.series',
         },
         engineEnabled: {
           'tmdb.search': true,
           'tvdb.search': true,
           'tvdb.collections.search': false,
           'tvmaze.search': true,
-          'mal.search.movie': true,
-          'mal.search.series': true,
+          'kitsu.search.movie': true,
+          'kitsu.search.series': true,
         },
       },
     }
@@ -201,7 +201,7 @@ const presetConfigs: PresetConfig[] = [
 ];
 
 export function PresetManager() {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, catalogTTL } = useConfig();
   const [includeAdult, setIncludeAdult] = useState(config.includeAdult || false);
   const [includePopularLists, setIncludePopularLists] = useState(false);
   const [selectedCurators, setSelectedCurators] = useState<Set<string>>(new Set());
@@ -466,8 +466,9 @@ export function PresetManager() {
               source: 'mdblist' as const,
               sort: 'default' as const,
               order: 'asc' as const,
-              cacheTTL: 86400,
+              cacheTTL: catalogTTL,
               genreSelection: 'standard' as const, // Default to standard genres for preset imports
+              enableRPDB: true,
               displayType,
             };
             newCatalogs.push(newCatalog);

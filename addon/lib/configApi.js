@@ -178,6 +178,7 @@ class ConfigApi {
             console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
             console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
           }
+          
 
           // Show meta provider attribution changes - affects basic meta display
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {

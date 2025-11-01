@@ -261,6 +261,7 @@ addon.get("/api/config", (req, res) => {
     addonVersion: ADDON_VERSION,
     hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
     hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
+    catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
   };
   
   res.setHeader('Cache-Control', 'private, max-age=300');
@@ -560,6 +561,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   );
   const actualType = catalogConfig ? catalogConfig.type : type;
   
+  console.log(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
+  console.log(`[CATALOG ROUTE] enableRPDB value:`, catalogConfig?.enableRPDB, `(type: ${typeof catalogConfig?.enableRPDB})`);
+  
+  // Add current catalog config to global config for per-catalog settings (like enableRPDB)
+  config._currentCatalogConfig = catalogConfig;
+  
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
 
@@ -588,13 +595,28 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     let responseData;
       
       if (id === 'search') {
+      // Determine which search engine is being used based on type
+      let searchEngine = null;
+      if (actualType === 'movie') {
+        searchEngine = config.search?.providers?.movie;
+      } else if (actualType === 'series') {
+        searchEngine = config.search?.providers?.series;
+      } else if (actualType === 'anime.series') {
+        searchEngine = config.search?.providers?.anime_series;
+      } else if (actualType === 'anime.movie') {
+        searchEngine = config.search?.providers?.anime_movie;
+      } else if (actualType === 'collection') {
+        searchEngine = 'tvdb.collections.search';
+      }
+      config._currentSearchEngine = searchEngine;
+      
       // Use search-specific cache wrapper
       const searchKey = `${id}:${actualType}:${stableStringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
         const searchResult = await getSearch(id, actualType, language, extraArgs, config);
         return { metas: searchResult.metas || [] };
-      }, cacheOptions);
+      }, searchEngine, cacheOptions);
       } else {
       // Use regular catalog cache wrapper
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {

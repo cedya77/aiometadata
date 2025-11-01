@@ -32,12 +32,12 @@ interface CustomManifest {
 }
 
 export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestIntegrationProps) {
-  const { config, setConfig } = useConfig();
+  const { config, setConfig, catalogTTL } = useConfig();
   const [manifestUrl, setManifestUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [manifest, setManifest] = useState<CustomManifest | null>(null);
   const [selectedCatalogs, setSelectedCatalogs] = useState<Set<string>>(new Set());
-  const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(86400); // Default to 24 hours
+  const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(catalogTTL);
 
   // Get currently imported custom manifests
   const currentCustomCatalogs = config.catalogs.filter(c => c.id.startsWith("custom."));
@@ -153,6 +153,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
               sourceUrl: catalogUrl, // Store the actual catalog URL
               genres: catalog.genres || [], // Store genres from manifest
               cacheTTL: defaultCacheTTL, // Add custom TTL support
+              enableRPDB: true,
               manifestData: { 
                 ...catalog, 
                 idPrefixes: manifest.idPrefixes // Store manifest idPrefixes for tun_ detection
@@ -250,12 +251,12 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                     id="default-cache-ttl"
                     type="number"
                     value={defaultCacheTTL}
-                    onChange={(e) => setDefaultCacheTTL(parseInt(e.target.value) || 86400)}
+                    onChange={(e) => setDefaultCacheTTL(parseInt(e.target.value) || catalogTTL)}
                     min="300"
                     max="604800"
                     step="3600"
                     className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                    placeholder="86400"
+                    placeholder={catalogTTL.toString()}
                   />
                   <span className="text-sm text-muted-foreground whitespace-nowrap">
                     ({Math.floor(defaultCacheTTL / 3600)}h {Math.floor((defaultCacheTTL % 3600) / 60)}m)

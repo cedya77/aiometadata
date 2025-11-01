@@ -6,11 +6,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2 } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
 
-type BulkActionType = 'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | null;
+type BulkActionType = 'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | 'enableRPDB' | 'disableRPDB' | null;
 
 interface BulkActionBarProps {
   selectedCatalogs: CatalogConfig[];
@@ -21,6 +21,9 @@ interface BulkActionBarProps {
   onDeleteSelected: () => void;
   onInvertSelection: () => void;
   onClearSelection: () => void;
+  onEnableRPDB?: () => void;
+  onDisableRPDB?: () => void;
+  hasRPDBKey?: boolean;
   isLoading?: boolean;
   loadingAction?: BulkActionType;
 }
@@ -34,6 +37,9 @@ export function BulkActionBar({
   onDeleteSelected,
   onInvertSelection,
   onClearSelection,
+  onEnableRPDB,
+  onDisableRPDB,
+  hasRPDBKey = false,
   isLoading = false,
   loadingAction = null,
 }: BulkActionBarProps) {
@@ -47,6 +53,8 @@ export function BulkActionBar({
   const hasRemovableCatalogs = selectedCatalogs.some(c => 
     ['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
   );
+  const hasRPDBDisabled = selectedCatalogs.some(c => c.enableRPDB === false);
+  const hasRPDBEnabled = selectedCatalogs.some(c => c.enableRPDB !== false);
   
   // Count non-removable catalogs for tooltip
   const nonRemovableCount = selectedCatalogs.filter(c => 
@@ -203,6 +211,58 @@ export function BulkActionBar({
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>Remove selected catalogs from home board</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Enable RPDB for Selected */}
+            {hasRPDBKey && hasRPDBDisabled && onEnableRPDB && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onEnableRPDB}
+                    disabled={isLoading}
+                    aria-label="Enable RPDB for selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
+                  >
+                    {loadingAction === 'enableRPDB' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Star className="h-4 w-4 text-yellow-500" />
+                    )}
+                    <span className="ml-2">Enable RPDB</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Enable RPDB for selected catalogs</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Disable RPDB for Selected */}
+            {hasRPDBKey && hasRPDBEnabled && onDisableRPDB && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onDisableRPDB}
+                    disabled={isLoading}
+                    aria-label="Disable RPDB for selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
+                  >
+                    {loadingAction === 'disableRPDB' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Star className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span className="ml-2">Disable RPDB</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Disable RPDB for selected catalogs</p>
                 </TooltipContent>
               </Tooltip>
             )}

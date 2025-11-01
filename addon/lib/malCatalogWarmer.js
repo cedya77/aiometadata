@@ -283,6 +283,11 @@ class MALCatalogWarmer {
       warmingConfig = config;
     }
     
+    // Find catalog config for per-catalog settings (like enableRPDB)
+    const findCatalogConfig = (catalogId) => {
+      return warmingConfig.catalogs?.find(c => c.id === catalogId);
+    };
+    
     const catalogMap = {
       'airing-now': 'mal.airing',
       'top-anime': 'mal.top_anime',
@@ -316,6 +321,9 @@ class MALCatalogWarmer {
           const skip = page > 1 ? (page - 1) * pageSize : 0;
           const extraArgs = skip > 0 ? { skip: skip.toString() } : {};
           const catalogKey = `${catalog.catalogId}:anime:${JSON.stringify(extraArgs || {})}`;
+          
+          // Set current catalog config for per-catalog settings (like enableRPDB)
+          warmingConfig._currentCatalogConfig = findCatalogConfig(catalog.catalogId);
           
           // Wrap in cacheWrapCatalog just like the catalog route
           const result = await cacheWrapCatalog(systemUUID, catalogKey, async () => {
@@ -368,6 +376,9 @@ class MALCatalogWarmer {
       this.log('debug', `Failed to load system config: ${error.message}`);
       warmingConfig = config;
     }
+    
+    // Set catalog config for mal.schedule
+    warmingConfig._currentCatalogConfig = warmingConfig.catalogs?.find(c => c.id === 'mal.schedule');
     
     // Warm current day and next day (most likely to be accessed)
     const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -437,6 +448,9 @@ class MALCatalogWarmer {
       for (const decade of decades) {
         try {
           this.log('debug', `Warming decade: ${decade.id}...`);
+          
+          // Set current catalog config for per-catalog settings (like enableRPDB)
+          warmingConfig._currentCatalogConfig = warmingConfig.catalogs?.find(c => c.id === decade.catalogId);
           
           // Decade catalogs are page 1 only, no skip
           const catalogKey = `${decade.catalogId}:anime:{}`;

@@ -12,6 +12,7 @@ const { selectFanartImageByLang } = require('./fanart');
 const { getImdbRating } = require('../lib/getImdbRating');
 const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
+const wikiMappings = require('../lib/wiki-mapper.js');
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
 // Dynamic import to avoid circular dependency
 
@@ -34,6 +35,26 @@ const logger = consola.create({
 });  
 
 const isDebugEnabled = consola.level >= 4;
+
+/**
+ * Helper function to check if RPDB is enabled for the current context
+ * Checks per-catalog settings if available, otherwise defaults to true
+ */
+function isRPDBEnabled(config) {
+  // Check catalog-level RPDB setting (for catalog routes)
+  if (config._currentCatalogConfig) {
+    return config._currentCatalogConfig.enableRPDB !== false;
+  }
+  
+  // Check search engine-level RPDB setting (for search routes)
+  if (config._currentSearchEngine) {
+    // Default to true if not explicitly set to false
+    return config.search?.engineRPDB?.[config._currentSearchEngine] !== false;
+  }
+  
+  // Default to true if neither catalog nor search context is set
+  return true;
+}
 
 /**
  * Normalizes a string for searching:
@@ -1156,9 +1177,9 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
   console.log(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
   const artProvider = resolveArtProvider('anime', 'background', config);
   const mapping = malId ? idMapper.getMappingByMalId(malId) : null;
-  tvdbId = tvdbId || mapping?.thetvdb_id;
-  tmdbId = tmdbId || mapping?.themoviedb_id;
-  imdbId = imdbId || mapping?.imdb_id;
+  tvdbId = tvdbId 
+  tmdbId = tmdbId 
+  imdbId = imdbId 
   // Check art provider preference
   
   
@@ -1568,7 +1589,8 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   const kitsuId = mapping?.kitsu_id;
   const imdbRating = await getImdbRating(imdbId, stremioType);
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
-  if (config.apiKeys?.rpdb) {
+  // Check if RPDB is enabled (check catalog-specific setting if available, otherwise default to true)
+  if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
 
     if (mapping) {
       const tvdbId = mapping.thetvdb_id;
@@ -1748,12 +1770,6 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         );
         const item = kitsuData.data[0];
         const stremioType = item.attributes.subtype === 'movie' ? 'movie' : 'series';
-        if((config.mal?.useImdbIdForCatalogAndSearch && stremioType === 'series')){
-          return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
-            const { getMeta } = await import("../lib/getMeta");
-            return await getMeta(stremioType, language, `kitsu:${mapping.kitsu_id}`, config, config.userUUID, false);
-          }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, false))?.meta || null;
-        }
         let finalPosterUrl = await getAnimePosterUrl(id, mapping, stremioType, config, language, anilistArtworkMap, item.attributes.posterImage?.original, kitsuArtworkMap);
         let kitsuReleaseInfo = item.attributes.startDate ? item.attributes.startDate.substring(0, 4) : null;
         if (stremioType === 'series' && item.attributes.startDate) {
@@ -2846,7 +2862,8 @@ module.exports = {
   isReleasedDigitally,
   getTvdbCertification,
   getAnimePosterUrl,
-  getKitsuLocalizedTitle
+  getKitsuLocalizedTitle,
+  isRPDBEnabled
 };
 
 /**
@@ -2964,13 +2981,15 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
     }
   }
   
-  if (config.apiKeys?.rpdb && stremioType !== 'movie') {
+  // Check if RPDB is enabled (check catalog-specific setting if available, otherwise default to true)
+  if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
     if (mapping) {
-      const tvdbId = mapping.thetvdb_id;
-      const tmdbId = mapping.themoviedb_id;
+      const tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping.themoviedb_id;
+      const imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping.imdb_id;
+      const tvdbId = stremioType === 'movie' ? (await wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping.thetvdb_id;
       let proxyId = null;
 
-      proxyId = tvdbId ? `tvdb:${tvdbId}` : (tmdbId ? `tmdb:${tmdbId}` : null);
+      proxyId = (imdbId ? `${imdbId}`: (tmdbId ? `tmdb:${tmdbId}` :  tvdbId ? `tvdb:${tvdbId}` : null));
 
       if (proxyId) {
         const fallback = encodeURIComponent(finalPosterUrl);
