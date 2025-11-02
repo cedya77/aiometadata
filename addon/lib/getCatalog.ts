@@ -533,7 +533,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     logger.info(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
     
     // Find the user catalog configuration to get the source URL
-    const userCatalog = config.catalogs?.find(c => c.id === catalogId);
+    const userCatalog = config.catalogs?.find(c => c.id === catalogId && c.type === type);
     if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
       logger.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
       return [];

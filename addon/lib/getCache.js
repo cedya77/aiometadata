@@ -667,6 +667,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   }
 
   const idOnly = catalogKey.split(':')[0];
+  const catalogType = catalogKey.split(':')[1];
   const trendingIds = new Set(['tmdb.trending']);
 
   // Disable caching for trending catalogs since they change frequently
@@ -683,7 +684,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
   // Find the catalog config to get per-catalog settings (like enableRPDB)
-  const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly);
+  // Match by both id AND type to handle duplicate IDs (e.g., tvdb.trending for movie vs series)
+  const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly && c.type === catalogType);
   const enableRPDB = catalogFromConfig?.enableRPDB !== false; // Default to true if not explicitly disabled
   
   // Create context-aware catalog config (only relevant parameters for catalogs)

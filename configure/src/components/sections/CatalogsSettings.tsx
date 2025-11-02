@@ -957,7 +957,7 @@ function CatalogsSettingsContent({
         showInHome: c.showOnHomeByDefault || false,
       }));
       const userCatalogSettings = new Map(
-        prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome }])
+        prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome, enableRPDB: c.enableRPDB }])
       );
       const userCatalogKeys = new Set(prev.catalogs.map(c => `${c.id}-${c.type}`));
       const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`));

@@ -102,21 +102,8 @@ async function _processAnimeItem(item, provider, id, language, config, includeVi
  * @private
  */
 async function _processStandardItem(item, provider, language, config, includeVideos = false) {
+  let stremioId = item.id;
   const result = await cacheWrapMetaSmart(config.userUUID, item.id, async () => {
-      let stremioId = item.id;
-      //  if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-      //      stremioId = `tvdb:${allIds.tvdbId}`;
-      //  } else if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-      //      stremioId = `tvmaze:${allIds.tvmazeId}`;
-      //  } else if (preferredProvider === 'imdb' && allIds?.imdbId) {
-      //      stremioId = allIds.imdbId;
-      //  } else if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
-       //     stremioId = `tmdb:${allIds.tmdbId}`;
-      //  }
-      //}
-      
-      // Use the potentially translated ID to get the meta.
-      // Note: Your getMeta function must be able to handle these different ID formats.
       return await getMeta(item.type, language, stremioId, config, config.userUUID, includeVideos);
   }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, includeVideos);
   

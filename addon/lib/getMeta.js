@@ -1040,6 +1040,8 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     links.unshift(certificationLink);
   }
 
+  logger.debug(`[TmdbMovieMeta] rpdb enabled: ${isRPDBEnabled(config)}`);
+
   return {
     id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
     type: 'movie',
@@ -1107,7 +1109,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   ]);
   }
   // log arts 
-  l//ogger.debug(`[TmdbSeriesMeta] poster: ${poster}, background: ${background}, logoUrl: ${logoUrl}`);
+  // logger.debug(`[TmdbSeriesMeta] poster: ${poster}, background: ${background}, logoUrl: ${logoUrl}`);
   
   const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
@@ -1578,8 +1580,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let certification = null;
   if(tmdbId){
     const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
-    release_dates = movieData.release_dates;  
-    certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
+    release_dates = movieData?.release_dates || null;  
+    certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
   }
   let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks];
   if(certification && config.displayAgeRating){
