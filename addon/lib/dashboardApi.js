@@ -1483,12 +1483,23 @@ class DashboardAPI {
         const { getWarmupStats: getCatalogStats } = require('./comprehensiveCatalogWarmer');
         const catalogStats = await getCatalogStats();
         
+        // Build description with more context
+        let description = `Warms all user catalogs`;
+        if (catalogStats.totalUUIDs > 0) {
+          description += ` (${catalogStats.totalUUIDs} user${catalogStats.totalUUIDs > 1 ? 's' : ''})`;
+        }
+        if (catalogStats.catalogsWarmed > 0 && catalogStats.totalCatalogs > 0) {
+          description += ` - Last run: ${catalogStats.catalogsWarmed}/${catalogStats.totalCatalogs} catalogs, ${catalogStats.totalItems || 0} items`;
+        } else if (catalogStats.totalItems > 0) {
+          description += ` - Last run: ${catalogStats.totalItems} items warmed`;
+        }
+        
         tasks.push({
           id: 9,
           name: "Comprehensive Catalog Warming",
           status: catalogStats.enabled ? (catalogStats.isRunning ? "running" : "completed") : "disabled",
           lastRun: catalogStats.lastRun ? this.getTimeAgo(new Date(catalogStats.lastRun)) : "Never",
-          description: `Warms all user catalogs (${catalogStats.catalogsWarmed || 0} catalogs, ${catalogStats.totalItems || 0} items)`,
+          description: description,
           nextRun: catalogStats.enabled ? (catalogStats.nextRun ? this.getTimeUntil(new Date(catalogStats.nextRun)) : "Scheduled") : "Disabled",
           action: catalogStats.enabled ? (catalogStats.isRunning ? "stop" : "restart") : "enable",
           category: "warming"

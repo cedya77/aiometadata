@@ -27,7 +27,7 @@ const parseWarmupUUIDs = () => {
 const WARMUP_CONFIG = {
   enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && WARMUP_MODE === 'comprehensive',
   uuids: parseWarmupUUIDs(),
-  intervalHours: Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h (supports fractional hours like 0.5)
+  intervalHours: parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24, // Daily default, minimum 12h (supports fractional hours like 0.5)
   initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,
   maxPagesPerCatalog: parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100,
   resumeOnRestart: process.env.CATALOG_WARMUP_RESUME_ON_RESTART !== 'false',
@@ -477,6 +477,13 @@ class ComprehensiveCatalogWarmer {
     try {
       this.log('success', `Starting comprehensive catalog warmup for ${this.config.uuids.length} UUID(s)...`);
 
+      // Reset overall stats for this run (don't accumulate from previous runs)
+      this.stats.totalCatalogs = 0;
+      this.stats.catalogsWarmed = 0;
+      this.stats.totalPages = 0;
+      this.stats.totalItems = 0;
+      this.stats.errors = [];
+
       // Process each UUID sequentially
       for (const uuid of this.config.uuids) {
         try {
@@ -632,6 +639,59 @@ class ComprehensiveCatalogWarmer {
             const parsedStats = JSON.parse(persistedStats);
             this.stats.uuidStats[uuid] = parsedStats;
           }
+        }
+        
+        // Aggregate totals from per-UUID stats
+        let totalCatalogs = 0;
+        let catalogsWarmed = 0;
+        let totalPages = 0;
+        let totalItems = 0;
+        
+        for (const uuid of this.config.uuids) {
+          const uuidStats = this.stats.uuidStats[uuid];
+          if (uuidStats) {
+            totalCatalogs += uuidStats.totalCatalogs || 0;
+            catalogsWarmed += uuidStats.catalogsWarmed || 0;
+            totalPages += uuidStats.totalPages || 0;
+            totalItems += uuidStats.totalItems || 0;
+          }
+        }
+        
+        this.stats.totalCatalogs = totalCatalogs;
+        this.stats.catalogsWarmed = catalogsWarmed;
+        this.stats.totalPages = totalPages;
+        this.stats.totalItems = totalItems;
+      }
+      
+      // Recalculate nextRun if not set or if it has passed
+      if (!this.stats.nextRun || new Date(this.stats.nextRun) < new Date()) {
+        let earliestNextRun = null;
+        let latestLastRun = null;
+        
+        for (const uuid of this.config.uuids) {
+          const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
+          const lastRun = await redis.get(lastWarmupKey);
+          
+          if (lastRun) {
+            const lastRunTime = parseInt(lastRun);
+            const nextRunTime = lastRunTime + (this.config.intervalHours * 60 * 60 * 1000);
+            
+            if (!earliestNextRun || nextRunTime < earliestNextRun) {
+              earliestNextRun = nextRunTime;
+            }
+            
+            if (!latestLastRun || lastRunTime > latestLastRun) {
+              latestLastRun = lastRunTime;
+            }
+          }
+        }
+        
+        if (earliestNextRun) {
+          this.stats.nextRun = new Date(earliestNextRun).toISOString();
+        }
+        
+        if (latestLastRun) {
+          this.stats.lastRun = new Date(latestLastRun).toISOString();
         }
       }
     } catch (error) {
