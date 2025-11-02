@@ -441,24 +441,24 @@ class ComprehensiveCatalogWarmer {
   async runWarmup(force = false) {
     if (this.isRunning) {
       this.log('warn', 'Warmup already running, skipping');
-      return;
+      return false;
     }
 
     if (!this.config.enabled) {
       this.log('debug', 'Catalog warming is disabled');
-      return;
+      return false;
     }
 
     if (!this.config.uuids || this.config.uuids.length === 0) {
       this.log('error', 'Cannot run comprehensive warmup: CACHE_WARMUP_UUIDS is not set');
-      return;
+      return false;
     }
 
     // Check if we should run (skip if force is true)
     if (!force) {
       const shouldRun = await this.shouldWarmup();
       if (!shouldRun) {
-        return;
+        return false;
       }
     } else {
       this.log('info', 'Force restart requested - bypassing interval check');
@@ -467,7 +467,7 @@ class ComprehensiveCatalogWarmer {
     // Check quiet hours
     if (this.isQuietHours()) {
       this.log('info', 'Skipping warmup during quiet hours');
-      return;
+      return false;
     }
 
     this.isRunning = true;
@@ -555,9 +555,11 @@ class ComprehensiveCatalogWarmer {
       this.stats.lastRun = new Date().toISOString();
 
       this.log('success', `Warmup complete! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
+      return true;
     } catch (error) {
       this.log('error', `Warmup failed: ${error.message}`);
       this.stats.errors.push({ global: error.message });
+      return false;
     } finally {
       this.isRunning = false;
       this.stats.isRunning = false;
@@ -609,21 +611,26 @@ class ComprehensiveCatalogWarmer {
   async scheduleNextWarmup() {
     // Run warmup and schedule the next one after it completes
     this.log('info', 'Starting warmup cycle...');
-    await this.runWarmup();
+    const didRun = await this.runWarmup();
     
-    // After warmup completes, calculate when to run next
+    // Only update nextRun if the warmup actually executed
+    // If it was skipped (didRun = false), keep the existing nextRun time
+    if (didRun) {
+      // After warmup completes, calculate when to run next
+      const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
+      this.log('info', `Scheduling next warmup in ${this.config.intervalHours} hours`);
+      
+      // Calculate and update when the next run will occur
+      const nextRunTime = Date.now() + intervalMs;
+      this.stats.nextRun = new Date(nextRunTime).toISOString();
+      this.log('success', `Next warmup scheduled for ${this.stats.nextRun}`);
+    }
+    
+    // Always schedule the next check (regardless of whether this one ran)
     const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
-    this.log('info', `Scheduling next warmup in ${this.config.intervalHours} hours`);
-    
-    // Schedule the next warmup to occur after the interval
     setTimeout(async () => {
       await this.scheduleNextWarmup();
     }, intervalMs);
-    
-    // Calculate and log when the next run will occur
-    const nextRunTime = Date.now() + intervalMs;
-    this.stats.nextRun = new Date(nextRunTime).toISOString();
-    this.log('success', `Next warmup scheduled for ${this.stats.nextRun}`);
   }
 
   async getStats() {
