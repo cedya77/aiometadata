@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.6.0](https://github.com/cedya77/aiometadata/compare/v1.5.0...v1.6.0) (2025-11-03)
+
+
+### Features
+
+* add clear expire keys button to dash ([2c17c48](https://github.com/cedya77/aiometadata/commit/2c17c481c48aef457ebcec48ade6b60bd3c76c68))
+* Add granular RPDB control, anime movie mappings, and catalog warmer fixes ([3bef3b1](https://github.com/cedya77/aiometadata/commit/3bef3b197726789a46aba8d0332e674198053ef5))
+
+
+### Bug Fixes
+
+* missing 'None' genre option for tmdb.popular when showInHome is false ([2c17c48](https://github.com/cedya77/aiometadata/commit/2c17c481c48aef457ebcec48ade6b60bd3c76c68))
+* use CATALOG_LIST_ITEMS_SIZE for MDBList catalogs in warmer ([5527d74](https://github.com/cedya77/aiometadata/commit/5527d748c474eeeb3fad613fed5ad9961b93789b))
+
 ## [1.5.0](https://github.com/cedya77/aiometadata/compare/v1.4.1...v1.5.0) (2025-10-28)
 
 
