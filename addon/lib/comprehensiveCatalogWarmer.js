@@ -27,7 +27,7 @@ const parseWarmupUUIDs = () => {
 const WARMUP_CONFIG = {
   enabled: !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && WARMUP_MODE === 'comprehensive',
   uuids: parseWarmupUUIDs(),
-  intervalHours: parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24, // Daily default, minimum 12h (supports fractional hours like 0.5)
+  intervalHours: Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24), // Daily default, minimum 12h (supports fractional hours like 0.5)
   initialDelaySeconds: parseInt(process.env.CATALOG_WARMUP_INITIAL_DELAY_SECONDS) || 300,
   maxPagesPerCatalog: parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100,
   resumeOnRestart: process.env.CATALOG_WARMUP_RESUME_ON_RESTART !== 'false',
@@ -82,6 +82,38 @@ class ComprehensiveCatalogWarmer {
     if (messageLevelIndex >= configLevelIndex) {
       logger[level](message);
     }
+  }
+
+  formatNextRunTime(nextRunTime) {
+    const date = new Date(nextRunTime);
+    const now = Date.now();
+    const diffMs = nextRunTime - now;
+    const diffMinutes = Math.round(diffMs / 60000);
+    const diffHours = Math.round(diffMs / 3600000);
+    
+    // Format local time
+    const localTime = date.toLocaleString('en-US', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit',
+      hour12: false 
+    });
+    
+    // Calculate relative time
+    let relativeTime;
+    if (diffMinutes < 60) {
+      relativeTime = `in ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      relativeTime = `in ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+    } else {
+      const diffDays = Math.round(diffHours / 24);
+      relativeTime = `in ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+    }
+    
+    return `${localTime} (${relativeTime})`;
   }
 
   async delay(ms) {
@@ -158,7 +190,7 @@ class ComprehensiveCatalogWarmer {
       
       const nextRunTime = Date.now() + (this.config.intervalHours * 60 * 60 * 1000);
       this.stats.nextRun = new Date(nextRunTime).toISOString();
-      this.log('debug', `Marked warmup complete for UUID ${uuid}, next run: ${this.stats.nextRun}`);
+      this.log('debug', `Marked warmup complete for UUID ${uuid}, next run: ${this.formatNextRunTime(nextRunTime)}`);
     } catch (error) {
       this.log('error', `Failed to mark warmup complete for UUID ${uuid}: ${error.message}`);
     }
@@ -560,7 +592,7 @@ class ComprehensiveCatalogWarmer {
       const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
       const nextRunTime = Date.now() + intervalMs;
       this.stats.nextRun = new Date(nextRunTime).toISOString();
-      this.log('info', `Next warmup scheduled for ${this.stats.nextRun}`);
+      this.log('info', `Next warmup scheduled for ${this.formatNextRunTime(nextRunTime)}`);
       
       return true;
     } catch (error) {
