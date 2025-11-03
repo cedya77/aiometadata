@@ -4,10 +4,48 @@
  */
 
 /**
+ * Parse inline flags from regex pattern
+ * Supports: (?i) (?-i) (?s) (?-s) (?m) (?-m)
+ * @param {string} pattern - The regex pattern potentially containing inline flags
+ * @returns {Object} - Object with parsed pattern and flags
+ */
+function parseInlineFlags(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return { pattern, flags: 'i' };
+  }
+
+  let flagSet = new Set(['i']);
+  let cleanPattern = pattern;
+  
+  // Check for inline flags at the start of the pattern
+  // Matches patterns like (?i), (?-i), (?im), (?-im), etc.
+  const inlineFlagMatch = pattern.match(/^\(\?(-)?([ims]+)\)/);
+  
+  if (inlineFlagMatch) {
+    const isNegation = inlineFlagMatch[1] === '-';
+    const flagChars = inlineFlagMatch[2];
+    
+    if (isNegation) {
+      for (const flag of flagChars) {
+        flagSet.delete(flag);
+      }
+    } else {
+      for (const flag of flagChars) {
+        flagSet.add(flag);
+      }
+    }
+    
+    cleanPattern = pattern.substring(inlineFlagMatch[0].length);
+  }
+  
+  return { pattern: cleanPattern, flags: Array.from(flagSet).join('') };
+}
+
+/**
  * Check if content should be excluded based on keywords or regex patterns
  * @param {Object} meta - The metadata object to check
  * @param {string} keywords - Comma-separated keywords to exclude
- * @param {string} regexPattern - Optional regex pattern for advanced users
+ * @param {string} regexPattern - Optional regex pattern (supports inline flags)
  * @returns {boolean} - true if content should be excluded, false otherwise
  */
 function shouldExcludeContent(meta, keywords, regexPattern) {
@@ -37,8 +75,8 @@ function shouldExcludeContent(meta, keywords, regexPattern) {
   // Check regex filtering (advanced users)
   if (regexPattern && regexPattern.trim()) {
     try {
-      // Create regex from pattern (case-insensitive by default)
-      const regex = new RegExp(regexPattern, 'i');
+      const { pattern: cleanPattern, flags } = parseInlineFlags(regexPattern.trim());
+      const regex = new RegExp(cleanPattern, flags);
       
       // Check title
       if (meta.name && regex.test(meta.name)) {
@@ -114,7 +152,8 @@ function validateRegexPattern(pattern) {
   }
 
   try {
-    new RegExp(pattern, 'i');
+    const { pattern: cleanPattern, flags } = parseInlineFlags(pattern);
+    new RegExp(cleanPattern, flags);
     return { isValid: true, error: null };
   } catch (error) {
     return { 
@@ -143,5 +182,6 @@ module.exports = {
   shouldExcludeContent,
   filterMetasByRegex,
   validateRegexPattern,
-  getCommonKidSafePatterns
+  getCommonKidSafePatterns,
+  parseInlineFlags,
 };
