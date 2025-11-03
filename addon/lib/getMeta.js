@@ -1408,6 +1408,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           released: ep.air_date ? new Date(ep.air_date + 'T12:00:00.000Z').toISOString() : null,
           overview: ep.overview,
           thumbnail: finalThumbnail,
+          runtime: Utils.parseRunTime(ep.runtime),
         };
       })
     );
@@ -1873,6 +1874,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               overview: episode.overview,
               released: episode.aired ? new Date(episode.aired + 'T12:00:00.000Z') : null,
               available: episode.aired ? new Date(episode.aired) < new Date() : false,
+              runtime: Utils.parseRunTime(episode.runtime),
           };
         })
     );
@@ -2054,6 +2056,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
         released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
+        runtime: Utils.parseRunTime(episode.runtime),
       };
       specialCount++;
       specialVideos.push(specialEpisode);
@@ -2080,6 +2083,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
         released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
+        runtime: Utils.parseRunTime(episode.runtime),
       };
     });
   }
@@ -2268,6 +2272,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           overview: episodeSynopsis,
           isFiller: ep.filler,
           isRecap: ep.recap,
+          runtime: Utils.parseRunTime(malData.duration)
         };
       });
       
@@ -2278,6 +2283,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           const enrichedVideos = await idMapper.enrichMalEpisodes(videos, kitsuId);
           if (enrichedVideos && Array.isArray(enrichedVideos) && enrichedVideos.length > 0) {
             videos = enrichedVideos;
+            videos.forEach(ep => {
+              ep.runtime = Utils.parseRunTime(malData.duration);
+            });
             
             logger.debug(`[getMeta] Successfully enriched ${enrichedVideos.length} episodes with IMDB data`);
           } else {
@@ -2540,6 +2548,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           season: 1,
           episode: ep.number,
           available: ep.airdate ? new Date(ep.airdate) < new Date() : false,
+          runtime: Utils.parseRunTime(ep.length)
         }
       })
 
