@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.6.1](https://github.com/cedya77/aiometadata/compare/v1.6.0...v1.6.1) (2025-11-03)
+
+
+### Bug Fixes
+
+* **meta:** anime ID provider check logic ([17c7828](https://github.com/cedya77/aiometadata/commit/17c7828051d208062c873f41c23901e31e9d9ae0))
+
 ## [1.6.0](https://github.com/cedya77/aiometadata/compare/v1.5.0...v1.6.0) (2025-11-03)
 
 
