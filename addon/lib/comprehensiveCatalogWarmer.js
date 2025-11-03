@@ -555,6 +555,13 @@ class ComprehensiveCatalogWarmer {
       this.stats.lastRun = new Date().toISOString();
 
       this.log('success', `Warmup complete! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
+      
+      // Update nextRun time after successful warmup (for both scheduled and forced runs)
+      const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
+      const nextRunTime = Date.now() + intervalMs;
+      this.stats.nextRun = new Date(nextRunTime).toISOString();
+      this.log('info', `Next warmup scheduled for ${this.stats.nextRun}`);
+      
       return true;
     } catch (error) {
       this.log('error', `Warmup failed: ${error.message}`);
@@ -613,24 +620,27 @@ class ComprehensiveCatalogWarmer {
     this.log('info', 'Starting warmup cycle...');
     const didRun = await this.runWarmup();
     
-    // Only update nextRun if the warmup actually executed
-    // If it was skipped (didRun = false), keep the existing nextRun time
-    if (didRun) {
-      // After warmup completes, calculate when to run next
-      const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
-      this.log('info', `Scheduling next warmup in ${this.config.intervalHours} hours`);
+    // nextRun is already updated by runWarmup() if it executed
+    // Calculate delay until next scheduled run
+    let delayMs;
+    if (this.stats.nextRun) {
+      // Calculate delay based on the scheduled nextRun time
+      const nextRunTime = new Date(this.stats.nextRun).getTime();
+      const now = Date.now();
+      delayMs = Math.max(0, nextRunTime - now);
       
-      // Calculate and update when the next run will occur
-      const nextRunTime = Date.now() + intervalMs;
-      this.stats.nextRun = new Date(nextRunTime).toISOString();
-      this.log('success', `Next warmup scheduled for ${this.stats.nextRun}`);
+      const delayMinutes = Math.round(delayMs / 60000);
+      this.log('info', `Next check scheduled in ${delayMinutes} minutes`);
+    } else {
+      // Fallback to interval if nextRun is not set
+      delayMs = this.config.intervalHours * 60 * 60 * 1000;
+      this.log('info', `Next check scheduled in ${this.config.intervalHours} hours`);
     }
     
-    // Always schedule the next check (regardless of whether this one ran)
-    const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
+    // Schedule the next check based on calculated delay
     setTimeout(async () => {
       await this.scheduleNextWarmup();
-    }, intervalMs);
+    }, delayMs);
   }
 
   async getStats() {
