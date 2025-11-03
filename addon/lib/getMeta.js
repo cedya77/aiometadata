@@ -701,7 +701,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     }
   }
   // check if stremioId starts with one of the animeIdProviders
-  if (!(animeIdProviders.some(provider => stremioId.startsWith(provider)))) {
+  if (animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     try {
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
         const langCode = language.split('-')[0];
