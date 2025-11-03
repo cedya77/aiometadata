@@ -1,6 +1,7 @@
 require("dotenv").config();
 const FanartTvApi = require('fanart.tv-api');
 const { cacheWrapGlobal } = require('../lib/getCache');
+const FANART_IMAGE_BASE = 'https://assets.fanart.tv/fanart/movies/';
 
 const clientCache = new Map();
 
@@ -55,7 +56,8 @@ async function getBestSeriesBackground(tvdbId, config) {
         return null;
       }
       const sortedBackgrounds = images.showbackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      return sortedBackgrounds[0].url;
+      const backgroundUrl = sortedBackgrounds[0].url.startsWith('http') ? sortedBackgrounds[0].url : `${FANART_IMAGE_BASE}${sortedBackgrounds[0].id}/showbackground/${sortedBackgrounds[0].url}`;
+      return backgroundUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
@@ -84,7 +86,8 @@ async function getBestMovieBackground(tmdbId, config) {
         return null;
       }
       const sortedBackgrounds = images.moviebackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      return sortedBackgrounds[0].url;
+      const backgroundUrl = sortedBackgrounds[0].url.startsWith('http') ? sortedBackgrounds[0].url : `${FANART_IMAGE_BASE}${sortedBackgrounds[0].id}/moviebackground/${sortedBackgrounds[0].url}`;
+      return backgroundUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
@@ -138,7 +141,8 @@ async function getBestMoviePoster(tmdbId, config) {
         return null;
       }
       const sortedPosters = images.movieposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      return sortedPosters[0].url;
+      const posterUrl = sortedPosters[0].url.startsWith('http') ? sortedPosters[0].url : `${FANART_IMAGE_BASE}${sortedPosters[0].id}/movieposter/${sortedPosters[0].url}`;
+      return posterUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
@@ -168,7 +172,8 @@ async function getBestMovieLogo(tmdbId, config) {
         return null;
       }
       const sortedLogos = images.hdmovielogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      return sortedLogos[0].url;
+      const logoUrl = sortedLogos[0].url.startsWith('http') ? sortedLogos[0].url : `${FANART_IMAGE_BASE}${sortedLogos[0].id}/hdmovielogo/${sortedLogos[0].url}`;
+      return logoUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
@@ -197,7 +202,8 @@ async function getBestSeriesPoster(tvdbId, config) {
         return null;
       }
       const sortedPosters = images.tvposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      return sortedPosters[0].url;
+      const posterUrl = sortedPosters[0].url.startsWith('http') ? sortedPosters[0].url : `${FANART_IMAGE_BASE}${sortedPosters[0].id}/tvposter/${sortedPosters[0].url}`;
+      return posterUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
@@ -226,7 +232,8 @@ async function getBestTVLogo(tvdbId, config) {
         return null;
       }
       const sortedLogos = images.hdtvlogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      return sortedLogos[0].url;
+      const logoUrl = sortedLogos[0].url.startsWith('http') ? sortedLogos[0].url : `${FANART_IMAGE_BASE}${sortedLogos[0].id}/hdtvlogo/${sortedLogos[0].url}`;
+      return logoUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);

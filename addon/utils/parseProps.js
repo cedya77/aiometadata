@@ -1354,13 +1354,9 @@ async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series
   if (config.apiKeys.fanart && artProvider === 'fanart') {
     let fanartUrl = null;
     if (mediaType === 'series' && tvdbId) {
-      const images = await fanart.getShowImages(tvdbId, config);
-      const logo = selectFanartImageByLang(images?.hdtvlogo, config);
-      fanartUrl = logo?.url;
+      fanartUrl = await fanart.getBestTVLogo(tvdbId, config);
     } else if (mediaType === 'movie' && tmdbId) {
-      const images = await fanart.getMovieImages(tmdbId, config);
-      const logo = selectFanartImageByLang(images?.hdmovielogo, config);
-      fanartUrl = logo?.url;
+      fanartUrl = await fanart.getBestMovieLogo(tmdbId, config);
     }
     if (fanartUrl) {
       console.log(`[getAnimeLogo] Found high-quality back up logo from Fanart.tv.`);
@@ -1449,13 +1445,9 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
     let fanartUrl = null;
     console.log(`[getAnimePoster] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}`);
     if (mediaType === 'series' && tvdbId) {
-      const images = await fanart.getShowImages(tvdbId, config);
-      const poster = selectFanartImageByLang(images?.tvposter, config);
-      fanartUrl = poster?.url;
+      fanartUrl = await fanart.getBestSeriesPoster(tvdbId, config);
     } else if (mediaType === 'movie' && (imdbId || tmdbId)) {
-      const images = await fanart.getMovieImages(imdbId || tmdbId, config);
-      const poster = selectFanartImageByLang(images?.movieposter, config);
-      fanartUrl = poster?.url;
+      fanartUrl = await fanart.getBestMoviePoster(imdbId || tmdbId, config);
     }
 
     if (fanartUrl) {
@@ -2034,22 +2026,20 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
   if (artProvider === 'fanart') {
     try {
       if(tmdbId) {
-        const images = await fanart.getMovieImages(tmdbId, config);
-        const poster = selectFanartImageByLang(images?.movieposter, config);
+        const poster = await fanart.getBestMoviePoster(tmdbId, config);
         if (poster) {
-          console.log(`[getMoviePoster] Found Fanart.tv poster for movie (TMDB ID: ${tmdbId}, lang: ${poster.lang})`);
-          return poster.url;
+          console.log(`[getMoviePoster] Found Fanart.tv poster for movie (TMDB ID: ${tmdbId})`);
+          return poster;
         }
       }
       else {
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const images = await fanart.getMovieImages(mappedIds.tmdbId, config);
-          const poster = selectFanartImageByLang(images?.movieposter, config);
+          const poster = await fanart.getBestMoviePoster(mappedIds.tmdbId, config);
           if (poster) {
-            console.log(`[getMoviePoster] Found Fanart.tv poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId}, lang: ${poster.lang})`);
-            return poster.url;
+            console.log(`[getMoviePoster] Found Fanart.tv poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            return poster;
           }
         }
       }
@@ -2131,22 +2121,20 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
   if (artProvider === 'fanart') {
     try {
       if(tmdbId) {
-        const images = await fanart.getMovieImages(tmdbId, config);
-        const bg = selectFanartImageByLang(images?.moviebackground, config);
+        const bg = await fanart.getBestMovieBackground(tmdbId, config);
         if (bg) {
-          console.log(`[getMovieBackground] Found Fanart.tv background for movie (TMDB ID: ${tmdbId}, lang: ${bg.lang})`);
-          return bg.url;
+          console.log(`[getMovieBackground] Found Fanart.tv background for movie (TMDB ID: ${tmdbId})`);
+          return bg;
         }
       }
       else {
         if(!tvdbId) return fallbackBackgroundUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const images = await fanart.getMovieImages(mappedIds.tmdbId, config);
-          const bg = selectFanartImageByLang(images?.moviebackground, config);
+          const bg = await fanart.getBestMovieBackground(mappedIds.tmdbId, config);
           if (bg) {
-            console.log(`[getMovieBackground] Found Fanart.tv background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId}, lang: ${bg.lang})`);
-            return bg.url;
+            console.log(`[getMovieBackground] Found Fanart.tv background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            return bg;
           }
         }
       }
@@ -2221,22 +2209,20 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
   if (artProvider === 'fanart') {
     try {
       if(tmdbId) {
-        const images = await fanart.getMovieImages(tmdbId, config);
-        const logo = selectFanartImageByLang(images?.hdmovielogo, config);
+        const logo = await fanart.getBestMovieLogo(tmdbId, config);
         if (logo) {
-          console.log(`[getMovieLogo] Found Fanart.tv logo for movie (TMDB ID: ${tmdbId}, lang: ${logo.lang})`);
-          return logo.url;
+          console.log(`[getMovieLogo] Found Fanart.tv logo for movie (TMDB ID: ${tmdbId})`);
+          return logo;
         }
       }
       else {
         if(!tvdbId) return fallbackLogoUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const images = await fanart.getMovieImages(mappedIds.tmdbId, config);
-          const logo = selectFanartImageByLang(images?.hdmovielogo, config);
+          const logo = await fanart.getBestMovieLogo(mappedIds.tmdbId, config);
           if (logo) {
-            console.log(`[getMovieLogo] Found Fanart.tv logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId}, lang: ${logo.lang})`);
-            return logo.url;
+            console.log(`[getMovieLogo] Found Fanart.tv logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            return logo;
           }
         }
       }
@@ -2319,19 +2305,17 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
   if (artProvider === 'fanart') {
     try {
       if(tvdbId) {
-        const images = await fanart.getShowImages(tvdbId, config);
-        const poster = selectFanartImageByLang(images?.tvposter, config);
+        const poster = await fanart.getBestSeriesPoster(tvdbId, config);
         if (poster) {
-          return poster.url;
+          return poster;
         }
       }
       else if(tmdbId) {
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
-          const images = await fanart.getShowImages(mappedIds.tvdbId, config);
-          const poster = selectFanartImageByLang(images?.tvposter, config);
+          const poster = await fanart.getBestSeriesPoster(mappedIds.tvdbId, config);
           if (poster) {
-              return poster.url;
+              return poster;
           }
         }
       }
@@ -2414,20 +2398,18 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
   if (artProvider === 'fanart') {
     try {
       if(tvdbId) {
-        const images = await fanart.getShowImages(tvdbId, config);
-        const bg = selectFanartImageByLang(images?.showbackground, config);
+        const bg = await fanart.getBestSeriesBackground(tvdbId, config);
         if (bg) {
-          console.log(`[getSeriesBackground] Found Fanart.tv background for series (TVDB ID: ${tvdbId}, lang: ${bg.lang})`);
-          return bg.url;
+          console.log(`[getSeriesBackground] Found Fanart.tv background for series (TVDB ID: ${tvdbId})`);
+          return bg;
         }
       } else if(tmdbId) {
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
         if(mappedIds.tvdbId) {
-          const images = await fanart.getShowImages(mappedIds.tvdbId, config);
-          const bg = selectFanartImageByLang(images?.showbackground, config);
+          const bg = await fanart.getBestSeriesBackground(mappedIds.tvdbId, config);
           if (bg) {
-            console.log(`[getSeriesBackground] Found Fanart.tv background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId}, lang: ${bg.lang})`);
-            return bg.url;
+            console.log(`[getSeriesBackground] Found Fanart.tv background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+            return bg;
           }
         }
       }
@@ -2503,22 +2485,20 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
   if (artProvider === 'fanart') {
     try {
       if(tvdbId) {
-        const images = await fanart.getShowImages(tvdbId, config);
-        const logo = selectFanartImageByLang(images?.hdtvlogo, config);
+        const logo = await fanart.getBestTVLogo(tvdbId, config);
         if (logo) {
-          //console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId}, lang: ${logo.lang})`);
-          return logo.url;
+          console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId})`);
+          return logo;
         }
       }
       else if(tmdbId) {
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           console.log(`[getSeriesLogo] Fetching Fanart.tv logo for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
-          const images = await fanart.getShowImages(mappedIds.tvdbId, config);
-          const logo = selectFanartImageByLang(images?.hdtvlogo, config);
+          const logo = await fanart.getBestTVLogo(mappedIds.tvdbId, config);
           if (logo) {
-            //console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId}, lang: ${logo.lang})`);
-            return logo.url;
+            console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tvdbId})`);
+            return logo;
           }
         }
       }
@@ -2958,22 +2938,19 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
   if (useFanart && mapping) {
     try {
       if(mapping.themoviedb_id && stremioType === 'movie') {
-        const images = await fanart.getMovieImages(mapping.themoviedb_id, config);
-        const poster = selectFanartImageByLang(images?.movieposter, config);
+        poster = await fanart.getBestMoviePoster(mapping.themoviedb_id, config);
         if (poster) {
-          finalPosterUrl = poster.url;
+          finalPosterUrl = poster;
         }
       } else if (mapping.imdb_id && stremioType === 'movie') {
-        const images = await fanart.getMovieImages(mapping.imdb_id, config);
-        const poster = selectFanartImageByLang(images?.movieposter, config);
+        poster = await fanart.getBestMoviePoster(mapping.imdb_id, config);
         if (poster) {
-          finalPosterUrl = poster.url;
+          finalPosterUrl = poster;
         }
       } else if (mapping.thetvdb_id && stremioType === 'series') {
-        const images = await fanart.getShowImages(mapping.thetvdb_id, config);
-        const poster = selectFanartImageByLang(images?.tvposter, config);
+        poster = await fanart.getBestSeriesPoster(mapping.thetvdb_id, config);
         if (poster) {
-          finalPosterUrl = poster.url;
+          finalPosterUrl = poster;
         }
       }
     } catch (error) {
