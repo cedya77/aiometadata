@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.6.4](https://github.com/cedya77/aiometadata/compare/v1.6.3...v1.6.4) (2025-11-04)
+
+
+### Bug Fixes
+
+* **anime meta & fanart:** fix self-inflicted initialization issue and re apply langugage selection logic to fanart ([af1b8ec](https://github.com/cedya77/aiometadata/commit/af1b8ec459c498681087a7124a2bf71413e9dd16))
+* finetune person's search logic further ([#99](https://github.com/cedya77/aiometadata/issues/99)) ([5df4cc6](https://github.com/cedya77/aiometadata/commit/5df4cc6a29a2d8adb43ba611f48aefcd404b9e39))
+
 ## [1.6.3](https://github.com/cedya77/aiometadata/compare/v1.6.2...v1.6.3) (2025-11-04)
 
 
