@@ -1,3 +1,5 @@
+//new current
+
 require("dotenv").config();
 const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
@@ -358,68 +360,67 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config),
       
       shouldSearchPersons
-          ? moviedb.searchPerson({ query, language }, config).then(async personRes => {
+          ? moviedb.searchPerson({ query, language: 'en-US' }, config).then(async personRes => {
               if (personRes.results?.length > 0) {
                 const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
                 const topPerson = sortedPersons[0];
                 
                 logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
                 
+                // Thresholds for person validation
+                const MIN_QUALITY_WORK_VOTES = 4000;
+                const MIN_RECOGNIZED_WORK_VOTES = 100;
+                const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
+                const MIN_POPULARITY_PRIMARY_NAME = 3.0;
+                
+                // Check work recognition
+                const knownFor = topPerson.known_for || [];
+                const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
+                logger.debug(`Person ${topPerson.name} highest vote count in known_for: ${highestVoteCount}`);
+                
                 // Early exit: skip if person has very low popularity or no profile picture
-                // This avoids wasting an API call on likely junk results
-                if ((topPerson.popularity || 0) < 1.0 || !topPerson.profile_path) {
+                const personPopularity = topPerson.popularity || 0;
+                if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK || !topPerson.profile_path) {
                   logger.debug(`Skipping person ${topPerson.name} - too low popularity or missing profile picture`);
                   return [];
                 }
                 
-                // Fetch full person details to get also_known_as names
-                const personDetails = await moviedb.personInfo({ id: topPerson.id, language }, config);
-                
-                const queryNormalized = normalizeForComparison(query);
-                const personNameNormalized = normalizeForComparison(topPerson.name);
-                const alsoKnownAs = personDetails.also_known_as || [];
-                
-                // Check if query matches the primary name
-                const isExactMatch = personNameNormalized === queryNormalized;
-                const isContainedMatch = personNameNormalized.includes(queryNormalized);
-                
-                // Check if query matches any of the also_known_as names
-                const matchesAlsoKnownAs = alsoKnownAs.some(aka => {
-                  const akaNormalized = normalizeForComparison(aka);
-                  return akaNormalized === queryNormalized || akaNormalized.includes(queryNormalized);
-                });
-                
-                if (!isExactMatch && !isContainedMatch && !matchesAlsoKnownAs) {
-                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name or also_known_as (${alsoKnownAs.join(', ')})`);
+                // Early exit: person must have at least one recognized work
+                if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES) {
+                  logger.debug(`Skipping person ${topPerson.name} - no recognized work (highest vote count: ${highestVoteCount})`);
                   return [];
                 }
                 
-                // Validate person through their work quality (from known_for in search results)
-                const knownFor = topPerson.known_for || [];
-                const hasHighQualityWork = knownFor.some(work => {
-                  const votes = work.vote_count || 0;
-                  return votes >= 5000;
-                });
+                const queryNormalized = normalizeForComparison(query);
+                const personNameNormalized = normalizeForComparison(topPerson.name);
                 
-                const minPopularityExact = 2.5;
-                const minPopularityAlias = 4.0;
-                const personPopularity = topPerson.popularity || 0;
+                // Check if query matches the primary name
+                const isExactMatch = personNameNormalized === queryNormalized;
                 
-                // If person has high-quality work (>5000 votes) and at least 1.0 popularity, accept them
-                if (hasHighQualityWork && personPopularity >= 1.0) {
-                  logger.debug(`Person match confirmed: ${topPerson.name} (validated through high-quality work)`);
-                } else {
-                  // Otherwise, require minimum popularity
-                  const meetsPopularityThreshold = 
-                    (isExactMatch && personPopularity >= minPopularityExact) ||
-                    (isContainedMatch && personPopularity >= minPopularityExact) ||
-                    (matchesAlsoKnownAs && personPopularity >= minPopularityAlias);
-                  
-                  if (!meetsPopularityThreshold) {
-                    logger.debug(`Skipping person ${topPerson.name} - insufficient popularity (${personPopularity}) and no high-quality work`);
-                    return [];
-                  }
+                // Check if query matches as a complete word (not substring)
+                const nameWords = personNameNormalized.toLowerCase().split(/\s+/);
+                const isContainsMatch = nameWords.some(word => word === queryNormalized.toLowerCase());
+                
+                const primaryNameMatches = isExactMatch || isContainsMatch;
+                
+                // Name must match
+                if (!primaryNameMatches) {
+                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name`);
+                  return [];
+                }
+                
+                // Check work quality
+                const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
+                
+                // Check if person meets quality/popularity requirements
+                const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+                const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
+                
+                if (passesQualityCheck || passesPopularityCheck) {
                   logger.debug(`Person match confirmed: ${topPerson.name} (popularity: ${personPopularity})`);
+                } else {
+                  logger.debug(`Skipping person ${topPerson.name} - insufficient popularity (${personPopularity})`);
+                  return [];
                 }
                 
                 const credits = type === 'movie'
