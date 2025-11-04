@@ -1504,11 +1504,8 @@ class RequestTracker {
     return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
   }
 
-  // Get improved user identifier using simplified factors
-  getImprovedUserIdentifier(req) {
-    const crypto = require("crypto");
-
-    // Get anonymized IP (first 3 octets only for privacy)
+  // Get anonymized IP from request (helper method)
+  getAnonymizedIP(req) {
     let anonymizedIP = "unknown";
     try {
       const ip =
@@ -1532,6 +1529,15 @@ class RequestTracker {
     } catch (error) {
       anonymizedIP = "unknown";
     }
+    return anonymizedIP;
+  }
+
+  // Get improved user identifier using simplified factors
+  getImprovedUserIdentifier(req) {
+    const crypto = require("crypto");
+
+    // Get anonymized IP (first 3 octets only for privacy)
+    const anonymizedIP = this.getAnonymizedIP(req);
 
     // Get basic browser info (just browser name, not version)
     const userAgent = req.get("User-Agent") || "unknown";
@@ -1581,6 +1587,7 @@ class RequestTracker {
         endpoint: this.normalizeEndpoint(req.path),
         userAgent: req.get("User-Agent") || "unknown",
         method: req.method,
+        anonymizedIP: this.getAnonymizedIP(req),
       };
 
       // Store in a time-ordered list (keep last 1000 activities)

@@ -1859,6 +1859,7 @@ class DashboardAPI {
             status: "active",
             userAgent: activity.userAgent,
             lastEndpoint: activity.endpoint,
+            anonymizedIP: activity.anonymizedIP || "unknown",
           });
         }
 

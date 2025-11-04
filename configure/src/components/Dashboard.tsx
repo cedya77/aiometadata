@@ -2835,6 +2835,8 @@ function DashboardUsers({ data, loading }) {
   const [error, setError] = useState(null);
   const [clearingUserData, setClearingUserData] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showUserDetails, setShowUserDetails] = useState(false);
 
   // Clear inflated user data
   const handleClearUserData = async () => {
@@ -3033,7 +3035,14 @@ function DashboardUsers({ data, loading }) {
                     >
                       {user.status}
                     </Badge>
-                    <Button size="sm" variant="outline">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setShowUserDetails(true);
+                      }}
+                    >
                       View Details
                     </Button>
                   </div>
@@ -3157,6 +3166,92 @@ function DashboardUsers({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* User Activity Details Dialog */}
+      <Dialog open={showUserDetails} onOpenChange={setShowUserDetails}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>User Activity Details</DialogTitle>
+            <DialogDescription>
+              Detailed information about this user's activity
+            </DialogDescription>
+          </DialogHeader>
+          {selectedUser && (
+            <div className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">IP Address</Label>
+                  <p className="text-sm font-mono mt-1">
+                    {selectedUser.anonymizedIP && selectedUser.anonymizedIP !== "unknown"
+                      ? selectedUser.anonymizedIP
+                      : "Unknown"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {selectedUser.anonymizedIP && selectedUser.anonymizedIP !== "unknown"
+                      ? "Anonymized IP (first 3 octets)"
+                      : "IP address not available"}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Status</Label>
+                  <div className="mt-1">
+                    <Badge
+                      variant={
+                        selectedUser.status === "active"
+                          ? "default"
+                          : selectedUser.status === "idle"
+                            ? "secondary"
+                            : "outline"
+                      }
+                    >
+                      {selectedUser.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-medium text-muted-foreground">Identifier Hash</Label>
+                <p className="text-sm font-mono mt-1 text-muted-foreground">{selectedUser.id}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Internal identifier hash (for tracking)
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Total Requests</Label>
+                  <p className="text-sm font-semibold mt-1">{selectedUser.requests}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Last Seen</Label>
+                  <p className="text-sm mt-1">{selectedUser.lastSeen}</p>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-medium text-muted-foreground">Last Endpoint</Label>
+                <p className="text-sm font-mono mt-1 break-all">{selectedUser.lastEndpoint || "N/A"}</p>
+              </div>
+
+              <div>
+                <Label className="text-sm font-medium text-muted-foreground">User Agent</Label>
+                <p className="text-sm mt-1 break-all text-muted-foreground">
+                  {selectedUser.userAgent || "Unknown"}
+                </p>
+              </div>
+
+              <div className="pt-4 border-t">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Note:</strong> The IP address shown is anonymized (first 3 octets for IPv4, first 3 groups for IPv6) 
+                  for privacy. The identifier hash is created from the anonymized IP and browser type. 
+                  This does not correspond to a registered user UUID.
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* User Management Modal */}
       <UserManagementModal
