@@ -176,7 +176,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
         break;
     }
 
-    if(isTraktUpNextId && !includeVideos) {
+    if(isTraktUpNextId) {
       if(meta.id.startsWith('tt')) {
         meta.id = `tun_${meta.id}`;
       }

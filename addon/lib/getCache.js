@@ -1409,9 +1409,13 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   
   const result = await method();
   const meta = result?.meta || result;
+  let idToCache = meta.id
+  if(metaId.startsWith('tun_')){
+    idToCache = metaId
+  }
   
   // Cache the generated components with the resolved meta.id
-  return await cacheWrapMetaComponents(userUUID, meta.id || metaId, async () => result, ttl, options, type);
+  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type);
 }
 
 /**
