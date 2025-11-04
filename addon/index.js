@@ -934,6 +934,32 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 
 
 
+// Proxy endpoint for fetching manifests from internal Docker network URLs
+addon.get("/api/proxy-manifest", async function (req, res) {
+  const { url } = req.query;
+  
+  if (!url) {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  try {
+    const { httpGet } = require('./utils/httpClient');
+    const manifestData = await httpGet(url, {
+      timeout: 10000
+    });
+    
+    // Set CORS headers to allow frontend access
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.json(manifestData.data);
+  } catch (error) {
+    console.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
+    res.status(error.response?.status || 500).json({ 
+      error: error.message || 'Failed to fetch manifest' 
+    });
+  }
+});
+
 addon.get("/poster/:type/:id", async function (req, res) {
   const { type, id } = req.params;
   const { fallback, lang, key } = req.query;

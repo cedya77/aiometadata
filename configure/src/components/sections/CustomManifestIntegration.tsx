@@ -42,6 +42,26 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
   // Get currently imported custom manifests
   const currentCustomCatalogs = config.catalogs.filter(c => c.id.startsWith("custom."));
   
+  const isInternalDockerUrl = (url: string): boolean => {
+    try {
+      const urlObj = new URL(url);
+      // Check for internal Docker network patterns:
+      // - http:// (not https) with service name (no dots before port)
+      // - localhost
+      // - 127.0.0.1
+      // - Internal network IPs (10.x, 172.16-31.x, 192.168.x)
+      const hostname = urlObj.hostname;
+      const isHttp = urlObj.protocol === 'http:';
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+      const isInternalIP = /^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)/.test(hostname);
+      const isServiceName = isHttp && !hostname.includes('.') && hostname !== 'localhost';
+      
+      return isLocalhost || isInternalIP || isServiceName;
+    } catch {
+      return false;
+    }
+  };
+
   const fetchManifest = useCallback(async () => {
     if (!manifestUrl.trim()) {
       toast.error("Please enter a manifest URL.");
@@ -50,7 +70,12 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
 
     setIsLoading(true);
     try {
-      const response = await fetch(manifestUrl);
+      const useProxy = isInternalDockerUrl(manifestUrl);
+      const fetchUrl = useProxy 
+        ? `/api/proxy-manifest?url=${encodeURIComponent(manifestUrl)}`
+        : manifestUrl;
+
+      const response = await fetch(fetchUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch manifest (Status: ${response.status})`);
       }
