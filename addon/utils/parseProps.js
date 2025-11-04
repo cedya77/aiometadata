@@ -1410,7 +1410,7 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
           : await tvdb.getSeriesPoster(tvdbId, config);
 
       if (tvdbPoster) {
-        //console.log(`[getAnimePoster] Found TVDB poster for MAL ID: ${malId} (TVDB ID: ${tvdbId}, Type: ${mediaType})`);
+        console.log(`[getAnimePoster] Found TVDB poster for MAL ID: ${malId} (TVDB ID: ${tvdbId}, Type: ${mediaType}) - ${tvdbPoster}`);
         return tvdbPoster;
       }
     } catch (error) {
@@ -1896,7 +1896,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         name: anime.title_english || anime.title
       });
     }
-    if((config.mal?.useImdbIdForCatalogAndSearch && stremioType === 'series')){
+    if((config.mal?.useImdbIdForCatalogAndSearch)){
       return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
         const { getMeta } = await import("../lib/getMeta");
         return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, false);
@@ -2908,7 +2908,9 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
   if (useTvdb && tvdbId) {
     try {
       // Use the appropriate TVDB function based on media type
-      const tvdbPoster = await tvdb.getSeriesPoster(tvdbId, config);
+      const tvdbPoster = stremioType === 'movie'
+        ? await tvdb.getMoviePoster(tvdbId, config)
+        : await tvdb.getSeriesPoster(tvdbId, config);
       
       if (tvdbPoster) {
         //console.log(`[parseAnimeCatalogMetaBatch] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);

@@ -110,53 +110,88 @@ async function processRequest(requestTask) {
     requestTask.resolve(result);
     
   } catch (error) {
-    if (error.response && error.response.status === 429 && requestTask.retries < MAX_RETRIES) {
+    // Check if this is a retryable error (rate limit or timeout)
+    const isRateLimit = error.response && error.response.status === 429;
+    const isTimeout = error.code && (error.code.includes('TIMEOUT') || error.code.includes('UND_ERR_HEADERS_TIMEOUT') || error.code.includes('UND_ERR_BODY_TIMEOUT'));
+    const isRetryable = (isRateLimit || isTimeout) && requestTask.retries < MAX_RETRIES;
+    
+    if (isRetryable) {
       requestTask.retries++; 
       
-      // Track rate limit hits using a sliding window (last 60 seconds)
-      const now = Date.now();
-      rateLimitHitTimestamps.push(now);
-      
-      // Remove hits older than 60 seconds
-      rateLimitHitTimestamps = rateLimitHitTimestamps.filter(timestamp => now - timestamp < 60000);
-      
-      const recentHitCount = rateLimitHitTimestamps.length;
+      if (isRateLimit) {
+        // Track rate limit hits using a sliding window (last 60 seconds)
+        const now = Date.now();
+        rateLimitHitTimestamps.push(now);
+        
+        // Remove hits older than 60 seconds
+        rateLimitHitTimestamps = rateLimitHitTimestamps.filter(timestamp => now - timestamp < 60000);
+        
+        const recentHitCount = rateLimitHitTimestamps.length;
 
-      // Increase backoff time if we're hitting rate limits frequently
-      let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
-      if (recentHitCount > 10) {
-        baseBackoffTime *= 2.5; // 2.5x delay if hitting rate limits very frequently
-      } else if (recentHitCount > 5) {
-        baseBackoffTime *= 1.8; // 1.8x delay if hitting frequently
-      } else if (recentHitCount > 2) {
-        baseBackoffTime *= 1.3; // 1.3x delay if hitting moderately
-      }
-      
-      const jitter = Math.random() * 300;
-      const totalDelay = baseBackoffTime + jitter;
-
-      console.warn(
-        `Jikan rate limit hit (${recentHitCount} hits in last 60s). Retrying in ${Math.round(totalDelay)}ms. ` +
-        `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
-      );
-      
-      // Log rate limit warning for dashboard
-      const requestTracker = require('./requestTracker');
-      requestTracker.logError('warning', `MAL API rate limit hit`, {
-        retries: requestTask.retries,
-        maxRetries: MAX_RETRIES,
-        backoffTime: Math.round(totalDelay),
-        recentHits: recentHitCount,
-        url: requestTask.url
-      });
-
-      // Re-queue with delay
-      setTimeout(() => {
-        requestQueue.unshift(requestTask);
-        if (!isProcessing) {
-          processQueue();
+        // Increase backoff time if we're hitting rate limits frequently
+        let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
+        if (recentHitCount > 10) {
+          baseBackoffTime *= 2.5; // 2.5x delay if hitting rate limits very frequently
+        } else if (recentHitCount > 5) {
+          baseBackoffTime *= 1.8; // 1.8x delay if hitting frequently
+        } else if (recentHitCount > 2) {
+          baseBackoffTime *= 1.3; // 1.3x delay if hitting moderately
         }
-      }, totalDelay);
+        
+        const jitter = Math.random() * 300;
+        const totalDelay = baseBackoffTime + jitter;
+
+        console.warn(
+          `Jikan rate limit hit (${recentHitCount} hits in last 60s). Retrying in ${Math.round(totalDelay)}ms. ` +
+          `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
+        );
+        
+        // Log rate limit warning for dashboard
+        const requestTracker = require('./requestTracker');
+        requestTracker.logError('warning', `MAL API rate limit hit`, {
+          retries: requestTask.retries,
+          maxRetries: MAX_RETRIES,
+          backoffTime: Math.round(totalDelay),
+          recentHits: recentHitCount,
+          url: requestTask.url
+        });
+
+        // Re-queue with delay
+        setTimeout(() => {
+          requestQueue.unshift(requestTask);
+          if (!isProcessing) {
+            processQueue();
+          }
+        }, totalDelay);
+      } else if (isTimeout) {
+        // Retry timeout errors with exponential backoff
+        const timeoutDelay = Math.pow(2, requestTask.retries - 1) * 1000; // 1s, 2s, 4s
+        const jitter = Math.random() * 500;
+        const totalDelay = timeoutDelay + jitter;
+        
+        console.warn(
+          `Jikan request timeout for "${requestTask.url}". Retrying in ${Math.round(totalDelay)}ms. ` +
+          `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
+        );
+        
+        // Log timeout warning for dashboard
+        const requestTracker = require('./requestTracker');
+        requestTracker.logError('warning', `MAL API timeout`, {
+          retries: requestTask.retries,
+          maxRetries: MAX_RETRIES,
+          backoffTime: Math.round(totalDelay),
+          url: requestTask.url,
+          errorCode: error.code
+        });
+
+        // Re-queue with delay
+        setTimeout(() => {
+          requestQueue.unshift(requestTask);
+          if (!isProcessing) {
+            processQueue();
+          }
+        }, totalDelay);
+      }
       
     } else {
       if (requestTask.retries >= MAX_RETRIES) {
@@ -202,7 +237,8 @@ async function _makeJikanRequest(url) {
     
     const response = await httpGet(url, { 
       dispatcher: malDispatcher,
-      headers: headers
+      headers: headers,
+      timeout: 15000 // 15 second timeout for Jikan API (some endpoints can be slow)
     });
     const responseTime = Date.now() - startTime;
     

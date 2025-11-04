@@ -311,8 +311,7 @@ export function SearchSettings() {
       <Card>
         <CardContent className="p-4 pt-6 flex items-center justify-between">
             <div>
-                <Label htmlFor="search-enabled" className="text-lg font-medium">Enable Search Catalogs</Label>
-                <p className="text-sm text-muted-foreground">Adds "Search" catalogs to your Discover screen.</p>
+                <Label htmlFor="search-enabled" className="text-lg font-medium">Enable Search functionality</Label>
             </div>
             <Switch 
               id="search-enabled"

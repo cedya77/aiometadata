@@ -884,6 +884,21 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       }
     }*/
     
+    // Extract actual poster URL from RPDB proxy URL for meta route
+    // Meta routes should return the actual poster URL, not the RPDB proxy
+    if (result.meta.poster && result.meta.poster.includes('/poster/') && result.meta.poster.includes('fallback=')) {
+      try {
+        const url = new URL(result.meta.poster);
+        const fallback = url.searchParams.get('fallback');
+        if (fallback) {
+          result.meta.poster = decodeURIComponent(fallback);
+        }
+      } catch (e) {
+        // Keep original if URL parsing fails
+        console.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
+      }
+    }
+    
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
     
@@ -918,6 +933,32 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 });
 
 
+
+// Proxy endpoint for fetching manifests from internal Docker network URLs
+addon.get("/api/proxy-manifest", async function (req, res) {
+  const { url } = req.query;
+  
+  if (!url) {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  try {
+    const { httpGet } = require('./utils/httpClient');
+    const manifestData = await httpGet(url, {
+      timeout: 10000
+    });
+    
+    // Set CORS headers to allow frontend access
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.json(manifestData.data);
+  } catch (error) {
+    console.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
+    res.status(error.response?.status || 500).json({ 
+      error: error.message || 'Failed to fetch manifest' 
+    });
+  }
+});
 
 addon.get("/poster/:type/:id", async function (req, res) {
   const { type, id } = req.params;
