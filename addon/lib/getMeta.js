@@ -691,7 +691,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     if(allIds?.malId) {
       allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
       allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
-      allIds.tvdbId =  (await wikiMappings.getByImdbId(allIds.imdbId, type))?.tvdbId || null;
+      allIds.tvdbId =  (await wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
 
     } else {
       allIds.tvdbId = null
@@ -1524,7 +1524,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const imdbRating = imdbRatingValue || "N/A";
   
   const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
-  const posterProxyUrl = `${host}/poster/movie/tvdb:${movieData.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const posterProxyUrl = `${host}/poster/movie/${imdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
   const movieCredits = {
     cast: (characters || [])
       .filter(c => c.peopleType === 'Actor')

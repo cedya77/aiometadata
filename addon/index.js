@@ -884,6 +884,21 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       }
     }*/
     
+    // Extract actual poster URL from RPDB proxy URL for meta route
+    // Meta routes should return the actual poster URL, not the RPDB proxy
+    if (result.meta.poster && result.meta.poster.includes('/poster/') && result.meta.poster.includes('fallback=')) {
+      try {
+        const url = new URL(result.meta.poster);
+        const fallback = url.searchParams.get('fallback');
+        if (fallback) {
+          result.meta.poster = decodeURIComponent(fallback);
+        }
+      } catch (e) {
+        // Keep original if URL parsing fails
+        console.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
+      }
+    }
+    
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
     
