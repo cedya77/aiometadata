@@ -365,6 +365,13 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 
                 logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
                 
+                // Early exit: skip if person has very low popularity or no profile picture
+                // This avoids wasting an API call on likely junk results
+                if ((topPerson.popularity || 0) < 1.0 || !topPerson.profile_path) {
+                  logger.debug(`Skipping person ${topPerson.name} - too low popularity or missing profile picture`);
+                  return [];
+                }
+                
                 // Fetch full person details to get also_known_as names
                 const personDetails = await moviedb.personInfo({ id: topPerson.id, language }, config);
                 
@@ -374,28 +381,46 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 
                 // Check if query matches the primary name
                 const isExactMatch = personNameNormalized === queryNormalized;
-                const isContainedWithPopularity = personNameNormalized.includes(queryNormalized) && (topPerson.popularity || 0) > 3;
+                const isContainedMatch = personNameNormalized.includes(queryNormalized);
                 
                 // Check if query matches any of the also_known_as names
-                // Aliases must ALWAYS pass the popularity check (no bypass for exact matches)
                 const matchesAlsoKnownAs = alsoKnownAs.some(aka => {
                   const akaNormalized = normalizeForComparison(aka);
-                  const isMatch = akaNormalized === queryNormalized || akaNormalized.includes(queryNormalized);
-                  
-                  if (!isMatch) return false;
-                  
-                  // For alias matches, ALWAYS require minimum popularity
-                  // This prevents low-popularity people with famous aliases (e.g., "Superman") from hijacking searches
-                  const minPopularityForAlias = 3.0;
-                  return (topPerson.popularity || 0) >= minPopularityForAlias;
+                  return akaNormalized === queryNormalized || akaNormalized.includes(queryNormalized);
                 });
                 
-                if (!isExactMatch && !isContainedWithPopularity && !matchesAlsoKnownAs) {
-                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name or also_known_as (${alsoKnownAs.join(', ')}) with sufficient popularity (${topPerson.popularity || 0} < 3.0)`);
+                if (!isExactMatch && !isContainedMatch && !matchesAlsoKnownAs) {
+                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name or also_known_as (${alsoKnownAs.join(', ')})`);
                   return [];
                 }
                 
-                logger.debug(`Person match confirmed: ${topPerson.name} (also known as: ${alsoKnownAs.join(', ')})`);
+                // Validate person through their work quality (from known_for in search results)
+                const knownFor = topPerson.known_for || [];
+                const hasHighQualityWork = knownFor.some(work => {
+                  const votes = work.vote_count || 0;
+                  return votes >= 5000;
+                });
+                
+                const minPopularityExact = 2.5;
+                const minPopularityAlias = 4.0;
+                const personPopularity = topPerson.popularity || 0;
+                
+                // If person has high-quality work (>5000 votes) and at least 1.0 popularity, accept them
+                if (hasHighQualityWork && personPopularity >= 1.0) {
+                  logger.debug(`Person match confirmed: ${topPerson.name} (validated through high-quality work)`);
+                } else {
+                  // Otherwise, require minimum popularity
+                  const meetsPopularityThreshold = 
+                    (isExactMatch && personPopularity >= minPopularityExact) ||
+                    (isContainedMatch && personPopularity >= minPopularityExact) ||
+                    (matchesAlsoKnownAs && personPopularity >= minPopularityAlias);
+                  
+                  if (!meetsPopularityThreshold) {
+                    logger.debug(`Skipping person ${topPerson.name} - insufficient popularity (${personPopularity}) and no high-quality work`);
+                    return [];
+                  }
+                  logger.debug(`Person match confirmed: ${topPerson.name} (popularity: ${personPopularity})`);
+                }
                 
                 const credits = type === 'movie'
                     ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
