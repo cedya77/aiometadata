@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.6.3](https://github.com/cedya77/aiometadata/compare/v1.6.2...v1.6.3) (2025-11-04)
+
+
+### Bug Fixes
+
+* **anime movie:** adapt ids to new anime movie id mapping ([0ca12cc](https://github.com/cedya77/aiometadata/commit/0ca12cc5832f5c50662ccf73b78cba101d1c4ada))
+* **fanart:** adapt changes from fanart api ([8b3d006](https://github.com/cedya77/aiometadata/commit/8b3d006d3e60da1b3aee99bd9b193c2f1a288324))
+
 ## [1.6.2](https://github.com/cedya77/aiometadata/compare/v1.6.1...v1.6.2) (2025-11-03)
 
 
