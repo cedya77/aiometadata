@@ -55,8 +55,8 @@ async function getBestSeriesBackground(tvdbId, config) {
       if (!images.showbackground || images.showbackground.length === 0) {
         return null;
       }
-      const sortedBackgrounds = images.showbackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      const backgroundUrl = sortedBackgrounds[0].url.startsWith('http') ? sortedBackgrounds[0].url : `${FANART_IMAGE_BASE}${sortedBackgrounds[0].id}/showbackground/${sortedBackgrounds[0].url}`;
+      const selectedBackground = selectFanartImageByLang(images.showbackground, config, 'lang');
+      const backgroundUrl = selectedBackground.url.startsWith('http') ? selectedBackground.url : `${FANART_IMAGE_BASE}${selectedBackground.id}/showbackground/${selectedBackground.url}`;
       return backgroundUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
@@ -85,8 +85,8 @@ async function getBestMovieBackground(tmdbId, config) {
       if (!images.moviebackground || images.moviebackground.length === 0) {
         return null;
       }
-      const sortedBackgrounds = images.moviebackground.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      const backgroundUrl = sortedBackgrounds[0].url.startsWith('http') ? sortedBackgrounds[0].url : `${FANART_IMAGE_BASE}${sortedBackgrounds[0].id}/moviebackground/${sortedBackgrounds[0].url}`;
+      const selectedBackground = selectFanartImageByLang(images.moviebackground, config, 'lang');
+      const backgroundUrl = selectedBackground.url.startsWith('http') ? selectedBackground.url : `${FANART_IMAGE_BASE}${selectedBackground.id}/moviebackground/${selectedBackground.url}`;
       return backgroundUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
@@ -140,8 +140,8 @@ async function getBestMoviePoster(tmdbId, config) {
       if (!images.movieposter || images.movieposter.length === 0) {
         return null;
       }
-      const sortedPosters = images.movieposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      const posterUrl = sortedPosters[0].url.startsWith('http') ? sortedPosters[0].url : `${FANART_IMAGE_BASE}${sortedPosters[0].id}/movieposter/${sortedPosters[0].url}`;
+      const selectedPoster = selectFanartImageByLang(images.movieposter, config, 'lang');
+      const posterUrl = selectedPoster.url.startsWith('http') ? selectedPoster.url : `${FANART_IMAGE_BASE}${selectedPoster.id}/movieposter/${selectedPoster.url}`;
       return posterUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
@@ -171,8 +171,8 @@ async function getBestMovieLogo(tmdbId, config) {
       if (!images.hdmovielogo || images.hdmovielogo.length === 0) {
         return null;
       }
-      const sortedLogos = images.hdmovielogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      const logoUrl = sortedLogos[0].url.startsWith('http') ? sortedLogos[0].url : `${FANART_IMAGE_BASE}${sortedLogos[0].id}/hdmovielogo/${sortedLogos[0].url}`;
+      const selectedLogo = selectFanartImageByLang(images.hdmovielogo, config, 'lang');
+      const logoUrl = selectedLogo.url.startsWith('http') ? selectedLogo.url : `${FANART_IMAGE_BASE}${selectedLogo.id}/hdmovielogo/${selectedLogo.url}`;
       return logoUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
@@ -201,8 +201,8 @@ async function getBestSeriesPoster(tvdbId, config) {
       if (!images.tvposter || images.tvposter.length === 0) {
         return null;
       }
-      const sortedPosters = images.tvposter.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      const posterUrl = sortedPosters[0].url.startsWith('http') ? sortedPosters[0].url : `${FANART_IMAGE_BASE}${sortedPosters[0].id}/tvposter/${sortedPosters[0].url}`;
+      const selectedPoster = selectFanartImageByLang(images.tvposter, config, 'lang');
+      const posterUrl = selectedPoster.url.startsWith('http') ? selectedPoster.url : `${FANART_IMAGE_BASE}${selectedPoster.id}/tvposter/${selectedPoster.url}`;
       return posterUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
@@ -231,8 +231,8 @@ async function getBestTVLogo(tvdbId, config) {
       if (!images.hdtvlogo || images.hdtvlogo.length === 0) {
         return null;
       }
-      const sortedLogos = images.hdtvlogo.sort((a, b) => parseInt(b.likes) - parseInt(a.likes));
-      const logoUrl = sortedLogos[0].url.startsWith('http') ? sortedLogos[0].url : `${FANART_IMAGE_BASE}${sortedLogos[0].id}/hdtvlogo/${sortedLogos[0].url}`;
+      const selectedLogo = selectFanartImageByLang(images.hdtvlogo, config, 'lang');
+      const logoUrl = selectedLogo.url.startsWith('http') ? selectedLogo.url : `${FANART_IMAGE_BASE}${selectedLogo.id}/hdtvlogo/${selectedLogo.url}`;
       return logoUrl;
     } catch (error) {
       if (error.message && error.message.includes("Not Found")) {
