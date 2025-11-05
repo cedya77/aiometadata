@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.7.1](https://github.com/cedya77/aiometadata/compare/v1.7.0...v1.7.1) (2025-11-05)
+
+
+### Bug Fixes
+
+* **meta:** fix undefined certificationsData and empty ids handling ([7c66530](https://github.com/cedya77/aiometadata/commit/7c665305d9322e92959bcdd15d62948218729a5e))
+
 ## [1.7.0](https://github.com/cedya77/aiometadata/compare/v1.6.4...v1.7.0) (2025-11-04)
 
 
