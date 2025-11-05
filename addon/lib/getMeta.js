@@ -705,11 +705,6 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
       allIds.tvdbId =  (await wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
 
-    } else {
-      allIds.tvdbId = null
-      allIds.tvmazeId = null
-      allIds.imdbId = null
-      allIds.tmdbId = null
     }
   }
   // check if stremioId starts with one of the animeIdProviders
@@ -736,6 +731,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           ]);
           return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
         } else if (type === 'movie') {
+          logger.info(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
           if(!movieData) {
             if(allIds?.imdbId) {
@@ -1635,8 +1631,6 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   }
   console.log(`[TvdbMovieMeta] remoteIds:`, remoteIds);
 
-  imdbId = imdbId || remoteIds?.find(id => id.sourceName === 'IMDB')?.id 
-  tmdbId = tmdbId || remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id 
 
   let release_dates = null;
   let certification = null;
