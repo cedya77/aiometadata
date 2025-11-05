@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.7.0](https://github.com/cedya77/aiometadata/compare/v1.6.4...v1.7.0) (2025-11-04)
+
+
+### Features
+
+* **custom-manifest:** Add proxy endpoint for Docker network manifest URLs ([9083e12](https://github.com/cedya77/aiometadata/commit/9083e12c4bb2f842df30d3874747e9a86e8d344e))
+
+
+### Bug Fixes
+
+* **art:** RPDB handling and improve error resilience ([eafe942](https://github.com/cedya77/aiometadata/commit/eafe9422ab0d23e62bfdd1afbc013fb2b8b757ec))
+* **tmdb trailers:** fix multilingual trailers logic ([cc4a088](https://github.com/cedya77/aiometadata/commit/cc4a088ad7a98b5d8e98a926ccfd6c3cd4eda4b0))
+* **trakt up next:** fix issue with caching ([b44be7c](https://github.com/cedya77/aiometadata/commit/b44be7c81bad2bd6c7550b8cea63ec8d8678dd01))
+
 ## [1.6.4](https://github.com/cedya77/aiometadata/compare/v1.6.3...v1.6.4) (2025-11-04)
 
 
