@@ -917,6 +917,10 @@ function parseAnimeCreditsLink(characterData, userUUID, castCount) {
 }
 
 function getTmdbMovieCertificationForCountry(certificationsData) {
+  if (!certificationsData) {
+    return null;
+  }
+  
   const countryData = certificationsData.results?.find(r => r.iso_3166_1 === 'US');
   if (!countryData?.release_dates) return null;
   
@@ -943,6 +947,10 @@ function getTmdbMovieCertificationForCountry(certificationsData) {
 }
 
 function getTmdbTvCertificationForCountry(certificationsData) {
+  if (!certificationsData) {
+    return null;
+  }
+  
   const countryData = certificationsData.results?.find(r => r.iso_3166_1 === 'US');
   if (!countryData?.rating) return null;
   

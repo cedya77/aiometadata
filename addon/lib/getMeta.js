@@ -579,7 +579,10 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
         logger.warn(`[SeriesMeta] TMDB returned null data for ${allIds.tmdbId}`);
       }
     } catch (e) {
+      const errorLine = e.stack?.split('\n')[1]?.trim() || 'unknown';
       logger.warn(`[SeriesMeta] TMDB failed: ${e.message}`);
+      logger.warn(`[SeriesMeta] TMDB error at: ${errorLine}`);
+      logger.warn(`[SeriesMeta] TMDB full stack trace:`, e.stack);
     }
   }
 
@@ -654,7 +657,10 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
         logger.warn(`[SeriesMeta] TMDB by ID returned null data for ${id}`);
       }
     } catch (e) {
+      const errorLine = e.stack?.split('\n')[1]?.trim() || 'unknown';
       logger.warn(`[SeriesMeta] TMDB by ID failed: ${e.message}`);
+      logger.warn(`[SeriesMeta] TMDB by ID error at: ${errorLine}`);
+      logger.warn(`[SeriesMeta] TMDB by ID full stack trace:`, e.stack);
     }
   } else if (provider === 'imdb' && id) {
     try {
@@ -1086,7 +1092,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const finalTrailerStreams = userLangTrailerStreams.length > 0 ? userLangTrailerStreams : (englishTrailerStreams.length > 0 ? englishTrailerStreams : allTrailerStreams);
 
   return {
-    id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
+    id: imdbId || stremioId,
     type: 'movie',
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     name: finalTitle,
@@ -1499,8 +1505,9 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   // Prefer user's language, fallback to English, then all available
   const finalTrailers = userLangTrailers.length > 0 ? userLangTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
 
+  logger.info(`[TmdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
   const meta = {
-    id: external_ids?.imdb_id || allIds?.imdbId || stremioId,
+    id: imdbId || stremioId,
     type: 'series',
     name: finalName,
     imdb_id: imdbId,
@@ -1939,7 +1946,6 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
       logoUrl =  imdb.getLogoFromImdb(imdbId);
     }
   }
-  imdbId = imdbId || remoteIds?.find(id => id.sourceName === 'IMDB')?.id 
  
   // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
   let tvdbReleaseInfo = year || "";
@@ -1967,6 +1973,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
 
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
+  logger.info(`[TvdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
   const meta = {
     id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
     type: 'series',
