@@ -193,13 +193,14 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
+  const [pageSize, setPageSize] = useState<number>(catalog.pageSize || 100);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL, enableRPDB }
+          ? { ...c, cacheTTL, enableRPDB, pageSize }
           : c
       )
     }));
@@ -233,6 +234,25 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
             </div>
             <p className="text-xs text-muted-foreground">
               How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="custom-page-size">Page Size</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                id="custom-page-size"
+                type="number"
+                value={pageSize}
+                onChange={(e) => setPageSize(parseInt(e.target.value) || 100)}
+                min="1"
+                max="1000"
+                step="1"
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder="100"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Number of items per page for this catalog. Default: 100. This should match the imported addon's page size for accurate pagination.
             </p>
           </div>
           {config.apiKeys?.rpdb && (

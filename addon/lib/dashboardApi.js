@@ -261,10 +261,10 @@ class DashboardAPI {
         ? await this.requestTracker.getActiveUsers()
         : 0;
 
-      // Get real cache hit rate from request tracker
-      const cacheHitRate = this.requestTracker
-        ? await this.requestTracker.getCacheHitRate()
-        : 0;
+      // Get cache hit rate from cacheHealth (same source as ops tab for consistency)
+      const { getCacheHealth } = require('./getCache');
+      const cacheHealth = getCacheHealth();
+      const cacheHitRate = parseFloat(cacheHealth.hitRate) || 0;
 
       return {
         totalRequests: requestStats.todayRequests || requestStats.totalRequests, // Use today's requests for dashboard

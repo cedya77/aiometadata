@@ -38,6 +38,7 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
   const [manifest, setManifest] = useState<StremThruManifest | null>(null);
   const [selectedCatalogs, setSelectedCatalogs] = useState<Set<string>>(new Set());
   const [importedManifests, setImportedManifests] = useState<string[]>([]);
+  const [defaultPageSize, setDefaultPageSize] = useState<number>(100);
 
   // Get currently imported StremThru manifests
   const currentStremThruCatalogs = config.catalogs.filter(c => c.id.startsWith("stremthru."));
@@ -153,6 +154,7 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
               source: 'stremthru', // Keep source as the display label
               sourceUrl: catalogUrl, // Store the actual catalog URL
               genres: catalog.genres || [], // Store genres from manifest
+              pageSize: defaultPageSize, // Add page size support
               enableRPDB: true,
               manifestData: { 
                 ...catalog, 
@@ -245,6 +247,27 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
                 <Button onClick={fetchManifest} disabled={isLoading || !manifestUrl.trim()}>
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Load Manifest"}
                 </Button>
+              </div>
+
+              {/* Page Size Configuration */}
+              <div className="space-y-2">
+                <Label htmlFor="stremthru-page-size">Default Page Size</Label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    id="stremthru-page-size"
+                    type="number"
+                    value={defaultPageSize}
+                    onChange={(e) => setDefaultPageSize(parseInt(e.target.value) || 100)}
+                    min="1"
+                    max="1000"
+                    step="1"
+                    className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                    placeholder="100"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Number of items per page for newly added catalogs. Default: 100. This should match the addon's page size for accurate pagination.
+                </p>
               </div>
 
               {/* Manifest Info */}
