@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.7.2](https://github.com/cedya77/aiometadata/compare/v1.7.1...v1.7.2) (2025-11-05)
+
+
+### Bug Fixes
+
+* **meta:** fix anime id condition issue ([9a22e0e](https://github.com/cedya77/aiometadata/commit/9a22e0e8ce3b9bdfead2ac53ddae77f9958a3986))
+
 ## [1.7.1](https://github.com/cedya77/aiometadata/compare/v1.7.0...v1.7.1) (2025-11-05)
 
 
