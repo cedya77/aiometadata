@@ -933,6 +933,12 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  * Caches individual components separately to prevent one bad component from affecting everything
  */
 async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
+   // Validate metaId
+   if (!metaId || typeof metaId !== 'string') {
+     cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
+     return { meta: null };
+   }
+   
    // Load config from database
    let config;
    try {
@@ -1180,6 +1186,12 @@ const metaConfigString = stableStringify(metaConfig);
  * @param {boolean} includeVideos - Whether videos component is required for this request
  */
 async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
+   // Validate metaId
+   if (!metaId || typeof metaId !== 'string') {
+     cacheLogger.warn(`Invalid metaId provided: ${metaId}`);
+     return { errorReason: 'invalid metaId' };
+   }
+   
    // Load config from database
    let config;
    try {
@@ -1408,10 +1420,24 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
   
   const result = await method();
-  const meta = result?.meta || result;
-  let idToCache = meta.id
+  
+  // Handle null/empty results
+  if (!result || !result.meta) {
+    cacheLogger.info(`Method returned null/empty result for ${metaId}`);
+    return { meta: null };
+  }
+  
+  const meta = result.meta;
+  let idToCache = meta.id;
+  
+  // Validate that we have a valid ID to cache
+  if (!idToCache || typeof idToCache !== 'string') {
+    cacheLogger.warn(`Invalid meta.id for caching: ${idToCache}, using original metaId: ${metaId}`);
+    idToCache = metaId;
+  }
+  
   if(metaId.startsWith('tun_')){
-    idToCache = metaId
+    idToCache = metaId;
   }
   
   // Cache the generated components with the resolved meta.id
@@ -1440,6 +1466,12 @@ async function cacheComponent(cacheKey, componentData, ttl) {
  */
 async function cacheMetaComponent(userUUID, metaId, componentName, componentData, ttl = META_TTL, type = null) {
   if (!redis || !componentData) return;
+  
+  // Validate metaId
+  if (!metaId || typeof metaId !== 'string') {
+    cacheLogger.warn(`Invalid metaId provided to cacheMetaComponent: ${metaId}`);
+    return;
+  }
   
   try {
     // Load config from database

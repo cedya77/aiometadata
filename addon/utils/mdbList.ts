@@ -456,8 +456,16 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   //const batchMediaInfo = await fetchMDBListBatchMediaInfo('tmdb', targetMediaType, filteredItems.map(item => item.id), config.apiKeys?.mdblist || '');
   //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo)}`);
   
+  // Filter out items with invalid IDs before processing
+  const validItems = filteredItems.filter((item: any) => {
+    if (!item.id || item.id === null || item.id === undefined) {
+      logger.warn(`Skipping MDBList item with invalid ID: ${JSON.stringify(item)}`);
+      return false;
+    }
+    return true;
+  });
  
-  const metas = await Promise.all(filteredItems
+  const metas = await Promise.all(validItems
 
     .map(async (item: any) => {
       try {
