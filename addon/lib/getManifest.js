@@ -772,6 +772,8 @@ async function getManifest(config) {
   if (!config.catalogModeOnly) {
     resources.push("meta");
   }
+  // Add subtitles resource for watch tracking
+  resources.push("subtitles");
   
   const manifest = {
     id: packageJson.name,

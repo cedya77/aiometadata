@@ -82,6 +82,7 @@ export interface AppConfig {
     mdblist: string;
     customDescriptionBlurb?: string;
   };
+  mdblistWatchTracking: boolean;
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;

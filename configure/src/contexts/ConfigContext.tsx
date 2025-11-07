@@ -116,6 +116,7 @@ const initialConfig: AppConfig = {
     rpdb: "", 
     mdblist: "" 
   },
+  mdblistWatchTracking: true,
   ageRating: 'None',
   searchEnabled: true,
   sessionId: "",

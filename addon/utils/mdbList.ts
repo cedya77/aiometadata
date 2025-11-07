@@ -562,5 +562,131 @@ function convertGenreToSlug(genre: string): string {
   return genre;
 }
 
-export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug };
+/**
+ * Mark a movie as watched in MDBList
+ * @param {string} imdbId - IMDb ID (e.g., 'tt1234567')
+ * @param {string} apiKey - User's MDBList API key
+ * @returns {Promise<boolean>} - True if successful, false otherwise
+ */
+async function markMovieAsWatched(imdbId: string, apiKey: string): Promise<boolean> {
+  if (!imdbId || !apiKey) {
+    logger.warn('Missing IMDb ID or API key for markMovieAsWatched');
+    return false;
+  }
+
+  try {
+    const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
+    
+    // Generate ISO 8601 timestamp
+    const watchedAt = new Date().toISOString();
+    
+    const payload = {
+      movies: [
+        {
+          ids: {
+            imdb: imdbId
+          },
+          watched_at: watchedAt
+        }
+      ]
+    };
+
+    logger.debug(`[Watch Tracking] Marking movie as watched - URL: ${url}`);
+    logger.debug(`[Watch Tracking] Request payload: ${JSON.stringify(payload, null, 2)}`);
+
+    const response = await makeRateLimitedRequest(
+      () => httpPost(url, payload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher
+      }),
+      `MDBList markMovieAsWatched (imdbId: ${imdbId})`
+    );
+
+    logger.debug(`[Watch Tracking] Response: ${JSON.stringify(response, null, 2)}`);
+    logger.info(`Successfully marked movie ${imdbId} as watched`);
+    return true;
+  } catch (error: any) {
+    // Don't throw - just log and return false
+    logger.error(`Failed to mark movie ${imdbId} as watched: ${error.message}`);
+    if (error.response) {
+      logger.error(`Response status: ${error.response.status}`);
+      logger.error(`Response data: ${JSON.stringify(error.response.data, null, 2)}`);
+    }
+    return false;
+  }
+}
+
+/**
+ * Mark a TV episode as watched in MDBList
+ * @param {string} imdbId - Show's IMDb ID
+ * @param {number} season - Season number
+ * @param {number} episode - Episode number
+ * @param {string} apiKey - User's MDBList API key
+ * @returns {Promise<boolean>} - True if successful, false otherwise
+ */
+async function markEpisodeAsWatched(imdbId: string, season: number, episode: number, apiKey: string): Promise<boolean> {
+  if (!imdbId || !apiKey || season < 1 || episode < 1) {
+    logger.warn(`Invalid parameters for markEpisodeAsWatched: imdbId=${imdbId}, season=${season}, episode=${episode}`);
+    return false;
+  }
+
+  try {
+    const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
+    
+    // Generate ISO 8601 timestamp
+    const watchedAt = new Date().toISOString();
+    
+    const payload = {
+      shows: [
+        {
+          ids: {
+            imdb: imdbId
+          },
+          seasons: [
+            {
+              number: season,
+              episodes: [
+                {
+                  number: episode,
+                  watched_at: watchedAt
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    logger.debug(`[Watch Tracking] Marking episode as watched - URL: ${url}`);
+    logger.debug(`[Watch Tracking] Request payload: ${JSON.stringify(payload, null, 2)}`);
+
+    const response = await makeRateLimitedRequest(
+      () => httpPost(url, payload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher
+      }),
+      `MDBList markEpisodeAsWatched (imdbId: ${imdbId}, S${season}E${episode})`
+    );
+
+    logger.debug(`[Watch Tracking] Response: ${JSON.stringify(response, null, 2)}`);
+    logger.info(`Successfully marked episode ${imdbId} S${season}E${episode} as watched`);
+    return true;
+  } catch (error: any) {
+    // Don't throw - just log and return false
+    logger.error(`Failed to mark episode ${imdbId} S${season}E${episode} as watched: ${error.message}`);
+    if (error.response) {
+      logger.error(`Response status: ${error.response.status}`);
+      logger.error(`Response data: ${JSON.stringify(error.response.data, null, 2)}`);
+    }
+    return false;
+  }
+}
+
+export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched };
 

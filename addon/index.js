@@ -932,7 +932,47 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   }
 });
 
-
+// --- Subtitle Route (for watch tracking) ---
+// Route pattern matches Stremio's subtitle URL format: /:id/:extra?.json
+// where extra contains filename, videoSize, and videoHash parameters
+addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function (req, res) {
+  const { userUUID, type, id } = req.params;
+  
+  // Log for debugging
+  consola.debug(`[Subtitle Route] Matched - ID: ${id}, Extra: ${req.params.extra || 'none'}`);
+  
+  try {
+    // Load config from database
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      consola.debug(`[Subtitle] No config found for user: ${userUUID}`);
+      return respond(req, res, { subtitles: [] });
+    }
+    
+    // Check if watch tracking is enabled and MDBList API key exists
+    const hasApiKey = config?.apiKeys?.mdblist;
+    const trackingEnabled = config?.mdblistWatchTracking?.enabled !== false;
+    
+    if (hasApiKey && trackingEnabled) {
+      // Import and call subtitle handler
+      const { handleSubtitleRequest } = require('./lib/subtitleHandler');
+      
+      // Call handler (fire-and-forget pattern - handler returns immediately)
+      const result = await handleSubtitleRequest(type, id, config, userUUID);
+      
+      // Return empty subtitle response immediately
+      return respond(req, res, result, { cacheMaxAge: 0 });
+    } else {
+      // Watch tracking disabled or no API key - return empty subtitles
+      consola.debug(`[Subtitle] Watch tracking skipped for user ${userUUID} - hasApiKey: ${hasApiKey}, enabled: ${trackingEnabled}`);
+      return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
+    }
+  } catch (error) {
+    consola.error(`[Subtitle] Error for user ${userUUID}:`, error);
+    // Always return empty subtitles even on error to not break playback
+    return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
+  }
+});
 
 // Proxy endpoint for fetching manifests from internal Docker network URLs
 addon.get("/api/proxy-manifest", async function (req, res) {
