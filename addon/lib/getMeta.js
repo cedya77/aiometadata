@@ -1063,7 +1063,14 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const watchProviders = moviedb.getWatchProviders(movieData['watch/providers'], config);
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
-  finalTitle = Utils.processTitleTranslations(movieData.translations, language, title, 'movie');
+  finalTitle = Utils.processTitleTranslations(
+    movieData.translations,
+    language,
+    title,
+    'movie',
+    movieData.original_language,
+    movieData.original_title
+  );
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
   if (certification && config.displayAgeRating) {
@@ -1466,7 +1473,14 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;
-  finalName = Utils.processTitleTranslations(seriesData.translations, language, finalName, 'series');
+  finalName = Utils.processTitleTranslations(
+    seriesData.translations,
+    language,
+    finalName,
+    'series',
+    seriesData.original_language,
+    seriesData.original_name
+  );
 
   // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
   let releaseInfo = "";
