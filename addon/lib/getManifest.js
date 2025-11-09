@@ -239,13 +239,13 @@ async function createStremThruCatalog(userCatalog) {
     
     if (userCatalog.genres && Array.isArray(userCatalog.genres) && userCatalog.genres.length > 0) {
       genres = userCatalog.genres;
-      console.log(`[Manifest] Using genres from userCatalog.genres: ${genres.length} genres`);
+      //console.log(`[Manifest] Using genres from userCatalog.genres: ${genres.length} genres`);
     } else if (userCatalog.manifestData && userCatalog.manifestData.extra) {
       // Try to extract genres from the original manifest data
       const genreExtra = userCatalog.manifestData.extra.find(e => e.name === 'genre');
       if (genreExtra && genreExtra.options && Array.isArray(genreExtra.options) && genreExtra.options.length > 0) {
         genres = genreExtra.options;
-        console.log(`[Manifest] Using genres from manifestData.extra: ${genres.length} genres`);
+        //console.log(`[Manifest] Using genres from manifestData.extra: ${genres.length} genres`);
       }
     }
     
@@ -539,6 +539,10 @@ async function getManifest(config) {
       }
       else if (userCatalog.id === 'mal.schedule') {
         catalogOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      }
+      else if (userCatalog.id === 'tvmaze.schedule') {
+        const countries = ['US', 'CA', 'GB', 'AU', 'DE', 'FR', 'ES', 'BR'];
+        catalogOptions = userCatalog.showInHome ? countries : ['None', ...countries];
       }
       else if (userCatalog.id === 'mal.seasons') {
         // Use fetched available seasons from API, or fallback to generated list

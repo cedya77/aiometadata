@@ -52,6 +52,7 @@ const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
 const axios = require('axios');
 const jikan = require('./lib/mal');
+const tvmaze = require('./lib/tvmaze');
 const packageJson = require('../package.json');
 const ADDON_VERSION = packageJson.version;
 const sharp = require('sharp');
@@ -584,7 +585,15 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   const cacheWrapper = cacheWrapCatalog;
 
-  const catalogKey = `${id}:${actualType}:${stableStringify(extraArgs || {})}`;
+  extraArgs = extraArgs || {};
+  if (id === 'tvmaze.schedule') {
+    const todayUtc = new Date();
+    const dateString = todayUtc.toISOString().split('T')[0];
+    extraArgs.date = extraArgs.date || dateString;
+    extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
+  }
+
+  const catalogKey = `${id}:${actualType}:${stableStringify(extraArgs)}`;
   
   const cacheOptions = {
     enableErrorCaching: true,
@@ -722,6 +731,56 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               }
               
             }
+            break;
+          }
+          case 'tvmaze.schedule': {
+            const scheduleDate = extraArgs.date;
+            const scheduleCountry = extraArgs.genre;
+            const scheduleEntries = await tvmaze.getWebSchedule(scheduleDate, scheduleCountry);
+
+            if (!Array.isArray(scheduleEntries) || scheduleEntries.length === 0) {
+              metas = [];
+              break;
+            }
+
+            const stripHtml = (text) => text ? text.replace(/<[^>]*>?/gm, '') : '';
+
+            const uniqueByShow = new Map();
+            for (const entry of scheduleEntries) {
+              const showId = entry?._embedded?.show?.id;
+              if (!showId || uniqueByShow.has(showId)) continue;
+              uniqueByShow.set(showId, entry);
+            }
+
+            const dedupedEntries = Array.from(uniqueByShow.values()).sort((a, b) => {
+              const timeA = a?.airstamp ? new Date(a.airstamp).getTime() : 0;
+              const timeB = b?.airstamp ? new Date(b.airstamp).getTime() : 0;
+              return timeA - timeB;
+            });
+
+            const metasFromSchedule = await Promise.all(dedupedEntries.map(async (entry) => {
+              const show = entry?._embedded?.show;
+              if (!show?.id) return null;
+
+              const stremioId = `tvmaze:${show.id}`;
+              let meta;
+
+              try {
+                const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+                  return await getMeta('series', language, stremioId, config, userUUID, true);
+                }, undefined, { enableErrorCaching: true, maxRetries: 2 }, 'series', true);
+
+                meta = result?.meta;
+              } catch (error) {
+                consola.warn(`[Catalog Route] Failed to fetch meta for schedule entry ${stremioId}: ${error.message}`);
+              }
+              return meta;
+            }));
+
+            const validScheduleMetas = metasFromSchedule.filter(Boolean);
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            metas = validScheduleMetas.slice(startIndex, endIndex);
             break;
           }
           case 'mal.genres': {
