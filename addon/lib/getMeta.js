@@ -86,7 +86,12 @@ const host = process.env.HOST_NAME.startsWith('http')
 // --- Main Orchestrator ---
 async function getMeta(type, language, stremioId, config = {}, userUUID, includeVideos = true) {
   try {
-
+    // Validate inputs
+    if (!stremioId || typeof stremioId !== 'string') {
+      logger.error(`[Meta] Invalid stremioId: ${stremioId}`);
+      return { meta: null };
+    }
+    
     // --- Handle custom ID prefixes (e.g., "tun_tt6128300") ---
     const isTraktUpNextId = stremioId.startsWith('tun_');
     if (isTraktUpNextId) {
@@ -176,8 +181,14 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
         break;
     }
 
+    // Check if meta was successfully retrieved
+    if (!meta) {
+      logger.warn(`[Meta] No metadata found for ${stremioId}`);
+      return { meta: null };
+    }
+
     if(isTraktUpNextId) {
-      if(meta.id.startsWith('tt')) {
+      if(meta.id && meta.id.startsWith('tt')) {
         meta.id = `tun_${meta.id}`;
       }
     }
