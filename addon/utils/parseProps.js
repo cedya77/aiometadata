@@ -1926,7 +1926,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         name: anime.title_english || anime.title
       });
     }
-    if((config.mal?.useImdbIdForCatalogAndSearch)){
+    if((config.mal?.useImdbIdForCatalogAndSearch && imdbId)){
       return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
         const { getMeta } = await import("../lib/getMeta");
         return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, false);

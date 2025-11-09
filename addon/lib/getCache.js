@@ -388,7 +388,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
   }
 
   const versionedKey = `v${ADDON_VERSION}:${key}`;
-  const { enableErrorCaching = true, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
 
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);
@@ -536,7 +536,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
   }
 
   const versionedKey = `global:${ADDON_VERSION}:${key}`;
-  const { enableErrorCaching = true, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
   
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);

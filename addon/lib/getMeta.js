@@ -729,7 +729,14 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
               tvdb.getSeriesExtended(allIds.tvdbId, config),
               includeVideos ? tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config) : null
           ]);
-          return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
+          if(!seriesData) {
+            if(allIds?.imdbId) {
+              let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
+              return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+            }
+          } else {
+            return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
+          }
         } else if (type === 'movie') {
           logger.info(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
