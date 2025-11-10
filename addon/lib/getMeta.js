@@ -899,9 +899,10 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     ]);
   }
 
+  const fallbackPosterUrl = poster || `${host}/missing_poster.png`;
   const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
-    ? `${host}/poster/series/imdb:${imdbId}?fallback=${encodeURIComponent(poster)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
-    : poster;
+    ? `${host}/poster/series/imdb:${imdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
+    : fallbackPosterUrl;
 
   // Process credits in place
   processCreditsPhotos(imdbData.credits_cast);
