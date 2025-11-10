@@ -170,13 +170,14 @@ class ComprehensiveCatalogWarmer {
     }
   }
 
-  async markWarmed(uuid) {
+  async markWarmed(uuid, runStartedAt = null) {
     try {
       const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
       const statsKey = `catalog-warmup:stats:${uuid}`;
+      const recordedStart = typeof runStartedAt === 'number' ? runStartedAt : Date.now();
       
       // Save timestamp for this specific UUID
-      await redis.set(lastWarmupKey, Date.now().toString());
+      await redis.set(lastWarmupKey, recordedStart.toString());
       
       // Save stats for this UUID
       await redis.set(statsKey, JSON.stringify({
@@ -188,7 +189,7 @@ class ComprehensiveCatalogWarmer {
         errors: this.stats.uuidStats[uuid]?.errors || []
       }));
       
-      const nextRunTime = Date.now() + (this.config.intervalHours * 60 * 60 * 1000);
+      const nextRunTime = recordedStart + (this.config.intervalHours * 60 * 60 * 1000);
       this.stats.nextRun = new Date(nextRunTime).toISOString();
       this.log('debug', `Marked warmup complete for UUID ${uuid}, next run: ${this.formatNextRunTime(nextRunTime)}`);
     } catch (error) {
@@ -565,7 +566,7 @@ class ComprehensiveCatalogWarmer {
           this.stats.uuidStats[uuid].duration = `${Math.floor(uuidDuration / 60000)}m ${Math.floor((uuidDuration % 60000) / 1000)}s`;
 
           // Mark this UUID as complete
-          await this.markWarmed(uuid);
+          await this.markWarmed(uuid, uuidStartTime);
 
           // Update overall stats
           this.stats.totalCatalogs += this.stats.uuidStats[uuid].totalCatalogs;
@@ -584,13 +585,13 @@ class ComprehensiveCatalogWarmer {
       // Calculate overall duration
       const overallDuration = Date.now() - startTime;
       this.stats.duration = `${Math.floor(overallDuration / 60000)}m ${Math.floor((overallDuration % 60000) / 1000)}s`;
-      this.stats.lastRun = new Date().toISOString();
+      this.stats.lastRun = new Date(startTime).toISOString();
 
       this.log('success', `Warmup complete! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
       
       // Update nextRun time after successful warmup (for both scheduled and forced runs)
       const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
-      const nextRunTime = Date.now() + intervalMs;
+      const nextRunTime = startTime + intervalMs;
       this.stats.nextRun = new Date(nextRunTime).toISOString();
       this.log('info', `Next warmup scheduled for ${this.formatNextRunTime(nextRunTime)}`);
       

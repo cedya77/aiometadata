@@ -19,6 +19,7 @@ const ADDON_VERSION = packageJson.version;
 // --- Time To Live (TTL) constants in seconds ---
 const META_TTL = parseInt(process.env.META_TTL || 7 * 24 * 60 * 60, 10);
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
+const TMDB_TRENDING_TTL = parseInt(process.env.TMDB_TRENDING_TTL || 3 * 60 * 60, 10);
 const JIKAN_API_TTL = 1 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 const TVDB_API_TTL = 12 * 60 * 60;
@@ -676,12 +677,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const idOnly = catalogKey.split(':')[0];
   const catalogType = catalogKey.split(':')[1];
   const trendingIds = new Set(['tmdb.trending']);
-
-  // Disable caching for trending catalogs since they change frequently
-  if (trendingIds.has(idOnly)) {
-    cacheLogger.info(`Skipping cache for trending catalog: ${idOnly}`);
-    return method(); // Execute without caching
-  }
+  const isTrendingCatalog = trendingIds.has(idOnly);
   
   // Check if this is a MAL catalog with MAL as anime provider
   const isMALCatalog = idOnly.startsWith('mal.');
@@ -739,6 +735,11 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const catalogConfigString = JSON.stringify(catalogConfig);
   
+  if (isTrendingCatalog) {
+    cacheTTL = TMDB_TRENDING_TTL;
+    cacheLogger.info(`Using TMDB trending cache TTL for ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+  }
+
   // Use custom cache TTL for MDBList catalogs if specified
   let cacheTTL = CATALOG_TTL;
   
