@@ -40,17 +40,20 @@ jobs:
           fi
           BUILD=$((COUNT + 1))
           VERSION="${PREFIX}.${BUILD}"
+          SEMVER="0.0.0-testing.${DATE}.${BUILD}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "NIGHTLY_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "NIGHTLY_SEMVER=${SEMVER}" >> "$GITHUB_ENV"
           echo "Computed nightly version: ${VERSION}"
+          echo "Computed semver version: ${SEMVER}"
 
       - name: Update package version for build
         env:
-          NIGHTLY_VERSION: ${{ env.NIGHTLY_VERSION }}
+          NIGHTLY_SEMVER: ${{ env.NIGHTLY_SEMVER }}
         run: |
           node -e "
             const fs = require('fs');
-            const version = process.env.NIGHTLY_VERSION;
+            const version = process.env.NIGHTLY_SEMVER;
             const pkgPath = 'package.json';
             const lockPath = 'package-lock.json';
             const pkg = JSON.parse(fs.readFileSync(pkgPath));
@@ -69,8 +72,10 @@ jobs:
       - name: Announce nightly version
         run: |
           echo "Nightly build version: ${NIGHTLY_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Package semver version: ${NIGHTLY_SEMVER}" >> "$GITHUB_STEP_SUMMARY"
         env:
           NIGHTLY_VERSION: ${{ env.NIGHTLY_VERSION }}
+          NIGHTLY_SEMVER: ${{ env.NIGHTLY_SEMVER }}
 
       - name: Set up QEMU for multi-arch builds
         uses: docker/setup-qemu-action@v3
