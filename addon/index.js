@@ -1013,15 +1013,16 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function (req, res) {
   const { userUUID, type, id } = req.params;
   
-  // Log for debugging
-  consola.debug(`[Subtitle Route] Matched - ID: ${id}, Extra: ${req.params.extra || 'none'}`);
+  // Debug logging for all watch tracking attempts with media ID and user UUID
+  consola.debug(`[Watch Tracking] Subtitle route matched - userUUID: ${userUUID}, type: ${type}, id: ${id}, extra: ${req.params.extra || 'none'}`);
   
   try {
     // Load config from database
     const config = await loadConfigFromDatabase(userUUID);
     if (!config) {
-      consola.debug(`[Subtitle] No config found for user: ${userUUID}`);
-      return respond(req, res, { subtitles: [] });
+      consola.debug(`[Watch Tracking] No config found for user: ${userUUID}`);
+      // Use Promise.resolve() for immediate response
+      return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
     
     // Check if watch tracking is enabled and MDBList API key exists
@@ -1032,19 +1033,22 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
-      // Call handler (fire-and-forget pattern - handler returns immediately)
-      const result = await handleSubtitleRequest(type, id, config, userUUID);
+      // Call handler synchronously (no await)
+      const result = handleSubtitleRequest(type, id, config, userUUID);
       
       // Return empty subtitle response immediately
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
       // Watch tracking disabled or no API key - return empty subtitles
-      consola.debug(`[Subtitle] Watch tracking skipped for user ${userUUID} - hasApiKey: ${hasApiKey}, enabled: ${trackingEnabled}`);
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - hasApiKey: ${!!hasApiKey}, trackingEnabled: ${trackingEnabled}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {
-    consola.error(`[Subtitle] Error for user ${userUUID}:`, error);
-    // Always return empty subtitles even on error to not break playback
+    consola.error(`[Watch Tracking] Subtitle route error - userUUID: ${userUUID}, type: ${type}, id: ${id}, error: ${error.message}`, {
+      stack: error.stack,
+      extra: req.params.extra
+    });
+    
     return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
   }
 });

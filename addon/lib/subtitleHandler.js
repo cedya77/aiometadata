@@ -11,17 +11,24 @@ const logger = consola.create({ tag: 'SubtitleHandler' });
  * @returns {Object|null} - Parsed media info or null if invalid
  */
 function parseMediaId(id) {
+  // Input validation: Check for null, undefined, or non-string types
   if (!id || typeof id !== 'string') {
-    logger.warn(`Invalid media ID format: ${id}`);
+    logger.debug(`[Watch Tracking] Invalid media ID format - id is ${id === null ? 'null' : id === undefined ? 'undefined' : 'not a string'}, type: ${typeof id}`);
     return null;
   }
 
-  // Remove any whitespace
+  // Remove any whitespace and validate length
   const cleanId = id.trim();
-
-  // Check for IMDb ID format
+  
+  // Prevent excessively long input
+  if (cleanId.length > 100) {
+    logger.debug(`[Watch Tracking] Invalid media ID format - exceeds maximum length: ${cleanId.length} characters`);
+    return null;
+  }
+  
+  // Validate IMDb ID format prefix
   if (!cleanId.startsWith('tt')) {
-    logger.warn(`Media ID does not start with 'tt': ${cleanId}`);
+    logger.debug(`[Watch Tracking] Invalid media ID format - does not start with 'tt': ${cleanId.substring(0, 20)}`);
     return null;
   }
 
@@ -32,9 +39,9 @@ function parseMediaId(id) {
   if (parts.length === 1) {
     const imdbId = parts[0];
     
-    // Validate IMDb ID format (tt followed by digits)
+    // Sanitize IMDb ID: Must match pattern /^tt\d+$/ (tt followed by digits only)
     if (!/^tt\d+$/.test(imdbId)) {
-      logger.warn(`Invalid IMDb ID format: ${imdbId}`);
+      logger.debug(`[Watch Tracking] Invalid IMDb ID format - expected 'tt' followed by digits: ${imdbId.substring(0, 20)}`);
       return null;
     }
 
@@ -52,15 +59,21 @@ function parseMediaId(id) {
     const season = parseInt(parts[1], 10);
     const episode = parseInt(parts[2], 10);
 
-    // Validate IMDb ID format
+    // Sanitize IMDb ID: Must match pattern /^tt\d+$/ (tt followed by digits only)
     if (!/^tt\d+$/.test(imdbId)) {
-      logger.warn(`Invalid IMDb ID format in series: ${imdbId}`);
+      logger.debug(`[Watch Tracking] Invalid IMDb ID format in series - expected 'tt' followed by digits: ${imdbId.substring(0, 20)}`);
       return null;
     }
 
-    // Validate season and episode are positive integers
+    // Validate season and episode are positive integers (must be >= 1)
     if (isNaN(season) || season < 1 || isNaN(episode) || episode < 1) {
-      logger.warn(`Invalid season/episode numbers: season=${parts[1]}, episode=${parts[2]}`);
+      logger.debug(`[Watch Tracking] Invalid season/episode numbers - season=${parts[1]} (parsed: ${season}), episode=${parts[2]} (parsed: ${episode}), mediaId: ${cleanId.substring(0, 50)}`);
+      return null;
+    }
+    
+    // Validate reasonable upper bounds for season/episode numbers
+    if (season > 999 || episode > 9999) {
+      logger.debug(`[Watch Tracking] Season/episode numbers exceed reasonable limits - season=${season}, episode=${episode}`);
       return null;
     }
 
@@ -72,30 +85,32 @@ function parseMediaId(id) {
     };
   }
 
-  // Invalid format
-  logger.warn(`Invalid media ID format (unexpected parts count): ${cleanId}`);
+  // Invalid format - unexpected number of parts
+  logger.debug(`[Watch Tracking] Invalid media ID format - unexpected structure (${parts.length} parts): ${cleanId.substring(0, 50)}`);
   return null;
 }
 
 /**
  * Check if watch tracking should be enabled for this request
+ * Security: API keys are never logged or exposed
  * @param {Object} config - User configuration
  * @returns {boolean} - True if tracking should proceed
  */
 function shouldTrackWatch(config) {
-  // Check if MDBList API key exists
+  // Check if MDBList API key exists (never log the actual key value)
   if (!config?.apiKeys?.mdblist) {
-    logger.debug('Watch tracking skipped: No MDBList API key configured');
+    logger.debug('[Watch Tracking] Skipped - No MDBList API key configured');
     return false;
   }
 
   // Check if watch tracking is explicitly disabled
   if (config.mdblistWatchTracking?.enabled === false) {
-    logger.debug('Watch tracking skipped: Feature disabled in config');
+    logger.debug('[Watch Tracking] Skipped - Feature disabled in user config');
     return false;
   }
 
   // Default to enabled if API key exists
+  logger.debug('[Watch Tracking] Enabled - API key present and feature not disabled');
   return true;
 }
 
@@ -105,11 +120,12 @@ function shouldTrackWatch(config) {
  * @param {string} id - Media ID (e.g., 'tt1234567' or 'tt1234567:2:5')
  * @param {Object} config - User configuration including API keys
  * @param {string} userUUID - User identifier for logging
- * @returns {Promise<Object>} - Empty subtitle response { subtitles: [] }
+ * @returns {Object} - Empty subtitle response { subtitles: [] } (synchronous return)
  */
-async function handleSubtitleRequest(type, id, config, userUUID) {
+function handleSubtitleRequest(type, id, config, userUUID) {
   try {
-    logger.debug(`Subtitle request received - userUUID: ${userUUID}, type: ${type}, id: ${id}`);
+    // Debug logging for all watch tracking attempts with media ID and user UUID
+    logger.debug(`[Watch Tracking] Subtitle request received, type: ${type}, id: ${id}`);
 
     // Check if tracking should be enabled
     if (!shouldTrackWatch(config)) {
@@ -119,21 +135,24 @@ async function handleSubtitleRequest(type, id, config, userUUID) {
     // Parse the media ID
     const parsedId = parseMediaId(id);
     if (!parsedId) {
-      logger.warn(`Failed to parse media ID - userUUID: ${userUUID}, id: ${id}`);
+      // Warning logging for invalid media ID formats
+      logger.warn(`[Watch Tracking] Failed to parse media ID, id: ${id}, type: ${type}`);
       return { subtitles: [] };
     }
 
-    // Log the tracking attempt
+    // Log the tracking attempt with full details
     const mediaInfo = parsedId.isMovie 
       ? `movie ${parsedId.imdbId}` 
       : `series ${parsedId.imdbId} S${parsedId.season}E${parsedId.episode}`;
-    logger.debug(`Watch tracking initiated - userUUID: ${userUUID}, media: ${mediaInfo}`);
+    logger.debug(`[Watch Tracking] Tracking attempt initiated, media: ${mediaInfo}, type: ${type}`);
 
-    // Fire-and-forget: Initiate async tracking without awaiting
-    // This ensures we return the subtitle response immediately
+    // Initiate async tracking without awaiting
     trackWatchStatus(type, parsedId, config, userUUID).catch(error => {
-      // Catch and log errors without propagating them
-      logger.error(`Watch tracking failed - userUUID: ${userUUID}, media: ${mediaInfo}, error: ${error.message}`);
+      logger.error(`[Watch Tracking] Tracking failed, media: ${mediaInfo}, error: ${error.message}`, {
+        stack: error.stack,
+        type: type,
+        parsedId: parsedId
+      });
     });
 
     // Return empty subtitles immediately
@@ -141,7 +160,9 @@ async function handleSubtitleRequest(type, id, config, userUUID) {
 
   } catch (error) {
     // Catch any unexpected errors to ensure we always return a valid response
-    logger.error(`Subtitle handler error - userUUID: ${userUUID}, type: ${type}, id: ${id}, error: ${error.message}`);
+    logger.error(`[Watch Tracking] Subtitle handler error, type: ${type}, id: ${id}, error: ${error.message}`, {
+      stack: error.stack
+    });
     return { subtitles: [] };
   }
 }
@@ -160,28 +181,21 @@ async function trackWatchStatus(type, parsedId, config, userUUID) {
 
     const apiKey = config.apiKeys.mdblist;
 
+    // Call MDBList API functions (they handle their own logging)
     if (parsedId.isMovie) {
-      // Track movie
-      logger.debug(`Marking movie as watched - userUUID: ${userUUID}, imdbId: ${parsedId.imdbId}`);
       await markMovieAsWatched(parsedId.imdbId, apiKey);
-      logger.info(`Movie marked as watched - userUUID: ${userUUID}, imdbId: ${parsedId.imdbId}`);
     } else {
-      // Track episode
-      logger.debug(`Marking episode as watched - userUUID: ${userUUID}, imdbId: ${parsedId.imdbId}, season: ${parsedId.season}, episode: ${parsedId.episode}`);
       await markEpisodeAsWatched(parsedId.imdbId, parsedId.season, parsedId.episode, apiKey);
-      logger.info(`Episode marked as watched - userUUID: ${userUUID}, imdbId: ${parsedId.imdbId}, S${parsedId.season}E${parsedId.episode}`);
     }
   } catch (error) {
-    // Log error but don't throw - this is fire-and-forget
+    // Only log unexpected errors that weren't caught by MDBList functions
     const mediaInfo = parsedId.isMovie 
       ? `movie ${parsedId.imdbId}` 
       : `series ${parsedId.imdbId} S${parsedId.season}E${parsedId.episode}`;
-    logger.error(`MDBList API call failed - userUUID: ${userUUID}, media: ${mediaInfo}, error: ${error.message}`);
     
-    // Log additional error details if available
-    if (error.response) {
-      logger.error(`MDBList API error details - status: ${error.response.status}, data: ${JSON.stringify(error.response.data)}`);
-    }
+    logger.error(`[Watch Tracking] Unexpected error, media: ${mediaInfo}, error: ${error.message}`, {
+      stack: error.stack
+    });
   }
 }
 
