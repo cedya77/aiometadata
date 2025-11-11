@@ -379,7 +379,8 @@ function parseMedia(el, type, genreList = [], config = {}) {
 
   if(el.translations){
     el.overview = processOverviewTranslations(el.translations, config.language, el.overview);
-    name = processTitleTranslations(el.translations, config.language, name, type);
+    const originalTitle = type === 'movie' ? el.original_title : el.original_name;
+    name = processTitleTranslations(el.translations, config.language, name, type, el.original_language, originalTitle);
   }
 
   return {
@@ -626,7 +627,12 @@ function processOverviewTranslations(translations, language, overview) {
   return overview;
 }
 
-function processTitleTranslations(translations, language, title, type) {
+function processTitleTranslations(translations, language, title, type, originalLanguage = null, originalTitle = null) {
+  // Extract base language code from user's language (e.g., "pl-PL" -> "pl", "en-US" -> "en")
+  const baseLanguage = language ? language.split('-')[0].toLowerCase() : null;
+  // Check if user's language matches the original language
+  const languagesMatch = originalLanguage && baseLanguage && originalLanguage.toLowerCase() === baseLanguage;
+  
   // Handle title fallback for pt-PT language
   if(language === 'pt-PT'){
     let translation = tmdb.getTranslations(translations, 'pt-PT');
@@ -637,9 +643,17 @@ function processTitleTranslations(translations, language, title, type) {
       if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
         title = type === 'movie' ? translation.data.title : translation.data.name;
       } else {
-        translation = tmdb.getTranslations(translations, 'en-US');
-        if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
-          title = type === 'movie' ? translation.data.title : translation.data.name;
+        // If languages match and no translation found, use original title instead of English fallback
+        if(languagesMatch && originalTitle && originalTitle.trim() !== ''){
+          title = originalTitle;
+        } else {
+          translation = tmdb.getTranslations(translations, 'en-US');
+          if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+            title = type === 'movie' ? translation.data.title : translation.data.name;
+          } else if(languagesMatch && originalTitle && originalTitle.trim() !== ''){
+            // Fallback to original title if English also not found
+            title = originalTitle;
+          }
         }
       }
     }
@@ -648,9 +662,17 @@ function processTitleTranslations(translations, language, title, type) {
     if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
       title = type === 'movie' ? translation.data.title : translation.data.name;
     } else {
-      translation = tmdb.getTranslations(translations, 'en-US');
-      if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
-        title = type === 'movie' ? translation.data.title : translation.data.name;
+      // If languages match and no translation found, use original title instead of English fallback
+      if(languagesMatch && originalTitle && originalTitle.trim() !== ''){
+        title = originalTitle;
+      } else {
+        translation = tmdb.getTranslations(translations, 'en-US');
+        if(translation && (translation.data.title || translation.data.name) && (translation.data.title || translation.data.name).trim() !== ''){
+          title = type === 'movie' ? translation.data.title : translation.data.name;
+        } else if(languagesMatch && originalTitle && originalTitle.trim() !== ''){
+          // Fallback to original title if English also not found
+          title = originalTitle;
+        }
       }
     }
   }
@@ -1904,11 +1926,11 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         name: anime.title_english || anime.title
       });
     }
-    if((config.mal?.useImdbIdForCatalogAndSearch)){
+    if((config.mal?.useImdbIdForCatalogAndSearch && imdbId)){
       return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
         const { getMeta } = await import("../lib/getMeta");
-        return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, false);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, false))?.meta || null;
+        return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, true);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, true))?.meta || null;
     }
     else {
       let malReleaseInfo = anime.year || (anime.aired?.from ? anime.aired.from.substring(0, 4) : "");

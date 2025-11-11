@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -39,6 +39,7 @@ const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
   mal: "bg-indigo-800/80 text-indigo-200 border-indigo-600/50 hover:bg-indigo-800",
+  tvmaze: "bg-orange-800/80 text-orange-200 border-orange-600/50 hover:bg-orange-800",
   mdblist: "bg-yellow-800/80 text-yellow-200 border-yellow-600/50 hover:bg-yellow-800",
   stremthru: "bg-purple-800/80 text-purple-200 border-purple-600/50 hover:bg-purple-800",
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
@@ -193,13 +194,14 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
+  const [pageSize, setPageSize] = useState<number>(catalog.pageSize || 100);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL, enableRPDB }
+          ? { ...c, cacheTTL, enableRPDB, pageSize }
           : c
       )
     }));
@@ -233,6 +235,25 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
             </div>
             <p className="text-xs text-muted-foreground">
               How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="custom-page-size">Page Size</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                id="custom-page-size"
+                type="number"
+                value={pageSize}
+                onChange={(e) => setPageSize(parseInt(e.target.value) || 100)}
+                min="1"
+                max="1000"
+                step="1"
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder="100"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Number of items per page for this catalog. Default: 100. This should match the imported addon's page size for accurate pagination.
             </p>
           </div>
           {config.apiKeys?.rpdb && (
@@ -322,6 +343,17 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       ...prev,
       catalogs: prev.catalogs.map(c =>
         (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRPDB: !c.enableRPDB } : c
+      )
+    }));
+  };
+
+  const handleToggleRandomize = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        (c.id === catalog.id && c.type === catalog.type)
+          ? { ...c, randomizePerPage: !c.randomizePerPage }
+          : c
       )
     }));
   };
@@ -518,6 +550,24 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
               <TooltipContent><p>{catalog.enableRPDB !== false && catalog.enabled ? 'RPDB Enabled' : 'RPDB Disabled'}</p></TooltipContent>
             </Tooltip>
           )}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleRandomize}
+                disabled={!catalog.enabled}
+                className="disabled:opacity-20 disabled:cursor-not-allowed"
+                aria-label="Toggle random order"
+              >
+                <Shuffle className={`h-5 w-5 transition-colors ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-500 dark:text-purple-400' : 'text-muted-foreground'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{catalog.randomizePerPage && catalog.enabled ? 'Randomized per page' : 'Original order'}</p>
+            </TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -803,7 +853,19 @@ function CatalogsSettingsContent({
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingAction, setLoadingAction] = useState<'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | 'enableRPDB' | 'disableRPDB' | null>(null);
+  const [loadingAction, setLoadingAction] = useState<
+    | 'enable'
+    | 'disable'
+    | 'addToHome'
+    | 'removeFromHome'
+    | 'delete'
+    | 'invert'
+    | 'enableRPDB'
+    | 'disableRPDB'
+    | 'enableRandomize'
+    | 'disableRandomize'
+    | null
+  >(null);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   // Check if TVDB key is available
@@ -1206,6 +1268,64 @@ function CatalogsSettingsContent({
     }
   };
 
+  const handleBulkEnableRandomize = async () => {
+    setIsLoading(true);
+    setLoadingAction('enableRandomize');
+
+    try {
+      const catalogsToEnableRandomize = selectedCatalogs.filter(catalog => !catalog.randomizePerPage);
+
+      if (catalogsToEnableRandomize.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldEnableRandomize = catalogsToEnableRandomize.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldEnableRandomize ? { ...c, randomizePerPage: true } : c;
+          })
+        }));
+      }
+
+      toast.success(`Randomize enabled for ${catalogsToEnableRandomize.length} catalog${catalogsToEnableRandomize.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('enable randomize', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkDisableRandomize = async () => {
+    setIsLoading(true);
+    setLoadingAction('disableRandomize');
+
+    try {
+      const catalogsToDisableRandomize = selectedCatalogs.filter(catalog => catalog.randomizePerPage);
+
+      if (catalogsToDisableRandomize.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldDisableRandomize = catalogsToDisableRandomize.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldDisableRandomize ? { ...c, randomizePerPage: false } : c;
+          })
+        }));
+      }
+
+      toast.success(`Randomize disabled for ${catalogsToDisableRandomize.length} catalog${catalogsToDisableRandomize.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('disable randomize', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
   const handleBulkDelete = () => {
     // Show confirmation dialog
     setShowDeleteConfirmDialog(true);
@@ -1330,6 +1450,8 @@ function CatalogsSettingsContent({
           onClearSelection={deselectAll}
           onEnableRPDB={handleBulkEnableRPDB}
           onDisableRPDB={handleBulkDisableRPDB}
+          onEnableRandomize={handleBulkEnableRandomize}
+          onDisableRandomize={handleBulkDisableRandomize}
           hasRPDBKey={!!config.apiKeys?.rpdb}
           isLoading={isLoading}
           loadingAction={loadingAction}

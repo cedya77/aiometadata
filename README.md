@@ -50,6 +50,7 @@ services:
       - REDIS_URL=redis://aiometadata_redis:6379
       - META_TTL=604800
       - CATALOG_TTL=86400
+      - TMDB_TRENDING_TTL=10800
       - CATALOG_LIST_ITEMS_SIZE=20
       - LOG_LEVEL=debug
       - ADMIN_KEY=${ADMIN_KEY?}
@@ -104,6 +105,9 @@ Create a `.env` file with your API keys and settings:
 ```bash
 # Required API Keys
 TMDB_API_KEY=your_tmdb_api_key
+# Cache TTL Overrides
+TMDB_TRENDING_TTL=10800
+
 TVDB_API_KEY=your_tvdb_api_key
 FANART_API_KEY=your_fanart_api_key
 MDBLIST_API_KEY=your_mdblist_api_key

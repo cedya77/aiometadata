@@ -129,6 +129,7 @@ const initialConfig: AppConfig = {
       enabled: c.isEnabledByDefault || false,
       showInHome: c.showOnHomeByDefault || false,
       enableRPDB: true, // Default to enabled for new catalogs
+      randomizePerPage: false,
     })),
   search: {
     enabled: true,
@@ -161,6 +162,7 @@ const defaultCatalogs = allCatalogDefinitions.map(c => ({
   enabled: c.isEnabledByDefault || false,
   showInHome: c.showOnHomeByDefault || false,
   enableRPDB: true, // Default to enabled for new catalogs
+  randomizePerPage: false,
 }));
 
 
@@ -174,7 +176,25 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
       
       if (preloadedConfig.catalogs && preloadedConfig.catalogs.length > 0) {
           const userCatalogSettings = new Map(
-              preloadedConfig.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome, enableRPDB: c.enableRPDB }])
+              preloadedConfig.catalogs.map(c => {
+                const settings: CatalogConfig = {
+                  id: c.id,
+                  name: c.name,
+                  type: c.type as any,
+                  source: c.source as any,
+                  enabled: c.enabled,
+                  showInHome: c.showInHome,
+                };
+                if (c.enableRPDB !== undefined) settings.enableRPDB = c.enableRPDB;
+                if (c.randomizePerPage !== undefined) settings.randomizePerPage = c.randomizePerPage;
+                if (c.displayType !== undefined) settings.displayType = c.displayType;
+                if (c.cacheTTL !== undefined) settings.cacheTTL = c.cacheTTL;
+                if (c.genreSelection !== undefined) settings.genreSelection = c.genreSelection;
+                if (c.sort !== undefined) settings.sort = c.sort;
+                if (c.order !== undefined) settings.order = c.order;
+                if (c.pageSize !== undefined) settings.pageSize = c.pageSize;
+                return [`${c.id}-${c.type}`, settings];
+              })
           );
 
           // Always merge in new catalogs from allCatalogDefinitions

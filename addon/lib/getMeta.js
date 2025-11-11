@@ -706,6 +706,14 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
 // --- Anime worker ---
 
+function annotateAnimeMeta(meta) {
+  if (meta && typeof meta === 'object') {
+    meta.app_extras = meta.app_extras || {};
+    meta.app_extras.isAnime = true;
+  }
+  return meta;
+}
+
 async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime, includeVideos) {
   logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
   
@@ -727,10 +735,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         if (type === 'movie') {
           
           const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-          return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
+          return annotateAnimeMeta(await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime));
         } else {
           const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-            return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
+            return annotateAnimeMeta(await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos));
         }
       }
       
@@ -740,17 +748,24 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
               tvdb.getSeriesExtended(allIds.tvdbId, config),
               includeVideos ? tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config) : null
           ]);
-          return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
+          if(!seriesData) {
+            if(allIds?.imdbId) {
+              let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
+              return annotateAnimeMeta(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime));
+            }
+          } else {
+            return annotateAnimeMeta(await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos));
+          }
         } else if (type === 'movie') {
           logger.info(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
           if(!movieData) {
             if(allIds?.imdbId) {
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-              return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+              return annotateAnimeMeta(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime));
             }
           } else {
-            return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
+            return annotateAnimeMeta(await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime));
           }
         }
       }
@@ -761,15 +776,15 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           tvmaze.getShowDetails(allIds.tvmazeId),
           includeVideos ? tvmaze.getShowEpisodes(allIds.tvmazeId) : null
         ]);
-        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
+        return annotateAnimeMeta(await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos));
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
           let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
-          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+          return annotateAnimeMeta(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime));
           } else if(type === 'movie') {
             let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-            return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+            return annotateAnimeMeta(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime));
         }
       }
   
@@ -805,12 +820,12 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       let episodes = kitsuDetails.included?.filter(item => item.type === 'episodes') || [];
       let genres = kitsuDetails.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
     
-      return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, { 
+      return annotateAnimeMeta(await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, { 
         mapping: allIds, 
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
         bestLogoUrl: logo
-      });
+      }));
   
     } catch (error) {
       logger.error(`[AnimeMeta] CRITICAL: Native provider 'kitsu' also failed for ${stremioId}: ${error.message}`);
@@ -842,12 +857,12 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       
       
       
-      return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
+      return annotateAnimeMeta(await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
         mapping: allIds, 
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
         bestLogoUrl: logo
-      });
+      }));
   
     } catch (error) {
       logger.error(`[AnimeMeta] CRITICAL: Native provider 'mal' also failed for ${stremioId}: ${error.message}`);
@@ -892,9 +907,10 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     ]);
   }
 
+  const fallbackPosterUrl = poster || `${host}/missing_poster.png`;
   const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
-    ? `${host}/poster/series/imdb:${imdbId}?fallback=${encodeURIComponent(poster)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
-    : poster;
+    ? `${host}/poster/series/imdb:${imdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
+    : fallbackPosterUrl;
 
   // Process credits in place
   processCreditsPhotos(imdbData.credits_cast);
@@ -1074,7 +1090,14 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const watchProviders = moviedb.getWatchProviders(movieData['watch/providers'], config);
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
-  finalTitle = Utils.processTitleTranslations(movieData.translations, language, title, 'movie');
+  finalTitle = Utils.processTitleTranslations(
+    movieData.translations,
+    language,
+    title,
+    'movie',
+    movieData.original_language,
+    movieData.original_title
+  );
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
   if (certification && config.displayAgeRating) {
@@ -1477,7 +1500,14 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;
-  finalName = Utils.processTitleTranslations(seriesData.translations, language, finalName, 'series');
+  finalName = Utils.processTitleTranslations(
+    seriesData.translations,
+    language,
+    finalName,
+    'series',
+    seriesData.original_language,
+    seriesData.original_name
+  );
 
   // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
   let releaseInfo = "";

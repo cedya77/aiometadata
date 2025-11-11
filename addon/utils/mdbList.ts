@@ -456,8 +456,19 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   //const batchMediaInfo = await fetchMDBListBatchMediaInfo('tmdb', targetMediaType, filteredItems.map(item => item.id), config.apiKeys?.mdblist || '');
   //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo)}`);
   
-  // Filter out items with invalid IDs before processing
-  const validItems = filteredItems.filter((item: any) => {
+  // Normalize IDs, falling back to imdb_id or tvdb_id when possible
+  const normalizedItems = filteredItems.map((item: any) => {
+    if (!item.id || item.id === null || item.id === undefined) {
+      const fallbackId = item.imdb_id || item.tvdb_id;
+      if (fallbackId) {
+        const resolvedId = typeof fallbackId === 'string' ? fallbackId : String(fallbackId);
+        return { ...item, id: resolvedId };
+      }
+    }
+    return item;
+  });
+
+  const validItems = normalizedItems.filter((item: any) => {
     if (!item.id || item.id === null || item.id === undefined) {
       logger.warn(`Skipping MDBList item with invalid ID: ${JSON.stringify(item)}`);
       return false;

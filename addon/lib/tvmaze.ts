@@ -240,6 +240,12 @@ interface ApiError {
   error?: boolean;
 }
 
+interface TVmazeScheduleEntry extends TVmazeEpisode {
+  _embedded?: {
+    show?: TVmazeShow;
+  };
+}
+
 /**
  * Sleep function for retry delays
  */
@@ -484,6 +490,25 @@ async function getPersonCastCredits(personId: number): Promise<TVmazeCastCredit[
   });
 }
 
+/**
+ * Fetches the web channel schedule for a specific date and country.
+ */
+async function getWebSchedule(date: string, country: string): Promise<TVmazeScheduleEntry[]> {
+  const normalizedCountry = country == null ? 'US' : country;
+  const cacheKey = `schedule-web:${normalizedCountry}:${date}`;
+  console.log(`getWebSchedule: ${cacheKey}`);
+
+  return cacheWrapTvmazeApi(cacheKey, async () => {
+    const url = `${TVMAZE_API_URL}/schedule/web?date=${date}&country=${normalizedCountry}`;
+    const context = `getWebSchedule for ${normalizedCountry} on ${date}`;
+
+    return await retryApiCall(async () => {
+      const response = await httpGet(url, DEFAULT_HTTP_CONFIG);
+      return response.data;
+    }, context) || [];
+  });
+}
+
 export {
   getShowByImdbId,
   getShowDetails,
@@ -492,7 +517,8 @@ export {
   searchShows,
   searchPeople,
   getPersonCastCredits,
-  getShowById
+  getShowById,
+  getWebSchedule
 };
 
 // CommonJS compatibility
@@ -504,5 +530,6 @@ module.exports = {
   searchShows,
   searchPeople,
   getPersonCastCredits,
-  getShowById
+  getShowById,
+  getWebSchedule
 };

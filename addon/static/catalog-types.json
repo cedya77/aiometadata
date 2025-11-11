@@ -68,6 +68,12 @@
     "most_popular": { "nameKey": "most_popular", "extraSupported": ["genre", "skip"] },
     "top_anime": { "nameKey": "top_anime", "extraSupported": ["genre", "skip"] }
   },
+  "tvmaze": {
+    "schedule": {
+      "nameKey": "tvmaze_schedule",
+      "extraSupported": ["genre", "skip"]
+    }
+  },
   "auth": {
     "favorites": {
       "nameKey": "favorites",

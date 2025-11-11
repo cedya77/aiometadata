@@ -38,6 +38,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
   const [manifest, setManifest] = useState<CustomManifest | null>(null);
   const [selectedCatalogs, setSelectedCatalogs] = useState<Set<string>>(new Set());
   const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(catalogTTL);
+  const [defaultPageSize, setDefaultPageSize] = useState<number>(100);
 
   // Get currently imported custom manifests
   const currentCustomCatalogs = config.catalogs.filter(c => c.id.startsWith("custom."));
@@ -178,6 +179,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
               sourceUrl: catalogUrl, // Store the actual catalog URL
               genres: catalog.genres || [], // Store genres from manifest
               cacheTTL: defaultCacheTTL, // Add custom TTL support
+              pageSize: defaultPageSize, // Add page size support
               enableRPDB: true,
               manifestData: { 
                 ...catalog, 
@@ -289,6 +291,27 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                 </div>
                 <p className="text-xs text-muted-foreground">
                   How long to cache newly added catalogs before refreshing. Range: 5 minutes to 7 days.
+                </p>
+              </div>
+
+              {/* Page Size Configuration */}
+              <div className="space-y-2">
+                <Label htmlFor="default-page-size">Default Page Size</Label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    id="default-page-size"
+                    type="number"
+                    value={defaultPageSize}
+                    onChange={(e) => setDefaultPageSize(parseInt(e.target.value) || 100)}
+                    min="1"
+                    max="1000"
+                    step="1"
+                    className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                    placeholder="100"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Number of items per page for newly added catalogs. Default: 100. This should match the imported addon's page size for accurate pagination.
                 </p>
               </div>
 

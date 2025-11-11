@@ -6,20 +6,76 @@ on:
       - 'testing'
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
+    env:
+      REGISTRY: ghcr.io
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Calculate nightly version
+        id: nightly
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          DATE=$(date -u +'%Y%m%d')
+          PREFIX="v.testing.${DATE}"
+          git fetch --tags --force --prune
+          COUNT=$(git tag -l "${PREFIX}.*" | wc -l | tr -d ' ')
+          if [ -z "$COUNT" ]; then
+            COUNT=0
+          fi
+          BUILD=$((COUNT + 1))
+          VERSION="${PREFIX}.${BUILD}"
+          SEMVER="0.0.0-testing.${DATE}.${BUILD}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "NIGHTLY_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "NIGHTLY_SEMVER=${SEMVER}" >> "$GITHUB_ENV"
+          echo "Computed nightly version: ${VERSION}"
+          echo "Computed semver version: ${SEMVER}"
+
+      - name: Update package version for build
+        env:
+          NIGHTLY_SEMVER: ${{ env.NIGHTLY_SEMVER }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const version = process.env.NIGHTLY_SEMVER;
+            const pkgPath = 'package.json';
+            const lockPath = 'package-lock.json';
+            const pkg = JSON.parse(fs.readFileSync(pkgPath));
+            pkg.version = version;
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+            if (fs.existsSync(lockPath)) {
+              const lock = JSON.parse(fs.readFileSync(lockPath));
+              lock.version = version;
+              if (lock.packages && lock.packages['']) {
+                lock.packages[''].version = version;
+              }
+              fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+            }
+          "
+
+      - name: Announce nightly version
+        run: |
+          echo "Nightly build version: ${NIGHTLY_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Package semver version: ${NIGHTLY_SEMVER}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          NIGHTLY_VERSION: ${{ env.NIGHTLY_VERSION }}
+          NIGHTLY_SEMVER: ${{ env.NIGHTLY_SEMVER }}
 
       - name: Set up QEMU for multi-arch builds
         uses: docker/setup-qemu-action@v3
@@ -38,10 +94,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
+            type=raw,value=${{ env.NIGHTLY_VERSION }}
+            type=raw,value=${{ env.NIGHTLY_VERSION }}-{{sha}}
             type=raw,value=testing
-            type=raw,value=testing-{{sha}}
 
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v5
@@ -53,6 +110,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Push nightly git tag
+        env:
+          NIGHTLY_VERSION: ${{ env.NIGHTLY_VERSION }}
+        run: |
+          if git rev-parse "${NIGHTLY_VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${NIGHTLY_VERSION} already exists locally."
+          else
+            git config user.name "${GITHUB_ACTOR}"
+            git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+            git tag "${NIGHTLY_VERSION}"
+            git push origin "${NIGHTLY_VERSION}"
+          fi
 
 
 

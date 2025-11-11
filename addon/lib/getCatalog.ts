@@ -549,7 +549,8 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     
     // --- Dynamic pagination ---
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
-    const stremThruBatchSize = 100; // fixed backend limit
+    // Use catalog-specific page size if configured, otherwise default to 100
+    const stremThruBatchSize = userCatalog.pageSize || 100;
     const globalItemIndex = (page - 1) * pageSize;
 
     const batchesNeeded = Math.ceil((globalItemIndex % stremThruBatchSize + pageSize) / stremThruBatchSize);
