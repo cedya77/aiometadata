@@ -259,25 +259,28 @@ const respond = function (req, res, data, opts) {
   res.send(data);
 };
 
-addon.get("/api/config", (req, res) => {
-  const publicEnvConfig = {
-    tmdb: process.env.TMDB_API || "",
-    tvdb: process.env.TVDB_API_KEY || "",
-    fanart: process.env.FANART_API_KEY || "",
-    rpdb: process.env.RPDB_API_KEY || "",
-    mdblist: process.env.MDBLIST_API_KEY || "",
-    gemini: process.env.GEMINI_API_KEY || "",
-    customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
-    addonVersion: ADDON_VERSION,
-    hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
-    hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
-    catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
-  };
-  
-  res.setHeader('Cache-Control', 'private, max-age=300');
-  
-  res.json(publicEnvConfig);
-});
+  addon.get("/api/config", (req, res) => {
+    const publicEnvConfig = {
+      tmdb: process.env.TMDB_API || "",
+      tvdb: process.env.TVDB_API_KEY || "",
+      fanart: process.env.FANART_API_KEY || "",
+      rpdb: process.env.RPDB_API_KEY || "",
+      mdblist: process.env.MDBLIST_API_KEY || "",
+      gemini: process.env.GEMINI_API_KEY || "",
+      customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
+      addonVersion: ADDON_VERSION,
+      hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
+      hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
+      catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
+    };
+    
+    // No cache to prevent cross-instance contamination
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    res.json(publicEnvConfig);
+  });
 
 // --- Configuration Database API Routes ---
 addon.post("/api/config/save", configApi.saveConfig.bind(configApi));
@@ -1208,9 +1211,13 @@ addon.get('/resize-image', async function (req, res) {
 
 
 // Support Stremio settings opening under /stremio/:uuid/:config/configure
-addon.get('/stremio/:userUUID/configure', function (req, res) {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
+  addon.get('/stremio/:userUUID/configure', function (req, res) {
+    // No cache to prevent cross-instance contamination
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  });
 
 addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
 addon.use('/configure', express.static(path.join(__dirname, '../dist')));
