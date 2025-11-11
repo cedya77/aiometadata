@@ -22,7 +22,7 @@ export const baseCatalogs: CatalogDefinition[] = [
   { id: 'tvdb.genres', name: 'TVDB Genres', type: 'movie', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.genres', name: 'TVDB Genres', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'tvdb.collections', name: 'TVDB Collections', type: 'series', source: 'tvdb', isEnabledByDefault: true, showOnHomeByDefault: false },
-  { id: 'tvmaze.schedule', name: 'TVmaze Daily Schedule', type: 'series', source: 'tvmaze', isEnabledByDefault: false, showOnHomeByDefault: true },
+  { id: 'tvmaze.schedule', name: 'TVmaze Daily Schedule', type: 'series', source: 'tvmaze', isEnabledByDefault: true, showOnHomeByDefault: true },
 ];
 
 // --- Catalogs sourced from MyAnimeList ---
