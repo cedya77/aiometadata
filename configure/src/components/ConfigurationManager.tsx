@@ -139,16 +139,25 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     }
     const isAuthenticated = auth.authenticated && auth.userUUID && auth.password;
     try {
+      // Remove instance-specific fields that shouldn't be saved to user config
+      const configToSave = {
+        ...config,
+        apiKeys: {
+          ...config.apiKeys,
+          customDescriptionBlurb: undefined // Never save this - it's instance-specific
+        }
+      };
+      
       const response = isAuthenticated
         ? await fetch(`/api/config/update/${encodeURIComponent(auth.userUUID!)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config, password: auth.password, addonPassword })
+            body: JSON.stringify({ config: configToSave, password: auth.password, addonPassword })
           })
         : await fetch('/api/config/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config, password, addonPassword })
+            body: JSON.stringify({ config: configToSave, password, addonPassword })
           });
       if (!response.ok) {
         let message = 'Failed to save configuration';

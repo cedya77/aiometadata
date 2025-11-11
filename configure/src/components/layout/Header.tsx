@@ -30,6 +30,28 @@ export function Header() {
 
   useEffect(() => {
     try {
+      if (window.location.pathname.includes('/configure')) {
+        sessionStorage.setItem(
+          'lastConfigureUrl',
+          window.location.pathname + window.location.search + window.location.hash
+        );
+      }
+    } catch {}
+  }, []);
+
+  const handleLogoClick = () => {
+    if (typeof window === 'undefined') return;
+    const currentPath = window.location.pathname;
+    if (currentPath.startsWith('/dashboard')) {
+      const stored = sessionStorage.getItem('lastConfigureUrl');
+      window.location.href = stored || '/configure';
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    try {
       const pathParts = window.location.pathname.split('/');
       const stremioIndex = pathParts.findIndex(p => p === 'stremio');
       if (stremioIndex !== -1 && pathParts[stremioIndex + 1]) {
@@ -199,11 +221,18 @@ export function Header() {
     <header className="w-full max-w-5xl py-6 sm:py-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center space-x-4">
-          <img 
-            src="/logo.png"
-            alt="AIO-Metadata Addon Logo" 
-            className="h-12 w-12 sm:h-16 sm:w-16"
-          />
+          <button
+            type="button"
+            onClick={handleLogoClick}
+            className="group flex items-center focus:outline-none"
+            aria-label="Return to configuration"
+          >
+            <img 
+              src="/logo.png"
+              alt="AIO-Metadata Addon Logo" 
+              className="h-12 w-12 sm:h-16 sm:w-16 transition-transform group-hover:scale-105"
+            />
+          </button>
           <div className="text-left">
             <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
               AIOMetadata <span className="text-sm text-muted-foreground">v{addonVersion}</span>
