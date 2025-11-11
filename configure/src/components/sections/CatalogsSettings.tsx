@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -347,6 +347,17 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     }));
   };
 
+  const handleToggleRandomize = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        (c.id === catalog.id && c.type === catalog.type)
+          ? { ...c, randomizePerPage: !c.randomizePerPage }
+          : c
+      )
+    }));
+  };
+
   const handleEditSave = () => {
     const trimmedName = newName.trim();
     const trimmedType = newType.trim();
@@ -539,6 +550,24 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
               <TooltipContent><p>{catalog.enableRPDB !== false && catalog.enabled ? 'RPDB Enabled' : 'RPDB Disabled'}</p></TooltipContent>
             </Tooltip>
           )}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleRandomize}
+                disabled={!catalog.enabled}
+                className="disabled:opacity-20 disabled:cursor-not-allowed"
+                aria-label="Toggle random order"
+              >
+                <Shuffle className={`h-5 w-5 transition-colors ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-500 dark:text-purple-400' : 'text-muted-foreground'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{catalog.randomizePerPage && catalog.enabled ? 'Randomized per page' : 'Original order'}</p>
+            </TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -824,7 +853,19 @@ function CatalogsSettingsContent({
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingAction, setLoadingAction] = useState<'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | 'enableRPDB' | 'disableRPDB' | null>(null);
+  const [loadingAction, setLoadingAction] = useState<
+    | 'enable'
+    | 'disable'
+    | 'addToHome'
+    | 'removeFromHome'
+    | 'delete'
+    | 'invert'
+    | 'enableRPDB'
+    | 'disableRPDB'
+    | 'enableRandomize'
+    | 'disableRandomize'
+    | null
+  >(null);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   // Check if TVDB key is available
@@ -1227,6 +1268,64 @@ function CatalogsSettingsContent({
     }
   };
 
+  const handleBulkEnableRandomize = async () => {
+    setIsLoading(true);
+    setLoadingAction('enableRandomize');
+
+    try {
+      const catalogsToEnableRandomize = selectedCatalogs.filter(catalog => !catalog.randomizePerPage);
+
+      if (catalogsToEnableRandomize.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldEnableRandomize = catalogsToEnableRandomize.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldEnableRandomize ? { ...c, randomizePerPage: true } : c;
+          })
+        }));
+      }
+
+      toast.success(`Randomize enabled for ${catalogsToEnableRandomize.length} catalog${catalogsToEnableRandomize.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('enable randomize', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkDisableRandomize = async () => {
+    setIsLoading(true);
+    setLoadingAction('disableRandomize');
+
+    try {
+      const catalogsToDisableRandomize = selectedCatalogs.filter(catalog => catalog.randomizePerPage);
+
+      if (catalogsToDisableRandomize.length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c => {
+            const catalogKey = `${c.id}-${c.type}`;
+            const shouldDisableRandomize = catalogsToDisableRandomize.some(
+              cat => `${cat.id}-${cat.type}` === catalogKey
+            );
+            return shouldDisableRandomize ? { ...c, randomizePerPage: false } : c;
+          })
+        }));
+      }
+
+      toast.success(`Randomize disabled for ${catalogsToDisableRandomize.length} catalog${catalogsToDisableRandomize.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('disable randomize', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
   const handleBulkDelete = () => {
     // Show confirmation dialog
     setShowDeleteConfirmDialog(true);
@@ -1351,6 +1450,8 @@ function CatalogsSettingsContent({
           onClearSelection={deselectAll}
           onEnableRPDB={handleBulkEnableRPDB}
           onDisableRPDB={handleBulkDisableRPDB}
+          onEnableRandomize={handleBulkEnableRandomize}
+          onDisableRandomize={handleBulkDisableRandomize}
           hasRPDBKey={!!config.apiKeys?.rpdb}
           isLoading={isLoading}
           loadingAction={loadingAction}

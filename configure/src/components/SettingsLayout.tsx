@@ -88,7 +88,7 @@ export function SettingsLayout() {
   }
 
   return (
-    <Tabs defaultValue="general" className="w-full">
+    <Tabs defaultValue="presets" className="w-full">
         <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-2 bg-muted">
           {settingsPages.map((page) => (
             <TabsTrigger 

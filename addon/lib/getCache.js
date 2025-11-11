@@ -735,13 +735,14 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const catalogConfigString = JSON.stringify(catalogConfig);
   
+  let cacheTTL = CATALOG_TTL;
+  
   if (isTrendingCatalog) {
     cacheTTL = TMDB_TRENDING_TTL;
     cacheLogger.info(`Using TMDB trending cache TTL for ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
   }
-
+  
   // Use custom cache TTL for MDBList catalogs if specified
-  let cacheTTL = CATALOG_TTL;
   
   // Decade catalogs use 30-day cache since historical data doesn't change
   // Note: 2020s decade still active, but older decades are stable

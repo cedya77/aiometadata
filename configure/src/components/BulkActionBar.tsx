@@ -6,11 +6,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
 
-type BulkActionType = 'enable' | 'disable' | 'addToHome' | 'removeFromHome' | 'delete' | 'invert' | 'enableRPDB' | 'disableRPDB' | null;
+type BulkActionType =
+  | 'enable'
+  | 'disable'
+  | 'addToHome'
+  | 'removeFromHome'
+  | 'delete'
+  | 'invert'
+  | 'enableRPDB'
+  | 'disableRPDB'
+  | 'enableRandomize'
+  | 'disableRandomize'
+  | null;
 
 interface BulkActionBarProps {
   selectedCatalogs: CatalogConfig[];
@@ -23,6 +34,8 @@ interface BulkActionBarProps {
   onClearSelection: () => void;
   onEnableRPDB?: () => void;
   onDisableRPDB?: () => void;
+  onEnableRandomize?: () => void;
+  onDisableRandomize?: () => void;
   hasRPDBKey?: boolean;
   isLoading?: boolean;
   loadingAction?: BulkActionType;
@@ -39,6 +52,8 @@ export function BulkActionBar({
   onClearSelection,
   onEnableRPDB,
   onDisableRPDB,
+  onEnableRandomize,
+  onDisableRandomize,
   hasRPDBKey = false,
   isLoading = false,
   loadingAction = null,
@@ -55,6 +70,8 @@ export function BulkActionBar({
   );
   const hasRPDBDisabled = selectedCatalogs.some(c => c.enableRPDB === false);
   const hasRPDBEnabled = selectedCatalogs.some(c => c.enableRPDB !== false);
+  const hasRandomizeDisabled = selectedCatalogs.some(c => !c.randomizePerPage);
+  const hasRandomizeEnabled = selectedCatalogs.some(c => c.randomizePerPage);
   
   // Count non-removable catalogs for tooltip
   const nonRemovableCount = selectedCatalogs.filter(c => 
@@ -237,6 +254,58 @@ export function BulkActionBar({
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>Enable RPDB for selected catalogs</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Enable Randomize */}
+            {hasRandomizeDisabled && onEnableRandomize && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onEnableRandomize}
+                    disabled={isLoading}
+                    aria-label="Enable random order for selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
+                  >
+                    {loadingAction === 'enableRandomize' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Shuffle className="h-4 w-4 text-purple-500" />
+                    )}
+                    <span className="ml-2">Enable Randomize</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Randomize items within each page for selected catalogs</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Disable Randomize */}
+            {hasRandomizeEnabled && onDisableRandomize && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onDisableRandomize}
+                    disabled={isLoading}
+                    aria-label="Disable random order for selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
+                  >
+                    {loadingAction === 'disableRandomize' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Shuffle className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span className="ml-2">Disable Randomize</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Restore original ordering for selected catalogs</p>
                 </TooltipContent>
               </Tooltip>
             )}

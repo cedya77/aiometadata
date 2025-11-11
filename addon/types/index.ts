@@ -50,6 +50,7 @@ export interface Catalog {
   enabled: boolean;
   showInHome: boolean;
   source?: string;
+  randomizePerPage?: boolean;
   [key: string]: any;
 }
 

@@ -57,6 +57,15 @@ const packageJson = require('../package.json');
 const ADDON_VERSION = packageJson.version;
 const sharp = require('sharp');
 
+function shuffleMetas(metas = []) {
+  const shuffled = Array.isArray(metas) ? metas.slice() : [];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 // Parse JSON and URL-encoded bodies for API routes
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
@@ -868,6 +877,13 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     }, undefined, cacheOptions);
     }
     
+    if (catalogConfig?.randomizePerPage && Array.isArray(responseData?.metas) && responseData.metas.length > 1) {
+      responseData = {
+        ...responseData,
+        metas: shuffleMetas(responseData.metas)
+      };
+    }
+
     const httpCacheOpts = { cacheMaxAge: 0, staleRevalidate: 5 * 60 }; // No cache for regular catalogs, 5 min stale-while-revalidate
     respond(req, res, responseData, httpCacheOpts);
 
