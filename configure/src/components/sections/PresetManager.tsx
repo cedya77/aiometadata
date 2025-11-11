@@ -78,7 +78,7 @@ const presetConfigs: PresetConfig[] = [
   },
   {
     id: 'movies-shows-anime-mal',
-    name: 'Movies & Shows + Anime (MAL)',
+    name: 'Movies & Shows + Anime (Kitsu)',
     description: 'Best of both worlds - traditional content plus anime with Kitsu as the anime meta provider. Anime poster provider is MAL, background and logo are IMDb.',
     icon: <Sparkles className="h-6 w-6" />,
     badge: 'Hybrid',
