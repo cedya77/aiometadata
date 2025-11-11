@@ -206,9 +206,6 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 async function performKitsuSearch(type, query, language, config, page = 1) {
   logger.debug(`Performing Kitsu search for ${type}:`, query);
   
-  const timer = timingMetrics.start('search_kitsu');
-  const providerTimer = timingMetrics.startProvider('search', 'kitsu');
-
   try {
     const KITSU_RATING_MAP = {
       'G': 'G',
@@ -304,15 +301,10 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
       })
     );
     
-    const filteredMetas = metas.filter(Boolean);
-    providerTimer?.success();
-    return filteredMetas;
+    return metas.filter(Boolean);
   } catch (error) {
     logger.error(`Kitsu search failed for "${query}":`, error.message);
-    providerTimer?.fail();
     return [];
-  } finally {
-    timer?.stop();
   }
 }
 
