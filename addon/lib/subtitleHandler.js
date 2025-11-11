@@ -104,14 +104,15 @@ function shouldTrackWatch(config) {
   }
 
   // Check if watch tracking is explicitly disabled
-  if (config.mdblistWatchTracking?.enabled === false) {
+  if (config.mdblistWatchTracking === false) {
     logger.debug('[Watch Tracking] Skipped - Feature disabled in user config');
     return false;
   }
 
-  // Default to enabled if API key exists
-  logger.debug('[Watch Tracking] Enabled - API key present and feature not disabled');
-  return true;
+  // Default to boolean true when API key is present
+  const enabled = config.mdblistWatchTracking !== false;
+  logger.debug(`[Watch Tracking] Enabled - API key present, flag=${enabled}`);
+  return enabled;
 }
 
 /**

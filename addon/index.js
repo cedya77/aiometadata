@@ -1030,7 +1030,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
     
     // Check if watch tracking is enabled and MDBList API key exists
     const hasApiKey = config?.apiKeys?.mdblist;
-    const trackingEnabled = config?.mdblistWatchTracking?.enabled !== false;
+    const trackingEnabled = !!config?.mdblistWatchTracking;
     
     if (hasApiKey && trackingEnabled) {
       // Import and call subtitle handler

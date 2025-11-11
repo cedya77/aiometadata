@@ -778,36 +778,6 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             </Card>
           )}
 
-          {/* Watch Status Tracking Section */}
-          {isValid && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Watch Status Tracking</CardTitle>
-                <CardDescription>
-                  Automatically sync your watch history to MDBList when you play content in Stremio
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between p-4 rounded-lg border">
-                  <div>
-                    <Label htmlFor="mdblist-watch-tracking" className="text-base font-medium">
-                      Enable Watch Status Tracking
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Automatically mark movies and episodes as watched in your MDBList account when you play them
-                    </p>
-                  </div>
-                  <Switch
-                    id="mdblist-watch-tracking"
-                    checked={config.mdblistWatchTracking}
-                    onCheckedChange={(checked) => {
-                      setConfig(prev => ({ ...prev, mdblistWatchTracking: checked }));
-                    }}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
           {/* Custom User Lists Section */}
           {isValid && (
             <Card>

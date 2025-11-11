@@ -250,6 +250,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, displayAgeRating: checked }));
   };
 
+  const handleMDBListTrackingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, mdblistWatchTracking: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -363,6 +367,19 @@ export function GeneralSettings() {
             id="display-age-rating"
             checked={config.displayAgeRating}
             onCheckedChange={handleDisplayAgeRatingChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="mdblist-watch-tracking" className="text-lg font-medium">MDBList Watch Tracking</Label>
+            <p className="text-sm text-muted-foreground">
+              Automatically sync watched status to MDBList when you play movies or episodes (requires MDBList API key).
+            </p>
+          </div>
+          <Switch
+            id="mdblist-watch-tracking"
+            checked={!!config.mdblistWatchTracking}
+            onCheckedChange={handleMDBListTrackingChange}
           />
         </div>
         
