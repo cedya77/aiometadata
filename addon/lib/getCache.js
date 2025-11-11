@@ -4,6 +4,7 @@ const packageJson = require('../../package.json');
 const redis = require('./redisClient');
 const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
+const idMapper = require('./id-mapper');
 
 // Create tagged loggers
 const cacheLogger = consola.withTag('Cache');
@@ -882,7 +883,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    };
    
    // Add context-specific settings based on meta type
-   if (prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime') {
+  const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
+  if (animePrefixes.includes(prefix) || metaType === 'anime') {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = {
        poster: resolveArtProvider('anime', 'poster', config),
@@ -934,7 +936,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  * Granular component caching for meta objects
  * Caches individual components separately to prevent one bad component from affecting everything
  */
-async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
+async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, isAnimeMeta = false) {
    // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
@@ -972,8 +974,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
      }
    };
-   
-   const isAnime = metaType === 'anime' || prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb';
+   const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
+   const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
    
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
@@ -982,7 +984,6 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
        background: resolveArtProvider('anime', 'background', config),
        logo: resolveArtProvider('anime', 'logo', config)
      };
-     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
        skipRecap: config.mal?.skipRecap || false,
@@ -1017,7 +1018,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      if (metaConfig.forceAnimeForDetectedImdb) {
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      }
- }
+    }
+    if (isAnimeMeta) {
+      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+    }
  
 const metaConfigString = stableStringify(metaConfig);
  
@@ -1226,8 +1230,9 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      }
    };
    
-   const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';
-   
+   const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
+   const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
+   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId) && (config.providers?.forceAnimeForDetectedImdb || config.mal?.useImdbIdForCatalogAndSearch);
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = {
@@ -1235,7 +1240,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        background: resolveArtProvider('anime', 'background', config),
        logo: resolveArtProvider('anime', 'logo', config)
      };
-     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
      metaConfig.mal = {
        skipFiller: config.mal?.skipFiller || false,
        skipRecap: config.mal?.skipRecap || false,
@@ -1266,7 +1270,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     scrapeImdb: config.tmdb?.scrapeImdb || false
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-   if (metaConfig.forceAnimeForDetectedImdb) {
+   if (isImdbIdAnime || isAnime) {
     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
    }
  }
@@ -1430,6 +1434,7 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   const failureReason = reconstructedMeta && reconstructedMeta.errorReason ? ` (reason: ${reconstructedMeta.errorReason})` : '';
   cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
   
+  let isAnimeMeta = false;
   const result = await method();
   
   // Handle null/empty results
@@ -1439,6 +1444,9 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   }
   
   const meta = result.meta;
+  if (meta?.app_extras?.isAnime) {
+    isAnimeMeta = true;
+  }
   let idToCache = meta.id;
   
   // Validate that we have a valid ID to cache
@@ -1451,7 +1459,7 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
     idToCache = metaId;
   }
   
-  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type);
+  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type, isAnimeMeta);
 }
 
 /**
@@ -1510,7 +1518,8 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
     };
     
     // Add context-specific settings
-    const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';
+    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
+    const isAnime = isAnimeMeta || animePrefixes.includes(prefix) || metaType === 'anime';
     
     if (isAnime) {
       metaConfig.metaProvider = config.providers?.anime || 'mal';
