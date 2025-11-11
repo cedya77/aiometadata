@@ -293,7 +293,9 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           apiKeys: {
             ...initialConfig.apiKeys,   // Priority 3: Default empty strings
             ...envApiKeys,              // Priority 2: Server-provided keys
-            ...preloadedConfig?.apiKeys // Priority 1: User's saved keys (from URL or localStorage)
+            ...preloadedConfig?.apiKeys, // Priority 1: User's saved keys (from URL or localStorage)
+            // ALWAYS override customDescriptionBlurb from server - it's instance-specific, not user-specific
+            customDescriptionBlurb: envApiKeys.customDescriptionBlurb
           }
         }));
 

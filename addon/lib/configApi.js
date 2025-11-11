@@ -446,7 +446,7 @@ class ConfigApi {
   // async clearCache(req, res) { ... }
 
   // Load configuration by UUID (requires password)
-  async loadConfig(req, res) {
+    async loadConfig(req, res) {
     try {
       await this.initialize();
       const { userUUID } = req.params;
@@ -472,10 +472,20 @@ class ConfigApi {
       if (!isTrusted && addonPassword && addonPassword === process.env.ADDON_PASSWORD) {
         await database.trustUUID(userUUID);
       }
+      
+      // Strip instance-specific fields that shouldn't be returned from saved config
+      const sanitizedConfig = {
+        ...config,
+        apiKeys: {
+          ...config.apiKeys,
+          customDescriptionBlurb: undefined
+        }
+      };
+      
       res.json({
         success: true,
         userUUID,
-        config
+        config: sanitizedConfig
       });
     } catch (error) {
       console.error('[ConfigApi] Load config error:', error);
@@ -886,7 +896,16 @@ class ConfigApi {
         throw new Error(`No configuration found for userUUID: ${userUUID}`);
       }
 
-      return config;
+      // Strip instance-specific fields that shouldn't be returned from saved config
+      const sanitizedConfig = {
+        ...config,
+        apiKeys: {
+          ...config.apiKeys,
+          customDescriptionBlurb: undefined
+        }
+      };
+
+      return sanitizedConfig;
     } catch (error) {
       console.error('[ConfigApi] loadConfigFromDatabase error:', error);
       throw error;
