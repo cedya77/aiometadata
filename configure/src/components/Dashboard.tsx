@@ -946,6 +946,7 @@ function DashboardPerformance({ data, loading }) {
                 "search_tvdb",
                 "search_tvmaze",
                 "search_mal",
+                "search_kitsu",
               ].map((metric) => {
                 const stats = timingMetrics[metric]?.overall || {};
                 if (stats.count === 0) return null;
