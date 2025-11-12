@@ -493,14 +493,22 @@ async function getPersonCastCredits(personId: number): Promise<TVmazeCastCredit[
 /**
  * Fetches the web channel schedule for a specific date and country.
  */
-async function getWebSchedule(date: string, country: string): Promise<TVmazeScheduleEntry[]> {
-  const normalizedCountry = country == null ? 'US' : country;
-  const cacheKey = `schedule-web:${normalizedCountry}:${date}`;
-  console.log(`getWebSchedule: ${cacheKey}`);
+async function getFullSchedule(date: string, country: string): Promise<TVmazeScheduleEntry[]> {
+  // Check if country is null, undefined, or empty string
+  const hasCountry = country != null && country.trim().length > 0;
+  const normalizedCountry = hasCountry ? country.trim() : 'default';
+  const cacheKey = `schedule-full:${normalizedCountry}:${date}`;
+  console.log(`getFullSchedule: ${cacheKey}`);
 
   return cacheWrapTvmazeApi(cacheKey, async () => {
-    const url = `${TVMAZE_API_URL}/schedule/web?date=${date}&country=${normalizedCountry}`;
-    const context = `getWebSchedule for ${normalizedCountry} on ${date}`;
+    // Only include country parameter if it's provided and non-empty
+    const url = hasCountry 
+      ? `${TVMAZE_API_URL}/schedule?date=${date}&country=${normalizedCountry}`
+      : `${TVMAZE_API_URL}/schedule?date=${date}`;
+    const context = hasCountry 
+      ? `getFullSchedule for ${normalizedCountry} on ${date}`
+      : `getFullSchedule on ${date}`;
+    console.log(`getFullSchedule: ${url}`);
 
     return await retryApiCall(async () => {
       const response = await httpGet(url, DEFAULT_HTTP_CONFIG);
@@ -518,7 +526,7 @@ export {
   searchPeople,
   getPersonCastCredits,
   getShowById,
-  getWebSchedule
+  getFullSchedule
 };
 
 // CommonJS compatibility
@@ -531,5 +539,5 @@ module.exports = {
   searchPeople,
   getPersonCastCredits,
   getShowById,
-  getWebSchedule
+  getFullSchedule
 };

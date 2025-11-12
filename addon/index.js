@@ -755,7 +755,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           case 'tvmaze.schedule': {
             const scheduleDate = extraArgs.date;
             const scheduleCountry = extraArgs.genre;
-            const scheduleEntries = await tvmaze.getWebSchedule(scheduleDate, scheduleCountry);
+            const scheduleEntries = await tvmaze.getFullSchedule(scheduleDate, scheduleCountry);
 
             if (!Array.isArray(scheduleEntries) || scheduleEntries.length === 0) {
               metas = [];
@@ -766,7 +766,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
             const uniqueByShow = new Map();
             for (const entry of scheduleEntries) {
-              const showId = entry?._embedded?.show?.id;
+              const showId = entry?.show?.id;
               if (!showId || uniqueByShow.has(showId)) continue;
               uniqueByShow.set(showId, entry);
             }
@@ -778,7 +778,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             });
 
             const metasFromSchedule = await Promise.all(dedupedEntries.map(async (entry) => {
-              const show = entry?._embedded?.show;
+              const show = entry?.show;
               if (!show?.id) return null;
 
               const stremioId = `tvmaze:${show.id}`;
