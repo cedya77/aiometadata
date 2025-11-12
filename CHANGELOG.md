@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.8.0](https://github.com/cedya77/aiometadata/compare/v1.7.2...v1.8.0) (2025-11-12)
+
+
+### Features
+
+* add more providers ([7bf97b9](https://github.com/cedya77/aiometadata/commit/7bf97b976411b602e09395573ef81922a62ffab1))
+* **catalogs:** Add per-catalog randomization controls ([9ac3d89](https://github.com/cedya77/aiometadata/commit/9ac3d89b33bcfd07be7715d19ed17b2f068a2448))
+* **catalogs:** Add TVMaze daily schedule catalog ([15e928b](https://github.com/cedya77/aiometadata/commit/15e928b0c00342f6772def0bc473e6ef2c6a7776))
+* start implementing mdblist watch status ([c391f88](https://github.com/cedya77/aiometadata/commit/c391f8848943dc16e9c3abeedc99d72f47ed4ed5))
+* **ui:** Track Kitsu search performance and improve nav ([01f66aa](https://github.com/cedya77/aiometadata/commit/01f66aa95a92d056bd6d9a8cdacb1d8fb5fafd90))
+
+
+### Bug Fixes
+
+* **cache:** Handle cache key correctly for anime id provider when using imdb id for anime ([36453f3](https://github.com/cedya77/aiometadata/commit/36453f391c1be15dbf122cbdb103cc61dc938dec))
+* **cache:** Track meta cache hits correctly and prevent double-counting misses ([4b59363](https://github.com/cedya77/aiometadata/commit/4b5936368aaaee14cfbd61037c0b52680008450e))
+* **custom catalogs:** allow configuring page size for imports to fix pagination for addons that use less than 100 as page size ([683205b](https://github.com/cedya77/aiometadata/commit/683205ba45109bfc8047d333a9b1f636a4515468))
+* decouple html blurb from user configs ([2ed1aeb](https://github.com/cedya77/aiometadata/commit/2ed1aeb3100667c1f37846d16cbcf1a86bfb1e11))
+* decouple html blurb from user configs ([fdedabb](https://github.com/cedya77/aiometadata/commit/fdedabb779179356540ce08449f2b3ddec75cdba))
+* make persons search strict ([02cf696](https://github.com/cedya77/aiometadata/commit/02cf69696478dfeb7d93ee8c7e60bcbc0edf0053))
+* make persons search strict ([4d253b2](https://github.com/cedya77/aiometadata/commit/4d253b25b6f367b5f4c7909ca5040bd009b120b2))
+* make skygo region agnostic ([ca8c08c](https://github.com/cedya77/aiometadata/commit/ca8c08cb0eddba3b8a3b12bb5958809a4dbe8c23))
+* **meta:** prevent getMeta from being called if imdb id isnt found when Use IMDb ID for Catalog/Search for Series is On ([f566121](https://github.com/cedya77/aiometadata/commit/f566121f768e2c9787d8e38182c733f268b40074))
+* **search:** Improve search provider labeling ([c22ee47](https://github.com/cedya77/aiometadata/commit/c22ee47afae5dbe946ab85632b609a6b1b956d19))
+* **tmdb meta:** Use original_title when user language matches original language and no translation exists ([56ff1e1](https://github.com/cedya77/aiometadata/commit/56ff1e1975d2cf7621c05dc06a93b25e20d01303))
+
 ## [1.7.2](https://github.com/cedya77/aiometadata/compare/v1.7.1...v1.7.2) (2025-11-05)
 
 
