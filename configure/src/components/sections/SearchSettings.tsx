@@ -15,12 +15,14 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 // Sortable Search Provider Item Component
-function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, onEngineRPDBChange, getProviderDisplayName, hasRPDBKey, engineRPDBEnabled }: {
+function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, onEngineRPDBChange, getProviderDisplayName, getProviderBaseLabel, getProviderCustomName, hasRPDBKey, engineRPDBEnabled }: {
   provider: { id: string; type: string; provider: string };
   onEditProviderName: (providerId: string) => void;
   onEngineEnabledChange: (engine: string, checked: boolean) => void;
   onEngineRPDBChange: (engine: string, checked: boolean) => void;
   getProviderDisplayName: (providerId: string) => string;
+  getProviderBaseLabel: (providerId: string) => string;
+  getProviderCustomName: (providerId: string) => string;
   hasRPDBKey: boolean;
   engineRPDBEnabled: boolean;
 }) {
@@ -47,8 +49,15 @@ function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnab
       >
         <GripVertical className="h-4 w-4 text-muted-foreground" />
       </div>
-      <div className="flex-1 text-sm font-medium">
-        {getProviderDisplayName(provider.provider)}
+      <div className="flex-1 text-sm">
+        <div className="font-medium">
+          {getProviderCustomName(provider.provider) || getProviderBaseLabel(provider.provider)}
+        </div>
+        {getProviderCustomName(provider.provider) && (
+          <div className="text-xs text-muted-foreground">
+            {getProviderBaseLabel(provider.provider)}
+          </div>
+        )}
       </div>
       <Button
         variant="outline"
@@ -151,22 +160,32 @@ export function SearchSettings() {
   };
 
   // Helper function to get display name for a provider
-  const getProviderDisplayName = (providerId: string) => {
-    const customName = config.search.providerNames?.[providerId];
-    if (customName) return customName;
-    
-    // Special case for TVDB Collections
+  const getProviderBaseLabel = (providerId: string) => {
     if (providerId === 'tvdb.collections.search') {
       return 'TVDB Collections';
     }
-    
+
     const provider = allSearchProviders.find(p => p.value === providerId);
     return provider?.label || providerId;
   };
 
+  const getProviderCustomName = (providerId: string) =>
+    config.search.providerNames?.[providerId]?.trim() || '';
+
+  const getProviderDisplayName = (providerId: string) => {
+    const baseLabel = getProviderBaseLabel(providerId);
+    const customName = getProviderCustomName(providerId);
+
+    if (customName && customName !== baseLabel) {
+      return `${customName} • ${baseLabel}`;
+    }
+
+    return baseLabel;
+  };
+
   const handleEditProviderName = (providerId: string) => {
     setEditingProvider(providerId);
-    setEditName(getProviderDisplayName(providerId));
+    setEditName(getProviderCustomName(providerId) || getProviderBaseLabel(providerId));
   };
 
   const handleSaveProviderName = () => {
@@ -337,7 +356,11 @@ export function SearchSettings() {
                             <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {movieSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{getProviderDisplayName(p.value)}</SelectItem>)}
+                                    {movieSearchProviders.map(p => (
+                                      <SelectItem key={p.value} value={p.value}>
+                                        {getProviderDisplayName(p.value)}
+                                      </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                             <Button
@@ -372,7 +395,11 @@ export function SearchSettings() {
                             <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {seriesSearchProviders.map(p => <SelectItem key={p.value} value={p.value}>{getProviderDisplayName(p.value)}</SelectItem>)}
+                                    {seriesSearchProviders.map(p => (
+                                      <SelectItem key={p.value} value={p.value}>
+                                        {getProviderDisplayName(p.value)}
+                                      </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                             <Button
@@ -407,7 +434,13 @@ export function SearchSettings() {
                             <Select value={config.search.providers.anime_series} onValueChange={(val) => handleProviderChange('anime_series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {animeSearchProviders.filter(p => p.mediaType.includes('anime_series')).map(p => <SelectItem key={p.value} value={p.value}>{getProviderDisplayName(p.value)}</SelectItem>)}
+                                    {animeSearchProviders
+                                      .filter(p => p.mediaType.includes('anime_series'))
+                                      .map(p => (
+                                        <SelectItem key={p.value} value={p.value}>
+                                          {getProviderDisplayName(p.value)}
+                                        </SelectItem>
+                                      ))}
                                 </SelectContent>
                             </Select>
                             <Button
@@ -442,7 +475,13 @@ export function SearchSettings() {
                             <Select value={config.search.providers.anime_movie} onValueChange={(val) => handleProviderChange('anime_movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {animeSearchProviders.filter(p => p.mediaType.includes('anime_movie')).map(p => <SelectItem key={p.value} value={p.value}>{getProviderDisplayName(p.value)}</SelectItem>)}
+                                    {animeSearchProviders
+                                      .filter(p => p.mediaType.includes('anime_movie'))
+                                      .map(p => (
+                                        <SelectItem key={p.value} value={p.value}>
+                                          {getProviderDisplayName(p.value)}
+                                        </SelectItem>
+                                      ))}
                                 </SelectContent>
                             </Select>
                             <Button
@@ -532,6 +571,8 @@ export function SearchSettings() {
                                         onEngineEnabledChange={handleEngineEnabledChange}
                                         onEngineRPDBChange={handleEngineRPDBChange}
                                         getProviderDisplayName={getProviderDisplayName}
+                                        getProviderBaseLabel={getProviderBaseLabel}
+                                        getProviderCustomName={getProviderCustomName}
                                         hasRPDBKey={hasRPDBKey}
                                         engineRPDBEnabled={config.search.engineRPDB?.[provider.provider] ?? true}
                                     />
