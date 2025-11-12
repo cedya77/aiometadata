@@ -574,6 +574,13 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   );
   const actualType = catalogConfig ? catalogConfig.type : type;
   
+  const hasRpdbKey =
+    (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0);
+
+  if (catalogConfig && !hasRpdbKey) {
+    catalogConfig.enableRPDB = false;
+  }
+
   console.log(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
   console.log(`[CATALOG ROUTE] enableRPDB value:`, catalogConfig?.enableRPDB, `(type: ${typeof catalogConfig?.enableRPDB})`);
   

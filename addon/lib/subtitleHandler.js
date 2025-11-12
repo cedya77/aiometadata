@@ -1,4 +1,6 @@
 const consola = require('consola');
+const idMapper = require('./id-mapper');
+const { resolveTvdbEpisodeFromAnidbEpisode } = require('./anime-list-mapper');
 
 // Configure logging level based on environment
 const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
@@ -6,87 +8,140 @@ consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NOD
 const logger = consola.create({ tag: 'SubtitleHandler' });
 
 /**
- * Parse media ID to extract IMDb ID, season, and episode information
- * @param {string} id - Media ID (e.g., 'tt1234567' or 'tt1234567:2:5')
- * @returns {Object|null} - Parsed media info or null if invalid
+ * Parse Stremio media IDs into structured identifiers supported by MDBList.
+ *
+ * Supported ID formats:
+ *   Movies:  imdb -> tt1234567
+ *            tmdb -> tmdb:123456   or tmdb-localized (still matches tmdb:123456)
+ *            trakt -> trakt:123456
+ *            kitsu -> kitsu:123456
+ *   Series:  imdb -> tt1234567:season:episode
+ *            tmdb -> tmdb:123456:season:episode
+ *            trakt -> trakt:123456:season:episode
+ *            tvdb -> tvdb:123456:season:episode
+ *
+ * @param {string} id
+ * @returns {Object|null} Structured identifier, or null if invalid/unsupported.
+ *   Example return for movie:
+ *     { type: 'movie', provider: 'tmdb', id: '12345' }
+ *   Series:
+ *     { type: 'series', provider: 'tvdb', id: '305089', season: 2, episode: 21 }
  */
 function parseMediaId(id) {
-  // Input validation: Check for null, undefined, or non-string types
   if (!id || typeof id !== 'string') {
     logger.debug(`[Watch Tracking] Invalid media ID format - id is ${id === null ? 'null' : id === undefined ? 'undefined' : 'not a string'}, type: ${typeof id}`);
     return null;
   }
 
-  // Remove any whitespace and validate length
   const cleanId = id.trim();
-  
-  // Prevent excessively long input
-  if (cleanId.length > 100) {
-    logger.debug(`[Watch Tracking] Invalid media ID format - exceeds maximum length: ${cleanId.length} characters`);
-    return null;
-  }
-  
-  // Validate IMDb ID format prefix
-  if (!cleanId.startsWith('tt')) {
-    logger.debug(`[Watch Tracking] Invalid media ID format - does not start with 'tt': ${cleanId.substring(0, 20)}`);
+  if (cleanId.length === 0 || cleanId.length > 150) {
+    logger.debug(`[Watch Tracking] Invalid media ID format - empty or exceeds maximum length (${cleanId.length})`);
     return null;
   }
 
-  // Split by colon to check for series format
-  const parts = cleanId.split(':');
+  const parts = cleanId.split(':').map(part => part.trim()).filter(Boolean);
 
-  // Movie format: tt1234567
-  if (parts.length === 1) {
-    const imdbId = parts[0];
-    
-    // Sanitize IMDb ID: Must match pattern /^tt\d+$/ (tt followed by digits only)
-    if (!/^tt\d+$/.test(imdbId)) {
-      logger.debug(`[Watch Tracking] Invalid IMDb ID format - expected 'tt' followed by digits: ${imdbId.substring(0, 20)}`);
-      return null;
-    }
-
-    return {
-      imdbId,
-      season: null,
-      episode: null,
-      isMovie: true
-    };
+  if (parts.length === 0) {
+    logger.debug('[Watch Tracking] Invalid media ID format - no parts after splitting');
+    return null;
   }
 
-  // Series format: tt1234567:2:5
-  if (parts.length === 3) {
-    const imdbId = parts[0];
-    const season = parseInt(parts[1], 10);
-    const episode = parseInt(parts[2], 10);
+  const [prefix, ...rest] = parts;
 
-    // Sanitize IMDb ID: Must match pattern /^tt\d+$/ (tt followed by digits only)
-    if (!/^tt\d+$/.test(imdbId)) {
-      logger.debug(`[Watch Tracking] Invalid IMDb ID format in series - expected 'tt' followed by digits: ${imdbId.substring(0, 20)}`);
-      return null;
-    }
+  const isImdb = prefix.startsWith('tt');
+  const imdbMatch = isImdb ? /^tt\d+$/.test(prefix) : false;
 
-    // Validate season and episode are positive integers (must be >= 1)
-    if (isNaN(season) || season < 1 || isNaN(episode) || episode < 1) {
-      logger.debug(`[Watch Tracking] Invalid season/episode numbers - season=${parts[1]} (parsed: ${season}), episode=${parts[2]} (parsed: ${episode}), mediaId: ${cleanId.substring(0, 50)}`);
-      return null;
-    }
-    
-    // Validate reasonable upper bounds for season/episode numbers
-    if (season > 999 || episode > 9999) {
-      logger.debug(`[Watch Tracking] Season/episode numbers exceed reasonable limits - season=${season}, episode=${episode}`);
-      return null;
-    }
+  const isPrefixedId = !isImdb && ['tmdb', 'tvdb', 'trakt', 'kitsu'].includes(prefix);
 
-    return {
-      imdbId,
-      season,
-      episode,
-      isMovie: false
-    };
+  if (!isPrefixedId && !imdbMatch) {
+    logger.debug(`[Watch Tracking] Unsupported media prefix: ${prefix}`);
+    return null;
   }
 
-  // Invalid format - unexpected number of parts
-  logger.debug(`[Watch Tracking] Invalid media ID format - unexpected structure (${parts.length} parts): ${cleanId.substring(0, 50)}`);
+  const provider = isPrefixedId ? prefix : 'imdb';
+  let numericId = '';
+  let season = null;
+  let episode = null;
+
+  if (provider === 'imdb') {
+    if (rest.length === 0) {
+      numericId = prefix;
+      return { type: 'movie', provider, id: numericId };
+    }
+
+    if (rest.length === 2) {
+      const [seasonStr, episodeStr] = rest;
+      season = parseInt(seasonStr, 10);
+      episode = parseInt(episodeStr, 10);
+      if (Number.isNaN(season) || season < 1 || season > 999) {
+        logger.debug(`[Watch Tracking] Invalid season value in IMDb ID: season=${seasonStr}`);
+        return null;
+      }
+      if (Number.isNaN(episode) || episode < 1 || episode > 9999) {
+        logger.debug(`[Watch Tracking] Invalid episode value in IMDb ID: episode=${episodeStr}`);
+        return null;
+      }
+      numericId = prefix;
+      return { type: 'series', provider, id: numericId, season, episode };
+    }
+
+    logger.debug(`[Watch Tracking] Invalid IMDb media ID structure: ${cleanId}`);
+    return null;
+  }
+
+  if (rest.length === 0) {
+    logger.debug(`[Watch Tracking] Missing identifier for provider ${provider}`);
+    return null;
+  }
+
+  numericId = rest[0];
+  if (!numericId || !/^\d+$/.test(numericId)) {
+    logger.debug(`[Watch Tracking] Invalid numeric identifier for provider ${provider}: ${numericId}`);
+    return null;
+  }
+
+  if (rest.length === 1) {
+    if (provider === 'tvdb') {
+      logger.debug('[Watch Tracking] TVDB identifiers must include season and episode numbers');
+      return null;
+    }
+
+    return { type: 'movie', provider, id: numericId };
+  }
+
+  if (rest.length === 2 && provider === 'kitsu') {
+    const [episodeStr] = rest.slice(1);
+    episode = parseInt(episodeStr, 10);
+    if (Number.isNaN(episode) || episode < 1 || episode > 9999) {
+      logger.debug(`[Watch Tracking] Invalid episode value for Kitsu provider: ${episodeStr}`);
+      return null;
+    }
+    season = 1;
+    return { type: 'series', provider, id: numericId, season, episode };
+  }
+
+  if (rest.length === 3) {
+    if (!['tmdb', 'tvdb', 'trakt', 'kitsu'].includes(provider)) {
+      logger.debug(`[Watch Tracking] Provider ${provider} does not support season/episode structure`);
+      return null;
+    }
+
+    const [seasonStr, episodeStr] = rest.slice(1);
+    season = parseInt(seasonStr, 10);
+    episode = parseInt(episodeStr, 10);
+    if (Number.isNaN(season) || season < 1 || season > 999) {
+      logger.debug(`[Watch Tracking] Invalid season value for provider ${provider}: ${seasonStr}`);
+      return null;
+    }
+    if (Number.isNaN(episode) || episode < 1 || episode > 9999) {
+      logger.debug(`[Watch Tracking] Invalid episode value for provider ${provider}: ${episodeStr}`);
+      return null;
+    }
+
+    return { type: 'series', provider, id: numericId, season, episode };
+  }
+
+  logger.debug(`[Watch Tracking] Unsupported media ID format for provider ${provider}: ${cleanId}`);
   return null;
 }
 
@@ -141,17 +196,10 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       return { subtitles: [] };
     }
 
-    // Log the tracking attempt with full details
-    const mediaInfo = parsedId.isMovie 
-      ? `movie ${parsedId.imdbId}` 
-      : `series ${parsedId.imdbId} S${parsedId.season}E${parsedId.episode}`;
-    logger.debug(`[Watch Tracking] Tracking attempt initiated, media: ${mediaInfo}, type: ${type}`);
-
     // Initiate async tracking without awaiting
-    trackWatchStatus(type, parsedId, config, userUUID).catch(error => {
-      logger.error(`[Watch Tracking] Tracking failed, media: ${mediaInfo}, error: ${error.message}`, {
+    trackWatchStatus(parsedId, config).catch(error => {
+      logger.error(`[Watch Tracking] Tracking failed for ${id}: ${error.message}`, {
         stack: error.stack,
-        type: type,
         parsedId: parsedId
       });
     });
@@ -175,26 +223,150 @@ function handleSubtitleRequest(type, id, config, userUUID) {
  * @param {Object} config - User configuration
  * @param {string} userUUID - User identifier for logging
  */
-async function trackWatchStatus(type, parsedId, config, userUUID) {
+function buildIdSummary(ids) {
+  return Object.entries(ids || {})
+    .map(([key, value]) => `${key}:${value}`)
+    .join(', ');
+}
+
+function normalizeIdsForMovie(parsedId) {
+  switch (parsedId.provider) {
+    case 'imdb':
+      return { imdb: parsedId.id };
+    case 'tmdb':
+      return { tmdb: parseInt(parsedId.id, 10) };
+    case 'trakt':
+      return { trakt: parseInt(parsedId.id, 10) };
+    case 'kitsu': {
+      const kitsuId = parseInt(parsedId.id, 10);
+      if (Number.isNaN(kitsuId) || kitsuId <= 0) {
+        logger.debug(`[Watch Tracking] Invalid Kitsu movie identifier: ${parsedId.id}`);
+        return null;
+      }
+
+      const mapping = idMapper.getMappingByKitsuId(kitsuId);
+      const malId = mapping?.mal_id;
+      if (malId) {
+        const traktMovie = idMapper.getTraktAnimeMovieByMalId(malId);
+        const imdbId = traktMovie?.externals?.imdb;
+        if (imdbId) {
+          return { imdb: imdbId };
+        }
+      }
+
+      logger.debug(`[Watch Tracking] Falling back to Kitsu ID for movie ${parsedId.id}`);
+      return { kitsu: kitsuId };
+    }
+    default:
+      logger.debug(`[Watch Tracking] Unsupported movie provider: ${parsedId.provider}`);
+      return null;
+  }
+}
+
+async function resolveSeriesIds(parsedId) {
+  switch (parsedId.provider) {
+    case 'imdb':
+      return {
+        ids: { imdb: parsedId.id },
+        season: parsedId.season,
+        episode: parsedId.episode
+      };
+    case 'tvdb':
+      return {
+        ids: { tvdb: parseInt(parsedId.id, 10) },
+        season: parsedId.season,
+        episode: parsedId.episode
+      };
+    case 'tmdb': {
+      const mapping = idMapper.getMappingByTmdbId(parsedId.id, 'series');
+      if (!mapping) {
+        logger.debug(`[Watch Tracking] No mapping found for TMDB series ${parsedId.id}`);
+        return null;
+      }
+      const ids = {};
+      if (mapping.imdb_id) ids.imdb = mapping.imdb_id;
+      if (mapping.thetvdb_id) ids.tvdb = parseInt(mapping.thetvdb_id, 10);
+
+      if (Object.keys(ids).length === 0) {
+        logger.debug(`[Watch Tracking] TMDB ${parsedId.id} mapping lacks IMDb/TVDB identifiers`);
+        return null;
+      }
+
+      return { ids, season: parsedId.season, episode: parsedId.episode };
+    }
+    case 'kitsu': {
+      const mapping = idMapper.getMappingByKitsuId(parsedId.id);
+      if (!mapping) {
+        logger.debug(`[Watch Tracking] No mapping found for Kitsu series ${parsedId.id}`);
+        return null;
+      }
+
+      let resolved = null;
+      if (mapping.anidb_id) {
+        resolved = resolveTvdbEpisodeFromAnidbEpisode(
+          parseInt(mapping.anidb_id, 10),
+          parsedId.season,
+          parsedId.episode
+        );
+      }
+
+      if (!resolved) {
+        logger.debug(`[Watch Tracking] Could not resolve AniDB → TVDB for Kitsu series ${parsedId.id}`);
+        return null;
+      }
+
+      return {
+        ids: { tvdb: resolved.tvdbId },
+        season: resolved.tvdbSeason,
+        episode: resolved.tvdbEpisode
+      };
+    }
+    default:
+      logger.debug(`[Watch Tracking] Unsupported series provider: ${parsedId.provider}`);
+      return null;
+  }
+}
+
+async function trackWatchStatus(parsedId, config) {
   try {
     // Import MDBList functions dynamically to avoid circular dependencies
     const { markMovieAsWatched, markEpisodeAsWatched } = require('../utils/mdbList');
-
     const apiKey = config.apiKeys.mdblist;
 
-    // Call MDBList API functions (they handle their own logging)
-    if (parsedId.isMovie) {
-      await markMovieAsWatched(parsedId.imdbId, apiKey);
-    } else {
-      await markEpisodeAsWatched(parsedId.imdbId, parsedId.season, parsedId.episode, apiKey);
+    if (!apiKey) {
+      logger.debug('[Watch Tracking] Skipping tracking - missing MDBList API key');
+      return;
     }
+
+    if (parsedId.type === 'movie') {
+      const ids = normalizeIdsForMovie(parsedId);
+      if (!ids) {
+        logger.debug(`[Watch Tracking] No valid identifiers for movie provider ${parsedId.provider}`);
+        return;
+      }
+
+      logger.debug(`[Watch Tracking] Marking movie as watched (${buildIdSummary(ids)})`);
+      await markMovieAsWatched(ids, apiKey);
+      return;
+    }
+
+    if (parsedId.type === 'series') {
+      const resolution = await resolveSeriesIds(parsedId);
+      if (!resolution) {
+        logger.debug(`[Watch Tracking] Unable to resolve identifiers for series provider ${parsedId.provider}`);
+        return;
+      }
+
+      logger.debug(
+        `[Watch Tracking] Marking episode as watched (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
+      );
+      await markEpisodeAsWatched(resolution.ids, resolution.season, resolution.episode, apiKey);
+      return;
+    }
+
+    logger.debug(`[Watch Tracking] Unsupported content type for tracking: ${parsedId.type}`);
   } catch (error) {
-    // Only log unexpected errors that weren't caught by MDBList functions
-    const mediaInfo = parsedId.isMovie 
-      ? `movie ${parsedId.imdbId}` 
-      : `series ${parsedId.imdbId} S${parsedId.season}E${parsedId.episode}`;
-    
-    logger.error(`[Watch Tracking] Unexpected error, media: ${mediaInfo}, error: ${error.message}`, {
+    logger.error(`[Watch Tracking] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }

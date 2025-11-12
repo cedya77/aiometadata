@@ -1592,6 +1592,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const overview = overviewTranslations.find(t => t.language === langCode3)?.overview
   || overviewTranslations.find(t => t.language === 'eng')?.overview
   || movieData.overview;
+  const idProvider = config.providers?.anime_id_provider || 'kitsu';
 
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
@@ -1713,7 +1714,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     trailers: trailers,
     trailerStreams: trailerStreams,
     behaviorHints: {
-      defaultVideoId: imdbId ? imdbId : kitsuId ? `kitsu:${kitsuId}` : stremioId,
+      defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId ? imdbId : stremioId,
       hasScheduledVideos: false
     },
     links: links,

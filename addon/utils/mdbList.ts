@@ -583,17 +583,101 @@ function convertGenreToSlug(genre: string): string {
   return genre;
 }
 
-/**
- * Mark a movie as watched in MDBList
- * @param {string} imdbId - IMDb ID (e.g., 'tt1234567')
- * @param {string} apiKey - User's MDBList API key
- * @returns {Promise<boolean>} - True if successful, false otherwise
- */
-async function markMovieAsWatched(imdbId: string, apiKey: string): Promise<boolean> {
-  // Input validation: Ensure required parameters are present (never log API key value)
-  if (!imdbId || !apiKey) {
-    logger.debug('[Watch Tracking] Missing IMDb ID or API key for markMovieAsWatched', {
-      hasImdbId: !!imdbId,
+type MovieIdInput =
+  | string
+  | {
+      imdb?: string;
+      tmdb?: number | string;
+      trakt?: number | string;
+      kitsu?: number | string;
+    };
+
+type EpisodeIdInput =
+  | string
+  | {
+      imdb?: string;
+      tmdb?: number | string;
+      trakt?: number | string;
+      tvdb?: number | string;
+    };
+
+function formatIdSummary(ids: Record<string, string | number>) {
+  return Object.entries(ids)
+    .map(([key, value]) => `${key}:${value}`)
+    .join(', ');
+}
+
+function toOptionalNumber(value: number | string | undefined) {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeMovieIdInput(input: MovieIdInput | null | undefined) {
+  if (!input) return null;
+
+  const ids: Record<string, string | number> = {};
+
+  if (typeof input === 'string') {
+    if (input.startsWith('tt')) {
+      ids.imdb = input;
+      return ids;
+    }
+    const [prefix, value] = input.split(':');
+    if (prefix && value) {
+      ids[prefix] = /^\d+$/.test(value) ? Number(value) : value;
+      return ids;
+    }
+    return null;
+  }
+
+  if (input.imdb) ids.imdb = input.imdb;
+  const tmdb = toOptionalNumber(input.tmdb);
+  if (tmdb !== undefined) ids.tmdb = tmdb;
+  const trakt = toOptionalNumber(input.trakt);
+  if (trakt !== undefined) ids.trakt = trakt;
+  const kitsu = toOptionalNumber(input.kitsu);
+  if (kitsu !== undefined) ids.kitsu = kitsu;
+
+  return Object.keys(ids).length > 0 ? ids : null;
+}
+
+function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
+  if (!input) return null;
+
+  const ids: Record<string, string | number> = {};
+
+  if (typeof input === 'string') {
+    if (input.startsWith('tt')) {
+      ids.imdb = input;
+      return ids;
+    }
+    const [prefix, value] = input.split(':');
+    if (prefix && value) {
+      ids[prefix] = /^\d+$/.test(value) ? Number(value) : value;
+      return ids;
+    }
+    return null;
+  }
+
+  if (input.imdb) ids.imdb = input.imdb;
+  const tmdb = toOptionalNumber(input.tmdb);
+  if (tmdb !== undefined) ids.tmdb = tmdb;
+  const trakt = toOptionalNumber(input.trakt);
+  if (trakt !== undefined) ids.trakt = trakt;
+  const tvdb = toOptionalNumber(input.tvdb);
+  if (tvdb !== undefined) ids.tvdb = tvdb;
+
+  return Object.keys(ids).length > 0 ? ids : null;
+}
+
+async function markMovieAsWatched(idInput: MovieIdInput, apiKey: string): Promise<boolean> {
+  const normalizedIds = normalizeMovieIdInput(idInput);
+
+  if (!normalizedIds || !apiKey) {
+    logger.debug('[Watch Tracking] Missing ID or API key for markMovieAsWatched', {
+      id: idInput,
       hasApiKey: !!apiKey
     });
     return false;
@@ -601,76 +685,79 @@ async function markMovieAsWatched(imdbId: string, apiKey: string): Promise<boole
 
   try {
     const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
-    
-    // Generate ISO 8601 timestamp
     const watchedAt = new Date().toISOString();
-    
+
     const payload = {
       movies: [
         {
-          ids: {
-            imdb: imdbId
-          },
+          ids: normalizedIds,
           watched_at: watchedAt
         }
       ]
     };
 
-    logger.debug(`[Watch Tracking] Marking movie as watched - imdbId: ${imdbId}, timestamp: ${watchedAt}`);
-
-    await makeRateLimitedRequest(
-      () => httpPost(url, payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000,
-        dispatcher: mdblistDispatcher
-      }),
-      `MDBList markMovieAsWatched (imdbId: ${imdbId})`
+    logger.debug(
+      `[Watch Tracking] Marking movie as watched - ids: ${formatIdSummary(normalizedIds)}, timestamp: ${watchedAt}`
     );
 
-    logger.info(`[Watch Tracking] Movie marked as watched - imdbId: ${imdbId}`);
+    await makeRateLimitedRequest(
+      () =>
+        httpPost(url, payload, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000,
+          dispatcher: mdblistDispatcher
+        }),
+      `MDBList markMovieAsWatched (${formatIdSummary(normalizedIds)})`
+    );
+
+    logger.info('[Watch Tracking] Movie marked as watched', {
+      ids: normalizedIds
+    });
     return true;
   } catch (error: any) {
-    // Error logging for MDBList API failures
-    logger.error(`[Watch Tracking] Failed to mark movie as watched - imdbId: ${imdbId}, error: ${error.message}`, {
-      stack: error.stack
-    });
-    
+    logger.error(
+      `[Watch Tracking] Failed to mark movie as watched - ids: ${formatIdSummary(normalizedIds)}, error: ${error.message}`,
+      {
+        stack: error.stack
+      }
+    );
+
     if (error.response) {
-      // Error logging with HTTP status codes
-      logger.error(`[Watch Tracking] MDBList API error response - imdbId: ${imdbId}, status: ${error.response.status}, statusText: ${error.response.statusText || 'N/A'}`, {
-        responseData: error.response.data,
-        headers: error.response.headers
-      });
+      logger.error(
+        `[Watch Tracking] MDBList API error response - status: ${error.response.status}, statusText: ${
+          error.response.statusText || 'N/A'
+        }`,
+        {
+          responseData: error.response.data,
+          headers: error.response.headers
+        }
+      );
     } else if (error.code) {
-      // Network or timeout errors
-      logger.error(`[Watch Tracking] Network error - imdbId: ${imdbId}, code: ${error.code}`, {
+      logger.error(`[Watch Tracking] Network error - code: ${error.code}`, {
         errno: error.errno,
         syscall: error.syscall
       });
     }
-    
+
     return false;
   }
 }
 
-/**
- * Mark a TV episode as watched in MDBList
- * Security: API key is never logged or exposed, only passed in HTTPS requests
- * @param {string} imdbId - Show's IMDb ID
- * @param {number} season - Season number (must be positive integer)
- * @param {number} episode - Episode number (must be positive integer)
- * @param {string} apiKey - User's MDBList API key
- * @returns {Promise<boolean>} - True if successful, false otherwise
- */
-async function markEpisodeAsWatched(imdbId: string, season: number, episode: number, apiKey: string): Promise<boolean> {
-  // Input validation: Ensure all required parameters are valid (never log API key value)
-  if (!imdbId || !apiKey || season < 1 || episode < 1) {
+async function markEpisodeAsWatched(
+  idInput: EpisodeIdInput,
+  season: number,
+  episode: number,
+  apiKey: string
+): Promise<boolean> {
+  const normalizedIds = normalizeEpisodeIdInput(idInput);
+
+  if (!normalizedIds || !apiKey || season < 1 || episode < 1) {
     logger.warn('[Watch Tracking] Invalid parameters for markEpisodeAsWatched', {
-      imdbId: imdbId,
-      season: season,
-      episode: episode,
+      id: idInput,
+      season,
+      episode,
       hasApiKey: !!apiKey
     });
     return false;
@@ -678,16 +765,12 @@ async function markEpisodeAsWatched(imdbId: string, season: number, episode: num
 
   try {
     const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
-    
-    // Generate ISO 8601 timestamp
     const watchedAt = new Date().toISOString();
-    
+
     const payload = {
       shows: [
         {
-          ids: {
-            imdb: imdbId
-          },
+          ids: normalizedIds,
           seasons: [
             {
               number: season,
@@ -703,38 +786,51 @@ async function markEpisodeAsWatched(imdbId: string, season: number, episode: num
       ]
     };
 
-    logger.debug(`[Watch Tracking] Marking episode as watched - imdbId: ${imdbId}, S${season}E${episode}, timestamp: ${watchedAt}`);
-
-    await makeRateLimitedRequest(
-      () => httpPost(url, payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000,
-        dispatcher: mdblistDispatcher
-      }),
-      `MDBList markEpisodeAsWatched (imdbId: ${imdbId}, S${season}E${episode})`
+    logger.debug(
+      `[Watch Tracking] Marking episode as watched - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, timestamp: ${watchedAt}`
     );
 
-    logger.info(`[Watch Tracking] Episode marked as watched - imdbId: ${imdbId}, S${season}E${episode}`);
+    await makeRateLimitedRequest(
+      () =>
+        httpPost(url, payload, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000,
+          dispatcher: mdblistDispatcher
+        }),
+      `MDBList markEpisodeAsWatched (${formatIdSummary(normalizedIds)}, S${season}E${episode})`
+    );
+
+    logger.info('[Watch Tracking] Episode marked as watched', {
+      ids: normalizedIds,
+      season,
+      episode
+    });
     return true;
   } catch (error: any) {
-    logger.error(`[Watch Tracking] Failed to mark episode as watched - imdbId: ${imdbId}, S${season}E${episode}, error: ${error.message}`, {
-      stack: error.stack
-    });
-    
+    logger.error(
+      `[Watch Tracking] Failed to mark episode as watched - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, error: ${error.message}`,
+      {
+        stack: error.stack
+      }
+    );
+
     if (error.response) {
-      logger.error(`[Watch Tracking] MDBList API error response - imdbId: ${imdbId}, S${season}E${episode}, status: ${error.response.status}, statusText: ${error.response.statusText || 'N/A'}`, {
-        responseData: error.response.data,
-        headers: error.response.headers
-      });
+      logger.error(
+        `[Watch Tracking] MDBList API error response - status: ${error.response.status}, statusText: ${error.response.statusText || 'N/A'}`,
+        {
+          responseData: error.response.data,
+          headers: error.response.headers
+        }
+      );
     } else if (error.code) {
-      logger.error(`[Watch Tracking] Network error - imdbId: ${imdbId}, S${season}E${episode}, code: ${error.code}`, {
+      logger.error(`[Watch Tracking] Network error - code: ${error.code}`, {
         errno: error.errno,
         syscall: error.syscall
       });
     }
-    
+
     return false;
   }
 }
