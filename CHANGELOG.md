@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.8.1](https://github.com/cedya77/aiometadata/compare/v1.8.0...v1.8.1) (2025-11-12)
+
+
+### Bug Fixes
+
+* **tvmaze:** Update schedule API from web to full and adapt new response structure ([27cbacd](https://github.com/cedya77/aiometadata/commit/27cbacd21b1651335fa89659b92f349250104810))
+
 ## [1.8.0](https://github.com/cedya77/aiometadata/compare/v1.7.2...v1.8.0) (2025-11-12)
 
 
