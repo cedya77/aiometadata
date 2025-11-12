@@ -234,7 +234,7 @@
     "sky": {
       "nameKey": "sky",
       "watchProviderId": 29,
-      "country": "GB",
+      "country": "",
       "extraSupported": ["genre", "skip"]
     },
     "wow": {
