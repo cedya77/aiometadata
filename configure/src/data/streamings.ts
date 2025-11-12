@@ -20,12 +20,15 @@ export const streamingServices = [
     { id: "nlz", name: "NLZIET", icon: "/nlziet.webp" },
     { id: "vil", name: "Videoland", icon: "/videoland.webp" },
     { id: "sst", name: "SkyShowtime", icon: "/skyshowtime.webp" },
+    { id: "sky", name: "Sky Go", icon: "/skygo.jpg" },
+    { id: "wow", name: "WOW", icon: "/wow.jpg" },
     { id: "blv", name: "BluTV", icon: "/blu.webp" },
     { id: "cpd", name: "Canal+", icon: "/canal-plus.webp" },
+    { id: "crv", name: "Crave", icon: "/crave.jpg" },
     { id: "dpe", name: "Discovery+", icon: "/discovery-plus.webp" },
-    { id: "bet", name: "Bet+", icon: "https://image.tmdb.org/t/p/original/2AvUqoIHAq2lLxRy2IxOBUgCYef.jpg" },
-    { id: "mub", name: "MUBI", icon: "https://image.tmdb.org/t/p/original/fj9Y8iIMFUC6952HwxbGixTQPb7.jpg" },
-    { id: "sta", name: "Starz", icon: "https://image.tmdb.org/t/p/original/yIKwylTLP1u8gl84Is7FItpYLGL.jpg" }
+    { id: "bet", name: "Bet+", icon: "/betp.jpg" },
+    { id: "mub", name: "MUBI", icon: "/mubi.jpg" },
+    { id: "sta", name: "Starz", icon: "/starz.jpg" }
   ];
   
   export const regions = {
@@ -49,6 +52,6 @@ export const streamingServices = [
     ],
     'Any': [
       'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv', 'bet', 'mub', 'sta',
-      'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'dpe'
+      'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'sky', 'wow', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'crv', 'dpe'
     ]
   };

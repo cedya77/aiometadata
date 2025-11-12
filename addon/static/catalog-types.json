@@ -231,6 +231,18 @@
       "country": "NL",
       "extraSupported": ["genre", "skip"]
     },
+    "sky": {
+      "nameKey": "sky",
+      "watchProviderId": 29,
+      "country": "GB",
+      "extraSupported": ["genre", "skip"]
+    },
+    "wow": {
+      "nameKey": "wow",
+      "watchProviderId": 30,
+      "country": "DE",
+      "extraSupported": ["genre", "skip"]
+    },
     "blv": {
       "nameKey": "blv",
       "watchProviderId": 341,
@@ -241,6 +253,12 @@
       "nameKey": "cpd",
       "watchProviderId": 381,
       "country": "FR",
+      "extraSupported": ["genre", "skip"]
+    },
+    "crv": {
+      "nameKey": "crv",
+      "watchProviderId": 230,
+      "country": "CA",
       "extraSupported": ["genre", "skip"]
     },
     "dpe": {
