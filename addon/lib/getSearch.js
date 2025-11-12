@@ -341,10 +341,12 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   const shouldSearchPersons = (() => {
     if (!searchPersons) return false; // Respect the explicit parameter
     
-    // Check for symbols that are unlikely in a 'person''s name
-    const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
-    if (nameInvalidatingSymbols.test(query)) {
-      logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
+    // Skip if contains invalid symbols or standalone numbers/years
+    // Symbols: : ( ) [ ] ? ! $ # @ &
+    // Numbers: "3", "1999" (matches) but NOT "3rd", "1st" (doesn't match)
+    const invalidNamePattern = /[:()[\]?!$#@&]|\b\d+\b/;
+    if (invalidNamePattern.test(query)) {
+      logger.debug(`Skipping person search due to invalid characters or numbers: "${query}"`);
       return false;
     }
     
@@ -370,7 +372,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                 const MIN_QUALITY_WORK_VOTES = 4000;
                 const MIN_RECOGNIZED_WORK_VOTES = 100;
                 const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
-                const MIN_POPULARITY_PRIMARY_NAME = 3.0;
+                const MIN_POPULARITY_PRIMARY_NAME = 2.5;
                 
                 // Check work recognition
                 const knownFor = topPerson.known_for || [];
@@ -390,26 +392,68 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
                   return [];
                 }
                 
-                const queryNormalized = normalizeForComparison(query);
-                const personNameNormalized = normalizeForComparison(topPerson.name);
+                // Normalize names for strict matching
+                // Handles: diacritics, periods (initials), hyphens
+                const normalizeNameForMatching = (name) => {
+                  return name
+                    .toLowerCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics (Penélope → Penelope)
+                    .replace(/\./g, '') // Remove periods (Samuel L. → Samuel L)
+                    .replace(/-/g, ' ') // Hyphens to spaces (Jean-Claude → Jean Claude)
+                    .replace(/\s+/g, ' ') // Multiple spaces to single
+                    .trim();
+                };
                 
-                // Check if query matches the primary name
-                const isExactMatch = personNameNormalized === queryNormalized;
+                const queryNorm = normalizeNameForMatching(query);
+                const personNameNorm = normalizeNameForMatching(topPerson.name);
                 
-                // Check if query matches as a complete word (not substring)
-                const nameWords = personNameNormalized.toLowerCase().split(/\s+/);
-                const isContainsMatch = nameWords.some(word => word === queryNormalized.toLowerCase());
+                // Early exit: skip if normalization resulted in empty strings
+                if (!queryNorm || !personNameNorm) {
+                  logger.debug(`Skipping person ${topPerson.name} - empty string after normalization`);
+                  return [];
+                }
                 
-                const primaryNameMatches = isExactMatch || isContainsMatch;
+                // Split into words for analysis
+                const queryWords = queryNorm.split(' ').filter(w => w); // Filter empty strings
+                const personWords = personNameNorm.split(' ').filter(w => w);
+                
+                // Check work quality (needed for single-word validation)
+                const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
+                
+                // Match type 1: Exact match
+                const isExactMatch = queryNorm === personNameNorm;
+                
+                // Match type 2: Middle initial tolerance
+                // User searches "Samuel Jackson", API returns "Samuel L Jackson"
+                // Only matches if the middle word is a single letter (initial)
+                const isMiddleNameMatch = personWords.length === 3 && queryWords.length === 2 &&
+                  queryWords[0] === personWords[0] && 
+                  queryWords[1] === personWords[2] &&
+                  personWords[1].length === 1; // Middle word must be single-letter initial
+                
+                // Match type 3: Suffix tolerance
+                // User searches "Robert Downey", API returns "Robert Downey Jr"
+                // Only matches if API name ends with a suffix (Jr, Sr, II, III, IV, V)
+                const suffixPattern = /^(jr|sr|ii|iii|iv|v)$/i;
+                const isSuffixMatch = personWords.length >= 3 && 
+                  queryWords.length === personWords.length - 1 &&
+                  suffixPattern.test(personWords[personWords.length - 1]) &&
+                  queryWords.every((word, index) => word === personWords[index]);
+                
+                // Match type 4: Single word match (requires quality check)
+                // User searches "Lucy", API returns "Lucy" - must have high quality work
+                const isSingleWordMatch = queryWords.length === 1 && personWords.length === 1 &&
+                  queryWords[0] === personWords[0] &&
+                  hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+                
+                const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
                 
                 // Name must match
                 if (!primaryNameMatches) {
                   logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name`);
                   return [];
                 }
-                
-                // Check work quality
-                const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
                 
                 // Check if person meets quality/popularity requirements
                 const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
