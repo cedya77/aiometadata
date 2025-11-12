@@ -14,7 +14,8 @@ export const streamingServices = [
     { id: "hay", name: "Hayu", icon: "/hayu.webp" },
     { id: "clv", name: "Clarovideo", icon: "/claro.webp" },
     { id: "gop", name: "Globoplay", icon: "/globo.webp" },
-    { id: "hst", name: "Hotstar", icon: "/hotstar.webp" },
+    { id: "hst", name: "JioHotstar", icon: "/hotstar.webp" },
+    { id: "slv", name: "Sony Liv", icon: "/sonyliv.webp" },
     { id: "zee", name: "Zee5", icon: "/zee5.webp" },
     { id: "nlz", name: "NLZIET", icon: "/nlziet.webp" },
     { id: "vil", name: "Videoland", icon: "/videoland.webp" },
@@ -35,7 +36,7 @@ export const streamingServices = [
       'nfx', 'nfk', 'dnp', 'atp', 'amp', 'pmp', 'hbm', 'cru', 'clv', 'gop', 'mgl', 'cts', 'mub'
     ],
     'India': [
-      'hay', 'nfx', 'nfk', 'atp', 'amp', 'cru', 'zee', 'hst', 'mgl', 'cts', 'dpe', 'mub'
+      'hay', 'nfx', 'nfk', 'atp', 'amp', 'cru', 'zee', 'hst', 'slv', 'mgl', 'cts', 'dpe', 'mub'
     ],
     'Turkey': [
       'nfx', 'nfk', 'dnp', 'atp', 'amp', 'cru', 'blv', 'mgl', 'cts', 'mub'
@@ -48,6 +49,6 @@ export const streamingServices = [
     ],
     'Any': [
       'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv', 'bet', 'mub', 'sta',
-      'zee', 'hst', 'hay', 'vil', 'sst', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'dpe'
+      'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'dpe'
     ]
   };

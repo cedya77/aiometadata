@@ -197,7 +197,13 @@
     },
     "hst": {
       "nameKey": "hst",
-      "watchProviderId": 122,
+      "watchProviderId": 2336,
+      "country": "IN",
+      "extraSupported": ["genre", "skip"]
+    },
+    "slv": {
+      "nameKey": "slv",
+      "watchProviderId": 237,
       "country": "IN",
       "extraSupported": ["genre", "skip"]
     },
