@@ -5,6 +5,7 @@ const jikan = require('./mal');
 const database = require('./database');
 const redis = require('./redisClient');
 const consola = require('consola');
+const packageJson = require('../../package.json');
 
 const logger = consola.create({
   defaults: {
@@ -34,7 +35,8 @@ const WARMUP_CONFIG = {
   quietHoursEnabled: process.env.CATALOG_WARMUP_QUIET_HOURS_ENABLED === 'true',
   quietHoursRange: process.env.CATALOG_WARMUP_QUIET_HOURS || '02:00-06:00',
   taskDelayMs: parseInt(process.env.CATALOG_WARMUP_TASK_DELAY_MS) || 100,
-  logLevel: process.env.CATALOG_WARMUP_LOG_LEVEL || 'info'
+  logLevel: process.env.CATALOG_WARMUP_LOG_LEVEL || 'info',
+  autoOnVersionChange: process.env.CATALOG_WARMUP_AUTO_ON_VERSION_CHANGE === 'true'
 };
 
 // Stats tracking - now supports multiple UUIDs
@@ -606,6 +608,43 @@ class ComprehensiveCatalogWarmer {
     }
   }
 
+  async checkVersionAndWarmIfNeeded() {
+    if (!this.config.autoOnVersionChange) {
+      return false;
+    }
+
+    const currentVersion = packageJson.version;
+    const versionKey = 'catalog-warmup:last-version';
+    
+    try {
+      const lastVersion = await redis.get(versionKey);
+      
+      if (lastVersion && lastVersion !== currentVersion) {
+        this.log('success', `App version changed from ${lastVersion} to ${currentVersion} - triggering automatic warmup`);
+        // Run warmup immediately (force=true bypasses interval checks)
+        const warmupCompleted = await this.runWarmup(true);
+        
+        if (warmupCompleted) {
+          // Store new version after successful warmup
+          await redis.set(versionKey, currentVersion);
+          this.log('success', `Version change warmup completed. Updated stored version to ${currentVersion}`);
+          return true;
+        } else {
+          this.log('warn', 'Version change warmup was skipped or failed');
+          return false;
+        }
+      } else if (!lastVersion) {
+        await redis.set(versionKey, currentVersion);
+        this.log('info', `Storing initial app version: ${currentVersion}`);
+      }
+      
+      return false;
+    } catch (error) {
+      this.log('error', `Error checking version: ${error.message}`);
+      return false;
+    }
+  }
+
   async startBackgroundWarming() {
     if (!process.env.CACHE_WARMUP_UUIDS && !process.env.CACHE_WARMUP_UUID) {
       this.log('info', 'Comprehensive catalog warming disabled - CACHE_WARMUP_UUIDS not set');
@@ -621,7 +660,14 @@ class ComprehensiveCatalogWarmer {
 
     this.log('success', `Comprehensive catalog warming enabled for ${this.config.uuids.length} UUID(s): ${this.config.uuids.join(', ')}`);
     this.log('info', `Mode: ${WARMUP_MODE}, Interval: ${this.config.intervalHours}h, Initial delay: ${this.config.initialDelaySeconds}s`);
+    
+    if (this.config.autoOnVersionChange) {
+      this.log('info', 'Auto-warmup on version change: enabled');
+    }
 
+    const versionWarmupRan = await this.checkVersionAndWarmIfNeeded();
+    
+    // If version warmup ran, we still want to schedule the next regular warmup
     // Calculate next run time based on the earliest UUID that needs warming
     let earliestNextRun = null;
     for (const uuid of this.config.uuids) {
@@ -641,8 +687,9 @@ class ComprehensiveCatalogWarmer {
       this.stats.nextRun = new Date(earliestNextRun).toISOString();
     }
 
-    // Initial delay
-    await this.delay(this.config.initialDelaySeconds * 1000);
+    if (!versionWarmupRan) {
+      await this.delay(this.config.initialDelaySeconds * 1000);
+    }
 
     // Schedule warmup with proper sequencing
     await this.scheduleNextWarmup();
