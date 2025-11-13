@@ -606,9 +606,20 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
   extraArgs = extraArgs || {};
   if (id === 'tvmaze.schedule') {
-    const todayUtc = new Date();
-    const dateString = todayUtc.toISOString().split('T')[0];
-    extraArgs.date = extraArgs.date || dateString;
+    // Format date in user's local timezone
+    // Uses server's local timezone (better than UTC for most users)
+    // If a timezone header is provided, we could use that, but Stremio doesn't send it
+    const getLocalDateString = () => {
+      const now = new Date();
+      // Get local date components (not UTC) - uses server's timezone
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    const dateString = extraArgs.date || getLocalDateString();
+    extraArgs.date = dateString;
     extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
   }
 
@@ -764,8 +775,14 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
             const stripHtml = (text) => text ? text.replace(/<[^>]*>?/gm, '') : '';
 
+            // Filter out news shows
+            const filteredEntries = scheduleEntries.filter(entry => {
+              const showType = entry?.show?.type;
+              return showType && showType.toLowerCase() !== 'news' && showType.toLowerCase() !== 'talk show';
+            });
+
             const uniqueByShow = new Map();
-            for (const entry of scheduleEntries) {
+            for (const entry of filteredEntries) {
               const showId = entry?.show?.id;
               if (!showId || uniqueByShow.has(showId)) continue;
               uniqueByShow.set(showId, entry);

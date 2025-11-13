@@ -755,14 +755,18 @@ async function performTvdbCollectionsSearch(query, language, config) {
             tvdb.getCollectionTranslations(String(collectionId), langCode3, config)
           ]);
 
-          if (!details) return null;
+          if (!details || !Array.isArray(details.entities)) return null;
+
+          // Only include collections that have at least one movie
+          const hasMovies = details.entities.some(e => e.movieId);
+          if (!hasMovies) return null;
 
           const translatedName = translations?.name || details.name;
           const translatedOverview = translations?.overview || details.overview;
 
           return {
             id: `tvdbc:${collectionId}`,
-            type: 'series', // Collections are typically series-focused
+            type: 'movie', // Collections are movies only
             name: translatedName || details.name,
             poster: details.image || collection.image_url,
             description: translatedOverview || details.overview || '',

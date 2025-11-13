@@ -286,7 +286,12 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     // Fetch extended details and translations for each collection in parallel
     const metas = await Promise.all(collections.map(async col => {
       const extended = await cacheWrapTvdbApi(`collection-extended:${col.id}`, () => tvdb.getCollectionDetails(col.id, config));
-      if (!extended) return null;
+      if (!extended || !Array.isArray(extended.entities)) return null;
+      
+      // Only include collections that have at least one movie
+      const hasMovies = extended.entities.some(e => e.movieId);
+      if (!hasMovies) return null;
+      
       const langCode3 = await to3LetterCode(langCode, config);
       let translation = await tvdb.getCollectionTranslations(col.id, langCode3, config);
 
@@ -296,7 +301,7 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
       const poster = extended.image ? (extended.image.startsWith('http') ? extended.image : `${TVDB_IMAGE_BASE}${extended.image}`) : undefined;
       return {
         id: `tvdbc:${col.id}`,
-        type: 'series',
+        type: 'movie', // Collections are movies only
         name,
         poster,
         description: overview,

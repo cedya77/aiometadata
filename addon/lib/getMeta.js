@@ -35,16 +35,16 @@ const processLogo = (logoUrl) => {
   return logoUrl.replace(/^http:/, "https:");
 };
 
-const findArtwork = (artworks, type, lang, config) => {
+const findArtwork = (artworks, type, lang, config, typeToFind="image") => {
   // If englishArtOnly is enabled, prefer English artwork first
   if (config?.artProviders?.englishArtOnly) {
-    return artworks?.find(a => a.type === type && a.language === 'eng')?.image
-      || artworks?.find(a => a.type === type)?.image;
+    return artworks?.find(a => a.type === type && a.language === 'eng')?.[typeToFind]
+      || artworks?.find(a => a.type === type)?.[typeToFind];
   }
   // Otherwise use preferred language fallback
-  return artworks?.find(a => a.type === type && a.language === lang)?.image
-    || artworks?.find(a => a.type === type && a.language === 'eng')?.image
-    || artworks?.find(a => a.type === type)?.image;
+  return artworks?.find(a => a.type === type && a.language === lang)?.[typeToFind]
+    || artworks?.find(a => a.type === type && a.language === 'eng')?.[typeToFind]
+    || artworks?.find(a => a.type === type)?.[typeToFind];
 };
 
 async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgroundUrl, type) {
@@ -263,7 +263,7 @@ async function handleTvdbCollection(collectionId, language, config, userUUID) {
       let genres = (details.tags || []).filter(t => t.tagName === "Genre").map(t => t.name);
 
       const movieEntities = details.entities.filter(e => e.movieId);
-      const seriesEntities = details.entities.filter(e => e.seriesId);
+      const seriesEntities = []; // Filter out series - collections are movies only
 
       // Process entities in parallel
       const { videos, links, background, genreSet } = await processCollectionEntities(
@@ -282,7 +282,7 @@ async function handleTvdbCollection(collectionId, language, config, userUUID) {
 
       // Add genre links
       if (genres.length) {
-        const genreType = movieEntities.length ? 'movie' : 'series';
+        const genreType = 'movie'; 
         const genreLinks = Utils.parseGenreLink(genres.map(name => ({ name })), genreType, userUUID, true);
         const seen = new Set();
         for (const link of genreLinks) {
@@ -297,7 +297,7 @@ async function handleTvdbCollection(collectionId, language, config, userUUID) {
       return {
         meta: {
           id: `tvdbc:${collectionId}`,
-          type: 'series',
+          type: 'movie', 
           name,
           description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
           poster,
@@ -311,7 +311,7 @@ async function handleTvdbCollection(collectionId, language, config, userUUID) {
     },
     12 * 60 * 60,
     {},
-    'series'
+    'movie'
   );
 }
 
@@ -425,19 +425,24 @@ async function processMovieEntity(entity, langCode3, config) {
 
   const allIds = await resolveAllIds(`tvdb:${entity.movieId}`, 'movie', config, {}, ['imdb']);
 
+  const nameTranslations = movie.translations?.nameTranslations || [];
+  const translatedName = nameTranslations.find(t => t.language === langCode3)?.name
+             || nameTranslations.find(t => t.language === 'eng')?.name
+             || movie.name;
   const overviewTranslations = movie.translations?.overviewTranslations || [];
   const translatedOverview = overviewTranslations.find(t => t.language === langCode3)?.overview
     || overviewTranslations.find(t => t.language === 'eng')?.overview
     || movie.overview;
 
+    const tvdbPosterUrl = findArtwork(movie.artworks, 14, langCode3, config, 'thumbnail') || findArtwork(movie.artworks, 14, langCode3, config, 'image') || `${host}/missing_thumbnail.png`;
   return {
     video: {
       id: allIds?.imdbId || `tvdb:${entity.movieId}`,
-      title: movie.name,
+      title: translatedName,
       season: 1,
       episode: 0, // Will be set by caller
       overview: translatedOverview,
-      thumbnail: movie.image ? (movie.image.startsWith('http') ? movie.image : `${TVDB_IMAGE_BASE}${movie.image}`) : `${host}/missing_thumbnail.png`,
+      thumbnail: tvdbPosterUrl,
       released: movie.first_release?.Date ? new Date(movie.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
       available: movie.first_release?.Date ? new Date(movie.first_release.Date) < new Date() : false
     },
