@@ -662,7 +662,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
         const pageSize = id.includes(`mal.`) ? 25 : 
-                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.')) ? 
+                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || id === 'tvdb.genres') ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
