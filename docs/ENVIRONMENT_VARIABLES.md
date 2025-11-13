@@ -267,6 +267,12 @@ This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifest
 - **Description**: Log verbosity for catalog warmup process
 - **Example**: `CATALOG_WARMUP_LOG_LEVEL=debug`
 
+### `CATALOG_WARMUP_AUTO_ON_VERSION_CHANGE`
+- **Default**: `false`
+- **Description**: Automatically trigger catalog warmup when app version changes. When enabled, the warmer compares the current app version with the last stored version in Redis. If they differ, it immediately runs a warmup to refresh all caches with the new version's cache keys.
+- **Example**: `CATALOG_WARMUP_AUTO_ON_VERSION_CHANGE=true`
+- **Note**: Requires `CACHE_WARMUP_MODE=comprehensive` to be enabled. Cache keys are tied to app version, so this ensures fresh data after updates.
+
 ---
 
 ## Cache Cleanup Scheduler
