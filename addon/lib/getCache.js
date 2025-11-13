@@ -976,6 +976,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    };
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
+   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId) && (config.providers?.forceAnimeForDetectedImdb || config.mal?.useImdbIdForCatalogAndSearch);
+
    
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
@@ -1015,11 +1017,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       scrapeImdb: config.tmdb?.scrapeImdb || false
      };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-     if (metaConfig.forceAnimeForDetectedImdb) {
-      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-     }
     }
-    if (isAnimeMeta) {
+    if (isAnimeMeta || isImdbIdAnime) {
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
     }
  
@@ -1270,9 +1269,9 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     scrapeImdb: config.tmdb?.scrapeImdb || false
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-   if (isImdbIdAnime || isAnime) {
-    metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-   }
+ }
+ if (isImdbIdAnime || isAnime) {
+  metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
  }
  
  const metaConfigString = stableStringify(metaConfig);
