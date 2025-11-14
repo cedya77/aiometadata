@@ -266,7 +266,7 @@ export function StremThruIntegration({ isOpen, onClose }: StremThruIntegrationPr
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Number of items per page for newly added catalogs. Default: 100. This should match the addon's page size for accurate pagination.
+                  Expected items returned per page by the external addon (default 100). Match the source addon's pagination so we request the right pages—this does not change our catalog size.
                 </p>
               </div>
 

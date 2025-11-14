@@ -905,9 +905,10 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
-     metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false
-     };
+    metaConfig.tmdb = {
+     scrapeImdb: config.tmdb?.scrapeImdb || false,
+     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
+    };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
@@ -1001,7 +1002,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      };
     // Keep keys identical to reconstructMetaFromComponents
     metaConfig.tmdb = {
-     scrapeImdb: config.tmdb?.scrapeImdb || false
+     scrapeImdb: config.tmdb?.scrapeImdb || false,
+     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
     };
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
@@ -1013,9 +1015,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      if (prefix === 'tvdb') {
        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
      }
-     metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false
-     };
+    metaConfig.tmdb = {
+     scrapeImdb: config.tmdb?.scrapeImdb || false,
+     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
+    };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
     }
     if (isAnimeMeta || isImdbIdAnime) {
@@ -1266,7 +1269,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
    }
    metaConfig.tmdb = {
-    scrapeImdb: config.tmdb?.scrapeImdb || false
+    scrapeImdb: config.tmdb?.scrapeImdb || false,
+    forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
  }

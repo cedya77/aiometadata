@@ -107,6 +107,7 @@ const initialConfig: AppConfig = {
   },
   tmdb: {
     scrapeImdb: false,
+    forceLatinCastNames: false,
   },
   apiKeys: { 
     gemini: "", 

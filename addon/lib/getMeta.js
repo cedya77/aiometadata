@@ -1028,13 +1028,45 @@ function processCreditsPhotos(credits) {
   }
 }
 
+function shouldForceLatinTmdbCast(config) {
+  if (!config?.tmdb?.forceLatinCastNames) return false;
+  const lang = (config.language || 'en-US').toLowerCase();
+  return !lang.startsWith('en');
+}
+
+async function ensureLatinTmdbCredits(mediaType, tmdbId, existingCredits, config) {
+  if (!shouldForceLatinTmdbCast(config) || !tmdbId) {
+    return existingCredits;
+  }
+
+  try {
+    const englishCredits = mediaType === 'movie'
+      ? await moviedb.movieCredits({ id: tmdbId, language: 'en-US' }, config)
+      : await moviedb.tvCredits({ id: tmdbId, language: 'en-US' }, config);
+
+    if (englishCredits && (Array.isArray(englishCredits.cast) || Array.isArray(englishCredits.crew))) {
+      processCreditsPhotos(englishCredits.cast);
+      processCreditsPhotos(englishCredits.crew);
+      return englishCredits;
+    }
+  } catch (error) {
+    logger.warn(`[TMDB] Failed to fetch English credits for ${mediaType} ${tmdbId}: ${error.message}`);
+  }
+
+  return existingCredits;
+}
+
 async function buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const { allIds } = enrichmentData;
-  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, credits, images, } = movieData;
+  const { id: tmdbId, title, external_ids, poster_path, backdrop_path, images, } = movieData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
   const castCount = config.castCount === 0 ? undefined : config.castCount;
   const langCode = language.split('-')[0];
+  let credits = await ensureLatinTmdbCredits('movie', tmdbId, movieData.credits, config);
+  if (!credits) {
+    credits = { cast: [], crew: [] };
+  }
   // Get artwork based on art provider preference
   const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config);
   const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
@@ -1083,13 +1115,13 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     character: d.name,
-    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+    photo: d.profile_path || null
   })).filter(d => d.name);
 
   const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
     name: w.name,
     character: w.name,
-    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+    photo: w.profile_path || null
   })).filter(w => w.name);
 
   const watchProviders = moviedb.getWatchProviders(movieData['watch/providers'], config);
@@ -1155,12 +1187,16 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
 
 
 async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, enrichmentData = {}, isAnime = false, includeVideos = true) {
-  const { id: tmdbId, name, external_ids, poster_path, backdrop_path, credits, videos: trailers, seasons, images } = seriesData;
+  const { id: tmdbId, name, external_ids, poster_path, backdrop_path, videos: trailers, seasons, images } = seriesData;
   const { allIds } = enrichmentData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
   const kitsuId = allIds?.kitsuId;
   const malId = allIds?.malId;
+  let credits = await ensureLatinTmdbCredits('tv', tmdbId, seriesData.credits, config);
+  if (!credits) {
+    credits = { cast: [], crew: [] };
+  }
 
   const idProvider = config.providers?.anime_id_provider || 'imdb';
   const langCode = language.split('-')[0];
@@ -1214,13 +1250,13 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     character: d.name,
-    photo: d.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${d.profile_path}` : null
+    photo: d.profile_path || null
   })).filter(d => d.name);
 
   const writerDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
     name: w.name,
     character: w.name,
-    photo: w.profile_path ?  `https://image.tmdb.org/t/p/w276_and_h350_face${w.profile_path}` : null
+    photo: w.profile_path || null
   })).filter(w => w.name);
   let videos = [];
   const tmdbSeasons = (seasons || []).filter(season => season.season_number != 0);

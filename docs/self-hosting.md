@@ -149,4 +149,8 @@ To add the addon to Stremio, use the URL:
    - Check if the HOST_NAME variable matches your actual domain
    - Ensure your domain/IP is accessible from the internet
 
+### UI Tips
+
+- **Force Latin TMDB Cast Names** – Located under *Configure → Providers → The Movie Database (TMDB) Settings*. When enabled, the addon fetches TMDB credits in English even if your display language is another locale. Use this if Asian productions show cast names in non-Latin scripts and you prefer Latin characters in Stremio.
+
 For additional help, please open an issue on GitHub.

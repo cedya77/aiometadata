@@ -90,7 +90,7 @@ export function ProvidersSettings() {
     }));
   };
 
-  const handleTmdbToggle = (key: 'scrapeImdb', checked: boolean) => {
+  const handleTmdbToggle = (key: 'scrapeImdb' | 'forceLatinCastNames', checked: boolean) => {
     setConfig(prev => ({
       ...prev,
       tmdb: {
@@ -242,6 +242,20 @@ export function ProvidersSettings() {
               id="scrape-imdb"
               checked={config.tmdb?.scrapeImdb || false}
               onCheckedChange={(val) => handleTmdbToggle('scrapeImdb', val)}
+            />
+          </div>
+          {/* Force Latin Cast Names */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="force-latin-cast" className="text-lg font-medium">Force Latin TMDB Cast Names</Label>
+              <p className="text-sm text-muted-foreground">
+                Fetch English TMDB cast credits even when your display language is another locale (useful for Asian productions with non-Latin character sets).
+              </p>
+            </div>
+            <Switch
+              id="force-latin-cast"
+              checked={!!config.tmdb?.forceLatinCastNames}
+              onCheckedChange={(val) => handleTmdbToggle('forceLatinCastNames', val)}
             />
           </div>
         </CardContent>

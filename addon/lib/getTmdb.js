@@ -291,6 +291,16 @@ async function tvExternalIds(id, config) {
   return makeTmdbRequest(`/tv/${id}/external_ids`, getApiKey(config), { id }, 'GET', null, config);
 }
 
+async function movieCredits(params, config) {
+  const { id, ...queryParams } = params;
+  return makeTmdbRequest(`/movie/${id}/credits`, getApiKey(config), queryParams, 'GET', null, config);
+}
+
+async function tvCredits(params, config) {
+  const { id, ...queryParams } = params;
+  return makeTmdbRequest(`/tv/${id}/credits`, getApiKey(config), queryParams, 'GET', null, config);
+}
+
 async function searchMovie(params, config) {
   const startTime = Date.now();
   const query = params.query || 'unknown';
@@ -818,6 +828,8 @@ module.exports = {
   getTranslations,
   movieExternalIds,
   tvExternalIds,
+  movieCredits,
+  tvCredits,
   getTmdbImages,
   getWatchProviders
 };

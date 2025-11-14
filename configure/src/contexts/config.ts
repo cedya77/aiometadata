@@ -76,6 +76,7 @@ export interface AppConfig {
   };
   tmdb: {
     scrapeImdb: boolean;
+    forceLatinCastNames?: boolean;
   };
   apiKeys: {
     gemini: string;
