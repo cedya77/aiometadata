@@ -1342,7 +1342,53 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
       return null;
     }
     
-    // Strategy 1: Use episode number ranges if available
+    // Determine mapping strategy based on scenario:
+    // - If Season 1 with multiple Kitsu entries → Use episode-based mapping (e.g., Solo Leveling: 1 TMDB season, 2 Kitsu entries)
+    // - If Season 2+ → Use season-based mapping (e.g., To Your Eternity: 3 TMDB seasons, 3 Kitsu entries)
+    // - If Season 1 with single Kitsu entry → Use season-based mapping (simple case)
+    
+    const isSeason1 = seasonNumber === 1;
+    const hasMultipleKitsuEntries = kitsuEntries.length > 1;
+    
+    // Strategy 1: Try episode-based mapping first for Season 1 with multiple Kitsu entries
+    // For cases like Solo Leveling where 1 TMDB season spans multiple Kitsu entries
+    if (isSeason1 && hasMultipleKitsuEntries) {
+      let cumulativeEpisodes = 0;
+      for (const kitsuEntry of kitsuEntries) {
+        const episodeCount = kitsuEntry.episodeCount || 0;
+        const startEpisode = cumulativeEpisodes + 1;
+        const endEpisode = cumulativeEpisodes + episodeCount;
+        
+        if (episodeNumber >= startEpisode && episodeNumber <= endEpisode) {
+          // Calculate the Kitsu episode number (reset to 1 for each Kitsu entry)
+          const kitsuEpisodeNumber = episodeNumber - cumulativeEpisodes;
+          console.log(`[ID Mapper] Season 1 Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (episode-based mapping, range ${startEpisode}-${endEpisode})`);
+          return {
+            kitsuId: kitsuEntry.id,
+            episodeNumber: kitsuEpisodeNumber
+          };
+        }
+        
+        cumulativeEpisodes = endEpisode;
+      }
+      // If episode number is beyond all cumulative ranges, fall through to season-based mapping
+    }
+    
+    // Strategy 2: Hopes and prayers - Season-based mapping (for Season 2+ or Season 1 when episode-based didn't match)
+    // TMDB Season 1 → Kitsu Entry 0, Season 2 → Entry 1, etc.
+    // Note: TMDB seasons are 1-based, Kitsu entries array is 0-based
+    const seasonIndex = seasonNumber - 1;
+    
+    if (seasonIndex >= 0 && seasonIndex < kitsuEntries.length) {
+      const kitsuEntry = kitsuEntries[seasonIndex];
+      console.log(`[ID Mapper] TMDB Season ${seasonNumber} maps directly to Kitsu ID ${kitsuEntry.id}, Episode ${episodeNumber} (season-based mapping)`);
+      return {
+        kitsuId: kitsuEntry.id,
+        episodeNumber: episodeNumber
+      };
+    }
+    
+    // Strategy 3: Fallback to episode number ranges if season mapping doesn't work
     // Each Kitsu entry starts from episode 1, so we need to map TMDB episode numbers to Kitsu episode numbers
     let cumulativeEpisodes = 0;
     for (const kitsuEntry of kitsuEntries) {
@@ -1353,7 +1399,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
       if (episodeNumber >= startEpisode && episodeNumber <= endEpisode) {
         // Calculate the Kitsu episode number (reset to 1 for each Kitsu entry)
         const kitsuEpisodeNumber = episodeNumber - cumulativeEpisodes;
-        console.log(`[ID Mapper] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (TMDB range ${startEpisode}-${endEpisode})`);
+        console.log(`[ID Mapper] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (fallback, range ${startEpisode}-${endEpisode})`);
         return {
           kitsuId: kitsuEntry.id,
           episodeNumber: kitsuEpisodeNumber
@@ -1363,7 +1409,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
       cumulativeEpisodes = endEpisode;
     }
     
-    // Strategy 2: Use air date if available
+    // Strategy 4: Inchallah - Use air date if available (fallback if season/episode mapping failed)
     if (episodeAirDate) {
       const targetDate = new Date(episodeAirDate);
       if (!isNaN(targetDate.getTime())) {
@@ -1375,11 +1421,11 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
             kitsuEndDate.setDate(kitsuEndDate.getDate() + (kitsuEntry.episodeCount * 7)); // Rough estimate
             
             if (targetDate >= kitsuStartDate && targetDate <= kitsuEndDate) {
-              console.log(`[ID Mapper] Episode ${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
-              // For air date strategy, we can't determine exact episode number, so use 1 as fallback
+              console.log(`[ID Mapper] Episode S${seasonNumber}E${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
+              // Use the episode number from TMDB directly
               return {
                 kitsuId: kitsuEntry.id,
-                episodeNumber: 1
+                episodeNumber: episodeNumber
               };
             }
           }
@@ -1387,11 +1433,11 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
       }
     }
     
-    // Strategy 3: Fallback to first Kitsu entry
-    console.log(`[ID Mapper] Using fallback: episode ${episodeNumber} maps to first Kitsu ID ${kitsuEntries[0].id}`);
+    // Strategy 5: cooked - Fallback to first Kitsu entry if season is out of range
+    console.log(`[ID Mapper] Using fallback: Season ${seasonNumber} is out of range, mapping to first Kitsu ID ${kitsuEntries[0].id}`);
     return {
       kitsuId: kitsuEntries[0].id,
-      episodeNumber: 1
+      episodeNumber: episodeNumber
     };
     
   } catch (error) {
