@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.8.3](https://github.com/cedya77/aiometadata/compare/v1.8.2...v1.8.3) (2025-11-14)
+
+
+### Bug Fixes
+
+* **cache:** fix cache key mismatch in meta wrap smart by aligning animeIdProvider logic ([c4571e4](https://github.com/cedya77/aiometadata/commit/c4571e44444fa1fa54379d63638faa8b79358f7e))
+* **tvdb genre:** TVDB genres pagination by using correct pageSize from env var ([1fef78e](https://github.com/cedya77/aiometadata/commit/1fef78e467d24a54543d98f4a92d6644620b66fa))
+
 ## [1.8.2](https://github.com/cedya77/aiometadata/compare/v1.8.1...v1.8.2) (2025-11-13)
 
 
