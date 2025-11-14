@@ -1447,6 +1447,85 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
 }
 
 /**
+ * Resolves TMDB season and episode number from a Kitsu ID and episode number.
+ * 
+ * @param {string|number} kitsuId
+ * @param {number} kitsuEpisodeNumber
+ * @returns {Promise<{tmdbId: number, seasonNumber: number, episodeNumber: number}|null>} - The TMDB ID, season, and episode number
+ */
+async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
+  if (!isInitialized) return null;
+  
+  const mapping = getMappingByKitsuId(kitsuId);
+  if (!mapping || !mapping.themoviedb_id) {
+    console.warn(`[ID Mapper] No TMDB mapping found for Kitsu ID ${kitsuId}`);
+    return null;
+  }
+  
+  const tmdbId = mapping.themoviedb_id;
+  console.log(`[ID Mapper] Resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} (TMDB ID: ${tmdbId})`);
+  
+  try {
+    const franchiseInfo = await getFranchiseInfoFromTmdbId(tmdbId);
+    if (!franchiseInfo) {
+      console.warn(`[ID Mapper] No franchise info found for TMDB ID ${tmdbId}`);
+      return null;
+    }
+    
+    // Get all Kitsu entries sorted by start date
+    const kitsuEntries = franchiseInfo.kitsuDetails
+      .filter(entry => entry.subtype?.toLowerCase() === 'tv')
+      .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'));
+    
+    // Find which Kitsu entry this ID corresponds to
+    const kitsuEntryIndex = kitsuEntries.findIndex(entry => entry.id === parseInt(kitsuId, 10));
+    if (kitsuEntryIndex === -1) {
+      console.warn(`[ID Mapper] Kitsu ID ${kitsuId} not found in franchise entries for TMDB ${tmdbId}`);
+      return null;
+    }
+    
+    // We are trying to do the reverse of the ;ogic from resolveKitsuIdForEpisodeByTmdb
+    // The forward function: if Season 1 AND multiple entries → episode-based, else → season-based
+    // For reverse: Check needsEpisodeMapping first - if true, ALL entries map to Season 1
+    // If false, each entry maps to a different season
+    
+    const hasMultipleKitsuEntries = kitsuEntries.length > 1;
+    
+    // Strategy 1: Episode-based mapping (single-season scenario)
+    // If needsEpisodeMapping is true, ALL Kitsu entries map to Season 1 with cumulative episodes
+    // Stuff like Solo Leveling where 1 TMDB season spans multiple Kitsu entries
+    if (hasMultipleKitsuEntries && franchiseInfo.needsEpisodeMapping) {
+      let cumulativeEpisodes = 0;
+      for (let i = 0; i < kitsuEntryIndex; i++) {
+        cumulativeEpisodes += kitsuEntries[i].episodeCount || 0;
+      }
+      const tmdbEpisodeNumber = cumulativeEpisodes + kitsuEpisodeNumber;
+      console.log(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season 1 Episode ${tmdbEpisodeNumber} (single-season scenario)`);
+      return {
+        tmdbId: tmdbId,
+        seasonNumber: 1,
+        episodeNumber: tmdbEpisodeNumber
+      };
+    }
+    
+    // Strategy 2: Lord help us all - Season-based mapping (multi-season scenario)
+    // Each Kitsu entry maps to a different TMDB season
+    // Kitsu Entry 0 → TMDB Season 1, Entry 1 → Season 2, etc.
+    const tmdbSeasonNumber = kitsuEntryIndex + 1;
+    console.log(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season ${tmdbSeasonNumber} Episode ${kitsuEpisodeNumber} (multi-season scenario)`);
+    return {
+      tmdbId: tmdbId,
+      seasonNumber: tmdbSeasonNumber,
+      episodeNumber: kitsuEpisodeNumber
+    };
+    
+  } catch (error) {
+    console.error(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}:`, error);
+    return null;
+  }
+}
+
+/**
  * Resolves Kitsu ID and episode number for a specific episode when episode-level mapping is needed (IMDb version).
  * This handles cases where multiple Kitsu entries map to a single IMDb season.
  * 
@@ -1790,6 +1869,8 @@ module.exports = {
   getKitsuToImdbMappingsByImdbId,
   enrichMalEpisodes,
   resolveKitsuIdForEpisodeByTvdb,
+  resolveKitsuIdForEpisodeByTmdb,
+  resolveTmdbEpisodeFromKitsu,
   getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb,
   getAllMappings,
   cleanup,

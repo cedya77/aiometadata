@@ -1,6 +1,6 @@
 const consola = require('consola');
 const idMapper = require('./id-mapper');
-const { resolveTvdbEpisodeFromAnidbEpisode } = require('./anime-list-mapper');
+const { resolveTmdbEpisodeFromKitsu } = require('./id-mapper');
 
 // Configure logging level based on environment
 const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
@@ -295,30 +295,20 @@ async function resolveSeriesIds(parsedId) {
       return { ids, season: parsedId.season, episode: parsedId.episode };
     }
     case 'kitsu': {
-      const mapping = idMapper.getMappingByKitsuId(parsedId.id);
-      if (!mapping) {
-        logger.debug(`[Watch Tracking] No mapping found for Kitsu series ${parsedId.id}`);
-        return null;
-      }
-
-      let resolved = null;
-      if (mapping.anidb_id) {
-        resolved = resolveTvdbEpisodeFromAnidbEpisode(
-          parseInt(mapping.anidb_id, 10),
-          parsedId.season,
-          parsedId.episode
-        );
-      }
+      const resolved = await resolveTmdbEpisodeFromKitsu(
+        parseInt(parsedId.id, 10),
+        parseInt(parsedId.episode, 10)
+      );
 
       if (!resolved) {
-        logger.debug(`[Watch Tracking] Could not resolve AniDB → TVDB for Kitsu series ${parsedId.id}`);
+        logger.debug(`[Watch Tracking] Could not resolve Kitsu → TMDB for Kitsu series ${parsedId.id}`);
         return null;
       }
 
       return {
-        ids: { tvdb: resolved.tvdbId },
-        season: resolved.tvdbSeason,
-        episode: resolved.tvdbEpisode
+        ids: { tmdb: resolved.tmdbId },
+        season: resolved.seasonNumber,
+        episode: resolved.episodeNumber
       };
     }
     default:
