@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
-import { StremThruIntegration } from './StremThruIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -847,7 +846,6 @@ function CatalogsSettingsContent({
     selectedIds
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
-  const [isStremThruOpen, setIsStremThruOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
@@ -1502,10 +1500,6 @@ function CatalogsSettingsContent({
       <MDBListIntegration
         isOpen={isMdbListOpen}
         onClose={() => setIsMdbListOpen(false)}
-      />
-      <StremThruIntegration
-        isOpen={isStremThruOpen}
-        onClose={() => setIsStremThruOpen(false)}
       />
       <CustomManifestIntegration
         isOpen={isCustomManifestOpen}

@@ -39,6 +39,8 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
   const [selectedCatalogs, setSelectedCatalogs] = useState<Set<string>>(new Set());
   const [defaultCacheTTL, setDefaultCacheTTL] = useState<number>(catalogTTL);
   const [defaultPageSize, setDefaultPageSize] = useState<number>(100);
+  const [detectedPageSize, setDetectedPageSize] = useState<number | null>(null);
+  const [isDetectingPageSize, setIsDetectingPageSize] = useState<boolean>(false);
 
   // Get currently imported custom manifests
   const currentCustomCatalogs = config.catalogs.filter(c => c.id.startsWith("custom."));
@@ -89,6 +91,8 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
 
       setManifest(manifestData);
       setSelectedCatalogs(new Set()); // Reset selection
+      setDetectedPageSize(null); // Reset detected page size
+      setDefaultPageSize(100); // Reset to default
       toast.success("Manifest loaded successfully", {
         description: `Found ${manifestData.catalogs.length} available catalogs`
       });
@@ -108,7 +112,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
     return `${catalog.type}:${catalog.id}`;
   };
 
-  const handleCatalogSelection = (catalogKey: string, checked: boolean) => {
+  const handleCatalogSelection = async (catalogKey: string, checked: boolean) => {
     const newSelection = new Set(selectedCatalogs);
     if (checked) {
       newSelection.add(catalogKey);
@@ -116,6 +120,65 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
       newSelection.delete(catalogKey);
     }
     setSelectedCatalogs(newSelection);
+
+    // Auto-detect page size when first catalog is selected
+    if (checked && newSelection.size === 1 && manifest && !detectedPageSize) {
+      await detectPageSizeForCatalogs(newSelection);
+    }
+  };
+
+  const detectPageSizeForCatalogs = async (catalogKeys: Set<string>) => {
+    if (!manifest || catalogKeys.size === 0) return;
+
+    setIsDetectingPageSize(true);
+    try {
+      // Try to detect page size from the first selected catalog
+      const firstCatalogKey = Array.from(catalogKeys)[0];
+      const colonIndex = firstCatalogKey.indexOf(':');
+      const type = firstCatalogKey.substring(0, colonIndex);
+      const id = firstCatalogKey.substring(colonIndex + 1);
+      const catalog = manifest.catalogs.find(c => c.type === type && c.id === id);
+      
+      if (!catalog) {
+        setIsDetectingPageSize(false);
+        return;
+      }
+
+      // Construct the catalog URL
+      const encodedCatalogId = encodeURIComponent(catalog.id);
+      const catalogUrl = `${manifestUrl.replace('/manifest.json', '')}/catalog/${catalog.type}/${encodedCatalogId}.json`;
+      
+      // Use proxy for internal Docker URLs
+      const useProxy = isInternalDockerUrl(catalogUrl);
+      const detectUrl = useProxy
+        ? `/api/detect-page-size?catalogUrl=${encodeURIComponent(catalogUrl)}`
+        : `/api/detect-page-size?catalogUrl=${encodeURIComponent(catalogUrl)}`;
+
+      const response = await fetch(detectUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to detect page size (Status: ${response.status})`);
+      }
+
+      const result = await response.json();
+      if (result.detected && result.pageSize) {
+        setDetectedPageSize(result.pageSize);
+        setDefaultPageSize(result.pageSize);
+        toast.success("Page size auto-detected", {
+          description: `Detected page size: ${result.pageSize} items per page`
+        });
+      } else {
+        toast.info("Could not auto-detect page size", {
+          description: "Using default page size of 100. You can adjust it manually."
+        });
+      }
+    } catch (error) {
+      console.error("Error detecting page size:", error);
+      toast.info("Could not auto-detect page size", {
+        description: "Using default page size of 100. You can adjust it manually."
+      });
+    } finally {
+      setIsDetectingPageSize(false);
+    }
   };
 
   const importSelectedCatalogs = useCallback(async () => {
@@ -296,22 +359,59 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
 
               {/* Page Size Configuration */}
               <div className="space-y-2">
-                <Label htmlFor="default-page-size">Default Page Size</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="default-page-size">Default Page Size</Label>
+                  {selectedCatalogs.size > 0 && !detectedPageSize && !isDetectingPageSize && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => detectPageSizeForCatalogs(selectedCatalogs)}
+                      className="h-7 text-xs"
+                    >
+                      Auto-detect
+                    </Button>
+                  )}
+                  {isDetectingPageSize && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Detecting...
+                    </span>
+                  )}
+                  {detectedPageSize && !isDetectingPageSize && (
+                    <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                      ✓ Auto-detected: {detectedPageSize}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center space-x-2">
                   <input
                     id="default-page-size"
                     type="number"
                     value={defaultPageSize}
-                    onChange={(e) => setDefaultPageSize(parseInt(e.target.value) || 100)}
+                    onChange={(e) => {
+                      const newValue = parseInt(e.target.value) || 100;
+                      setDefaultPageSize(newValue);
+                      // Clear detected value if user manually changes it
+                      if (detectedPageSize && newValue !== detectedPageSize) {
+                        setDetectedPageSize(null);
+                      }
+                    }}
                     min="1"
                     max="1000"
                     step="1"
-                    className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                    className={`flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent ${
+                      detectedPageSize ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20' : 'border-input bg-background'
+                    }`}
                     placeholder="100"
+                    disabled={isDetectingPageSize}
                   />
+                  {detectedPageSize && defaultPageSize === detectedPageSize && (
+                    <span className="text-xs text-green-600 dark:text-green-400">✓</span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Expected items returned per page by the external addon (default 100). Match the source addon's pagination so we request the right pages—this does not change our AIOMetadata catalogs page size.
+                  Expected items returned per page by the external addon (default 100). {detectedPageSize ? 'Auto-detected from the selected catalog. ' : 'Click "Auto-detect" after selecting catalogs to automatically determine the page size. For best results, select a catalog with the most items. '}Match the source addon's pagination so we request the right pages—this does not change our AIOMetadata catalogs page size.
                 </p>
               </div>
 

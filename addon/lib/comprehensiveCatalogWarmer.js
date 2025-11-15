@@ -390,7 +390,7 @@ class ComprehensiveCatalogWarmer {
     
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
-                     (catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.')) ? 
+                     (catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.')) || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.')) ? 
                      parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
@@ -439,7 +439,7 @@ class ComprehensiveCatalogWarmer {
             const configWithUUID = { ...config, userUUID: uuid };
             const { getTrending } = require('./getTrending');
             // getTrending is page-based; derive page from totalSeen/pageSize to keep behavior aligned
-             return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, config.providers?.series !== 'tmdb');
+             return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
           } else {
             // Everything else goes through getCatalog
             if (!uuid) {
@@ -449,7 +449,7 @@ class ComprehensiveCatalogWarmer {
             const configWithUUID = { ...config, userUUID: uuid };
             const { getCatalog } = require('./getCatalog');
             // getCatalog is page-based; derive page from totalSeen/pageSize to mirror Stremio skip accumulation
-             return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, config.providers?.series !== 'tmdb');
+             return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
           }
           }, undefined, { enableErrorCaching: false, maxRetries: 1 });
 

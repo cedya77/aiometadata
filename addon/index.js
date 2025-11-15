@@ -669,7 +669,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         switch (id) {
           case "tmdb.trending":
             console.log(`[CATALOG ROUTE 2] tmdb.trending called with type=${actualType}, language=${language}, page=${page}`);
-            metas = (await getTrending(...args, genreName, config, userUUID, config.providers?.series !== 'tmdb')).metas;
+            metas = (await getTrending(...args, genreName, config, userUUID, false)).metas;
             break;
           case "tmdb.favorites":
             metas = (await getFavorites(...args, genreName, sessionId, config)).metas;
@@ -678,7 +678,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
             break;
           case "tvdb.genres": {
-            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, config.providers?.series !== 'tmdb')).metas;
+            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, false)).metas;
             break;
           }
           case "tvdb.collections": {
@@ -897,7 +897,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             break;
           }
           default:
-            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, config.providers?.series !== 'tmdb')).metas;
+            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, false)).metas;
             break;
       }
       return { metas: metas || [] };
@@ -1102,6 +1102,48 @@ addon.get("/api/proxy-manifest", async function (req, res) {
     console.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
     res.status(error.response?.status || 500).json({ 
       error: error.message || 'Failed to fetch manifest' 
+    });
+  }
+});
+
+// API endpoint to auto-detect page size for external addon catalogs
+addon.get("/api/detect-page-size", async function (req, res) {
+  const { catalogUrl } = req.query;
+  
+  if (!catalogUrl) {
+    return res.status(400).json({ error: 'Missing catalogUrl parameter' });
+  }
+
+  try {
+    const { httpGet } = require('./utils/httpClient');
+    
+    // For the first page, Stremio doesn't include skip parameter at all
+    // Fetch the base catalog URL directly without any skip parameter
+    const response = await httpGet(catalogUrl, { timeout: 10000 });
+    
+    if (!response.data || !response.data.metas) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.json({ pageSize: 100, detected: false, error: 'Invalid response format' });
+      return;
+    }
+    
+    const pageSize = response.data.metas.length;
+    
+    if (pageSize === 0) {
+      // If first page is empty, return error
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.json({ pageSize: 100, detected: false, error: 'No items found in first page' });
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.json({ pageSize, detected: true });
+    }
+  } catch (error) {
+    console.error(`[Detect Page Size] Failed to detect page size for ${catalogUrl}:`, error.message);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(error.response?.status || 500).json({ 
+      pageSize: 100,
+      detected: false,
+      error: error.message || 'Failed to detect page size' 
     });
   }
 });

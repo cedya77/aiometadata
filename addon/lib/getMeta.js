@@ -1076,7 +1076,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     || images?.backdrops?.[0];
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
-  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
+  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/w500${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   
   let poster, background, logoUrl, imdbRatingValue;
   
@@ -1210,7 +1210,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     || images?.backdrops?.[0];
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
-  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
+  let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/w500${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   let poster, background, logoUrl, imdbRatingValue;
   
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
@@ -1712,7 +1712,6 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   if(tmdbId){
      watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
   }
-  console.log(`[TvdbMovieMeta] remoteIds:`, remoteIds);
 
 
   let release_dates = null;
