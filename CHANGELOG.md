@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.9.0](https://github.com/cedya77/aiometadata/compare/v1.8.3...v1.9.0) (2025-11-16)
+
+
+### Features
+
+* **ui:** Add auto-detect page size for custom manifests and optimize logging ([3777115](https://github.com/cedya77/aiometadata/commit/3777115c9d07647807ae236601dbc1ab7c61fb39))
+
+
+### Bug Fixes
+
+* **cast credits:** add option to let the user force latin cast name when using a non EN lang for TMDB meta ([9963ad5](https://github.com/cedya77/aiometadata/commit/9963ad5cad744ffe22ddd3a3794d5299c37aa8dc))
+
 ## [1.8.3](https://github.com/cedya77/aiometadata/compare/v1.8.2...v1.8.3) (2025-11-14)
 
 
