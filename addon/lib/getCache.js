@@ -937,7 +937,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  * Granular component caching for meta objects
  * Caches individual components separately to prevent one bad component from affecting everything
  */
-async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, isAnimeMeta = false) {
+async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
    // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
@@ -977,7 +977,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    };
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId) && (config.providers?.forceAnimeForDetectedImdb || config.mal?.useImdbIdForCatalogAndSearch);
+   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
+   const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
 
    
    if (isAnime) {
@@ -1021,7 +1022,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
     }
-    if (isAnimeMeta || isImdbIdAnime) {
+    if (isAnimeWithImdbId) {
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
     }
  
@@ -1234,7 +1235,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId) && (config.providers?.forceAnimeForDetectedImdb || config.mal?.useImdbIdForCatalogAndSearch);
+   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
+   const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = {
@@ -1249,15 +1251,16 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
      };
    } else if (metaType === 'movie') {
-     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = {
-       poster: resolveArtProvider('movie', 'poster', config),
-       background: resolveArtProvider('movie', 'background', config),
-       logo: resolveArtProvider('movie', 'logo', config)
-     };
-     metaConfig.tmdb = {
-     scrapeImdb: config.tmdb?.scrapeImdb || false
+    metaConfig.metaProvider = config.providers?.movie || 'tmdb';
+    metaConfig.artProvider = {
+      poster: resolveArtProvider('movie', 'poster', config),
+      background: resolveArtProvider('movie', 'background', config),
+      logo: resolveArtProvider('movie', 'logo', config)
     };
+    metaConfig.tmdb = {
+    scrapeImdb: config.tmdb?.scrapeImdb || false,
+    forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
+   };
   } else if (metaType === 'series') {
     metaConfig.metaProvider = config.providers?.series || 'tvdb';
     metaConfig.artProvider = {
@@ -1274,7 +1277,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
  }
- if (isImdbIdAnime || isAnime) {
+ if (isAnimeWithImdbId) {
   metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
  }
  
@@ -1437,7 +1440,6 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   const failureReason = reconstructedMeta && reconstructedMeta.errorReason ? ` (reason: ${reconstructedMeta.errorReason})` : '';
   cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
   
-  let isAnimeMeta = false;
   const result = await method();
   
   // Handle null/empty results
@@ -1447,9 +1449,6 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   }
   
   const meta = result.meta;
-  if (meta?.app_extras?.isAnime) {
-    isAnimeMeta = true;
-  }
   let idToCache = meta.id;
   
   // Validate that we have a valid ID to cache
@@ -1462,7 +1461,7 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
     idToCache = metaId;
   }
   
-  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type, isAnimeMeta);
+  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type);
 }
 
 /**

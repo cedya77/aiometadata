@@ -711,14 +711,6 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
 // --- Anime worker ---
 
-function annotateAnimeMeta(meta) {
-  if (meta && typeof meta === 'object') {
-    meta.app_extras = meta.app_extras || {};
-    meta.app_extras.isAnime = true;
-  }
-  return meta;
-}
-
 async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime, includeVideos) {
   logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
   
@@ -740,10 +732,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         if (type === 'movie') {
           
           const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-          return annotateAnimeMeta(await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime));
+          return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         } else {
           const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-            return annotateAnimeMeta(await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos));
+            return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
         }
       }
       
@@ -756,10 +748,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           if(!seriesData) {
             if(allIds?.imdbId) {
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
-              return annotateAnimeMeta(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime));
+              return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
           } else {
-            return annotateAnimeMeta(await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos));
+            return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
           }
         } else if (type === 'movie') {
           logger.info(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
@@ -767,10 +759,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           if(!movieData) {
             if(allIds?.imdbId) {
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-              return annotateAnimeMeta(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime));
+              return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
           } else {
-            return annotateAnimeMeta(await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime));
+            return await buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
           }
         }
       }
@@ -781,15 +773,15 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           tvmaze.getShowDetails(allIds.tvmazeId),
           includeVideos ? tvmaze.getShowEpisodes(allIds.tvmazeId) : null
         ]);
-        return annotateAnimeMeta(await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos));
+        return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
         if(type === 'series') {
           let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
-          return annotateAnimeMeta(await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime));
+          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
           } else if(type === 'movie') {
             let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-            return annotateAnimeMeta(await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime));
+            return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
   
@@ -825,12 +817,12 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       let episodes = kitsuDetails.included?.filter(item => item.type === 'episodes') || [];
       let genres = kitsuDetails.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
     
-      return annotateAnimeMeta(await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, { 
+      return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, { 
         mapping: allIds, 
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
         bestLogoUrl: logo
-      }));
+      });
   
     } catch (error) {
       logger.error(`[AnimeMeta] CRITICAL: Native provider 'kitsu' also failed for ${stremioId}: ${error.message}`);
@@ -862,12 +854,12 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       
       
       
-      return annotateAnimeMeta(await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
+      return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
         mapping: allIds, 
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
         bestLogoUrl: logo
-      }));
+      });
   
     } catch (error) {
       logger.error(`[AnimeMeta] CRITICAL: Native provider 'mal' also failed for ${stremioId}: ${error.message}`);

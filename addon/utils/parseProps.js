@@ -1929,7 +1929,9 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
     if((config.mal?.useImdbIdForCatalogAndSearch && imdbId)){
       return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
         const { getMeta } = await import("../lib/getMeta");
-        return await getMeta(stremioType, language, `mal:${malId}`, config, config.userUUID, true);
+        // When useImdbIdForCatalogAndSearch is enabled, call getMeta with IMDb ID so it's treated consistently
+        // This ensures cache keys match - if forceAnimeForDetectedImdb is false, it will be treated as series/movie
+        return await getMeta(stremioType, language, id, config, config.userUUID, true);
       }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, true))?.meta || null;
     }
     else {
