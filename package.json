@@ -1,6 +1,6 @@
 {
   "name": "aio-metadata",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "Metadata provider for Stremio",
   "main": "server.js",
   "scripts": {
