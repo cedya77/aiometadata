@@ -1015,7 +1015,7 @@ async function getAnimeGenres() {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch anime genres from Jikan`, e.message);
+      logger.error(`Could not fetch anime genres from Jikan`, e.message);
       return [];
     });
 }
@@ -1080,7 +1080,7 @@ function parseConfig(catalogChoices) {
     
     // Debug: Log art provider configuration
     if (config.artProviders) {
-      console.log(`[Config Debug] Art providers:`, config.artProviders);
+      // logger.debug(`[Config Debug] Art providers:`, config.artProviders);
     }
     
     return config;
@@ -1090,7 +1090,7 @@ function parseConfig(catalogChoices) {
       
       // Debug: Log art provider configuration
       if (config.artProviders) {
-        console.log(`[Config Debug] Art providers:`, config.artProviders);
+        // logger.debug(`[Config Debug] Art providers:`, config.artProviders);
       }
       
       return config; 
@@ -1153,7 +1153,7 @@ async function checkIfExists(url) {
     if (error.message.includes('Invalid URL')) {
       return false;
     }
-    console.error(`Network error in checkIfExists for URL ${url}:`, error.message);
+    logger.error(`Network error in checkIfExists for URL ${url}:`, error.message);
     return false;
   }
 }
@@ -1204,7 +1204,7 @@ function getDefaultProvider(contentType) {
 
 async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaType = 'series' }, config) {
   
-  console.log(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
+  // logger.debug(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
   const artProvider = resolveArtProvider('anime', 'background', config);
   const mapping = malId ? idMapper.getMappingByMalId(malId) : null;
   tvdbId = tvdbId 
@@ -1216,45 +1216,45 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
   if (artProvider === 'anilist' && malId) {
     try {
       const anilistData = await anilist.getAnimeArtwork(malId);
-      console.log(`[getAnimeBg] AniList data for MAL ID ${malId}:`, {
-        hasData: !!anilistData,
-        hasBannerImage: !!anilistData?.bannerImage,
-        bannerImage: anilistData?.bannerImage?.substring(0, 50) + '...'
-      });
+      // logger.debug(`[getAnimeBg] AniList data for MAL ID ${malId}:`, {
+      //   hasData: !!anilistData,
+      //   hasBannerImage: !!anilistData?.bannerImage,
+      //   bannerImage: anilistData?.bannerImage?.substring(0, 50) + '...'
+      // });
       
       if (anilistData) {
         const anilistBackground = anilist.getBackgroundUrl(anilistData);
-        console.log(`[getAnimeBg] AniList background URL for MAL ID ${malId}:`, anilistBackground?.substring(0, 50) + '...');
+        // logger.debug(`[getAnimeBg] AniList background URL for MAL ID ${malId}:`, anilistBackground?.substring(0, 50) + '...');
         
         if (anilistBackground) {
-          console.log(`[getAnimeBg] Found AniList background for MAL ID: ${malId}`);
+          // logger.debug(`[getAnimeBg] Found AniList background for MAL ID: ${malId}`);
           return anilistBackground;
         } else {
-          console.log(`[getAnimeBg] No AniList background URL found for MAL ID: ${malId}`);
+          // logger.debug(`[getAnimeBg] No AniList background URL found for MAL ID: ${malId}`);
         }
       }
     } catch (error) {
-      console.warn(`[getAnimeBg] AniList background fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeBg] AniList background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
   if (artProvider === 'kitsu' && mapping?.kitsu_id && config.providers?.anime !== 'kitsu') {
     try {
       const kitsuData = await kitsu.getMultipleAnimeDetails([mapping.kitsu_id]);
-      console.log(`[getAnimeBg] Kitsu data for MAL ID ${malId}:`, {
-        hasData: !!kitsuData,
-        hasCoverImage: !!kitsuData?.data?.[0]?.attributes?.coverImage,
-        coverImage: kitsuData?.data?.[0]?.attributes?.coverImage?.original?.substring(0, 50) + '...'
-      });
+      // logger.debug(`[getAnimeBg] Kitsu data for MAL ID ${malId}:`, {
+      //   hasData: !!kitsuData,
+      //   hasCoverImage: !!kitsuData?.data?.[0]?.attributes?.coverImage,
+      //   coverImage: kitsuData?.data?.[0]?.attributes?.coverImage?.original?.substring(0, 50) + '...'
+      // });
       
       if (kitsuData?.data?.[0]?.attributes?.coverImage?.original) {
-        console.log(`[getAnimeBg] Found Kitsu background for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
+        // logger.debug(`[getAnimeBg] Found Kitsu background for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
         return kitsuData.data[0].attributes.coverImage.original;
       } else {
-        console.log(`[getAnimeBg] No Kitsu background URL found for MAL ID: ${malId}`);
+        // logger.debug(`[getAnimeBg] No Kitsu background URL found for MAL ID: ${malId}`);
       }
     } catch (error) {
-      console.warn(`[getAnimeBg] Kitsu background fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeBg] Kitsu background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
@@ -1266,11 +1266,11 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
           : await tvdb.getSeriesBackground(tvdbId, config);
         
         if (tvdbBackground) {
-          console.log(`[getAnimeBg] Found TVDB background for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${mediaType})`);
+          // logger.debug(`[getAnimeBg] Found TVDB background for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${mediaType})`);
           return tvdbBackground;
         }
     } catch (error) {
-      console.warn(`[getAnimeBg] TVDB background fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeBg] TVDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
 
@@ -1278,7 +1278,7 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
     try {
       return imdb.getBackgroundFromImdb(imdbId);
     } catch (error) {
-      console.warn(`[getAnimeBg] IMDB background fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeBg] IMDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
 
@@ -1296,16 +1296,16 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
           });
         
         if (tmdbBackground) {
-          console.log(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${tmdbId}, Type: ${mediaType})`);
+          // logger.debug(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${tmdbId}, Type: ${mediaType})`);
           return tmdbBackground;
         }
     } catch (error) {
-      console.warn(`[getAnimeBg] TMDB background fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeBg] TMDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
   if (config.apiKeys.fanart && artProvider === 'fanart') {
-    console.log(`[getAnimeBg] Fetching background from Fanart.tv for ${mediaType}`);
+    // logger.debug(`[getAnimeBg] Fetching background from Fanart.tv for ${mediaType}`);
     let fanartUrl = null;
     if (mediaType === 'series') {
       if (tvdbId) {
@@ -1321,12 +1321,12 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
     }
 
     if (fanartUrl) {
-      console.log(`[getAnimeBg] Found high-quality Fanart.tv background.`);
+      // logger.debug(`[getAnimeBg] Found high-quality Fanart.tv background.`);
       return fanartUrl;
     }
   }
 
-  console.log(`[getAnimeBg] No Fanart or TMDB background found. Falling back to MAL poster.`);
+  // logger.debug(`[getAnimeBg] No Fanart or TMDB background found. Falling back to MAL poster.`);
   return malPosterUrl;
 }
 
@@ -1355,7 +1355,7 @@ async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series
         }
       }
     } catch (error) {
-      console.warn(`[getAnimeLogo] TVDB logo fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeLogo] TVDB logo fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
 
@@ -1363,7 +1363,7 @@ async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series
     try {
       return imdb.getLogoFromImdb(imdbId);
     } catch (error) {
-      console.warn(`[getAnimeLogo] IMDB logo fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeLogo] IMDB logo fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   if (artProvider === 'tmdb' && tmdbId) {
@@ -1377,7 +1377,7 @@ async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series
           return tmdbLogo;
         }
     } catch (error) {
-      console.warn(`[getAnimeLogo] TMDB logo fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimeLogo] TMDB logo fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   // fallback to fanart
@@ -1389,7 +1389,7 @@ async function getAnimeLogo({ malId, imdbId, tvdbId, tmdbId, mediaType = 'series
       fanartUrl = await fanart.getBestMovieLogo(tmdbId, config);
     }
     if (fanartUrl) {
-      console.log(`[getAnimeLogo] Found high-quality back up logo from Fanart.tv.`);
+      // logger.debug(`[getAnimeLogo] Found high-quality back up logo from Fanart.tv.`);
       return fanartUrl;
     }
   }
@@ -1417,7 +1417,7 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
         }
       }
     } catch (error) {
-      console.warn(`[getAnimePoster] AniList poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimePoster] AniList poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
@@ -1425,11 +1425,11 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
     try {
       const kitsuData = await kitsu.getMultipleAnimeDetails([mapping.kitsu_id]);
       if (kitsuData?.data?.[0]?.attributes?.posterImage?.original) {
-        console.log(`[getAnimePoster] Found Kitsu poster for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
+        // logger.debug(`[getAnimePoster] Found Kitsu poster for MAL ID: ${malId} (Kitsu ID: ${mapping.kitsu_id})`);
         return kitsuData.data[0].attributes.posterImage.original;
       }
     } catch (error) {
-      console.warn(`[getAnimePoster] Kitsu poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[getAnimePoster] Kitsu poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
@@ -1440,11 +1440,11 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
           : await tvdb.getSeriesPoster(tvdbId, config);
 
       if (tvdbPoster) {
-        console.log(`[getAnimePoster] Found TVDB poster for MAL ID: ${malId} (TVDB ID: ${tvdbId}, Type: ${mediaType}) - ${tvdbPoster}`);
+        // logger.debug(`[getAnimePoster] Found TVDB poster for MAL ID: ${malId} (TVDB ID: ${tvdbId}, Type: ${mediaType}) - ${tvdbPoster}`);
         return tvdbPoster;
       }
     } catch (error) {
-      console.warn(`[getAnimePoster] TVDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
+      logger.warn(`[getAnimePoster] TVDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
 
@@ -1452,7 +1452,7 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
     try {
       return imdb.getPosterFromImdb(imdbId);
     } catch (error) {
-      console.warn(`[getAnimePoster] IMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
+      logger.warn(`[getAnimePoster] IMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
   if (artProvider === 'tmdb' && tmdbId) {
@@ -1468,12 +1468,12 @@ async function getAnimePoster({ malId, imdbId, tvdbId, tmdbId, malPosterUrl, med
           return tmdbPoster;
         }
     } catch (error) {
-      console.warn(`[getAnimePoster] TMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
+      logger.warn(`[getAnimePoster] TMDB poster fetch failed for ID ${malId || imdbId}:`, error.message);
     }
   }
   if (config.apiKeys.fanart && artProvider === 'fanart') {
     let fanartUrl = null;
-    console.log(`[getAnimePoster] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}`);
+    // logger.debug(`[getAnimePoster] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}`);
     if (mediaType === 'series' && tvdbId) {
       fanartUrl = await fanart.getBestSeriesPoster(tvdbId, config);
     } else if (mediaType === 'movie' && (imdbId || tmdbId)) {
@@ -1498,10 +1498,10 @@ async function getBatchAnimeArtwork(malIds, config) {
   if (artProvider === 'anilist' && malIds && malIds.length > 0) {
     try {
       const artworkData = await anilist.getCatalogArtwork(malIds);
-      console.log(`[getBatchAnimeArtwork] Retrieved ${artworkData.length} AniList artworks for ${malIds.length} MAL IDs`);
+      // logger.debug(`[getBatchAnimeArtwork] Retrieved ${artworkData.length} AniList artworks for ${malIds.length} MAL IDs`);
       return artworkData;
     } catch (error) {
-      console.warn(`[getBatchAnimeArtwork] AniList batch fetch failed:`, error.message);
+      logger.warn(`[getBatchAnimeArtwork] AniList batch fetch failed:`, error.message);
     }
   }
   
@@ -1517,11 +1517,11 @@ async function getBatchAnimeArtwork(malIds, config) {
       
       if (kitsuIds.length > 0) {
         const kitsuData = await kitsu.getMultipleAnimeDetails(kitsuIds);
-        console.log(`[getBatchAnimeArtwork] Retrieved ${kitsuData?.data?.length || 0} Kitsu artworks for ${kitsuIds.length} Kitsu IDs`);
+        // logger.debug(`[getBatchAnimeArtwork] Retrieved ${kitsuData?.data?.length || 0} Kitsu artworks for ${kitsuIds.length} Kitsu IDs`);
         return kitsuData?.data || [];
       }
     } catch (error) {
-      console.warn(`[getBatchAnimeArtwork] Kitsu batch fetch failed:`, error.message);
+      logger.warn(`[getBatchAnimeArtwork] Kitsu batch fetch failed:`, error.message);
     }
   }
   
@@ -1562,12 +1562,12 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       if (anilistData) {
         const anilistPoster = anilist.getPosterUrl(anilistData);
         if (anilistPoster) {
-          console.log(`[parseAnimeCatalogMeta] Using AniList poster for MAL ID: ${malId}`);
+          // logger.debug(`[parseAnimeCatalogMeta] Using AniList poster for MAL ID: ${malId}`);
           finalPosterUrl = anilistPoster;
         }
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMeta] AniList poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMeta] AniList poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   } else if (artProvider === 'tvdb' && malId) {
     try {
@@ -1579,12 +1579,12 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
           : await tvdb.getSeriesPoster(mapping.thetvdb_id, config);
         
         if (tvdbPoster) {
-          console.log(`[parseAnimeCatalogMeta] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);
+          // logger.debug(`[parseAnimeCatalogMeta] Using TVDB poster for MAL ID: ${malId} (TVDB ID: ${mapping.thetvdb_id}, Type: ${stremioType})`);
           finalPosterUrl = tvdbPoster;
         }
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMeta] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMeta] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   } else if (artProvider === 'tmdb' && malId) {
     try {
@@ -1596,12 +1596,12 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
           : await tmdb.getTmdbSeriesPoster(mapping.themoviedb_id, config);
         
         if (tmdbPoster) {
-          console.log(`[parseAnimeCatalogMeta] Using TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${stremioType})`);
+          // logger.debug(`[parseAnimeCatalogMeta] Using TMDB poster for MAL ID: ${malId} (TMDB ID: ${mapping.themoviedb_id}, Type: ${stremioType})`);
           finalPosterUrl = tmdbPoster;
         }
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMeta] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMeta] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
@@ -1671,7 +1671,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
 /**
  * Batch version of parseAnimeCatalogMeta that uses AniList batch fetching for better performance
  */
-async function parseAnimeCatalogMetaBatch(animes, config, language) {
+async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideos = false) {
   if (!animes || animes.length === 0) return [];
 
   const artProvider = resolveArtProvider('anime', 'poster', config);
@@ -1740,7 +1740,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         title: anilistArtwork[0].title?.english || anilistArtwork[0].title?.romaji
       } : 'No data');*/
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] AniList batch fetch failed:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] AniList batch fetch failed:`, error.message);
     }
   }
   
@@ -1767,21 +1767,21 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
               kitsuArtworkMap.set(mapping.mal_id, item);
             }
           });
-          console.log(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuData.data.length} Kitsu artworks`);
+          // logger.debug(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuData.data.length} Kitsu artworks`);
         }
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
     }
   }
   
   const preferredProvider = config.providers?.anime || 'mal';
-  consola.log(`[parseAnimeCatalogMetaBatch] Preferred provider: ${preferredProvider}`);
+  // logger.debug(`[parseAnimeCatalogMetaBatch] Preferred provider: ${preferredProvider}`);
 
   if(preferredProvider === 'kitsu') {
     try {
       let metas = await Promise.all(malIds.map(async id => {
-        consola.log(`[parseAnimeCatalogMetaBatch] Fetching Kitsu data for ID: ${id}`);
+        // logger.debug(`[parseAnimeCatalogMetaBatch] Fetching Kitsu data for ID: ${id}`);
         
         const mapping = idMapper.getMappingByMalId(id);
         if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animes.find(anime => anime.mal_id === id), config, language);
@@ -1866,7 +1866,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
       }
       return metas;
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
     }
   }
   // Process each anime
@@ -1931,8 +1931,8 @@ async function parseAnimeCatalogMetaBatch(animes, config, language) {
         const { getMeta } = await import("../lib/getMeta");
         // When useImdbIdForCatalogAndSearch is enabled, call getMeta with IMDb ID so it's treated consistently
         // This ensures cache keys match - if forceAnimeForDetectedImdb is false, it will be treated as series/movie
-        return await getMeta(stremioType, language, id, config, config.userUUID, true);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, true))?.meta || null;
+        return await getMeta(stremioType, language, id, config, config.userUUID, includeVideos);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, includeVideos))?.meta || null;
     }
     else {
       let malReleaseInfo = anime.year || (anime.aired?.from ? anime.aired.from.substring(0, 4) : "");
@@ -1988,7 +1988,7 @@ function getYouTubeIdFromUrl(url) {
       return urlObject.pathname.slice(1); // Remove the leading '/'
     }
   } catch (error) {
-    console.warn(`[Parser] Could not parse invalid URL for YouTube ID: ${url}`);
+    logger.warn(`[Parser] Could not parse invalid URL for YouTube ID: ${url}`);
   }
   return null;
 }
@@ -2042,7 +2042,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
       if(tvdbId) {
       const tvdbPoster = await tvdb.getMoviePoster(tvdbId, config);
       if (tvdbPoster) {
-        console.log(`[getMoviePoster] Found TVDB poster for movie (TVDB ID: ${tvdbId})`);
+        // logger.debug(`[getMoviePoster] Found TVDB poster for movie (TVDB ID: ${tvdbId})`);
           return tvdbPoster;
         }
       }
@@ -2051,12 +2051,12 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'movie', config);
         if(mappedIds.tvdbId) {
           const tvdbPoster = await tvdb.getMoviePoster(mappedIds.tvdbId, config);
-          console.log(`[getMoviePoster] Found TVDB poster via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+          // logger.debug(`[getMoviePoster] Found TVDB poster via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbPoster;
         }
       }
     } catch (error) {
-      console.warn(`[getMoviePoster] TVDB poster fetch failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMoviePoster] TVDB poster fetch failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2065,7 +2065,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
       if(tmdbId) {
         const poster = await fanart.getBestMoviePoster(tmdbId, config);
         if (poster) {
-          console.log(`[getMoviePoster] Found Fanart.tv poster for movie (TMDB ID: ${tmdbId})`);
+          // logger.debug(`[getMoviePoster] Found Fanart.tv poster for movie (TMDB ID: ${tmdbId})`);
           return poster;
         }
       }
@@ -2075,13 +2075,13 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
         if(mappedIds.tmdbId) {
           const poster = await fanart.getBestMoviePoster(mappedIds.tmdbId, config);
           if (poster) {
-            console.log(`[getMoviePoster] Found Fanart.tv poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            // logger.debug(`[getMoviePoster] Found Fanart.tv poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
             return poster;
           }
         }
       }
     } catch (error) {
-      console.warn(`[getMoviePoster] Fanart.tv poster fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
+      logger.warn(`[getMoviePoster] Fanart.tv poster fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   
@@ -2092,7 +2092,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
           const img = selectTmdbImageByLang(res.posters, config);
           return img?.file_path;
         });
-        console.log(`[getMoviePoster] Found TMDB poster for movie (TMDB ID: ${tmdbId})`);
+        // logger.debug(`[getMoviePoster] Found TMDB poster for movie (TMDB ID: ${tmdbId})`);
         return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
       }
       else {
@@ -2103,12 +2103,12 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
             const img = selectTmdbImageByLang(res.posters, config);
             return img?.file_path;
           });
-          console.log(`[getMoviePoster] Found TMDB poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+          // logger.debug(`[getMoviePoster] Found TMDB poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
           return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
         }
       }
     } catch (error) {
-      console.warn(`[getMoviePoster] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMoviePoster] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2134,10 +2134,10 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
       if(tvdbId) {
-        console.log(`[getMovieBackground] Fetching TVDB background for movie (TVDB ID: ${tvdbId})`);
+        // logger.debug(`[getMovieBackground] Fetching TVDB background for movie (TVDB ID: ${tvdbId})`);
         const tvdbBackground = await tvdb.getMovieBackground(tvdbId, config);
         if (tvdbBackground) {
-          console.log(`[getMovieBackground] Found TVDB background for movie (TVDB ID: ${tvdbId}): ${tvdbBackground.substring(0, 50)}...`);
+          // logger.debug(`[getMovieBackground] Found TVDB background for movie (TVDB ID: ${tvdbId}): ${tvdbBackground.substring(0, 50)}...`);
           return tvdbBackground;
         }
       }
@@ -2146,12 +2146,12 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'movie', config);
         if(mappedIds.tvdbId) {
           const tvdbBackground = await tvdb.getMovieBackground(mappedIds.tvdbId, config);
-          console.log(`[getMovieBackground] Found TVDB background via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+          // logger.debug(`[getMovieBackground] Found TVDB background via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbBackground;
         }
       }
     } catch (error) {
-      console.warn(`[getMovieBackground] TVDB background fetch failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMovieBackground] TVDB background fetch failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2160,7 +2160,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
       if(tmdbId) {
         const bg = await fanart.getBestMovieBackground(tmdbId, config);
         if (bg) {
-          console.log(`[getMovieBackground] Found Fanart.tv background for movie (TMDB ID: ${tmdbId})`);
+          // logger.debug(`[getMovieBackground] Found Fanart.tv background for movie (TMDB ID: ${tmdbId})`);
           return bg;
         }
       }
@@ -2170,13 +2170,13 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
         if(mappedIds.tmdbId) {
           const bg = await fanart.getBestMovieBackground(mappedIds.tmdbId, config);
           if (bg) {
-            console.log(`[getMovieBackground] Found Fanart.tv background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            // logger.debug(`[getMovieBackground] Found Fanart.tv background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
             return bg;
           }
         }
       }
     } catch (error) {
-      console.warn(`[getMovieBackground] Fanart.tv background fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
+      logger.warn(`[getMovieBackground] Fanart.tv background fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   
@@ -2187,7 +2187,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
           const img = res.backdrops[0];
           return img?.file_path;
         });
-        console.log(`[getMovieBackground] Found TMDB background for movie (TMDB ID: ${tmdbId})`);
+        // logger.debug(`[getMovieBackground] Found TMDB background for movie (TMDB ID: ${tmdbId})`);
         return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
       }
       else {
@@ -2198,12 +2198,12 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
             const img = res.backdrops[0];
             return img?.file_path;
           });
-          console.log(`[getMovieBackground] Found TMDB background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+          // logger.debug(`[getMovieBackground] Found TMDB background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
           return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
         }
       }
     } catch (error) {
-      console.warn(`[getMovieBackground] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMovieBackground] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2225,7 +2225,7 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
       if(tvdbId) {
         const tvdbLogo = await tvdb.getMovieLogo(tvdbId, config);
         if (tvdbLogo) {
-          console.log(`[getMovieLogo] Found TVDB logo for movie (TVDB ID: ${tvdbId})`);
+          // logger.debug(`[getMovieLogo] Found TVDB logo for movie (TVDB ID: ${tvdbId})`);
           return tvdbLogo;
         }
       }
@@ -2234,12 +2234,12 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'movie', config);
         if(mappedIds.tvdbId) {
           const tvdbLogo = await tvdb.getMovieLogo(mappedIds.tvdbId, config);
-          console.log(`[getMovieLogo] Found TVDB logo via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+          // logger.debug(`[getMovieLogo] Found TVDB logo via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbLogo;
         }
       }
     } catch (error) {
-      console.warn(`[getMovieLogo] TVDB logo fetch failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMovieLogo] TVDB logo fetch failed for movie (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2248,7 +2248,7 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
       if(tmdbId) {
         const logo = await fanart.getBestMovieLogo(tmdbId, config);
         if (logo) {
-          console.log(`[getMovieLogo] Found Fanart.tv logo for movie (TMDB ID: ${tmdbId})`);
+          // logger.debug(`[getMovieLogo] Found Fanart.tv logo for movie (TMDB ID: ${tmdbId})`);
           return logo;
         }
       }
@@ -2258,13 +2258,13 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
         if(mappedIds.tmdbId) {
           const logo = await fanart.getBestMovieLogo(mappedIds.tmdbId, config);
           if (logo) {
-            console.log(`[getMovieLogo] Found Fanart.tv logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            // logger.debug(`[getMovieLogo] Found Fanart.tv logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
             return logo;
           }
         }
       }
     } catch (error) {
-      console.warn(`[getMovieLogo] Fanart.tv logo fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
+      logger.warn(`[getMovieLogo] Fanart.tv logo fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   
@@ -2276,8 +2276,8 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
           return img?.file_path;
         });
         if (tmdbLogo) {
-          console.log(`[getMovieLogo] Found TMDB logo for movie (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+          // logger.debug(`[getMovieLogo] Found TMDB logo for movie (TMDB ID: ${tmdbId})`);
+          return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
         }
       }
       else {
@@ -2289,13 +2289,13 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
             return img?.file_path;
           });
           if (tmdbLogo) {
-            console.log(`[getMovieLogo] Found TMDB logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            // logger.debug(`[getMovieLogo] Found TMDB logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
             return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
           }
         }
       }
     } catch (error) {
-      console.warn(`[getMovieLogo] TMDB logo fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
+      logger.warn(`[getMovieLogo] TMDB logo fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2335,7 +2335,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
         }
       }
     } catch (error) {
-      console.warn(`[getSeriesPoster] TVDB poster fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesPoster] TVDB poster fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2358,7 +2358,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
       }
       
     } catch (error) {
-      console.warn(`[getSeriesPoster] Fanart.tv poster fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesPoster] Fanart.tv poster fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2387,7 +2387,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
         }
       }
     } catch (error) {
-      console.warn(`[getSeriesPoster] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesPoster] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2414,7 +2414,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       if(tvdbId) {
       const tvdbBackground = await tvdb.getSeriesBackground(tvdbId, config);
       if (tvdbBackground) {
-        console.log(`[getSeriesBackground] Found TVDB background for series (TVDB ID: ${tvdbId})`);
+        // logger.debug(`[getSeriesBackground] Found TVDB background for series (TVDB ID: ${tvdbId})`);
           return tvdbBackground;
         }
       }
@@ -2423,12 +2423,12 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           const tvdbBackground = await tvdb.getSeriesBackground(mappedIds.tvdbId, config);
-          console.log(`[getSeriesBackground] Found TVDB background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+          // logger.debug(`[getSeriesBackground] Found TVDB background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbBackground;
         }
       }
     } catch (error) {
-      console.warn(`[getSeriesBackground] TVDB background fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesBackground] TVDB background fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2437,7 +2437,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       if(tvdbId) {
         const bg = await fanart.getBestSeriesBackground(tvdbId, config);
         if (bg) {
-          console.log(`[getSeriesBackground] Found Fanart.tv background for series (TVDB ID: ${tvdbId})`);
+          // logger.debug(`[getSeriesBackground] Found Fanart.tv background for series (TVDB ID: ${tvdbId})`);
           return bg;
         }
       } else if(tmdbId) {
@@ -2445,14 +2445,14 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
         if(mappedIds.tvdbId) {
           const bg = await fanart.getBestSeriesBackground(mappedIds.tvdbId, config);
           if (bg) {
-            console.log(`[getSeriesBackground] Found Fanart.tv background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+            // logger.debug(`[getSeriesBackground] Found Fanart.tv background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
             return bg;
           }
         }
       }
           
     } catch (error) {
-      console.warn(`[getSeriesBackground] Fanart.tv background fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesBackground] Fanart.tv background fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2463,7 +2463,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
           const img = res.backdrops[0];
           return img?.file_path;
         });
-        console.log(`[getSeriesBackground] Found TMDB background for series (TMDB ID: ${tmdbId})`);
+        // logger.debug(`[getSeriesBackground] Found TMDB background for series (TMDB ID: ${tmdbId})`);
         return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
       }
       else {
@@ -2473,12 +2473,12 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
             const img = res.backdrops[0];
             return img?.file_path;
           });
-          console.log(`[getSeriesBackground] Found TMDB background via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+          // logger.debug(`[getSeriesBackground] Found TMDB background via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
           return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
         }
       }
     } catch (error) {
-      console.warn(`[getSeriesBackground] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesBackground] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2501,7 +2501,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
       if(tvdbId) {
         const tvdbLogo = await tvdb.getSeriesLogo(tvdbId, config);
         if (tvdbLogo) {
-        console.log(`[getSeriesLogo] Found TVDB logo for series (TVDB ID: ${tvdbId})`);
+        // logger.debug(`[getSeriesLogo] Found TVDB logo for series (TVDB ID: ${tvdbId})`);
           return tvdbLogo;
         }
       }
@@ -2510,12 +2510,12 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
           const tvdbLogo = await tvdb.getSeriesLogo(mappedIds.tvdbId, config);
-          console.log(`[getSeriesLogo] Found TVDB logo via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+          // logger.debug(`[getSeriesLogo] Found TVDB logo via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbLogo;
         }
       }
     } catch (error) {
-      console.warn(`[getSeriesLogo] TVDB logo fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesLogo] TVDB logo fetch failed for series (TVDB ID: ${tvdbId}):`, error.message);
     }
   }
   
@@ -2524,17 +2524,17 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
       if(tvdbId) {
         const logo = await fanart.getBestTVLogo(tvdbId, config);
         if (logo) {
-          console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId})`);
+          // logger.debug(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId})`);
           return logo;
         }
       }
       else if(tmdbId) {
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
-          console.log(`[getSeriesLogo] Fetching Fanart.tv logo for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
+          // logger.debug(`[getSeriesLogo] Fetching Fanart.tv logo for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           const logo = await fanart.getBestTVLogo(mappedIds.tvdbId, config);
           if (logo) {
-            console.log(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tvdbId})`);
+            // logger.debug(`[getSeriesLogo] Found Fanart.tv logo for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tvdbId})`);
             return logo;
           }
         }
@@ -2543,7 +2543,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
         return fallbackLogoUrl;
       }
     } catch (error) {
-      console.warn(`[getSeriesLogo] Fanart.tv logo fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
+      logger.warn(`[getSeriesLogo] Fanart.tv logo fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   
@@ -2557,8 +2557,8 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
           return img?.file_path;
         });
         if (tmdbLogo) {
-          console.log(`[getSeriesLogo] Found TMDB logo for series (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+          // logger.debug(`[getSeriesLogo] Found TMDB logo for series (TMDB ID: ${tmdbId})`);
+          return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
         }
       }
       else {
@@ -2572,13 +2572,13 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
             return img?.file_path;
           });
           if (tmdbLogo) {
-            console.log(`[getSeriesLogo] Found TMDB logo via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-            return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+            // logger.debug(`[getSeriesLogo] Found TMDB logo via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
           }
         }
       }
     } catch (error) {
-      console.warn(`[getSeriesLogo] TMDB logo fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
+      logger.warn(`[getSeriesLogo] TMDB logo fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   else if ((artProvider === 'imdb' || fallbackLogoUrl === null) && metaProvider != 'imdb') {
@@ -2803,7 +2803,7 @@ function isReleasedDigitally(meta) {
 
 function getKitsuLocalizedTitle(titles, language = '') {
   if (!titles) return 'Unknown';
-  console.log(`[getKitsuLocalizedTitle] language: ${language}`);
+  // logger.debug(`[getKitsuLocalizedTitle] language: ${language}`);
 
   // Normalize the locale (e.g., "fr-FR" -> "fr_fr", "en-US" -> "en_us")
   const normalized = language.toLowerCase().replace('-', '_');
@@ -2931,7 +2931,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
           finalPosterUrl = kitsuData.attributes.posterImage.original;
         }
       } catch (error) {
-        console.warn(`[parseAnimeCatalogMetaBatch] Kitsu poster fetch failed for MAL ID ${malId}:`, error.message);
+        logger.warn(`[parseAnimeCatalogMetaBatch] Kitsu poster fetch failed for MAL ID ${malId}:`, error.message);
       }
     }
   }
@@ -2949,7 +2949,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
         finalPosterUrl = tvdbPoster;
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] TVDB poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   
@@ -2966,7 +2966,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
         finalPosterUrl = tmdbPoster;
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] TMDB poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
 
@@ -2974,7 +2974,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
     try {
       finalPosterUrl = imdb.getPosterFromImdb(imdbId);
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] IMDB poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   //console.log(`[parseAnimeCatalogMetaBatch] useFanart: ${useFanart} mapping: ${JSON.stringify(mapping)}`);
@@ -2997,7 +2997,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
         }
       }
     } catch (error) {
-      console.warn(`[parseAnimeCatalogMetaBatch] Fanart poster fetch failed for MAL ID ${malId}:`, error.message);
+      logger.warn(`[parseAnimeCatalogMetaBatch] Fanart poster fetch failed for MAL ID ${malId}:`, error.message);
     }
   }
   

@@ -131,7 +131,7 @@ const getCacheHeaders = function (opts) {
 const respond = function (req, res, data, opts) {
 
   if (NO_CACHE) {
-    console.log('[Cache] Bypassing browser cache for this request.');
+    consola.debug('[Cache] Bypassing browser cache for this request.');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -200,7 +200,7 @@ const respond = function (req, res, data, opts) {
 
     // Enhanced cache invalidation strategy
     if (req.headers['if-none-match'] === etag) {
-      console.log('[Cache] Browser cache hit but forcing refresh for ETag:', etag);
+      consola.debug('[Cache] Browser cache hit but forcing refresh for ETag:', etag);
       // Don't return 304, continue to send fresh content
       // This ensures Stremio always gets the latest data when config changes
     }
@@ -211,7 +211,7 @@ const respond = function (req, res, data, opts) {
       if (req.route.path.includes('/manifest.json')) {
         // Manifest: No cache at all - always fresh
         cacheControl = "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0";
-        console.log('[Cache] Setting manifest Cache-Control:', cacheControl);
+        consola.debug('[Cache] Setting manifest Cache-Control:', cacheControl);
       } else if (req.route.path.includes('/catalog/')) {
         // Catalog: Very short cache with aggressive revalidation
         const configVersion = req.userConfig?.configVersion || Date.now();
@@ -220,7 +220,7 @@ const respond = function (req, res, data, opts) {
         
         // Use very short cache to force refresh when config changes
         cacheControl = "no-cache, must-revalidate, max-age=0";
-        console.log('[Cache] Setting catalog Cache-Control:', cacheControl);
+        consola.debug('[Cache] Setting catalog Cache-Control:', cacheControl);
       } else if (req.route.path.includes('/meta/')) {
         // Meta: Aggressive cache control to ensure fresh data when config changes
         const configVersion = req.userConfig?.configVersion || Date.now();
@@ -229,19 +229,19 @@ const respond = function (req, res, data, opts) {
         
         // Use very short cache to force refresh when config changes
         cacheControl = "no-cache, must-revalidate, max-age=0";
-        console.log('[Cache] Setting aggressive meta Cache-Control:', cacheControl);
+        consola.debug('[Cache] Setting aggressive meta Cache-Control:', cacheControl);
       } else {
         // For other routes, use getCacheHeaders if available, otherwise default
         const defaultCacheControl = getCacheHeaders(opts);
         cacheControl = defaultCacheControl || "public, max-age=3600";
-        console.log('[Cache] Setting default Cache-Control:', cacheControl);
+        consola.debug('[Cache] Setting default Cache-Control:', cacheControl);
       }
-    } else {
-      // For routes without path info, use getCacheHeaders if available, otherwise default
-      const defaultCacheControl = getCacheHeaders(opts);
-      cacheControl = defaultCacheControl || "public, max-age=3600";
-      console.log('[Cache] Setting default Cache-Control:', cacheControl);
-    }
+      } else {
+        // For routes without path info, use getCacheHeaders if available, otherwise default
+        const defaultCacheControl = getCacheHeaders(opts);
+        cacheControl = defaultCacheControl || "public, max-age=3600";
+        consola.debug('[Cache] Setting default Cache-Control:', cacheControl);
+      }
     
     res.setHeader("Cache-Control", cacheControl);
   }
@@ -335,7 +335,7 @@ addon.post("/api/cache/warm", async (req, res) => {
   }
   
   try {
-    console.log('[API] Manual essential content warming requested');
+    consola.info('[API] Manual essential content warming requested');
     const results = await warmEssentialContent();
     res.json({ 
       success: true, 
@@ -343,7 +343,7 @@ addon.post("/api/cache/warm", async (req, res) => {
       results 
     });
   } catch (error) {
-    console.error('[API] Essential content warming failed:', error);
+    consola.error('[API] Essential content warming failed:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message 
@@ -425,7 +425,7 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
       const keys = await redis.keys(key);
       if (keys.length > 0) {
         await redis.del(...keys);
-        console.log(`[Cache] Cleared ${keys.length} keys matching pattern: ${key}`);
+        consola.info(`[Cache] Cleared ${keys.length} keys matching pattern: ${key}`);
         res.json({
           success: true,
           message: `Cleared ${keys.length} cache keys matching pattern: ${key}`,
@@ -441,7 +441,7 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
     } else {
       // Clear specific key
       const result = await redis.del(key);
-      console.log(`[Cache] Cleared cache key: ${key} (result: ${result})`);
+      consola.info(`[Cache] Cleared cache key: ${key} (result: ${result})`);
       res.json({
         success: true,
         message: result > 0 ? `Cache key cleared: ${key}` : `Cache key not found: ${key}`,
@@ -449,7 +449,7 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
       });
     }
   } catch (error) {
-    console.error(`[Cache] Error clearing cache key ${key}:`, error);
+    consola.error(`[Cache] Error clearing cache key ${key}:`, error);
     res.status(500).json({
       error: 'Failed to clear cache key',
       details: error.message
@@ -500,11 +500,11 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         // Load config from database
         const config = await database.getUserConfig(userUUID);
         if (!config) {
-            console.log(`[Manifest] No config found for user: ${userUUID}`);
+            consola.debug(`[Manifest] No config found for user: ${userUUID}`);
             return res.status(404).send({ err: "User configuration not found." });
         }
         
-        console.log(`[Manifest] Building fresh manifest for user: ${userUUID}`);
+        consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}`);
         const manifest = await getManifest(config);
             if (!manifest) {
                 return res.status(500).send({ err: "Failed to build manifest." });
@@ -546,7 +546,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         };
             respond(req, res, manifest, cacheOpts);
     } catch (error) {
-        console.error(`[Manifest] Error for user ${userUUID}:`, error);
+        consola.error(`[Manifest] Error for user ${userUUID}:`, error);
         res.status(500).send({ err: "Failed to build manifest." });
     }
 });
@@ -581,8 +581,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     catalogConfig.enableRPDB = false;
   }
 
-  console.log(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
-  console.log(`[CATALOG ROUTE] enableRPDB value:`, catalogConfig?.enableRPDB, `(type: ${typeof catalogConfig?.enableRPDB})`);
+  //consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
+  //consola.debug(`[CATALOG ROUTE] enableRPDB value:`, catalogConfig?.enableRPDB, `(type: ${typeof catalogConfig?.enableRPDB})`);
   
   // Add current catalog config to global config for per-catalog settings (like enableRPDB)
   config._currentCatalogConfig = catalogConfig;
@@ -668,7 +668,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         const args = [actualType, language, page];
         switch (id) {
           case "tmdb.trending":
-            console.log(`[CATALOG ROUTE 2] tmdb.trending called with type=${actualType}, language=${language}, page=${page}`);
+            //consola.debug(`[CATALOG ROUTE 2] tmdb.trending called with type=${actualType}, language=${language}, page=${page}`);
             metas = (await getTrending(...args, genreName, config, userUUID, false)).metas;
             break;
           case "tmdb.favorites":
@@ -727,7 +727,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (id === 'mal.most_popular') {
-              console.log(`[CATALOG ROUTE 2] mal.most_popular called with type=${actualType}, language=${language}, page=${page}`);
+              //consola.debug(`[CATALOG ROUTE 2] mal.most_popular called with type=${actualType}, language=${language}, page=${page}`);
               const animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
                 return await jikan.getTopAnimeByFilter('bypopularity', page, config);
               });
@@ -745,7 +745,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             } else {
             const [startDate, endDate] = decadeMap[id];
             const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+              //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
               return await jikan.getAnimeGenres();
              });
                 const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
@@ -822,7 +822,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           case 'mal.genres': {
             const mediaType = type_filter || 'series';
             const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              console.log('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+              //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
               return await jikan.getAnimeGenres();
             });
             const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
@@ -841,7 +841,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
           case 'mal.studios': {
             if (genreName) {
-                console.log(`[Catalog] Fetching anime for MAL studio: ${genreName}`);
+                //consola.debug(`[Catalog] Fetching anime for MAL studio: ${genreName}`);
                 const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100));
                 const selectedStudio = studios.find(studio => {
                     const defaultTitle = studio.titles.find(t => t.type === 'Default');
@@ -855,7 +855,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
                     });
                     metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 } else {
-                    console.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
+                    consola.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
                 }
             }
             break;
@@ -915,7 +915,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     respond(req, res, responseData, httpCacheOpts);
 
   } catch (e) {
-    console.error(`Error in catalog route for id "${id}" and type "${actualType}":`, e);
+    consola.error(`Error in catalog route for id "${id}" and type "${actualType}":`, e);
     return res.status(500).send("Internal Server Error");
   }
 });
@@ -962,9 +962,9 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         } catch (error) {
           // Skip MDBList ratings if rate limited (429) or any other error
           if (error.response?.status === 429) {
-            console.warn(`[MDBList] Rate limited for MAL ID ${result.meta.mal_id}, skipping ratings`);
+            consola.warn(`[MDBList] Rate limited for MAL ID ${result.meta.mal_id}, skipping ratings`);
           } else {
-            console.warn(`[MDBList] Error fetching ratings for MAL ID ${result.meta.mal_id}:`, error.message);
+            consola.warn(`[MDBList] Error fetching ratings for MAL ID ${result.meta.mal_id}:`, error.message);
           }
         }
       }
@@ -978,9 +978,9 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         } catch (error) {
           // Skip MDBList ratings if rate limited (429) or any other error
           if (error.response?.status === 429) {
-            console.warn(`[MDBList] Rate limited for IMDb ID ${result.meta.imdb_id}, skipping ratings`);
+            consola.warn(`[MDBList] Rate limited for IMDb ID ${result.meta.imdb_id}, skipping ratings`);
           } else {
-            console.warn(`[MDBList] Error fetching ratings for IMDb ID ${result.meta.imdb_id}:`, error.message);
+            consola.warn(`[MDBList] Error fetching ratings for IMDb ID ${result.meta.imdb_id}:`, error.message);
           }
         }
       }
@@ -997,7 +997,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         }
       } catch (e) {
         // Keep original if URL parsing fails
-        console.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
+        consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
       }
     }
     
@@ -1007,7 +1007,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     // Warm user's frequently accessed content in background
     if (!NO_CACHE) {
       warmUserContent(userUUID, type).catch(error => {
-        console.warn(`[Cache Warming] User content warming failed for ${userUUID}:`, error.message);
+        consola.warn(`[Cache Warming] User content warming failed for ${userUUID}:`, error.message);
       });
     }
     
@@ -1016,7 +1016,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     respond(req, res, result);
     
   } catch (error) {
-    console.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
+    consola.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
     
     // Log error for dashboard
     try {
@@ -1027,7 +1027,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         stack: error.stack
       });
     } catch (logError) {
-      console.warn('Failed to log error:', logError.message);
+      consola.warn('Failed to log error:', logError.message);
     }
     
     res.status(500).send("Internal Server Error");
@@ -1099,7 +1099,7 @@ addon.get("/api/proxy-manifest", async function (req, res) {
     res.setHeader('Content-Type', 'application/json');
     res.json(manifestData.data);
   } catch (error) {
-    console.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
+    consola.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
     res.status(error.response?.status || 500).json({ 
       error: error.message || 'Failed to fetch manifest' 
     });
@@ -1138,7 +1138,7 @@ addon.get("/api/detect-page-size", async function (req, res) {
       res.json({ pageSize, detected: true });
     }
   } catch (error) {
-    console.error(`[Detect Page Size] Failed to detect page size for ${catalogUrl}:`, error.message);
+    consola.error(`[Detect Page Size] Failed to detect page size for ${catalogUrl}:`, error.message);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(error.response?.status || 500).json({ 
       pageSize: 100,
@@ -1179,7 +1179,7 @@ addon.get("/poster/:type/:id", async function (req, res) {
       res.redirect(302, fallback);
     }
   } catch (error) {
-    console.error(`Error in poster proxy for ${id}:`, error.message);
+    consola.error(`Error in poster proxy for ${id}:`, error.message);
     res.redirect(302, fallback);
   }
 });
@@ -1201,7 +1201,7 @@ addon.get("/api/image/blur", async function (req, res) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.send(blurredImageBuffer);
   } catch (error) {
-    console.error('Error in blur route:', error);
+    consola.error('Error in blur route:', error);
     res.status(500).send('Error processing image');
   }
 });
@@ -1233,7 +1233,7 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
       res.status(500).send('Failed to process image');
     }
   } catch (error) {
-    console.error(`Error converting banner to background for ${imageUrl}:`, error.message);
+    consola.error(`Error converting banner to background for ${imageUrl}:`, error.message);
     res.status(500).send('Internal server error');
   }
 });
@@ -1260,7 +1260,7 @@ addon.get("/api/image/gradient-overlay", async function (req, res) {
       res.status(500).send('Failed to process image');
     }
   } catch (error) {
-    console.error(`Error adding gradient overlay for ${imageUrl}:`, error.message);
+    consola.error(`Error adding gradient overlay for ${imageUrl}:`, error.message);
     res.status(500).send('Internal server error');
   }
 });
@@ -1312,7 +1312,7 @@ addon.get('/resize-image', async function (req, res) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.send(buffer);
   } catch (error) {
-    console.error('Error in resize-image route:', error);
+    consola.error('Error in resize-image route:', error);
     res.status(500).send('Error processing image');
   }
 });
@@ -1369,7 +1369,7 @@ addon.get("/dashboard", (req, res) => {
     
     res.send(html);
   } catch (error) {
-    console.error('Error serving dashboard page:', error);
+    consola.error('Error serving dashboard page:', error);
     res.status(500).send('Error loading dashboard');
   }
 });
@@ -1415,7 +1415,7 @@ addon.get('/api/admin/users', async (req, res) => {
     const users = await database.getAllUsersWithStats();
     res.json({ users });
   } catch (error) {
-    console.error('[Admin API] Error fetching users:', error);
+    consola.error('[Admin API] Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -1437,7 +1437,7 @@ addon.get('/api/admin/users/:userUUID', async (req, res) => {
     
     res.json({ user: userDetails });
   } catch (error) {
-    console.error('[Admin API] Error fetching user details:', error);
+    consola.error('[Admin API] Error fetching user details:', error);
     res.status(500).json({ error: 'Failed to fetch user details' });
   }
 });
@@ -1459,7 +1459,7 @@ addon.post('/api/admin/users/:userUUID/reset-password', async (req, res) => {
     
     res.json({ newPassword });
   } catch (error) {
-    console.error('[Admin API] Error resetting password:', error);
+    consola.error('[Admin API] Error resetting password:', error);
     res.status(500).json({ error: 'Failed to reset password' });
   }
 });
@@ -1481,7 +1481,7 @@ addon.delete('/api/admin/users/:userUUID', async (req, res) => {
     
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
-    console.error('[Admin API] Error deleting user:', error);
+    consola.error('[Admin API] Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
@@ -1499,7 +1499,7 @@ addon.get('/api/admin/users/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=users-export-${new Date().toISOString().split('T')[0]}.json`);
     res.json(userData);
   } catch (error) {
-    console.error('[Admin API] Error exporting user data:', error);
+    consola.error('[Admin API] Error exporting user data:', error);
     res.status(500).json({ error: 'Failed to export user data' });
   }
 });
@@ -1516,7 +1516,7 @@ addon.post('/api/admin/users/bulk-delete-inactive', async (req, res) => {
     const deletedCount = await database.deleteInactiveUsers(days);
     res.json({ deletedCount, message: `${deletedCount} inactive users deleted` });
   } catch (error) {
-    console.error('[Admin API] Error deleting inactive users:', error);
+    consola.error('[Admin API] Error deleting inactive users:', error);
     res.status(500).json({ error: 'Failed to delete inactive users' });
   }
 });
@@ -1557,7 +1557,7 @@ addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
       manifest: await getManifest(config)
     });
   } catch (error) {
-    console.error(`[Debug] Error for user ${userUUID}:`, error);
+    consola.error(`[Debug] Error for user ${userUUID}:`, error);
     res.status(500).json({ error: "Failed to get debug info" });
   }
 });
@@ -1595,7 +1595,7 @@ addon.delete('/api/config/delete-user/:userUUID', async (req, res) => {
     // Delete user and all associated data
     await database.deleteUser(userUUID);
     
-    console.log(`[Delete User] Successfully deleted user ${userUUID} and all associated data`);
+    consola.info(`[Delete User] Successfully deleted user ${userUUID} and all associated data`);
     
     res.json({ 
       success: true, 
@@ -1603,7 +1603,7 @@ addon.delete('/api/config/delete-user/:userUUID', async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`[Delete User] Error deleting user ${userUUID}:`, error);
+    consola.error(`[Delete User] Error deleting user ${userUUID}:`, error);
     res.status(500).json({ 
       error: 'Failed to delete user account',
       details: error.message 
@@ -1625,7 +1625,7 @@ addon.post('/api/cache/clean-bad', async (req, res) => {
       results: result
     });
   } catch (error) {
-    console.error('[Cache Clean] Error:', error);
+    consola.error('[Cache Clean] Error:', error);
     res.status(500).json({ 
       error: 'Failed to clean cache',
       details: error.message 
@@ -1644,7 +1644,7 @@ addon.get('/api/cache/health', async (req, res) => {
       health: health
     });
   } catch (error) {
-    console.error('[Cache Health] Error:', error);
+    consola.error('[Cache Health] Error:', error);
     res.status(500).json({ 
       error: 'Failed to get cache health',
       details: error.message 
@@ -1673,7 +1673,7 @@ addon.post('/api/cache/test-granular', async (req, res) => {
       message: reconstructed ? 'Components found and reconstructed' : 'No cached components found'
     });
   } catch (error) {
-    console.error('[Cache Test] Error:', error);
+    consola.error('[Cache Test] Error:', error);
     res.status(500).json({ 
       error: 'Failed to test granular caching',
       details: error.message 
@@ -1708,7 +1708,7 @@ addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
     
     if (keys.length > 0) {
       await redis.del(...keys);
-      console.log(`[Cache Invalidation] Cleared ${keys.length} cache entries for user ${userUUID}`);
+      consola.info(`[Cache Invalidation] Cleared ${keys.length} cache entries for user ${userUUID}`);
       
       res.json({
         success: true,
@@ -1724,7 +1724,7 @@ addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('[Cache Invalidation] Error:', error);
+    consola.error('[Cache Invalidation] Error:', error);
     res.status(500).json({ 
       error: 'Failed to invalidate cache',
       details: error.message 
@@ -1766,7 +1766,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('[Cache Test] Error:', error);
+    consola.error('[Cache Test] Error:', error);
     res.status(500).json({ 
       error: 'Failed to test cache',
       details: error.message 
@@ -1807,7 +1807,7 @@ addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('[Cache Status] Error:', error);
+    consola.error('[Cache Status] Error:', error);
     res.status(500).json({ 
       error: 'Failed to get cache status',
       details: error.message 
@@ -1851,11 +1851,11 @@ addon.get("/api/dashboard/overview", (req, res) => {
     dashboardApi.getAllDashboardData()
       .then(data => res.json(data))
       .catch(error => {
-        console.error('[Dashboard API] Error:', error);
+        consola.error('[Dashboard API] Error:', error);
         res.status(500).json({ error: 'Failed to fetch dashboard data' });
       });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 });
@@ -1875,11 +1875,11 @@ addon.get("/api/dashboard/stats", (req, res) => {
     ]).then(([quickStats, cachePerformance, providerPerformance]) => {
       res.json({ quickStats, cachePerformance, providerPerformance });
     }).catch(error => {
-      console.error('[Dashboard API] Error:', error);
+      consola.error('[Dashboard API] Error:', error);
       res.status(500).json({ error: 'Failed to fetch dashboard stats' });
     });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });
   }
 });
@@ -1896,11 +1896,11 @@ addon.get("/api/dashboard/system", (req, res) => {
     ]).then(([systemConfig, resourceUsage, providerStatus, recentActivity]) => {
       res.json({ systemConfig, resourceUsage, providerStatus, recentActivity });
     }).catch(error => {
-      console.error('[Dashboard API] Error:', error);
+      consola.error('[Dashboard API] Error:', error);
       res.status(500).json({ error: 'Failed to fetch system data' });
     });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch system data' });
   }
 });
@@ -1920,11 +1920,11 @@ addon.get("/api/dashboard/operations", (req, res) => {
     ]).then(([errorLogs, maintenanceTasks, cacheStats]) => {
       res.json({ errorLogs, maintenanceTasks, cacheStats });
     }).catch(error => {
-      console.error('[Dashboard API] Error:', error);
+      consola.error('[Dashboard API] Error:', error);
       res.status(500).json({ error: 'Failed to fetch operations data' });
     });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch operations data' });
   }
 });
@@ -1955,7 +1955,7 @@ addon.get("/api/dashboard/timing", async (req, res) => {
       const { getRatingsStats } = require('./lib/imdbRatings.js');
       imdbRatingsStats = getRatingsStats();
     } catch (err) {
-      console.warn('[Dashboard API] Failed to get IMDb ratings stats:', err);
+      consola.warn('[Dashboard API] Failed to get IMDb ratings stats:', err);
     }
     
     res.json({
@@ -1967,7 +1967,7 @@ addon.get("/api/dashboard/timing", async (req, res) => {
       lastUpdated: new Date().toISOString()
     });
   } catch (error) {
-    console.error('[Timing API] Error:', error);
+    consola.error('[Timing API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch timing data' });
   }
 });
@@ -1988,11 +1988,11 @@ addon.post("/api/dashboard/cache/clear", (req, res) => {
     dashboardApi.clearCache(type)
       .then(result => res.json(result))
       .catch(error => {
-        console.error('[Dashboard API] Error:', error);
+        consola.error('[Dashboard API] Error:', error);
         res.status(500).json({ error: 'Failed to clear cache' });
       });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to clear cache' });
   }
 });
@@ -2011,14 +2011,14 @@ addon.post("/api/dashboard/users/clear", (req, res) => {
       dashboardApi.requestTracker.clearActiveUserData()
         .then(result => res.json(result))
         .catch(error => {
-          console.error('[Dashboard API] User data clear error:', error);
+          consola.error('[Dashboard API] User data clear error:', error);
           res.status(500).json({ error: 'Failed to clear user data' });
         });
     } else {
       res.status(500).json({ error: 'Request tracker not available' });
     }
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to clear user data' });
   }
 });
@@ -2044,7 +2044,7 @@ addon.get("/api/dashboard/analytics", async (req, res) => {
       idResolverPerformance: idResolverStats
     });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch analytics data' });
   }
 });
@@ -2064,11 +2064,11 @@ addon.post("/api/dashboard/uptime/reset", (req, res) => {
         newStartTime: new Date().toISOString()
       });
     }).catch(error => {
-      console.error('[Dashboard API] Error resetting uptime:', error);
+      consola.error('[Dashboard API] Error resetting uptime:', error);
       res.status(500).json({ error: 'Failed to reset uptime counter' });
     });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to reset uptime counter' });
   }
 });
@@ -2103,7 +2103,7 @@ addon.post("/api/dashboard/test-errors", (req, res) => {
       message: 'Test error logs generated successfully'
     });
   } catch (error) {
-    console.error('[Dashboard API] Error generating test errors:', error);
+    consola.error('[Dashboard API] Error generating test errors:', error);
     res.status(500).json({ error: 'Failed to generate test errors' });
   }
 });
@@ -2127,11 +2127,11 @@ addon.get("/api/dashboard/content", (req, res) => {
         }
       });
     }).catch(error => {
-      console.error('[Dashboard API] Error:', error);
+      consola.error('[Dashboard API] Error:', error);
       res.status(500).json({ error: 'Failed to fetch content data' });
     });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch content data' });
   }
 });
@@ -2147,11 +2147,11 @@ addon.get("/api/dashboard/users", (req, res) => {
     dashboardApi.getUserStats()
       .then(data => res.json(data))
       .catch(error => {
-        console.error('[Dashboard API] Error:', error);
+        consola.error('[Dashboard API] Error:', error);
         res.status(500).json({ error: 'Failed to fetch user data' });
       });
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch user data' });
   }
 });
@@ -2163,7 +2163,7 @@ addon.get("/api/dashboard/mal-warmup", (req, res) => {
     const stats = getWarmupStats();
     res.json(stats);
   } catch (error) {
-    console.error('[MAL Warmer API] Error:', error);
+    consola.error('[MAL Warmer API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch MAL warmup stats' });
   }
 });
@@ -2175,7 +2175,7 @@ addon.get("/api/dashboard/catalog-warmup", (req, res) => {
     const stats = getWarmupStats();
     res.json(stats);
   } catch (error) {
-    console.error('[Catalog Warmer API] Error:', error);
+    consola.error('[Catalog Warmer API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch catalog warmup stats' });
   }
 });
@@ -2220,7 +2220,7 @@ addon.get("/api/dashboard/warming", (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[Warming Dashboard API] Error:', error);
+    consola.error('[Warming Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch warming dashboard data' });
   }
 });
@@ -2280,7 +2280,7 @@ addon.post("/api/dashboard/warming/control", (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('[Warming Control API] Error:', error);
+    consola.error('[Warming Control API] Error:', error);
     res.status(500).json({ error: 'Failed to control warming system' });
   }
 });
@@ -2308,7 +2308,7 @@ addon.post("/api/dashboard/maintenance/execute", async (req, res) => {
           const dashboardApi = getDashboardAPI();
           result = await dashboardApi.clearExpiredCacheEntries();
         } catch (error) {
-          console.error('[Maintenance Task] Error clearing expired cache:', error);
+          consola.error('[Maintenance Task] Error clearing expired cache:', error);
           result = { success: false, message: `Failed to clear expired cache: ${error.message}` };
         }
       } else if (action === 'stop') {
@@ -2364,7 +2364,7 @@ addon.post("/api/dashboard/maintenance/execute", async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('[Maintenance Task API] Error:', error);
+    consola.error('[Maintenance Task API] Error:', error);
     res.status(500).json({ error: 'Failed to execute maintenance task' });
   }
 });
@@ -2372,19 +2372,19 @@ addon.post("/api/dashboard/maintenance/execute", async (req, res) => {
 // Blocking startup function that waits for cache warming
 async function startServerWithCacheWarming() {
   if (ENABLE_CACHE_WARMING && !NO_CACHE) {
-    console.log('[Server Startup] Waiting for initial cache warming to complete...');
+    consola.info('[Server Startup] Waiting for initial cache warming to complete...');
     const { warmEssentialContent } = require("./lib/cacheWarmer");
     
     try {
       await warmEssentialContent();
-      console.log('[Server Startup] Initial cache warming completed successfully');
+      consola.success('[Server Startup] Initial cache warming completed successfully');
     } catch (error) {
-      console.error('[Server Startup] Initial cache warming failed:', error.message);
-      console.log('[Server Startup] Continuing with server startup despite cache warming failure');
+      consola.error('[Server Startup] Initial cache warming failed:', error.message);
+      consola.info('[Server Startup] Continuing with server startup despite cache warming failure');
     }
   }
   
-  console.log('[Server Startup] Server ready to accept requests');
+  consola.success('[Server Startup] Server ready to accept requests');
   return addon;
 }
 

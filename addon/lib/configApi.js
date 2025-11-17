@@ -1,6 +1,23 @@
 const crypto = require('crypto');
 const { request } = require("undici");
 const database = require('./database');
+const consola = require('consola');
+const logger = consola.create({ 
+  level: process.env.LOG_LEVEL ? 
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+    (process.env.NODE_ENV === 'production' ? 3 : 4),
+  fancy: true,
+  colors: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  },
+  tag: 'ConfigApi'
+});
+
+// Import the config cache
+const configCache = require('./configCache');
 
 class ConfigApi {
   constructor() {
@@ -68,7 +85,7 @@ class ConfigApi {
 
   // Save configuration with password
   async saveConfig(req, res) {
-    console.log(`[ConfigApi] saveConfig called - starting function`);
+    logger.debug('saveConfig called - starting function');
     try {
       await this.initialize();
       
@@ -119,10 +136,10 @@ class ConfigApi {
       let oldConfig = null;
       try {
         oldConfig = await database.getUserConfig(userUUID);
-        console.log(`[ConfigApi] Retrieved old config for user ${userUUID}`);
+        logger.debug(`Retrieved old config for user ${userUUID}`);
       } catch (error) {
         // User might not exist yet, that's fine
-        console.log(`[ConfigApi] No existing config found for user ${userUUID}, treating as new config`);
+        logger.debug(`No existing config found for user ${userUUID}, treating as new config`);
       }
       
       // Add a config version that changes when config is updated
@@ -130,14 +147,18 @@ class ConfigApi {
       configWithTimestamp.configVersion = Date.now();
       
       await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
-      console.log(`[ConfigApi] Saved config for user ${userUUID}`);
+      logger.info(`Saved config for user ${userUUID}`);
+      
+      // Invalidate memory cache
+      configCache.del(userUUID);
+      
       // Always trust the UUID after creation
       await database.trustUUID(userUUID);
       
       // Invalidate user's cache when config changes
       try {
         const redis = require('./getCache').redis;
-        console.log(`[ConfigApi] Starting cache invalidation process`);
+        logger.debug(`Starting cache invalidation process`);
         
         // Clear only the meta components affected by config changes
         try {
@@ -150,15 +171,15 @@ class ConfigApi {
           if (config.castCount !== undefined && config.castCount !== oldConfig?.castCount) {
             patterns.push(`meta-cast:*`);  // Cast components
             patterns.push(`meta-videos:*`); // Episode components (might include cast info)
-            console.log(`[ConfigApi] Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
+            logger.debug(`Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
           }
           
           // Language changes - affects all meta content
           if (config.language !== undefined && config.language !== oldConfig?.language) {
             patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
             patterns.push(`search:*`); // Also clear search cache since language affects search results
-            console.log(`[ConfigApi] Language changed from ${oldConfig?.language} to ${config.language}`);
-            console.log(`[ConfigApi] DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
+            logger.debug(`Language changed from ${oldConfig?.language} to ${config.language}`);
+            logger.debug(`DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
           }
           
           // Blur thumbs changes - affects poster/background display
@@ -167,16 +188,16 @@ class ConfigApi {
             patterns.push(`meta-background:*`); // Background components
             patterns.push(`meta-videos:*`); // Videos components
             patterns.push(`search:*`); // Also clear search cache since blur affects search results
-            console.log(`[ConfigApi] Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, and search cache for blur change`);
+            logger.debug(`Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
+            logger.debug('Added patterns for poster, background, and search cache for blur change');
           }
           
           // Show prefix changes - affects basic meta display
           if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
             patterns.push(`meta-basic:*`); // Basic meta components
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
+            logger.debug(`Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
+            logger.debug('Added patterns for basic meta and search cache for prefix change');
           }
           
 
@@ -184,8 +205,8 @@ class ConfigApi {
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
             patterns.push(`meta-basic:*`); // Basic meta components
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            console.log(`[ConfigApi] Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
+            logger.debug(`Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
+            logger.debug('Added patterns for basic meta and search cache for show meta provider attribution change');
           }
 
           // API key changes - affects poster/background components and search results
@@ -198,23 +219,23 @@ class ConfigApi {
               patterns.push(`meta-background:*`); // Background components affected by RPDB
               patterns.push(`search:*`); // Search results affected by API keys
               patterns.push(`catalog:*`); // Catalog results affected by API keys
-              console.log(`[ConfigApi] API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
-              console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
+              logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
+              logger.debug(`DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
             }
           }
 
           // Art provider changes - affects all art-related components
-          console.log(`[ConfigApi] DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
-          console.log(`[ConfigApi] DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
+          logger.debug(`DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
+          logger.debug(`DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
           
           if (config.artProviders && oldConfig?.artProviders) {
-            console.log(`[ConfigApi] DEBUG: Both art providers exist, comparing...`);
+            logger.debug(`DEBUG: Both art providers exist, comparing...`);
             let artProvidersChanged = false;
             
             // Check englishArtOnly boolean property
             if (config.artProviders?.englishArtOnly !== oldConfig?.artProviders?.englishArtOnly) {
               artProvidersChanged = true;
-              console.log(`[ConfigApi] englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
+              logger.debug(`englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
             }
             
             // Check each content type (movie, series, anime)
@@ -227,7 +248,7 @@ class ConfigApi {
               if (typeof newContentType === 'string' && typeof oldContentType === 'string') {
                 if (newContentType !== oldContentType) {
                   artProvidersChanged = true;
-                  console.log(`[ConfigApi] ${contentType} art provider changed from ${oldContentType} to ${newContentType}`);
+                  logger.debug(`${contentType} art provider changed from ${oldContentType} to ${newContentType}`);
                 }
               }
               // Handle new nested object format
@@ -236,14 +257,14 @@ class ConfigApi {
                 for (const artType of artTypes) {
                   if (newContentType?.[artType] !== oldContentType?.[artType]) {
                     artProvidersChanged = true;
-                    console.log(`[ConfigApi] ${contentType}.${artType} changed from ${oldContentType?.[artType]} to ${newContentType?.[artType]}`);
+                    logger.debug(`${contentType}.${artType} changed from ${oldContentType?.[artType]} to ${newContentType?.[artType]}`);
                   }
                 }
               }
               // Handle mixed formats (legacy to new or vice versa) or missing values
               else if (newContentType !== oldContentType) {
                 artProvidersChanged = true;
-                console.log(`[ConfigApi] ${contentType} art provider format changed from ${oldContentType} to ${newContentType}`);
+                logger.debug(`${contentType} art provider format changed from ${oldContentType} to ${newContentType}`);
               }
             }
             
@@ -252,19 +273,19 @@ class ConfigApi {
               patterns.push(`meta-*:*`);
               patterns.push(`search:*`);
               patterns.push(`catalog:*`);
-              console.log(`[ConfigApi] Art providers changed - clearing cache`);
-              console.log(`[ConfigApi] Old art providers:`, oldConfig?.artProviders);
-              console.log(`[ConfigApi] New art providers:`, config.artProviders);
+              logger.debug('Art providers changed - clearing cache');
+              logger.debug('Old art providers:', oldConfig?.artProviders);
+              logger.debug('New art providers:', config.artProviders);
             }
           }
           
           // Meta provider changes - affects all components since it changes the data source
           if (config.providers && oldConfig?.providers) {
-            console.log(`[ConfigApi] DEBUG: Comparing providers - old:`, oldConfig.providers, `new:`, config.providers);
+            logger.debug('Comparing providers - old:', oldConfig.providers, 'new:', config.providers);
             const providersChanged = Object.keys(config.providers).some(key => 
               config.providers[key] !== oldConfig.providers?.[key]
             );
-            console.log(`[ConfigApi] DEBUG: Providers changed:`, providersChanged);
+            logger.debug('Providers changed:', providersChanged);
             if (providersChanged) {
               patterns.push(`meta:*`);
               patterns.push(`meta-*:*`);
@@ -272,7 +293,7 @@ class ConfigApi {
               patterns.push(`catalog:*`);
             }
           } else {
-            console.log(`[ConfigApi] DEBUG: No providers to compare - old:`, oldConfig?.providers, `new:`, config.providers);
+            logger.debug('No providers to compare - old:', oldConfig?.providers, 'new:', config.providers);
           }
           
           // SFW mode changes
@@ -280,8 +301,8 @@ class ConfigApi {
             // SFW affects content filtering, so clear all components
             patterns.push(`meta-*:*`); // All meta components
             patterns.push(`search:*`); // Also clear search cache since SFW affects search results
-            console.log(`[ConfigApi] SFW mode changed from ${oldConfig?.sfw} to ${config.sfw}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for meta and search cache for SFW change`);
+            logger.debug(`SFW mode changed from ${oldConfig?.sfw} to ${config.sfw}`);
+            logger.debug('Added patterns for meta and search cache for SFW change');
           }
           
           // MDBList catalog changes - affects specific catalog cache
@@ -299,7 +320,7 @@ class ConfigApi {
                 if (newCatalog.sort !== oldCatalog.sort || newCatalog.order !== oldCatalog.order) {
                   mdblistChanged = true;
                   changedCatalogs.push(newCatalog.id);
-                  console.log(`[ConfigApi] MDBList catalog ${newCatalog.id} sort/order changed:`, {
+                  logger.debug(`MDBList catalog ${newCatalog.id} sort/order changed:`, {
                     old: { sort: oldCatalog.sort, order: oldCatalog.order },
                     new: { sort: newCatalog.sort, order: newCatalog.order }
                   });
@@ -312,7 +333,7 @@ class ConfigApi {
               for (const catalogId of changedCatalogs) {
                 const pattern = `catalog:${userUUID}:*${catalogId}*`;
                 patterns.push(pattern);
-                console.log(`[ConfigApi] Added cache invalidation pattern for MDBList catalog: ${pattern}`);
+                logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
             }
           }
@@ -327,16 +348,16 @@ class ConfigApi {
             
             if (searchProvidersChanged || aiEnabledChanged) {
               patterns.push(`search:*`); // Clear all search cache
-              console.log(`[ConfigApi] Search settings changed, clearing search cache`);
-              if (searchProvidersChanged) console.log(`[ConfigApi] Search providers changed`);
-              if (aiEnabledChanged) console.log(`[ConfigApi] AI enabled changed from ${oldConfig.search.ai_enabled} to ${config.search.ai_enabled}`);
-              console.log(`[ConfigApi] DEBUG: Added pattern "search:*" for search settings change`);
+              logger.debug(`Search settings changed, clearing search cache`);
+              if (searchProvidersChanged) logger.debug(`Search providers changed`);
+              if (aiEnabledChanged) logger.debug(`AI enabled changed from ${oldConfig.search.ai_enabled} to ${config.search.ai_enabled}`);
+              logger.debug(`DEBUG: Added pattern "search:*" for search settings change`);
             }
           }
           
           // If no specific patterns identified, don't clear anything
           if (patterns.length === 0) {
-            console.log(`[ConfigApi] No config changes detected, skipping cache clearing`);
+            logger.debug(`No config changes detected, skipping cache clearing`);
           }
           
           let totalCleared = 0;
@@ -345,15 +366,15 @@ class ConfigApi {
           for (const pattern of patterns) {
             const keys = await redis.keys(pattern);
             if (keys.length > 0) {
-              console.log(`[ConfigApi] DEBUG: Found ${keys.length} keys matching pattern "${pattern}":`);
-              keys.slice(0, 5).forEach(key => console.log(`[ConfigApi] DEBUG:   - ${key}`));
-              if (keys.length > 5) console.log(`[ConfigApi] DEBUG:   ... and ${keys.length - 5} more`);
+              logger.debug(`Found ${keys.length} keys matching pattern "${pattern}":`);
+              keys.slice(0, 5).forEach(key => logger.debug(`  - ${key}`));
+              if (keys.length > 5) logger.debug(`  ... and ${keys.length - 5} more`);
               
               await redis.del(...keys);
               totalCleared += keys.length;
-              console.log(`[ConfigApi] Cleared ${keys.length} cache entries matching pattern: ${pattern}`);
+              logger.debug(`Cleared ${keys.length} cache entries matching pattern: ${pattern}`);
             } else {
-              console.log(`[ConfigApi] DEBUG: No keys found matching pattern "${pattern}"`);
+              logger.debug(`No keys found matching pattern "${pattern}"`);
             }
           }
           
@@ -363,14 +384,14 @@ class ConfigApi {
             try {
               // Clear ALL cache entries for this user (nuclear option)
               const allKeys = await redis.keys(`meta-*:*`);
-              console.log(`[ConfigApi] DEBUG: Nuclear option - Found ${allKeys.length} total meta keys:`);
-              allKeys.slice(0, 10).forEach(key => console.log(`[ConfigApi] DEBUG:   - ${key}`));
-              if (allKeys.length > 10) console.log(`[ConfigApi] DEBUG:   ... and ${allKeys.length - 10} more`);
+              logger.debug(`Nuclear option - Found ${allKeys.length} total meta keys:`);
+              allKeys.slice(0, 10).forEach(key => logger.debug(`  - ${key}`));
+              if (allKeys.length > 10) logger.debug(`  ... and ${allKeys.length - 10} more`);
               
               if (allKeys.length > 0) {
                 await redis.del(...allKeys);
                 totalCleared += allKeys.length;
-                console.log(`[ConfigApi] NUCLEAR OPTION: Cleared ${allKeys.length} total meta cache entries for user`);
+                logger.info(`NUCLEAR OPTION: Cleared ${allKeys.length} total meta cache entries for user`);
               }
               
               // Also try clearing with more specific patterns (matching actual cache key format)
@@ -391,35 +412,35 @@ class ConfigApi {
               for (const pattern of specificPatterns) {
                 const keys = await redis.keys(pattern);
                 if (keys.length > 0) {
-                  console.log(`[ConfigApi] DEBUG: Specific pattern "${pattern}" found ${keys.length} keys:`);
-                  keys.slice(0, 3).forEach(key => console.log(`[ConfigApi] DEBUG:   - ${key}`));
-                  if (keys.length > 3) console.log(`[ConfigApi] DEBUG:   ... and ${keys.length - 3} more`);
+                  logger.debug(`Specific pattern "${pattern}" found ${keys.length} keys:`);
+                  keys.slice(0, 3).forEach(key => logger.debug(`  - ${key}`));
+                  if (keys.length > 3) logger.debug(`  ... and ${keys.length - 3} more`);
                   
                   await redis.del(...keys);
                   totalCleared += keys.length;
-                  console.log(`[ConfigApi] Cleared ${keys.length} cache entries with pattern: ${pattern}`);
+                  logger.debug(`Cleared ${keys.length} cache entries with pattern: ${pattern}`);
                 } else {
-                  console.log(`[ConfigApi] DEBUG: Specific pattern "${pattern}" found no keys`);
+                  logger.debug(`Specific pattern "${pattern}" found no keys`);
                 }
               }
               
             } catch (fallbackError) {
-              console.warn(`[ConfigApi] Fallback cache clearing failed:`, fallbackError.message);
+              logger.warn('Fallback cache clearing failed:', fallbackError.message);
             }
           }
           
           if (totalCleared > 0) {
-            console.log(`[ConfigApi] Total affected cache cleared: ${totalCleared} entries`);
+            logger.info(`Total affected cache cleared: ${totalCleared} entries`);
           } else {
-            console.log(`[ConfigApi] No affected cache entries found to clear`);
+            logger.debug('No affected cache entries found to clear');
           }
         } catch (cacheError) {
-          console.warn(`[ConfigApi] Failed to clear affected cache:`, cacheError.message);
+          logger.warn('Failed to clear affected cache:', cacheError.message);
         }
         
 
       } catch (cacheError) {
-        console.warn(`[ConfigApi] Failed to invalidate cache for user ${userUUID}:`, cacheError.message);
+        logger.warn(`Failed to invalidate cache for user ${userUUID}:`, cacheError.message);
         // Don't fail the config save if cache invalidation fails
       }
       
@@ -437,7 +458,7 @@ class ConfigApi {
         message: existingUUID ? 'Configuration updated successfully' : 'Configuration saved successfully'
       });
     } catch (error) {
-      console.error('[ConfigApi] Save config error:', error);
+      logger.error('Save config error:', error);
       res.status(500).json({ error: 'Failed to save configuration' });
     }
   }
@@ -488,15 +509,15 @@ class ConfigApi {
         config: sanitizedConfig
       });
     } catch (error) {
-      console.error('[ConfigApi] Load config error:', error);
+      logger.error('Load config error:', error);
       res.status(500).json({ error: 'Failed to load configuration' });
     }
   }
 
   // Update configuration (requires password)
   async updateConfig(req, res) {
-    console.log(`[ConfigApi] updateConfig called for userUUID: ${req.params.userUUID}`);
-    console.log(`[ConfigApi] Request body keys:`, Object.keys(req.body || {}));
+    logger.debug(`updateConfig called for userUUID: ${req.params.userUUID}`);
+    logger.debug(`Request body keys:`, Object.keys(req.body || {}));
     try {
       await this.initialize();
       
@@ -545,9 +566,9 @@ class ConfigApi {
       let oldConfig = null;
       try {
         oldConfig = await database.getUserConfig(userUUID);
-        console.log(`[ConfigApi] Retrieved old config for user ${userUUID}`);
+        logger.debug(`Retrieved old config for user ${userUUID}`);
       } catch (error) {
-        console.log(`[ConfigApi] Could not retrieve old config for user ${userUUID}:`, error.message);
+        logger.debug(`Could not retrieve old config for user ${userUUID}:`, error.message);
       }
 
       // Add timestamp to track config changes
@@ -561,13 +582,16 @@ class ConfigApi {
       
       // Update the configuration
       await database.saveUserConfig(userUUID, passwordHash, configWithTimestamp);
-      console.log(`[ConfigApi] Updated config for user ${userUUID} with configVersion: ${configWithTimestamp.configVersion}`);
-      console.log(`[ConfigApi] Previous configVersion was: ${oldConfig?.configVersion || 'none'}`);
+      logger.debug(`Updated config for user ${userUUID} with configVersion: ${configWithTimestamp.configVersion}`);
+      logger.debug(`Previous configVersion was: ${oldConfig?.configVersion || 'none'}`);
+      
+      // Invalidate memory cache
+      configCache.del(userUUID);
       
       // Invalidate user's cache when config changes
       try {
         const redis = require('./getCache').redis;
-        console.log(`[ConfigApi] Starting cache invalidation process`);
+        logger.debug(`Starting cache invalidation process`);
         
         // Clear only the meta components affected by config changes
         try {
@@ -580,15 +604,15 @@ class ConfigApi {
           if (config.castCount !== undefined && config.castCount !== oldConfig?.castCount) {
             patterns.push(`meta-cast:*`);  // Cast components
             patterns.push(`meta-videos:*`); // Episode components (might include cast info)
-            console.log(`[ConfigApi] Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
+            logger.debug(`Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
           }
           
           // Language changes - affects all meta content
           if (config.language !== undefined && config.language !== oldConfig?.language) {
             patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
             patterns.push(`search:*`); // Also clear search cache since language affects search results
-            console.log(`[ConfigApi] Language changed from ${oldConfig?.language} to ${config.language}`);
-            console.log(`[ConfigApi] DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
+            logger.debug(`Language changed from ${oldConfig?.language} to ${config.language}`);
+            logger.debug(`DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
           }
           
           // Blur thumbs changes - affects poster/background display
@@ -596,23 +620,23 @@ class ConfigApi {
             patterns.push(`meta-poster:*`); // Poster components
             patterns.push(`meta-background:*`); // Background components
             patterns.push(`search:*`); // Also clear search cache since blur affects search results
-            console.log(`[ConfigApi] Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, and search cache for blur change`);
+            logger.debug(`Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
+            logger.debug(`DEBUG: Added patterns for poster, background, and search cache for blur change`);
           }
           
           // Show prefix changes - affects basic meta display
           if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
             patterns.push(`meta-basic:*`); // Basic meta components
             patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            console.log(`[ConfigApi] Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for prefix change`);
+            logger.debug(`Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
+            logger.debug(`DEBUG: Added patterns for basic meta and search cache for prefix change`);
           }
           // show meta provider attribution changes - affects basic meta display
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
             patterns.push(`meta-basic:*`); // Basic meta components
             patterns.push(`search:*`);
-            console.log(`[ConfigApi] Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
-            console.log(`[ConfigApi] DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
+            logger.debug(`Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
+            logger.debug(`DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
           }
 
           // API key changes - affects poster/background components and search results
@@ -625,23 +649,23 @@ class ConfigApi {
               patterns.push(`meta-background:*`); // Background components affected by RPDB
               patterns.push(`search:*`); // Search results affected by API keys
               patterns.push(`catalog:*`); // Catalog results affected by API keys
-              console.log(`[ConfigApi] API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
-              console.log(`[ConfigApi] DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
+              logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
+              logger.debug(`DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
             }
           }
 
           // Art provider changes - affects all art-related components
-          console.log(`[ConfigApi] DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
-          console.log(`[ConfigApi] DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
+          logger.debug(`DEBUG: Checking art providers - config.artProviders:`, config.artProviders);
+          logger.debug(`DEBUG: Checking art providers - oldConfig?.artProviders:`, oldConfig?.artProviders);
           
           if (config.artProviders && oldConfig?.artProviders) {
-            console.log(`[ConfigApi] DEBUG: Both art providers exist, comparing...`);
+            logger.debug(`DEBUG: Both art providers exist, comparing...`);
             let artProvidersChanged = false;
             
             // Check englishArtOnly boolean property
             if (config.artProviders?.englishArtOnly !== oldConfig?.artProviders?.englishArtOnly) {
               artProvidersChanged = true;
-              console.log(`[ConfigApi] englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
+              logger.debug(`englishArtOnly changed from ${oldConfig?.artProviders?.englishArtOnly} to ${config.artProviders?.englishArtOnly}`);
             }
             
             // Check each content type (movie, series, anime)
@@ -660,7 +684,7 @@ class ConfigApi {
                   
                   if (newArtProvider !== oldArtProvider) {
                     artProvidersChanged = true;
-                    console.log(`[ConfigApi] ${contentType} ${artType} changed from '${oldArtProvider}' to '${newArtProvider}'`);
+                    logger.debug(`${contentType} ${artType} changed from '${oldArtProvider}' to '${newArtProvider}'`);
                   }
                 }
                 
@@ -671,7 +695,7 @@ class ConfigApi {
                 if (newProviders.length > 0 || oldProviders.length > 0) {
                   if (JSON.stringify(newProviders.sort()) !== JSON.stringify(oldProviders.sort())) {
                     artProvidersChanged = true;
-                    console.log(`[ConfigApi] ${contentType} providers changed from [${oldProviders.join(', ')}] to [${newProviders.join(', ')}]`);
+                    logger.debug(`${contentType} providers changed from [${oldProviders.join(', ')}] to [${newProviders.join(', ')}]`);
                   }
                 }
                 
@@ -681,13 +705,13 @@ class ConfigApi {
                 if (newFallbacks.length > 0 || oldFallbacks.length > 0) {
                   if (JSON.stringify(newFallbacks.sort()) !== JSON.stringify(oldFallbacks.sort())) {
                     artProvidersChanged = true;
-                    console.log(`[ConfigApi] ${contentType} fallbacks changed from [${oldFallbacks.join(', ')}] to [${newFallbacks.join(', ')}]`);
+                    logger.debug(`${contentType} fallbacks changed from [${oldFallbacks.join(', ')}] to [${newFallbacks.join(', ')}]`);
                   }
                 }
               } else if (newContentType !== oldContentType) {
                 // One exists and the other doesn't
                 artProvidersChanged = true;
-                console.log(`[ConfigApi] ${contentType} content type changed from ${oldContentType ? 'exists' : 'null'} to ${newContentType ? 'exists' : 'null'}`);
+                logger.debug(`${contentType} content type changed from ${oldContentType ? 'exists' : 'null'} to ${newContentType ? 'exists' : 'null'}`);
               }
             }
             
@@ -697,9 +721,9 @@ class ConfigApi {
               patterns.push(`meta-banner:*`); // Banner components
               patterns.push(`meta-logo:*`); // Logo components
               patterns.push(`search:*`); // Also clear search cache since art affects search results
-              console.log(`[ConfigApi] Art providers changed - added patterns for all art-related components`);
+              logger.debug(`Art providers changed - added patterns for all art-related components`);
             } else {
-              console.log(`[ConfigApi] Art providers unchanged`);
+              logger.debug(`Art providers unchanged`);
             }
           } else if (config.artProviders !== oldConfig?.artProviders) {
             // One exists and the other doesn't
@@ -708,9 +732,9 @@ class ConfigApi {
             patterns.push(`meta-banner:*`); // Banner components
             patterns.push(`meta-logo:*`); // Logo components
             patterns.push(`search:*`); // Also clear search cache since art affects search results
-            console.log(`[ConfigApi] Art providers changed from ${oldConfig?.artProviders ? 'exists' : 'null'} to ${config.artProviders ? 'exists' : 'null'}`);
+            logger.debug(`Art providers changed from ${oldConfig?.artProviders ? 'exists' : 'null'} to ${config.artProviders ? 'exists' : 'null'}`);
           } else {
-            console.log(`[ConfigApi] No art providers in config or oldConfig`);
+            logger.debug(`No art providers in config or oldConfig`);
           }
           
           // MDBList catalog changes - affects specific catalog cache
@@ -728,7 +752,7 @@ class ConfigApi {
                 if (newCatalog.sort !== oldCatalog.sort || newCatalog.order !== oldCatalog.order) {
                   mdblistChanged = true;
                   changedCatalogs.push(newCatalog.id);
-                  console.log(`[ConfigApi] MDBList catalog ${newCatalog.id} sort/order changed:`, {
+                  logger.debug(`MDBList catalog ${newCatalog.id} sort/order changed:`, {
                     old: { sort: oldCatalog.sort, order: oldCatalog.order },
                     new: { sort: newCatalog.sort, order: newCatalog.order }
                   });
@@ -741,14 +765,14 @@ class ConfigApi {
               for (const catalogId of changedCatalogs) {
                 const pattern = `*${catalogId}*`;
                 patterns.push(pattern);
-                console.log(`[ConfigApi] Added cache invalidation pattern for MDBList catalog: ${pattern}`);
+                logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
             }
           }
           
           // Clear cache patterns if any changes were detected
           if (patterns.length > 0) {
-            console.log(`[ConfigApi] Clearing cache patterns:`, patterns);
+            logger.debug(`Clearing cache patterns:`, patterns);
             
             // Clear each pattern
             for (const pattern of patterns) {
@@ -756,22 +780,22 @@ class ConfigApi {
                 const keys = await redis.keys(`*:${userUUID}:${pattern}`);
                 if (keys.length > 0) {
                   await redis.del(...keys);
-                  console.log(`[ConfigApi] Cleared ${keys.length} cache entries for pattern: ${pattern}`);
+                  logger.debug(`Cleared ${keys.length} cache entries for pattern: ${pattern}`);
                 }
               } catch (patternError) {
-                console.error(`[ConfigApi] Error clearing cache pattern ${pattern}:`, patternError);
+                logger.error(`Error clearing cache pattern ${pattern}:`, patternError);
               }
             }
             
-            console.log(`[ConfigApi] Cache invalidation completed for user ${userUUID}`);
+            logger.debug(`Cache invalidation completed for user ${userUUID}`);
           } else {
-            console.log(`[ConfigApi] No cache patterns to clear - no relevant config changes detected`);
+            logger.debug(`No cache patterns to clear - no relevant config changes detected`);
           }
         } catch (cacheError) {
-          console.error(`[ConfigApi] Error during cache invalidation:`, cacheError);
+          logger.error(`Error during cache invalidation:`, cacheError);
         }
       } catch (redisError) {
-        console.error(`[ConfigApi] Error accessing Redis for cache invalidation:`, redisError);
+        logger.error(`Error accessing Redis for cache invalidation:`, redisError);
       }
       
       const hostEnv2 = process.env.HOST_NAME;
@@ -786,7 +810,7 @@ class ConfigApi {
         message: 'Configuration updated successfully'
       });
     } catch (error) {
-      console.error('[ConfigApi] Update config error:', error);
+      logger.error('Update config error:', error);
       res.status(500).json({ error: 'Failed to update configuration' });
     }
   }
@@ -827,7 +851,7 @@ class ConfigApi {
         message: 'Migration completed successfully'
       });
     } catch (error) {
-      console.error('[ConfigApi] Migration error:', error);
+      logger.error('Migration error:', error);
       res.status(500).json({ error: 'Failed to migrate data' });
     }
   }
@@ -846,7 +870,7 @@ class ConfigApi {
         }
       });
     } catch (error) {
-      console.error('[ConfigApi] Get stats error:', error);
+      logger.error('Get stats error:', error);
       res.status(500).json({ error: 'Failed to get database stats' });
     }
   }
@@ -862,7 +886,7 @@ class ConfigApi {
         version: process.env.npm_package_version || '1.0.0'
       });
     } catch (error) {
-      console.error('[ConfigApi] Get addon info error:', error);
+      logger.error('Get addon info error:', error);
       res.status(500).json({ error: 'Failed to get addon information' });
     }
   }
@@ -877,7 +901,7 @@ class ConfigApi {
       const requiresAddonPassword = !!(process.env.ADDON_PASSWORD && process.env.ADDON_PASSWORD.length > 0);
       res.json({ trusted, requiresAddonPassword });
     } catch (error) {
-      console.error('[ConfigApi] isTrusted error:', error);
+      logger.error('isTrusted error:', error);
       res.status(500).json({ error: 'Failed to check trust status' });
     }
   }
@@ -891,6 +915,16 @@ class ConfigApi {
         throw new Error('userUUID is required');
       }
 
+      // Check memory cache first
+      const cached = configCache.get(userUUID);
+      if (cached) {
+      logger.debug(`⚡ Config cache HIT for user ${userUUID.substring(0, 8)}...`);
+        return cached;
+      }
+
+      logger.debug(`❌ Config cache MISS for user ${userUUID.substring(0, 8)}..., loading from database`);
+
+      // Load from database
       const config = await database.getUserConfig(userUUID);
       if (!config) {
         throw new Error(`No configuration found for userUUID: ${userUUID}`);
@@ -905,9 +939,12 @@ class ConfigApi {
         }
       };
 
+      // Store in memory cache
+      configCache.set(userUUID, sanitizedConfig);
+
       return sanitizedConfig;
     } catch (error) {
-      console.error('[ConfigApi] loadConfigFromDatabase error:', error);
+      logger.error('loadConfigFromDatabase error:', error);
       throw error;
     }
   }
@@ -941,7 +978,7 @@ class ConfigApi {
         }
       }
     } catch (error) {
-      console.error('[ConfigApi] Get corrections error:', error);
+      logger.error('Get corrections error:', error);
       res.status(500).json({ error: 'Failed to get corrections' });
     }
   }
@@ -984,7 +1021,7 @@ class ConfigApi {
         res.status(500).json({ error: 'Failed to add correction' });
       }
     } catch (error) {
-      console.error('[ConfigApi] Add correction error:', error);
+      logger.error('Add correction error:', error);
       res.status(500).json({ error: 'Failed to add correction' });
     }
   }
@@ -1021,7 +1058,7 @@ class ConfigApi {
         res.status(404).json({ error: 'Correction not found' });
       }
     } catch (error) {
-      console.error('[ConfigApi] Remove correction error:', error);
+      logger.error('Remove correction error:', error);
       res.status(500).json({ error: 'Failed to remove correction' });
     }
   }

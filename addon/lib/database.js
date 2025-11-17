@@ -5,6 +5,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const redisIdCache = require('./redis-id-cache');
+const consola = require('consola');
+const logger = consola.withTag('Database');
 
 class Database {
   constructor() {
@@ -61,7 +63,7 @@ class Database {
     // from runQuery/getQuery during table creation.
     this.initialized = true;
     await this.createTables();
-    console.log(`[Database] Initialized ${this.type} database`);
+    logger.info(`Initialized ${this.type} database`);
   }
 
   async initializeSQLite(uri) {
@@ -289,7 +291,7 @@ class Database {
         ? JSON.parse(row.config_data) 
         : row.config_data;
     } catch (error) {
-      console.error('[Database] Error parsing config data:', error);
+      logger.error('Error parsing config data:', error);
       return null;
     }
   }
@@ -421,9 +423,9 @@ class Database {
           : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
         
         await this.runQuery(updateQuery, [newBcryptHash, userUUID]);
-        console.log(`[Database] Migrated user ${userUUID} from SHA-256 to bcrypt hash`);
+        logger.info(`Migrated user ${userUUID} from SHA-256 to bcrypt hash`);
       } catch (error) {
-        console.error(`[Database] Failed to migrate user ${userUUID} to bcrypt:`, error);
+        logger.error(`Failed to migrate user ${userUUID} to bcrypt:`, error);
         // Don't fail the login if migration fails
       }
     }
@@ -433,7 +435,7 @@ class Database {
         ? JSON.parse(row.config_data)
         : row.config_data;
     } catch (error) {
-      console.error('[Database] Error parsing user config:', error);
+      logger.error('Error parsing user config:', error);
       return null;
     }
   }
@@ -469,9 +471,9 @@ class Database {
         : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
       await this.runQuery(deleteTrustedQuery, [userUUID]);
       
-      console.log(`[Database] Successfully deleted user ${userUUID} and all associated data`);
+      logger.info(`Successfully deleted user ${userUUID} and all associated data`);
     } catch (error) {
-      console.error(`[Database] Error deleting user ${userUUID}:`, error);
+      logger.error(`Error deleting user ${userUUID}:`, error);
       throw error;
     }
   }
@@ -493,11 +495,11 @@ class Database {
       const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
       
       await this.saveUserConfig(userUUID, passwordHash, config);
-      console.log('[Database] Migrated localStorage config for user:', userUUID);
+      logger.info('[Database] Migrated localStorage config for user:', userUUID);
       
       return userUUID;
     } catch (error) {
-      console.error('[Database] Migration failed:', error);
+      logger.error('Migration failed:', error);
       return null;
     }
   }
@@ -537,7 +539,7 @@ class Database {
       ? 'DELETE FROM id_mappings'
       : 'DELETE FROM id_mappings';
     await this.runQuery(query);
-    console.log('[Database] Pruned all id_mappings.');
+    logger.info('Pruned all id_mappings.');
   }
 
   /**
@@ -619,7 +621,7 @@ class Database {
             ? JSON.parse(row.config_data) 
             : row.config_data;
         } catch (error) {
-          console.warn('[Database] Error parsing config data for user:', row.user_uuid);
+          logger.warn('Error parsing config data for user:', row.user_uuid);
         }
 
         // Check if user has API keys configured
@@ -647,7 +649,7 @@ class Database {
         };
       });
     } catch (error) {
-      console.error('[Database] Error getting all users with stats:', error);
+      logger.error('Error getting all users with stats:', error);
       return [];
     }
   }
@@ -669,7 +671,7 @@ class Database {
           ? JSON.parse(row.config_data) 
           : row.config_data;
       } catch (error) {
-        console.warn('[Database] Error parsing config data for user:', userUUID);
+        logger.warn('Error parsing config data for user:', userUUID);
         return null;
       }
 
@@ -691,7 +693,7 @@ class Database {
         region: configData?.region || 'US'
       };
     } catch (error) {
-      console.error('[Database] Error getting user details:', error);
+      logger.error('Error getting user details:', error);
       return null;
     }
   }
@@ -715,7 +717,7 @@ class Database {
       
       return null;
     } catch (error) {
-      console.error('[Database] Error resetting user password:', error);
+      logger.error('Error resetting user password:', error);
       return null;
     }
   }
@@ -731,7 +733,7 @@ class Database {
       
       return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
     } catch (error) {
-      console.error('[Database] Error deleting user:', error);
+      logger.error('Error deleting user:', error);
       return false;
     }
   }
@@ -767,7 +769,7 @@ class Database {
               ? JSON.parse(row.config_data) 
               : row.config_data;
           } catch (error) {
-            console.warn('[Database] Error parsing config data for export:', row.user_uuid);
+            logger.warn('Error parsing config data for export:', row.user_uuid);
           }
 
           return {
@@ -779,7 +781,7 @@ class Database {
         })
       };
     } catch (error) {
-      console.error('[Database] Error exporting user data:', error);
+      logger.error('Error exporting user data:', error);
       return { exportDate: new Date().toISOString(), totalUsers: 0, users: [] };
     }
   }
@@ -798,7 +800,7 @@ class Database {
       
       return this.type === 'sqlite' ? result.changes : result.rowCount;
     } catch (error) {
-      console.error('[Database] Error deleting inactive users:', error);
+      logger.error('Error deleting inactive users:', error);
       return 0;
     }
   }

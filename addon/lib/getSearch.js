@@ -1067,7 +1067,7 @@ async function getSearch(id, type, language, extra, config) {
       case 'mal.genre_search':
         if (extra.genre_id) {
           const results = await jikan.getAnimeByGenre(extra.genre_id, extra.type_filter, page, config);
-          metas = await Utils.parseAnimeCatalogMetaBatch(results, config, language);
+          metas = await Utils.parseAnimeCatalogMetaBatch(results, config, language, false);
         }
         break;
       
@@ -1075,7 +1075,7 @@ async function getSearch(id, type, language, extra, config) {
         if (extra.va_id) {
           const roles = await jikan.getAnimeByVoiceActor(extra.va_id);
           const animeResults = roles.map(role => role.anime);
-          const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeResults, config, language);
+          const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeResults, config, language, false);
           
           metas = batchMetas.map((meta, index) => {
             if (roles[index]) {

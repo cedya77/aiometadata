@@ -208,7 +208,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
           return await jikan.getAiringNow(page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -216,7 +216,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
           return await jikan.getUpcoming(page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -224,7 +224,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByType('movie', page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -232,7 +232,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-top-series-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByType('tv', page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -240,7 +240,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByFilter('bypopularity', page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -248,7 +248,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-most-favorites-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByFilter('favorite', page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -256,7 +256,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByType('anime', page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -285,7 +285,7 @@ class ComprehensiveCatalogWarmer {
             const animeResults = await cacheWrapJikanApi(`mal-decade-${catalogId}-${page}-${genreId}-${config.sfw}`, async () => {
               return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
             });
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
           }
         }
         break;
@@ -305,7 +305,7 @@ class ComprehensiveCatalogWarmer {
             const animeResults = await cacheWrapJikanApi(`mal-genre-${genreId}-${mediaType}-${page}-${config.sfw}`, async () => {
               return await jikan.getAnimeByGenre(genreId, mediaType, page, config);
             });
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
           }
         }
         break;
@@ -325,7 +325,7 @@ class ComprehensiveCatalogWarmer {
             const animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
               return await jikan.getAnimeByStudio(studioId, page);
             });
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
           } else {
             this.log('warn', `Could not find a MAL ID for studio name: ${genreName}`);
           }
@@ -338,7 +338,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-schedule-${dayOfWeek}-${page}-${config.sfw}`, async () => {
           return await jikan.getAiringSchedule(dayOfWeek, page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
@@ -366,7 +366,7 @@ class ComprehensiveCatalogWarmer {
         const animeResults = await cacheWrapJikanApi(`mal-season-${year}-${season}-${page}-${config.sfw}`, async () => {
           return await jikan.getAnimeBySeason(year, season, page, config);
         });
-        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+        metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
 
