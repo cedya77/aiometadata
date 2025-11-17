@@ -2,6 +2,8 @@ require("dotenv").config();
 const { httpGet } = require('../utils/httpClient');
 const { socksDispatcher } = require('fetch-socks');
 const { Agent } = require('undici');
+const consola = require('consola');
+const logger = consola.withTag('MAL');
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
 
@@ -22,7 +24,7 @@ setInterval(() => {
   }
   
   if (cleaned > 0) {
-    console.log(`[MAL] Cleaned ${cleaned} expired ETag entries. Cache size: ${etagCache.size}`);
+    logger.debug(`Cleaned ${cleaned} expired ETag entries. Cache size: ${etagCache.size}`);
   }
 }, 60 * 60 * 1000); // Run every hour
 
@@ -41,18 +43,18 @@ if (MAL_SOCKS_PROXY_URL) {
         userId: proxyUrlObj.username,
         password: proxyUrlObj.password,
       });
-      console.log(`[MAL] SOCKS proxy is enabled for Jikan API via fetch-socks.`);
+      logger.info(`SOCKS proxy is enabled for Jikan API via fetch-socks.`);
     } else {
-      console.error(`[MAL] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
+      logger.warn(`Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
       malDispatcher = new Agent({ connect: { timeout: 30000 } });
     }
   } catch (error) {
-    console.error(`[MAL] Invalid MAL_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
+    logger.warn(`Invalid MAL_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
     malDispatcher = new Agent({ connect: { timeout: 30000 } });
   }
 } else {
   malDispatcher = new Agent({ connect: { timeout: 30000 } });
-  console.log('[MAL] undici agent is enabled for direct connections.');
+  logger.info('undici agent is enabled for direct connections.');
 }
 
 const BASE_REQUEST_DELAY = 400;  // 400ms = ~2.5 req/sec (safer margin under 3 req/sec limit)
@@ -64,7 +66,7 @@ let isProcessing = false;
 let activeRequests = 0;
 const MAX_CONCURRENT_REQUESTS = 1;
 let rateLimitHitTimestamps = []; // Track timestamps of rate limit hits
-console.log(`[Jikan] Keep-Alive is enabled with optimized rate limiting.`);
+logger.info(`Keep-Alive is enabled with optimized rate limiting.`);
 
 
 async function processQueue() {
@@ -141,7 +143,7 @@ async function processRequest(requestTask) {
         const jitter = Math.random() * 300;
         const totalDelay = baseBackoffTime + jitter;
 
-        console.warn(
+        logger.warn(
           `Jikan rate limit hit (${recentHitCount} hits in last 60s). Retrying in ${Math.round(totalDelay)}ms. ` +
           `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
         );
@@ -169,7 +171,7 @@ async function processRequest(requestTask) {
         const jitter = Math.random() * 500;
         const totalDelay = timeoutDelay + jitter;
         
-        console.warn(
+        logger.warn(
           `Jikan request timeout for "${requestTask.url}". Retrying in ${Math.round(totalDelay)}ms. ` +
           `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
         );
@@ -195,13 +197,13 @@ async function processRequest(requestTask) {
       
     } else {
       if (requestTask.retries >= MAX_RETRIES) {
-        console.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries. Giving up.`);
+        logger.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries. Giving up.`);
       }
       if (error.code) {
-        console.error(`[NETWORK DEBUG] Jikan request for "${requestTask.url}" failed with network error code: ${error.code}`);
+        logger.debug(`Jikan request for "${requestTask.url}" failed with network error code: ${error.code}`);
       }
       if (error.cause) {
-        console.error(`[NETWORK DEBUG] Underlying cause:`, error.cause);
+        logger.debug(`Underlying cause:`, error.cause);
       }
 
       requestTask.reject(error);
@@ -230,9 +232,9 @@ async function _makeJikanRequest(url) {
     
     if (cached && cached.etag) {
       headers['If-None-Match'] = cached.etag;
-      console.log(`Jikan request for: ${url} (with ETag validation)`);
+      //logger.debug(`Jikan request for: ${url} (with ETag validation)`);
     } else {
-      console.log(`Jikan request for: ${url}`);
+      //logger.debug(`Jikan request for: ${url}`);
     }
     
     const response = await httpGet(url, { 
@@ -255,7 +257,7 @@ async function _makeJikanRequest(url) {
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('mal', responseTime, true);
     
-    console.log(`[MAL] Request completed in ${responseTime}ms (undici)`);
+    //logger.debug(`Request completed in ${responseTime}ms (undici)`);
     return response;
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -264,7 +266,7 @@ async function _makeJikanRequest(url) {
     if (error.response?.status === 304) {
       const cached = etagCache.get(url);
       if (cached && cached.data) {
-        console.log(`[MAL] Cache hit (304) for: ${url} in ${responseTime}ms`);
+        //logger.debug(`Cache hit (304) for: ${url} in ${responseTime}ms`);
         const requestTracker = require('./requestTracker');
         requestTracker.trackProviderCall('mal', responseTime, true);
         return cached.data;
@@ -301,11 +303,11 @@ async function searchAnime(type, query, limit = 25, config = {}, page = 1) {
   if (queryType) {
     url += `&type=${queryType}`;
   }
-  console.log(`Jikan request for: ${url}`);
+  //logger.debug(`Jikan request for: ${url}`);
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`A critical error occurred while searching for anime with query "${query}"`, e.message);
+      logger.error(`A critical error occurred while searching for anime with query "${query}"`, e.message);
       return [];
     });
 }
@@ -322,16 +324,16 @@ async function getAnimeDetails(malId) {
 
 
 async function getAnimeEpisodes(malId) {
-  console.log(`Fetching all episode data for MAL ID: ${malId}`);
+  //logger.debug(`Fetching all episode data for MAL ID: ${malId}`);
   const results = await jikanGetAllPages(`/anime/${malId}/episodes`);
-  console.log(`Finished fetching. Total episodes collected for MAL ID ${malId}: ${results.length}`);
+  //logger.debug(`Finished fetching. Total episodes collected for MAL ID ${malId}: ${results.length}`);
   return results;
 }
 
 async function getAnimeEpisodeVideos(malId) {
-  console.log(`Fetching all episode thumbnail data for MAL ID: ${malId}`);
+  //logger.debug(`Fetching all episode thumbnail data for MAL ID: ${malId}`);
   const results = await jikanGetAllPages(`/anime/${malId}/videos/episodes`);
-  console.log(`Finished fetching. Total episode videos collected for MAL ID ${malId}: ${results.length}`);
+  //logger.debug(`Finished fetching. Total episode videos collected for MAL ID ${malId}: ${results.length}`);
   return results;
 }
 
@@ -340,7 +342,7 @@ async function getAnimeCharacters(malId) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch characters for MAL ID ${malId}:`, e.message);
+      logger.warn(`Could not fetch characters for MAL ID ${malId}:`, e.message);
       return [];
     });
 }
@@ -351,7 +353,7 @@ async function getAnimeByVoiceActor(personId) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data?.voices || [])
     .catch(e => {
-      console.error(`Could not fetch roles for person ID ${personId}:`, e.message);
+      logger.warn(`Could not fetch roles for person ID ${personId}:`, e.message);
       return [];
     });
 }
@@ -380,7 +382,7 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
     return enqueueRequest(() => _makeJikanRequest(url), url)
       .then(response => response.data || { data: [], pagination: {} })
       .catch(e => {
-        console.error(`Could not fetch page ${page} for endpoint ${endpoint}:`, e.message);
+        logger.warn(`Could not fetch page ${page} for endpoint ${endpoint}:`, e.message);
         return { data: [], pagination: {} };
       });
   }
@@ -437,7 +439,7 @@ async function jikanGetAllPages(endpoint, initialParams = {}) {
         hasNextPage = false;
       }
     } catch (error) {
-      console.error(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message || error || 'Unknown error');
+      logger.warn(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message || error || 'Unknown error');
       hasNextPage = false; 
     }
     page++;
@@ -467,7 +469,7 @@ async function getAiringSchedule(day, page = 1, config = {}) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch airing schedule for ${day}, page ${page}:`, e.message);
+      logger.warn(`Could not fetch airing schedule for ${day}, page ${page}:`, e.message);
       return [];
     });
 }
@@ -484,7 +486,7 @@ async function getAiringNow(page = 1, config = {}) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch currently airing anime, page ${page}:`, e.message);
+      logger.warn(`Could not fetch currently airing anime, page ${page}:`, e.message);
       return [];
     });
 }
@@ -502,7 +504,7 @@ async function getUpcoming(page = 1, config = {}) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch upcoming anime , page ${page}:`, e.message);
+      logger.warn(`Could not fetch upcoming anime , page ${page}:`, e.message);
       return [];
     });
 }
@@ -539,7 +541,7 @@ async function getAnimeByGenre(genreId, typeFilter = null, page = 1 , config = {
     return animeList.filter(anime => anime.type && desiredTypes.has(anime.type.toLowerCase()));
 
   } catch (error) {
-    console.error(`Jikan API Error: Could not fetch anime for genre ID ${genreId}, page ${page}. URL: ${url}`, error.message);
+    logger.error(`Jikan API Error: Could not fetch anime for genre ID ${genreId}, page ${page}. URL: ${url}`, error.message);
     return []; 
   }
 }
@@ -550,7 +552,7 @@ async function getAnimeGenres() {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch anime genres from Jikan`, e.message);
+      logger.error(`Could not fetch anime genres from Jikan`, e.message);
       return [];
     });
 }
@@ -587,7 +589,7 @@ async function getTopAnimeByDateRange(startDate, endDate, page = 1, genreId, con
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch top anime between ${startDate} and ${endDate}, page ${page}:`, e.message);
+      logger.warn(`Could not fetch top anime between ${startDate} and ${endDate}, page ${page}:`, e.message);
       return [];
   });
 }
@@ -616,7 +618,7 @@ async function getTopAnimeByType(type, page = 1, config = {}) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch top  anime, page ${page}:`, e.message);
+      logger.warn(`Could not fetch top  anime, page ${page}:`, e.message);
       return [];
     });
 }
@@ -635,7 +637,7 @@ async function getTopAnimeByFilter(filter, page = 1, config = {}) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch top anime by filter ${filter}, page ${page}:`, e.message);
+      logger.warn(`Could not fetch top anime by filter ${filter}, page ${page}:`, e.message);
       return [];
     });
 }
@@ -666,7 +668,7 @@ async function getAnimeByStudio(studioId, page = 1, limit = 25) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch anime for studio ID ${studioId}:`, e.message);
+      logger.warn(`Could not fetch anime for studio ID ${studioId}:`, e.message);
       return [];
     });
 }
@@ -691,7 +693,7 @@ async function getAnimeBySeason(year, season, page = 1, config = {}) {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch anime for ${season} ${year}, page ${page}:`, e.message);
+      logger.warn(`Could not fetch anime for ${season} ${year}, page ${page}:`, e.message);
       return [];
     });
 }
@@ -706,7 +708,7 @@ async function getAvailableSeasons() {
   return enqueueRequest(() => _makeJikanRequest(url), url)
     .then(response => response.data?.data || [])
     .catch(e => {
-      console.error(`Could not fetch available seasons:`, e.message);
+      logger.error(`Could not fetch available seasons:`, e.message);
       return [];
     });
 }

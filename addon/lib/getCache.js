@@ -1304,9 +1304,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   const cacheKeys = Object.values(componentCacheKeys);
   
   let componentResults = [];
-  try {
-    // Use MGET to fetch all keys in a single network round trip
-    const cachedValues = await redis.mget(...cacheKeys);
+  
+  // Short-circuit if no cache keys to fetch
+  if (cacheKeys.length === 0) {
+    componentResults = componentNames.map(componentName => ({ componentName, data: null }));
+  } else {
+    try {
+      // Use MGET to fetch all keys in a single network round trip
+      const cachedValues = await redis.mget(...cacheKeys);
     
     // Map results back to component names
     componentResults = componentNames.map((componentName, index) => {
@@ -1325,10 +1330,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
         return { componentName, data: null };
       }
     });
-  } catch (error) {
-    cacheLogger.warn(`Error fetching components with MGET:`, error);
-    // Fallback: return empty results
-    componentResults = componentNames.map(componentName => ({ componentName, data: null }));
+    } catch (error) {
+      cacheLogger.warn(`Error fetching components with MGET:`, error);
+      // Fallback: return empty results
+      componentResults = componentNames.map(componentName => ({ componentName, data: null }));
+    }
   }
   
   const availableComponents = componentResults.filter(result => result.data !== null);

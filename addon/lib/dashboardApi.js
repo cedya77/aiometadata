@@ -1,5 +1,7 @@
 const os = require("os");
 const process = require("process");
+const consola = require('consola');
+const logger = consola.withTag('DashboardAPI');
 
 class DashboardAPI {
   constructor(cache, idMapper, config, database, requestTracker) {
@@ -17,7 +19,7 @@ class DashboardAPI {
         this.uptimeInitialized = true;
       })
       .catch((err) => {
-        console.error("[Dashboard API] Failed to initialize uptime:", err);
+        logger.error("Failed to initialize uptime:", err);
       });
   }
 
@@ -66,12 +68,12 @@ class DashboardAPI {
         if (!existingStartTime) {
           // First time startup - store current time
           await this.cache.set("addon:start_time", Date.now().toString());
-          console.log("[Dashboard API] Initialized persistent uptime tracking");
+          logger.debug("Initialized persistent uptime tracking");
         }
       }
     } catch (error) {
-      console.warn(
-        "[Dashboard API] Failed to initialize persistent uptime:",
+      logger.warn(
+        "Failed to initialize persistent uptime:",
         error.message,
       );
     }
@@ -97,7 +99,7 @@ class DashboardAPI {
           };
         } else {
           // Key doesn't exist yet, initialize it
-          console.log(
+          logger.debug(
             "[Dashboard API] addon:start_time not found, initializing now",
           );
           await this.cache.set("addon:start_time", Date.now().toString());
@@ -118,7 +120,7 @@ class DashboardAPI {
       }
 
       // Fallback to process uptime when Redis not ready
-      console.warn("[Dashboard API] Redis not ready, using process uptime");
+      logger.warn("Redis not ready, using process uptime");
       const processUptime = process.uptime();
       const hours = Math.floor(processUptime / 3600);
       const minutes = Math.floor((processUptime % 3600) / 60);
@@ -129,8 +131,8 @@ class DashboardAPI {
         startTime: new Date(Date.now() - processUptime * 1000).toISOString(),
       };
     } catch (error) {
-      console.warn(
-        "[Dashboard API] Failed to get persistent uptime:",
+      logger.warn(
+        "Failed to get persistent uptime:",
         error.message,
       );
       // Return process uptime instead of 0h 0m
@@ -164,7 +166,7 @@ class DashboardAPI {
         await this.cache.ping();
         healthChecks.redis = true;
       } else if (this.cache && this.cache.status) {
-        console.log(`[Dashboard API] Redis status: ${this.cache.status}`);
+        logger.debug(`Redis status: ${this.cache.status}`);
         if (
           this.cache.status === "connecting" ||
           this.cache.status === "reconnecting"
@@ -180,7 +182,7 @@ class DashboardAPI {
         }
       } else if (!this.cache) {
         // NO_CACHE mode - don't show as issue
-        console.log("[Dashboard API] Redis disabled (NO_CACHE mode)");
+        logger.info("[Dashboard API] Redis disabled (NO_CACHE mode)");
       }
     } catch (error) {
       issues.push(`Redis error: ${error.message}`);
@@ -277,7 +279,7 @@ class DashboardAPI {
         trackingCoverage: requestStats.trackingCoverage || 100,
       };
     } catch (error) {
-      console.error("[Dashboard API] Error getting quick stats:", error);
+      logger.error("Error getting quick stats:", error);
       return {
         totalRequests: 0,
         todayRequests: 0,
@@ -335,7 +337,7 @@ class DashboardAPI {
               );
             }
           } catch (memError) {
-            console.warn(
+            logger.warn(
               "[Dashboard API] Failed to get Redis memory info:",
               memError.message,
             );
@@ -354,8 +356,8 @@ class DashboardAPI {
             byType: cacheHealth.byType || {},
           };
         } catch (redisError) {
-          console.warn(
-            "[Dashboard API] Redis error, using fallback stats:",
+          logger.warn(
+            "Redis error, using fallback stats:",
             redisError.message,
           );
           return {
@@ -383,7 +385,7 @@ class DashboardAPI {
         byType: {},
       };
     } catch (error) {
-      console.error("[Dashboard API] Error getting cache performance:", error);
+      logger.error("Error getting cache performance:", error);
       return {
         hitRate: 0,
         missRate: 0,
@@ -413,8 +415,8 @@ class DashboardAPI {
 
       return realStats;
     } catch (error) {
-      console.error(
-        "[Dashboard API] Error getting provider performance:",
+      logger.error(
+        "Error getting provider performance:",
         error,
       );
       return [];
@@ -424,13 +426,13 @@ class DashboardAPI {
   // Get recent activity
   async getRecentActivity(limit = 20) {
     try {
-      console.log("[Dashboard API] Getting recent activity...");
+      //logger.debug("[Dashboard API] Getting recent activity...");
 
       const activities = this.requestTracker
         ? await this.requestTracker.getRecentActivity(limit)
         : [];
-      console.log(
-        `[Dashboard API] Got ${activities.length} activities from request tracker`,
+      logger.debug(
+        `Got ${activities.length} activities from request tracker`,
       );
 
       // Format activities for display
@@ -447,12 +449,12 @@ class DashboardAPI {
         };
       });
 
-      console.log(
-        `[Dashboard API] Returning ${formattedActivities.length} formatted activities`,
+      logger.debug(
+        `Returning ${formattedActivities.length} formatted activities`,
       );
       return formattedActivities;
     } catch (error) {
-      console.error("[Dashboard API] Error getting recent activity:", error);
+      logger.error("Error getting recent activity:", error);
       return [];
     }
   }
@@ -565,7 +567,7 @@ class DashboardAPI {
                   }
                 }
               } catch (parseError) {
-                console.warn(
+                logger.warn(
                   `[Dashboard API] Failed to parse rate limit data for ${provider.name}:`,
                   parseError.message,
                 );
@@ -625,7 +627,7 @@ class DashboardAPI {
               envVar: provider.envVar,
             };
           } catch (providerError) {
-            console.warn(
+            logger.warn(
               `[Dashboard API] Failed to get status for provider ${provider.name}:`,
               providerError.message,
             );
@@ -642,7 +644,7 @@ class DashboardAPI {
 
       return providerStatus;
     } catch (error) {
-      console.error("[Dashboard API] Error getting provider status:", error);
+      logger.error("Error getting provider status:", error);
       return [];
     }
   }
@@ -674,8 +676,8 @@ class DashboardAPI {
           userConfigs = configs.filter((config) => config !== null);
         }
       } catch (dbError) {
-        console.warn(
-          "[Dashboard API] Failed to load user configs for aggregation:",
+        logger.warn(
+          "Failed to load user configs for aggregation:",
           dbError.message,
         );
       }
@@ -691,7 +693,7 @@ class DashboardAPI {
         lastUpdated: new Date().toISOString(),
       };
     } catch (error) {
-      console.error("[Dashboard API] Error getting system config:", error);
+      logger.error("Error getting system config:", error);
       return {
         totalUsers: 0,
         sampleSize: 0,
@@ -1025,7 +1027,7 @@ class DashboardAPI {
       }
       return 0;
     } catch (error) {
-      console.warn("[Dashboard API] Failed to get disk usage:", error.message);
+      logger.warn("Failed to get disk usage:", error.message);
       return 0;
     }
   }
@@ -1073,7 +1075,7 @@ class DashboardAPI {
       this.lastNetworkMeasurement = { bytes: totalBytes, time: now };
       return Math.max(0, networkIO);
     } catch (error) {
-      console.warn("[Dashboard API] Failed to get network I/O:", error.message);
+      logger.warn("Failed to get network I/O:", error.message);
       return 0;
     }
   }
@@ -1088,7 +1090,7 @@ class DashboardAPI {
         networkIO: await this.getNetworkIO(),
       };
     } catch (error) {
-      console.error("[Dashboard API] Error getting resource usage:", error);
+      logger.error("Error getting resource usage:", error);
       return {
         memoryUsage: 0,
         cpuUsage: 0,
@@ -1109,7 +1111,7 @@ class DashboardAPI {
       // If no real errors, return empty array (no mock data)
       return errorLogs;
     } catch (error) {
-      console.error("[Dashboard API] Error getting error logs:", error);
+      logger.error("Error getting error logs:", error);
       return [];
     }
   }
@@ -1169,8 +1171,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get cache cleanup status:",
+        logger.warn(
+          "Failed to get cache cleanup status:",
           error.message,
         );
         tasks.push({
@@ -1203,7 +1205,7 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn("[Dashboard API] Failed to get cache cleanup scheduler status:", error.message);
+        logger.warn("Failed to get cache cleanup scheduler status:", error.message);
       }
 
       // 3. Anime-list update task - check actual update timestamps
@@ -1229,8 +1231,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get anime-list status:",
+        logger.warn(
+          "Failed to get anime-list status:",
           error.message,
         );
         tasks.push({
@@ -1264,8 +1266,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get ID mapper status:",
+        logger.warn(
+          "Failed to get ID mapper status:",
           error.message,
         );
         tasks.push({
@@ -1301,8 +1303,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get Kitsu-IMDB status:",
+        logger.warn(
+          "Failed to get Kitsu-IMDB status:",
           error.message,
         );
         tasks.push({
@@ -1336,8 +1338,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get database status:",
+        logger.warn(
+          "Failed to get database status:",
           error.message,
         );
         tasks.push({
@@ -1371,8 +1373,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get health check status:",
+        logger.warn(
+          "Failed to get health check status:",
           error.message,
         );
         tasks.push({
@@ -1406,8 +1408,8 @@ class DashboardAPI {
           });
         }
       } catch (error) {
-        console.warn(
-          "[Dashboard API] Failed to get cache warming status:",
+        logger.warn(
+          "Failed to get cache warming status:",
           error.message,
         );
         tasks.push({
@@ -1436,7 +1438,7 @@ class DashboardAPI {
           category: "warming"
         });
       } catch (error) {
-        console.warn("[Dashboard API] Failed to get essential warming status:", error.message);
+        logger.warn("Failed to get essential warming status:", error.message);
         tasks.push({
           id: 7,
           name: "Essential Cache Warming",
@@ -1465,7 +1467,7 @@ class DashboardAPI {
           category: "warming"
         });
       } catch (error) {
-        console.warn("[Dashboard API] Failed to get MAL warming status:", error.message);
+        logger.warn("Failed to get MAL warming status:", error.message);
         tasks.push({
           id: 8,
           name: "MAL Catalog Warming",
@@ -1505,7 +1507,7 @@ class DashboardAPI {
           category: "warming"
         });
       } catch (error) {
-        console.warn("[Dashboard API] Failed to get comprehensive warming status:", error.message);
+        logger.warn("Failed to get comprehensive warming status:", error.message);
         tasks.push({
           id: 9,
           name: "Comprehensive Catalog Warming",
@@ -1520,7 +1522,7 @@ class DashboardAPI {
 
       return tasks;
     } catch (error) {
-      console.error("[Dashboard API] Error getting maintenance tasks:", error);
+      logger.error("Error getting maintenance tasks:", error);
       return [];
     }
   }
@@ -1545,7 +1547,7 @@ class DashboardAPI {
 
       return { count: expiredCount, totalKeys: allKeys.length };
     } catch (error) {
-      console.error("[Cache Cleanup Scheduler] Error checking expired keys:", error);
+      logger.error("[Cache Cleanup Scheduler] Error checking expired keys:", error);
       return { count: 0, error: error.message };
     }
   }
@@ -1553,34 +1555,34 @@ class DashboardAPI {
   // Smart cache cleanup scheduler
   async runScheduledCacheCleanup() {
     try {
-      console.log("[Cache Cleanup Scheduler] Starting scheduled cleanup check...");
+      //logger.debug("[Cache Cleanup Scheduler] Starting scheduled cleanup check...");
       
       // Check if cleanup is needed
       const checkResult = await this.checkExpiredKeysCount();
       
       if (checkResult.error) {
-        console.error("[Cache Cleanup Scheduler] Failed to check keys:", checkResult.error);
+        logger.error("[Cache Cleanup Scheduler] Failed to check keys:", checkResult.error);
         return;
       }
 
       if (checkResult.count === 0) {
-        console.log("[Cache Cleanup Scheduler] No expired keys found, skipping cleanup");
+        //logger.debug("[Cache Cleanup Scheduler] No expired keys found, skipping cleanup");
         return;
       }
 
-      console.log(`[Cache Cleanup Scheduler] Found ${checkResult.count} expired keys out of ${checkResult.totalKeys} total keys`);
+      //logger.debug(`[Cache Cleanup Scheduler] Found ${checkResult.count} expired keys out of ${checkResult.totalKeys} total keys`);
       
       // Run the actual cleanup
       const cleanupResult = await this.clearExpiredCacheEntries();
       
       if (cleanupResult.success) {
-        console.log(`[Cache Cleanup Scheduler] Scheduled cleanup completed: ${cleanupResult.message}`);
+        //logger.debug(`[Cache Cleanup Scheduler] Scheduled cleanup completed: ${cleanupResult.message}`);
       } else {
-        console.error(`[Cache Cleanup Scheduler] Scheduled cleanup failed: ${cleanupResult.message}`);
+        logger.error(`[Cache Cleanup Scheduler] Scheduled cleanup failed: ${cleanupResult.message}`);
       }
       
     } catch (error) {
-      console.error("[Cache Cleanup Scheduler] Error in scheduled cleanup:", error);
+      logger.error("[Cache Cleanup Scheduler] Error in scheduled cleanup:", error);
     }
   }
 
@@ -1591,14 +1593,14 @@ class DashboardAPI {
         throw new Error("Cache not available");
       }
 
-      console.log("[Maintenance Task] Starting expired cache cleanup...");
+      //logger.debug("[Maintenance Task] Starting expired cache cleanup...");
       
       // Get all keys
       const allKeys = await this.cache.keys("*");
       const expiredKeys = [];
       const totalKeys = allKeys.length;
 
-      console.log(`[Maintenance Task] Checking ${totalKeys} keys for expiration...`);
+      //logger.debug(`[Maintenance Task] Checking ${totalKeys} keys for expiration...`);
 
       // Check each key's TTL
       for (const key of allKeys) {
@@ -1608,7 +1610,7 @@ class DashboardAPI {
         }
       }
 
-      console.log(`[Maintenance Task] Found ${expiredKeys.length} expired keys to clear`);
+      //logger.debug(`[Maintenance Task] Found ${expiredKeys.length} expired keys to clear`);
 
       // Delete expired keys in batches to avoid overwhelming Redis
       if (expiredKeys.length > 0) {
@@ -1616,7 +1618,7 @@ class DashboardAPI {
         for (let i = 0; i < expiredKeys.length; i += batchSize) {
           const batch = expiredKeys.slice(i, i + batchSize);
           await this.cache.del(...batch);
-          console.log(`[Maintenance Task] Cleared batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(expiredKeys.length / batchSize)}`);
+          //logger.debug(`[Maintenance Task] Cleared batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(expiredKeys.length / batchSize)}`);
         }
       }
 
@@ -1626,10 +1628,10 @@ class DashboardAPI {
       const finalKeyCount = await this.cache.dbsize();
       const message = `Expired cache cleanup completed. Cleared ${expiredKeys.length} expired keys. ${finalKeyCount} keys remain.`;
 
-      console.log(`[Maintenance Task] ${message}`);
+      //logger.debug(`[Maintenance Task] ${message}`);
       return { success: true, message, clearedCount: expiredKeys.length, remainingCount: finalKeyCount };
     } catch (error) {
-      console.error("[Maintenance Task] Error clearing expired cache entries:", error);
+      logger.error("[Maintenance Task] Error clearing expired cache entries:", error);
       return { success: false, message: error.message };
     }
   }
@@ -1683,7 +1685,7 @@ class DashboardAPI {
       // Debug: List the actual keys for troubleshooting
       if (type === "all" && finalKeyCount > 0) {
         const keys = await this.cache.keys("*");
-        console.log(`[Cache Clear] Remaining keys after clear:`, keys);
+        //logger.debug(`[Cache Clear] Remaining keys after clear:`, keys);
       }
 
       let message = `Cache ${type} cleared successfully`;
@@ -1693,7 +1695,7 @@ class DashboardAPI {
 
       return { success: true, message, keyCount: finalKeyCount };
     } catch (error) {
-      console.error("[Dashboard API] Error clearing cache:", error);
+      logger.error("Error clearing cache:", error);
       return { success: false, message: error.message };
     }
   }
@@ -1704,7 +1706,7 @@ class DashboardAPI {
       const { getRatingsStats } = require("./imdbRatings.js");
       return getRatingsStats();
     } catch (error) {
-      console.error("[Dashboard API] Error getting IMDb ratings stats:", error);
+      logger.error("Error getting IMDb ratings stats:", error);
       return {
         totalRequests: 0,
         datasetHits: 0,
@@ -1756,7 +1758,7 @@ class DashboardAPI {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      console.error("[Dashboard API] Error getting all dashboard data:", error);
+      logger.error("Error getting all dashboard data:", error);
       throw error;
     }
   }
@@ -1778,8 +1780,8 @@ class DashboardAPI {
           // New users today from database
           newUsersToday = await this.database.getUsersCreatedToday();
         } catch (dbError) {
-          console.warn(
-            "[Dashboard API] Database query failed:",
+          logger.warn(
+            "Database query failed:",
             dbError.message,
           );
         }
@@ -1806,8 +1808,8 @@ class DashboardAPI {
         blockedUsers: 0, // No blocking system implemented yet
       };
 
-      console.log(
-        `[Dashboard API] User Stats - Total: ${totalUsers}, Active: ${activeUsers}, New Today: ${newUsersToday}`,
+      logger.debug(
+        `User Stats - Total: ${totalUsers}, Active: ${activeUsers}, New Today: ${newUsersToday}`,
       );
 
       return {
@@ -1819,7 +1821,7 @@ class DashboardAPI {
         accessControl,
       };
     } catch (error) {
-      console.error("[Dashboard API] Error getting user stats:", error);
+      logger.error("Error getting user stats:", error);
       return {
         totalUsers: 0,
         activeUsers: 0,
@@ -1885,8 +1887,8 @@ class DashboardAPI {
         status: this.determineUserStatus(user.lastSeen),
       }));
     } catch (error) {
-      console.error(
-        "[Dashboard API] Error getting recent user activity:",
+      logger.error(
+        "Error getting recent user activity:",
         error,
       );
       return [];
