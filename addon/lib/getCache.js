@@ -1299,25 +1299,38 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      extras: `meta-extras:${metaConfigString}:${metaId}`
    };
    
-   // Try to fetch all components from cache
-  const componentPromises = Object.entries(componentCacheKeys).map(async ([componentName, cacheKey]) => {
-     try {
-       const cached = await redis.get(cacheKey);
-       if (cached) {
-         const parsed = JSON.parse(cached);
-         //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
-         return { componentName, data: parsed };
-       } else {
-         //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
-         return { componentName, data: null };
-       }
-     } catch (error) {
-       cacheLogger.warn(`Error fetching component ${componentName}:`, error);
-       return { componentName, data: null };
-     }
-   });
-   
-  const componentResults = await Promise.all(componentPromises);
+   // Try to fetch all components from cache using MGET (optimized single round trip)
+  const componentNames = Object.keys(componentCacheKeys);
+  const cacheKeys = Object.values(componentCacheKeys);
+  
+  let componentResults = [];
+  try {
+    // Use MGET to fetch all keys in a single network round trip
+    const cachedValues = await redis.mget(...cacheKeys);
+    
+    // Map results back to component names
+    componentResults = componentNames.map((componentName, index) => {
+      const cached = cachedValues[index];
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
+          return { componentName, data: parsed };
+        } catch (parseError) {
+          cacheLogger.warn(`Error parsing component ${componentName}:`, parseError);
+          return { componentName, data: null };
+        }
+      } else {
+        //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
+        return { componentName, data: null };
+      }
+    });
+  } catch (error) {
+    cacheLogger.warn(`Error fetching components with MGET:`, error);
+    // Fallback: return empty results
+    componentResults = componentNames.map(componentName => ({ componentName, data: null }));
+  }
+  
   const availableComponents = componentResults.filter(result => result.data !== null);
   
   if (availableComponents.length === 0) {
