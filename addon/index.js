@@ -987,18 +987,26 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     }*/
     
     // Extract actual poster URL from RPDB proxy URL for meta route
-    // Meta routes should return the actual poster URL, not the RPDB proxy
+    // Only remove RPDB proxy if enableRPDBForLibrary is disabled
+    // Meta routes (continue watching/library) should keep RPDB if the option is enabled
     if (result.meta.poster && result.meta.poster.includes('/poster/') && result.meta.poster.includes('fallback=')) {
-      try {
-        const url = new URL(result.meta.poster);
-        const fallback = url.searchParams.get('fallback');
-        if (fallback) {
-          result.meta.poster = decodeURIComponent(fallback);
+      // Check if RPDB should be kept for library items (continue watching/library)
+      const keepRPDBForLibrary = config.enableRPDBForLibrary !== false; // Default to true
+      
+      if (!keepRPDBForLibrary) {
+        // User has disabled RPDB for library items, extract fallback URL
+        try {
+          const url = new URL(result.meta.poster);
+          const fallback = url.searchParams.get('fallback');
+          if (fallback) {
+            result.meta.poster = decodeURIComponent(fallback);
+          }
+        } catch (e) {
+          // Keep original if URL parsing fails
+          consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
         }
-      } catch (e) {
-        // Keep original if URL parsing fails
-        consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
       }
+      // If keepRPDBForLibrary is true (default), keep the RPDB proxy URL as-is
     }
     
     // Note: Popular content warming is now handled globally by warmPopularContent()

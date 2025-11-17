@@ -88,6 +88,8 @@ export interface AppConfig {
     customDescriptionBlurb?: string;
   };
   mdblistWatchTracking: boolean;
+  /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
+  enableRPDBForLibrary?: boolean;
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;

@@ -118,6 +118,7 @@ const initialConfig: AppConfig = {
     mdblist: "" 
   },
   mdblistWatchTracking: true,
+  enableRPDBForLibrary: true, // Default to enabled - keep RPDB posters for library items
   ageRating: 'None',
   searchEnabled: true,
   sessionId: "",

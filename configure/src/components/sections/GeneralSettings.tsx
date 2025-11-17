@@ -254,6 +254,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, mdblistWatchTracking: checked }));
   };
 
+  const handleEnableRPDBForLibraryChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, enableRPDBForLibrary: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -380,6 +384,19 @@ export function GeneralSettings() {
             id="mdblist-watch-tracking"
             checked={!!config.mdblistWatchTracking}
             onCheckedChange={handleMDBListTrackingChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="enable-rpdb-for-library" className="text-lg font-medium">Keep RPDB for Library Items</Label>
+            <p className="text-sm text-muted-foreground">
+              Keep RPDB posters for items in Continue Watching and Library (enabled by default) in Stremio. Useful when RPDB is enabled for your catalogs. When disabled, RPDB posters are removed from library items since catalog context is unavailable.
+            </p>
+          </div>
+          <Switch
+            id="enable-rpdb-for-library"
+            checked={config.enableRPDBForLibrary !== false}
+            onCheckedChange={handleEnableRPDBForLibraryChange}
           />
         </div>
         
