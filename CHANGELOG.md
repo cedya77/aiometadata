@@ -7,7 +7,8 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Features
 
-* enrich episodes with IMDb data while preserving original IDs ([d24f13d](https://github.com/cedya77/aiometadata/commit/d24f13d0952b8a033dfe9548bfc4b1a79012c9ef))
+* enrich kitsu episodes with IMDb data while preserving original IDs ([d24f13d](https://github.com/cedya77/aiometadata/commit/d24f13d0952b8a033dfe9548bfc4b1a79012c9ef))
+* add option to keep RPDB posters for library items ([b009c00](https://github.com/cedya77/aiometadata/commit/b009c004f5a012880b8db3e6d61f388707d1779b))
 * **getManifest:** extend TMDB year catalog range from 20 years to 1900-present ([f55575e](https://github.com/cedya77/aiometadata/commit/f55575ea298cb94c7529e97837b1c859938a8125))
 
 
