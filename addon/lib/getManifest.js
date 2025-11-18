@@ -322,7 +322,7 @@ async function getManifest(config) {
   console.log(`[Manifest] Custom catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('custom.')).map(c => c.id));
   //console.log(`[Manifest] StremThru catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('stremthru.')).map(c => c.id));
   
-  const years = generateArrayOfYears(20);
+  const years = generateArrayOfYears(new Date().getFullYear() - 1900);
   
   // Only fetch genre lists if we actually have catalogs that need them
   const hasTmdbCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('tmdb.'));
