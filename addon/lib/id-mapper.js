@@ -4,6 +4,12 @@ const { httpGet, httpHead } = require('../utils/httpClient');
 const { redis } = require('./getCache'); 
 const kitsu = require('./kitsu');
 const { numberValueTypes } = require('framer-motion');
+const consola = require('consola');
+
+// Configure logging level based on environment
+const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
+const logger = consola.create({ tag: 'ID-Mapper' });
 
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
@@ -64,7 +70,7 @@ function processAndIndexData(jsonData) {
   }
   tmdbIndexArray = animeList.filter(item => item.themoviedb_id);
   isInitialized = true;
-  console.log(`[ID Mapper] Successfully loaded and indexed ${animeIdMap.size} anime mappings.`);
+  logger.info(`Successfully loaded and indexed ${animeIdMap.size} anime mappings.`);
 }
 
 /**
@@ -81,23 +87,23 @@ async function downloadAndProcessAnimeList() {
       const headers = (await httpHead(REMOTE_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
 
-      console.log(`[ID Mapper] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+      logger.debug(`[ID Mapper] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
         try {
-          console.log('[ID Mapper] No changes detected. Loading from local disk cache...');
+          logger.debug('[ID Mapper] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
           processAndIndexData(fileContent);
           return;
         } catch (e) {
-          console.warn('[ID Mapper] ETag matched, but local cache was unreadable. Forcing re-download.');
+          logger.warn('[ID Mapper] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
       }
     } else {
-      console.log('[ID Mapper] Redis cache is disabled. Proceeding to download.');
+      logger.debug('[ID Mapper] Redis cache is disabled. Proceeding to download.');
     }
 
-    console.log('[ID Mapper] Downloading full list...');
+    logger.debug('[ID Mapper] Downloading full list...');
     const response = await httpGet(REMOTE_MAPPING_URL);
     const jsonData = JSON.stringify(response.data);
 
@@ -112,15 +118,15 @@ async function downloadAndProcessAnimeList() {
     processAndIndexData(jsonData);
 
   } catch (error) {
-    console.error(`[ID Mapper] An error occurred during remote download: ${error.message}`);
-    console.log('[ID Mapper] Attempting to fall back to local disk cache...');
+    logger.error(`[ID Mapper] An error occurred during remote download: ${error.message}`);
+    logger.debug('[ID Mapper] Attempting to fall back to local disk cache...');
     
     try {
       const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
-      console.log('[ID Mapper] Successfully loaded data from local cache on fallback.');
+      logger.debug('[ID Mapper] Successfully loaded data from local cache on fallback.');
       processAndIndexData(fileContent);
     } catch (fallbackError) {
-      console.error('[ID Mapper] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
+      logger.error('[ID Mapper] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
     }
   }
 }
@@ -139,26 +145,26 @@ async function downloadAndProcessTraktAnimeMovies() {
       const headers = (await httpHead(REMOTE_TRAKT_ANIME_MOVIES_URL)).headers;
       const remoteEtag = headers.etag;
 
-      console.log(`[ID Mapper] [Trakt-Anime-Movies] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+      logger.debug(`[ID Mapper] [Trakt-Anime-Movies] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
         try {
-          console.log('[ID Mapper] [Trakt-Anime-Movies] No changes detected. Loading from local disk cache...');
+          logger.debug('[ID Mapper] [Trakt-Anime-Movies] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
           traktAnimeMovies = JSON.parse(fileContent);
           processAndIndexTraktAnimeMovies(traktAnimeMovies);
           isTraktAnimeMoviesInitialized = true;
-          console.log(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings from local cache.`);
+          logger.debug(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings from local cache.`);
           return;
         } catch (e) {
-          console.warn('[ID Mapper] [Trakt-Anime-Movies] ETag matched, but local cache was unreadable. Forcing re-download.');
+          logger.warn('[ID Mapper] [Trakt-Anime-Movies] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
       }
     } else {
-      console.log('[ID Mapper] [Trakt-Anime-Movies] Redis cache is disabled. Proceeding to download.');
+      logger.debug('[ID Mapper] [Trakt-Anime-Movies] Redis cache is disabled. Proceeding to download.');
     }
 
-    console.log('[ID Mapper] [Trakt-Anime-Movies] Downloading Trakt anime movies mapping...');
+    logger.debug('[ID Mapper] [Trakt-Anime-Movies] Downloading Trakt anime movies mapping...');
     const response = await httpGet(REMOTE_TRAKT_ANIME_MOVIES_URL);
     traktAnimeMovies = response.data;
     const jsonData = JSON.stringify(traktAnimeMovies);
@@ -172,20 +178,20 @@ async function downloadAndProcessTraktAnimeMovies() {
     
     processAndIndexTraktAnimeMovies(traktAnimeMovies);
     isTraktAnimeMoviesInitialized = true;
-    console.log(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings.`);
+    logger.debug(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings.`);
 
   } catch (error) {
-    console.error(`[ID Mapper] [Trakt-Anime-Movies] An error occurred during remote download: ${error.message}`);
-    console.log('[ID Mapper] [Trakt-Anime-Movies] Attempting to fall back to local disk cache...');
+    logger.error(`[ID Mapper] [Trakt-Anime-Movies] An error occurred during remote download: ${error.message}`);
+    logger.debug('[ID Mapper] [Trakt-Anime-Movies] Attempting to fall back to local disk cache...');
     
     try {
       const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
       traktAnimeMovies = JSON.parse(fileContent);
       processAndIndexTraktAnimeMovies(traktAnimeMovies);
       isTraktAnimeMoviesInitialized = true;
-      console.log('[ID Mapper] [Trakt-Anime-Movies] Successfully loaded data from local cache on fallback.');
+      logger.debug('[ID Mapper] [Trakt-Anime-Movies] Successfully loaded data from local cache on fallback.');
     } catch (fallbackError) {
-      console.error('[ID Mapper] [Trakt-Anime-Movies] CRITICAL: Fallback to local cache also failed. Trakt anime movies mapping will be empty.');
+      logger.error('[ID Mapper] [Trakt-Anime-Movies] CRITICAL: Fallback to local cache also failed. Trakt anime movies mapping will be empty.');
       traktAnimeMovies = [];
       isTraktAnimeMoviesInitialized = true;
     }
@@ -212,7 +218,7 @@ function processAndIndexTraktAnimeMovies(moviesArray) {
     }
   }
   
-  console.log(`[ID Mapper] [Trakt-Anime-Movies] Indexed ${malIdToTraktMovieMap.size} MAL, ${tmdbIdToTraktMovieMap.size} TMDB, ${imdbIdToTraktMovieMap.size} IMDB mappings.`);
+  logger.debug(`[ID Mapper] [Trakt-Anime-Movies] Indexed ${malIdToTraktMovieMap.size} MAL, ${tmdbIdToTraktMovieMap.size} TMDB, ${imdbIdToTraktMovieMap.size} IMDB mappings.`);
 }
 
 /**
@@ -229,25 +235,25 @@ async function downloadAndProcessKitsuToImdbMapping() {
       const headers = (await httpHead(REMOTE_KITSU_TO_IMDB_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
 
-      console.log(`[ID Mapper] [Kitsu-IMDB] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+      logger.debug(`[ID Mapper] [Kitsu-IMDB] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
         try {
-          console.log('[ID Mapper] [Kitsu-IMDB] No changes detected. Loading from local disk cache...');
+          logger.debug('[ID Mapper] [Kitsu-IMDB] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_KITSU_TO_IMDB_MAPPING_PATH, 'utf-8');
           kitsuToImdbMapping = JSON.parse(fileContent);
           isKitsuToImdbInitialized = true;
-          console.log(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings from local cache.`);
+          logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings from local cache.`);
           return;
         } catch (e) {
-          console.warn('[ID Mapper] [Kitsu-IMDB] ETag matched, but local cache was unreadable. Forcing re-download.');
+          logger.warn('[ID Mapper] [Kitsu-IMDB] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
       }
     } else {
-      console.log('[ID Mapper] [Kitsu-IMDB] Redis cache is disabled. Proceeding to download.');
+      logger.debug('[ID Mapper] [Kitsu-IMDB] Redis cache is disabled. Proceeding to download.');
     }
 
-    console.log('[ID Mapper] [Kitsu-IMDB] Downloading Kitsu to IMDB mapping...');
+    logger.debug('[ID Mapper] [Kitsu-IMDB] Downloading Kitsu to IMDB mapping...');
     const response = await httpGet(REMOTE_KITSU_TO_IMDB_MAPPING_URL);
     kitsuToImdbMapping = response.data;
     const jsonData = JSON.stringify(kitsuToImdbMapping);
@@ -260,19 +266,19 @@ async function downloadAndProcessKitsuToImdbMapping() {
     }
     
     isKitsuToImdbInitialized = true;
-    console.log(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings.`);
+    logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings.`);
 
   } catch (error) {
-    console.error(`[ID Mapper] [Kitsu-IMDB] An error occurred during remote download: ${error.message}`);
-    console.log('[ID Mapper] [Kitsu-IMDB] Attempting to fall back to local disk cache...');
+    logger.error(`[ID Mapper] [Kitsu-IMDB] An error occurred during remote download: ${error.message}`);
+    logger.debug('[ID Mapper] [Kitsu-IMDB] Attempting to fall back to local disk cache...');
     
     try {
       const fileContent = await fs.readFile(LOCAL_KITSU_TO_IMDB_MAPPING_PATH, 'utf-8');
       kitsuToImdbMapping = JSON.parse(fileContent);
       isKitsuToImdbInitialized = true;
-      console.log('[ID Mapper] [Kitsu-IMDB] Successfully loaded data from local cache on fallback.');
+      logger.debug('[ID Mapper] [Kitsu-IMDB] Successfully loaded data from local cache on fallback.');
     } catch (fallbackError) {
-      console.error('[ID Mapper] [Kitsu-IMDB] CRITICAL: Fallback to local cache also failed. Kitsu-IMDB mapping will be empty.');
+      logger.error('[ID Mapper] [Kitsu-IMDB] CRITICAL: Fallback to local cache also failed. Kitsu-IMDB mapping will be empty.');
       kitsuToImdbMapping = {};
       isKitsuToImdbInitialized = true;
     }
@@ -297,20 +303,20 @@ async function initializeMapper() {
   if (!updateInterval) {
     const intervalMs = UPDATE_INTERVAL_HOURS * 60 * 60 * 1000; // Convert hours to milliseconds
     updateInterval = setInterval(async () => {
-      console.log(`[ID Mapper] Running scheduled update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
+      logger.debug(`[ID Mapper] Running scheduled update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
       try {
         await Promise.all([
           downloadAndProcessAnimeList(),
           downloadAndProcessKitsuToImdbMapping(),
           downloadAndProcessTraktAnimeMovies()
         ]);
-        console.log('[ID Mapper] Scheduled update completed successfully.');
+        logger.debug('[ID Mapper] Scheduled update completed successfully.');
       } catch (error) {
-        console.error('[ID Mapper] Scheduled update failed:', error.message);
+        logger.error('[ID Mapper] Scheduled update failed:', error.message);
       }
     }, intervalMs);
     
-    console.log(`[ID Mapper] Scheduled periodic updates every ${UPDATE_INTERVAL_HOURS} hours.`);
+    logger.debug(`[ID Mapper] Scheduled periodic updates every ${UPDATE_INTERVAL_HOURS} hours.`);
   }
 }
 
@@ -375,12 +381,12 @@ async function buildFranchiseMapFromTvdbId(tvdbId) {
       seasonToKitsuMap.set(0, parseInt(sortedOvasAndOnas[0].id, 10));
     }
 
-    console.log(`[ID Mapper] Built franchise map for TVDB ${tvdbId}:`, seasonToKitsuMap);
+    logger.debug(`[ID Mapper] Built franchise map for TVDB ${tvdbId}:`, seasonToKitsuMap);
     franchiseMapCache.set(numericTvdbId, seasonToKitsuMap);
     return seasonToKitsuMap;
 
   } catch (error) {
-    console.error(`[ID Mapper] Failed to build franchise map for TVDB ${tvdbId}:`, error);
+    logger.error(`[ID Mapper] Failed to build franchise map for TVDB ${tvdbId}:`, error);
     return null;
   }
 }
@@ -395,10 +401,10 @@ async function resolveKitsuIdFromTvdbSeason(tvdbId, seasonNumber) {
     
     const franchiseMap = await buildFranchiseMapFromTvdbId(tvdbId);
     if (!franchiseMap) {
-      console.warn(`[ID Mapper] No franchise map available for TVDB ${tvdbId}`);
+      logger.warn(`[ID Mapper] No franchise map available for TVDB ${tvdbId}`);
       return null;
     }
-    console.log(`[ID Mapper] Franchise map for TVDB ${tvdbId}:`, franchiseMap);
+    logger.debug(`[ID Mapper] Franchise map for TVDB ${tvdbId}:`, franchiseMap);
     
     const foundKitsuId = franchiseMap.get(seasonNumber) || null;
     if (foundKitsuId) {
@@ -406,13 +412,13 @@ async function resolveKitsuIdFromTvdbSeason(tvdbId, seasonNumber) {
       if (seasonNumber === 0) {
         seasonType = 'OVA/ONA';
       }
-      console.log(`[ID Mapper] Resolved TVDB S${seasonNumber} (${seasonType}) to Kitsu ID ${foundKitsuId}`);
+      logger.debug(`[ID Mapper] Resolved TVDB S${seasonNumber} (${seasonType}) to Kitsu ID ${foundKitsuId}`);
     } else {
-      console.warn(`[ID Mapper] No Kitsu ID found for S${seasonNumber} in franchise map for TVDB ${tvdbId}`);
+      logger.warn(`[ID Mapper] No Kitsu ID found for S${seasonNumber} in franchise map for TVDB ${tvdbId}`);
       
       // Provide helpful debugging info about available seasons
       const availableSeasons = Array.from(franchiseMap.keys()).sort((a, b) => a - b);
-      console.log(`[ID Mapper] Available seasons for TVDB ${tvdbId}: ${availableSeasons.join(', ')}`);
+      logger.debug(`[ID Mapper] Available seasons for TVDB ${tvdbId}: ${availableSeasons.join(', ')}`);
     }
     return foundKitsuId;
 }
@@ -432,15 +438,15 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
     const franchiseInfo = await getFranchiseInfoFromTmdbId(tmdbId);
     
     if (!franchiseInfo) {
-      console.warn(`[ID Mapper] No franchise info found for TMDB ID ${tmdbId}`);
+      logger.warn(`[ID Mapper] No franchise info found for TMDB ID ${tmdbId}`);
       return null;
     }
     
-    console.log(`[ID Mapper] Resolving TMDB S${seasonNumber} for ${tmdbId} (scenario: ${franchiseInfo.mappingScenario})`);
+    logger.debug(`[ID Mapper] Resolving TMDB S${seasonNumber} for ${tmdbId} (scenario: ${franchiseInfo.mappingScenario})`);
     
     // Check if episode-level mapping is needed (like Dan Da Dan scenario)
     if (franchiseInfo.needsEpisodeMapping) {
-      console.log(`[ID Mapper] Episode-level mapping detected for TMDB ${tmdbId} (${franchiseInfo.tvSeriesCount} Kitsu entries for 1 TMDB season)`);
+      logger.debug(`[ID Mapper] Episode-level mapping detected for TMDB ${tmdbId} (${franchiseInfo.tvSeriesCount} Kitsu entries for 1 TMDB season)`);
       
       // For episode-level mapping, we need to return a representative Kitsu ID
       // The actual episode-specific mapping will be done in getMeta.js
@@ -449,15 +455,15 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
         .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'))[0];
       
       if (firstKitsuEntry) {
-        console.log(`[ID Mapper] Using first Kitsu ID ${firstKitsuEntry.id} as representative for episode-level mapping`);
+        logger.debug(`[ID Mapper] Using first Kitsu ID ${firstKitsuEntry.id} as representative for episode-level mapping`);
         return firstKitsuEntry.id;
       }
     }
     
     // Check if the requested season exists in our mapping
     if (!franchiseInfo.seasons[seasonNumber]) {
-      console.warn(`[ID Mapper] Season ${seasonNumber} not found in franchise mapping for TMDB ${tmdbId}`);
-      console.log(`[ID Mapper] Available seasons: ${franchiseInfo.availableSeasonNumbers.join(', ')}`);
+      logger.warn(`[ID Mapper] Season ${seasonNumber} not found in franchise mapping for TMDB ${tmdbId}`);
+      logger.debug(`[ID Mapper] Available seasons: ${franchiseInfo.availableSeasonNumbers.join(', ')}`);
       
       // For complex scenarios, try to find the best match
       if (franchiseInfo.mappingScenario === 'tv_series_with_ovas' && seasonNumber > 0) {
@@ -467,7 +473,7 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
         );
         if (tvSeason) {
           const [seasonNum, info] = tvSeason;
-          console.log(`[ID Mapper] Using TV series season ${seasonNum} (Kitsu ID ${info.kitsuId}) for TMDB S${seasonNumber}`);
+          logger.debug(`[ID Mapper] Using TV series season ${seasonNum} (Kitsu ID ${info.kitsuId}) for TMDB S${seasonNumber}`);
           return info.kitsuId;
         }
       }
@@ -475,13 +481,13 @@ async function resolveKitsuIdFromTmdbSeason(tmdbId, seasonNumber) {
       // Fallback to first available season
       const firstSeason = franchiseInfo.availableSeasonNumbers[0];
       const firstSeasonInfo = franchiseInfo.seasons[firstSeason];
-      console.log(`[ID Mapper] Using fallback season ${firstSeason} (Kitsu ID ${firstSeasonInfo.kitsuId}) for TMDB S${seasonNumber}`);
+      logger.debug(`[ID Mapper] Using fallback season ${firstSeason} (Kitsu ID ${firstSeasonInfo.kitsuId}) for TMDB S${seasonNumber}`);
       return firstSeasonInfo.kitsuId;
     }
     
     const seasonInfo = franchiseInfo.seasons[seasonNumber];
-    console.log(`[ID Mapper] Resolved TMDB S${seasonNumber} to Kitsu ID ${seasonInfo.kitsuId} (${seasonInfo.mappingType})`);
-    console.log(`[ID Mapper] Season details: ${seasonInfo.title} (${seasonInfo.episodeCount} episodes, started ${seasonInfo.startDate})`);
+    logger.debug(`[ID Mapper] Resolved TMDB S${seasonNumber} to Kitsu ID ${seasonInfo.kitsuId} (${seasonInfo.mappingType})`);
+    logger.debug(`[ID Mapper] Season details: ${seasonInfo.title} (${seasonInfo.episodeCount} episodes, started ${seasonInfo.startDate})`);
     
     return seasonInfo.kitsuId;
 }
@@ -502,12 +508,12 @@ function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, ep
     
     // We MUST have the imdbId parameter - no fallback to mapping file
     if (!imdbId) {
-      console.warn(`[ID Mapper] No IMDB ID provided for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}`);
+      logger.warn(`[ID Mapper] No IMDB ID provided for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}`);
       return null;
     }
     
     if (!cinemetaVideos || !Array.isArray(cinemetaVideos)) {
-      console.warn(`[ID Mapper] No valid Cinemeta videos array provided for ${imdbId}`);
+      logger.warn(`[ID Mapper] No valid Cinemeta videos array provided for ${imdbId}`);
       // Fallback: return the base IMDB ID with season/episode
       return null;
     }
@@ -515,10 +521,10 @@ function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, ep
     // Parse the episode air date
     const targetDate = new Date(episodeAirDate);
     if (isNaN(targetDate.getTime())) {
-      console.warn(`[ID Mapper] Invalid episode air date: ${episodeAirDate}`);
+      logger.warn(`[ID Mapper] Invalid episode air date: ${episodeAirDate}`);
       // Fallback: return the base IMDB ID with season/episode
       const fallbackId = `${imdbId}:${seasonNumber}:${episodeNumber}`;
-      console.log(`[ID Mapper] Using fallback IMDB ID ${fallbackId} for TMDB S${seasonNumber}E${episodeNumber} (invalid date)`);
+      logger.debug(`[ID Mapper] Using fallback IMDB ID ${fallbackId} for TMDB S${seasonNumber}E${episodeNumber} (invalid date)`);
       return fallbackId;
     }
     
@@ -545,7 +551,7 @@ function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, ep
     // If we found a match within 7 days, use it
     if (bestMatch && smallestDateDiff <= 7) {
       const episodeId = `${imdbId}:${bestMatch.season}:${bestMatch.episode}`;
-      console.log(`[ID Mapper] Mapped TMDB S${seasonNumber}E${episodeNumber} (${episodeAirDate}) to IMDB ${episodeId} (${bestMatch.released}, diff: ${smallestDateDiff.toFixed(1)} days)`);
+      logger.debug(`[ID Mapper] Mapped TMDB S${seasonNumber}E${episodeNumber} (${episodeAirDate}) to IMDB ${episodeId} (${bestMatch.released}, diff: ${smallestDateDiff.toFixed(1)} days)`);
       return episodeId;
     }
     
@@ -557,14 +563,14 @@ function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, ep
       
       if (seasonMatch) {
         const episodeId = `${imdbId}:${seasonMatch.season}:${seasonMatch.episode}`;
-        console.log(`[ID Mapper] Mapped TMDB S${seasonNumber}E${episodeNumber} to IMDB ${episodeId} (by season/episode number)`);
+        logger.debug(`[ID Mapper] Mapped TMDB S${seasonNumber}E${episodeNumber} to IMDB ${episodeId} (by season/episode number)`);
         return episodeId;
       }
     }
     
     // Fallback: return the base IMDB ID with season/episode
     const fallbackId = `${tmdbId}:${seasonNumber}:${episodeNumber}`;
-    console.log(`[ID Mapper] Using fallback IMDB ID ${fallbackId} for TMDB S${seasonNumber}E${episodeNumber}`);
+    logger.debug(`[ID Mapper] Using fallback IMDB ID ${fallbackId} for TMDB S${seasonNumber}E${episodeNumber}`);
     return fallbackId;
 }
 
@@ -577,56 +583,56 @@ function getImdbEpisodeIdFromTmdbEpisode(tmdbId, seasonNumber, episodeNumber, ep
  */
 async function getCinemetaVideosForImdbSeries(imdbId) {
   if (!imdbId) {
-    console.warn(`[ID Mapper] No IMDB ID provided`);
+    logger.warn(`[ID Mapper] No IMDB ID provided`);
     return null;
   }
   
   try {
     // Fetch episode data from Cinemeta API
     const cinemetaUrl = `https://cinemeta-live.strem.io/meta/series/${imdbId}.json`;
-    console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
+    logger.debug(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
     const response = await httpGet(cinemetaUrl);
     const cinemetaData = response.data.meta;
     
     if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {
-      console.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
+      logger.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
       return null;
     }
     
-    console.log(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
+    logger.debug(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
     return cinemetaData.videos;
     
   } catch (error) {
-    console.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
+    logger.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
     return null;
   }
 }
 
 async function getCinemetaVideosForImdbIoSeries(imdbId) {
   if (!imdbId) {
-    console.warn(`[ID Mapper] No IMDB ID provided`);
+    logger.warn(`[ID Mapper] No IMDB ID provided`);
     return null;
   }
   
   try {
     // Fetch episode data from Cinemeta API
     const cinemetaUrl = `https://cinemeta-live.strem.io/meta/series/${imdbId}.json`;
-    console.log(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
+    logger.debug(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
     const response = await httpGet(cinemetaUrl);
     const cinemetaData = response.data.meta;
     
     if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {
-      console.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
+      logger.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
       return null;
     }
     
-    console.log(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
+    logger.debug(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
     return cinemetaData.videos;
     
   } catch (error) {
-    console.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
+    logger.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
     return null;
   }
 }
@@ -653,7 +659,7 @@ async function resolveImdbSeasonFromKitsu(kitsuId) {
   try {
     const baseMapping = getMappingByKitsuId(numericKitsuId);
     if (!baseMapping || !baseMapping.imdb_id) {
-      console.warn(`Incomplete mapping for Kitsu ID ${numericKitsuId}. Missing IMDb parent.`);
+      logger.warn(`Incomplete mapping for Kitsu ID ${numericKitsuId}. Missing IMDb parent.`);
       return null;
     }
     const parentImdbId = baseMapping.imdb_id;
@@ -679,17 +685,17 @@ async function resolveImdbSeasonFromKitsu(kitsuId) {
     if (seasonIndex !== -1) {
       const seasonNumber = seasonIndex + 1;
       const result = { imdbId: parentImdbId, seasonNumber: seasonNumber };
-      console.log(`[ID Resolver] Mapped Kitsu ID ${numericKitsuId} to IMDb Season ${seasonNumber}`);
+      logger.debug(`[ID Resolver] Mapped Kitsu ID ${numericKitsuId} to IMDb Season ${seasonNumber}`);
       kitsuToImdbCache.set(numericKitsuId, result);
       return result;
     }
 
-    console.warn(`[ID Resolver] Could not determine season number for Kitsu ID ${numericKitsuId}.`);
+    logger.warn(`[ID Resolver] Could not determine season number for Kitsu ID ${numericKitsuId}.`);
     kitsuToImdbCache.set(numericKitsuId, null);
     return null;
 
   } catch (error) {
-    console.error(`[ID Resolver] Error in resolveImdbSeasonFromKitsu for ${kitsuId}:`, error.message);
+    logger.error(`[ID Resolver] Error in resolveImdbSeasonFromKitsu for ${kitsuId}:`, error.message);
     return null;
   }
 }
@@ -698,7 +704,7 @@ async function resolveImdbSeasonFromKitsu(kitsuId) {
 
 function getMappingByMalId(malId) {
   if (!isInitialized) {
-    console.warn('[ID Mapper] Mapper is not initialized. Returning null.');
+    logger.warn('[ID Mapper] Mapper is not initialized. Returning null.');
     return null;
   }
   return animeIdMap.get(parseInt(malId, 10)) || null;
@@ -738,7 +744,7 @@ function getMappingByImdbId(imdbId) {
  */
 function getKitsuToImdbMapping(kitsuId) {
   if (!isKitsuToImdbInitialized) {
-    console.warn('[ID Mapper] [Kitsu-IMDB] Mapper is not initialized. Returning null.');
+    logger.warn('[ID Mapper] [Kitsu-IMDB] Mapper is not initialized. Returning null.');
     return null;
   }
   const numericKitsuId = parseInt(kitsuId, 10);
@@ -752,7 +758,7 @@ function getKitsuToImdbMapping(kitsuId) {
  */
 function getKitsuToImdbMappingsByImdbId(imdbId) {
   if (!isKitsuToImdbInitialized) {
-    console.warn('[ID Mapper] [Kitsu-IMDB] Mapper is not initialized. Returning empty array.');
+    logger.warn('[ID Mapper] [Kitsu-IMDB] Mapper is not initialized. Returning empty array.');
     return [];
   }
   
@@ -766,16 +772,21 @@ function getKitsuToImdbMappingsByImdbId(imdbId) {
  * @param {Object} imdbMetadata - The IMDB metadata containing episode information
  * @returns {Array} Enriched episodes array
  */
-async function enrichMalEpisodes(videos, kitsuId) {
+async function enrichMalEpisodes(videos, kitsuId, preserveIds = false) {
+  logger.debug(`[enrichMalEpisodes] Called with kitsuId: ${kitsuId}, videos count: ${videos?.length || 0}`);
+  
   if (!videos || !videos.length) {
-    return videos;
+    logger.debug(`[enrichMalEpisodes] No videos provided, returning null`);
+    return null;
   }
 
   const imdbInfo = getKitsuToImdbMapping(kitsuId);
   if (!imdbInfo) {
-    return videos;
+    logger.debug(`[enrichMalEpisodes] No IMDB mapping found for kitsuId: ${kitsuId}, returning null (no enrichment)`);
+    return null;
   }
 
+  logger.info(`[enrichMalEpisodes] Found IMDB mapping for kitsuId ${kitsuId}: ${JSON.stringify(imdbInfo)}`);
   const imdbMetadata = await getCinemetaVideosForImdbSeries(imdbInfo.imdb_id);
   const startSeason = Number.isInteger(imdbInfo.fromSeason) ? imdbInfo.fromSeason : 1;
   const startEpisode = Number.isInteger(imdbInfo.fromEpisode) ? imdbInfo.fromEpisode : 1;
@@ -796,18 +807,17 @@ async function enrichMalEpisodes(videos, kitsuId) {
   
   const nextImdbEntry = otherImdbEntries && otherImdbEntries[0];
 
-  const perSeasonEpisodeCount = imdbMetadata && imdbMetadata.videos && imdbMetadata.videos
+  const perSeasonEpisodeCount = imdbMetadata && Array.isArray(imdbMetadata) && imdbMetadata
       .filter((video) => (video.season === startSeason && video.episode >= startEpisode) || (video.season > startSeason
           && (!nextImdbEntry || nextImdbEntry.fromSeason > video.season)))
       .reduce(
           (counts, next) => (counts[next.season - startSeason] = counts[next.season - startSeason] + 1 || 1, counts),
           []);
 
-  const videosMap = perSeasonEpisodeCount && imdbMetadata.videos.reduce((map, next) => (map[next.id] = next, map), {})
-  console.log(`[ID Mapper] Videos map:`, videosMap);
+  const videosMap = perSeasonEpisodeCount && imdbMetadata && Array.isArray(imdbMetadata) && imdbMetadata.reduce((map, next) => (map[next.id] = next, map), {})
   let skippedEpisodes = 0;
 
-  console.log(`[ID Mapper] Per season episode count:`, perSeasonEpisodeCount);
+  //logger.debug(`[ID Mapper] Per season episode count:`, perSeasonEpisodeCount);
 
 
   if (perSeasonEpisodeCount && perSeasonEpisodeCount.length) {
@@ -826,13 +836,17 @@ async function enrichMalEpisodes(videos, kitsuId) {
           const episode = startEpisode - 1 + video.episode - skippedEpisodes - previousSeasonsEpisodeCount;
           const imdbVideo = videosMap[`${imdbInfo.imdb_id}:${season}:${episode}`];
           const title = video.title.match(/Episode \d+/) && (imdbVideo?.title || imdbVideo?.name) || video.title;
-          const thumbnail = video.thumbnail || imdbVideo?.thumbnail;
+          // If video.thumbnail is missing_thumbnail.png, prefer imdbVideo.thumbnail if available
+          const thumbnail = (video.thumbnail && video.thumbnail.includes('missing_thumbnail.png'))
+            ? (imdbVideo?.thumbnail || video.thumbnail)
+            : (video.thumbnail || imdbVideo?.thumbnail);
           const overview = video.overview || imdbVideo?.overview;
           const released = new Date(imdbVideo?.released || video.released.getTime());
           lastReleased = lastReleased?.getTime() > released.getTime() ? lastReleased : released;
-          video.id = `${imdbInfo.imdb_id}:${season}:${episode}`;
+          const episodeId = preserveIds ? video.id : `${imdbInfo.imdb_id}:${season}:${episode}`;
           return {
             ...video,
+            id: episodeId,
             title,
             thumbnail,
             overview,
@@ -852,12 +866,18 @@ async function enrichMalEpisodes(videos, kitsuId) {
     );
     
     // Use IMDB data to enrich the episode
-    video.thumbnail = video.thumbnail || imdbVideo?.thumbnail;
+    // If video.thumbnail is missing_thumbnail.png, prefer imdbVideo.thumbnail if available
+    video.thumbnail = (video.thumbnail && video.thumbnail.includes('missing_thumbnail.png'))
+      ? (imdbVideo?.thumbnail || video.thumbnail)
+      : (video.thumbnail || imdbVideo?.thumbnail);
     video.overview = video.overview || imdbVideo?.overview;
     video.released = imdbVideo?.released ? new Date(imdbVideo.released) : video.released;
     video.title = video.title.match(/Episode \d+/) && (imdbVideo?.title || imdbVideo?.name) || video.title;
-    video.id = `${imdbInfo.imdb_id}:${startSeason}:${startEpisode + index}`;
-    return video;
+    const episodeId = preserveIds ? video.id : `${imdbInfo.imdb_id}:${startSeason}:${startEpisode + index}`;
+    return {
+      ...video,
+      id: episodeId
+    };
   });
   return enrichedVideos;
   
@@ -887,7 +907,7 @@ function getMappingByTmdbId(tmdbId, type) {
     return allMatches[0];
   }
 
-  console.log(`[ID Mapper] Found ${allMatches.length} potential matches for TMDB ID ${numericTmdbId}. Using type ('${type}') to find the best fit.`);
+  logger.debug(`[ID Mapper] Found ${allMatches.length} potential matches for TMDB ID ${numericTmdbId}. Using type ('${type}') to find the best fit.`);
 
   if (type === 'movie') {
     const movieMatch = allMatches.find(item => item.type && item.type.toLowerCase() === 'movie');
@@ -900,7 +920,7 @@ function getMappingByTmdbId(tmdbId, type) {
     if (seriesMatch) return seriesMatch;
   }
 
-  console.warn(`[ID Mapper] Could not disambiguate for TMDB ID ${numericTmdbId} with type '${type}'. Returning first available match.`);
+  logger.warn(`[ID Mapper] Could not disambiguate for TMDB ID ${numericTmdbId} with type '${type}'. Returning first available match.`);
   return allMatches[0];
 }
 
@@ -1027,7 +1047,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     .filter(mapping => mapping.themoviedb_id === tmdbId);
   
   if (tmdbMappings.length === 0) {
-    console.warn(`[ID Mapper] No TMDB mapping found for TMDB ID ${tmdbId}`);
+    logger.warn(`[ID Mapper] No TMDB mapping found for TMDB ID ${tmdbId}`);
     return null;
   }
   
@@ -1036,7 +1056,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     const kitsuIds = tmdbMappings.map(m => m.kitsu_id).filter(Boolean);
     
     if (kitsuIds.length === 0) {
-      console.warn(`[ID Mapper] No valid Kitsu IDs found in TMDB mappings for ${tmdbId}`);
+      logger.warn(`[ID Mapper] No valid Kitsu IDs found in TMDB mappings for ${tmdbId}`);
       return null;
     }
     
@@ -1115,7 +1135,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     };
     
   } catch (error) {
-    console.error(`[ID Mapper] Error getting franchise info for TMDB ${tmdbId}:`, error);
+    logger.error(`[ID Mapper] Error getting franchise info for TMDB ${tmdbId}:`, error);
     return null;
   }
 }
@@ -1133,7 +1153,7 @@ async function getFranchiseInfoFromImdbId(imdbId) {
   // Find all mappings for this IMDb ID
   const imdbMappings = imdbIdToAnimeListMap.get(imdbId) || [];
   if (imdbMappings.length === 0) {
-    console.warn(`[ID Mapper] No IMDb mapping found for IMDb ID ${imdbId}`);
+    logger.warn(`[ID Mapper] No IMDb mapping found for IMDb ID ${imdbId}`);
     return null;
   }
 
@@ -1141,7 +1161,7 @@ async function getFranchiseInfoFromImdbId(imdbId) {
     // Get all Kitsu IDs from the mappings
     const kitsuIds = imdbMappings.map(m => m.kitsu_id).filter(Boolean);
     if (kitsuIds.length === 0) {
-      console.warn(`[ID Mapper] No valid Kitsu IDs found in IMDb mappings for ${imdbId}`);
+      logger.warn(`[ID Mapper] No valid Kitsu IDs found in IMDb mappings for ${imdbId}`);
       return null;
     }
 
@@ -1210,7 +1230,7 @@ async function getFranchiseInfoFromImdbId(imdbId) {
       }))
     };
   } catch (error) {
-    console.error(`[ID Mapper] Error getting franchise info for IMDb ${imdbId}:`, error);
+    logger.error(`[ID Mapper] Error getting franchise info for IMDb ${imdbId}:`, error);
     return null;
   }
 }
@@ -1237,10 +1257,10 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
   if (!isInitialized) return null;
   const franchiseInfo = await getFranchiseInfoFromTvdbId(tvdbId);
   if (!franchiseInfo || !franchiseInfo.needsEpisodeMapping) {
-    console.warn(`[ID Mapper] Episode-level mapping not needed for TVDB ${tvdbId}`);
+    logger.warn(`[ID Mapper] Episode-level mapping not needed for TVDB ${tvdbId}`);
     return null;
   }
-  console.log(`[ID Mapper] Resolving episode-level mapping for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}`);
+  logger.debug(`[ID Mapper] Resolving episode-level mapping for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}`);
   
   try {
     const kitsuEntries = franchiseInfo.kitsuDetails
@@ -1248,7 +1268,7 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
       .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'));
       
     if (kitsuEntries.length === 0) {
-      console.warn(`[ID Mapper] No TV series found for episode-level mapping`);
+      logger.warn(`[ID Mapper] No TV series found for episode-level mapping`);
       return null;
     }
     
@@ -1263,7 +1283,7 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
       if (episodeNumber >= startEpisode && episodeNumber <= endEpisode) {
         // Calculate the Kitsu episode number (reset to 1 for each Kitsu entry)
         const kitsuEpisodeNumber = episodeNumber - cumulativeEpisodes;
-        console.log(`[ID Mapper] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (TMDB range ${startEpisode}-${endEpisode})`);
+        logger.debug(`[ID Mapper] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (TMDB range ${startEpisode}-${endEpisode})`);
         return {
           kitsuId: kitsuEntry.id,
           episodeNumber: kitsuEpisodeNumber
@@ -1285,7 +1305,7 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
             kitsuEndDate.setDate(kitsuEndDate.getDate() + (kitsuEntry.episodeCount * 7)); // Rough estimate
             
             if (targetDate >= kitsuStartDate && targetDate <= kitsuEndDate) {
-              console.log(`[ID Mapper] Episode ${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
+              logger.debug(`[ID Mapper] Episode ${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
               // For air date strategy, we can't determine exact episode number, so use 1 as fallback
               return {
                 kitsuId: kitsuEntry.id,
@@ -1298,14 +1318,14 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
     }
     
     // Strategy 3: Fallback to first Kitsu entry
-    console.log(`[ID Mapper] Using fallback: episode ${episodeNumber} maps to first Kitsu ID ${kitsuEntries[0].id}`);
+    logger.debug(`[ID Mapper] Using fallback: episode ${episodeNumber} maps to first Kitsu ID ${kitsuEntries[0].id}`);
     return {
       kitsuId: kitsuEntries[0].id,
       episodeNumber: 1
     };
     
   } catch (error) {
-    console.error(`[ID Mapper] Error in episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}:`, error);
+    logger.error(`[ID Mapper] Error in episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}:`, error);
     return null;
   }
 }
@@ -1325,11 +1345,11 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
   
   const franchiseInfo = await getFranchiseInfoFromTmdbId(tmdbId);
   if (!franchiseInfo || !franchiseInfo.needsEpisodeMapping) {
-    console.warn(`[ID Mapper] Episode-level mapping not needed for TMDB ${tmdbId}`);
+    logger.warn(`[ID Mapper] Episode-level mapping not needed for TMDB ${tmdbId}`);
     return null;
   }
   
-  console.log(`[ID Mapper] Resolving episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}`);
+  logger.debug(`[ID Mapper] Resolving episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}`);
   
   try {
     // Get all Kitsu entries for this TMDB ID
@@ -1338,7 +1358,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
       .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'));
     
     if (kitsuEntries.length === 0) {
-      console.warn(`[ID Mapper] No TV series found for episode-level mapping`);
+      logger.warn(`[ID Mapper] No TV series found for episode-level mapping`);
       return null;
     }
     
@@ -1362,7 +1382,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
         if (episodeNumber >= startEpisode && episodeNumber <= endEpisode) {
           // Calculate the Kitsu episode number (reset to 1 for each Kitsu entry)
           const kitsuEpisodeNumber = episodeNumber - cumulativeEpisodes;
-          console.log(`[ID Mapper] Season 1 Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (episode-based mapping, range ${startEpisode}-${endEpisode})`);
+          logger.debug(`[ID Mapper] Season 1 Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (episode-based mapping, range ${startEpisode}-${endEpisode})`);
           return {
             kitsuId: kitsuEntry.id,
             episodeNumber: kitsuEpisodeNumber
@@ -1381,7 +1401,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
     
     if (seasonIndex >= 0 && seasonIndex < kitsuEntries.length) {
       const kitsuEntry = kitsuEntries[seasonIndex];
-      console.log(`[ID Mapper] TMDB Season ${seasonNumber} maps directly to Kitsu ID ${kitsuEntry.id}, Episode ${episodeNumber} (season-based mapping)`);
+      logger.debug(`[ID Mapper] TMDB Season ${seasonNumber} maps directly to Kitsu ID ${kitsuEntry.id}, Episode ${episodeNumber} (season-based mapping)`);
       return {
         kitsuId: kitsuEntry.id,
         episodeNumber: episodeNumber
@@ -1399,7 +1419,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
       if (episodeNumber >= startEpisode && episodeNumber <= endEpisode) {
         // Calculate the Kitsu episode number (reset to 1 for each Kitsu entry)
         const kitsuEpisodeNumber = episodeNumber - cumulativeEpisodes;
-        console.log(`[ID Mapper] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (fallback, range ${startEpisode}-${endEpisode})`);
+        logger.debug(`[ID Mapper] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (fallback, range ${startEpisode}-${endEpisode})`);
         return {
           kitsuId: kitsuEntry.id,
           episodeNumber: kitsuEpisodeNumber
@@ -1421,7 +1441,7 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
             kitsuEndDate.setDate(kitsuEndDate.getDate() + (kitsuEntry.episodeCount * 7)); // Rough estimate
             
             if (targetDate >= kitsuStartDate && targetDate <= kitsuEndDate) {
-              console.log(`[ID Mapper] Episode S${seasonNumber}E${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
+              logger.debug(`[ID Mapper] Episode S${seasonNumber}E${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
               // Use the episode number from TMDB directly
               return {
                 kitsuId: kitsuEntry.id,
@@ -1434,14 +1454,14 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
     }
     
     // Strategy 5: cooked - Fallback to first Kitsu entry if season is out of range
-    console.log(`[ID Mapper] Using fallback: Season ${seasonNumber} is out of range, mapping to first Kitsu ID ${kitsuEntries[0].id}`);
+    logger.debug(`[ID Mapper] Using fallback: Season ${seasonNumber} is out of range, mapping to first Kitsu ID ${kitsuEntries[0].id}`);
     return {
       kitsuId: kitsuEntries[0].id,
       episodeNumber: episodeNumber
     };
     
   } catch (error) {
-    console.error(`[ID Mapper] Error in episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}:`, error);
+    logger.error(`[ID Mapper] Error in episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}:`, error);
     return null;
   }
 }
@@ -1458,17 +1478,17 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
   
   const mapping = getMappingByKitsuId(kitsuId);
   if (!mapping || !mapping.themoviedb_id) {
-    console.warn(`[ID Mapper] No TMDB mapping found for Kitsu ID ${kitsuId}`);
+    logger.warn(`[ID Mapper] No TMDB mapping found for Kitsu ID ${kitsuId}`);
     return null;
   }
   
   const tmdbId = mapping.themoviedb_id;
-  console.log(`[ID Mapper] Resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} (TMDB ID: ${tmdbId})`);
+  logger.debug(`[ID Mapper] Resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} (TMDB ID: ${tmdbId})`);
   
   try {
     const franchiseInfo = await getFranchiseInfoFromTmdbId(tmdbId);
     if (!franchiseInfo) {
-      console.warn(`[ID Mapper] No franchise info found for TMDB ID ${tmdbId}`);
+      logger.warn(`[ID Mapper] No franchise info found for TMDB ID ${tmdbId}`);
       return null;
     }
     
@@ -1480,7 +1500,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
     // Find which Kitsu entry this ID corresponds to
     const kitsuEntryIndex = kitsuEntries.findIndex(entry => entry.id === parseInt(kitsuId, 10));
     if (kitsuEntryIndex === -1) {
-      console.warn(`[ID Mapper] Kitsu ID ${kitsuId} not found in franchise entries for TMDB ${tmdbId}`);
+      logger.warn(`[ID Mapper] Kitsu ID ${kitsuId} not found in franchise entries for TMDB ${tmdbId}`);
       return null;
     }
     
@@ -1500,7 +1520,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
         cumulativeEpisodes += kitsuEntries[i].episodeCount || 0;
       }
       const tmdbEpisodeNumber = cumulativeEpisodes + kitsuEpisodeNumber;
-      console.log(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season 1 Episode ${tmdbEpisodeNumber} (single-season scenario)`);
+      logger.debug(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season 1 Episode ${tmdbEpisodeNumber} (single-season scenario)`);
       return {
         tmdbId: tmdbId,
         seasonNumber: 1,
@@ -1512,7 +1532,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
     // Each Kitsu entry maps to a different TMDB season
     // Kitsu Entry 0 → TMDB Season 1, Entry 1 → Season 2, etc.
     const tmdbSeasonNumber = kitsuEntryIndex + 1;
-    console.log(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season ${tmdbSeasonNumber} Episode ${kitsuEpisodeNumber} (multi-season scenario)`);
+    logger.debug(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season ${tmdbSeasonNumber} Episode ${kitsuEpisodeNumber} (multi-season scenario)`);
     return {
       tmdbId: tmdbId,
       seasonNumber: tmdbSeasonNumber,
@@ -1520,7 +1540,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
     };
     
   } catch (error) {
-    console.error(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}:`, error);
+    logger.error(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}:`, error);
     return null;
   }
 }
@@ -1540,13 +1560,13 @@ async function resolveKitsuIdForEpisodeByImdb(imdbId, seasonNumber, episodeNumbe
   try {
     const franchiseInfo = await getFranchiseInfoFromImdbId(imdbId);
     if (!franchiseInfo || !franchiseInfo.kitsuDetails) {
-      console.warn(`[ID Mapper] [IMDb] No franchise info found for IMDb ${imdbId}`);
+      logger.warn(`[ID Mapper] [IMDb] No franchise info found for IMDb ${imdbId}`);
       return null;
     }
     // If only one TV series, no episode-level mapping needed
     const tvSeries = franchiseInfo.kitsuDetails.filter(item => item.subtype?.toLowerCase() === 'tv');
     if (tvSeries.length <= 1) {
-      console.log(`[ID Mapper] [IMDb] Only one TV series for IMDb ${imdbId}, no episode-level mapping needed.`);
+      logger.debug(`[ID Mapper] [IMDb] Only one TV series for IMDb ${imdbId}, no episode-level mapping needed.`);
       return null;
     }
     // Multiple TV series: episode-level mapping needed
@@ -1557,7 +1577,7 @@ async function resolveKitsuIdForEpisodeByImdb(imdbId, seasonNumber, episodeNumbe
       const endEp = cumulativeEpisodes + epCount;
       if (episodeNumber >= startEp && episodeNumber <= endEp) {
         const kitsuEpisodeNumber = episodeNumber - cumulativeEpisodes;
-        console.log(`[ID Mapper] [IMDb] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (IMDb range ${startEp}-${endEp})`);
+        logger.debug(`[ID Mapper] [IMDb] Episode ${episodeNumber} maps to Kitsu ID ${kitsuEntry.id} episode ${kitsuEpisodeNumber} (IMDb range ${startEp}-${endEp})`);
         return { kitsuId: kitsuEntry.id, episodeNumber: kitsuEpisodeNumber };
       }
       cumulativeEpisodes = endEp;
@@ -1572,7 +1592,7 @@ async function resolveKitsuIdForEpisodeByImdb(imdbId, seasonNumber, episodeNumbe
             const kitsuEndDate = new Date(kitsuEntry.startDate);
             kitsuEndDate.setDate(kitsuEndDate.getDate() + (kitsuEntry.episodeCount * 7)); // Rough estimate
             if (targetDate >= kitsuStartDate && targetDate <= kitsuEndDate) {
-              console.log(`[ID Mapper] [IMDb] Episode ${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
+              logger.debug(`[ID Mapper] [IMDb] Episode ${episodeNumber} (${episodeAirDate}) maps to Kitsu ID ${kitsuEntry.id} by air date`);
               return { kitsuId: kitsuEntry.id, episodeNumber: 1 };
             }
           }
@@ -1581,12 +1601,12 @@ async function resolveKitsuIdForEpisodeByImdb(imdbId, seasonNumber, episodeNumbe
     }
     // Fallback: use first TV series Kitsu entry
     if (tvSeries.length > 0) {
-      console.log(`[ID Mapper] [IMDb] Fallback: episode ${episodeNumber} maps to first Kitsu ID ${tvSeries[0].id}`);
+      logger.debug(`[ID Mapper] [IMDb] Fallback: episode ${episodeNumber} maps to first Kitsu ID ${tvSeries[0].id}`);
       return { kitsuId: tvSeries[0].id, episodeNumber: 1 };
     }
     return null;
   } catch (error) {
-    console.error(`[ID Mapper] [IMDb] Error in resolveKitsuIdForEpisodeByImdb for IMDb ${imdbId} S${seasonNumber}E${episodeNumber}:`, error);
+    logger.error(`[ID Mapper] [IMDb] Error in resolveKitsuIdForEpisodeByImdb for IMDb ${imdbId} S${seasonNumber}E${episodeNumber}:`, error);
     return null;
   }
 }
@@ -1637,7 +1657,7 @@ function cleanup() {
   if (updateInterval) {
     clearInterval(updateInterval);
     updateInterval = null;
-    console.log('[ID Mapper] Cleaned up update interval.');
+    logger.debug('[ID Mapper] Cleaned up update interval.');
   }
 }
 
@@ -1672,7 +1692,7 @@ async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
     const imdbEpisodes = cinemetaVideos.filter(ep => ep.season !==0)
     
     if (!imdbEpisodes.length) {
-      console.warn(`[ID Mapper] No IMDB episodes found for ${commonImdbId}`);
+      logger.warn(`[ID Mapper] No IMDB episodes found for ${commonImdbId}`);
       return null;
     }
 
@@ -1694,7 +1714,7 @@ async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
     );
 
     if (!mappedImdbSeasons.length) {
-      console.warn(`[ID Mapper] No IMDB seasons mapped for TMDB season ${tmdbSeasonNumber}`);
+      logger.warn(`[ID Mapper] No IMDB seasons mapped for TMDB season ${tmdbSeasonNumber}`);
       return null;
     }
 
@@ -1710,11 +1730,11 @@ async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
       return `${commonImdbId}:${imdbEpisode.season}:${imdbEpisode.episode}`;
     }
 
-    console.warn(`[ID Mapper] No IMDB episode found for TMDB S${tmdbSeasonNumber}E${tmdbEpisodeNumber} (air date: ${tmdbAirDate})`);
+    logger.warn(`[ID Mapper] No IMDB episode found for TMDB S${tmdbSeasonNumber}E${tmdbEpisodeNumber} (air date: ${tmdbAirDate})`);
     return null;
 
   } catch (error) {
-    console.error(`[ID Mapper] Error mapping TMDB episode to IMDB:`, error);
+    logger.error(`[ID Mapper] Error mapping TMDB episode to IMDB:`, error);
     return null;
   }
 }
@@ -1808,7 +1828,7 @@ function findImdbEpisodeByAirDate(tmdbAirDate, mappedImdbSeasons, toleranceDays 
  */
 function getTraktAnimeMovieByMalId(malId) {
   if (!isTraktAnimeMoviesInitialized) {
-    console.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
+    logger.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
     return null;
   }
   const numericMalId = parseInt(malId, 10);
@@ -1822,7 +1842,7 @@ function getTraktAnimeMovieByMalId(malId) {
  */
 function getTraktAnimeMovieByTmdbId(tmdbId) {
   if (!isTraktAnimeMoviesInitialized) {
-    console.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
+    logger.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
     return null;
   }
   const numericTmdbId = parseInt(tmdbId, 10);
@@ -1836,7 +1856,7 @@ function getTraktAnimeMovieByTmdbId(tmdbId) {
  */
 function getTraktAnimeMovieByImdbId(imdbId) {
   if (!isTraktAnimeMoviesInitialized) {
-    console.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
+    logger.warn('[ID Mapper] [Trakt-Anime-Movies] Mapper is not initialized. Returning null.');
     return null;
   }
   return imdbIdToTraktMovieMap.get(imdbId) || null;

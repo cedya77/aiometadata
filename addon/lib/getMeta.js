@@ -2423,8 +2423,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
             videos.forEach(ep => {
               ep.runtime = Utils.parseRunTime(malData.duration);
             });
-            
             logger.debug(`[getMeta] Successfully enriched ${enrichedVideos.length} episodes with IMDB data`);
+          } else if (enrichedVideos === null) {
+            logger.debug(`[getMeta] No IMDB enrichment available for kitsuId ${kitsuId}, using original videos`);
           } else {
             logger.warn(`[getMeta] enrichMalEpisodes returned invalid data: ${JSON.stringify(enrichedVideos)}`);
           }
@@ -2689,18 +2690,21 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         }
       })
 
-      if (idProvider === 'imdb') {
+      // Enrich episodes with IMDb data if mapping exists
+      if (imdbId) {
         try {
-          const enrichedVideos = await idMapper.enrichMalEpisodes(meta.videos, kitsuData.id);
+          const preserveIds = idProvider !== 'imdb';
+          const enrichedVideos = await idMapper.enrichMalEpisodes(meta.videos, kitsuData.id, preserveIds);
           if (enrichedVideos && Array.isArray(enrichedVideos) && enrichedVideos.length > 0) {
             meta.videos = enrichedVideos;
-            
-            logger.debug(`[buildKitsuAnimeResponse] Successfully enriched ${enrichedVideos.length} episodes with IMDB data`);
+            logger.debug(`[buildKitsuAnimeResponse] Successfully enriched ${enrichedVideos.length} episodes with IMDB data (preserving original IDs)`);
+          } else if (enrichedVideos === null) {
+            logger.debug(`[buildKitsuAnimeResponse] No IMDB enrichment available for kitsuId ${kitsuData.id}, using original videos`);
           } else {
             logger.warn(`[buildKitsuAnimeResponse] enrichMalEpisodes returned invalid data: ${JSON.stringify(enrichedVideos)}`);
           }
         } catch (error) {
-          logger.error(`[buildKitsuAnimeResponse] Error enriching MAL episodes: ${error.message}`);
+          logger.error(`[buildKitsuAnimeResponse] Error enriching episodes: ${error.message}`);
           // Keep original videos if enrichment fails
         }
       }
