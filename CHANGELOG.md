@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.10.0](https://github.com/cedya77/aiometadata/compare/v1.9.0...v1.10.0) (2025-11-18)
+
+
+### Features
+
+* enrich episodes with IMDb data while preserving original IDs ([d24f13d](https://github.com/cedya77/aiometadata/commit/d24f13d0952b8a033dfe9548bfc4b1a79012c9ef))
+* **getManifest:** extend TMDB year catalog range from 20 years to 1900-present ([f55575e](https://github.com/cedya77/aiometadata/commit/f55575ea298cb94c7529e97837b1c859938a8125))
+
+
+### Bug Fixes
+
+* **index:** add CORS headers to manifest.json endpoints to prevent browser blocking ([d0cda45](https://github.com/cedya77/aiometadata/commit/d0cda456a468ebdf756218cfc6992a2cc496503f))
+
+
+### Performance Improvements
+
+* add in-memory config cache ([f0f2a59](https://github.com/cedya77/aiometadata/commit/f0f2a5918494105af65c039f6c46ee8a2eef14de))
+* use MGET in reconstructMetaFromComponents ([f7e58e1](https://github.com/cedya77/aiometadata/commit/f7e58e1e82aaf38d996284ead538678e15d69a4e))
+
 ## [1.9.0](https://github.com/cedya77/aiometadata/compare/v1.8.3...v1.9.0) (2025-11-16)
 
 
