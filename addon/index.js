@@ -490,6 +490,8 @@ addon.get("/stremio/manifest.json", function (req, res) {
     
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
     res.json(basicManifest);
 });
 
@@ -501,12 +503,16 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
         const config = await database.getUserConfig(userUUID);
         if (!config) {
             consola.debug(`[Manifest] No config found for user: ${userUUID}`);
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Headers', '*');
             return res.status(404).send({ err: "User configuration not found." });
         }
         
         consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}`);
         const manifest = await getManifest(config);
             if (!manifest) {
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Access-Control-Allow-Headers', '*');
                 return res.status(500).send({ err: "Failed to build manifest." });
             }
             
@@ -547,6 +553,8 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             respond(req, res, manifest, cacheOpts);
     } catch (error) {
         consola.error(`[Manifest] Error for user ${userUUID}:`, error);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Headers', '*');
         res.status(500).send({ err: "Failed to build manifest." });
     }
 });
