@@ -374,38 +374,26 @@ class RequestTracker {
           // Debounce per user + query for a short window to avoid overcounting
           const userHash = this.getImprovedUserIdentifier(req);
           const dedupeKey = `search_dedupe:${today}:${userHash}:${catalogType}:${searchQuery}`;
-          try {
-            const setResult = await redis.set(dedupeKey, "1", "NX", "EX", 3);
-            if (setResult) {
-              // Increment global aggregate
-              redis
-                .zincrby(`search_patterns:${today}`, 1, searchQuery)
-                .catch(() => {});
-              redis
-                .expire(`search_patterns:${today}`, 86400 * 30)
-                .catch(() => {}); // 30 days
-
-              // Increment per-type aggregate
-              redis
-                .zincrby(
-                  `search_patterns:${today}:${catalogType}`,
-                  1,
-                  searchQuery,
-                )
-                .catch(() => {});
-              redis
-                .expire(`search_patterns:${today}:${catalogType}`, 86400 * 30)
-                .catch(() => {});
-            }
-          } catch (_) {
-            // On Redis error, fall back to naive increment to avoid losing data entirely
-            redis
-              .zincrby(`search_patterns:${today}`, 1, searchQuery)
-              .catch(() => {});
-            redis
-              .expire(`search_patterns:${today}`, 86400 * 30)
-              .catch(() => {});
-          }
+          
+          redis.set(dedupeKey, "1", "NX", "EX", 3)
+            .then(setResult => {
+              if (setResult) {
+                // Increment both global and per-type aggregates in parallel
+                Promise.all([
+                  redis.zincrby(`search_patterns:${today}`, 1, searchQuery),
+                  redis.expire(`search_patterns:${today}`, 86400 * 30),
+                  redis.zincrby(`search_patterns:${today}:${catalogType}`, 1, searchQuery),
+                  redis.expire(`search_patterns:${today}:${catalogType}`, 86400 * 30)
+                ]).catch(() => {});
+              }
+            })
+            .catch(() => {
+              // On Redis error, fall back to naive increment
+              Promise.all([
+                redis.zincrby(`search_patterns:${today}`, 1, searchQuery),
+                redis.expire(`search_patterns:${today}`, 86400 * 30)
+              ]).catch(() => {});
+            });
         }
       }
 
@@ -1565,8 +1553,7 @@ class RequestTracker {
   async trackActiveUser(userIdentifier, req) {
     try {
       const now = Date.now();
-      const hour = new Date().toISOString().substring(0, 13);
-      const minute = new Date().toISOString().substring(0, 16);
+      const today = new Date().toISOString().split("T")[0];
 
       // Track in multiple time windows for better accuracy
       const timeWindows = [
@@ -1574,11 +1561,6 @@ class RequestTracker {
         { key: `active_users:1hour`, ttl: 3600 }, // 1 hour
         { key: `active_users:24hour`, ttl: 86400 }, // 24 hours
       ];
-
-      for (const window of timeWindows) {
-        await redis.sadd(window.key, userIdentifier);
-        await redis.expire(window.key, window.ttl);
-      }
 
       // Store detailed user activity for analytics
       const userActivity = {
@@ -1590,15 +1572,21 @@ class RequestTracker {
         anonymizedIP: this.getAnonymizedIP(req),
       };
 
-      // Store in a time-ordered list (keep last 1000 activities)
-      await redis.lpush("user_activities", JSON.stringify(userActivity));
-      await redis.ltrim("user_activities", 0, 999); // Keep only last 1000
-      await redis.expire("user_activities", 86400 * 7); // 7 days
-
-      // Track unique users per day
-      const today = new Date().toISOString().split("T")[0];
-      await redis.sadd(`unique_users:${today}`, userIdentifier);
-      await redis.expire(`unique_users:${today}`, 86400 * 30); // 30 days
+      // Execute Redis operations in parallel
+      await Promise.all([
+        // Time window tracking
+        ...timeWindows.flatMap(window => [
+          redis.sadd(window.key, userIdentifier),
+          redis.expire(window.key, window.ttl)
+        ]),
+        // User activity tracking
+        redis.lpush("user_activities", JSON.stringify(userActivity)),
+        redis.ltrim("user_activities", 0, 999),
+        redis.expire("user_activities", 86400 * 7),
+        // Daily unique users
+        redis.sadd(`unique_users:${today}`, userIdentifier),
+        redis.expire(`unique_users:${today}`, 86400 * 30)
+      ]);
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to track active user:",
