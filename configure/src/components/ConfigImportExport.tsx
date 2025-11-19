@@ -110,12 +110,26 @@ export function ConfigImportExport() {
           });
         }
 
-        // Merge the imported config with current config
-        // Preserve current API keys if they were excluded from export
         const mergedConfig = {
-          ...config,
           ...importData.config,
-          apiKeys: importData.metadata?.apiKeysExcluded ? config.apiKeys : importData.config.apiKeys
+          apiKeys: (() => {
+            if (importData.metadata?.apiKeysExcluded) {
+              return config.apiKeys;
+            }
+            
+            if (!importData.config.apiKeys) {
+              return config.apiKeys;
+            }
+            
+            const importedKeys = importData.config.apiKeys;
+            const allKeysEmpty = Object.values(importedKeys).every(key => !key || (typeof key === 'string' && key.trim() === ''));
+            
+            if (allKeysEmpty) {
+              return config.apiKeys;
+            }
+            
+            return importedKeys;
+          })()
         };
 
         // Update the configuration
