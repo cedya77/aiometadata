@@ -39,10 +39,7 @@ class RequestTracker {
     const tracker = this; // Capture the tracker instance
 
     return async (req, res, next) => {
-      const startTime = Date.now();
-      const originalSend = res.send;
-      const originalJson = res.json;
-      const originalEnd = res.end;
+      const start = process.hrtime();
       let responseTracked = false;
 
       // Track request start
@@ -52,33 +49,23 @@ class RequestTracker {
       const trackOnce = function () {
         if (!responseTracked) {
           responseTracked = true;
-          const responseTime = Date.now() - startTime;
-          tracker.trackResponse(req, res, responseTime);
+          const [seconds, nanoseconds] = process.hrtime(start);
+          const responseTime = (seconds * 1000) + (nanoseconds / 1e6);
+          tracker.trackResponse(req, res, responseTime).catch(err => {
+            logger.warn('[Request Tracker] Failed to track response:', err.message);
+          });
         }
       };
 
-      // Override res.send
+      // Primary tracking via finish event (most reliable)
+      res.on("finish", trackOnce);
+
+      // Keep minimal patching as safety net for edge cases
+      const originalSend = res.send;
       res.send = function (data) {
         trackOnce();
         return originalSend.call(this, data);
       };
-
-      // Override res.json
-      res.json = function (data) {
-        trackOnce();
-        return originalJson.call(this, data);
-      };
-
-      // Override res.end as final fallback
-      res.end = function (data) {
-        trackOnce();
-        return originalEnd.call(this, data);
-      };
-
-      // Handle errors that happen before response is sent
-      res.on("finish", () => {
-        trackOnce();
-      });
 
       next();
     };
@@ -201,7 +188,7 @@ class RequestTracker {
       redis.expire(`errors:${statusCode}:${today}`, 86400 * 30).catch(() => {});
       redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
 
-      // If this was a catalog search, compute real success (results > 0)
+      // Track catalog/search success
       if (req.path.includes("/catalog/")) {
         let rawSearch = "";
         // Query param
@@ -228,6 +215,7 @@ class RequestTracker {
           } catch (_) {}
         }
         const queryNorm = rawSearch.toLowerCase().trim();
+        
         if (queryNorm) {
           // Determine type for optional per-type success storage
           let catalogType = "all";
@@ -237,28 +225,9 @@ class RequestTracker {
               catalogType = catalogMatch[1].toLowerCase();
           } catch (_) {}
 
-          // Try to parse response body from res.locals if present (since we can't reliably read res.send data here)
-          // Many routes set res.locals.payload before sending; if not available, we can't compute success here.
-          let resultsCount = 0;
-          try {
-            const payload = res.locals?.payload || res.locals?.data;
-            if (payload) {
-              const obj =
-                typeof payload === "string" ? JSON.parse(payload) : payload;
-              if (obj && typeof obj === "object") {
-                const candidates = ["metas", "results", "items"];
-                for (const key of candidates) {
-                  if (Array.isArray(obj[key])) {
-                    resultsCount = obj[key].length;
-                    break;
-                  }
-                }
-              }
-            }
-          } catch (_) {}
+          const resultsCount = res.locals?.resultCount ?? 0;
 
-          // Fallback: if we don't have res.locals, try to infer from status code 200 (treat as attempt only)
-          // We only increment success if resultsCount > 0
+          // Track search success if results were found
           if (resultsCount > 0) {
             redis
               .zincrby(`search_success:${today}`, 1, queryNorm)

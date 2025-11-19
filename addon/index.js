@@ -129,6 +129,12 @@ const getCacheHeaders = function (opts) {
 };
 
 const respond = function (req, res, data, opts) {
+  // LOGGING: Store response data in res.locals for success detection
+  if (req.path.includes('/catalog/') && data && data.metas) {
+    res.locals.payload = data;
+    res.locals.resultCount = data.metas.length;
+    res.locals.hasResults = data.metas.length > 0;
+  }
 
   if (NO_CACHE) {
     consola.debug('[Cache] Bypassing browser cache for this request.');
