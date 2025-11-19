@@ -44,66 +44,55 @@ function parseInlineFlags(pattern) {
 /**
  * Check if content should be excluded based on keywords or regex patterns
  * @param {Object} meta - The metadata object to check
- * @param {string} keywords - Comma-separated keywords to exclude
- * @param {string} regexPattern - Optional regex pattern (supports inline flags)
+ * @param {Array} keywordList - Pre-processed array of keywords (lowercase, trimmed)
+ * @param {RegExp|null} compiledRegex - Pre-compiled regex pattern
  * @returns {boolean} - true if content should be excluded, false otherwise
  */
-function shouldExcludeContent(meta, keywords, regexPattern) {
+function shouldExcludeContent(meta, keywordList, compiledRegex) {
   if (!meta) {
     return false;
   }
 
   // Check keyword filtering first (simple, user-friendly)
-  if (keywords && keywords.trim()) {
-    const keywordList = keywords.split(',').map(k => k.trim().toLowerCase()).filter(k => k);
-    if (keywordList.length > 0) {
-      const textToCheck = [
-        meta.name,
-        meta.description,
-        meta.originalTitle,
-        ...(meta.alternativeTitles || [])
-      ].filter(Boolean).join(' ').toLowerCase();
+  if (keywordList && keywordList.length > 0) {
+    const textToCheck = [
+      meta.name,
+      meta.description,
+      meta.originalTitle,
+      ...(meta.alternativeTitles || [])
+    ].filter(Boolean).join(' ').toLowerCase();
 
-      for (const keyword of keywordList) {
-        if (textToCheck.includes(keyword)) {
-          return true;
-        }
+    for (const keyword of keywordList) {
+      if (textToCheck.includes(keyword)) {
+        return true;
       }
     }
   }
 
   // Check regex filtering (advanced users)
-  if (regexPattern && regexPattern.trim()) {
-    try {
-      const { pattern: cleanPattern, flags } = parseInlineFlags(regexPattern.trim());
-      const regex = new RegExp(cleanPattern, flags);
-      
-      // Check title
-      if (meta.name && regex.test(meta.name)) {
-        return true;
-      }
-      
-      // Check description
-      if (meta.description && regex.test(meta.description)) {
-        return true;
-      }
-      
-      // Check original title if different from name
-      if (meta.originalTitle && meta.originalTitle !== meta.name && regex.test(meta.originalTitle)) {
-        return true;
-      }
-      
-      // Check alternative titles
-      if (meta.alternativeTitles && Array.isArray(meta.alternativeTitles)) {
-        for (const altTitle of meta.alternativeTitles) {
-          if (regex.test(altTitle)) {
-            return true;
-          }
+  if (compiledRegex) {
+    // Check title
+    if (meta.name && compiledRegex.test(meta.name)) {
+      return true;
+    }
+    
+    // Check description
+    if (meta.description && compiledRegex.test(meta.description)) {
+      return true;
+    }
+    
+    // Check original title if different from name
+    if (meta.originalTitle && meta.originalTitle !== meta.name && compiledRegex.test(meta.originalTitle)) {
+      return true;
+    }
+    
+    // Check alternative titles
+    if (meta.alternativeTitles && Array.isArray(meta.alternativeTitles)) {
+      for (const altTitle of meta.alternativeTitles) {
+        if (compiledRegex.test(altTitle)) {
+          return true;
         }
       }
-    } catch (error) {
-      console.warn(`[Regex Filter] Invalid regex pattern "${regexPattern}":`, error.message);
-      // Don't exclude if regex is invalid
     }
   }
   
@@ -127,14 +116,31 @@ function filterMetasByRegex(metas, keywords, regexPattern) {
     return metas;
   }
 
+  // Pre-process keywords once (instead of in every iteration)
+  const keywordList = keywords && keywords.trim() 
+    ? keywords.split(',').map(k => k.trim().toLowerCase()).filter(k => k)
+    : [];
+
+  // Pre-compile regex once (instead of in every iteration)
+  let compiledRegex = null;
+  if (regexPattern && regexPattern.trim()) {
+    try {
+      const { pattern: cleanPattern, flags } = parseInlineFlags(regexPattern.trim());
+      compiledRegex = new RegExp(cleanPattern, flags);
+    } catch (error) {
+      console.warn(`[Regex Filter] Invalid regex pattern "${regexPattern}":`, error.message);
+      // Continue with null regex (won't filter by regex)
+    }
+  }
+
   const beforeCount = metas.length;
-  const filteredMetas = metas.filter(meta => !shouldExcludeContent(meta, keywords, regexPattern));
+  const filteredMetas = metas.filter(meta => !shouldExcludeContent(meta, keywordList, compiledRegex));
   const afterCount = filteredMetas.length;
   
   if (beforeCount !== afterCount) {
     const patterns = [];
-    if (keywords && keywords.trim()) patterns.push(`keywords: "${keywords}"`);
-    if (regexPattern && regexPattern.trim()) patterns.push(`regex: "${regexPattern}"`);
+    if (keywordList.length > 0) patterns.push(`keywords: "${keywords}"`);
+    if (compiledRegex) patterns.push(`regex: "${regexPattern}"`);
     console.log(`[Content Filter] Excluded ${beforeCount - afterCount} items matching ${patterns.join(' and ')}`);
   }
   
