@@ -714,7 +714,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     displayAgeRating: config.displayAgeRating || false,
     
     // RPDB enablement state (boolean, affects poster generation)
-    rpdbEnabled: enableRPDB && config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0
+    rpdbEnabled: !!(enableRPDB && config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0)
   };
   
   // Only include MDBList API key for MDBList catalogs
