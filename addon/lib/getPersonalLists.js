@@ -3,6 +3,8 @@ const moviedb = require("./getTmdb");
 const { getGenreList } = require("./getGenreList");
 const { parseMedia } = require("../utils/parseProps");
 const translations = require("../static/translations.json");
+const { getMeta } = require("./getMeta");
+const { cacheWrapMetaSmart } = require("./getCache");
 
 
 function getAllTranslations(key) {
@@ -120,21 +122,20 @@ function shuffleArray(array) {
  * @param {string} genre - The genre/sorting string.
  * @param {string} sessionId - The user's TMDB session ID.
  * @param {'favorite'|'watchlist'} listType - The type of list to fetch.
+ * @param {object} config - The user configuration.
+ * @param {string} userUUID - The user's UUID for caching.
+ * @param {boolean} includeVideos - Whether to include videos.
  * @returns {Promise<{metas: Array}>} A Stremio catalog object.
  */
-async function getPersonalList(type, language, page, genre, sessionId, listType, config) {
+async function getPersonalList(type, language, page, genre, sessionId, listType, config, userUUID, includeVideos = false) {
   if (!sessionId) {
-    console.warn(`Attempted to fetch personal ${listType} without a session ID.`);
+    console.warn(`Attempted to fetch personal ${listType} without a session ID. User needs to authenticate with TMDB.`);
     return { metas: [] };
   }
 
   try {
-    moviedb.sessionId = sessionId;
-    
-    let parameters = { language, page };
+    let parameters = { language, page, session_id: sessionId };
     parameters = configureSortingParameters(parameters, genre);
-
-    const genreList = await getGenreList('tmdb', language, type, config);
 
     let fetchFunction;
     if (listType === 'favorite') {
@@ -150,9 +151,24 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
     const res = await fetchFunction();
 
     const sortedResults = sortResults(res?.results || [], genre);
-    const metas = sortedResults.map(el => parseMedia(el, type, genreList));
+    
+    // Call getMeta for each item to get full metadata (similar to getCatalog)
+    const metas = await Promise.all(sortedResults.map(async (item) => {
+      const stremioId = `tmdb:${item.id}`;
+      
+      const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+        return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type, includeVideos);
+      
+      if (result && result.meta) {
+        return result.meta;
+      }
+      return null;
+    }));
 
-    return { metas };
+    const validMetas = metas.filter(meta => meta !== null);
+
+    return { metas: validMetas };
 
   } catch (error) {
     console.error(`Error fetching personal ${listType} for ${type}:`, error.message);
@@ -162,12 +178,12 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
 
 
 
-async function getFavorites(type, language, page, genre, sessionId, config) {
-  return getPersonalList(type, language, page, genre, sessionId, 'favorite', config);
+async function getFavorites(type, language, page, genre, sessionId, config, userUUID, includeVideos = false) {
+  return getPersonalList(type, language, page, genre, sessionId, 'favorite', config, userUUID, includeVideos);
 }
 
-async function getWatchList(type, language, page, genre, sessionId, config) {
-  return getPersonalList(type, language, page, genre, sessionId, 'watchlist', config);
+async function getWatchList(type, language, page, genre, sessionId, config, userUUID, includeVideos = false) {
+  return getPersonalList(type, language, page, genre, sessionId, 'watchlist', config, userUUID, includeVideos);
 }
 
 

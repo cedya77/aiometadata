@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Eye, EyeOff, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle, XCircle, Loader2, LogIn, LogOut, AlertCircle } from 'lucide-react';
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
 import { toast } from 'sonner';
 
@@ -77,14 +77,105 @@ const ApiKeyInput = ({
 };
 
 export function IntegrationsSettings() {
-  const { config } = useConfig();
+  const { config, sessionId, setSessionId, auth } = useConfig();
   const [validationStatus, setValidationStatus] = useState<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({});
   const [isTesting, setIsTesting] = useState(false);
+  const [tmdbAuthLoading, setTmdbAuthLoading] = useState(false);
+  const [tmdbAuthError, setTmdbAuthError] = useState('');
   
   // Track successfully validated keys to prevent re-testing unchanged keys
   const lastValidatedKeys = useRef<Record<string, string>>({});
   const [hasChangedKeys, setHasChangedKeys] = useState(true);
   
+  // Handle TMDB authentication callback - create session using user's API key
+  const handleRequestToken = useCallback(async (requestToken: string) => {
+    setTmdbAuthLoading(true);
+    setTmdbAuthError('');
+    
+    const tmdbApiKey = config.apiKeys?.tmdb;
+    if (!tmdbApiKey) {
+      setTmdbAuthError("TMDB API key is required");
+      toast.error("Please enter your TMDB API key first");
+      setTmdbAuthLoading(false);
+      return;
+    }
+    
+    try {
+      // Call TMDB API directly from frontend using user's API key
+      const sessionResponse = await fetch(
+        `https://api.themoviedb.org/3/authentication/session/new?api_key=${tmdbApiKey}&request_token=${requestToken}`,
+        { method: 'GET' }
+      );
+      
+      if (!sessionResponse.ok) {
+        const errorData = await sessionResponse.json().catch(() => ({}));
+        throw new Error(errorData.status_message || 'Failed to create session');
+      }
+      
+      const sessionData = await sessionResponse.json();
+      if (!sessionData.success) {
+        throw new Error('Failed to create session with TMDB');
+      }
+      
+      const newSessionId = sessionData.session_id;
+      setSessionId(newSessionId);
+      
+      // Auto-save config if user is authenticated
+      if (auth.authenticated && auth.userUUID && auth.password) {
+        try {
+          const configToSave = {
+            ...config,
+            sessionId: newSessionId,
+            apiKeys: {
+              ...config.apiKeys,
+              customDescriptionBlurb: undefined
+            }
+          };
+          
+          const saveResponse = await fetch(`/api/config/update/${encodeURIComponent(auth.userUUID)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: configToSave, password: auth.password })
+          });
+          
+          if (saveResponse.ok) {
+            toast.success("TMDB session saved successfully!");
+          } else {
+            toast.warning("Session created but save failed. Please save your config manually.");
+          }
+        } catch (saveError) {
+          console.error('Auto-save error:', saveError);
+          toast.warning("Session created but save failed. Please save your config manually.");
+        }
+      } else {
+        toast.info("Session created. Please save your configuration to persist it.");
+      }
+      
+      window.history.replaceState({}, '', window.location.pathname);
+      // Clear any previous errors on success
+      setTmdbAuthError('');
+    } catch (e) {
+      console.error(e);
+      const errorMessage = e instanceof Error ? e.message : "Failed to create TMDB session";
+      // If authentication failed, clear the existing sessionId (it might be invalid)
+      setSessionId("");
+      setTmdbAuthError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setTmdbAuthLoading(false);
+    }
+  }, [setSessionId, config, auth]);
+
+  // Check for request_token in URL on mount and when handleRequestToken changes
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const requestToken = urlParams.get('request_token');
+
+    if (requestToken) {
+      handleRequestToken(requestToken);
+    }
+  }, [handleRequestToken]);
+
   // Check if any keys have changed since last successful validation
   useEffect(() => {
     const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
@@ -115,6 +206,52 @@ export function IntegrationsSettings() {
       ...prev,
       [id]: 'idle'
     }));
+  };
+
+  const handleTmdbLogin = async () => {
+    setTmdbAuthLoading(true);
+    setTmdbAuthError('');
+
+    const tmdbApiKey = config.apiKeys?.tmdb;
+    if (!tmdbApiKey) {
+      setTmdbAuthError("Please enter your TMDB API key first");
+      toast.error("Please enter your TMDB API key first");
+      setTmdbAuthLoading(false);
+      return;
+    }
+
+    try {
+      // Call TMDB API directly from frontend using user's API key
+      const response = await fetch(
+        `https://api.themoviedb.org/3/authentication/token/new?api_key=${tmdbApiKey}`,
+        { method: 'GET' }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.status_message || 'Failed to get request token');
+      }
+      
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error('Failed to get request token from TMDB');
+      }
+      
+      const requestToken = data.request_token;
+      const tmdbAuthUrl = `https://www.themoviedb.org/authenticate/${requestToken}?redirect_to=${window.location.href}`;
+      window.location.href = tmdbAuthUrl;
+    } catch (e) {
+      console.error(e);
+      const errorMessage = e instanceof Error ? e.message : "Failed to start TMDB authentication";
+      setTmdbAuthError(errorMessage);
+      toast.error(errorMessage);
+      setTmdbAuthLoading(false);
+    }
+  };
+
+  const handleTmdbLogout = () => {
+    setSessionId("");
+    toast.info("TMDB session cleared. Save your configuration to persist the change.");
   };
   
   const handleTestAllKeys = async () => {
@@ -267,13 +404,69 @@ export function IntegrationsSettings() {
           validationStatus={validationStatus.gemini || 'idle'} 
           onKeyChange={handleKeyChange}
         /> */}
-        <ApiKeyInput 
-          id="tmdb" 
-          label="TMDB API Key" 
-          linkHref="https://www.themoviedb.org/settings/api" 
-          validationStatus={validationStatus.tmdb || 'idle'} 
-          onKeyChange={handleKeyChange}
-        />
+        <div className="space-y-3">
+          <ApiKeyInput 
+            id="tmdb" 
+            label="TMDB API Key" 
+            linkHref="https://www.themoviedb.org/settings/api" 
+            validationStatus={validationStatus.tmdb || 'idle'} 
+            onKeyChange={handleKeyChange}
+          />
+          {/* TMDB Authentication */}
+          <div className="ml-4 p-4 rounded-lg border border-border bg-muted/30">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-medium">TMDB Authentication</Label>
+              <span className="text-xs text-muted-foreground">Required for watchlist & favorites</span>
+            </div>
+            {tmdbAuthError && !sessionId && (
+              <div className="mb-3 p-2 rounded-md bg-destructive/10 border border-destructive/20 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+                <span className="text-sm text-destructive">{tmdbAuthError}</span>
+              </div>
+            )}
+            {sessionId ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  <span className="text-sm text-muted-foreground">Authenticated</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTmdbLogout}
+                  disabled={tmdbAuthLoading}
+                >
+                  <LogOut className="h-3 w-3 mr-1" />
+                  Logout
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTmdbLogin}
+                disabled={tmdbAuthLoading || !config.apiKeys?.tmdb}
+              >
+                {tmdbAuthLoading ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-3 w-3 mr-1" />
+                    Login with TMDB
+                  </>
+                )}
+              </Button>
+            )}
+            {!config.apiKeys?.tmdb && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Enter a TMDB API key above to enable authentication
+              </p>
+            )}
+          </div>
+        </div>
         <ApiKeyInput 
           id="tvdb" 
           label="TheTVDB API Key" 

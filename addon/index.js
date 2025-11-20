@@ -47,7 +47,6 @@ const database = require('./lib/database');
 const { loadConfigFromDatabase } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
 const { getRpdbPoster, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
-const { getRequestToken, getSessionId } = require("./lib/getSession");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
 const axios = require('axios');
@@ -469,11 +468,6 @@ addon.get("/", function (_, res) {
     res.setHeader('Expires', '0'); 
     res.redirect("/configure"); 
 });
-addon.get("/request_token", async function (req, res) { const r = await getRequestToken(); respond(req, res, r); });
-addon.get("/session_id", async function (req, res) { const s = await getSessionId(req.query.request_token); respond(req, res, s); });
-
-
-
 // --- Basic Manifest Route ---
 addon.get("/stremio/manifest.json", function (req, res) {
   const host = process.env.HOST_NAME.startsWith('http')
@@ -685,10 +679,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = (await getTrending(...args, genreName, config, userUUID, false)).metas;
             break;
           case "tmdb.favorites":
-            metas = (await getFavorites(...args, genreName, sessionId, config)).metas;
+            metas = (await getFavorites(...args, genreName, sessionId, config, userUUID, false)).metas;
             break;
           case "tmdb.watchlist":
-            metas = (await getWatchList(...args, genreName, sessionId, config)).metas;
+            metas = (await getWatchList(...args, genreName, sessionId, config, userUUID, false)).metas;
             break;
           case "tvdb.genres": {
             metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, false)).metas;

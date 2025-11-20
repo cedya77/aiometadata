@@ -680,6 +680,12 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const trendingIds = new Set(['tmdb.trending']);
   const isTrendingCatalog = trendingIds.has(idOnly);
   
+  // Check if this is an auth catalog (watchlist/favorites) - user-specific
+  const isAuthCatalog = idOnly === 'tmdb.watchlist' || idOnly === 'tmdb.favorites';
+  
+  // Check if this is an airing_today catalog - needs date in cache key
+  const isAiringTodayCatalog = idOnly === 'tmdb.airing_today';
+  
   // Check if this is a MAL catalog with MAL as anime provider
   const isMALCatalog = idOnly.startsWith('mal.');
   const isMALAnimeProvider = config.providers?.anime === 'mal';
@@ -738,7 +744,12 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   let cacheTTL = CATALOG_TTL;
   
-  if (isTrendingCatalog) {
+  // Auth catalogs (watchlist/favorites) change frequently - don't cache to avoid stale data
+  // User lists can change (items added/removed), and old cached pages could show items that no longer exist
+  if (isAuthCatalog) {
+    cacheTTL = 0; // Don't cache - user lists change frequently and old pages could be stale
+    cacheLogger.info(`Not caching auth catalog ${idOnly} (user-specific data changes frequently)`);
+  } else if (isTrendingCatalog) {
     cacheTTL = TMDB_TRENDING_TTL;
     cacheLogger.info(`Using TMDB trending cache TTL for ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
   }
@@ -771,12 +782,30 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   }
   
   // Include TTL in cache key to ensure proper cache invalidation when TTL changes
-  const key = idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')
-    ? `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`
-    : `catalog:${catalogConfigString}:${catalogKey}`;
+  // Auth catalogs (watchlist/favorites) use sessionId in cache key (since they're tied to TMDB account)
+  // Airing today catalog needs today's date in cache key (results change daily)
+  // Other user-specific catalogs use userUUID
+  let key;
+  if (isAuthCatalog) {
+    const sessionId = config.sessionId || '';
+    key = `catalog:${sessionId}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
+  } else if (isAiringTodayCatalog) {
+    // Use local timezone to get today's date for cache key
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
+    key = `catalog:${today}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
+  } else if (idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
+    key = `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
+  } else {
+    key = `catalog:${catalogConfigString}:${catalogKey}`;
+  }
   
-  const catalogSig = shortSignature(`${userUUID || ''}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
-  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')} ttl:${cacheTTL}s key:${key}`);
+  const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
+  const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
+  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s key:${key}`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state

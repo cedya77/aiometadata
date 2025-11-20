@@ -59,9 +59,11 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
         }
         return translatedCatalogs[option] || option;
       });
+      // Add "None" option for airing_today when showInHome is false to work around Stremio's genre requirement
+      const finalOptions = (id === 'tmdb.airing_today' && !showInHome) ? ['None', ...formattedOptions] : formattedOptions;
       const genreExtra = {
         name: "genre",
-        options: formattedOptions,
+        options: finalOptions,
         isRequired: showInHome ? false : true
       };
 
@@ -125,6 +127,11 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
 
 function getCatalogDefinition(catalogId) {
   const [provider, catalogType] = catalogId.split('.');
+
+  // Check auth catalogs (favorites and watchlist) first
+  if ((catalogType === 'favorites' || catalogType === 'watchlist') && CATALOG_TYPES.auth && CATALOG_TYPES.auth[catalogType]) {
+    return CATALOG_TYPES.auth[catalogType];
+  }
 
   if (CATALOG_TYPES[provider] && CATALOG_TYPES[provider][catalogType]) {
     return CATALOG_TYPES[provider][catalogType];
@@ -481,10 +488,8 @@ async function getManifest(config) {
         console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: no catalog definition`);
         return false;
       }
-      if (catalogDef.requiresAuth && !sessionId) {
-        console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: requires auth but no session`);
-        return false;
-      }
+      // Don't filter out auth catalogs - show them in manifest even without session
+      // They will fail at the catalog route level if not authenticated, which is expected
       return true;
     })
     .map(async (userCatalog) => {

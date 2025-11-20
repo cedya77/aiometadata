@@ -21,6 +21,8 @@ interface ConfigContextType {
   hasBuiltInTmdb: boolean;
   catalogTTL: number;
   isLoading: boolean;
+  sessionId: string;
+  setSessionId: (sessionId: string) => void;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -333,8 +335,14 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     return <LoadingScreen message="Loading configuration..." />;
   }
 
+  // Helper functions for sessionId
+  const sessionId = config.sessionId || "";
+  const setSessionId = (newSessionId: string) => {
+    setConfig(prev => ({ ...prev, sessionId: newSessionId }));
+  };
+
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId }}>
       {children}
     </ConfigContext.Provider>
   );

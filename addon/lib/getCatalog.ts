@@ -400,6 +400,23 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
   const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
 
+  // Log the full URL for airing_today catalog
+  if (id === 'tmdb.airing_today') {
+    const baseUrl = 'https://api.themoviedb.org/3';
+    const endpoint = type === 'movie' ? '/discover/movie' : '/discover/tv';
+    const queryParams = new URLSearchParams();
+    Object.keys(parameters).forEach(key => {
+      const value = parameters[key];
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+    queryParams.append('api_key', config.apiKeys?.tmdb || process.env.TMDB_API || '');
+    const fullUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
+    logger.info(`[Airing Today] Full TMDB API URL: ${fullUrl}`);
+    logger.info(`[Airing Today] Parameters: ${JSON.stringify(parameters, null, 2)}`);
+  }
+
   const fetchFunction = type === "movie" 
     ? () => moviedb.discoverMovie(parameters, config) 
     : () => moviedb.discoverTv(parameters, config);
@@ -407,9 +424,12 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   const res: any = await fetchFunction();
   // define preferred provider as string
   
-  //sort res.results by vote count in descending order
+  // Sort results by release date (newest first) for catalogs that explicitly sort by release date
+  // Top rated, year, and language catalogs should keep TMDB's default sorting, so skip this
   if (res?.results) {
-    res.results.sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
+    if (id === 'tmdb.top') {
+      res.results.sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
+    }
     const metas = await Promise.all(res.results.map(async item => {
     let stremioId = `tmdb:${item.id}`;
     
@@ -512,6 +532,37 @@ async function buildParameters(type: string, language: string, page: number, id:
       case "tmdb.language":
         const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, languages) : language.split("-")[0];
         parameters.with_original_language = findGenre;
+        break;
+      case "tmdb.top_rated":
+        // Sort by vote average (highest rated first) with minimum vote count
+        parameters.sort_by = type === "movie" ? 'vote_average.desc' : 'vote_average.desc';
+        parameters['vote_count.gte'] = 200; // Require at least 200 votes for top rated
+        // Exclude Documentary (99) and News (10755) genres
+        parameters.without_genres = '99,10755';
+        if(genre && genre.toLowerCase() !== 'none') {
+          logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
+          parameters.with_genres = findGenreId(genre, genreList);
+        }
+        break;
+      case "tmdb.airing_today":
+        // Filter for TV shows with episodes airing today
+        // Use first_air_date to find shows that first aired, but for "airing today" we want shows with episodes today
+        // TMDB's discover endpoint doesn't have direct "airing today" filter, so we use air_date range
+        // Use local timezone to get today's date
+        const now = new Date();
+        const todayYear = now.getFullYear();
+        const todayMonth = String(now.getMonth() + 1).padStart(2, '0');
+        const todayDay = String(now.getDate()).padStart(2, '0');
+        const today = `${todayYear}-${todayMonth}-${todayDay}`; // YYYY-MM-DD format in local timezone
+        parameters['air_date.gte'] = today;
+        parameters['air_date.lte'] = today;
+        parameters.sort_by = 'popularity.desc';
+        parameters.with_type = '2|3|4'; // Filter by TV show types (Scripted, Reality, Miniseries)
+        delete parameters['vote_count.gte'];
+        if(genre && genre.toLowerCase() !== 'none') {
+          parameters.with_origin_country = genre.toUpperCase();
+          logger.debug(`Found origin country: ${genre}`);
+        }
         break;
       default:
         break;

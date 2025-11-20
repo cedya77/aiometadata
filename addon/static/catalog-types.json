@@ -16,6 +16,15 @@
       "nameKey": "trending",
       "extraSupported": ["genre", "skip"],
       "defaultOptions": ["Day", "Week"]
+    },
+    "top_rated": {
+      "nameKey": "top_rated",
+      "extraSupported": ["genre", "skip"]
+    },
+    "airing_today": {
+      "nameKey": "airing_today",
+      "extraSupported": ["genre", "skip"],
+      "defaultOptions": ["AU", "BR", "CA", "DE", "FR", "GB", "IN", "NL", "PL", "PT", "SE", "US"]
     }
   },
   "tvdb": {
