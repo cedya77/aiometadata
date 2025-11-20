@@ -238,7 +238,8 @@ export function IntegrationsSettings() {
       }
       
       const requestToken = data.request_token;
-      const tmdbAuthUrl = `https://www.themoviedb.org/authenticate/${requestToken}?redirect_to=${window.location.href}`;
+      const redirectUrl = window.location.href;
+      const tmdbAuthUrl = `https://www.themoviedb.org/authenticate/${requestToken}?redirect_to=${encodeURIComponent(redirectUrl)}`;
       window.location.href = tmdbAuthUrl;
     } catch (e) {
       console.error(e);
