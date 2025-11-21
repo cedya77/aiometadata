@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.11.0](https://github.com/cedya77/aiometadata/compare/v1.10.0...v1.11.0) (2025-11-21)
+
+
+### Features
+
+* add TMDB top rated and airing today catalogs ([2fc0ffb](https://github.com/cedya77/aiometadata/commit/2fc0ffba83ae307d0473cf44c2b9d525dad2d983))
+* **catalogs:** add airing today catalog with origin country filter ([2fc0ffb](https://github.com/cedya77/aiometadata/commit/2fc0ffba83ae307d0473cf44c2b9d525dad2d983))
+* **catalogs:** add top rated movies and TV catalogs ([2fc0ffb](https://github.com/cedya77/aiometadata/commit/2fc0ffba83ae307d0473cf44c2b9d525dad2d983))
+
+
+### Bug Fixes
+
+* **auth:** move TMDB authentication flow to frontend ([2fc0ffb](https://github.com/cedya77/aiometadata/commit/2fc0ffba83ae307d0473cf44c2b9d525dad2d983))
+* **cache:** ensure rpdbEnabled is always boolean in catalog cache keys ([9cd0601](https://github.com/cedya77/aiometadata/commit/9cd06011b5798f217857f6f306d2ac02c86a82d6))
+* **import:** use full replacement for config import ([6031911](https://github.com/cedya77/aiometadata/commit/6031911793e8abcccbafcc1190c673793985ee4d))
+* tmdb auth flow ([ff7aba4](https://github.com/cedya77/aiometadata/commit/ff7aba41bb3ffbbfbcd92729861ca1bdc29011fe))
+
+
+### Performance Improvements
+
+* compile regex pattern once ([19272a7](https://github.com/cedya77/aiometadata/commit/19272a75a69f2c6d9d2d11d7dcb10cd169f6063e))
+* parallelize tracking operations ([829d896](https://github.com/cedya77/aiometadata/commit/829d896ee59315cb3aa8d1c908e1f574c7e3f5cb))
+* simplify and parallelize requestTracker further ([0839d65](https://github.com/cedya77/aiometadata/commit/0839d65bf1e3f8bd04f2ac2cf594a97aae772239))
+
 ## [1.10.0](https://github.com/cedya77/aiometadata/compare/v1.9.0...v1.10.0) (2025-11-18)
 
 
