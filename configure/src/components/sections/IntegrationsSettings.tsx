@@ -87,12 +87,22 @@ export function IntegrationsSettings() {
   const lastValidatedKeys = useRef<Record<string, string>>({});
   const [hasChangedKeys, setHasChangedKeys] = useState(true);
   
+  // Track if we've already processed a request token to prevent infinite loops
+  const processedTokenRef = useRef<string | null>(null);
+  
   // Handle TMDB authentication callback - create session using user's API key
   const handleRequestToken = useCallback(async (requestToken: string) => {
+    // Prevent processing the same token multiple times
+    if (processedTokenRef.current === requestToken) {
+      return;
+    }
+    
+    processedTokenRef.current = requestToken;
     setTmdbAuthLoading(true);
     setTmdbAuthError('');
     
     const tmdbApiKey = config.apiKeys?.tmdb;
+    
     if (!tmdbApiKey) {
       setTmdbAuthError("TMDB API key is required");
       toast.error("Please enter your TMDB API key first");
@@ -101,10 +111,15 @@ export function IntegrationsSettings() {
     }
     
     try {
-      // Call TMDB API directly from frontend using user's API key
       const sessionResponse = await fetch(
-        `https://api.themoviedb.org/3/authentication/session/new?api_key=${tmdbApiKey}&request_token=${requestToken}`,
-        { method: 'GET' }
+        `https://api.themoviedb.org/3/authentication/session/new?api_key=${tmdbApiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ request_token: requestToken })
+        }
       );
       
       if (!sessionResponse.ok) {
@@ -113,6 +128,7 @@ export function IntegrationsSettings() {
       }
       
       const sessionData = await sessionResponse.json();
+      
       if (!sessionData.success) {
         throw new Error('Failed to create session with TMDB');
       }
@@ -152,12 +168,9 @@ export function IntegrationsSettings() {
       }
       
       window.history.replaceState({}, '', window.location.pathname);
-      // Clear any previous errors on success
       setTmdbAuthError('');
     } catch (e) {
-      console.error(e);
       const errorMessage = e instanceof Error ? e.message : "Failed to create TMDB session";
-      // If authentication failed, clear the existing sessionId (it might be invalid)
       setSessionId("");
       setTmdbAuthError(errorMessage);
       toast.error(errorMessage);
@@ -166,12 +179,12 @@ export function IntegrationsSettings() {
     }
   }, [setSessionId, config, auth]);
 
-  // Check for request_token in URL on mount and when handleRequestToken changes
+  // Check for request_token in URL
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const requestToken = urlParams.get('request_token');
 
-    if (requestToken) {
+    if (requestToken && !processedTokenRef.current) {
       handleRequestToken(requestToken);
     }
   }, [handleRequestToken]);
@@ -213,6 +226,7 @@ export function IntegrationsSettings() {
     setTmdbAuthError('');
 
     const tmdbApiKey = config.apiKeys?.tmdb;
+    
     if (!tmdbApiKey) {
       setTmdbAuthError("Please enter your TMDB API key first");
       toast.error("Please enter your TMDB API key first");
@@ -221,7 +235,6 @@ export function IntegrationsSettings() {
     }
 
     try {
-      // Call TMDB API directly from frontend using user's API key
       const response = await fetch(
         `https://api.themoviedb.org/3/authentication/token/new?api_key=${tmdbApiKey}`,
         { method: 'GET' }
@@ -233,16 +246,24 @@ export function IntegrationsSettings() {
       }
       
       const data = await response.json();
+      
       if (!data.success) {
         throw new Error('Failed to get request token from TMDB');
       }
       
       const requestToken = data.request_token;
-      const redirectUrl = window.location.href;
+      
+      // Construct redirect URL - use /stremio/{uuid}/configure format if authenticated
+      let redirectUrl = window.location.href;
+      if (auth.authenticated && auth.userUUID) {
+        const origin = window.location.origin;
+        redirectUrl = `${origin}/stremio/${auth.userUUID}/configure`;
+      }
+      
       const tmdbAuthUrl = `https://www.themoviedb.org/authenticate/${requestToken}?redirect_to=${encodeURIComponent(redirectUrl)}`;
+      
       window.location.href = tmdbAuthUrl;
     } catch (e) {
-      console.error(e);
       const errorMessage = e instanceof Error ? e.message : "Failed to start TMDB authentication";
       setTmdbAuthError(errorMessage);
       toast.error(errorMessage);
