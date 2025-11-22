@@ -484,6 +484,7 @@ addon.get("/stremio/manifest.json", function (req, res) {
         resources: [],
         idPrefixes: [],
         behaviorHints: {
+          configurable: true,
           configurationRequired: false,
         },
     };
