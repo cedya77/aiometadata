@@ -484,7 +484,10 @@ addon.get("/stremio/manifest.json", function (req, res) {
         catalogs: [],
         resources: [],
         idPrefixes: [],
-        configurationRequired: true
+        behaviorHints: {
+          configurationRequired: true,
+          configurable: true
+        }
     };
     
     res.setHeader('Content-Type', 'application/json');

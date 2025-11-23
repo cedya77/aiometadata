@@ -74,6 +74,13 @@ function sanitizeQuery(query) {
   return query.replace(/[\[\]()!?]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
 }
 
+function isImdbId(query) {
+  if (!query || typeof query !== 'string') return false;
+  // IMDb ID format: tt followed by 7-8 digits
+  const imdbIdPattern = /^tt\d{7,8}$/i;
+  return imdbIdPattern.test(query.trim());
+}
+
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
@@ -330,7 +337,28 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   const rawResults = new Map();
   logger.info(`Starting TMDB search for type "${type}" with query: "${query}"`);
 
-  // STEP 1: GATHER ALL POTENTIAL IDs IN PARALLEL (from title search and person search)
+  // Check if query is an IMDb ID
+  if (isImdbId(query)) {
+    logger.info(`Detected IMDb ID: ${query}, using TMDB find API`);
+    try {
+      const findResult = await moviedb.find({ id: query.trim(), external_source: 'imdb_id' }, config);
+      const results = type === 'movie' ? findResult.movie_results : findResult.tv_results;
+      
+      if (results && results.length > 0) {
+        const media = results[0];
+        media.media_type = type === 'movie' ? 'movie' : 'tv';
+        rawResults.set(media.id, media);
+        logger.info(`Found ${type} via IMDb ID ${query}: ${media.title || media.name}`);
+      } else {
+        logger.info(`No ${type} found for IMDb ID ${query}`);
+        return [];
+      }
+    } catch (error) {
+      logger.error(`Error searching TMDB by IMDb ID ${query}:`, error.message);
+      return [];
+    }
+  } else {
+    // STEP 1: GATHER ALL POTENTIAL IDs IN PARALLEL (from title search and person search)
   const addRawResult = (media) => {
       if (media && media.id && !rawResults.has(media.id)) {
           media.media_type = type === 'movie' ? 'movie' : 'tv';
@@ -491,6 +519,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   // number of results from people search
   logger.debug(`TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
   logger.debug(`TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+  }
+  
   const sortedRawResults = Utils.sortSearchResults(Array.from(rawResults.values()), query).slice(0, 25);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
@@ -791,6 +821,47 @@ async function performTvdbCollectionsSearch(query, language, config) {
 }
 
 async function performTvdbSearch(type, query, language, config) {
+  // Check if query is an IMDb ID
+  if (isImdbId(query)) {
+    logger.info(`Detected IMDb ID: ${query}, using TVDB findByImdbId`);
+    try {
+      const imdbId = query.trim();
+      const results = await tvdb.findByImdbId(imdbId, config);
+      
+      if (!results || results.length === 0) {
+        logger.info(`No TVDB results found for IMDb ID ${imdbId}`);
+        return [];
+      }
+      
+      // TVDB findByImdbId returns results with either movie or series property
+      const tvdbId = type === 'movie' 
+        ? results[0]?.movie?.id 
+        : results[0]?.series?.id;
+      
+      if (!tvdbId) {
+        logger.info(`No ${type} found in TVDB for IMDb ID ${imdbId}`);
+        return [];
+      }
+      
+      // Fetch extended details
+      const extendedRecord = type === 'movie' 
+        ? await tvdb.getMovieExtended(tvdbId, config)
+        : await tvdb.getSeriesExtended(tvdbId, config);
+      
+      if (!extendedRecord) {
+        logger.warn(`Could not fetch extended details for TVDB ID ${tvdbId}`);
+        return [];
+      }
+      
+      // Parse and return the result
+      const parsed = await parseTvdbSearchResult(type, extendedRecord, language, config);
+      return parsed ? [parsed] : [];
+    } catch (error) {
+      logger.error(`Error searching TVDB by IMDb ID ${query}:`, error.message);
+      return [];
+    }
+  }
+  
   const sanitizedQuery = sanitizeQuery(query);
   if (!sanitizedQuery) return [];
 
@@ -924,6 +995,27 @@ async function performTvdbSearch(type, query, language, config) {
 }
 
 async function performTvmazeSearch(query, language, config) {
+  // Check if query is an IMDb ID
+  if (isImdbId(query)) {
+    logger.info(`Detected IMDb ID: ${query}, using TVMaze getShowByImdbId`);
+    try {
+      const imdbId = query.trim();
+      const show = await tvmaze.getShowByImdbId(imdbId);
+      
+      if (!show) {
+        logger.info(`No TVMaze show found for IMDb ID ${imdbId}`);
+        return [];
+      }
+      
+      // Parse and return the result
+      const parsed = await parseTvmazeResult(show, config);
+      return parsed ? [parsed] : [];
+    } catch (error) {
+      logger.error(`Error searching TVMaze by IMDb ID ${query}:`, error.message);
+      return [];
+    }
+  }
+  
   const sanitizedQuery = sanitizeTvmazeQuery(query);
   if (!sanitizedQuery) return [];
 
