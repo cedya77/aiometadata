@@ -787,7 +787,6 @@ async function getManifest(config) {
   const manifest = {
     id: packageJson.name,
     version: packageJson.version,
-    favicon: `${host}/favicon.png`,
     logo: `${host}/logo.png`,
     background: `${host}/background.png`,
     name: addonName,

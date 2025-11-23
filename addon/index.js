@@ -478,16 +478,15 @@ addon.get("/stremio/manifest.json", function (req, res) {
         version: packageJson.version,
         name: "AIO Metadata",
         description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
-        favicon: `${host}/favicon.png`,
         logo: `${host}/logo.png`,
         types: ["movie", "series"],
         catalogs: [],
         resources: [],
         idPrefixes: [],
         behaviorHints: {
-          configurationRequired: true,
-          configurable: true
-        }
+          configurable: true,
+          configurationRequired: false,
+        },
     };
     
     res.setHeader('Content-Type', 'application/json');
