@@ -2010,9 +2010,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           };
         })
     );
-    if(!logoUrl && imdbId){
-      logoUrl =  imdb.getLogoFromImdb(imdbId);
-    }
+  }
+  
+  // Fallback to IMDB logo if logo is still missing (should work for both includeVideos=true and false)
+  if(!logoUrl && imdbId){
+    logoUrl =  imdb.getLogoFromImdb(imdbId);
   }
  
   // Build releaseInfo in format "first_year-last_year" or "first_year-" for ongoing series
