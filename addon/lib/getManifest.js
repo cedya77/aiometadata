@@ -737,28 +737,15 @@ async function getManifest(config) {
   }
 
   if (config.apiKeys?.gemini && config.search?.ai_enabled) {
-    const aiSearchCatalogMovie = {
+    // Single AI Search catalog that supports all types
+    const aiSearchCatalog = {
       id: "gemini.search", 
-      type: "movie",
+      type: "other",
       name: "AI Search",
       extra: [{ name: "search", isRequired: true }]
     };
 
-    const aiSearchCatalogSeries = {
-      id: "gemini.search",
-      type: "series",
-      name: "AI Search",
-      extra: [{ name: "search", isRequired: true }]
-    };
-    
-    const aiSearchCatalogAnime = {
-      id: "gemini.search",
-      type: "anime",
-      name: "AI Search",
-      extra: [{ name: "search", isRequired: true }]
-    };
-
-    catalogs = [...catalogs, aiSearchCatalogMovie, aiSearchCatalogSeries, aiSearchCatalogAnime];
+    catalogs = [...catalogs, aiSearchCatalog];
   }
 
   const activeConfigs = [

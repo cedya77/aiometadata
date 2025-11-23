@@ -191,7 +191,7 @@ export function IntegrationsSettings() {
 
   // Check if any keys have changed since last successful validation
   useEffect(() => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
     
     let changed = false;
     for (const key of apiKeyFields) {
@@ -278,7 +278,7 @@ export function IntegrationsSettings() {
   
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -381,7 +381,7 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -418,14 +418,13 @@ export function IntegrationsSettings() {
       
       {/* Inputs */}
       <div className="space-y-4 max-w-2xl">
-        {/* Gemini AI Search - Temporarily hidden */}
-        {/* <ApiKeyInput 
+        <ApiKeyInput 
           id="gemini" 
           label="Google Gemini API Key" 
           linkHref="https://aistudio.google.com/app/apikey" 
           validationStatus={validationStatus.gemini || 'idle'} 
           onKeyChange={handleKeyChange}
-        /> */}
+        />
         <div className="space-y-3">
           <ApiKeyInput 
             id="tmdb" 

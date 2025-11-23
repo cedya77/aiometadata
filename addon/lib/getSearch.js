@@ -652,75 +652,324 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 }
 
 
-async function performAiSearch(type, query, language, config) {
-  const geminiKey = config.apiKeys?.gemini;
-  const aiSuggestions = await performGeminiSearch(geminiKey, query, type, language);
-  if (!aiSuggestions || aiSuggestions.length === 0) {
-    logger.info('Gemini returned no suggestions.');
+/**
+ * Lightweight TMDB matching for AI search suggestions.
+ * Directly calls TMDB search API without heavy hydration.
+ * 
+ * @param {Object} suggestion - The AI suggestion with title and year.
+ * @param {string} type - The media type ('movie' or 'series').
+ * @param {string} language - The language code.
+ * @param {Object} config - The user configuration.
+ * @returns {Promise<Object|null>} The matched TMDB ID or null if no match found.
+ */
+async function matchWithTMDB(suggestion, type, language, config) {
+  try {
+    const { title, year } = suggestion;
+    
+    // Direct TMDB search API call (without year filter to handle discrepancies)
+    const searchType = type === 'movie' ? 'movie' : 'tv';
+    const searchParams = {
+      query: title,
+      language: language,
+      include_adult: config.includeAdult || false,
+      page: 1
+    };
+    
+    const searchResults = type === 'movie'
+      ? await moviedb.searchMovie(searchParams, config)
+      : await moviedb.searchTv(searchParams, config);
+    
+    if (!searchResults?.results || searchResults.results.length === 0) {
+      logger.debug(`No TMDB match found for "${title}" (${year})`);
+      return null;
+    }
+    
+    // Find the best match from results that validates our criteria
+    const normalizeTitle = (t) => t
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^\w\s]/g, '') // Remove symbols and punctuation
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    const normalizedSearchTitle = normalizeTitle(title);
+    
+    let match = null;
+    for (const result of searchResults.results) {
+      const resultTitle = type === 'movie' ? result.title : result.name;
+      const resultYear = type === 'movie' 
+        ? result.release_date?.substring(0, 4)
+        : result.first_air_date?.substring(0, 4);
+      
+      // Check title match
+      const titleMatch = normalizeTitle(resultTitle) === normalizedSearchTitle;
+      
+      // Allow year to be off by 1 (common with regional release differences)
+      const yearMatch = resultYear && Math.abs(parseInt(resultYear) - parseInt(year)) <= 1;
+      
+      if (titleMatch && yearMatch) {
+        match = result;
+        logger.debug(`Matched "${title}" (${year}) from Gemini to "${resultTitle}" (${resultYear}) from TMDB -> ID: ${result.id}`);
+        break;
+      }
+    }
+    
+    if (!match) {
+      logger.debug(`Failed to match "${title}" (${year}) from Gemini - no matching results in TMDB`);
+      return null;
+    }
+    
+    // Return TMDB ID along with original type and title for tracking
+    return { 
+      tmdbId: match.id,
+      originalType: type,
+      originalTitle: title
+    };
+    
+  } catch (error) {
+    logger.error(`Failed to match suggestion "${suggestion.title}" with TMDB:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Enriches a TMDB ID with full metadata.
+ * This is the heavy operation that fetches all details.
+ * 
+ * @param {Object} match - Object containing tmdbId.
+ * @param {string} type - The media type ('movie' or 'series').
+ * @param {string} language - The language code.
+ * @param {Object} config - The user configuration.
+ * @returns {Promise<Object|null>} The enriched metadata or null.
+ */
+async function enrichTMDBMatch(match, type, language, config) {
+  if (!match || !match.tmdbId) return null;
+  
+  try {
+    const { tmdbId } = match;
+    const langCode = language.split('-')[0];
+    const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+    
+    // Fetch full details with all needed data in one call
+    const details = type === 'movie'
+      ? await moviedb.movieInfo({ 
+          id: tmdbId, 
+          language, 
+          append_to_response: "external_ids,release_dates,images,keywords",
+          include_image_language: imageLanguages 
+        }, config)
+      : await moviedb.tvInfo({ 
+          id: tmdbId, 
+          language, 
+          append_to_response: "external_ids,content_ratings,images,keywords",
+          include_image_language: imageLanguages 
+        }, config);
+    
+    // Resolve IDs
+    let allIds = {
+      tmdbId: details.id,
+      imdbId: details.external_ids?.imdb_id || details.imdb_id,
+      tvdbId: details.external_ids?.tvdb_id
+    };
+    allIds = await resolveAllIds(`tmdb:${tmdbId}`, type, config, allIds, ['imdb']);
+    
+    // Select images
+    const selectedBg = details.images?.backdrops?.find(b => b.iso_639_1 === 'xx')
+      || details.images?.backdrops?.find(b => b.iso_639_1 === null)
+      || details.images?.backdrops?.find(b => b.iso_639_1 === langCode)
+      || details.images?.backdrops?.[0];
+    const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
+    const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
+    
+    const fallbackImage = `${host}/missing_poster.png`;
+    const logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo.file_path}` : null;
+    const backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg.file_path}` 
+      : details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null;
+    const posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster.file_path}` 
+      : details.poster_path ? `https://image.tmdb.org/t/p/original${details.poster_path}` : fallbackImage;
+    
+    const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
+      ? posterUrl : fallbackImage;
+    
+    const posterProxyUrl = `${host}/poster/${type}/tmdb:${tmdbId}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    
+    // Get IMDB rating
+    const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, type) : null;
+    
+    // Determine Stremio ID
+    let stremioId = `tmdb:${tmdbId}`;
+    if (allIds?.imdbId) stremioId = allIds.imdbId;
+    
+    // Parse media
+    const parsed = Utils.parseMedia(details, type, [], config);
+    if (!parsed) return null;
+    
+    // Assemble final meta
+    parsed.id = stremioId;
+    parsed.poster = (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl;
+    parsed.imdbRating = imdbRating;
+    parsed.logo = logoUrl;
+    parsed.background = backgroundUrl;
+    parsed.certification = type === 'movie'
+      ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
+      : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
+    if (allIds.imdbId) parsed.imdb_id = allIds.imdbId;
+    parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
+    if (type === 'series') {
+      parsed.runtime = Utils.parseRunTime(
+        details.episode_run_time?.[0] ?? 
+        details.last_episode_to_air?.runtime ?? 
+        details.next_episode_to_air?.runtime ?? 
+        null
+      );
+    }
+    
+    return parsed;
+    
+  } catch (error) {
+    logger.error(`Failed to enrich TMDB ID ${match.tmdbId}:`, error.message);
+    return null;
+  }
+}
+
+
+/**
+ * Performs AI-powered search with mixed movie/series results.
+ * Single Gemini call returns both types, then enriches all in parallel.
+ * 
+ * @param {string} query - The user's natural language search query.
+ * @param {string} language - The language code.
+ * @param {Object} config - The user configuration.
+ * @returns {Promise<Array>} Array of enriched and filtered metadata.
+ */
+async function performAiSearch(query, language, config) {
+  const startTime = Date.now();
+  logger.info(`Starting AI search for query: "${query}"`);
+  
+  try {
+    // AI Generation and Parsing
+    const geminiKey = config.apiKeys?.gemini;
+    const suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language);
+    
+    if (!suggestions || suggestions.length === 0) {
+      logger.info('Gemini returned no suggestions.');
+      return [];
+    }
+    
+    logger.debug(`Gemini returned ${suggestions.length} suggestions`);
+    
+    // Data Enrichment (two-step: match then enrich)
+    logger.info(`Starting TMDB matching for ${suggestions.length} suggestions`);
+    const matchStart = Date.now();
+    
+    // Step 1: Match all suggestions to TMDB IDs (lightweight, parallel)
+    const matchPromises = suggestions.map(suggestion =>
+      matchWithTMDB(suggestion, suggestion.type, language, config)
+    );
+    
+    const matches = await Promise.all(matchPromises);
+    const validMatches = matches.filter(Boolean);
+    const matchTime = Date.now() - matchStart;
+    logger.info(`TMDB matching completed in ${matchTime}ms. Matched ${validMatches.length} of ${suggestions.length} suggestions`);
+    
+    if (validMatches.length === 0) {
+      logger.info('No valid TMDB matches found');
+      return [];
+    }
+    
+    // Step 2: Enrich all matched IDs with full metadata (heavy, parallel)
+    logger.info(`Starting metadata enrichment for ${validMatches.length} matches`);
+    const enrichStart = Date.now();
+    
+    // Need to pass the correct type for each match
+    const enrichPromises = validMatches.map((match, index) => {
+      const originalSuggestion = suggestions.find(s => 
+        s.title === match.originalTitle && s.type === match.originalType
+      );
+      const type = originalSuggestion?.type || 'movie';
+      return enrichTMDBMatch(match, type, language, config);
+    });
+    
+    const enrichedResults = await Promise.all(enrichPromises);
+    const enrichTime = Date.now() - enrichStart;
+    logger.info(`Metadata enrichment completed in ${enrichTime}ms`);
+    
+    // Filter out null results (failed enrichments)
+    const validResults = enrichedResults.filter(Boolean);
+    logger.info(`Successfully enriched ${validResults.length} of ${validMatches.length} matches`);
+    
+    // Phase 4: Apply content filters
+    let filteredResults = validResults;
+    
+    // Apply age rating filter (works for both movies and series)
+    if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+      const beforeCount = filteredResults.length;
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+      const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
+      filteredResults = filteredResults.filter(result => {
+        const cert = result.certification;
+        const isTvRating = result.type === 'series';
+        const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+        const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                       (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                       (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+        
+        if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+          return !isUserRatingRestrictive;
+        }
+        
+        const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+        const userRatingIndex = ratingHierarchy.indexOf(userRating);
+        const resultRatingIndex = ratingHierarchy.indexOf(cert);
+        
+        if (userRatingIndex === -1) return true;
+        if (resultRatingIndex === -1) return true;
+        
+        return resultRatingIndex <= userRatingIndex;
+      });
+      
+      const afterCount = filteredResults.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Age rating filter: ${beforeCount} -> ${afterCount} results`);
+      }
+    }
+    
+    // Apply digital release filter for movies only
+    if (config.hideUnreleasedDigital) {
+      const beforeCount = filteredResults.length;
+      filteredResults = filteredResults.filter(meta => 
+        meta.type !== 'movie' || Utils.isReleasedDigitally(meta)
+      );
+      const afterCount = filteredResults.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    // Apply exclusion keyword and regex filters
+    if (config.exclusionKeywords || config.regexExclusionFilter) {
+      const beforeCount = filteredResults.length;
+      filteredResults = filterMetasByRegex(filteredResults, config.exclusionKeywords, config.regexExclusionFilter);
+      const afterCount = filteredResults.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Content exclusion filter: ${beforeCount} -> ${afterCount} results`);
+      }
+    }
+    
+    const totalTime = Date.now() - startTime;
+    logger.success(`AI search completed in ${totalTime}ms. Returning ${filteredResults.length} results.`);
+    
+    return filteredResults;
+    
+  } catch (error) {
+    const totalTime = Date.now() - startTime;
+    logger.error(`AI search failed after ${totalTime}ms:`, error.message);
     return [];
   }
-  logger.debug('Gemini suggested:', JSON.stringify(aiSuggestions, null, 2));
-
-  const finalMetas = [];
-  const seenIds = new Set();
-
-  for (const suggestion of aiSuggestions) {
-    try {
-      let parsedResult = null;
-
-      if (type === 'anime') {
-        const malId = suggestion.mal_id;
-        if (malId) {
-          const jikanData = await jikan.getAnimeDetails(malId);
-          if (jikanData) {
-            parsedResult = Utils.parseAnimeCatalogMeta(jikanData, config, language);
-          }
-        }
-      } 
-      else if (type === 'series') {
-        const searchTitle = suggestion.title;
-        if (searchTitle) {
-          const searchStartTime = Date.now();
-          logger.debug(`Starting TVDB series search for: "${searchTitle}"`);
-          
-          const searchResults = await tvdb.searchSeries(searchTitle, config);
-          const searchTime = Date.now() - searchStartTime;
-          logger.debug(`TVDB series search completed in ${searchTime}ms, found ${searchResults?.length || 0} results`);
-          
-          const topMatchId = searchResults?.[0]?.tvdb_id;
-          if (topMatchId) {
-            const extendedStartTime = Date.now();
-            logger.debug(`Fetching TVDB extended data for series ID: ${topMatchId}`);
-            
-            const extendedRecord = await tvdb.getSeriesExtended(topMatchId, config);
-            const extendedTime = Date.now() - extendedStartTime;
-            logger.debug(`TVDB extended data fetched in ${extendedTime}ms`);
-            
-            parsedResult = await parseTvdbSearchResult(type, extendedRecord, language, config);
-          }
-        }
-      } 
-      /*else if (type === 'movie') {
-        const searchTitle = suggestion.title;
-        if (searchTitle) {
-          const results = await performMovieSearch(type, searchTitle, language, config, false);
-          parsedResult = results?.[0] || null;
-        }
-      }*/
-
-      if (parsedResult && !seenIds.has(parsedResult.id)) {
-        finalMetas.push(parsedResult);
-        seenIds.add(parsedResult.id);
-      }
-
-    } catch (error) {
-      const title = suggestion.title || suggestion.english_title || 'Unknown';
-      logger.error(`Failed to process AI suggestion "${title}":`, error.message);
-      continue; 
-    }
-  }
-
-  return finalMetas;
 }
 
 async function performTvdbCollectionsSearch(query, language, config) {
@@ -1105,6 +1354,14 @@ async function getSearch(id, type, language, extra, config) {
         }
         break;
 
+      case 'gemini.search':
+        if (extra.search) {
+          const query = extra.search;    
+          // Perform single AI search that returns mixed movie/series results
+          metas = await performAiSearch(query, language, config);
+        }
+        break;
+
       case 'search':
         if (extra.search) {
           const query = extra.search;
@@ -1123,13 +1380,11 @@ async function getSearch(id, type, language, extra, config) {
           }
           
           providerId = providerId || getDefaultProvider(type);
-          if (config.search?.ai_enabled && config.apiKeys?.gemini) {
-            logger.info(`Performing AI-enhanced search for type '${type}'`);
-            metas = await performAiSearch(type, query, language, config);
-          } else {
-            logger.debug(`Performing direct keyword search for type '${type}' using provider '${providerId}'`);
-
-            switch (providerId) {
+          // Regular search always uses keyword search providers
+          // AI search is now handled by the dedicated 'gemini.search' catalog
+          logger.debug(`Performing direct keyword search for type '${type}' using provider '${providerId}'`);
+          
+          switch (providerId) {
               case 'mal.search.series':
                 metas = await performAnimeSearch('series', query, language, config, page);
                 break;
@@ -1154,7 +1409,6 @@ async function getSearch(id, type, language, extra, config) {
               case 'tvmaze.search':
                 metas = await performTvmazeSearch(query, language, config);
                 break;
-            }
           }
         }
         break;
