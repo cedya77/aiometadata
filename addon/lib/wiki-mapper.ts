@@ -29,44 +29,132 @@ const moviesTmdbToAll = new Map<number, IdMap>();
 
 let isInitialized = false;
 
-async function downloadCsv(url: string, cachePath: string, etagKey: string): Promise<string> {
+async function downloadCsv(url: string, cachePath: string, etagKey: string, maxRetries: number = 3): Promise<string> {
   // Check ETag first
   if (redis && redis.status === 'ready') {
     try {
       const savedEtag = await redis.get(etagKey);
       if (savedEtag && fs.existsSync(cachePath)) {
-        const { statusCode, headers } = await request(url, { method: 'HEAD' });
-        const remoteEtag = headers.etag;
-        if (savedEtag === remoteEtag) {
-          console.log(`[Wiki Mapper] Using cache: ${cachePath}`);
-          return fs.readFileSync(cachePath, 'utf8');
+        try {
+          const { statusCode, headers } = await request(url, { method: 'HEAD' });
+          if (statusCode === 200 && headers.etag) {
+            const remoteEtag = headers.etag;
+            if (savedEtag === remoteEtag) {
+              console.log(`[Wiki Mapper] Using cache: ${cachePath}`);
+              return fs.readFileSync(cachePath, 'utf8');
+            }
+          } else if (statusCode === 429) {
+            // Rate limited on HEAD request, use cached data
+            console.warn(`[Wiki Mapper] Rate limited (429) on ETag check, using cached data: ${cachePath}`);
+            return fs.readFileSync(cachePath, 'utf8');
+          }
+        } catch (error: any) {
+          // If HEAD request fails (e.g., network error, 429), check if we have cached data to use
+          const statusCode = error.statusCode || (error.response && error.response.statusCode);
+          if (statusCode === 429 || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code?.startsWith('UND_ERR_')) {
+            console.warn(`[Wiki Mapper] ETag check failed (${statusCode || error.code}), attempting to use cached data`);
+            if (fs.existsSync(cachePath)) {
+              try {
+                const cachedData = fs.readFileSync(cachePath, 'utf8');
+                console.log(`[Wiki Mapper] Using cached data due to download error: ${cachePath}`);
+                return cachedData;
+              } catch (cacheError: any) {
+                console.warn(`[Wiki Mapper] Cached data unreadable: ${cacheError.message}`);
+              }
+            }
+          }
+          console.warn(`[Wiki Mapper] ETag check failed: ${error.message}`);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.warn(`[Wiki Mapper] ETag check failed: ${error.message}`);
     }
   }
 
-  // Download fresh data using undici for speed
-  console.log(`[Wiki Mapper] Downloading: ${url}`);
-  const { statusCode, headers, body } = await request(url);
+  // Download fresh data using undici with retry logic for 429 errors
+  let lastError: Error | null = null;
   
-  if (statusCode < 200 || statusCode >= 300) {
-    throw new Error(`HTTP ${statusCode}`);
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        // Exponential backoff: 1s, 2s, 4s, 8s... (capped at 30s)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+        console.log(`[Wiki Mapper] Retrying download (attempt ${attempt + 1}/${maxRetries + 1}) after ${delay}ms: ${url}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.log(`[Wiki Mapper] Downloading: ${url}`);
+      }
+      
+      const { statusCode, headers, body } = await request(url);
+      
+      if (statusCode === 429) {
+        // Rate limited - will retry if attempts remain
+        lastError = new Error(`HTTP ${statusCode}`);
+        if (attempt < maxRetries) {
+          continue;
+        }
+        // Last attempt failed with 429, try to use cache
+        console.warn(`[Wiki Mapper] Rate limited (429) after ${maxRetries + 1} attempts, falling back to cache`);
+        if (fs.existsSync(cachePath)) {
+          try {
+            const cachedData = fs.readFileSync(cachePath, 'utf8');
+            console.log(`[Wiki Mapper] Using cached data after rate limit: ${cachePath}`);
+            return cachedData;
+          } catch (cacheError: any) {
+            console.error(`[Wiki Mapper] Cached data unreadable: ${cacheError.message}`);
+            throw lastError;
+          }
+        }
+        throw lastError;
+      }
+      
+      if (statusCode < 200 || statusCode >= 300) {
+        throw new Error(`HTTP ${statusCode}`);
+      }
+      
+      const csvData = await body.text();
+
+      // Save to cache
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      fs.writeFileSync(cachePath, csvData);
+
+      // Save ETag
+      if (redis && redis.status === 'ready' && headers.etag) {
+        await redis.set(etagKey, headers.etag);
+      }
+
+      return csvData;
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a 429 error (either from statusCode check above or from error message)
+      const is429 = error.message?.includes('HTTP 429') || 
+                    error.statusCode === 429 || 
+                    (error.response && error.response.statusCode === 429);
+      
+      // If it's a 429 and we have retries left, continue the loop
+      if (is429 && attempt < maxRetries) {
+        continue;
+      }
+      
+      // If it's not a 429 or we're out of retries, try to use cached data
+      if (fs.existsSync(cachePath)) {
+        try {
+          console.warn(`[Wiki Mapper] Download failed (${error.message}), falling back to cached data: ${cachePath}`);
+          const cachedData = fs.readFileSync(cachePath, 'utf8');
+          return cachedData;
+        } catch (cacheError: any) {
+          console.error(`[Wiki Mapper] Cached data also unreadable: ${cacheError.message}`);
+        }
+      }
+      
+      // If no cache available or cache read failed, throw the original error
+      throw error;
+    }
   }
   
-  const csvData = await body.text();
-
-  // Save to cache
-  fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-  fs.writeFileSync(cachePath, csvData);
-
-  // Save ETag
-  if (redis && redis.status === 'ready' && headers.etag) {
-    await redis.set(etagKey, headers.etag);
-  }
-
-  return csvData;
+  // Should never reach here, but TypeScript needs it
+  throw lastError || new Error('Download failed after all retries');
 }
 
 function loadMappings(csvData: string, maps: { imdb: Map<string, IdMap>, tvdb: Map<number, IdMap>, tmdb: Map<number, IdMap>, tvmaze?: Map<number, IdMap> }) {
@@ -155,9 +243,11 @@ async function initialize() {
 
     isInitialized = true;
     console.log('[Wiki Mapper] Initialization complete');
-  } catch (error) {
-    console.error('[Wiki Mapper] Initialization failed:', error);
-    throw error;
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    console.error(`[Wiki Mapper] Initialization failed: ${errorMessage}`);
+    // Re-throw with a more descriptive error message
+    throw new Error(`Wiki Mappings failed to initialize: ${errorMessage}`);
   }
 }
 
