@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Eye, EyeOff, CheckCircle, XCircle, Loader2, LogIn, LogOut, AlertCircle } from 'lucide-react';
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
 import { toast } from 'sonner';
@@ -504,35 +505,25 @@ export function IntegrationsSettings() {
           onKeyChange={handleKeyChange}
         />
         {/* Poster Rating Provider Selection */}
-        <div className="space-y-3 p-4 rounded-lg border border-border bg-muted/30">
-          <Label className="text-sm font-medium">Poster Rating Provider</Label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Choose which service to use for rating overlays on posters
-          </p>
-          <div className="flex gap-4">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="radio"
-                name="posterRatingProvider"
-                value="rpdb"
-                checked={config.posterRatingProvider !== 'top'}
-                onChange={(e) => setConfig(prev => ({ ...prev, posterRatingProvider: e.target.value as 'rpdb' | 'top' }))}
-                className="w-4 h-4"
-              />
-              <span className="text-sm">RatingPosterDB (RPDB)</span>
-            </label>
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="radio"
-                name="posterRatingProvider"
-                value="top"
-                checked={config.posterRatingProvider === 'top'}
-                onChange={(e) => setConfig(prev => ({ ...prev, posterRatingProvider: e.target.value as 'rpdb' | 'top' }))}
-                className="w-4 h-4"
-              />
-              <span className="text-sm">Top Poster API</span>
-            </label>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div className="flex-1">
+            <Label htmlFor="posterRatingProvider" className="text-lg font-medium">Poster Rating Provider</Label>
+            <p className="text-sm text-muted-foreground mt-1">
+              Choose which service to use for rating overlays on posters
+            </p>
           </div>
+          <Select 
+            value={config.posterRatingProvider || 'rpdb'} 
+            onValueChange={(value) => setConfig(prev => ({ ...prev, posterRatingProvider: value as 'rpdb' | 'top' }))}
+          >
+            <SelectTrigger id="posterRatingProvider" className="w-[200px]">
+              <SelectValue placeholder="Select provider" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
+              <SelectItem value="top">Top Poster API</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         
         {config.posterRatingProvider !== 'top' ? (
