@@ -267,9 +267,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
         items = response.data.movies || [];
       }
     } else {
-      if (response.data?.items && Array.isArray(response.data.items)) {
-        items = response.data.items;
-      } else if (Array.isArray(response.data)) {
+      if (Array.isArray(response.data)) {
         items = response.data;
       } else {
         items = [

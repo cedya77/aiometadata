@@ -68,8 +68,8 @@ async function _processAnimeItem(item, provider, id, language, config, includeVi
     : item.poster;
 
     let posterProxyUrl;
-    if(imdbId){
-      posterProxyUrl = `${host}/poster/${item.type}/${imdbId}?fallback=${encodeURIComponent(posterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    if(imdbId && Utils.isPosterRatingEnabled(config)){
+      posterProxyUrl = Utils.buildPosterProxyUrl(host, item.type, imdbId, posterUrl, language, config);
     }else{
       posterProxyUrl = posterUrl;
     }

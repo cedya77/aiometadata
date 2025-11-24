@@ -57,6 +57,90 @@ function isRPDBEnabled(config) {
 }
 
 /**
+ * Helper function to check if poster rating is enabled (RPDB or Top Poster)
+ */
+function isPosterRatingEnabled(config) {
+  const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
+  if (provider === 'top') {
+    return !!(config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
+  }
+  // Default to RPDB
+  return !!(config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0);
+}
+
+/**
+ * Get poster URL from the selected rating provider (RPDB or Top Poster)
+ */
+function getRatingPosterUrl(type, ids, language, config, fallbackUrl = null) {
+  const provider = config.posterRatingProvider || 'rpdb';
+  
+  if (provider === 'top' && config.apiKeys?.topPoster) {
+    return getTopPosterPoster(type, ids, language, config.apiKeys.topPoster, fallbackUrl);
+  }
+  
+  // Default to RPDB
+  if (config.apiKeys?.rpdb) {
+    return getRpdbPoster(type, ids, language, config.apiKeys.rpdb);
+  }
+  
+  return null;
+}
+
+/**
+ * Get the API key for the selected poster rating provider
+ */
+function getPosterRatingApiKey(config) {
+  const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
+  
+  if (provider === 'top' && config.apiKeys?.topPoster) {
+    return config.apiKeys.topPoster;
+  }
+  
+  // Default to RPDB
+  return config.apiKeys?.rpdb || null;
+}
+
+/**
+ * Construct poster rating URL - direct for Top Poster, proxy for RPDB
+ * Note: Top Poster API returns proper HTTP codes (200, 404, 401, 429, etc.)
+ * For 429 (rate limit), we could use proxy for fallback, but since it's temporary,
+ * we use direct URL and let Stremio handle it. For permanent errors (404, 401), 
+ * Top Poster API returns proper codes that Stremio can handle.
+ */
+function buildPosterProxyUrl(host, type, proxyId, fallback, language, config) {
+  const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
+  const apiKey = getPosterRatingApiKey(config);
+  
+  if (!apiKey || !isPosterRatingEnabled(config)) {
+    return fallback;
+  }
+  
+  // Top Poster API returns proper HTTP codes and supports fallback_url parameter
+  // When any error occurs (429, 404, 401, etc.), it will use the fallback_url
+  // Note: Top Poster API only supports IMDb and TMDB IDs, not TVDB
+  if (provider === 'top' && config.apiKeys?.topPoster) {
+    // Extract IDs from proxyId format (e.g., "imdb:tt123", "tmdb:123", "tvdb:456")
+    const [idSource, idValue] = proxyId.startsWith('tt') ? ['imdb', proxyId] : proxyId.split(':');
+    
+    // Top Poster API doesn't support TVDB IDs - return fallback
+    if (idSource === 'tvdb') {
+      return fallback;
+    }
+    
+    const ids = {
+      tmdbId: idSource === 'tmdb' ? idValue : null,
+      tvdbId: null, // Top Poster API doesn't support TVDB
+      imdbId: idSource === 'imdb' ? idValue : null,
+    };
+    const topPosterUrl = getTopPosterPoster(type, ids, language, config.apiKeys.topPoster, fallback);
+    return topPosterUrl || fallback;
+  }
+  
+  // RPDB needs proxy endpoint for fallback handling
+  return `${host}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(fallback)}&lang=${language}&key=${apiKey}`;
+}
+
+/**
  * Normalizes a string for searching:
  * - Converts to lowercase
  * - Removes accents and diacritics
@@ -1141,6 +1225,91 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
     }
 }
 
+function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = null) {
+    const { tmdbId, imdbId } = ids;
+    let baseUrl = `https://api.top-streaming.stream`;
+    let idType = null;
+    let fullMediaId = null;
+    
+    // Top Poster API supports only IMDb and TMDB
+    if (type === 'movie') {
+        if (tmdbId) {
+            idType = 'tmdb';
+            fullMediaId = `movie-${tmdbId}`;
+        } else if (imdbId) {
+            idType = 'imdb';
+            fullMediaId = imdbId;
+        }
+    } else if (type === 'series') {
+        if (tmdbId) {
+            idType = 'tmdb';
+            fullMediaId = `series-${tmdbId}`;
+        } else if (imdbId) {
+            idType = 'imdb';
+            fullMediaId = imdbId;
+        }
+    }
+    
+    if (!idType || !fullMediaId) {
+        return null;
+    }
+
+    // Top Poster API format: /{api_key}/{id_type}/poster-default/{media_id}.jpg
+    const urlPath = `${baseUrl}/${topPosterKey}/${idType}/poster-default/${fullMediaId}.jpg`;
+    
+    // Build query parameters
+    // Top Poster API expects ISO 639-1 format (2-letter language code, e.g., 'en', 'it', 'pt')
+    const params = new URLSearchParams();
+    if (language) {
+        // Extract ISO 639-1 code (2-letter) from language string (e.g., 'en-US' -> 'en', 'it-IT' -> 'it', 'en' -> 'en')
+        const iso6391Code = language.split('-')[0].toLowerCase();
+        params.append('lang', iso6391Code);
+    }
+    if (fallbackUrl) {
+        params.append('fallback_url', fallbackUrl);
+    }
+    
+    return params.toString() ? `${urlPath}?${params.toString()}` : urlPath;
+}
+
+/**
+ * Get Top Poster API episode thumbnail URL with rating overlay
+ * Format: /{api_key}/{id_type}/thumbnail/{media_id}/S{season}E{episode}.jpg
+ */
+function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 'original', fallbackUrl = null) {
+    const { tmdbId, imdbId } = ids;
+    let baseUrl = `https://api.top-streaming.stream`;
+    let idType = null;
+    let fullMediaId = null;
+    
+    // Top Poster API supports only IMDb and TMDB for thumbnails
+    if (tmdbId) {
+        idType = 'tmdb';
+        fullMediaId = `series-${tmdbId}`;
+    } else if (imdbId) {
+        idType = 'imdb';
+        fullMediaId = imdbId;
+    }
+    
+    if (!idType || !fullMediaId || !season || !episode) {
+        return null;
+    }
+
+    // Top Poster API format: /{api_key}/{id_type}/thumbnail/{media_id}/S{season}E{episode}.jpg
+    const urlPath = `${baseUrl}/${topPosterKey}/${idType}/thumbnail/${fullMediaId}/S${season}E${episode}.jpg`;
+    
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (resolution && resolution !== 'original') {
+        params.append('resolution', resolution);
+    }
+    if (fallbackUrl) {
+        params.append('fallback_url', fallbackUrl);
+    }
+    
+    return params.toString() ? `${urlPath}?${params.toString()}` : urlPath;
+}
+
 async function checkIfExists(url) {
   try {
     const response = await axios.head(url, {
@@ -1164,6 +1333,19 @@ async function parsePoster(type, ids, fallbackFullUrl, language, rpdbkey) {
     if (rpdbImage && await checkIfExists(rpdbImage)) {
       return rpdbImage;
     }
+  }
+  return fallbackFullUrl;
+}
+
+async function parsePosterWithProvider(type, ids, fallbackFullUrl, language, config) {
+  if (!isPosterRatingEnabled(config)) {
+    return fallbackFullUrl;
+  }
+  
+  // Pass fallback URL to Top Poster API so it can handle errors gracefully
+  const posterUrl = getRatingPosterUrl(type, ids, language, config, fallbackFullUrl);
+  if (posterUrl && await checkIfExists(posterUrl)) {
+    return posterUrl;
   }
   return fallbackFullUrl;
 }
@@ -1611,8 +1793,8 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   const kitsuId = mapping?.kitsu_id;
   const imdbRating = await getImdbRating(imdbId, stremioType);
   //const metaType = (kitsuId || imdbId) ? stremioType : 'anime';
-  // Check if RPDB is enabled (check catalog-specific setting if available, otherwise default to true)
-  if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
+  // Check if poster rating is enabled (RPDB or Top Poster API)
+  if (isPosterRatingEnabled(config)) {
 
     if (mapping) {
       const tvdbId = mapping.thetvdb_id;
@@ -1626,8 +1808,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       }
 
       if (proxyId) {
-        const fallback = encodeURIComponent(finalPosterUrl);
-        finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        finalPosterUrl = buildPosterProxyUrl(host, stremioType, proxyId, finalPosterUrl, language, config);
       }
     }
   }
@@ -2848,6 +3029,13 @@ module.exports = {
   parseConfig,
   parsePoster,
   getRpdbPoster,
+  getTopPosterPoster,
+  getTopPosterThumbnail,
+  getRatingPosterUrl,
+  getPosterRatingApiKey,
+  buildPosterProxyUrl,
+  isPosterRatingEnabled,
+  parsePosterWithProvider,
   checkIfExists,
   sortSearchResults,
   sortTvdbSearchResults,
@@ -3001,14 +3189,13 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
     }
   }
   
-  // Check if RPDB is enabled (check catalog-specific setting if available, otherwise default to true)
-  if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
+  // Check if poster rating is enabled (RPDB or Top Poster API)
+  if (isPosterRatingEnabled(config)) {
     let proxyId = null;
     proxyId = (imdbId ? `${imdbId}`: (tmdbId ? `tmdb:${tmdbId}` :  tvdbId ? `tvdb:${tvdbId}` : null));
 
       if (proxyId) {
-        const fallback = encodeURIComponent(finalPosterUrl);
-        finalPosterUrl = `${host}/poster/${stremioType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        finalPosterUrl = buildPosterProxyUrl(host, stremioType, proxyId, finalPosterUrl, language, config);
       }
   }
 

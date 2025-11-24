@@ -77,7 +77,7 @@ const ApiKeyInput = ({
 };
 
 export function IntegrationsSettings() {
-  const { config, sessionId, setSessionId, auth } = useConfig();
+  const { config, setConfig, sessionId, setSessionId, auth } = useConfig();
   const [validationStatus, setValidationStatus] = useState<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({});
   const [isTesting, setIsTesting] = useState(false);
   const [tmdbAuthLoading, setTmdbAuthLoading] = useState(false);
@@ -191,7 +191,7 @@ export function IntegrationsSettings() {
 
   // Check if any keys have changed since last successful validation
   useEffect(() => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
     
     let changed = false;
     for (const key of apiKeyFields) {
@@ -278,7 +278,7 @@ export function IntegrationsSettings() {
   
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -381,7 +381,7 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -503,13 +503,55 @@ export function IntegrationsSettings() {
           validationStatus={validationStatus.fanart || 'idle'} 
           onKeyChange={handleKeyChange}
         />
-        <ApiKeyInput 
-          id="rpdb" 
-          label="RPDB API Key" 
-          linkHref="https://ratingposterdb.com/" 
-          validationStatus={validationStatus.rpdb || 'idle'} 
-          onKeyChange={handleKeyChange}
-        />
+        {/* Poster Rating Provider Selection */}
+        <div className="space-y-3 p-4 rounded-lg border border-border bg-muted/30">
+          <Label className="text-sm font-medium">Poster Rating Provider</Label>
+          <p className="text-xs text-muted-foreground mb-3">
+            Choose which service to use for rating overlays on posters
+          </p>
+          <div className="flex gap-4">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                name="posterRatingProvider"
+                value="rpdb"
+                checked={config.posterRatingProvider !== 'top'}
+                onChange={(e) => setConfig(prev => ({ ...prev, posterRatingProvider: e.target.value as 'rpdb' | 'top' }))}
+                className="w-4 h-4"
+              />
+              <span className="text-sm">RatingPosterDB (RPDB)</span>
+            </label>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                name="posterRatingProvider"
+                value="top"
+                checked={config.posterRatingProvider === 'top'}
+                onChange={(e) => setConfig(prev => ({ ...prev, posterRatingProvider: e.target.value as 'rpdb' | 'top' }))}
+                className="w-4 h-4"
+              />
+              <span className="text-sm">Top Poster API</span>
+            </label>
+          </div>
+        </div>
+        
+        {config.posterRatingProvider !== 'top' ? (
+          <ApiKeyInput 
+            id="rpdb" 
+            label="RPDB API Key" 
+            linkHref="https://ratingposterdb.com/" 
+            validationStatus={validationStatus.rpdb || 'idle'} 
+            onKeyChange={handleKeyChange}
+          />
+        ) : (
+          <ApiKeyInput 
+            id="topPoster" 
+            label="Top Poster API Key" 
+            linkHref="https://api.top-streaming.stream/user/register" 
+            validationStatus={validationStatus.topPoster || 'idle'} 
+            onKeyChange={handleKeyChange}
+          />
+        )}
         <ApiKeyInput 
           id="mdblist" 
           label="MDBList API Key" 

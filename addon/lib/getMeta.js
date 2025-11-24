@@ -905,9 +905,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   }
 
   const fallbackPosterUrl = poster || `${host}/missing_poster.png`;
-  const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
-    ? `${host}/poster/series/imdb:${imdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
-    : fallbackPosterUrl;
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', `imdb:${imdbId}`, fallbackPosterUrl, config.language, config);
 
   // Process credits in place
   processCreditsPhotos(imdbData.credits_cast);
@@ -925,17 +923,50 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
     const seriesData = await moviedb.tvInfo({ id: tmdbId, language: config.language, append_to_response: "content_ratings,videos", include_video_language: videoLanguages }, config);
     imdbData.app_extras = imdbData.app_extras || {};
-    imdbData.app_extras.certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
-    if (seriesData.videos) {
-      const allTrailers = Utils.parseTrailers(seriesData.videos);
-      const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
+    if(seriesData){
+      imdbData.app_extras.certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+      if (seriesData.videos) {
+        const allTrailers = Utils.parseTrailers(seriesData.videos);
+        const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
 
-      // Intelligent fallback: user language -> English -> all trailers
-      const englishTrailers = allTrailers.filter(trailer => trailer.lang === 'en');
-      const finalTrailers = filteredTrailers.length > 0 ? filteredTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
+        // Intelligent fallback: user language -> English -> all trailers
+        const englishTrailers = allTrailers.filter(trailer => trailer.lang === 'en');
+        const finalTrailers = filteredTrailers.length > 0 ? filteredTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
 
-      imdbData.trailers = finalTrailers;
+        imdbData.trailers = finalTrailers;
+      }
     }
+  }
+
+  // Process episode thumbnails with Top Poster API if enabled
+  if (imdbData.videos && Array.isArray(imdbData.videos) && config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
+    imdbData.videos = imdbData.videos.map(video => {
+      // Extract season and episode from video ID (format: "imdbId:season:episode")
+      const idParts = video.id?.split(':');
+      if (idParts && idParts.length >= 3) {
+        const season = parseInt(idParts[1], 10);
+        const episode = parseInt(idParts[2], 10);
+        
+        if (!isNaN(season) && !isNaN(episode)) {
+          const topPosterThumbnail = Utils.getTopPosterThumbnail(
+            { tmdbId, imdbId },
+            season,
+            episode,
+            config.apiKeys.topPoster,
+            'w500', // Use w500 resolution
+            video.thumbnail || null
+          );
+          
+          if (topPosterThumbnail) {
+            return {
+              ...video,
+              thumbnail: topPosterThumbnail
+            };
+          }
+        }
+      }
+      return video;
+    });
   }
 
   return imdbData;
@@ -969,9 +1000,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     ]);
   }
 
-  const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
-    ? `${host}/poster/movie/imdb:${imdbId}?fallback=${encodeURIComponent(poster)}&lang=${config.language}&key=${config.apiKeys.rpdb}`
-    : poster;
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'movie', `imdb:${imdbId}`, poster, config.language, config);
 
   processCreditsPhotos(imdbData.credits_cast);
   processCreditsPhotos(imdbData.credits_crew);
@@ -988,6 +1017,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
     const movieData = await moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates,videos", include_video_language: videoLanguages }, config);
     imdbData.app_extras = imdbData.app_extras || {};
+    imdbData.released = movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
     imdbData.app_extras.certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
     if (movieData.videos) {
@@ -1088,7 +1118,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   }
   
   const imdbRating = imdbRatingValue || movieData.vote_average?.toFixed(1) || "N/A";
-  const posterProxyUrl = `${host}/poster/movie/tmdb:${movieData.id}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'movie', `tmdb:${movieData.id}`, poster, language, config);
   const kitsuId = allIds?.kitsuId;
   const idProvider = config.providers?.movie || 'imdb';
 
@@ -1166,7 +1196,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     runtime: Utils.parseRunTime(movieData.runtime),
     country: Utils.parseCoutry(movieData.production_countries),
     imdbRating,
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     background: background,
     logo: processLogo(logoUrl),
     trailers: finalTrailers,
@@ -1223,7 +1253,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   // log arts 
   // logger.debug(`[TmdbSeriesMeta] poster: ${poster}, background: ${background}, logoUrl: ${logoUrl}`);
   
-  const posterProxyUrl = `${host}/poster/series/tmdb:${tmdbId}?fallback=${encodeURIComponent(poster)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', `tmdb:${tmdbId}`, poster, language, config);
   const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
   const castCount = config.castCount === 0 ? undefined : config.castCount;
 
@@ -1507,8 +1537,28 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
         }
 
-        const thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : `${host}/missing_thumbnail.png`;
-        const finalThumbnail = config.blurThumbs && ep.still_path
+        // Use Top Poster API for episode thumbnails if enabled (Premium feature)
+        let thumbnailUrl = null;
+        if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
+          const topPosterThumbnail = Utils.getTopPosterThumbnail(
+            { tmdbId, imdbId },
+            ep.season_number,
+            ep.episode_number,
+            config.apiKeys.topPoster,
+            'w500', // Use w500 resolution to match TMDB default
+            ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : null
+          );
+          if (topPosterThumbnail) {
+            thumbnailUrl = topPosterThumbnail;
+          }
+        }
+        
+        // Fallback to TMDB thumbnail if Top Poster not available
+        if (!thumbnailUrl) {
+          thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : `${host}/missing_thumbnail.png`;
+        }
+        
+        const finalThumbnail = config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
         
@@ -1589,7 +1639,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     released: seriesData.first_air_date ? new Date(seriesData.first_air_date + 'T12:00:00.000Z').toISOString() : null,
     status: seriesData.status,
     imdbRating,
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     background: background,
     logo: logoUrl,
     trailers: finalTrailers,
@@ -1654,7 +1704,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const imdbRating = imdbRatingValue || "N/A";
   
   const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
-  const posterProxyUrl = `${host}/poster/movie/${imdbId}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'movie', imdbId, fallbackPosterUrl, language, config);
   const movieCredits = {
     cast: (characters || [])
       .filter(c => c.peopleType === 'Actor')
@@ -1740,7 +1790,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     runtime: Utils.parseRunTime(movieData.runtime),
     country: movieData.originalCountry,
     imdbRating,
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     background: background,
     logo: processLogo(logoUrl),
     trailers: trailers,
@@ -1830,7 +1880,13 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
   const imdbRating = imdbRatingValue || "N/A";
   const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbShow.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  // Top Poster API only supports IMDb and TMDB IDs, not TVDB
+  // Use IMDb or TMDB ID if available when Top Poster API is selected
+  let posterProxyId = `tvdb:${tvdbShow.id}`;
+  if (config.posterRatingProvider === 'top' && (imdbId || tmdbId)) {
+    posterProxyId = imdbId || `tmdb:${tmdbId}`;
+  }
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', posterProxyId, fallbackPosterUrl, language, config);
   const tvdbCredits = {
     cast: (characters || [])
       .filter(c => c.peopleType === 'Actor')
@@ -1928,8 +1984,28 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
     videos = await Promise.all(
       (tvdbEpisodes.episodes || []).map(async (episode) => {
-          const thumbnailUrl = episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : `${host}/missing_thumbnail.png`;
-          const finalThumbnail = config.blurThumbs && episode.image
+          // Use Top Poster API for episode thumbnails if enabled (Premium feature)
+          let thumbnailUrl = null;
+          if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
+            const topPosterThumbnail = Utils.getTopPosterThumbnail(
+              { tmdbId, imdbId },
+              episode.seasonNumber,
+              episode.number,
+              config.apiKeys.topPoster,
+              'w500', // Use w500 resolution
+              episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : null
+            );
+            if (topPosterThumbnail) {
+              thumbnailUrl = topPosterThumbnail;
+            }
+          }
+          
+          // Fallback to TVDB thumbnail if Top Poster not available
+          if (!thumbnailUrl) {
+            thumbnailUrl = episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : `${host}/missing_thumbnail.png`;
+          }
+          
+          const finalThumbnail = config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
               ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
               : thumbnailUrl;
           let episodeId;
@@ -2062,7 +2138,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     status: tvdbShow.status?.name,
     country: tvdbShow.originalCountry,
     imdbRating,
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster,
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     background: background, 
     logo: logoUrl,
     videos: videos,
@@ -2176,7 +2252,13 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     photo: w.person.image?.medium
   })).filter(w => w.name);
 
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(poster || '')}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  // Top Poster API only supports IMDb and TMDB IDs, not TVDB
+  // Use IMDb or TMDB ID if available when Top Poster API is selected
+  let posterProxyId = `tvdb:${tvdbId}`;
+  if (config.posterRatingProvider === 'top' && (imdbId || tmdbId)) {
+    posterProxyId = imdbId || `tmdb:${tmdbId}`;
+  }
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', posterProxyId, poster || '', language, config);
 
   let specialVideos = [];
   let videos = [];
@@ -2184,14 +2266,35 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   if(includeVideos){
     let specialCount = 1;
     (episodes || []).filter(episode => episode.type.toLowerCase().includes('special')).forEach(episode => {
+      // Use Top Poster API for episode thumbnails if enabled (Premium feature)
+      let thumbnailUrl = null;
+      if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
+        const topPosterThumbnail = Utils.getTopPosterThumbnail(
+          { tmdbId, imdbId },
+          0, // Special episodes are season 0
+          specialCount,
+          config.apiKeys.topPoster,
+          'w500', // Use w500 resolution
+          episode.image?.original || tvmazeShow.image?.original || null
+        );
+        if (topPosterThumbnail) {
+          thumbnailUrl = topPosterThumbnail;
+        }
+      }
+      
+      // Fallback to TVMaze thumbnail if Top Poster not available
+      if (!thumbnailUrl) {
+        thumbnailUrl = episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`;
+      }
+      
       let specialEpisode = {
         id: `${imdbId}:0:${specialCount}`,
         title: episode.name || `Episode ${specialCount}`,
         season: 0,
         episode: specialCount,
-        thumbnail: config.blurThumbs && episode.image?.original
-          ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
-          : episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`,
+        thumbnail: config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+          ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
+          : thumbnailUrl,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
         released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
@@ -2211,14 +2314,36 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     
     videos = (episodes || []).filter(episode => !episode.type.toLowerCase().includes('special')).map(episode => {
       const actualSeason = seasonMap.get(episode.season) || episode.season;
+      
+      // Use Top Poster API for episode thumbnails if enabled (Premium feature)
+      let thumbnailUrl = null;
+      if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
+        const topPosterThumbnail = Utils.getTopPosterThumbnail(
+          { tmdbId, imdbId },
+          actualSeason,
+          episode.number,
+          config.apiKeys.topPoster,
+          'w500', // Use w500 resolution
+          episode.image?.original || tvmazeShow.image?.original || null
+        );
+        if (topPosterThumbnail) {
+          thumbnailUrl = topPosterThumbnail;
+        }
+      }
+      
+      // Fallback to TVMaze thumbnail if Top Poster not available
+      if (!thumbnailUrl) {
+        thumbnailUrl = episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`;
+      }
+      
       return {
         id: `${imdbId}:${actualSeason}:${episode.number}`,
         title: episode.name || `Episode ${episode.number}`,
         season: actualSeason,
         episode: episode.number,
-        thumbnail: config.blurThumbs && episode.image?.original
-          ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(episode.image.original)}`
-          : episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`,
+        thumbnail: config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+          ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
+          : thumbnailUrl,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
         released: new Date(episode.airstamp),
         available: new Date(episode.airstamp) < new Date(),
@@ -2266,7 +2391,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     status: tvmazeShow.status,
     country: tvmazeShow.network?.country?.name || null,
     imdbRating,
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : poster, 
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster, 
     background: background,
     logo: processLogo(logoUrl), 
     videos,
@@ -2299,8 +2424,8 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     // Use AniList poster if available and configured
     let finalPosterUrl = enrichmentData.bestPosterUrl || posterUrl; 
 
-    // Check if RPDB is enabled (check catalog-specific setting if available, otherwise default to true)
-    if (config.apiKeys?.rpdb && isRPDBEnabled(config) && mapping && stremioType !== 'movie') {
+    // Check if poster rating is enabled (RPDB or Top Poster API)
+    if (Utils.isPosterRatingEnabled(config) && mapping && stremioType !== 'movie') {
       const tvdbId = mapping.tvdbId;
       const tmdbId = mapping.tmdbId;
       const imdbId = mapping.imdbId;
@@ -2314,9 +2439,8 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       }
 
       if (proxyId) {
-        const fallback = encodeURIComponent(posterUrl);
-        finalPosterUrl = `${host}/poster/${proxyType}/${proxyId}?fallback=${fallback}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-      logger.debug(`[buildAnimeResponse] Constructed RPDB Poster Proxy URL: ${finalPosterUrl}`);
+        finalPosterUrl = Utils.buildPosterProxyUrl(host, proxyType, proxyId, posterUrl, language, config);
+      logger.debug(`[buildAnimeResponse] Constructed Poster Rating Proxy URL: ${finalPosterUrl}`);
       }
     }
     

@@ -134,7 +134,13 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const posterUrl = rawPosterUrl || fallbackImage;
   
   const validPosterUrl = posterUrl && typeof posterUrl === 'string' && !posterUrl.includes('undefined') && posterUrl !== 'null' ? posterUrl : fallbackImage;
-  const posterProxyUrl = `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+  // Top Poster API only supports IMDb and TMDB IDs, not TVDB
+  // Use IMDb or TMDB ID if available when Top Poster API is selected
+  let posterProxyId = `tvdb:${tvdbId}`;
+  if (config.posterRatingProvider === 'top' && (imdbId || tmdbId)) {
+    posterProxyId = imdbId || `tmdb:${tmdbId}`;
+  }
+  const posterProxyUrl = Utils.buildPosterProxyUrl(host, type, posterProxyId, validPosterUrl, language, config);
   
   let certification = null;
   try {
@@ -158,7 +164,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     id: stremioId,
     type: type,
     name: translatedName, 
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl,
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl,
     _rawPosterUrl: rawPosterUrl, 
     year: extendedRecord.year,
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
@@ -281,7 +287,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
               proxyId = `tmdb:${tmdbId}`;
             }
             if (proxyId) {
-              finalPoster = `${host}/poster/series/${proxyId}?fallback=${encodeURIComponent(finalPoster)}&lang=${language}&key=${config.apiKeys.rpdb}`;
+              finalPoster = Utils.buildPosterProxyUrl(host, 'series', proxyId, finalPoster, language, config);
             }
           }
           
@@ -572,7 +578,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           ? posterUrl 
           : fallbackImage;
         
-        const posterProxyUrl = `${host}/poster/${mediaType}/tmdb:${media.id}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+        const posterProxyUrl = Utils.buildPosterProxyUrl(host, mediaType, `tmdb:${media.id}`, validPosterUrl, language, config);
         
         let stremioId = `tmdb:${media.id}`; // Default to TMDB
         if(allIds?.imdbId) stremioId = allIds.imdbId;
@@ -581,7 +587,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         const parsed = Utils.parseMedia(details, mediaType, [], config);
         if (!parsed) return null; // In case parsing fails
         parsed.id = stremioId;
-        parsed.poster = (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl;
+        parsed.poster = Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl;
         parsed.imdbRating = imdbRating;
         parsed.logo = logoUrl;
         parsed.background = backgroundUrl;
@@ -1102,13 +1108,26 @@ async function parseTvmazeResult(show, config) {
   let stremioId = `tvmaze:${show.id}` ;
   if(imdbId) stremioId = imdbId;
   var fallbackImage = show.image?.original || `${host}/missing_poster.png`;
-  const posterProxyUrl = imdbId ? `${host}/poster/series/${imdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`: `${host}/poster/series/tvdb:${tvdbId}?fallback=${encodeURIComponent(show.image?.original || '')}&lang=${show.language}&key=${config.apiKeys?.rpdb}`;
+  // Top Poster API only supports IMDb and TMDB IDs, not TVDB
+  // Use IMDb or TMDB ID if available when Top Poster API is selected
+  let posterProxyId = imdbId || (tvdbId ? `tvdb:${tvdbId}` : null);
+  if (config.posterRatingProvider === 'top') {
+    if (imdbId || tmdbId) {
+      posterProxyId = imdbId || `tmdb:${tmdbId}`;
+    } else {
+      // Top Poster API doesn't support TVDB, fall back to regular poster
+      posterProxyId = null;
+    }
+  }
+  const posterProxyUrl = posterProxyId 
+    ? Utils.buildPosterProxyUrl(host, 'series', posterProxyId, show.image?.original || '', show.language, config)
+    : fallbackImage;
   const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
   return {
     id: stremioId,
     type: 'series',
     name: show.name,
-    poster: (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : fallbackImage,
+    poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : fallbackImage,
     background: show.image?.original ? `${show.image.original}` : null,
     description: Utils.addMetaProviderAttribution(show.summary ? show.summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     genres: show.genres || [],
