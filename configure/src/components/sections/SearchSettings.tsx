@@ -267,10 +267,6 @@ export function SearchSettings() {
   
   const movieSearchProviders = allSearchProviders.filter(p => {
     if (p.mediaType.includes('movie')) {
-      // Filter out TVDB search if no TVDB key is available
-      if (p.value === 'tvdb.search' && !hasTvdbKey) {
-        return false;
-      }
       return true;
     }
     return false;
@@ -278,10 +274,6 @@ export function SearchSettings() {
   
   const seriesSearchProviders = allSearchProviders.filter(p => {
     if (p.mediaType.includes('series')) {
-      // Filter out TVDB search if no TVDB key is available
-      if (p.value === 'tvdb.search' && !hasTvdbKey) {
-        return false;
-      }
       return true;
     }
     return false;
@@ -290,36 +282,6 @@ export function SearchSettings() {
   const animeSearchProviders = allSearchProviders.filter(
     p => p.mediaType.includes('anime_movie') || p.mediaType.includes('anime_series')
   );
-
-  // Auto-switch from TVDB if no key is available
-  React.useEffect(() => {
-    if (!hasTvdbKey) {
-      if (config.search.providers.movie === 'tvdb.search') {
-        setConfig(prev => ({
-          ...prev,
-          search: {
-            ...prev.search,
-            providers: {
-              ...prev.search.providers,
-              movie: 'tmdb.search'
-            }
-          }
-        }));
-      }
-      if (config.search.providers.series === 'tvdb.search') {
-        setConfig(prev => ({
-          ...prev,
-          search: {
-            ...prev.search,
-            providers: {
-              ...prev.search.providers,
-              series: 'tmdb.search'
-            }
-          }
-        }));
-      }
-    }
-  }, [hasTvdbKey, config.search.providers.movie, config.search.providers.series, setConfig]);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -358,8 +320,12 @@ export function SearchSettings() {
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     {movieSearchProviders.map(p => (
-                                      <SelectItem key={p.value} value={p.value}>
-                                        {getProviderDisplayName(p.value)}
+                                      <SelectItem 
+                                        key={p.value} 
+                                        value={p.value}
+                                        disabled={p.value === 'tvdb.search' && !hasTvdbKey}
+                                      >
+                                        {getProviderDisplayName(p.value)}{p.value === 'tvdb.search' && !hasTvdbKey && ' (API key required)'}
                                       </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -397,8 +363,12 @@ export function SearchSettings() {
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     {seriesSearchProviders.map(p => (
-                                      <SelectItem key={p.value} value={p.value}>
-                                        {getProviderDisplayName(p.value)}
+                                      <SelectItem 
+                                        key={p.value} 
+                                        value={p.value}
+                                        disabled={p.value === 'tvdb.search' && !hasTvdbKey}
+                                      >
+                                        {getProviderDisplayName(p.value)}{p.value === 'tvdb.search' && !hasTvdbKey && ' (API key required)'}
                                       </SelectItem>
                                     ))}
                                 </SelectContent>

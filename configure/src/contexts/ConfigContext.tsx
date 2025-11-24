@@ -117,8 +117,10 @@ const initialConfig: AppConfig = {
     tvdb: "",
     fanart: "", 
     rpdb: "", 
+    topPoster: "",
     mdblist: "" 
   },
+  posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   mdblistWatchTracking: true,
   enableRPDBForLibrary: true, // Default to enabled - keep RPDB posters for library items
   ageRating: 'None',

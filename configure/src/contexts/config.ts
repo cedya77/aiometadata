@@ -84,9 +84,12 @@ export interface AppConfig {
     tvdb: string;
     fanart: string;
     rpdb: string;
+    topPoster: string;
     mdblist: string;
     customDescriptionBlurb?: string;
   };
+  /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
+  posterRatingProvider?: 'rpdb' | 'top';
   mdblistWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
   enableRPDBForLibrary?: boolean;

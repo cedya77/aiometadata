@@ -295,7 +295,7 @@ export function GeneralSettings() {
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
           <div>
             <Label htmlFor="adult-content" className="text-lg font-medium">Include Adult Content</Label>
-            <p className="text-sm text-muted-foreground">Show 18+ content in catalogs and search.</p>
+            <p className="text-sm text-muted-foreground">Show NSFW (Not Safe For Work) content in catalogs and search.</p>
           </div>
           <Switch
             id="adult-content"
