@@ -719,8 +719,11 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
     
-    // RPDB enablement state (boolean, affects poster generation)
-    rpdbEnabled: !!(enableRPDB && config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0)
+    // Poster rating provider and API key (affects poster generation)
+    posterRatingProvider: config.posterRatingProvider || 'rpdb',
+    posterRatingApiKey: enableRPDB ? (config.posterRatingProvider === 'top' 
+      ? (config.apiKeys?.topPoster || '') 
+      : (config.apiKeys?.rpdb || '')) : ''
   };
   
   // Only include MDBList API key for MDBList catalogs
@@ -863,8 +866,11 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
     useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
-    // RPDB enablement state (boolean, affects poster generation)
-    rpdbEnabled: rpdbEnabled
+    // Poster rating provider and API key (affects poster generation)
+    posterRatingProvider: config.posterRatingProvider || 'rpdb',
+    posterRatingApiKey: rpdbEnabled ? (config.posterRatingProvider === 'top' 
+      ? (config.apiKeys?.topPoster || '') 
+      : (config.apiKeys?.rpdb || '')) : ''
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
@@ -909,6 +915,12 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
      
+     // Poster rating provider (affects poster URLs)
+     posterRatingProvider: config.posterRatingProvider || 'rpdb',
+     apiKeys: { 
+       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+       topPoster: config.apiKeys?.topPoster || ''
+     }
    };
    
    // Add context-specific settings based on meta type
@@ -1000,8 +1012,11 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
+     // Poster rating provider (affects poster URLs)
+     posterRatingProvider: config.posterRatingProvider || 'rpdb',
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+       topPoster: config.apiKeys?.topPoster || ''
      }
    };
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
@@ -1257,8 +1272,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
+     posterRatingProvider: config.posterRatingProvider || 'rpdb',
      apiKeys: { 
-       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || ''
+       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
+       topPoster: config.apiKeys?.topPoster || ''
      }
    };
    
@@ -1388,17 +1405,18 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      if (componentName === 'basic') return; // Already handled
      
      if (componentName === 'poster') {
-       // Apply RPDB logic during reconstruction if enabled
-       // Use module-level context to get accurate RPDB state
-       const rpdbEnabled = currentRequestContext.catalogConfig?.enableRPDB !== false;
+       // Apply poster rating logic during reconstruction if enabled
+       // Use module-level context to get accurate enablement state
+       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRPDB !== false;
        const host = process.env.HOST_NAME.startsWith('http')
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
        
-       if (config.apiKeys?.rpdb && rpdbEnabled && reconstructedMeta.id) {
-         // Apply RPDB proxy to cached poster
+       if (posterRatingEnabled && reconstructedMeta.id) {
+         // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
-         reconstructedMeta.poster = `${host}/poster/${reconstructedMeta.type}/${reconstructedMeta.id}?fallback=${encodeURIComponent(data.poster)}&lang=${language}&key=${config.apiKeys.rpdb}`;
+         const Utils = require("../utils/parseProps");
+         reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, reconstructedMeta.id, data.poster, language, config);
        } else {
          reconstructedMeta.poster = data.poster;
        }

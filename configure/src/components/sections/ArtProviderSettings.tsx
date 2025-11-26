@@ -134,7 +134,7 @@ export function ArtProviderSettings() {
         <div className="flex items-start gap-2 mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
           <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
           <p className="text-sm text-blue-800 dark:text-blue-200">
-            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance.
+            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance. <strong>When using rating posters (RPDB or Top Poster API), posters come from the rating provider rather than the art provider settings.</strong>
           </p>
         </div>
         

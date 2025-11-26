@@ -17,10 +17,13 @@ export interface UserConfig {
     tvdb?: string;
     fanart?: string;
     rpdb?: string;
+    topPoster?: string;
     mdblist?: string;
     gemini?: string;
     imdb?: string;
   };
+  /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
+  posterRatingProvider?: 'rpdb' | 'top';
   catalogs?: Catalog[];
   streaming?: StreamingConfig[];
   mal?: {

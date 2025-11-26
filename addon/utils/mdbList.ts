@@ -267,13 +267,12 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
         items = response.data.movies || [];
       }
     } else {
-      // Unified format: response is a flat array or has movies/shows arrays
       if (Array.isArray(response.data)) {
         items = response.data;
       } else {
         items = [
-          ...(response.data.movies || []),
-          ...(response.data.shows || [])
+          ...(response.data?.movies || []),
+          ...(response.data?.shows || [])
         ];
       }
     }

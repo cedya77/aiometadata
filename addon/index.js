@@ -46,7 +46,7 @@ const configApi = require('./lib/configApi');
 const database = require('./lib/database');
 const { loadConfigFromDatabase } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
-const { getRpdbPoster, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
+const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
 const axios = require('axios');
@@ -478,13 +478,15 @@ addon.get("/stremio/manifest.json", function (req, res) {
         version: packageJson.version,
         name: "AIO Metadata",
         description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
-        favicon: `${host}/favicon.png`,
         logo: `${host}/logo.png`,
         types: ["movie", "series"],
         catalogs: [],
         resources: [],
         idPrefixes: [],
-        configurationRequired: true
+        behaviorHints: {
+          configurable: true,
+          configurationRequired: false,
+        },
     };
     
     res.setHeader('Content-Type', 'application/json');
@@ -1180,13 +1182,26 @@ addon.get("/poster/:type/:id", async function (req, res) {
   };
 
   try {
-    const rpdbUrl = getRpdbPoster(type, ids, lang, key);
+    // Determine which provider to use based on key format
+    // Top Poster API keys start with "TP-", RPDB keys have different formats
+    const isTopPoster = key.startsWith('TP-');
+    let posterUrl = null;
+    
+    if (isTopPoster) {
+      // Use Top Poster API with fallback_url parameter
+      // Top Poster API will automatically use fallback_url on any non-200 response
+      const config = { apiKeys: { topPoster: key }, posterRatingProvider: 'top' };
+      posterUrl = getRatingPosterUrl(type, ids, lang, config, fallback);
+    } else {
+      // Use RPDB (backward compatibility)
+      posterUrl = getRpdbPoster(type, ids, lang, key);
+    }
 
-    if (rpdbUrl && await checkIfExists(rpdbUrl)) {
-      //console.log("Success! Pipe the image from RPDB directly to the user.");
+    if (posterUrl && await checkIfExists(posterUrl)) {
+      //console.log("Success! Pipe the image from rating provider directly to the user.");
       const imageResponse = await axios({
         method: 'get',
-        url: rpdbUrl,
+        url: posterUrl,
         responseType: 'stream'
       });
       res.setHeader('Content-Type', 'image/jpeg');
