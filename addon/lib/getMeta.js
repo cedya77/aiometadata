@@ -713,40 +713,39 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 
 async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime, includeVideos) {
   logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
-  
-  const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
-  if(type === 'movie') {
-    if(allIds?.malId) {
+
+  if (type === 'movie') {
+    if (allIds?.malId) {
       allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
       allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
-      allIds.tvdbId =  (await wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
-
+      allIds.tvdbId = (await wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
     }
   }
-  // check if stremioId starts with one of the animeIdProviders
-    try {
+
+  // --- Preferred Provider Logic ---
+  try {
+    if (preferredProvider && preferredProvider !== 'kitsu' && preferredProvider !== 'mal') {
+      logger.info(`[AnimeMeta] Attempting preferred provider '${preferredProvider}' for ${stremioId}.`);
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
         const langCode = language.split('-')[0];
         const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         if (type === 'movie') {
-          
           const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
           return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
         } else {
           const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-            return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
+          return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
         }
       }
-      
       if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
-        if( type === 'series') {
+        if (type === 'series') {
           const [seriesData, episodes] = await Promise.all([
-              tvdb.getSeriesExtended(allIds.tvdbId, config),
-              includeVideos ? tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config) : null
+            tvdb.getSeriesExtended(allIds.tvdbId, config),
+            includeVideos ? tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config) : null
           ]);
-          if(!seriesData) {
-            if(allIds?.imdbId) {
+          if (!seriesData) {
+            if (allIds?.imdbId) {
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
               return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
@@ -756,8 +755,8 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         } else if (type === 'movie') {
           logger.info(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
-          if(!movieData) {
-            if(allIds?.imdbId) {
+          if (!movieData) {
+            if (allIds?.imdbId) {
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
               return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
@@ -766,9 +765,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           }
         }
       }
-  
       if (preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-        //console.log(`[AnimeMeta] Attempting preferred provider TVmaze with ID: ${allIds.tvmazeId}`);
         const [seriesData, episodes] = await Promise.all([
           tvmaze.getShowDetails(allIds.tvmazeId),
           includeVideos ? tvmaze.getShowEpisodes(allIds.tvmazeId) : null
@@ -776,100 +773,76 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         return await buildSeriesResponseFromTvmaze(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
       }
       if (preferredProvider === 'imdb' && allIds?.imdbId) {
-        if(type === 'series') {
+        if (type === 'series') {
           let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
           return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
-          } else if(type === 'movie') {
-            let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
-            return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+        } else if (type === 'movie') {
+          let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
+          return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
-  
-      logger.info(`[AnimeMeta] No ID found for preferred provider '${preferredProvider}'. Falling back to MAL.`);
-  
-    } catch (e) {
-      logger.warn(`[AnimeMeta] Preferred provider '${preferredProvider}' failed for ${stremioId}. Falling back. Error: ${e.message}`);
-      logger.error(`[AnimeMeta] Full error details:`, e);
+      logger.info(`[AnimeMeta] No ID found for preferred provider '${preferredProvider}'.`);
     }
-  
+  } catch (e) {
+    logger.warn(`[AnimeMeta] Preferred provider '${preferredProvider}' failed for ${stremioId}. Falling back. Error: ${e.message}`);
+    logger.error(`[AnimeMeta] Full error details:`, e);
+  }
 
-  if(allIds?.kitsuId && preferredProvider === 'kitsu') {
+  // --- Fallback / Native Provider Logic ---
+
+  // 1. Try Kitsu (if it's the preferred provider OR as a fallback, but not if MAL was the preferred provider)
+  if (allIds?.kitsuId && (preferredProvider === 'kitsu' || preferredProvider !== 'mal')) {
     try {
-      logger.info(`[AnimeMeta] Using native provider 'kitsu' for ${stremioId} with Kitsu ID ${allIds?.kitsuId}`);
-      
-      // Fetch Kitsu anime details with caching
+      logger.info(`[AnimeMeta] Using provider 'kitsu' for ${stremioId} (Kitsu ID: ${allIds.kitsuId})`);
       const kitsuDetails = await cacheWrapGlobal(
-        `kitsu-anime-${allIds?.kitsuId}-genres,episodes,mediaRelationships.destination`,
-        () => kitsu.getMultipleAnimeDetails([allIds?.kitsuId], 'genres,episodes,mediaRelationships.destination'),
+        `kitsu-anime-${allIds.kitsuId}-genres,episodes,mediaRelationships.destination`,
+        () => kitsu.getMultipleAnimeDetails([allIds.kitsuId], 'genres,episodes,mediaRelationships.destination'),
         CATALOG_TTL
       );
-
-      
       if (!kitsuDetails) {
-        throw new Error(`Kitsu returned no details for Kitsu ID ${allIds?.kitsuId}.`);
+        throw new Error(`Kitsu returned no details for Kitsu ID ${allIds.kitsuId}.`);
       }
       const details = kitsuDetails.data[0];
-      
-      // Fetch artwork (cacheWrapMetaSmart will handle caching)
       const artwork = await getAnimeArtwork(allIds, config, details.attributes?.posterImage?.original, details.attributes?.coverImage?.original, type);
       const { background, poster, logo } = artwork;
-
       let episodes = kitsuDetails.included?.filter(item => item.type === 'episodes') || [];
       let genres = kitsuDetails.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
-    
-      return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, { 
-        mapping: allIds, 
+      return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, {
+        mapping: allIds,
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
         bestLogoUrl: logo
       });
-  
-    } catch (error) {
-      logger.error(`[AnimeMeta] CRITICAL: Native provider 'kitsu' also failed for ${stremioId}: ${error.message}`);
+    } catch (kitsuError) {
+      logger.warn(`[AnimeMeta] Kitsu provider failed: ${kitsuError.message}`);
     }
   }
 
-  if(allIds?.malId) {
+  // 2. Try MAL (if it's the preferred provider OR as the final fallback)
+  if (allIds?.malId) {
     try {
-      logger.info(`[AnimeMeta] Using native provider 'mal' for ${stremioId}`);
-      
-      // Fetch all components with caching
+      logger.info(`[AnimeMeta] Using provider 'mal' for ${stremioId}`);
       const [details, characters, episodes] = await Promise.all([
-        cacheWrapJikanApi(`anime-details-${allIds?.malId}`, () => jikan.getAnimeDetails(allIds?.malId)),
-        includeVideos ? cacheWrapJikanApi(`anime-characters-${allIds?.malId}`, () => jikan.getAnimeCharacters(allIds?.malId)) : null,
-        includeVideos ? cacheWrapJikanApi(`anime-episodes-${allIds?.malId}`, () => jikan.getAnimeEpisodes(allIds?.malId), 24 * 60 * 60) : null,
+        cacheWrapJikanApi(`anime-details-${allIds.malId}`, () => jikan.getAnimeDetails(allIds.malId)),
+        includeVideos ? cacheWrapJikanApi(`anime-characters-${allIds.malId}`, () => jikan.getAnimeCharacters(allIds.malId)) : null,
+        includeVideos ? cacheWrapJikanApi(`anime-episodes-${allIds.malId}`, () => jikan.getAnimeEpisodes(allIds.malId), 24 * 60 * 60) : null,
       ]);
-      
-  
-      
       if (!details) {
-        throw new Error(`Jikan returned no core details for MAL ID ${allIds?.malId}.`);
+        throw new Error(`Jikan returned no core details for MAL ID ${allIds.malId}.`);
       }
-      
-      
-      // Fetch artwork (cacheWrapMetaSmart will handle caching)
       const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, type);
       const { background, poster, logo } = artwork;
-      
-      
-      
-      
-      return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, { 
-        mapping: allIds, 
+      return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, {
+        mapping: allIds,
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
         bestLogoUrl: logo
       });
-  
-    } catch (error) {
-      logger.error(`[AnimeMeta] CRITICAL: Native provider 'mal' also failed for ${stremioId}: ${error.message}`);
+    } catch (malError) {
+      logger.error(`[AnimeMeta] CRITICAL: Final fallback 'mal' also failed for ${stremioId}: ${malError.message}`);
     }
   }
 
-
-  
-  
-  
   return null;
 }
 
@@ -1555,10 +1528,25 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
         
         // Fallback to TMDB thumbnail if Top Poster not available
         if (!thumbnailUrl) {
-          thumbnailUrl = ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : `${host}/missing_thumbnail.png`;
+          const isUnaired = !ep.air_date || new Date(ep.air_date + 'T12:00:00.000Z') > new Date();
+          if (ep.still_path) {
+            thumbnailUrl = `https://image.tmdb.org/t/p/w500${ep.still_path}`;
+          } else if (isUnaired) {
+            // For unaired episodes: try season poster, then background, then null
+            const season = seasonDetails.find(s => s.season_number === ep.season_number) || seasons?.find(s => s.season_number === ep.season_number);
+            if (season?.poster_path) {
+              thumbnailUrl = `https://image.tmdb.org/t/p/w500${season.poster_path}`;
+            } else if (background) {
+              thumbnailUrl = background;
+            } else {
+              thumbnailUrl = null;
+            }
+          } else {
+            thumbnailUrl = `${host}/missing_thumbnail.png`;
+          }
         }
         
-        const finalThumbnail = config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
         
@@ -1993,7 +1981,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               episode.number,
               config.apiKeys.topPoster,
               'w500', // Use w500 resolution
-              episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : null
+              episode.image ? (episode.image.startsWith('http') ? episode.image : `${TVDB_IMAGE_BASE}${episode.image}`) : null
             );
             if (topPosterThumbnail) {
               thumbnailUrl = topPosterThumbnail;
@@ -2002,10 +1990,25 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           
           // Fallback to TVDB thumbnail if Top Poster not available
           if (!thumbnailUrl) {
-            thumbnailUrl = episode.image ? `${TVDB_IMAGE_BASE}${episode.image}` : `${host}/missing_thumbnail.png`;
+            // Check if episode is unaired (not aired or air_date in future)
+            const isUnaired = !episode.aired || (episode.aired && new Date(episode.aired) > new Date());
+            if (episode.image) {
+              thumbnailUrl = episode.image.startsWith('http') ? episode.image : `${TVDB_IMAGE_BASE}${episode.image}`;
+            } else if (isUnaired) {
+              const season = officialSeasons.find(s => s.number === episode.seasonNumber);
+              if (season?.image) {
+                thumbnailUrl = season.image.startsWith('http') ? season.image : `${TVDB_IMAGE_BASE}${season.image}`;
+              } else if (background) {
+                thumbnailUrl = background;
+              } else {
+                thumbnailUrl = null;
+              }
+            } else {
+              thumbnailUrl = `${host}/missing_thumbnail.png`;
+            }
           }
           
-          const finalThumbnail = config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+          const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
               ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
               : thumbnailUrl;
           let episodeId;
@@ -2284,7 +2287,22 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
       
       // Fallback to TVMaze thumbnail if Top Poster not available
       if (!thumbnailUrl) {
-        thumbnailUrl = episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`;
+        // Check if episode is unaired (airstamp in future)
+        const isUnaired = new Date(episode.airstamp) > new Date();
+        if (episode.image?.original) {
+          thumbnailUrl = episode.image.original;
+        } else if (isUnaired) {
+          // For unaired episodes: try show image (poster), then background, then null
+          if (tvmazeShow.image?.original) {
+            thumbnailUrl = tvmazeShow.image.original;
+          } else if (background) {
+            thumbnailUrl = background;
+          } else {
+            thumbnailUrl = null;
+          }
+        } else {
+          thumbnailUrl = `${host}/missing_thumbnail.png`;
+        }
       }
       
       let specialEpisode = {
@@ -2292,7 +2310,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
         title: episode.name || `Episode ${specialCount}`,
         season: 0,
         episode: specialCount,
-        thumbnail: config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        thumbnail: thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
@@ -2333,7 +2351,22 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
       
       // Fallback to TVMaze thumbnail if Top Poster not available
       if (!thumbnailUrl) {
-        thumbnailUrl = episode.image?.original || tvmazeShow.image?.original || `${host}/missing_thumbnail.png`;
+        // Check if episode is unaired (airstamp in future)
+        const isUnaired = new Date(episode.airstamp) > new Date();
+        if (episode.image?.original) {
+          thumbnailUrl = episode.image.original;
+        } else if (isUnaired) {
+          // For unaired episodes: try show image (poster), then background, then null
+          if (tvmazeShow.image?.original) {
+            thumbnailUrl = tvmazeShow.image.original;
+          } else if (background) {
+            thumbnailUrl = background;
+          } else {
+            thumbnailUrl = null;
+          }
+        } else {
+          thumbnailUrl = `${host}/missing_thumbnail.png`;
+        }
       }
       
       return {
@@ -2341,7 +2374,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
         title: episode.name || `Episode ${episode.number}`,
         season: actualSeason,
         episode: episode.number,
-        thumbnail: config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        thumbnail: thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
@@ -2795,32 +2828,163 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
 
     // 🔹 episodes for series
     if (stremioType === 'series' && Array.isArray(episodeData) && episodeData.length > 0) {
-      meta.videos = episodeData.map((item) => {
+      // Pre-fetch franchise info once to avoid repeated API calls for each episode
+      let franchiseInfo = null;
+      let tmdbThumbnailMap = new Map(); // Map of "season:episode" -> thumbnail URL
+      let tmdbAirDateMap = new Map(); // Map of "season:episode" -> air_date
+      let tmdbEpisodeMap = new Map(); // Map of kitsuEpisodeNumber -> tmdbEpisode
+      let tmdbEpisodeTitleMap = new Map(); // Map of "season:episode" -> episode title
+      let tmdbEpisodeOverviewMap = new Map(); // Map of "season:episode" -> episode overview
+      const mapping = idMapper.getMappingByKitsuId(kitsuData.id);
+      
+      if (mapping?.themoviedb_id) {
+        try {
+          franchiseInfo = await idMapper.getFranchiseInfoFromTmdbId(mapping.themoviedb_id);
+          
+          // Resolve all TMDB episodes and group by season for bulk fetching
+          const seasonSet = new Set();
+          
+          for (const item of episodeData) {
+            const ep = item.attributes;
+            try {
+              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuData.id, ep.number, franchiseInfo);
+              if (tmdbEpisode && tmdbEpisode.tmdbId) {
+                tmdbEpisodeMap.set(ep.number, tmdbEpisode);
+                seasonSet.add(tmdbEpisode.seasonNumber);
+              }
+            } catch (error) {
+              logger.debug(`[buildKitsuAnimeResponse] Failed to resolve TMDB episode for Kitsu episode ${ep.number}: ${error.message}`);
+            }
+          }
+          
+          // Fetch TMDB season details in bulk if we have resolved episodes
+          if (tmdbEpisodeMap.size > 0 && seasonSet.size > 0) {
+            try {
+              const tmdbId = mapping.themoviedb_id;
+              const language = config.language || 'en-US';
+              const seasonsArray = Array.from(seasonSet).sort((a, b) => a - b);
+
+              // Create season objects for genSeasonsString and chunk the requests
+              const seasonObjects = seasonsArray.map(s => ({ season_number: s }));
+              const seasonChunks = Utils.genSeasonsString(seasonObjects);
+
+              const seasonPromises = seasonChunks.map(chunk => moviedb.tvInfo({ 
+                id: tmdbId, 
+                language, 
+                append_to_response: chunk
+              }, config));
+
+              const seasonResponses = await Promise.all(seasonPromises);
+
+              // Combine results from all chunks
+              const combinedResponse = seasonResponses.reduce((acc, res) => ({ ...acc, ...res }), {});
+              
+              // Extract episode thumbnails and air dates from season data
+              seasonsArray.forEach(seasonNum => {
+                const seasonKey = `season/${seasonNum}`;
+                const seasonData = combinedResponse[seasonKey];
+                if (seasonData && seasonData.episodes) {
+                  seasonData.episodes.forEach(tmdbEp => {
+                    const key = `${seasonNum}:${tmdbEp.episode_number}`;
+                    if (tmdbEp.still_path) {
+                      tmdbThumbnailMap.set(key, `https://image.tmdb.org/t/p/w500${tmdbEp.still_path}`);
+                    }
+                    if (tmdbEp.air_date) {
+                      tmdbAirDateMap.set(key, tmdbEp.air_date);
+                    }
+                    if (tmdbEp.name) {
+                      tmdbEpisodeTitleMap.set(key, tmdbEp.name);
+                    }
+                    if (tmdbEp.overview) {
+                      tmdbEpisodeOverviewMap.set(key, tmdbEp.overview);
+                    }
+                  });
+                }
+              });
+            } catch (error) {
+              logger.debug(`[buildKitsuAnimeResponse] Failed to fetch TMDB season thumbnails: ${error.message}`);
+            }
+          }
+        } catch (error) {
+          logger.debug(`[buildKitsuAnimeResponse] Failed to fetch franchise info: ${error.message}`);
+        }
+      }
+      
+      meta.videos = await Promise.all(episodeData.map(async (item) => {
         const ep = item.attributes;
         let episodeId = `${seriesId}:${ep.number}`
         if (idProvider === 'mal' && malId) {
           episodeId = `mal:${malId}:${ep.number}`
         }
+        
+        // Try to get thumbnail from TMDB or Top Poster
+        let thumbnailUrl = ep.thumbnail?.original || null;
+        const tmdbEpisode = tmdbEpisodeMap.get(ep.number);
+        
+        // First try Top Poster if enabled
+        if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && tmdbEpisode) {
+          try {
+            const topPosterThumbnail = Utils.getTopPosterThumbnail(
+              { tmdbId: tmdbEpisode.tmdbId, imdbId },
+              tmdbEpisode.seasonNumber,
+              tmdbEpisode.episodeNumber,
+              config.apiKeys.topPoster,
+              'w500',
+              thumbnailUrl
+            );
+            if (topPosterThumbnail) {
+              thumbnailUrl = topPosterThumbnail;
+            }
+          } catch (error) {
+            logger.debug(`[buildKitsuAnimeResponse] Failed to get Top Poster thumbnail: ${error.message}`);
+          }
+        }
+        
+        // Fallback to TMDB thumbnail if Top Poster not available or not enabled
+        if (!thumbnailUrl && tmdbEpisode) {
+          const key = `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}`;
+          const tmdbThumbnail = tmdbThumbnailMap.get(key);
+          if (tmdbThumbnail) {
+            thumbnailUrl = tmdbThumbnail;
+          }
+        }
+        
+        // Get air date from Kitsu, fallback to TMDB if available
+        let airDate = ep.airdate;
+        let episodeTitle = ep.canonicalTitle || ep.title;
+        let key = `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}`;
+        if (!airDate && tmdbEpisode) {
+          airDate = tmdbAirDateMap.get(key);
+        }
+        if(!episodeTitle && tmdbEpisode) {
+          episodeTitle = tmdbEpisodeTitleMap.get(key);
+        }
+        episodeTitle = episodeTitle || `Episode ${ep.number || ep.id}`;
+        let episodeOverview = ep.synopsis || '';
+        if(!episodeOverview && tmdbEpisode) {
+          episodeOverview = tmdbEpisodeOverviewMap.get(key);
+        }
+        episodeOverview = episodeOverview || ep.synopsis || '';
+        
         return {
           id: episodeId,
-          title: ep.canonicalTitle || ep.title || `Episode ${ep.number || ep.id}`,
-          released: ep.airdate
-            ? new Date(ep.airdate + 'T12:00:00.000Z')
+          title: episodeTitle,
+          released: airDate
+            ? new Date(airDate + 'T12:00:00.000Z')
             : null,
-          overview: ep.synopsis || '',
-          thumbnail: ep.thumbnail?.original || `${host}/missing_thumbnail.png`,
+          overview: episodeOverview,
+          thumbnail: thumbnailUrl || `${host}/missing_thumbnail.png`,
           season: 1,
           episode: ep.number,
-          available: ep.airdate ? new Date(ep.airdate) < new Date() : false,
+          available: airDate ? new Date(airDate) < new Date() : false,
           runtime: Utils.parseRunTime(ep.length)
         }
-      })
+      }))
 
       // Enrich episodes with IMDb data if mapping exists
-      if (imdbId) {
+      if (imdbId && idProvider === 'imdb') {
         try {
-          const preserveIds = idProvider !== 'imdb';
-          const enrichedVideos = await idMapper.enrichMalEpisodes(meta.videos, kitsuData.id, preserveIds);
+          const enrichedVideos = await idMapper.enrichMalEpisodes(meta.videos, kitsuData.id, false);
           if (enrichedVideos && Array.isArray(enrichedVideos) && enrichedVideos.length > 0) {
             meta.videos = enrichedVideos;
             logger.debug(`[buildKitsuAnimeResponse] Successfully enriched ${enrichedVideos.length} episodes with IMDB data (preserving original IDs)`);

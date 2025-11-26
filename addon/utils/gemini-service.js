@@ -110,7 +110,6 @@ Example response if the target language was Spanish:
 
 User's search: "${query}"
 Media Type: ${type}
-imdb_id: ${imdb_id}
 
 Instructions:
 1.  Analyze the context, intent, genre, theme, mood, style, time period, and specific plot elements mentioned in the query.

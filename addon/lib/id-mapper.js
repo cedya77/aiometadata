@@ -30,6 +30,29 @@ let tvdbIdToAnimeListMap = new Map();
 let isInitialized = false;
 let tvdbIdMap = new Map();
 const franchiseMapCache = new Map();
+const tmdbFranchiseInfoCache = new Map();
+const tmdbSeasonCache = new Map();
+
+async function getTmdbSeasonInfo(tmdbId) {
+  if (tmdbSeasonCache.has(tmdbId)) {
+    return tmdbSeasonCache.get(tmdbId);
+  }
+  const { tvInfo } = require('./getTmdb.js');
+
+  // The second argument is config, but getApiKey in getTmdb falls back to env vars,
+  // so we can pass an empty object.
+  const showInfo = await tvInfo({ id: tmdbId }, {});
+  
+  if (showInfo && showInfo.seasons) {
+    // Sort seasons by season number to ensure correct order
+    const sortedSeasons = showInfo.seasons.sort((a, b) => a.season_number - b.season_number);
+    tmdbSeasonCache.set(tmdbId, sortedSeasons);
+    return sortedSeasons;
+  }
+
+  return [];
+}
+
 let tmdbIndexArray; 
 const kitsuToImdbCache = new Map();
 let imdbIdToAnimeListMap = new Map();
@@ -835,14 +858,10 @@ async function enrichMalEpisodes(videos, kitsuId, preserveIds = false) {
           const season = startSeason + seasonIndex;
           const episode = startEpisode - 1 + video.episode - skippedEpisodes - previousSeasonsEpisodeCount;
           const imdbVideo = videosMap[`${imdbInfo.imdb_id}:${season}:${episode}`];
-          const title = video.title.match(/Episode \d+/) && (imdbVideo?.title || imdbVideo?.name) || video.title;
+          const title = video.title;
           // If video.thumbnail is missing_thumbnail.png, prefer imdbVideo.thumbnail if available
-          const thumbnail = (video.thumbnail && video.thumbnail.includes('missing_thumbnail.png'))
-            ? (imdbVideo?.thumbnail || video.thumbnail)
-            : (video.thumbnail || imdbVideo?.thumbnail);
+          const thumbnail = video.thumbnail;
           const overview = video.overview || imdbVideo?.overview;
-          const released = new Date(imdbVideo?.released || video.released.getTime());
-          lastReleased = lastReleased?.getTime() > released.getTime() ? lastReleased : released;
           const episodeId = preserveIds ? video.id : `${imdbInfo.imdb_id}:${season}:${episode}`;
           return {
             ...video,
@@ -850,7 +869,6 @@ async function enrichMalEpisodes(videos, kitsuId, preserveIds = false) {
             title,
             thumbnail,
             overview,
-            released: lastReleased,
             imdb_id: imdbInfo.imdb_id,
             imdbSeason: season,
             imdbEpisode: episode
@@ -1040,6 +1058,9 @@ async function getFranchiseInfoFromTvdbId(tvdbId) {
  * @returns {Promise<object|null>} - Franchise mapping information
  */
 async function getFranchiseInfoFromTmdbId(tmdbId) {
+  if (tmdbFranchiseInfoCache.has(tmdbId)) {
+    return tmdbFranchiseInfoCache.get(tmdbId);
+  }
   if (!isInitialized) return null;
   
   // Find all mappings for this TMDB ID
@@ -1048,6 +1069,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
   
   if (tmdbMappings.length === 0) {
     logger.warn(`[ID Mapper] No TMDB mapping found for TMDB ID ${tmdbId}`);
+    tmdbFranchiseInfoCache.set(tmdbId, null);
     return null;
   }
   
@@ -1057,6 +1079,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     
     if (kitsuIds.length === 0) {
       logger.warn(`[ID Mapper] No valid Kitsu IDs found in TMDB mappings for ${tmdbId}`);
+      tmdbFranchiseInfoCache.set(tmdbId, null);
       return null;
     }
     
@@ -1114,7 +1137,7 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
     // Determine if we need episode-level mapping
     const needsEpisodeMapping = determineIfEpisodeMappingNeeded(tvSeries.length, ovasAndOnas.length);
     
-    return {
+    const result = {
       tmdbId: parseInt(tmdbId, 10),
       totalSeasons: availableSeasonNumbers.length,
       totalKitsuIds: kitsuIds.length,
@@ -1133,9 +1156,13 @@ async function getFranchiseInfoFromTmdbId(tmdbId) {
         episodeCount: item.attributes?.episodeCount
       }))
     };
+
+    tmdbFranchiseInfoCache.set(tmdbId, result);
+    return result;
     
   } catch (error) {
     logger.error(`[ID Mapper] Error getting franchise info for TMDB ${tmdbId}:`, error);
+    tmdbFranchiseInfoCache.set(tmdbId, null);
     return null;
   }
 }
@@ -1471,74 +1498,96 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
  * 
  * @param {string|number} kitsuId
  * @param {number} kitsuEpisodeNumber
+ * @param {object} franchiseInfo - Optional pre-fetched franchise info to avoid repeated API calls
  * @returns {Promise<{tmdbId: number, seasonNumber: number, episodeNumber: number}|null>} - The TMDB ID, season, and episode number
  */
 async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
   if (!isInitialized) return null;
-  
+
   const mapping = getMappingByKitsuId(kitsuId);
   if (!mapping || !mapping.themoviedb_id) {
     logger.warn(`[ID Mapper] No TMDB mapping found for Kitsu ID ${kitsuId}`);
     return null;
   }
-  
+
   const tmdbId = mapping.themoviedb_id;
   logger.debug(`[ID Mapper] Resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} (TMDB ID: ${tmdbId})`);
-  
+
   try {
     const franchiseInfo = await getFranchiseInfoFromTmdbId(tmdbId);
     if (!franchiseInfo) {
       logger.warn(`[ID Mapper] No franchise info found for TMDB ID ${tmdbId}`);
       return null;
     }
-    
-    // Get all Kitsu entries sorted by start date
+
     const kitsuEntries = franchiseInfo.kitsuDetails
       .filter(entry => entry.subtype?.toLowerCase() === 'tv')
       .sort((a, b) => new Date(a.startDate || '9999-12-31') - new Date(b.startDate || '9999-12-31'));
-    
-    // Find which Kitsu entry this ID corresponds to
+
     const kitsuEntryIndex = kitsuEntries.findIndex(entry => entry.id === parseInt(kitsuId, 10));
     if (kitsuEntryIndex === -1) {
       logger.warn(`[ID Mapper] Kitsu ID ${kitsuId} not found in franchise entries for TMDB ${tmdbId}`);
+      // Fallback for cases where Kitsu entry is not in franchise (e.g. OVA)
+      // We can assume it is the first entry and has no predecessors
+      const tmdbSeasonData = await getTmdbSeasonInfo(tmdbId);
+      let cumulativeEpisodes = 0;
+      for (const season of tmdbSeasonData) {
+        if (season.season_number === 0) continue;
+        if (kitsuEpisodeNumber <= cumulativeEpisodes + season.episode_count) {
+          const tmdbSeasonNumber = season.season_number;
+          const tmdbEpisodeNumber = kitsuEpisodeNumber - cumulativeEpisodes;
+          logger.debug(`[ID Mapper] Kitsu ID ${kitsuId} (not in franchise) maps to TMDB ${tmdbId} S${tmdbSeasonNumber}E${tmdbEpisodeNumber}`);
+          return { tmdbId, seasonNumber: tmdbSeasonNumber, episodeNumber: tmdbEpisodeNumber };
+        }
+        cumulativeEpisodes += season.episode_count;
+      }
       return null;
     }
-    
-    // We are trying to do the reverse of the ;ogic from resolveKitsuIdForEpisodeByTmdb
-    // The forward function: if Season 1 AND multiple entries → episode-based, else → season-based
-    // For reverse: Check needsEpisodeMapping first - if true, ALL entries map to Season 1
-    // If false, each entry maps to a different season
-    
-    const hasMultipleKitsuEntries = kitsuEntries.length > 1;
-    
-    // Strategy 1: Episode-based mapping (single-season scenario)
-    // If needsEpisodeMapping is true, ALL Kitsu entries map to Season 1 with cumulative episodes
-    // Stuff like Solo Leveling where 1 TMDB season spans multiple Kitsu entries
-    if (hasMultipleKitsuEntries && franchiseInfo.needsEpisodeMapping) {
-      let cumulativeEpisodes = 0;
-      for (let i = 0; i < kitsuEntryIndex; i++) {
-        cumulativeEpisodes += kitsuEntries[i].episodeCount || 0;
-      }
-      const tmdbEpisodeNumber = cumulativeEpisodes + kitsuEpisodeNumber;
-      logger.debug(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season 1 Episode ${tmdbEpisodeNumber} (single-season scenario)`);
-      return {
-        tmdbId: tmdbId,
-        seasonNumber: 1,
-        episodeNumber: tmdbEpisodeNumber
-      };
+
+    let absoluteEpisodeNumber = kitsuEpisodeNumber;
+    for (let i = 0; i < kitsuEntryIndex; i++) {
+      absoluteEpisodeNumber += kitsuEntries[i].episodeCount || 0;
     }
-    
-    // Strategy 2: Lord help us all - Season-based mapping (multi-season scenario)
-    // Each Kitsu entry maps to a different TMDB season
-    // Kitsu Entry 0 → TMDB Season 1, Entry 1 → Season 2, etc.
-    const tmdbSeasonNumber = kitsuEntryIndex + 1;
-    logger.debug(`[ID Mapper] Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber} maps to TMDB ${tmdbId} Season ${tmdbSeasonNumber} Episode ${kitsuEpisodeNumber} (multi-season scenario)`);
-    return {
-      tmdbId: tmdbId,
-      seasonNumber: tmdbSeasonNumber,
-      episodeNumber: kitsuEpisodeNumber
-    };
-    
+
+    const tmdbSeasons = await getTmdbSeasonInfo(tmdbId);
+    if (!tmdbSeasons || tmdbSeasons.length === 0) {
+      logger.warn(`[ID Mapper] No TMDB season data found for ${tmdbId}`);
+      // Fallback to old logic if TMDB seasons are not available
+      const tmdbSeasonNumber = kitsuEntryIndex + 1;
+      return { tmdbId, seasonNumber: tmdbSeasonNumber, episodeNumber: kitsuEpisodeNumber };
+    }
+
+    let cumulativeEpisodes = 0;
+    for (const season of tmdbSeasons) {
+      if (season.season_number === 0) continue; // Skip specials
+
+      const seasonEpisodeCount = season.episode_count;
+      if (absoluteEpisodeNumber <= cumulativeEpisodes + seasonEpisodeCount) {
+        const tmdbSeasonNumber = season.season_number;
+        const relativeEpisodeNumber = absoluteEpisodeNumber - cumulativeEpisodes;
+        let tmdbEpisodeNumber;
+
+        // Special case for One Piece (TMDB ID 37854) as TMDB uses absolute episode numbers for it.
+        if (tmdbId === 37854) {
+          tmdbEpisodeNumber = absoluteEpisodeNumber;
+        } else {
+          tmdbEpisodeNumber = relativeEpisodeNumber;
+        }
+        
+        logger.debug(`[ID Mapper] Kitsu ${kitsuId} Ep ${kitsuEpisodeNumber} (Absolute: ${absoluteEpisodeNumber}) -> TMDB ${tmdbId} S${tmdbSeasonNumber}E${tmdbEpisodeNumber}`);
+        return {
+          tmdbId: tmdbId,
+          seasonNumber: tmdbSeasonNumber,
+          episodeNumber: tmdbEpisodeNumber,
+          relativeEpisodeNumber: relativeEpisodeNumber
+        };
+      }
+      cumulativeEpisodes += seasonEpisodeCount;
+    }
+
+    logger.warn(`[ID Mapper] Episode ${absoluteEpisodeNumber} exceeds total episodes in TMDB for ${tmdbId}.`);
+    return null;
+
   } catch (error) {
     logger.error(`[ID Mapper] Error resolving TMDB episode from Kitsu ID ${kitsuId} episode ${kitsuEpisodeNumber}:`, error);
     return null;

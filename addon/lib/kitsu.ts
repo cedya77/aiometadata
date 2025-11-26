@@ -5,6 +5,14 @@ import { cacheWrapGlobal } from './getCache.js';
 // Initialize Kitsu client
 const kitsu = new Kitsu();
 
+const normalizeToFlat = (item: any): any => {
+  if (!item.attributes) {
+      return item; // already flat
+  }
+  const { attributes, ...rest } = item;
+  return { ...rest, ...attributes };
+};
+
 // Type definitions for Kitsu API responses
 export interface KitsuAnimeAttributes {
   canonicalTitle: string;
@@ -53,29 +61,55 @@ export interface KitsuAnimeAttributes {
 }
 
 export interface KitsuAnime {
+
   id: string;
+
   type: string;
-  attributes: KitsuAnimeAttributes;
-  relationships: {
+
+  attributes?: KitsuAnimeAttributes;
+
+  relationships?: {
+
     episodes: {
+
       data: Array<{
+
         id: string;
+
         type: string;
+
       }>;
+
     };
+
     genres: {
+
       data: Array<{
+
         id: string;
+
         type: string;
+
       }>;
+
     };
+
     mediaRelationships: {
+
       data: Array<{
+
         id: string;
+
         type: string;
+
       }>;
+
     };
+
   };
+
+  [key: string]: any;
+
 }
 
 export interface KitsuEpisodeAttributes {
@@ -167,7 +201,15 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
         if (!nextResponse.ok) break;
 
         const nextData = await nextResponse.json() as KitsuApiResponse<KitsuAnime>;
-        results.push(...(nextData.data ?? []));
+        
+        // Manually flatten the attributes for paginated results to match the library's output
+        const flattenedData = (nextData.data ?? []).map(item => ({
+          id: item.id,
+          type: item.type,
+          ...item.attributes
+        }));
+
+        results.push(...flattenedData);
         nextUrl = nextData.links?.next;
       }
     }
