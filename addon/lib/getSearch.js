@@ -653,21 +653,20 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
 
 /**
- * Lightweight TMDB matching for AI search suggestions.
- * Directly calls TMDB search API without heavy hydration.
+ * Combined TMDB matching and enrichment for AI search suggestions.
+ * Performs search, validation, and full metadata enrichment in a single operation.
+ * This eliminates the async barrier between separate match and enrich phases.
  * 
- * @param {Object} suggestion - The AI suggestion with title and year.
- * @param {string} type - The media type ('movie' or 'series').
+ * @param {Object} suggestion - The AI suggestion with title, year, and type.
  * @param {string} language - The language code.
  * @param {Object} config - The user configuration.
- * @returns {Promise<Object|null>} The matched TMDB ID or null if no match found.
+ * @returns {Promise<Object|null>} The enriched metadata or null if no match found.
  */
-async function matchWithTMDB(suggestion, type, language, config) {
+async function matchAndEnrichFromTMDB(suggestion, language, config) {
+  const { title, year, type } = suggestion;
+  
   try {
-    const { title, year } = suggestion;
-    
-    // Direct TMDB search API call (without year filter to handle discrepancies)
-    const searchType = type === 'movie' ? 'movie' : 'tv';
+    // Step 1: Search TMDB for the title
     const searchParams = {
       query: title,
       language: language,
@@ -684,12 +683,12 @@ async function matchWithTMDB(suggestion, type, language, config) {
       return null;
     }
     
-    // Find the best match from results that validates our criteria
+    // Step 2: Find the best match from results
     const normalizeTitle = (t) => t
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
-      .replace(/[^\w\s]/g, '') // Remove symbols and punctuation
-      .replace(/\s+/g, ' ') // Normalize whitespace
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
     
     const normalizedSearchTitle = normalizeTitle(title);
@@ -697,60 +696,33 @@ async function matchWithTMDB(suggestion, type, language, config) {
     let match = null;
     for (const result of searchResults.results) {
       const resultTitle = type === 'movie' ? result.title : result.name;
+      const resultOriginalTitle = type === 'movie' ? result.original_title : result.original_name;
       const resultYear = type === 'movie' 
         ? result.release_date?.substring(0, 4)
         : result.first_air_date?.substring(0, 4);
       
-      // Check title match
-      const titleMatch = normalizeTitle(resultTitle) === normalizedSearchTitle;
-      
-      // Allow year to be off by 1 (common with regional release differences)
+      // Check both localized title and original title for matches
+      const titleMatch = normalizeTitle(resultTitle) === normalizedSearchTitle ||
+        (resultOriginalTitle && normalizeTitle(resultOriginalTitle) === normalizedSearchTitle);
       const yearMatch = resultYear && Math.abs(parseInt(resultYear) - parseInt(year)) <= 1;
       
       if (titleMatch && yearMatch) {
         match = result;
-        logger.debug(`Matched "${title}" (${year}) from Gemini to "${resultTitle}" (${resultYear}) from TMDB -> ID: ${result.id}`);
+        logger.debug(`Matched "${title}" (${year}) -> "${resultTitle}" (${resultYear}) TMDB ID: ${result.id}`);
         break;
       }
     }
     
     if (!match) {
-      logger.debug(`Failed to match "${title}" (${year}) from Gemini - no matching results in TMDB`);
+      logger.debug(`Failed to match "${title}" (${year}) - no matching results in TMDB`);
       return null;
     }
     
-    // Return TMDB ID along with original type and title for tracking
-    return { 
-      tmdbId: match.id,
-      originalType: type,
-      originalTitle: title
-    };
-    
-  } catch (error) {
-    logger.error(`Failed to match suggestion "${suggestion.title}" with TMDB:`, error.message);
-    return null;
-  }
-}
-
-/**
- * Enriches a TMDB ID with full metadata.
- * This is the heavy operation that fetches all details.
- * 
- * @param {Object} match - Object containing tmdbId.
- * @param {string} type - The media type ('movie' or 'series').
- * @param {string} language - The language code.
- * @param {Object} config - The user configuration.
- * @returns {Promise<Object|null>} The enriched metadata or null.
- */
-async function enrichTMDBMatch(match, type, language, config) {
-  if (!match || !match.tmdbId) return null;
-  
-  try {
-    const { tmdbId } = match;
+    // Step 3: Immediately enrich the matched result (no separate phase)
+    const tmdbId = match.id;
     const langCode = language.split('-')[0];
     const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
     
-    // Fetch full details with all needed data in one call
     const details = type === 'movie'
       ? await moviedb.movieInfo({ 
           id: tmdbId, 
@@ -827,7 +799,7 @@ async function enrichTMDBMatch(match, type, language, config) {
     return parsed;
     
   } catch (error) {
-    logger.error(`Failed to enrich TMDB ID ${match.tmdbId}:`, error.message);
+    logger.error(`Failed to match/enrich "${title}" (${year}):`, error.message);
     return null;
   }
 }
@@ -835,7 +807,7 @@ async function enrichTMDBMatch(match, type, language, config) {
 
 /**
  * Performs AI-powered search with mixed movie/series results.
- * Single Gemini call returns both types, then enriches all in parallel.
+ * Single Gemini call returns both types, then matches and enriches all in parallel.
  * 
  * @param {string} query - The user's natural language search query.
  * @param {string} language - The language code.
@@ -847,7 +819,7 @@ async function performAiSearch(query, language, config) {
   logger.info(`Starting AI search for query: "${query}"`);
   
   try {
-    // AI Generation and Parsing
+    // Phase 1: AI Generation and Parsing
     const geminiKey = config.apiKeys?.gemini;
     const suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language);
     
@@ -858,45 +830,21 @@ async function performAiSearch(query, language, config) {
     
     logger.debug(`Gemini returned ${suggestions.length} suggestions`);
     
-    // Data Enrichment (two-step: match then enrich)
-    logger.info(`Starting TMDB matching for ${suggestions.length} suggestions`);
-    const matchStart = Date.now();
-    
-    // Step 1: Match all suggestions to TMDB IDs (lightweight, parallel)
-    const matchPromises = suggestions.map(suggestion =>
-      matchWithTMDB(suggestion, suggestion.type, language, config)
-    );
-    
-    const matches = await Promise.all(matchPromises);
-    const validMatches = matches.filter(Boolean);
-    const matchTime = Date.now() - matchStart;
-    logger.info(`TMDB matching completed in ${matchTime}ms. Matched ${validMatches.length} of ${suggestions.length} suggestions`);
-    
-    if (validMatches.length === 0) {
-      logger.info('No valid TMDB matches found');
-      return [];
-    }
-    
-    // Step 2: Enrich all matched IDs with full metadata (heavy, parallel)
-    logger.info(`Starting metadata enrichment for ${validMatches.length} matches`);
+    // Phase 2: Combined TMDB matching + enrichment (single parallel operation)
+    // This eliminates the async barrier between separate match and enrich phases
+    logger.info(`Starting combined TMDB match+enrich for ${suggestions.length} suggestions`);
     const enrichStart = Date.now();
     
-    // Need to pass the correct type for each match
-    const enrichPromises = validMatches.map((match, index) => {
-      const originalSuggestion = suggestions.find(s => 
-        s.title === match.originalTitle && s.type === match.originalType
-      );
-      const type = originalSuggestion?.type || 'movie';
-      return enrichTMDBMatch(match, type, language, config);
-    });
+    const enrichPromises = suggestions.map(suggestion =>
+      matchAndEnrichFromTMDB(suggestion, language, config)
+    );
     
     const enrichedResults = await Promise.all(enrichPromises);
     const enrichTime = Date.now() - enrichStart;
-    logger.info(`Metadata enrichment completed in ${enrichTime}ms`);
     
-    // Filter out null results (failed enrichments)
+    // Filter out null results (failed matches or enrichments)
     const validResults = enrichedResults.filter(Boolean);
-    logger.info(`Successfully enriched ${validResults.length} of ${validMatches.length} matches`);
+    logger.info(`TMDB match+enrich completed in ${enrichTime}ms. Got ${validResults.length} of ${suggestions.length} suggestions`);
     
     // Phase 4: Apply content filters
     let filteredResults = validResults;

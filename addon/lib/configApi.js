@@ -1108,7 +1108,7 @@ class ConfigApi {
           const response = await serviceRequest(url, { method: "GET" }).catch(
             () => null,
           );
-          return response && response.statusCode === 200 && response.data?.models;
+          return !!(response && response.statusCode === 200 && response.data?.models);
         },
 
         tmdb: async (key) => {
