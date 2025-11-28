@@ -40,7 +40,9 @@ async function performGeminiSearch(apiKey, query, type, language) {
     const generationStart = Date.now();
     
     const prompt = buildPrompt(query, type, 20);
-    const response = await ai.models.generateContent({
+    
+    const response = await generateContent({
+      apiKey,
       model: DEFAULT_GEMINI_MODEL,
       prompt,
       useGrounding: true,
