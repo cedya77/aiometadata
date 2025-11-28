@@ -2746,7 +2746,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         }
       }
     }
-    const imdbRating = imdbId ? await getImdbRating(imdbId, stremioType) : 'N/A';
+    const imdbRating = imdbId ? await getImdbRating(imdbId, stremioType) || 'N/A' : 'N/A';
     const kitsuTitle = Utils.getKitsuLocalizedTitle(kitsuData.attributes.titles, config.language) || kitsuData.attributes.canonicalTitle;
     const links = [];
     if (imdbId) {
@@ -2794,9 +2794,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         ? new Date(kitsuData.attributes.startDate + 'T12:00:00.000Z')
         : null,
       releaseInfo: kitsuReleaseInfo,
-      runtime: kitsuData.attributes.episodeLength
-        ? Utils.parseRunTime(kitsuData.attributes.episodeLength)
-        : null,
+      runtime: Utils.parseRunTime(kitsuData.attributes.episodeLength),
       status: kitsuData.attributes.status || 'unknown',
       imdbRating: imdbRating,
       poster:
@@ -2831,6 +2829,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       // Pre-fetch franchise info once to avoid repeated API calls for each episode
       let franchiseInfo = null;
       let tmdbThumbnailMap = new Map(); // Map of "season:episode" -> thumbnail URL
+      let tmdbSeasonPosterMap = new Map(); // Map of season -> season poster url
       let tmdbAirDateMap = new Map(); // Map of "season:episode" -> air_date
       let tmdbEpisodeMap = new Map(); // Map of kitsuEpisodeNumber -> tmdbEpisode
       let tmdbEpisodeTitleMap = new Map(); // Map of "season:episode" -> episode title
@@ -2899,6 +2898,10 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
                       tmdbEpisodeOverviewMap.set(key, tmdbEp.overview);
                     }
                   });
+                  // store season poster for fallback on unaired episodes
+                  if (seasonData.poster_path) {
+                    tmdbSeasonPosterMap.set(seasonNum, `https://image.tmdb.org/t/p/w500${seasonData.poster_path}`);
+                  }
                 }
               });
             } catch (error) {
@@ -2920,6 +2923,8 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         // Try to get thumbnail from TMDB or Top Poster
         let thumbnailUrl = ep.thumbnail?.original || null;
         const tmdbEpisode = tmdbEpisodeMap.get(ep.number);
+        // Pre-calc airDate so we can decide if episode is upcoming
+        let airDate = ep.airdate;
         
         // First try Top Poster if enabled
         if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && tmdbEpisode) {
@@ -2948,23 +2953,58 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
             thumbnailUrl = tmdbThumbnail;
           }
         }
+        // If still no thumbnail: treat unaired (upcoming) episodes specially and fallback to season poster -> background -> null
+        if (!thumbnailUrl) {
+          const isUnaired = !airDate || new Date(airDate + 'T12:00:00.000Z') > new Date();
+          if (isUnaired) {
+            // Try season poster first if we have a TMDB mapping
+            if (tmdbEpisode && !tmdbEpisode.isFranchiseFallback && tmdbSeasonPosterMap.size > 0) {
+              const seasonPoster = tmdbSeasonPosterMap.get(tmdbEpisode.seasonNumber);
+              if (seasonPoster) {
+                thumbnailUrl = seasonPoster;
+              }
+            }
+            // Then fallback to series background if available
+            if (!thumbnailUrl && bestBackgroundUrl) {
+              logger.debug(`[buildKitsuAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuData.id} Ep ${ep.number}`);
+              thumbnailUrl = bestBackgroundUrl;
+            }
+            // If still no thumbnail available for an upcoming episode, keep it null
+            if (!thumbnailUrl) {
+              thumbnailUrl = null;
+            }
+          } else {
+            // For aired episodes without a thumbnail, show a missing thumbnail placeholder
+            thumbnailUrl = `${host}/missing_thumbnail.png`;
+          }
+        }
         
-        // Get air date from Kitsu, fallback to TMDB if available
-        let airDate = ep.airdate;
+        // Get air date from Kitsu (we already initialized), fallback to TMDB if available
         let episodeTitle = ep.canonicalTitle || ep.title;
-        let key = `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}`;
-        if (!airDate && tmdbEpisode) {
+        let key = tmdbEpisode ? `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}` : null;
+        if (!airDate && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {
           airDate = tmdbAirDateMap.get(key);
         }
-        if(!episodeTitle && tmdbEpisode) {
+        else if (!airDate && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
+          logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB air date for Kitsu ${kitsuData.id} Ep ${ep.number} because mapping is franchise fallback`);
+        }
+        if(!episodeTitle && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {
           episodeTitle = tmdbEpisodeTitleMap.get(key);
+        } else if (!episodeTitle && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
+          logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB title fallback for Kitsu ${kitsuData.id} Ep ${ep.number} because mapping is franchise fallback`);
         }
         episodeTitle = episodeTitle || `Episode ${ep.number || ep.id}`;
         let episodeOverview = ep.synopsis || '';
-        if(!episodeOverview && tmdbEpisode) {
+        if(!episodeOverview && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {
           episodeOverview = tmdbEpisodeOverviewMap.get(key);
+        } else if (!episodeOverview && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
+          logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB overview fallback for Kitsu ${kitsuData.id} Ep ${ep.number} because mapping is franchise fallback`);
         }
         episodeOverview = episodeOverview || ep.synopsis || '';
+        // Build final thumbnail; keep null for upcoming episodes if no background/season poster available
+        const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+          ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
+          : thumbnailUrl;
         
         return {
           id: episodeId,
@@ -2973,7 +3013,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
             ? new Date(airDate + 'T12:00:00.000Z')
             : null,
           overview: episodeOverview,
-          thumbnail: thumbnailUrl || `${host}/missing_thumbnail.png`,
+          thumbnail: finalThumbnail || (airDate && new Date(airDate) < new Date() ? `${host}/missing_thumbnail.png` : null),
           season: 1,
           episode: ep.number,
           available: airDate ? new Date(airDate) < new Date() : false,

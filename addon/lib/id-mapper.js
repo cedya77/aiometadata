@@ -1537,7 +1537,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
           const tmdbSeasonNumber = season.season_number;
           const tmdbEpisodeNumber = kitsuEpisodeNumber - cumulativeEpisodes;
           logger.debug(`[ID Mapper] Kitsu ID ${kitsuId} (not in franchise) maps to TMDB ${tmdbId} S${tmdbSeasonNumber}E${tmdbEpisodeNumber}`);
-          return { tmdbId, seasonNumber: tmdbSeasonNumber, episodeNumber: tmdbEpisodeNumber };
+          return { tmdbId, seasonNumber: tmdbSeasonNumber, episodeNumber: tmdbEpisodeNumber, isFranchiseFallback: true };
         }
         cumulativeEpisodes += season.episode_count;
       }
@@ -1554,7 +1554,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
       logger.warn(`[ID Mapper] No TMDB season data found for ${tmdbId}`);
       // Fallback to old logic if TMDB seasons are not available
       const tmdbSeasonNumber = kitsuEntryIndex + 1;
-      return { tmdbId, seasonNumber: tmdbSeasonNumber, episodeNumber: kitsuEpisodeNumber };
+      return { tmdbId, seasonNumber: tmdbSeasonNumber, episodeNumber: kitsuEpisodeNumber, isFranchiseFallback: false };
     }
 
     let cumulativeEpisodes = 0;
@@ -1579,7 +1579,8 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
           tmdbId: tmdbId,
           seasonNumber: tmdbSeasonNumber,
           episodeNumber: tmdbEpisodeNumber,
-          relativeEpisodeNumber: relativeEpisodeNumber
+          relativeEpisodeNumber: relativeEpisodeNumber,
+          isFranchiseFallback: false
         };
       }
       cumulativeEpisodes += seasonEpisodeCount;
