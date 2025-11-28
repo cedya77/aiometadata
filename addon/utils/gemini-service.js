@@ -62,7 +62,7 @@ async function performGeminiSearch(apiKey, query, type, language) {
     logger.info(`Starting AI generation phase for query: "${query}"`);
     const generationStart = Date.now();
     
-    const prompt = buildPrompt(query, type, 10);
+    const prompt = buildPrompt(query, type, 20);
     const response = await ai.models.generateContent({
       model: DEFAULT_GEMINI_MODEL,
       contents: prompt,

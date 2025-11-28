@@ -2875,10 +2875,8 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
 
               const seasonResponses = await Promise.all(seasonPromises);
 
-              // Combine results from all chunks
               const combinedResponse = seasonResponses.reduce((acc, res) => ({ ...acc, ...res }), {});
               
-              // Extract episode thumbnails and air dates from season data
               seasonsArray.forEach(seasonNum => {
                 const seasonKey = `season/${seasonNum}`;
                 const seasonData = combinedResponse[seasonKey];
@@ -2964,22 +2962,18 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
                 thumbnailUrl = seasonPoster;
               }
             }
-            // Then fallback to series background if available
             if (!thumbnailUrl && bestBackgroundUrl) {
               logger.debug(`[buildKitsuAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuData.id} Ep ${ep.number}`);
               thumbnailUrl = bestBackgroundUrl;
             }
-            // If still no thumbnail available for an upcoming episode, keep it null
             if (!thumbnailUrl) {
               thumbnailUrl = null;
             }
           } else {
-            // For aired episodes without a thumbnail, show a missing thumbnail placeholder
             thumbnailUrl = `${host}/missing_thumbnail.png`;
           }
         }
         
-        // Get air date from Kitsu (we already initialized), fallback to TMDB if available
         let episodeTitle = ep.canonicalTitle || ep.title;
         let key = tmdbEpisode ? `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}` : null;
         if (!airDate && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {

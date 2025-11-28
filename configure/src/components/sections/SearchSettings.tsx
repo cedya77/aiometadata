@@ -92,6 +92,7 @@ export function SearchSettings() {
   const { config, setConfig, hasBuiltInTvdb } = useConfig();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const hasGeminiKey = !!config.apiKeys?.gemini;
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -118,6 +119,10 @@ export function SearchSettings() {
     // Add TVDB collections if enabled
     if (config.search.engineEnabled?.['tvdb.collections.search'] !== false && hasTvdbKey) {
       enabledProviders.push({ id: 'tvdb.collections.search', type: 'collection', provider: 'tvdb.collections.search' });
+    }
+    // Add Gemini AI search if enabled (AI or explicit engine enable and key present)
+    if (config.search.engineEnabled?.['gemini.search'] !== false && config.search.ai_enabled && hasGeminiKey) {
+      enabledProviders.push({ id: 'gemini.search', type: 'ai', provider: 'gemini.search' });
     }
     
     // Add anime series search if enabled
@@ -164,6 +169,9 @@ export function SearchSettings() {
   const getProviderBaseLabel = (providerId: string) => {
     if (providerId === 'tvdb.collections.search') {
       return 'TVDB Collections';
+    }
+    if (providerId === 'gemini.search') {
+      return 'AI Search';
     }
 
     const provider = allSearchProviders.find(p => p.value === providerId);
