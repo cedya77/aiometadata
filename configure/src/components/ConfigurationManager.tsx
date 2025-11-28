@@ -110,6 +110,10 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     if (isFanartSelected && !requiredKeys.includes('fanart')) {
       requiredKeys.push('fanart');
     }
+    // Gemini key becomes required when AI search is enabled
+    if (config.search?.ai_enabled === true && !requiredKeys.includes('gemini')) {
+      requiredKeys.push('gemini');
+    }
     const missingKeys = requiredKeys.filter(key => {
       if (key === 'tmdb') {
         // TMDB is required unless there's a built-in key
@@ -281,7 +285,8 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                 { key: 'tmdb', name: 'TMDB' },
                 { key: 'tvdb', name: 'TVDB' },
                 { key: 'mdblist', name: 'MDBList' },
-                { key: 'fanart', name: 'Fanart' }
+                { key: 'fanart', name: 'Fanart' },
+                { key: 'gemini', name: 'Gemini AI' }
               ].map(({ key, name }) => {
                 const hasUserKey = config.apiKeys?.[key]?.trim();
                 const hasBuiltInKey = key === 'tmdb' ? hasBuiltInTmdb : (key === 'tvdb' ? hasBuiltInTvdb : false);
@@ -333,6 +338,10 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                       }
                       return false;
                     });
+                  }
+                  if (key === 'gemini') {
+                    // Gemini is in use when AI-powered search is enabled
+                    return !!(config.search?.ai_enabled === true);
                   }
                   return false;
                 })();

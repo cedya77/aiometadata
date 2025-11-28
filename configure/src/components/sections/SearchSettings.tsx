@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Edit2, GripVertical, Star } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Edit2, GripVertical, Star, Sparkles } from 'lucide-react';
 import { allSearchProviders } from '@/data/catalogs';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -91,6 +92,7 @@ export function SearchSettings() {
   const { config, setConfig, hasBuiltInTvdb } = useConfig();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const hasGeminiKey = !!config.apiKeys?.gemini;
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -117,6 +119,10 @@ export function SearchSettings() {
     // Add TVDB collections if enabled
     if (config.search.engineEnabled?.['tvdb.collections.search'] !== false && hasTvdbKey) {
       enabledProviders.push({ id: 'tvdb.collections.search', type: 'collection', provider: 'tvdb.collections.search' });
+    }
+    // Add Gemini AI search if enabled (AI or explicit engine enable and key present)
+    if (config.search.engineEnabled?.['gemini.search'] !== false && config.search.ai_enabled && hasGeminiKey) {
+      enabledProviders.push({ id: 'gemini.search', type: 'ai', provider: 'gemini.search' });
     }
     
     // Add anime series search if enabled
@@ -163,6 +169,9 @@ export function SearchSettings() {
   const getProviderBaseLabel = (providerId: string) => {
     if (providerId === 'tvdb.collections.search') {
       return 'TVDB Collections';
+    }
+    if (providerId === 'gemini.search') {
+      return 'AI Search';
     }
 
     const provider = allSearchProviders.find(p => p.value === providerId);
@@ -515,6 +524,48 @@ export function SearchSettings() {
                     </CardContent>
                 </Card>
             )}
+
+            {/* AI Search Toggle */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-primary" />
+                        <CardTitle>AI-Powered Search</CardTitle>
+                    </div>
+                    <CardDescription>
+                        Use Google Gemini to interpret natural language queries and find media using descriptive phrases instead of exact titles.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="flex items-center justify-between">
+                    <div className="flex-1">
+                        {!config.apiKeys?.gemini?.trim() && (
+                            <p className="text-sm text-muted-foreground">
+                                A Gemini API key is required to enable AI search. Add your key in the Integrations settings.
+                            </p>
+                        )}
+                    </div>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div>
+                                    <Switch
+                                        id="ai-search-enabled"
+                                        checked={config.search.ai_enabled}
+                                        onCheckedChange={handleAiToggle}
+                                        disabled={!config.apiKeys?.gemini?.trim()}
+                                        aria-label="Enable AI-powered search"
+                                    />
+                                </div>
+                            </TooltipTrigger>
+                            {!config.apiKeys?.gemini?.trim() && (
+                                <TooltipContent>
+                                    <p>Add a Gemini API key in Integrations to enable AI search</p>
+                                </TooltipContent>
+                            )}
+                        </Tooltip>
+                    </TooltipProvider>
+                </CardContent>
+            </Card>
 
             {/* Search Ordering */}
             <Card>

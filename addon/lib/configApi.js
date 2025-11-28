@@ -1103,11 +1103,12 @@ class ConfigApi {
 
       const testFunctions = {
         gemini: async (key) => {
+          // Validate by listing available models - no token usage
           const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
           const response = await serviceRequest(url, { method: "GET" }).catch(
             () => null,
           );
-          return response && response.statusCode === 200;
+          return response && response.statusCode === 200 && response.data?.models;
         },
 
         tmdb: async (key) => {

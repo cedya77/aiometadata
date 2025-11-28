@@ -1,7 +1,22 @@
 require('dotenv').config();
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
+const consola = require('consola');
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite";
+const logger = consola.create({ 
+  level: process.env.LOG_LEVEL ? 
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+    (process.env.NODE_ENV === 'production' ? 3 : 4),
+  fancy: true,
+  colors: true,
+  formatOptions: {
+    colors: true,
+    compact: false,
+    date: false
+  },
+  tag: 'GeminiService'
+});
+
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 const clientCache = new Map();
 
@@ -10,146 +25,284 @@ function getGeminiClient(apiKey) {
   if (clientCache.has(apiKey)) return clientCache.get(apiKey);
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: DEFAULT_GEMINI_MODEL });
-    console.log(`[GeminiService] Caching new client for API key ending in ...${apiKey.slice(-4)}`);
-    clientCache.set(apiKey, model);
-    return model;
+    const ai = new GoogleGenAI({ apiKey });
+    logger.info(`Caching new client for API key ending in ...${apiKey.slice(-4)}`);
+    clientCache.set(apiKey, ai);
+    return ai;
   } catch (error) {
-    console.error(`[GeminiService] Failed to initialize client for key ...${apiKey.slice(-4)}`);
+    logger.error(`Failed to initialize client for key ...${apiKey.slice(-4)}`);
     clientCache.set(apiKey, null);
     return null;
   }
 }
 
 /**
- * Translates a given query to English if it's not already.
- * @param {string} query - The user's search query.
- * @returns {Promise<string>} - The English translation of the query.
- */
-async function _translateToEnglish(model, query) {
-  // NOTE: This will fail in its current form because `this.model` is not defined.
-  // This fix addresses alignment only, as requested.
-  if (!model) return query;
-  try {
-    const prompt = `Translate the following search query to English. Return ONLY the translated text and nothing else:\n\n"${query}"`;
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text().trim();
-  } catch (error) {
-    console.error("[GeminiService] Error translating query:", error);
-    return query; // Fallback to the original query on error
-  }
-}
-
-/**
+ * Main orchestration function for AI-powered search.
+ * Implements three-phase architecture: AI Generation, Parsing, and returns structured suggestions.
+ * 
+ * @param {string} apiKey - The Gemini API key.
  * @param {string} query - The user's natural language search query.
- * @param {'movie' | 'series' | 'anime'} type - The type of media to search for.
- * @returns {Promise<Array<object>>} A promise that resolves to an array of objects, e.g., [{ title: "The Matrix" }] or [{ english_title: "Attack on Titan", romaji_title: "Shingeki no Kyojin" }]
+ * @param {'movie' | 'series'} type - The type of media to search for.
+ * @param {string} language - The language code (not used in current implementation).
+ * @returns {Promise<Array<{type: string, title: string, year: number}>>} Array of suggestions.
  */
 async function performGeminiSearch(apiKey, query, type, language) {
-  const model = getGeminiClient(apiKey);
-
-  // 2. If no client is available, fail gracefully.
-  if (!model) {
-    console.warn("[GeminiService] Search failed: client not available for the provided key.");
-    return [];
-  }
-
-  const timerLabel = `[GeminiService] AI search for "${query}" (type: ${type})`;
-  console.time(timerLabel);
+  const startTime = Date.now();
 
   try {
-    const englishQuery = await _translateToEnglish(model, query);
-    const prompt = _buildPrompt(englishQuery, type, language);
+    // Phase 1: Get Gemini client (with caching)
+    const ai = getGeminiClient(apiKey);
+    
+    if (!ai) {
+      logger.warn("Search failed: client not available for the provided key.");
+      return [];
+    }
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
-    return _parseJsonResponse(responseText);
+    // Phase 2: AI Generation
+    logger.info(`Starting AI generation phase for query: "${query}"`);
+    const generationStart = Date.now();
+    
+    const prompt = buildPrompt(query, type, 20);
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
+    });
+    const rawText = response.text;
+    
+    // Check if grounding (Google Search) was utilized
+    const groundingMetadata = response?.candidates?.[0]?.groundingMetadata;
+    if (groundingMetadata && Object.keys(groundingMetadata).length > 0) {
+      logger.debug('Gemini utilized Google Search grounding for live data');
+      //logger.debug(`Grounding metadata: ${JSON.stringify(groundingMetadata)}`);
+    }
+    
+    const generationTime = Date.now() - generationStart;
+    logger.info(`AI generation completed in ${generationTime}ms`);
+    logger.debug(`Gemini raw response: ${rawText}`);
+
+    // Phase 3: Parsing
+    logger.info(`Starting parsing phase`);
+    const parsingStart = Date.now();
+    
+    const suggestions = parseAIResponse(rawText, type);
+    
+    const parsingTime = Date.now() - parsingStart;
+    logger.info(`Parsing completed in ${parsingTime}ms`);
+    
+    const totalTime = Date.now() - startTime;
+    logger.info(`Total search time: ${totalTime}ms, returned ${suggestions.length} suggestions`);
+    
+    if (totalTime > 10000) {
+      logger.warn(`WARNING: AI search took longer than 10 seconds (${totalTime}ms)`);
+    }
+    
+    return suggestions;
 
   } catch (error) {
-    console.error("[GeminiService] A critical error occurred during AI search:", error);
+    logger.error("Error during AI search:", error.message);
+    logger.error("Stack trace:", error.stack);
     return [];
-  } finally {
-    console.timeEnd(timerLabel);
   }
 }
 
 /**
- * A helper function to construct the detailed prompt for the AI.
- * @param {string} query - The translated English query.
- * @param {'movie' | 'series' | 'anime'} type - The media type.
+ * Constructs the prompt for the AI based on query, type, and number of results.
+ * @param {string} query - The user's search query.
+ * @param {'movie' | 'series'} type - The media type.
+ * @param {number} numResults - The number of results to request (default 10).
  * @returns {string} The formatted prompt.
  */
-function _buildPrompt(query, type, language) {
-  if (type === 'anime') {
-    return `You are an expert anime database assistant. Your task is to return a structured list of anime based on a user's query.
+function buildPrompt(query, type, numResults = 10) {
+  const currentYear = new Date().getFullYear();
+  
+  return `## Role & Objective
+You are AIOMetadata Match, a specialized media recommendation engine. Your task is to analyze user queries and return exactly ${numResults} highly relevant movie and/or TV series recommendations as a JSON array.
 
-User's search: "${query}"
+Current date context: ${currentYear}
 
-Instructions:
-1.  Analyze the query for context, intent, genre, theme, mood, and plot elements.
-2.  For each relevant anime, provide its most common **English title**, its **release year**, its unique integer **MyAnimeList ID** and its original **title**.
-3.  Return the results as a valid JSON array of objects. Each object MUST have "english_title" (string), "year" (integer), "mal_id" (integer) and "title" (string) keys.
-4.  Do not include any text, explanations, or markdown formatting outside of the JSON array.
-5.  Return a maximum of 20 highly relevant results.
+## Step-by-Step Instructions
 
-Example response if the target language was Spanish:
+### Step 1: Query Analysis
+First, analyze the user's query to determine:
+- **Recency requirement**: Does the query need current data? (e.g., "in theaters now", "trending", "new releases", "currently airing", "this week/month")
+- **Media type preference**: Movies only, series only, or both?
+- **Content attributes**: Genre, mood, era, themes, similar titles
+- **Specificity level**: Specific titles vs. broad categories
+
+### Step 2: Tool Usage Decision
+IF the query requires fresh/current data OR if you don't have enough data in your knowledge base (from Step 1):
+- MUST call \`googleSearch\` tool with optimized search terms
+- Extract relevant titles, release years, and types from results
+- Verify information accuracy before including in response
+
+ELSE:
+- Proceed with your knowledge base
+
+### Step 3: Media Type Selection
+Apply this logic:
+- **Explicit type mentioned** (e.g., "movies about", "TV shows like") → Return ONLY that type
+- **Ambiguous/general query** (e.g., "sci-fi recommendations", "something funny") → Return BALANCED MIX of both movies and series
+
+### Step 4: Recommendation Selection
+Select recommendations based on:
+1. **Relevance**: Strong thematic/stylistic match to query
+2. **Quality**: Critically acclaimed or highly rated (when known)
+3. **Diversity**: Vary release years and sub-genres when appropriate
+4. **Popularity**: Balance between well-known and hidden gems
+5. **Recency**: For time-sensitive queries, prioritize recent releases
+
+### Step 5: Ranking
+Order results by relevance score (most relevant first), considering:
+- Direct query match strength
+- Cultural impact and recognition
+- User preference signals in query
+
+## Output Requirements
+
+**Format**: Return ONLY a valid JSON array. No markdown code blocks, no explanations, no preamble.
+
+**Schema**:
+\`\`\`json
 [
   {
-    "english_title": "One Punch Man",
-    "year": 2015,
-    "mal_id": 30276
+    "type": "movie" OR "series",
+    "title": "Exact official title",
+    "year": Release_year_as_integer
   }
 ]
-`;
-  }
+\`\`\`
 
-  return `You are a movie and TV show expert recommender. Your task is to analyze the user's search query and return a structured list of the most relevant titles.
+**Validation Rules**:
+- Exactly ${numResults} items in array
+- Each object must have all three fields
+- \`type\` must be either "movie" or "series" (lowercase)
+- \`title\` must be the official title (not alternative titles)
+- \`year\` must be the original release/premiere year as integer
+- No duplicate titles
+- No null or missing values
 
-User's search: "${query}"
-Media Type: ${type}
+## Edge Cases
 
-Instructions:
-1.  Analyze the context, intent, genre, theme, mood, style, time period, and specific plot elements mentioned in the query.
-2.  For each relevant ${type} you find, provide its exact and original **English title** and its imdb_id.
-3.  Return the results as a valid JSON array of objects, where each object has a "title" key.
-4.  Do not include any explanations, markdown formatting, or any text outside of the final JSON array.
-5.  Prioritize popular and critically acclaimed results that are highly relevant to the search intent.
-6.  Return a maximum of 20 results.
+**Invalid/unclear query**: Return best interpretation based on available context
+**No perfect matches**: Return closest thematic matches
+**Request exceeds availability**: Return maximum available up to ${numResults}
 
-Example response for a search like "murder mystery in a small village":
-[
-  {
-    "title": "Broadchurch",
-    "imdb_id": "tt2249364"
-  },
-  {
-    "title": "Hot Fuzz",
-    "imdb_id": "tt0425112"
-  },
-  {
-    "title": "Mare of Easttown",
-    "imdb_id": "tt10155688"
-  }
-]
-`;
+## Examples
+
+### Example 1: Ambiguous Query with Mixed Results
+**Input**: 
+Query: "space operas"
+Count: 3
+
+**Output**:
+\`\`\`json
+[{"type":"movie","title":"Dune","year":2021},{"type":"series","title":"The Expanse","year":2015},{"type":"movie","title":"Star Wars: Episode IV - A New Hope","year":1977}]
+\`\`\`
+
+### Example 2: Specific Media Type
+**Input**:
+Query: "90s sitcoms"
+Count: 2
+
+**Output**:
+\`\`\`json
+[{"type":"series","title":"Friends","year":1994},{"type":"series","title":"Seinfeld","year":1989}]
+\`\`\`
+
+### Example 3: Recency-Required Query (Tool Use)
+**Input**:
+Query: "movies in theaters now"
+Count: 2
+
+**Process**: 
+1. Detect recency requirement
+2. Call googleSearch("movies in theaters now ${currentYear}")
+3. Extract current theatrical releases
+4. Format response
+
+**Output**:
+\`\`\`json
+[{"type":"movie","title":"[Current Title 1]","year":2024},{"type":"movie","title":"[Current Title 2]","year":2024}]
+\`\`\`
+
+### Example 4: Reference-Based Query
+**Input**:
+Query: "similar to Stranger Things"
+Count: 2
+
+**Output**:
+\`\`\`json
+[{"type":"series","title":"Dark","year":2017},{"type":"series","title":"The Umbrella Academy","year":2019}]
+\`\`\`
+
+## Critical Reminders
+- Output MUST be valid, parseable JSON only
+- NO markdown formatting (no \`\`\`json blocks)
+- NO explanatory text before or after JSON
+- NO conversational language
+- Exactly ${numResults} recommendations, no more, no fewer
+- When in doubt about recency or you lack knowledge, use the search tool
+
+---
+
+## User Input
+Query: "${query}"
+Count: ${numResults}
+
+Begin analysis and return JSON response.`;
 }
 
 /**
- * Safely parses the JSON response from the AI.
- * @param {string} text - The raw text response from Gemini.
- * @returns {Array<object>} The parsed array of title objects, or an empty array on failure.
+ * Parses and validates the AI response.
+ * @param {string} rawText - The raw text response from Gemini.
+ * @param {string} type - The expected media type.
+ * @returns {Array<{type: string, title: string, year: number}>} Array of validated Suggestion objects.
  */
-function _parseJsonResponse(text) {
-  const cleanText = text.replace(/^```json\n?/, '').replace(/```$/, '').trim();
+function parseAIResponse(rawText, type) {
+  // Remove markdown code blocks if present
+  let cleanText = rawText.trim();
+  cleanText = cleanText.replace(/^```json\n?/i, '').replace(/^```\n?/, '').replace(/\n?```$/g, '').trim();
+  
   try {
     const parsed = JSON.parse(cleanText);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error)
-  {
-    console.error("[GeminiService] Failed to parse JSON response from AI. Raw text:", cleanText);
+    
+    if (!Array.isArray(parsed)) {
+      logger.error("Response is not an array");
+      return [];
+    }
+    
+    // Filter and validate entries
+    const validSuggestions = parsed.filter(entry => {
+      // Check required fields exist
+      if (!entry.type || !entry.title || !entry.year) {
+        logger.warn("Filtering out invalid entry (missing required fields):", entry);
+        return false;
+      }
+      
+      // Validate types
+      if (typeof entry.title !== 'string' || typeof entry.year !== 'number') {
+        logger.warn("Filtering out invalid entry (wrong field types):", entry);
+        return false;
+      }
+      
+      // Validate year is reasonable
+      if (entry.year < 1850 || entry.year > new Date().getFullYear() + 1) {
+        logger.warn("Filtering out invalid entry (unreasonable year):", entry);
+        return false;
+      }
+      
+      return true;
+    });
+    
+    logger.info(`Parsed ${validSuggestions.length} valid suggestions from ${parsed.length} total entries`);
+    return validSuggestions;
+    
+  } catch (error) {
+    logger.error("Failed to parse JSON response from AI. Error:", error.message);
+    logger.error("Raw text:", cleanText.substring(0, 500));
     return [];
   }
 }

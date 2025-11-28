@@ -694,6 +694,14 @@ async function getManifest(config) {
         enabled: engineEnabled[searchProviders.anime_movie] !== false,
         suffix: 'Anime Search'
       }
+      ,
+      {
+        id: 'gemini.search',
+        type: 'other',
+        provider: 'gemini.search',
+        enabled: engineEnabled['gemini.search'] !== false && config.search?.ai_enabled === true && !!config.apiKeys?.gemini,
+        suffix: 'AI Search'
+      }
     ];
     
     // Sort by searchOrder and add enabled catalogs
@@ -705,8 +713,10 @@ async function getManifest(config) {
       })
       .filter(config => config.enabled)
       .forEach(config => {
+        // Use provider id as the catalog id (e.g., 'tmdb.search' or 'gemini.search')
+        // This ensures unique catalog entries for reordering and per-provider settings
         catalogs.push({
-          id: 'search',
+          id: config.provider === 'gemini.search' ? 'gemini.search' : "search",
           type: config.type,
           name: getSearchCatalogName(config.provider, prefix, config.suffix),
           extra: [{ name: 'search', isRequired: true }]
@@ -736,30 +746,7 @@ async function getManifest(config) {
     }
   }
 
-  if (config.apiKeys?.gemini && config.search?.ai_enabled) {
-    const aiSearchCatalogMovie = {
-      id: "gemini.search", 
-      type: "movie",
-      name: "AI Search",
-      extra: [{ name: "search", isRequired: true }]
-    };
-
-    const aiSearchCatalogSeries = {
-      id: "gemini.search",
-      type: "series",
-      name: "AI Search",
-      extra: [{ name: "search", isRequired: true }]
-    };
-    
-    const aiSearchCatalogAnime = {
-      id: "gemini.search",
-      type: "anime",
-      name: "AI Search",
-      extra: [{ name: "search", isRequired: true }]
-    };
-
-    catalogs = [...catalogs, aiSearchCatalogMovie, aiSearchCatalogSeries, aiSearchCatalogAnime];
-  }
+  // No separate addition for gemini.search here — the provider will be added in the searchCatalogConfigs loop above
 
   const activeConfigs = [
     `Language: ${language}`,

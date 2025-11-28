@@ -642,10 +642,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   try {
     let responseData;
       
-      if (id === 'search') {
+      if (id === 'search' || id === 'gemini.search') {
       // Determine which search engine is being used based on type
       let searchEngine = null;
-      if (actualType === 'movie') {
+      if (id === 'gemini.search') {
+        searchEngine = 'gemini.search';
+      } else if (actualType === 'movie') {
         searchEngine = config.search?.providers?.movie;
       } else if (actualType === 'series') {
         searchEngine = config.search?.providers?.series;
