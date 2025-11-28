@@ -1170,7 +1170,7 @@ const metaConfigString = stableStringify(metaConfig);
    }
    
    // Videos (episodes for series)
-   if (meta.videos && Array.isArray(meta.videos)) {
+   if (meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.videos, { videos: meta.videos }, ttl)
      );

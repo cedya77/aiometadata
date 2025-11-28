@@ -1469,12 +1469,18 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
       // Use TMDB background for anime
         const tmdbBackground = mediaType === 'movie' 
           ? await tmdb.movieImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-            const img = res.backdrops[0];
-            return `https://image.tmdb.org/t/p/original${img?.file_path}`;
+            const img = res?.backdrops?.[0];
+            if (img?.file_path) {
+              return `https://image.tmdb.org/t/p/original${img.file_path}`;
+            }
+            return null;
           })
           : await tmdb.tvImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-            const img = res.backdrops[0];
-            return `https://image.tmdb.org/t/p/original${img?.file_path}`;
+            const img = res?.backdrops?.[0];
+            if (img?.file_path) {
+              return `https://image.tmdb.org/t/p/original${img.file_path}`;
+            }
+            return null;
           });
         
         if (tmdbBackground) {

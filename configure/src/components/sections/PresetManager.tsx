@@ -105,6 +105,12 @@ const presetConfigs: PresetConfig[] = [
         anime: { poster: 'meta', background: 'imdb', logo: 'imdb' },
         englishArtOnly: false,
       },
+      mal: {
+        skipFiller: false,
+        skipRecap: false,
+        allowEpisodeMarking: false,
+        useImdbIdForCatalogAndSearch: false,
+      },
       search: {
         enabled: true,
         ai_enabled: false,
@@ -153,6 +159,12 @@ const presetConfigs: PresetConfig[] = [
         series: { poster: 'meta', background: 'meta', logo: 'meta' },
         anime: { poster: 'mal', background: 'imdb', logo: 'imdb' },
         englishArtOnly: false,
+      },
+      mal: {
+        skipFiller: false,
+        skipRecap: false,
+        allowEpisodeMarking: false,
+        useImdbIdForCatalogAndSearch: false, // Use IMDb ID for Catalog/Search
       },
       search: {
         enabled: true,

@@ -22,13 +22,22 @@ export function ConfigImportExport() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
+  const [addonPassword, setAddonPassword] = useState('');
+  const [requiresAddonPassword, setRequiresAddonPassword] = useState(false);
 
 
   useEffect(() => {
     fetch("/api/config/addon-info")
       .then(res => res.json())
-      .then(data => setAddonVersion(data.addonVersion || "unknown"))
-      .catch(() => setAddonVersion("unknown"));
+      .then(data => {
+        setAddonVersion(data.addonVersion || "unknown");
+        setRequiresAddonPassword(!!data.requiresAddonPassword);
+      })
+      .catch(err => {
+        console.error('Failed to fetch addon-info:', err);
+        setAddonVersion("unknown");
+        setRequiresAddonPassword(false);
+      });
   }, []);
 
   const exportConfig = () => {
@@ -45,6 +54,7 @@ export function ConfigImportExport() {
           tvdb: "",
           fanart: "",
           rpdb: "",
+          topPoster: "",
           mdblist: ""
         };
       }
@@ -180,12 +190,20 @@ export function ConfigImportExport() {
     }
 
     setShowPasswordDialog(true);
+    console.log("requiresAddonPassword before showing password dialog:", requiresAddonPassword);
   };
 
   const handlePasswordConfirm = async () => {
     if (!deletePassword.trim()) {
       toast.error("Password is required", {
         description: "Please enter your password to confirm deletion"
+      });
+      return;
+    }
+
+    if (requiresAddonPassword && !addonPassword.trim()) {
+      toast.error("Addon Password is required", {
+        description: "Please enter the addon password to confirm deletion"
       });
       return;
     }
@@ -197,14 +215,20 @@ export function ConfigImportExport() {
   const handleDeleteConfirm = async () => {
     setIsDeleting(true);
     try {
+      const body: { password: string; addonPassword?: string } = {
+        password: deletePassword
+      };
+
+      if (requiresAddonPassword && addonPassword) {
+        body.addonPassword = addonPassword;
+      }
+      
       const response = await fetch(`/api/config/delete-user/${encodeURIComponent(auth.userUUID)}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          password: deletePassword
-        })
+        body: JSON.stringify(body)
       });
 
       if (response.ok) {
@@ -448,6 +472,23 @@ This action CANNOT be undone. Are you absolutely sure?`}
                 }}
               />
             </div>
+            {requiresAddonPassword && (
+              <div className="space-y-2">
+                <Label htmlFor="delete-addon-password">Addon Password</Label>
+                <Input
+                  id="delete-addon-password"
+                  type="password"
+                  value={addonPassword}
+                  onChange={(e) => setAddonPassword(e.target.value)}
+                  placeholder="Enter the addon password"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handlePasswordConfirm();
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPasswordDialog(false)}>
