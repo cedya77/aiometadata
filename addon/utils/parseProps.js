@@ -2276,22 +2276,28 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
     try {
       if(tmdbId) {
         const tmdbPoster = await tmdb.movieImages({ id: tmdbId }, config).then(res => {
+          if (!res || !Array.isArray(res.posters)) return null;
           const img = selectTmdbImageByLang(res.posters, config);
           return img?.file_path;
         });
-        // logger.debug(`[getMoviePoster] Found TMDB poster for movie (TMDB ID: ${tmdbId})`);
-        return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
+        if (tmdbPoster) {
+          // logger.debug(`[getMoviePoster] Found TMDB poster for movie (TMDB ID: ${tmdbId})`);
+          return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
+        }
       }
       else {
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
           const tmdbPoster = await tmdb.movieImages({ id: mappedIds.tmdbId }, config).then(res => {
+            if (!res || !Array.isArray(res.posters)) return null;
             const img = selectTmdbImageByLang(res.posters, config);
             return img?.file_path;
           });
-          // logger.debug(`[getMoviePoster] Found TMDB poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-          return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
+          if (tmdbPoster) {
+            // logger.debug(`[getMoviePoster] Found TMDB poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
+            return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
+          }
         }
       }
     } catch (error) {

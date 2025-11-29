@@ -408,6 +408,8 @@ async function getManifest(config) {
           const defaultTitle = studio.titles.find(t => t.type === 'Default');
           return defaultTitle ? defaultTitle.title : null;
         }).filter(Boolean);
+        // Ensure a consistent alphabetical ordering for manifest catalog options
+        studioNames = studioNames.sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
         console.log(`[Manifest] Studio list fetched successfully (${studioNames.length} studios)`);
       } catch (error) {
         console.warn('[Manifest] Studio list fetch failed, using empty list:', error.message);
@@ -537,7 +539,7 @@ async function getManifest(config) {
       else if (userCatalog.id === 'mal.genres') {
           // Use pre-fetched anime genres
           // Add "None" option when showInHome is false to work around Stremio's genre requirement
-          catalogOptions = userCatalog.showInHome ? animeGenreNames : ['None', ...animeGenreNames];
+          catalogOptions = animeGenreNames;
       } else if (userCatalog.id === 'mal.studios'){
         // Use pre-fetched studio names, fallback to empty if not available
         catalogOptions = studioNames.length > 0 ? studioNames : ['None'];

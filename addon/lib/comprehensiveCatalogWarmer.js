@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { cacheWrapCatalog, cacheWrapJikanApi, stableStringify } = require('./getCache');
+const { getGenreList } = require('./getGenreList');
 const { parseAnimeCatalogMetaBatch } = require('../utils/parseProps');
 const jikan = require('./mal');
 const database = require('./database');
@@ -388,8 +389,8 @@ class ComprehensiveCatalogWarmer {
     
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
-                     (catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.')) || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.')) ? 
-                     parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
+             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
+             parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
     const shouldIncludeGenreNone = (
@@ -398,12 +399,83 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
-        catalogId === 'tmdb.top'
+        catalogId === 'tmdb.top' ||
+        catalogId === 'tvmaze.schedule' ||
+        catalogId === 'tmdb.airing_today' ||
+        (catalogId.startsWith('mal.') && !catalogId.includes(['mal.genres', 'mal.studios', 'mal.schedule', 'mal.seasons']))
       )
     );
 
     // Use the genre value that Stremio will actually send
-    const genreValue = shouldIncludeGenreNone ? 'None' : null;
+    // For tvdb.genres, when showInHome is false the manifest does not add a 'None' option so the client defaults to the first genre.
+    // For MAL catalogs (except mal.genres) we use 'None' when showInHome is false.
+    let genreValue = null;
+    if (catalog.showInHome === false) {
+      // TVDB genres and tvdb.trending use the first genre when showInHome is false
+      if (catalogId === 'tvdb.genres' || catalogId === 'tvdb.trending') {
+        try {
+          const genres = await getGenreList('tvdb', config.language, catalog.type, config);
+          let genreNames = genres.map(genre => genre.name).sort();
+          if (genreNames && genreNames.length > 0) {
+            genreValue = genreNames[0];
+          }
+        } catch (e) {
+          // leave as null and let fallback happen
+        }
+      }
+      // MAL special catalogs default to the first option instead of 'None' when showInHome is false
+      else if (catalogId === 'mal.schedule') {
+        genreValue = 'Monday';
+      } else if (catalogId === 'mal.seasons') {
+        // Use cached seasons if available, otherwise generate a season list similar to manifest
+        if (global.availableSeasons && global.availableSeasons.length > 0) {
+          genreValue = global.availableSeasons[0];
+        } else {
+          const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+          const currentDate = new Date();
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth(); // 0-11
+          let currentSeasonIndex;
+          if (currentMonth <= 2) currentSeasonIndex = 0; // Winter
+          else if (currentMonth <= 5) currentSeasonIndex = 1; // Spring
+          else if (currentMonth <= 8) currentSeasonIndex = 2; // Summer
+          else currentSeasonIndex = 3; // Fall
+          const firstSeason = `${seasons[currentSeasonIndex]} ${currentYear}`;
+          genreValue = firstSeason;
+        }
+      } else if (catalogId === 'mal.studios') {
+        try {
+          // Use the same cache key and TTL as `getManifest` to avoid redundant API calls and keep cache consistent
+          const studios = await cacheWrapJikanApi('mal-studios', async () => await jikan.getStudios(100), 30 * 24 * 60 * 60);
+          let studioNames = studios.map(studio => {
+          const defaultTitle = studio.titles.find(t => t.type === 'Default');
+          return defaultTitle ? defaultTitle.title : null;
+        }).filter(Boolean);
+          if (studioNames && studioNames.length > 0) {
+            genreValue = studioNames[0];
+          }
+        } catch (e) {
+          // fallback to null
+        }
+      } else if (catalogId === 'mal.genres') {
+        try {
+          // Use the same cache key as getManifest for available anime genres
+          const animeGenres = await cacheWrapJikanApi('anime-genres', async () => await jikan.getAnimeGenres(), 30 * 24 * 60 * 60);
+          if (animeGenres && animeGenres.length > 0) {
+            let animeGenreNames = animeGenres.filter(Boolean).map(genre => genre.name).sort();
+            if (animeGenreNames.length > 0) {
+              genreValue = animeGenreNames[0];
+            }
+          }
+        } catch (e) {
+          // fallback to null
+        }
+      }
+      // For catalogs where manifest adds 'None' (e.g., mdblist/stremthru/custom/streaming/tmdb.top/tmdb.airing_today), use 'None'
+      else if (shouldIncludeGenreNone) {
+        genreValue = 'None';
+      }
+    }
 
     let totalItems = 0;
 
