@@ -2477,44 +2477,100 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       }
     }
     
-    // Start non-blocking API calls early
-    const enhancementPromises = [];
-    let kitsuEpisodeMap = new Map();
-    let imdbSeasonInfo = null;
-    
-    if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {
-      // Start Kitsu episodes fetch (non-blocking)
-      if (kitsuId) {
-        enhancementPromises.push(
-          kitsu.getAnimeEpisodes(kitsuId)
-            .then(kitsuEpisodes => {
-              logger.debug(`[Anime Meta] Fetched ${kitsuEpisodes.length} Kitsu episodes for ${kitsuId}`);
-              kitsuEpisodes.forEach(kitsuEp => {
-                const episodeNumber = kitsuEp.number;
-                if (episodeNumber) {
-                  //console.log(`[Anime Meta] Mapping Kitsu episode ${episodeNumber} (ID: ${kitsuEp.id}) for anime ${kitsuId}`);
-                  kitsuEpisodeMap.set(episodeNumber, kitsuEp);
-                }
-              });
-            })
-            .catch(error => {
-              logger.warn(`[Anime Meta] Failed to fetch Kitsu episodes for enhancement:`, error.message || error || 'Unknown error');
-            })
-        );
-      }
-    }
     
     // Process episodes while API calls are running
     if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {      // Filter episodes once
       
-      // Wait for enhancement data
-      await Promise.all(enhancementPromises);
+
+      // Pre-fetch franchise info once to avoid repeated API calls for each episode
+      let franchiseInfo = null;
+      let tmdbThumbnailMap = new Map(); // Map of "season:episode" -> thumbnail URL
+      let tmdbSeasonPosterMap = new Map(); // Map of season -> season poster url
+      let tmdbAirDateMap = new Map(); // Map of "season:episode" -> air_date
+      let tmdbEpisodeMap = new Map(); // Map of kitsuEpisodeNumber -> tmdbEpisode
+      let tmdbEpisodeTitleMap = new Map(); // Map of "season:episode" -> episode title
+      let tmdbEpisodeOverviewMap = new Map(); // Map of "season:episode" -> episode overview
+      const mapping = idMapper.getMappingByKitsuId(kitsuId);
+      
+      if (mapping?.themoviedb_id && kitsuId) {
+        try {
+          franchiseInfo = await idMapper.getFranchiseInfoFromTmdbId(mapping.themoviedb_id);
+          
+          // Resolve all TMDB episodes and group by season for bulk fetching
+          const seasonSet = new Set();
+          
+          for (const ep of episodeData) {
+            try {
+              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuId, ep.mal_id, franchiseInfo);
+              if (tmdbEpisode && tmdbEpisode.tmdbId) {
+                tmdbEpisodeMap.set(ep.mal_id, tmdbEpisode);
+                seasonSet.add(tmdbEpisode.seasonNumber);
+              }
+            } catch (error) {
+              logger.debug(`[buildKitsuAnimeResponse] Failed to resolve TMDB episode for Kitsu episode ${ep.mal_id}: ${error.message}`);
+            }
+          }
+          
+          // Fetch TMDB season details in bulk if we have resolved episodes
+          if (tmdbEpisodeMap.size > 0 && seasonSet.size > 0) {
+            try {
+              const tmdbId = mapping.themoviedb_id;
+              const language = config.language || 'en-US';
+              const seasonsArray = Array.from(seasonSet).sort((a, b) => a - b);
+
+              // Create season objects for genSeasonsString and chunk the requests
+              const seasonObjects = seasonsArray.map(s => ({ season_number: s }));
+              const seasonChunks = Utils.genSeasonsString(seasonObjects);
+
+              const seasonPromises = seasonChunks.map(chunk => moviedb.tvInfo({ 
+                id: tmdbId, 
+                language, 
+                append_to_response: chunk
+              }, config));
+
+              const seasonResponses = await Promise.all(seasonPromises);
+
+              const combinedResponse = seasonResponses.reduce((acc, res) => ({ ...acc, ...res }), {});
+              
+              seasonsArray.forEach(seasonNum => {
+                const seasonKey = `season/${seasonNum}`;
+                const seasonData = combinedResponse[seasonKey];
+                if (seasonData && seasonData.episodes) {
+                  seasonData.episodes.forEach(tmdbEp => {
+                    const key = `${seasonNum}:${tmdbEp.episode_number}`;
+                    if (tmdbEp.still_path) {
+                      tmdbThumbnailMap.set(key, `https://image.tmdb.org/t/p/w500${tmdbEp.still_path}`);
+                    }
+                    if (tmdbEp.air_date) {
+                      tmdbAirDateMap.set(key, tmdbEp.air_date);
+                    }
+                    if (tmdbEp.name) {
+                      tmdbEpisodeTitleMap.set(key, tmdbEp.name);
+                    }
+                    if (tmdbEp.overview) {
+                      tmdbEpisodeOverviewMap.set(key, tmdbEp.overview);
+                    }
+                  });
+                  // store season poster for fallback on unaired episodes
+                  if (seasonData.poster_path) {
+                    tmdbSeasonPosterMap.set(seasonNum, `https://image.tmdb.org/t/p/w500${seasonData.poster_path}`);
+                  }
+                }
+              });
+            } catch (error) {
+              logger.debug(`[buildKitsuAnimeResponse] Failed to fetch TMDB season thumbnails: ${error.message}`);
+            }
+          }
+        } catch (error) {
+          logger.debug(`[buildKitsuAnimeResponse] Failed to fetch franchise info: ${error.message}`);
+        }
+      }
       
       // Process episodes with enhancement data        
       videos = (episodeData || []).map(ep => {
-            let episodeId = `${seriesId}:${ep.mal_id}`;
-            if (idProvider === 'kitsu' && kitsuId) {
-              episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
+        let episodeId = `${seriesId}:${ep.mal_id}`;
+        if (idProvider === 'kitsu' && kitsuId) {
+          episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
         } else if (idProvider === 'imdb' && (imdbId || kitsuId)) {
           episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
         } 
@@ -2523,31 +2579,86 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         let thumbnailUrl = null;
         let episodeTitle = ep.title;
         let episodeSynopsis = ep.synopsis;
-        const kitsuEpisode = kitsuEpisodeMap.get(ep.mal_id);
+        // Try to get thumbnail from TMDB or Top Poster
+        const tmdbEpisode = tmdbEpisodeMap.get(ep.mal_id);
+        // Pre-calc airDate so we can decide if episode is upcoming
+        let airDate = ep.airdate;
         
-        if (kitsuEpisode) {
-          if (kitsuEpisode.thumbnail?.original) {
-            thumbnailUrl = kitsuEpisode.thumbnail.original;
-          }
-          
-          if (kitsuEpisode.synopsis) {
-            episodeSynopsis = kitsuEpisode.synopsis;
-          }
-          
-          if (kitsuEpisode.titles?.en_us) {
-            episodeTitle = kitsuEpisode.titles.en_us;
-          } else if (kitsuEpisode.titles?.en_jp) {
-            episodeTitle = kitsuEpisode.titles.en_jp;
-          } else if (kitsuEpisode.titles?.en) {
-            episodeTitle = kitsuEpisode.titles.en;
-          } else if (kitsuEpisode.canonicalTitle) {
-            episodeTitle = kitsuEpisode.canonicalTitle;
+        // First try Top Poster if enabled
+        if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && tmdbEpisode) {
+          try {
+            const topPosterThumbnail = Utils.getTopPosterThumbnail(
+              { tmdbId: tmdbEpisode.tmdbId, imdbId },
+              tmdbEpisode.seasonNumber,
+              tmdbEpisode.episodeNumber,
+              config.apiKeys.topPoster,
+              'w500',
+              thumbnailUrl
+            );
+            if (topPosterThumbnail) {
+              thumbnailUrl = topPosterThumbnail;
+            }
+          } catch (error) {
+            logger.debug(`[buildKitsuAnimeResponse] Failed to get Top Poster thumbnail: ${error.message}`);
           }
         }
-
+        
+        // Fallback to TMDB thumbnail if Top Poster not available or not enabled
+        if (!thumbnailUrl && tmdbEpisode) {
+          const key = `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}`;
+          const tmdbThumbnail = tmdbThumbnailMap.get(key);
+          if (tmdbThumbnail) {
+            thumbnailUrl = tmdbThumbnail;
+          }
+        }
+        // If still no thumbnail: treat unaired (upcoming) episodes specially and fallback to season poster -> background -> null
         if (!thumbnailUrl) {
-          thumbnailUrl = `${host}/missing_thumbnail.png`;
+          const isUnaired = !airDate || new Date(airDate + 'T12:00:00.000Z') > new Date();
+          if (isUnaired) {
+            // Try season poster first if we have a TMDB mapping
+            if (tmdbEpisode && !tmdbEpisode.isFranchiseFallback && tmdbSeasonPosterMap.size > 0) {
+              const seasonPoster = tmdbSeasonPosterMap.get(tmdbEpisode.seasonNumber);
+              if (seasonPoster) {
+                thumbnailUrl = seasonPoster;
+              }
+            }
+            if (!thumbnailUrl && bestBackgroundUrl) {
+              logger.debug(`[buildAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuId} Ep ${ep.mal_id}`);
+              thumbnailUrl = bestBackgroundUrl;
+            }
+            if (!thumbnailUrl) {
+              thumbnailUrl = null;
+            }
+          } else {
+            thumbnailUrl = `${host}/missing_thumbnail.png`;
+          }
         }
+        
+        let key = tmdbEpisode ? `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}` : null;
+        if (!airDate && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {
+          airDate = tmdbAirDateMap.get(key);
+        }
+        else if (!airDate && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
+          logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB air date for Kitsu ${kitsuId} Ep ${ep.mal_id} because mapping is franchise fallback`);
+        }
+        if(!episodeTitle && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {
+          episodeTitle = tmdbEpisodeTitleMap.get(key);
+        } else if (!episodeTitle && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
+          logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB title fallback for Kitsu ${kitsuId} Ep ${ep.mal_id} because mapping is franchise fallback`);
+        }
+        episodeTitle = episodeTitle || `Episode ${ep.mal_id}`;
+
+        if(!episodeSynopsis && tmdbEpisode && key && !tmdbEpisode.isFranchiseFallback) {
+          episodeSynopsis = tmdbEpisodeOverviewMap.get(key);
+        } else if (!episodeSynopsis && tmdbEpisode && key && tmdbEpisode.isFranchiseFallback) {
+          logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB overview fallback for Kitsu ${kitsuId} Ep ${ep.mal_id} because mapping is franchise fallback`);
+        }
+        episodeSynopsis = episodeSynopsis || ep.synopsis || '';
+        // Build final thumbnail; keep null for upcoming episodes if no background/season poster available
+        const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
+          ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
+          : thumbnailUrl;
+
         if (config.mal?.allowEpisodeMarking) {
           if (ep.filler) {
             episodeSynopsis = `[Filler] ${episodeSynopsis}`;
@@ -2562,9 +2673,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           title: episodeTitle,
           season: 1,
           episode: ep.mal_id,
-          released: ep.aired ? new Date(ep.aired.substring(0, 10)) : null,
-          thumbnail: config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png` ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}` : thumbnailUrl,
-          available: ep.aired ? new Date(ep.aired) < new Date() : false,
+          released: (ep.aired) ? new Date(ep.aired.substring(0, 10)) : null,
+          thumbnail: finalThumbnail || ((airDate && (new Date(airDate) < new Date())) ? `${host}/missing_thumbnail.png` : null),
+          available: (ep.aired) ? new Date(ep.aired) < new Date() : false,
           overview: episodeSynopsis,
           isFiller: ep.filler,
           isRecap: ep.recap,
