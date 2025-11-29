@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.12.0](https://github.com/cedya77/aiometadata/compare/v1.11.0...v1.12.0) (2025-11-29)
+
+
+### Features
+
+* add IMDb ID search support to TMDB, TVDB, and TVMaze ([753bd84](https://github.com/cedya77/aiometadata/commit/753bd847a08366cef1393b9f23f4ac411abb6fa0))
+* add Top Poster API integration for rating posters ([4cf583a](https://github.com/cedya77/aiometadata/commit/4cf583ab1a1273529b10c8c780dcaba506a27adc))
+* **episodes:** add Top Poster API support for episode thumbnails ([4cf583a](https://github.com/cedya77/aiometadata/commit/4cf583ab1a1273529b10c8c780dcaba506a27adc))
+* implement gemini client, tweak prompt, improve perf ([e0074ad](https://github.com/cedya77/aiometadata/commit/e0074ad438588bb107ec46cd0be5aa07fd795a36))
+* implement gemini search ([d15e10d](https://github.com/cedya77/aiometadata/commit/d15e10d78ed1bf010b1539f7de20be9883ee62d8))
+* **kitsu:** enrich meta with tmdb info for consistent thumbnails and ep title/overview ([6170037](https://github.com/cedya77/aiometadata/commit/617003700cbcbb05affdb8fd692a04c4159cf8a4))
+* **search:** Make AI search sortable and bump number of results to 20. ([f604a7e](https://github.com/cedya77/aiometadata/commit/f604a7e8c72be2da5162e42ac8dbcc894de2ded8))
+
+
+### Bug Fixes
+
+* correct manifest.json fields to match spec ([03bc6ba](https://github.com/cedya77/aiometadata/commit/03bc6ba8a518e91948ef4374702d7736fba0fa88)), closes [#132](https://github.com/cedya77/aiometadata/issues/132)
+* ensure logo fallback works in catalog endpoint and fix MDBList unified watchlist parsing ([eb277b0](https://github.com/cedya77/aiometadata/commit/eb277b04a1348ac4c25bd9232b60c0242bdbd988))
+* **frontend:** Conditionally display addon password for user deletion ([fc87102](https://github.com/cedya77/aiometadata/commit/fc87102aad83c53d5517929a8782d27d02292ab8))
+* **kitsu:** avoid using unreliable TMDB fallbacks for franchise fallback mappings; use background for upcoming episode thumbnails; ([ad91a43](https://github.com/cedya77/aiometadata/commit/ad91a43cf5d4f0033b5cb1c6d1b52d3825bd7c6c))
+* **mal cache warming:** resolve issue with genre value not matching index call when show in home is false for MAL, TVDB & TVMaze catalogs ([debbefd](https://github.com/cedya77/aiometadata/commit/debbefd89ae5ca8638af52a3228c684092cd3400))
+* **mdblist:** correct unified watchlist response parsing ([eb277b0](https://github.com/cedya77/aiometadata/commit/eb277b04a1348ac4c25bd9232b60c0242bdbd988))
+* **meta:** move IMDB logo fallback outside includeVideos block in buildTvdbSeriesResponse ([eb277b0](https://github.com/cedya77/aiometadata/commit/eb277b04a1348ac4c25bd9232b60c0242bdbd988))
+* **search:** show TVDB search in dropdown with API key required indicator ([2a0eaa5](https://github.com/cedya77/aiometadata/commit/2a0eaa5ab03723294aea797e14500b141e909fd5))
+* **wiki:** HTTP 429 error handling in wiki-mapper with retry logic and cache fallback ([62c010a](https://github.com/cedya77/aiometadata/commit/62c010a855664bd70b51a0847ff0a678889267e6))
+
 ## [1.11.0](https://github.com/cedya77/aiometadata/compare/v1.10.0...v1.11.0) (2025-11-21)
 
 
