@@ -2687,7 +2687,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       // Special processing for IMDB provider with season info
       if (idProvider === 'imdb') {
         try {
-          const enrichedVideos = await idMapper.enrichMalEpisodes(videos, kitsuId);
+          const enrichedVideos = await idMapper.enrichMalEpisodes(videos, kitsuId, false);
           if (enrichedVideos && Array.isArray(enrichedVideos) && enrichedVideos.length > 0) {
             videos = enrichedVideos;
             videos.forEach(ep => {
