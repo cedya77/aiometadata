@@ -383,15 +383,33 @@ class ConfigApi {
           if (patterns.some(p => p.includes('meta-'))) {
             try {
               // Clear ALL cache entries for this user (nuclear option)
-              const allKeys = await redis.keys(`meta-*:*`);
-              logger.debug(`Nuclear option - Found ${allKeys.length} total meta keys:`);
-              allKeys.slice(0, 10).forEach(key => logger.debug(`  - ${key}`));
-              if (allKeys.length > 10) logger.debug(`  ... and ${allKeys.length - 10} more`);
-              
-              if (allKeys.length > 0) {
-                await redis.del(...allKeys);
-                totalCleared += allKeys.length;
-                logger.info(`NUCLEAR OPTION: Cleared ${allKeys.length} total meta cache entries for user`);
+              // Use SCAN + pipeline in batches to avoid loading many keys into memory
+              async function deleteKeysByPattern(pattern, batchSize = 500) {
+                let cursor = '0';
+                let deletedCount = 0;
+                do {
+                  const reply = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 1000);
+                  cursor = reply[0];
+                  const keys = reply[1] || [];
+                  if (keys && keys.length > 0) {
+                    // delete in smaller chunks using pipeline
+                    for (let i = 0; i < keys.length; i += batchSize) {
+                      const chunk = keys.slice(i, i + batchSize);
+                      const pipeline = redis.pipeline();
+                      for (const k of chunk) pipeline.del(k);
+                      await pipeline.exec();
+                      deletedCount += chunk.length;
+                    }
+                  }
+                } while (cursor !== '0');
+                return deletedCount;
+              }
+
+              logger.debug('Nuclear option - deleting meta keys using SCAN+pipeline...');
+              const nuked = await deleteKeysByPattern(`meta-*:*`);
+              if (nuked > 0) {
+                totalCleared += nuked;
+                logger.info(`NUCLEAR OPTION: Cleared ${nuked} total meta cache entries for user`);
               }
               
               // Also try clearing with more specific patterns (matching actual cache key format)
@@ -410,15 +428,10 @@ class ConfigApi {
               ];
               
               for (const pattern of specificPatterns) {
-                const keys = await redis.keys(pattern);
-                if (keys.length > 0) {
-                  logger.debug(`Specific pattern "${pattern}" found ${keys.length} keys:`);
-                  keys.slice(0, 3).forEach(key => logger.debug(`  - ${key}`));
-                  if (keys.length > 3) logger.debug(`  ... and ${keys.length - 3} more`);
-                  
-                  await redis.del(...keys);
-                  totalCleared += keys.length;
-                  logger.debug(`Cleared ${keys.length} cache entries with pattern: ${pattern}`);
+                const count = await deleteKeysByPattern(pattern);
+                if (count > 0) {
+                  logger.debug(`Specific pattern "${pattern}" cleared ${count} keys`);
+                  totalCleared += count;
                 } else {
                   logger.debug(`Specific pattern "${pattern}" found no keys`);
                 }
