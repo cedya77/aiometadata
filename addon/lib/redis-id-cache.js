@@ -13,6 +13,7 @@ const logger = consola.create({
     date: false
   }
 });
+const { deleteKeysByPattern } = require('./redisUtils');
 
 class RedisIdCache {
   constructor() {
@@ -201,11 +202,8 @@ class RedisIdCache {
 
     try {
       logger.warn(`[Redis ID Cache] Starting cache clearing process...`);
-      const allKeys = await this._scanKeys('id_map:*');
-
-      if (allKeys.length > 0) {
-        await this.redis.del(...allKeys);
-      }
+      const { deleteKeysByPattern } = require('./redisUtils');
+      const deleted = await deleteKeysByPattern('id_map:*');
       
       const keyCount = allKeys.length;
       logger.success(`[Redis ID Cache] Cleared ${keyCount} keys.`);

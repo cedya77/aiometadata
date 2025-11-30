@@ -10,7 +10,7 @@ const { getCatalog } = require("./lib/getCatalog");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
-const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth, stableStringify } = require("./lib/getCache");
+const { cacheWrap, cacheWrapMeta, cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi, cacheWrapStaticCatalog, cacheWrapGlobal, getCacheHealth, clearCacheHealth, logCacheHealth, stableStringify, deleteKeysByPattern, scanKeys } = require("./lib/getCache");
 const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
@@ -425,11 +425,10 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
   
   try {
     if (pattern === 'true') {
-      // Clear all keys matching pattern
-      const keys = await redis.keys(key);
-      if (keys.length > 0) {
-        await redis.del(...keys);
-        consola.info(`[Cache] Cleared ${keys.length} keys matching pattern: ${key}`);
+      // Clear all keys matching pattern (safe SCAN-based deletion)
+      const deleted = await deleteKeysByPattern(key);
+      if (deleted > 0) {
+        consola.info(`[Cache] Cleared ${deleted} keys matching pattern: ${key}`);
         res.json({
           success: true,
           message: `Cleared ${keys.length} cache keys matching pattern: ${key}`,
@@ -1734,13 +1733,11 @@ addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
       return res.status(401).json({ error: 'Invalid password' });
     }
     
-    // Clear all cache entries for this user
+    // Clear all cache entries for this user (safe SCAN-based deletion)
     const userCachePattern = `*${userUUID}*`;
-    const keys = await redis.keys(userCachePattern);
-    
-    if (keys.length > 0) {
-      await redis.del(...keys);
-      consola.info(`[Cache Invalidation] Cleared ${keys.length} cache entries for user ${userUUID}`);
+    const deleted = await deleteKeysByPattern(userCachePattern);
+    if (deleted > 0) {
+      consola.info(`[Cache Invalidation] Cleared ${deleted} cache entries for user ${userUUID}`);
       
       res.json({
         success: true,
@@ -1812,24 +1809,18 @@ addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
     
     // Count cache entries for this user
     const userCachePattern = `*${userUUID}*`;
-    const keys = await redis.keys(userCachePattern);
-    
     // Group by cache type
     const cacheStats = {
-      total: keys.length,
+      total: 0,
       byType: {}
     };
-    
-    keys.forEach(key => {
-      if (key.includes('meta-')) {
-        cacheStats.byType.meta = (cacheStats.byType.meta || 0) + 1;
-      } else if (key.includes('catalog')) {
-        cacheStats.byType.catalog = (cacheStats.byType.catalog || 0) + 1;
-      } else if (key.includes('manifest')) {
-        cacheStats.byType.manifest = (cacheStats.byType.manifest || 0) + 1;
-      } else {
-        cacheStats.byType.other = (cacheStats.byType.other || 0) + 1;
-      }
+    // Iterate keys via SCAN and accumulate stats
+    await scanKeys(userCachePattern, async (k) => {
+      cacheStats.total++;
+      if (k.includes('meta-')) cacheStats.byType.meta = (cacheStats.byType.meta || 0) + 1;
+      else if (k.includes('catalog')) cacheStats.byType.catalog = (cacheStats.byType.catalog || 0) + 1;
+      else if (k.includes('manifest')) cacheStats.byType.manifest = (cacheStats.byType.manifest || 0) + 1;
+      else cacheStats.byType.other = (cacheStats.byType.other || 0) + 1;
     });
     
     res.json({

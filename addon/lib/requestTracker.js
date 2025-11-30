@@ -1323,17 +1323,14 @@ class RequestTracker {
   // Get top endpoints
   async getTopEndpoints(limit = 10) {
     try {
-      const keys = await redis.keys("requests:endpoint:*");
       const endpoints = [];
-
-      for (const key of keys) {
+      // Use redisUtils.scanKeys to avoid loading all keys at once
+      const { scanKeys } = require('./redisUtils');
+      await scanKeys('requests:endpoint:*', async (key) => {
         const count = await redis.get(key);
-        const endpoint = key.replace("requests:endpoint:", "");
-        endpoints.push({
-          endpoint,
-          requests: parseInt(count) || 0,
-        });
-      }
+        const endpoint = key.replace('requests:endpoint:', '');
+        endpoints.push({ endpoint, requests: parseInt(count) || 0 });
+      });
 
       return endpoints.sort((a, b) => b.requests - a.requests).slice(0, limit);
     } catch (error) {
@@ -1588,11 +1585,11 @@ class RequestTracker {
         "user_activities"
       ];
 
+      const { deleteKeysByPattern } = require('./redisUtils');
       for (const pattern of patterns) {
-        const keys = await redis.keys(pattern);
-        if (keys.length > 0) {
-          await redis.del(...keys);
-          logger.info(`[Request Tracker] Cleared ${keys.length} keys matching ${pattern}`);
+        const deleted = await deleteKeysByPattern(pattern);
+        if (deleted > 0) {
+          logger.info(`[Request Tracker] Cleared ${deleted} keys matching ${pattern}`);
         }
       }
 

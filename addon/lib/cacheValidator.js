@@ -327,22 +327,19 @@ class CacheValidator {
     }
 
     try {
-      const keys = await redis.keys(pattern);
       let invalidated = 0;
       let checked = 0;
-
-      console.log(`[Cache Validator] Checking ${keys.length} cache keys for bad data...`);
-
-      for (const key of keys) {
+      console.log(`[Cache Validator] Scanning keys matching ${pattern} for bad data...`);
+      const { scanKeys } = require('./redisUtils');
+      await scanKeys(pattern, async (key) => {
         checked++;
         const result = await this.checkCacheKeyForBadData(key, contentType);
-        
         if (result.shouldInvalidate) {
           await redis.del(key);
           invalidated++;
           console.log(`[Cache Validator] Invalidated bad cache key: ${key} - Reason: ${result.reason}`);
         }
-      }
+      });
 
       console.log(`[Cache Validator] Cache validation complete. Checked: ${checked}, Invalidated: ${invalidated}`);
       return { invalidated, checked };

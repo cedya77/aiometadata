@@ -18,6 +18,7 @@ const logger = consola.create({
 
 // Import the config cache
 const configCache = require('./configCache');
+const { deleteKeysByPattern } = require('./redisUtils');
 
 class ConfigApi {
   constructor() {
@@ -364,15 +365,10 @@ class ConfigApi {
           
           // First try pattern-based clearing
           for (const pattern of patterns) {
-            const keys = await redis.keys(pattern);
-            if (keys.length > 0) {
-              logger.debug(`Found ${keys.length} keys matching pattern "${pattern}":`);
-              keys.slice(0, 5).forEach(key => logger.debug(`  - ${key}`));
-              if (keys.length > 5) logger.debug(`  ... and ${keys.length - 5} more`);
-              
-              await redis.del(...keys);
-              totalCleared += keys.length;
-              logger.debug(`Cleared ${keys.length} cache entries matching pattern: ${pattern}`);
+            const deleted = await deleteKeysByPattern(pattern);
+            if (deleted > 0) {
+              logger.debug(`Cleared ${deleted} cache entries matching pattern: ${pattern}`);
+              totalCleared += deleted;
             } else {
               logger.debug(`No keys found matching pattern "${pattern}"`);
             }
@@ -790,10 +786,9 @@ class ConfigApi {
             // Clear each pattern
             for (const pattern of patterns) {
               try {
-                const keys = await redis.keys(`*:${userUUID}:${pattern}`);
-                if (keys.length > 0) {
-                  await redis.del(...keys);
-                  logger.debug(`Cleared ${keys.length} cache entries for pattern: ${pattern}`);
+                const deleted = await deleteKeysByPattern(`*:${userUUID}:${pattern}`);
+                if (deleted > 0) {
+                  logger.debug(`Cleared ${deleted} cache entries for pattern: ${pattern}`);
                 }
               } catch (patternError) {
                 logger.error(`Error clearing cache pattern ${pattern}:`, patternError);

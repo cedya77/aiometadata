@@ -130,8 +130,12 @@ class TimingMetrics {
    */
   async getAllMetrics() {
     try {
-      const keys = await this.redis.keys(`${this.keyPrefix}*`);
-      return keys.map(key => key.replace(this.keyPrefix, ''));
+      const { scanKeys } = require('./redisUtils');
+      const metrics = [];
+      await scanKeys(`${this.keyPrefix}*`, async (key) => {
+        metrics.push(key.replace(this.keyPrefix, ''));
+      });
+      return metrics;
     } catch (error) {
       logger.error('Failed to get all metrics:', error.message);
       return [];

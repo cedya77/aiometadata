@@ -76,6 +76,63 @@ const SELF_HEALING_CONFIG = {
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
 
+/**
+ * Safely delete Redis keys matching a pattern using SCAN and pipelined DELs to avoid memory/stack spikes
+ * @param {string} pattern Redis key pattern (e.g., 'meta-*:*')
+ * @param {object} options
+ * @param {number} options.scanCount  Number of keys to request per SCAN iteration (default 1000)
+ * @param {number} options.batchSize  Number of keys to delete per pipeline exec (default 500)
+ * @returns {Promise<number>} total deleted keys
+ */
+async function deleteKeysByPattern(pattern, options = {}) {
+  if (!redis) return 0;
+  const scanCount = options.scanCount || 1000;
+  const batchSize = options.batchSize || 500;
+  let cursor = '0';
+  let totalDeleted = 0;
+
+  do {
+    const res = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount);
+    cursor = res[0];
+    const keys = res[1] || [];
+    if (keys.length === 0) continue;
+
+    for (let i = 0; i < keys.length; i += batchSize) {
+      const chunk = keys.slice(i, i + batchSize);
+      const pipeline = redis.pipeline();
+      for (const k of chunk) pipeline.del(k);
+      await pipeline.exec();
+      totalDeleted += chunk.length;
+    }
+  } while (cursor !== '0');
+
+  return totalDeleted;
+}
+
+/**
+ * Scan keys matching pattern and invoke callback per key.
+ * @param {string} pattern
+ * @param {function} cb callback(key) which can be async
+ * @param {object} options
+ * @param {number} options.scanCount default 1000
+ */
+async function scanKeys(pattern, cb, options = {}) {
+  if (!redis) return 0;
+  const scanCount = options.scanCount || 1000;
+  let cursor = '0';
+  let processed = 0;
+  do {
+    const res = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount);
+    cursor = res[0];
+    const keys = res[1] || [];
+    for (const k of keys) {
+      await cb(k);
+      processed++;
+    }
+  } while (cursor !== '0');
+  return processed;
+}
+
 // Helper: stable stringify to ensure consistent cache keys regardless of property insertion order
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -1951,6 +2008,8 @@ module.exports = {
   redis,
   cacheWrap,
   cacheWrapGlobal,
+  deleteKeysByPattern,
+  scanKeys,
   cacheWrapCatalog,
   cacheWrapSearch,
   cacheWrapJikanApi,
