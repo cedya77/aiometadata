@@ -1,10 +1,16 @@
 const { request, setGlobalDispatcher, ProxyAgent } = require("undici");
 
 // Global proxy configuration - applies to all undici requests
+// Prefers HTTPS_PROXY since most API calls are HTTPS, falls back to HTTP_PROXY
 const getProxyUrl = () => {
-  const proxy = process.env.HTTP_PROXY ?? process.env.HTTPS_PROXY;
+  const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
   if (proxy) {
-    return new URL(proxy).toString();
+    try {
+      return new URL(proxy).toString();
+    } catch (error) {
+      console.warn('Invalid proxy URL in HTTP_PROXY/HTTPS_PROXY:', proxy);
+      return null;
+    }
   }
   return null;
 };

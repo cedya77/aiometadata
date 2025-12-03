@@ -2,23 +2,38 @@ const { request, Agent, ProxyAgent } = require('undici');
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
-// Gemini-specific proxy configuration
-// GEMINI_HTTP_PROXY or GEMINI_HTTPS_PROXY takes precedence over global proxy
+// Gemini dispatcher configuration
+// Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
 const getGeminiProxyUrl = () => {
-  const proxy = process.env.GEMINI_HTTP_PROXY ?? process.env.GEMINI_HTTPS_PROXY;
-  if (proxy) {
-    return new URL(proxy).toString();
+  // First check for Gemini-specific proxy
+  const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
+  if (geminiProxy) {
+    try {
+      return new URL(geminiProxy).toString();
+    } catch (error) {
+      console.warn('Invalid Gemini proxy URL:', geminiProxy);
+    }
+  }
+  // Fall back to global proxy
+  const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
+  if (globalProxy) {
+    try {
+      return new URL(globalProxy).toString();
+    } catch (error) {
+      console.warn('Invalid global proxy URL:', globalProxy);
+    }
   }
   return null;
 };
 
-// Create appropriate dispatcher based on proxy configuration
+// Create Gemini dispatcher
+// Uses Gemini-specific proxy if set, otherwise global proxy, otherwise direct connection
 const createGeminiDispatcher = () => {
   const proxyUrl = getGeminiProxyUrl();
   if (proxyUrl) {
     return new ProxyAgent({ uri: proxyUrl });
   }
-  // No Gemini-specific proxy, use regular Agent (bypasses global proxy)
+  // No proxy configured - use direct connection
   return new Agent({
     keepAliveTimeout: 30000,      // Keep connections alive for 30s
     keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
@@ -28,6 +43,7 @@ const createGeminiDispatcher = () => {
 };
 
 // Shared dispatcher for all requests to Gemini API
+// This is always a dedicated Agent/ProxyAgent, never using the global dispatcher
 const geminiDispatcher = createGeminiDispatcher();
 
 /**

@@ -5,11 +5,11 @@ import { cacheWrapMetaSmart, cacheWrapMDBListGenres } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const { socksDispatcher } = require('fetch-socks');
-const { Agent } = require('undici');
+const { Agent, ProxyAgent } = require('undici');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
+const logger = consola.create({
+  level: process.env.LOG_LEVEL ?
+    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) :
     (process.env.NODE_ENV === 'production' ? 3 : 4),
   fancy: true,
   colors: true,
@@ -31,9 +31,11 @@ function sanitizeUrlForLogging(url: string): string {
   return url.replace(/([?&]apikey=)[^&]+/gi, '$1[REDACTED]');
 }
 
-// Proxy configuration for MDBList requests
+// MDBList dispatcher configuration
+// Priority: MDBLIST_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
 const MDBLIST_SOCKS_PROXY_URL = process.env.MDBLIST_SOCKS_PROXY_URL;
-let mdblistDispatcher;
+const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
+let mdblistDispatcher: any;
 
 if (MDBLIST_SOCKS_PROXY_URL) {
   try {
@@ -48,16 +50,29 @@ if (MDBLIST_SOCKS_PROXY_URL) {
       });
       logger.info(`[MDBList] SOCKS proxy is enabled for MDBList API via fetch-socks.`);
     } else {
-      logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
+      logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
+      mdblistDispatcher = null; // Will be set below
+    }
+  } catch (error: any) {
+    logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
+    mdblistDispatcher = null; // Will be set below
+  }
+}
+
+// Fallback to HTTP proxy or direct connection
+if (!mdblistDispatcher) {
+  if (HTTP_PROXY_URL) {
+    try {
+      mdblistDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      logger.info('[MDBList] Using global HTTP proxy.');
+    } catch (error: any) {
+      logger.error(`[MDBList] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
       mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
     }
-  } catch (error) {
-    logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
+  } else {
     mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+    logger.info('[MDBList] undici agent is enabled for direct connections.');
   }
-} else {
-  mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
-  logger.info('[MDBList] undici agent is enabled for direct connections.');
 }
 
 /**

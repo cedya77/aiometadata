@@ -2,22 +2,35 @@ const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
 
-// Gemini-specific proxy configuration for API key testing
-// GEMINI_HTTP_PROXY or GEMINI_HTTPS_PROXY takes precedence over global proxy
-const getGeminiProxyDispatcher = () => {
-  const proxyUrl = process.env.GEMINI_HTTP_PROXY ?? process.env.GEMINI_HTTPS_PROXY;
-  if (proxyUrl) {
+// Gemini dispatcher configuration for API key testing
+// Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
+const createGeminiDispatcher = () => {
+  // First check for Gemini-specific proxy
+  const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
+  if (geminiProxy) {
     try {
-      return new ProxyAgent({ uri: new URL(proxyUrl).toString() });
+      return new ProxyAgent({ uri: new URL(geminiProxy).toString() });
     } catch (error) {
-      console.warn("Invalid Gemini proxy URL:", proxyUrl);
-      return undefined;
+      console.warn("Invalid Gemini proxy URL:", geminiProxy);
     }
   }
-  return undefined;
+  // Fall back to global proxy
+  const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
+  if (globalProxy) {
+    try {
+      return new ProxyAgent({ uri: new URL(globalProxy).toString() });
+    } catch (error) {
+      console.warn("Invalid global proxy URL:", globalProxy);
+    }
+  }
+  // No proxy configured - use direct connection
+  return new Agent({
+    keepAliveTimeout: 10000,
+    connections: 10,
+  });
 };
 
-const geminiDispatcher = getGeminiProxyDispatcher();
+const geminiDispatcher = createGeminiDispatcher();
 const consola = require('consola');
 const logger = consola.create({ 
   level: process.env.LOG_LEVEL ? 
