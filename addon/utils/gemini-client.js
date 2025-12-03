@@ -1,4 +1,21 @@
 const { request, Agent } = require('undici');
+const { setGlobalDispatcher, ProxyAgent } = require('undici');
+// Improved proxy configuration with type safety and readability
+
+const getProxyUrl = () => {
+  const proxy = process.env.http_proxy ?? process.env.https_proxy;
+  if (proxy) {
+    return new URL(proxy).toString();
+  }
+  return null;
+};
+
+const proxyUrl = getProxyUrl();
+
+if (proxyUrl) {
+  const dispatcher = new ProxyAgent({ uri: proxyUrl });
+  setGlobalDispatcher(dispatcher);
+}
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 

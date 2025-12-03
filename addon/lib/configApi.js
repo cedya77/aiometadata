@@ -15,6 +15,23 @@ const logger = consola.create({
   },
   tag: 'ConfigApi'
 });
+const { setGlobalDispatcher, ProxyAgent } = require('undici');
+// Improved proxy configuration with type safety and readability
+
+const getProxyUrl = () => {
+  const proxy = process.env.http_proxy ?? process.env.https_proxy;
+  if (proxy) {
+    return new URL(proxy).toString();
+  }
+  return null;
+};
+
+const proxyUrl = getProxyUrl();
+
+if (proxyUrl) {
+  const dispatcher = new ProxyAgent({ uri: proxyUrl });
+  setGlobalDispatcher(dispatcher);
+}
 
 // Import the config cache
 const configCache = require('./configCache');

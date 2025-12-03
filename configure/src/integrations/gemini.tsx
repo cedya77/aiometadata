@@ -6,6 +6,35 @@ import { DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Loader2 } from "lucide-react";
+import { env } from "process";
+import { setGlobalDispatcher, ProxyAgent } from "undici";
+
+// Improved proxy configuration with type safety and readability
+
+const getProxyUrl = (): string | undefined => {
+  const proxy = process.env.http_proxy ?? process.env.https_proxy;
+  if (proxy) {
+    try {
+      // Ensure it's a valid URL
+      return new URL(proxy).toString();
+    } catch (error) {
+      console.warn("Invalid proxy URL in environment variable:", proxy);
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+const proxyUrl = getProxyUrl();
+
+if (proxyUrl) {
+  try {
+    const dispatcher = new ProxyAgent({ uri: proxyUrl });
+    setGlobalDispatcher(dispatcher);
+  } catch (error) {
+    console.error("Failed to set global proxy dispatcher:", error);
+  }
+}
 
 export default function Gemini() {
   const { geminikey, setGeminiKey } = useConfig();
