@@ -1,5 +1,19 @@
-const { request } = require("undici");
+const { request, setGlobalDispatcher, ProxyAgent } = require("undici");
 
+// Global proxy configuration - applies to all undici requests
+const getProxyUrl = () => {
+  const proxy = process.env.http_proxy ?? process.env.https_proxy;
+  if (proxy) {
+    return new URL(proxy).toString();
+  }
+  return null;
+};
+
+const proxyUrl = getProxyUrl();
+if (proxyUrl) {
+  const dispatcher = new ProxyAgent({ uri: proxyUrl });
+  setGlobalDispatcher(dispatcher);
+}
 
 /**
  * HTTP client wrapper optimized for MAXIMUM SPEED.
