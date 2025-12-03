@@ -366,8 +366,14 @@ This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifest
 
 ### `HTTP_PROXY` / `HTTPS_PROXY`
 - **Optional**: Yes
-- **Description**: HTTP/HTTPS proxy
+- **Description**: HTTP/HTTPS proxy for general requests
 - **Example**: `HTTP_PROXY=http://proxy.example.com:8080`
+
+### `GEMINI_HTTP_PROXY` / `GEMINI_HTTPS_PROXY`
+- **Optional**: Yes
+- **Description**: HTTP/HTTPS proxy specifically for Gemini API requests. When set, this overrides any global proxy settings for Gemini calls only.
+- **Example**: `GEMINI_HTTP_PROXY=http://proxy.example.com:8080`
+- **Note**: Useful when you need Gemini requests to use a different proxy than other API calls
 
 ---
 

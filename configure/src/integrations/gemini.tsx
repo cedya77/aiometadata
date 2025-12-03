@@ -12,7 +12,7 @@ import { setGlobalDispatcher, ProxyAgent } from "undici";
 // Improved proxy configuration with type safety and readability
 
 const getProxyUrl = (): string | undefined => {
-  const proxy = process.env.http_proxy ?? process.env.https_proxy;
+  const proxy = process.env.HTTP_PROXY ?? process.env.HTTPS_PROXY;
   if (proxy) {
     try {
       // Ensure it's a valid URL

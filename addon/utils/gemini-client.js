@@ -1,14 +1,34 @@
-const { request, Agent } = require('undici');
+const { request, Agent, ProxyAgent } = require('undici');
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
-// Shared connection pool for all requests to Gemini API
-const geminiAgent = new Agent({
-  keepAliveTimeout: 30000,      // Keep connections alive for 30s
-  keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
-  connections: 50,              // Max concurrent connections
-  pipelining: 1,                // HTTP/1.1 pipelining
-});
+// Gemini-specific proxy configuration
+// GEMINI_HTTP_PROXY or GEMINI_HTTPS_PROXY takes precedence over global proxy
+const getGeminiProxyUrl = () => {
+  const proxy = process.env.GEMINI_HTTP_PROXY ?? process.env.GEMINI_HTTPS_PROXY;
+  if (proxy) {
+    return new URL(proxy).toString();
+  }
+  return null;
+};
+
+// Create appropriate dispatcher based on proxy configuration
+const createGeminiDispatcher = () => {
+  const proxyUrl = getGeminiProxyUrl();
+  if (proxyUrl) {
+    return new ProxyAgent({ uri: proxyUrl });
+  }
+  // No Gemini-specific proxy, use regular Agent (bypasses global proxy)
+  return new Agent({
+    keepAliveTimeout: 30000,      // Keep connections alive for 30s
+    keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
+    connections: 50,              // Max concurrent connections
+    pipelining: 1,                // HTTP/1.1 pipelining
+  });
+};
+
+// Shared dispatcher for all requests to Gemini API
+const geminiDispatcher = createGeminiDispatcher();
 
 /**
  * Generate content using Gemini API with optional Google Search grounding.
@@ -43,7 +63,7 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(body),
-    dispatcher: geminiAgent,
+    dispatcher: geminiDispatcher,
     headersTimeout: timeout,
     bodyTimeout: timeout,
   });
@@ -77,14 +97,14 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
  * Get agent stats for monitoring/debugging.
  */
 function getAgentStats() {
-  return geminiAgent.stats;
+  return geminiDispatcher.stats;
 }
 
 /**
  * Close the agent and all connections (for graceful shutdown).
  */
 async function closeAgent() {
-  await geminiAgent.close();
+  await geminiDispatcher.close();
 }
 
 module.exports = {

@@ -1,6 +1,23 @@
 const crypto = require('crypto');
-const { request } = require("undici");
+const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
+
+// Gemini-specific proxy configuration for API key testing
+// GEMINI_HTTP_PROXY or GEMINI_HTTPS_PROXY takes precedence over global proxy
+const getGeminiProxyDispatcher = () => {
+  const proxyUrl = process.env.GEMINI_HTTP_PROXY ?? process.env.GEMINI_HTTPS_PROXY;
+  if (proxyUrl) {
+    try {
+      return new ProxyAgent({ uri: new URL(proxyUrl).toString() });
+    } catch (error) {
+      console.warn("Invalid Gemini proxy URL:", proxyUrl);
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+const geminiDispatcher = getGeminiProxyDispatcher();
 const consola = require('consola');
 const logger = consola.create({ 
   level: process.env.LOG_LEVEL ? 
@@ -1111,8 +1128,12 @@ class ConfigApi {
       const testFunctions = {
         gemini: async (key) => {
           // Validate by listing available models - no token usage
+          // Use Gemini-specific proxy if configured
           const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
+          const response = await serviceRequest(url, {
+            method: "GET",
+            dispatcher: geminiDispatcher
+          }).catch(
             () => null,
           );
           return !!(response && response.statusCode === 200 && response.data?.models);
