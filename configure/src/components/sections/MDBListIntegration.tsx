@@ -229,7 +229,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRPDB: true,
+              enableRatingPosters: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -299,7 +299,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRPDB: true,
+              enableRatingPosters: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -390,7 +390,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRPDB: true,
+              enableRatingPosters: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -546,7 +546,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           order: defaultOrder,
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
-          enableRPDB: true
+          enableRatingPosters: true
         };
 
         setConfig(prev => {
@@ -592,7 +592,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
             genreSelection: defaultGenreSelection,
-            enableRPDB: true,
+            enableRatingPosters: true,
             ...(movieDisplayType && { displayType: movieDisplayType }),
           };
 
@@ -608,7 +608,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
             genreSelection: defaultGenreSelection,
-            enableRPDB: true,
+            enableRatingPosters: true,
             ...(seriesDisplayType && { displayType: seriesDisplayType }),
           };
 

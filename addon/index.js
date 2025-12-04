@@ -582,17 +582,19 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   );
   const actualType = catalogConfig ? catalogConfig.type : type;
   
-  const hasRpdbKey =
-    (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0);
+  // Check if user has either RPDB or Top Poster API key
+  const hasRatingPosterKey =
+    (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0) ||
+    (config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
 
-  if (catalogConfig && !hasRpdbKey) {
-    catalogConfig.enableRPDB = false;
+  if (catalogConfig && !hasRatingPosterKey) {
+    catalogConfig.enableRatingPosters = false;
   }
 
-  //consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
-  //consola.debug(`[CATALOG ROUTE] enableRPDB value:`, catalogConfig?.enableRPDB, `(type: ${typeof catalogConfig?.enableRPDB})`);
+  consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
+  //consola.debug(`[CATALOG ROUTE] enableRatingPosters value:`, catalogConfig?.enableRatingPosters, `(type: ${typeof catalogConfig?.enableRatingPosters})`);
   
-  // Add current catalog config to global config for per-catalog settings (like enableRPDB)
+  // Add current catalog config to global config for per-catalog settings (like enableRatingPosters)
   config._currentCatalogConfig = catalogConfig;
   
   const language = config.language || DEFAULT_LANGUAGE;
@@ -997,11 +999,11 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     }*/
     
     // Extract actual poster URL from RPDB proxy URL for meta route
-    // Only remove RPDB proxy if enableRPDBForLibrary is disabled
+    // Only remove RPDB proxy if enableRatingPostersForLibrary is disabled
     // Meta routes (continue watching/library) should keep RPDB if the option is enabled
     if (result.meta.poster && result.meta.poster.includes('/poster/') && result.meta.poster.includes('fallback=')) {
       // Check if RPDB should be kept for library items (continue watching/library)
-      const keepRPDBForLibrary = config.enableRPDBForLibrary !== false; // Default to true
+      const keepRPDBForLibrary = config.enableRatingPostersForLibrary !== false; // Default to true
       
       if (!keepRPDBForLibrary) {
         // User has disabled RPDB for library items, extract fallback URL
@@ -1803,7 +1805,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
   }
 });
 
-addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
+addon.get('api/cache/invalidation-status/:userUUID', async (req, res) => {
   try {
     const { userUUID } = req.params;
     

@@ -243,7 +243,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
               genres: catalog.genres || [], // Store genres from manifest
               cacheTTL: defaultCacheTTL, // Add custom TTL support
               pageSize: defaultPageSize, // Add page size support
-              enableRPDB: true,
+              enableRatingPosters: true,
               manifestData: { 
                 ...catalog, 
                 idPrefixes: manifest.idPrefixes // Store manifest idPrefixes for tun_ detection

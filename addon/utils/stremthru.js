@@ -2,7 +2,6 @@ const { request } = require("undici");
 const { cacheWrapMetaSmart } = require("../lib/getCache");
 const { getMeta } = require("../lib/getMeta");
 const Utils = require("./parseProps");
-const { isRPDBEnabled } = require("./parseProps");
 const idMapper = require("../lib/id-mapper");
 const imdb = require("../lib/imdb");
 const { getImdbRating } = require("../lib/getImdbRating");
@@ -120,7 +119,7 @@ async function _processStandardItem(item, provider, language, config, includeVid
  */
 function _createFallbackMeta(item, language, config) {
     const fallbackPosterUrl = item.poster || `${host}/missing_poster.png`;
-    const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
+    const posterProxyUrl = Utils.isPosterRatingEnabled(config)
         ? `${host}/poster/${item.type}/${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`
         : fallbackPosterUrl;
     

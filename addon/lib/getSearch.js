@@ -4,7 +4,6 @@ require("dotenv").config();
 const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
-const { isRPDBEnabled } = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { getImdbRating } = require("./getImdbRating");
 const { to3LetterCode } = require("./language-map"); 
@@ -277,7 +276,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           
           // Apply RPDB for series (non-movies)
           let finalPoster = poster || `${host}/missing_poster.png`;
-          if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
+          if (Utils.isPosterRatingEnabled(config)) {
             let proxyId = null;
             if (imdbId) {
               proxyId = imdbId;
@@ -814,7 +813,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     
     // Assemble final meta
     parsed.id = stremioId;
-    parsed.poster = (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl;
+    parsed.poster = Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl;
     parsed.imdbRating = imdbRating;
     parsed.logo = logoUrl;
     parsed.background = backgroundUrl;

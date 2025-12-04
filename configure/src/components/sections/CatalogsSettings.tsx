@@ -52,14 +52,14 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
-  const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
+  const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL, genreSelection, enableRPDB }
+          ? { ...c, sort, order, cacheTTL, genreSelection, enableRatingPosters }
           : c
       )
     }));
@@ -163,15 +163,15 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="mdblist-rpdb-toggle">Enable RPDB</Label>
+                  <Label htmlFor="mdblist-rating-posters-toggle">Enable Rating Posters</Label>
                   <p className="text-xs text-muted-foreground">
-                    Use RatingPosterDB for enhanced posters
+                    Use RatingPosterDB or other providers for enhanced posters
                   </p>
                 </div>
                 <Switch
-                  id="mdblist-rpdb-toggle"
-                  checked={enableRPDB}
-                  onCheckedChange={setEnableRPDB}
+                  id="mdblist-rating-posters-toggle"
+                  checked={enableRatingPosters}
+                  onCheckedChange={setEnableRatingPosters}
                 />
               </div>
             </div>
@@ -192,7 +192,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
-  const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
+  const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [pageSize, setPageSize] = useState<number>(catalog.pageSize || 100);
 
   const handleSave = () => {
@@ -200,7 +200,7 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL, enableRPDB, pageSize }
+          ? { ...c, cacheTTL, enableRatingPosters, pageSize }
           : c
       )
     }));
@@ -259,15 +259,15 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="custom-rpdb-toggle">Enable RPDB</Label>
+                  <Label htmlFor="custom-rating-posters-toggle">Enable Rating Posters</Label>
                   <p className="text-xs text-muted-foreground">
-                    Use RatingPosterDB for enhanced posters
+                    Use RatingPosterDB or other providers for enhanced posters
                   </p>
                 </div>
                 <Switch
-                  id="custom-rpdb-toggle"
-                  checked={enableRPDB}
-                  onCheckedChange={setEnableRPDB}
+                  id="custom-rating-posters-toggle"
+                  checked={enableRatingPosters}
+                  onCheckedChange={setEnableRatingPosters}
                 />
               </div>
             </div>
@@ -337,11 +337,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     }));
   };
 
-  const handleToggleRPDB = () => {
+  const handleToggleRatingPosters = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRPDB: !c.enableRPDB } : c
+        (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRatingPosters: !c.enableRatingPosters } : c
       )
     }));
   };
@@ -535,19 +535,19 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
           {config.apiKeys?.rpdb && (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleToggleRPDB}
-                  disabled={!catalog.enabled}
-                  className="disabled:opacity-20 disabled:cursor-not-allowed"
-                >
-                  <Star className={`h-5 w-5 transition-colors ${catalog.enableRPDB !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent><p>{catalog.enableRPDB !== false && catalog.enabled ? 'RPDB Enabled' : 'RPDB Disabled'}</p></TooltipContent>
-            </Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleRatingPosters}
+                disabled={!catalog.enabled}
+                className="disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <Star className={`h-5 w-5 transition-colors ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{catalog.enableRatingPosters !== false && catalog.enabled ? 'Rating Posters Enabled' : 'Rating Posters Disabled'}</p></TooltipContent>
+          </Tooltip>
           )}
 
           <Tooltip>
@@ -858,8 +858,8 @@ function CatalogsSettingsContent({
     | 'removeFromHome'
     | 'delete'
     | 'invert'
-    | 'enableRPDB'
-    | 'disableRPDB'
+    | 'enableRatingPosters'
+    | 'disableRatingPosters'
     | 'enableRandomize'
     | 'disableRandomize'
     | null
@@ -1017,7 +1017,7 @@ function CatalogsSettingsContent({
         showInHome: c.showOnHomeByDefault || false,
       }));
       const userCatalogSettings = new Map(
-        prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome, enableRPDB: c.enableRPDB }])
+        prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome, enableRatingPosters: c.enableRatingPosters }])
       );
       const userCatalogKeys = new Set(prev.catalogs.map(c => `${c.id}-${c.type}`));
       const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`));
@@ -1202,64 +1202,64 @@ function CatalogsSettingsContent({
     }
   };
 
-  const handleBulkEnableRPDB = async () => {
+  const handleBulkEnableRatingPosters = async () => {
     setIsLoading(true);
-    setLoadingAction('enableRPDB');
+    setLoadingAction('enableRatingPosters');
 
     try {
-      // Filter selected catalogs to only those with RPDB disabled
-      const catalogsToEnableRPDB = selectedCatalogs.filter(catalog => catalog.enableRPDB === false);
+      // Filter selected catalogs to only those with Rating posters disabled
+      const catalogsToEnableRatingPosters = selectedCatalogs.filter(catalog => catalog.enableRatingPosters === false);
 
       // Update config state to enable RPDB for selected catalogs
-      if (catalogsToEnableRPDB.length > 0) {
+      if (catalogsToEnableRatingPosters.length > 0) {
         setConfig(prev => ({
           ...prev,
           catalogs: prev.catalogs.map(c => {
             const catalogKey = `${c.id}-${c.type}`;
-            const shouldEnableRPDB = catalogsToEnableRPDB.some(
+            const shouldEnableRatingPosters = catalogsToEnableRatingPosters.some(
               cat => `${cat.id}-${cat.type}` === catalogKey
             );
-            return shouldEnableRPDB ? { ...c, enableRPDB: true } : c;
+            return shouldEnableRatingPosters ? { ...c, enableRatingPosters: true } : c;
           })
         }));
       }
 
       // Show toast notification
-      toast.success(`RPDB enabled for ${catalogsToEnableRPDB.length} catalog${catalogsToEnableRPDB.length === 1 ? '' : 's'}`);
+      toast.success(`Rating Posters enabled for ${catalogsToEnableRatingPosters.length} catalog${catalogsToEnableRatingPosters.length === 1 ? '' : 's'}`);
     } catch (error) {
-      showBulkActionError('enable RPDB', error as Error);
+      showBulkActionError('enable Rating Posters', error as Error);
     } finally {
       setIsLoading(false);
       setLoadingAction(null);
     }
   };
 
-  const handleBulkDisableRPDB = async () => {
+  const handleBulkDisableRatingPosters = async () => {
     setIsLoading(true);
-    setLoadingAction('disableRPDB');
+    setLoadingAction('disableRatingPosters');
 
     try {
-      // Filter selected catalogs to only those with RPDB enabled
-      const catalogsToDisableRPDB = selectedCatalogs.filter(catalog => catalog.enableRPDB !== false);
+      // Filter selected catalogs to only those with Rating posters enabled
+      const catalogsToDisableRatingPosters = selectedCatalogs.filter(catalog => catalog.enableRatingPosters !== false);
 
       // Update config state to disable RPDB for selected catalogs
-      if (catalogsToDisableRPDB.length > 0) {
+      if (catalogsToDisableRatingPosters.length > 0) {
         setConfig(prev => ({
           ...prev,
           catalogs: prev.catalogs.map(c => {
             const catalogKey = `${c.id}-${c.type}`;
-            const shouldDisableRPDB = catalogsToDisableRPDB.some(
+            const shouldDisableRatingPosters = catalogsToDisableRatingPosters.some(
               cat => `${cat.id}-${cat.type}` === catalogKey
             );
-            return shouldDisableRPDB ? { ...c, enableRPDB: false } : c;
+            return shouldDisableRatingPosters ? { ...c, enableRatingPosters: false } : c;
           })
         }));
       }
 
       // Show toast notification
-      toast.success(`RPDB disabled for ${catalogsToDisableRPDB.length} catalog${catalogsToDisableRPDB.length === 1 ? '' : 's'}`);
+      toast.success(`Rating Posters disabled for ${catalogsToDisableRatingPosters.length} catalog${catalogsToDisableRatingPosters.length === 1 ? '' : 's'}`);
     } catch (error) {
-      showBulkActionError('disable RPDB', error as Error);
+      showBulkActionError('disable Rating Posters', error as Error);
     } finally {
       setIsLoading(false);
       setLoadingAction(null);
@@ -1446,11 +1446,11 @@ function CatalogsSettingsContent({
           onDeleteSelected={handleBulkDelete}
           onInvertSelection={invertSelection}
           onClearSelection={deselectAll}
-          onEnableRPDB={handleBulkEnableRPDB}
-          onDisableRPDB={handleBulkDisableRPDB}
+          onEnableRatingPosters={handleBulkEnableRatingPosters}
+          onDisableRatingPosters={handleBulkDisableRatingPosters}
           onEnableRandomize={handleBulkEnableRandomize}
           onDisableRandomize={handleBulkDisableRandomize}
-          hasRPDBKey={!!config.apiKeys?.rpdb}
+          hasRatingPostersKey={!!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster}
           isLoading={isLoading}
           loadingAction={loadingAction}
         />

@@ -75,6 +75,7 @@ const SELF_HEALING_CONFIG = {
 
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
+const { cache } = require('sharp');
 
 /**
  * Safely delete Redis keys matching a pattern using SCAN and pipelined DELs to avoid memory/stack spikes
@@ -750,10 +751,10 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isStreamingCatalog = idOnly.startsWith('streaming.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
-  // Find the catalog config to get per-catalog settings (like enableRPDB)
+  // Find the catalog config to get per-catalog settings (like enableRatingPosters)
   // Match by both id AND type to handle duplicate IDs (e.g., tvdb.trending for movie vs series)
   const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly && c.type === catalogType);
-  const enableRPDB = catalogFromConfig?.enableRPDB !== false; // Default to true if not explicitly disabled
+  const enableRatingPosters = catalogFromConfig?.enableRatingPosters !== false; // Default to true if not explicitly disabled
   
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
@@ -778,7 +779,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     
     // Poster rating provider and API key (affects poster generation)
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: enableRPDB ? (config.posterRatingProvider === 'top' 
+    posterRatingApiKey: enableRatingPosters ? (config.posterRatingProvider === 'top' 
       ? (config.apiKeys?.topPoster || '') 
       : (config.apiKeys?.rpdb || '')) : ''
   };
@@ -899,8 +900,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     return { metas: [] };
   }
   
-  // Get RPDB enablement state for this search engine
-  const rpdbEnabled = searchEngine ? (config.search?.engineRPDB?.[searchEngine] !== false) : true;
+  // Get rating posters enablement state for this search engine
+  const ratingPostersEnabled = searchEngine ? (config.search?.engineRatingPosters?.[searchEngine] !== false) : true;
   
   // Search-specific config (only relevant parameters for search results)
   const searchConfig = {
@@ -925,7 +926,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
     // Poster rating provider and API key (affects poster generation)
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: rpdbEnabled ? (config.posterRatingProvider === 'top' 
+    posterRatingApiKey: ratingPostersEnabled ? (config.posterRatingProvider === 'top' 
       ? (config.apiKeys?.topPoster || '') 
       : (config.apiKeys?.rpdb || '')) : ''
   };
@@ -1464,7 +1465,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      if (componentName === 'poster') {
        // Apply poster rating logic during reconstruction if enabled
        // Use module-level context to get accurate enablement state
-       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRPDB !== false;
+       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRatingPosters !== false;
        const host = process.env.HOST_NAME.startsWith('http')
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;

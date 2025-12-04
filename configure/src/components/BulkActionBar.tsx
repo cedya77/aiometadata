@@ -17,8 +17,8 @@ type BulkActionType =
   | 'removeFromHome'
   | 'delete'
   | 'invert'
-  | 'enableRPDB'
-  | 'disableRPDB'
+  | 'enableRatingPosters'
+  | 'disableRatingPosters'
   | 'enableRandomize'
   | 'disableRandomize'
   | null;
@@ -32,11 +32,11 @@ interface BulkActionBarProps {
   onDeleteSelected: () => void;
   onInvertSelection: () => void;
   onClearSelection: () => void;
-  onEnableRPDB?: () => void;
-  onDisableRPDB?: () => void;
+  onEnableRatingPosters?: () => void;
+  onDisableRatingPosters?: () => void;
   onEnableRandomize?: () => void;
   onDisableRandomize?: () => void;
-  hasRPDBKey?: boolean;
+  hasRatingPostersKey?: boolean;
   isLoading?: boolean;
   loadingAction?: BulkActionType;
 }
@@ -50,11 +50,11 @@ export function BulkActionBar({
   onDeleteSelected,
   onInvertSelection,
   onClearSelection,
-  onEnableRPDB,
-  onDisableRPDB,
+  onEnableRatingPosters,
+  onDisableRatingPosters,
   onEnableRandomize,
   onDisableRandomize,
-  hasRPDBKey = false,
+  hasRatingPostersKey = false,
   isLoading = false,
   loadingAction = null,
 }: BulkActionBarProps) {
@@ -68,8 +68,8 @@ export function BulkActionBar({
   const hasRemovableCatalogs = selectedCatalogs.some(c => 
     ['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
   );
-  const hasRPDBDisabled = selectedCatalogs.some(c => c.enableRPDB === false);
-  const hasRPDBEnabled = selectedCatalogs.some(c => c.enableRPDB !== false);
+  const hasRatingPostersDisabled = selectedCatalogs.some(c => c.enableRatingPosters === false);
+  const hasRatingPostersEnabled = selectedCatalogs.some(c => c.enableRatingPosters !== false);
   const hasRandomizeDisabled = selectedCatalogs.some(c => !c.randomizePerPage);
   const hasRandomizeEnabled = selectedCatalogs.some(c => c.randomizePerPage);
   
@@ -233,27 +233,27 @@ export function BulkActionBar({
             )}
 
             {/* Enable RPDB for Selected */}
-            {hasRPDBKey && hasRPDBDisabled && onEnableRPDB && (
+            {hasRatingPostersKey && hasRatingPostersDisabled && onEnableRatingPosters && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={onEnableRPDB}
+                    onClick={onEnableRatingPosters}
                     disabled={isLoading}
-                    aria-label="Enable RPDB for selected catalogs"
+                    aria-label="Enable Rating Posters for selected catalogs"
                     className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
                   >
-                    {loadingAction === 'enableRPDB' ? (
+                    {loadingAction === 'enableRatingPosters' ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Star className="h-4 w-4 text-yellow-500" />
                     )}
-                    <span className="ml-2">Enable RPDB</span>
+                    <span className="ml-2">Enable Rating Posters</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Enable RPDB for selected catalogs</p>
+                  <p>Enable Rating Posters for selected catalogs</p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -311,27 +311,27 @@ export function BulkActionBar({
             )}
 
             {/* Disable RPDB for Selected */}
-            {hasRPDBKey && hasRPDBEnabled && onDisableRPDB && (
+            {hasRatingPostersKey && hasRatingPostersEnabled && onDisableRatingPosters && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={onDisableRPDB}
+                    onClick={onDisableRatingPosters}
                     disabled={isLoading}
-                    aria-label="Disable RPDB for selected catalogs"
+                    aria-label="Disable Rating Posters for selected catalogs"
                     className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
                   >
-                    {loadingAction === 'disableRPDB' ? (
+                    {loadingAction === 'disableRatingPosters' ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Star className="h-4 w-4 text-muted-foreground" />
                     )}
-                    <span className="ml-2">Disable RPDB</span>
+                    <span className="ml-2">Disable Rating Posters</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Disable RPDB for selected catalogs</p>
+                  <p>Disable Rating Posters for selected catalogs</p>
                 </TooltipContent>
               </Tooltip>
             )}

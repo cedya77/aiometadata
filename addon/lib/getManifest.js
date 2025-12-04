@@ -408,8 +408,6 @@ async function getManifest(config) {
           const defaultTitle = studio.titles.find(t => t.type === 'Default');
           return defaultTitle ? defaultTitle.title : null;
         }).filter(Boolean);
-        // Ensure a consistent alphabetical ordering for manifest catalog options
-        studioNames = studioNames.sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
         console.log(`[Manifest] Studio list fetched successfully (${studioNames.length} studios)`);
       } catch (error) {
         console.warn('[Manifest] Studio list fetch failed, using empty list:', error.message);

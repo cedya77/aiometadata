@@ -254,8 +254,8 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, mdblistWatchTracking: checked }));
   };
 
-  const handleEnableRPDBForLibraryChange = (checked: boolean) => {
-    setConfig(prevConfig => ({ ...prevConfig, enableRPDBForLibrary: checked }));
+  const handleEnableRatingPostersForLibraryChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
   };
 
   return (
@@ -388,15 +388,15 @@ export function GeneralSettings() {
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
           <div>
-            <Label htmlFor="enable-rpdb-for-library" className="text-lg font-medium">Keep RPDB for Library Items</Label>
+            <Label htmlFor="enable-rating-posters-for-library" className="text-lg font-medium">Keep Rating Posters for Library Items</Label>
             <p className="text-sm text-muted-foreground">
-              Keep RPDB posters for items in Continue Watching and Library (enabled by default) in Stremio. Useful when RPDB is enabled for your catalogs. When disabled, RPDB posters are removed from library items since catalog context is unavailable.
+              Keep Rating Posters for items in Continue Watching and Library (enabled by default) in Stremio. Useful when Rating Posters is enabled for your catalogs. When disabled, Rating Posters are removed from library items since catalog context is unavailable.
             </p>
           </div>
           <Switch
-            id="enable-rpdb-for-library"
-            checked={config.enableRPDBForLibrary !== false}
-            onCheckedChange={handleEnableRPDBForLibraryChange}
+            id="enable-rating-posters-for-library"
+            checked={config.enableRatingPostersForLibrary !== false}
+            onCheckedChange={handleEnableRatingPostersForLibraryChange}
           />
         </div>
         

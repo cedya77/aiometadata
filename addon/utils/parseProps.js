@@ -40,16 +40,16 @@ const isDebugEnabled = consola.level >= 4;
  * Helper function to check if RPDB is enabled for the current context
  * Checks per-catalog settings if available, otherwise defaults to true
  */
-function isRPDBEnabled(config) {
-  // Check catalog-level RPDB setting (for catalog routes)
+function isRatingPostersEnabled(config) {
+  // Check catalog-level RatingPosters setting (for catalog routes)
   if (config._currentCatalogConfig) {
-    return config._currentCatalogConfig.enableRPDB !== false;
+    return config._currentCatalogConfig.enableRatingPosters !== false;
   }
   
-  // Check search engine-level RPDB setting (for search routes)
+  // Check search engine-level RatingPosters setting (for search routes)
   if (config._currentSearchEngine) {
     // Default to true if not explicitly set to false
-    return config.search?.engineRPDB?.[config._currentSearchEngine] !== false;
+    return config.search?.engineRatingPosters?.[config._currentSearchEngine] !== false;
   }
   
   // Default to true if neither catalog nor search context is set
@@ -60,6 +60,9 @@ function isRPDBEnabled(config) {
  * Helper function to check if poster rating is enabled (RPDB or Top Poster)
  */
 function isPosterRatingEnabled(config) {
+  if (!isRatingPostersEnabled(config)) {
+    return false;
+  }
   const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
   if (provider === 'top') {
     return !!(config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
@@ -2136,10 +2139,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           }
         }
       }
+      let logo = await getAnimeLogo({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType}, config);
+      let background = await getAnimeBg({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType, malPosterUrl}, config);
       return {
         id: `mal:${malId}`,
         type: stremioType,
-        logo: stremioType === 'movie' ? await tmdb.getTmdbMovieLogo(tmdbId, config) : await tmdb.getTmdbSeriesLogo(tmdbId, config),
+        logo: logo,
+        background: background,
         name: anime.title_english || anime.title,
         poster: finalPosterUrl,
         description: addMetaProviderAttribution(anime.synopsis, 'MAL', config),
@@ -3081,7 +3087,7 @@ module.exports = {
   getTvdbCertification,
   getAnimePosterUrl,
   getKitsuLocalizedTitle,
-  isRPDBEnabled
+  isPosterRatingEnabled
 };
 
 /**

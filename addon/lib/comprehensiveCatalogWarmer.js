@@ -384,7 +384,7 @@ class ComprehensiveCatalogWarmer {
       throw new Error('UUID is required for catalog warming');
     }
     
-    // Set current catalog config for per-catalog settings (like enableRPDB)
+    // Set current catalog config for per-catalog settings (like enableRatingPosters)
     config._currentCatalogConfig = catalog;
     
     const catalogId = catalog.id;

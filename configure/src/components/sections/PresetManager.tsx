@@ -551,7 +551,7 @@ export function PresetManager() {
               order: 'asc' as const,
               cacheTTL: catalogTTL,
               genreSelection: 'standard' as const, // Default to standard genres for preset imports
-              enableRPDB: true,
+              enableRatingPosters: true,
               displayType,
             };
             newCatalogs.push(newCatalog);

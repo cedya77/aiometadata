@@ -18,7 +18,7 @@ export interface CatalogConfig {
   // Genre selection for MDBList catalogs - which genre set to use
   genreSelection?: 'standard' | 'anime' | 'all';
   // Enable RPDB for this catalog (for poster enhancements)
-  enableRPDB?: boolean;
+  enableRatingPosters?: boolean;
   // Randomize items within each page on every load
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
@@ -92,7 +92,7 @@ export interface AppConfig {
   posterRatingProvider?: 'rpdb' | 'top';
   mdblistWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
-  enableRPDBForLibrary?: boolean;
+  enableRatingPostersForLibrary?: boolean;
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;
@@ -118,7 +118,7 @@ export interface AppConfig {
       [engine: string]: boolean;
     };
     // RPDB enable/disable per search engine
-    engineRPDB?: {
+    engineRatingPosters?: {
       [engine: string]: boolean;
     };
     // Custom names for search providers

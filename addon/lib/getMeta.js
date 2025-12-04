@@ -1,6 +1,5 @@
 require("dotenv").config();
 const Utils = require("../utils/parseProps");
-const { isRPDBEnabled } = require("../utils/parseProps");
 const moviedb = require("./getTmdb");
 const tvdb = require("./tvdb");
 const imdb = require("./imdb");

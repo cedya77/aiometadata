@@ -122,7 +122,7 @@ const initialConfig: AppConfig = {
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   mdblistWatchTracking: true,
-  enableRPDBForLibrary: true, // Default to enabled - keep RPDB posters for library items
+  enableRatingPostersForLibrary: true, // Default to enabled - keep Rating Posters for library items
   ageRating: 'None',
   searchEnabled: true,
   sessionId: "",
@@ -134,7 +134,7 @@ const initialConfig: AppConfig = {
       source: c.source,
       enabled: c.isEnabledByDefault || false,
       showInHome: c.showOnHomeByDefault || false,
-      enableRPDB: true, // Default to enabled for new catalogs
+      enableRatingPosters: true, // Default to enabled for new catalogs
       randomizePerPage: false,
     })),
   search: {
@@ -167,7 +167,7 @@ const defaultCatalogs = allCatalogDefinitions.map(c => ({
   source: c.source,
   enabled: c.isEnabledByDefault || false,
   showInHome: c.showOnHomeByDefault || false,
-  enableRPDB: true, // Default to enabled for new catalogs
+  enableRatingPosters: true, // Default to enabled for new catalogs
   randomizePerPage: false,
 }));
 
@@ -191,7 +191,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
                   enabled: c.enabled,
                   showInHome: c.showInHome,
                 };
-                if (c.enableRPDB !== undefined) settings.enableRPDB = c.enableRPDB;
+                if (c.enableRatingPosters !== undefined) settings.enableRatingPosters = c.enableRatingPosters;
                 if (c.randomizePerPage !== undefined) settings.randomizePerPage = c.randomizePerPage;
                 if (c.displayType !== undefined) settings.displayType = c.displayType;
                 if (c.cacheTTL !== undefined) settings.cacheTTL = c.cacheTTL;

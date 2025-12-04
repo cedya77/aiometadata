@@ -937,6 +937,28 @@ class ConfigApi {
       if (!config) {
         throw new Error(`No configuration found for userUUID: ${userUUID}`);
       }
+      
+      // Migrate old property names to new ones
+      if (config.search?.engineRPDB && !config.search?.engineRatingPosters) {
+        logger.info(`[MIGRATION] Migrating search.engineRPDB to search.engineRatingPosters`);
+        config.search.engineRatingPosters = config.search.engineRPDB;
+        delete config.search.engineRPDB;
+      }
+      
+      // Migrate catalogs
+      if (config.catalogs && Array.isArray(config.catalogs)) {
+        config.catalogs = config.catalogs.map(catalog => {
+          if (catalog.enableRPDB !== undefined && catalog.enableRatingPosters === undefined) {
+            logger.info(`[MIGRATION] Migrating catalog ${catalog.id} enableRPDB to enableRatingPosters`);
+            return {
+              ...catalog,
+              enableRatingPosters: catalog.enableRPDB,
+              enableRPDB: undefined
+            };
+          }
+          return catalog;
+        });
+      }
 
       // Strip instance-specific fields that shouldn't be returned from saved config
       const sanitizedConfig = {
