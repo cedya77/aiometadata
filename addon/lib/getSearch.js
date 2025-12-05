@@ -1,5 +1,3 @@
-//new current
-
 require("dotenv").config();
 const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
@@ -772,6 +770,24 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
           include_image_language: imageLanguages 
         }, config);
     
+    // --- Safety Filter: Keyword Blacklist ---
+    if (config.includeAdult === false) {
+      const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga'];
+      const keywordsObject = details.keywords;
+      
+      if (keywordsObject) {
+        // Keywords can be in `results` (TV) or `keywords` (Movie)
+        const keywords = keywordsObject.results || keywordsObject.keywords || [];
+        
+        for (const keyword of keywords) {
+          if (adultKeywordBlacklist.includes(keyword.name.toLowerCase())) {
+            logger.debug(`Item "${title}" filtered because of blacklist keyword "${keyword.name}"`);
+            return null;
+          }
+        }
+      }
+    }
+    
     // Resolve IDs
     let allIds = {
       tmdbId: details.id,
@@ -817,6 +833,8 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     parsed.imdbRating = imdbRating;
     parsed.logo = logoUrl;
     parsed.background = backgroundUrl;
+//    parsed.popularity = match.popularity;
+//    parsed.score = match.vote_average;
     parsed.certification = type === 'movie'
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
@@ -830,7 +848,9 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
         null
       );
     }
-    
+
+    parsed.app_extras = { releaseDates: details.release_dates };
+
     return parsed;
     
   } catch (error) {
