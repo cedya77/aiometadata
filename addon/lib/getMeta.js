@@ -930,9 +930,14 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
           );
           
           if (topPosterThumbnail) {
+            // Apply blur if enabled
+            const finalThumbnail = config.blurThumbs && topPosterThumbnail !== `${host}/missing_thumbnail.png`
+              ? `${host}/api/image/blur?url=${encodeURIComponent(topPosterThumbnail)}`
+              : topPosterThumbnail;
+            
             return {
               ...video,
-              thumbnail: topPosterThumbnail
+              thumbnail: finalThumbnail
             };
           }
         }
