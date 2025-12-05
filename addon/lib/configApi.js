@@ -1194,6 +1194,19 @@ class ConfigApi {
           );
         },
 
+        topPoster: async (key) => {
+          const url = `https://api.top-streaming.stream/auth/verify/${key}`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return (
+            response &&
+            response.statusCode === 200 &&
+            response.data?.valid === true &&
+            response.data?.is_active === true
+          );
+        },
+
         mdblist: async (key) => {
           const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
           const response = await serviceRequest(url, { method: "GET" }).catch(
