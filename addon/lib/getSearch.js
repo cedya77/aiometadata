@@ -704,7 +704,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     // Step 1: Search TMDB for the title
     const searchParams = {
       query: title,
-      language: language,
+      language: 'en-US', 
       include_adult: config.includeAdult || false,
       page: 1
     };
