@@ -389,13 +389,14 @@ class ComprehensiveCatalogWarmer {
     
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
-             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
+             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.')|| catalogId.startsWith('custom.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
              parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
     const shouldIncludeGenreNone = (
       catalog.showInHome === false && (
         catalogId.startsWith('mdblist.') ||
+        catalogId.startsWith('trakt.') ||
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
@@ -492,6 +493,22 @@ class ComprehensiveCatalogWarmer {
         const extraArgs = {};
         if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
         if (genreValue) extraArgs.genre = genreValue;
+        
+        if (catalogId.startsWith('trakt.')) {
+          const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+          if (catalogConfig) {
+            if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
+            if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+          }
+        }
+        else if (catalogId.startsWith('mdblist.')) {
+          const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+          if (catalogConfig) {
+            if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
+            if (catalogConfig.order) extraArgs.order = catalogConfig.order;
+          }
+        }
+        
           const derivedPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
           const actualType = catalog.type;
           const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;

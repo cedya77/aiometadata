@@ -49,12 +49,23 @@ const { getTrending } = require("./lib/getTrending");
 const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
+const { TraktClient } = require('./lib/trakt');
 const axios = require('axios');
 const jikan = require('./lib/mal');
 const tvmaze = require('./lib/tvmaze');
 const packageJson = require('../package.json');
 const ADDON_VERSION = packageJson.version;
 const sharp = require('sharp');
+
+// Normalize redirect URIs to always include a scheme
+const normalizeRedirectUri = (uri) => {
+  if (!uri) return uri;
+  const trimmed = uri.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  return `https://${trimmed.replace(/^\/+/, '')}`;
+};
 
 function shuffleMetas(metas = []) {
   const shuffled = Array.isArray(metas) ? metas.slice() : [];
@@ -271,6 +282,7 @@ const respond = function (req, res, data, opts) {
       rpdb: process.env.RPDB_API_KEY || "",
       mdblist: process.env.MDBLIST_API_KEY || "",
       gemini: process.env.GEMINI_API_KEY || "",
+      trakt: process.env.TRAKT_CLIENT_ID || "",
       customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
       addonVersion: ADDON_VERSION,
       hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
@@ -293,6 +305,277 @@ addon.put("/api/config/update/:userUUID", configApi.updateConfig.bind(configApi)
 addon.post("/api/config/migrate", configApi.migrateFromLocalStorage.bind(configApi));
 addon.get('/api/config/is-trusted/:uuid', configApi.isTrusted.bind(configApi));
 addon.post("/api/test-keys", configApi.testApiKeys);
+
+// --- Trakt OAuth Routes ---
+addon.get("/api/auth/trakt/authorize", async (req, res) => {
+  try {
+    const clientId = process.env.TRAKT_CLIENT_ID;
+    const clientSecret = process.env.TRAKT_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "Trakt OAuth not configured. Please set TRAKT_CLIENT_ID and TRAKT_CLIENT_SECRET environment variables." });
+    }
+    
+    const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
+    
+    // Get authorization URL (no state needed - token ID generated in callback)
+    const authUrl = traktClient.getAuthorizationUrl();
+    
+    res.redirect(authUrl);
+  } catch (error) {
+    consola.error("[Trakt OAuth] Authorization error:", error);
+    res.status(500).json({ error: "Failed to initiate Trakt authorization" });
+  }
+});
+
+addon.get("/api/auth/trakt/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ OAuth Error</h1>
+          <p>Invalid callback parameters - missing authorization code.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const clientId = process.env.TRAKT_CLIENT_ID;
+    const clientSecret = process.env.TRAKT_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Configuration Error</h1>
+          <p>Trakt OAuth is not configured on this server.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
+    
+    // Exchange code for tokens
+    const tokens = await traktClient.exchangeCodeForToken(code);
+    
+    // Get user info
+    const user = await traktClient.getMe(tokens.access_token);
+    
+    // Generate UUID for this token
+    const tokenId = crypto.randomUUID();
+    
+    // Store tokens in database
+    const saved = await database.saveOAuthToken(
+      tokenId,
+      'trakt',
+      user.username,
+      tokens.access_token,
+      tokens.refresh_token,
+      tokens.expires_at,
+      tokens.scope || ''
+    );
+    
+    if (!saved) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Database Error</h1>
+          <p>Failed to save OAuth token to database.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Display success page with token ID
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Trakt OAuth Success</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #ed1c24; }
+          .token-box { background: #f9f9f9; border: 2px dashed #ed1c24; padding: 20px; margin: 20px 0; border-radius: 5px; word-break: break-all; }
+          .token { font-family: monospace; font-size: 14px; color: #333; }
+          button { background: #ed1c24; color: white; border: none; padding: 12px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px; }
+          button:hover { background: #c41a20; }
+          .instructions { text-align: left; margin-top: 30px; padding: 20px; background: #f0f8ff; border-left: 4px solid #007acc; }
+          .instructions ol { padding-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Trakt OAuth Successful</h1>
+          <p>Your Trakt account <strong>${user.username}</strong> has been authorized!</p>
+          
+          <div class="token-box">
+            <div class="token" id="tokenId">${tokenId}</div>
+          </div>
+          
+          <button onclick="copyToken()">📋 Copy Token ID</button>
+          
+          <div class="instructions">
+            <h3>📝 Next Steps:</h3>
+            <ol>
+              <li>Copy the Token ID above</li>
+              <li>Go to your addon configuration page</li>
+              <li>Find the <strong>Trakt Integration</strong> section</li>
+              <li>Paste this Token ID in the <strong>Trakt Token ID</strong> field</li>
+              <li>Save your configuration</li>
+            </ol>
+            <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your Trakt account through this addon.</p>
+          </div>
+        </div>
+        
+        <script>
+          function copyToken() {
+            const tokenText = document.getElementById('tokenId').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+              alert('✅ Token ID copied to clipboard!');
+            }).catch(err => {
+              alert('❌ Failed to copy. Please select and copy manually.');
+            });
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    consola.error("[Trakt OAuth] Callback error:", error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Trakt OAuth Error</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1>❌ OAuth Error</h1>
+        <p>An error occurred during authentication: ${error.message}</p>
+        <p><a href="${process.env.HOST_NAME}/configure">← Back to Configuration</a></p>
+      </body>
+      </html>
+    `);
+  }
+});
+
+// Generic OAuth token info endpoint
+const configCache = require('./lib/configCache');
+
+// Generic OAuth token info endpoint
+addon.post("/api/oauth/token/info", async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    if (!tokenId) {
+      return res.status(400).json({ error: "tokenId is required" });
+    }
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+    res.json({ provider: token.provider, username: token.user_id, expiresAt: token.expires_at });
+  } catch (error) {
+    consola.error("[OAuth] Token info fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch token info" });
+  }
+});
+
+addon.post("/api/auth/trakt/disconnect", async (req, res) => {
+  try {
+    const { userUUID } = req.body;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Delete OAuth token from database if it exists
+    if (config.apiKeys?.traktTokenId) {
+      await database.deleteOAuthToken(config.apiKeys.traktTokenId);
+      delete config.apiKeys.traktTokenId;
+    }
+    
+    // Remove Trakt user info
+    delete config.traktUser;
+    
+    // Remove Trakt catalogs
+    config.catalogs = (config.catalogs || []).filter(c => !c.id.startsWith('trakt.'));
+    
+    // Get user's password hash to save config
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Save updated config directly to database
+    await database.saveUserConfig(userUUID, user.password_hash, config);
+    
+    // Invalidate config cache
+    configCache.delete(userUUID);
+    
+    res.json({ success: true });
+  } catch (error) {
+    consola.error("[Trakt] Disconnect error:", error);
+    res.status(500).json({ error: "Failed to disconnect Trakt" });
+  }
+});
+
+// Proxy endpoint for authenticated Trakt API calls
+addon.post("/api/trakt/proxy", async (req, res) => {
+  try {
+    const { tokenId, endpoint, method = 'GET' } = req.body;
+    
+    if (!tokenId || !endpoint) {
+      return res.status(400).json({ error: "tokenId and endpoint are required" });
+    }
+
+    // Get the access token from database
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+
+    // Make the authenticated request to Trakt API
+    const response = await fetch(`https://api.trakt.tv${endpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token.access_token}`,
+        'trakt-api-version': '2',
+        'trakt-api-key': process.env.TRAKT_CLIENT_ID || '',
+        'User-Agent': 'AIOMetadata/1.0',
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      consola.error(`[Trakt Proxy] API error: ${response.status} - ${errorText}`);
+      return res.status(response.status).json({ error: `Trakt API returned ${response.status}` });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error:", error);
+    res.status(500).json({ error: "Failed to proxy Trakt request" });
+  }
+});
+
 // Manual cache clearing endpoint (temporarily disabled due to binding issue)
 // addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
 
@@ -615,6 +898,17 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   const cacheWrapper = cacheWrapCatalog;
 
   extraArgs = extraArgs || {};
+  // Ensure sort options are included in cache key
+  // Trakt uses: sort, sortDirection
+  if (id.startsWith('trakt.')) {
+    if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+  }
+  // MDBList uses: sort, order
+  else if (id.startsWith('mdblist.')) {
+    if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig.order) extraArgs.order = catalogConfig.order;
+  }
   if (id === 'tvmaze.schedule') {
     // Format date in user's local timezone
     // Uses server's local timezone (better than UTC for most users)
@@ -674,7 +968,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
         const pageSize = id.includes(`mal.`) ? 25 : 
-                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
+                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || id.startsWith('trakt.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
@@ -1441,7 +1735,7 @@ addon.post('/api/admin/prune-id-mappings', async (req, res) => {
 addon.get('/api/admin/users', async (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
+       return res.status(401).json({ error: 'Unauthorized' });
   }
   
   try {

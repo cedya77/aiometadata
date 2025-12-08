@@ -645,7 +645,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>MDBList Integration</DialogTitle>
+          <div className="flex items-center gap-3">
+            <img src="https://mdblist.com//static/mdblist_logo.png" alt="MDBList Logo" className="h-7 w-auto" />
+            <DialogTitle>MDBList Integration</DialogTitle>
+          </div>
           <DialogDescription>
             Import your public and private lists from MDBList.com to use as catalogs.
           </DialogDescription>

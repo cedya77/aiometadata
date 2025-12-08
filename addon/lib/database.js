@@ -138,7 +138,20 @@ class Database {
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid TEXT UNIQUE NOT NULL,
         trusted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`
+      )`,
+      `CREATE TABLE IF NOT EXISTS oauth_tokens (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        scope TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_provider ON oauth_tokens(provider)`,
+      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`
     ];
 
     for (const query of queries) {
@@ -175,7 +188,20 @@ class Database {
       `CREATE TABLE IF NOT EXISTS trusted_uuids (
         user_uuid VARCHAR(255) UNIQUE NOT NULL,
         trusted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`
+      )`,
+      `CREATE TABLE IF NOT EXISTS oauth_tokens (
+        id VARCHAR(255) PRIMARY KEY,
+        provider VARCHAR(50) NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        scope TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_provider ON oauth_tokens(provider)`,
+      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`
     ];
 
     for (const query of queries) {
@@ -802,6 +828,125 @@ class Database {
     } catch (error) {
       logger.error('Error deleting inactive users:', error);
       return 0;
+    }
+  }
+
+  // OAuth Token Management Methods
+
+  /**
+   * Save OAuth token to database
+   * @param {string} id - UUID for this token
+   * @param {string} provider - OAuth provider (e.g., 'trakt')
+   * @param {string} userId - Provider's user ID/username
+   * @param {string} accessToken - OAuth access token
+   * @param {string} refreshToken - OAuth refresh token
+   * @param {number} expiresAt - Expiration timestamp
+   * @param {string} scope - OAuth scopes
+   * @returns {Promise<boolean>}
+   */
+  async saveOAuthToken(id, provider, userId, accessToken, refreshToken, expiresAt, scope = '') {
+    try {
+      const query = this.type === 'sqlite'
+        ? `INSERT OR REPLACE INTO oauth_tokens 
+           (id, provider, user_id, access_token, refresh_token, expires_at, scope, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+        : `INSERT INTO oauth_tokens 
+           (id, provider, user_id, access_token, refresh_token, expires_at, scope, updated_at) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+           ON CONFLICT (id) DO UPDATE SET
+             access_token = EXCLUDED.access_token,
+             refresh_token = EXCLUDED.refresh_token,
+             expires_at = EXCLUDED.expires_at,
+             scope = EXCLUDED.scope,
+             updated_at = CURRENT_TIMESTAMP`;
+
+      await this.runQuery(query, [id, provider, userId, accessToken, refreshToken, expiresAt, scope]);
+      return true;
+    } catch (error) {
+      logger.error('Error saving OAuth token:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get OAuth token by ID
+   * @param {string} id - Token UUID
+   * @returns {Promise<Object|null>}
+   */
+  async getOAuthToken(id) {
+    try {
+      const query = this.type === 'sqlite'
+        ? 'SELECT * FROM oauth_tokens WHERE id = ?'
+        : 'SELECT * FROM oauth_tokens WHERE id = $1';
+
+      const row = await this.getQuery(query, [id]);
+      return row || null;
+    } catch (error) {
+      logger.error('Error getting OAuth token:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update OAuth token (for refresh)
+   * @param {string} id - Token UUID
+   * @param {string} accessToken - New access token
+   * @param {string} refreshToken - New refresh token
+   * @param {number} expiresAt - New expiration timestamp
+   * @returns {Promise<boolean>}
+   */
+  async updateOAuthToken(id, accessToken, refreshToken, expiresAt) {
+    try {
+      const query = this.type === 'sqlite'
+        ? `UPDATE oauth_tokens 
+           SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP 
+           WHERE id = ?`
+        : `UPDATE oauth_tokens 
+           SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = CURRENT_TIMESTAMP 
+           WHERE id = $4`;
+
+      await this.runQuery(query, [accessToken, refreshToken, expiresAt, id]);
+      return true;
+    } catch (error) {
+      logger.error('Error updating OAuth token:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete OAuth token by ID
+   * @param {string} id - Token UUID
+   * @returns {Promise<boolean>}
+   */
+  async deleteOAuthToken(id) {
+    try {
+      const query = this.type === 'sqlite'
+        ? 'DELETE FROM oauth_tokens WHERE id = ?'
+        : 'DELETE FROM oauth_tokens WHERE id = $1';
+
+      const result = await this.runQuery(query, [id]);
+      return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
+    } catch (error) {
+      logger.error('Error deleting OAuth token:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get all OAuth tokens for a provider
+   * @param {string} provider - OAuth provider
+   * @returns {Promise<Array>}
+   */
+  async getOAuthTokensByProvider(provider) {
+    try {
+      const query = this.type === 'sqlite'
+        ? 'SELECT * FROM oauth_tokens WHERE provider = ?'
+        : 'SELECT * FROM oauth_tokens WHERE provider = $1';
+
+      return await this.allQuery(query, [provider]);
+    } catch (error) {
+      logger.error('Error getting OAuth tokens by provider:', error);
+      return [];
     }
   }
 }

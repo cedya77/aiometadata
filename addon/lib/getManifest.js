@@ -3,6 +3,7 @@ const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
 const { getGenresFromMDBList, fetchMDBListGenres } = require("../utils/mdbList");
 const { getGenresFromStremThruCatalog, fetchStremThruCatalog } = require("../utils/stremthru");
+const { fetchTraktGenres } = require("../utils/traktUtils");
 const { getGenresBySelection } = require("../static/genres");
 const packageJson = require("../../package.json");
 const catalogsTranslations = require("../static/translations.json");
@@ -212,6 +213,60 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
     return catalog;
   } catch (error) {
     console.error(`[Manifest] Error creating MDBList catalog ${userCatalog.id}:`, error.message);
+    return null; // Return null instead of throwing to prevent manifest failure
+  }
+}
+
+async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = []) {
+  try {
+    console.log(`[Manifest] Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Determine which genre list to use based on catalog type
+    let genres = [];
+    if (userCatalog.type === 'movie' && prefetchedMovieGenres.length > 0) {
+      genres = prefetchedMovieGenres;
+      console.log(`[Manifest] Trakt using ${genres.length} pre-fetched movie genres`);
+    } else if (userCatalog.type === 'series' && prefetchedShowGenres.length > 0) {
+      genres = prefetchedShowGenres;
+      console.log(`[Manifest] Trakt using ${genres.length} pre-fetched show genres`);
+    } else if (userCatalog.type === 'all') {
+      // Combine both movie and show genres for 'all' type
+      genres = [...new Set([...prefetchedMovieGenres, ...prefetchedShowGenres])];
+      console.log(`[Manifest] Trakt using ${genres.length} combined genres`);
+    } else {
+      console.log(`[Manifest] Trakt no pre-fetched genres available for type: ${userCatalog.type}`);
+    }
+    
+    // Add "None" option when showInHome is false to work around Stremio's genre requirement
+    const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
+    
+    // Use displayType if defined, otherwise use original type
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+    // Only add genre extra if genres are available
+    if (genreOptions.length > 0) {
+      catalog.extra.unshift({ 
+        name: "genre", 
+        options: genreOptions, 
+        isRequired: userCatalog.showInHome ? false : true 
+      });
+    }
+    
+    console.log(`[Manifest] Trakt catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating Trakt catalog ${userCatalog.id}:`, error.message);
     return null; // Return null instead of throwing to prevent manifest failure
   }
 }
@@ -451,6 +506,7 @@ async function getManifest(config) {
   const genres_tvdb_all_names = genres_tvdb_all.map(g => g.name).sort();
   const filterLanguages = setOrderLanguage(language, languagesArray);
   const isMDBList = (id) => id.startsWith("mdblist.");
+  const isTrakt = (id) => id.startsWith("trakt.");
   const options = { years, genres_movie: genres_movie_names, genres_series: genres_series_names, filterLanguages };
 
   // Pre-fetch MDBList genres once to avoid repeated API calls
@@ -469,11 +525,31 @@ async function getManifest(config) {
     }
   }
 
+  // Pre-fetch Trakt genres once to avoid repeated API calls
+  let traktGenresMovies = [];
+  let traktGenresShows = [];
+  if (enabledCatalogs.some(c => c.id.startsWith('trakt.'))) {
+    console.log('[Manifest] Pre-fetching Trakt genres for all catalogs...');
+    try {
+      [traktGenresMovies, traktGenresShows] = await Promise.all([
+        fetchTraktGenres('movies'),
+        fetchTraktGenres('shows')
+      ]);
+      console.log(`[Manifest] Pre-fetched ${traktGenresMovies.length} movie genres and ${traktGenresShows.length} show genres from Trakt`);
+    } catch (error) {
+      console.warn('[Manifest] Failed to pre-fetch Trakt genres, catalogs will have no genres:', error.message);
+    }
+  }
+
   let catalogs = await Promise.all(enabledCatalogs
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
       if (isMDBList(userCatalog.id)) {
         //console.log(`[Manifest] MDBList catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
+      if (isTrakt(userCatalog.id)) {
+        //console.log(`[Manifest] Trakt catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
@@ -497,6 +573,12 @@ async function getManifest(config) {
           console.log(`[Manifest] Processing MDBList catalog: ${userCatalog.id}`);
           const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime);
           console.log(`[Manifest] MDBList catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (isTrakt(userCatalog.id)) {
+          console.log(`[Manifest] Processing Trakt catalog: ${userCatalog.id}`);
+          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
+          console.log(`[Manifest] Trakt catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
@@ -780,7 +862,7 @@ async function getManifest(config) {
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
     resources,
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "tun_"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "upnext_"],
     stremioAddonsConfig: {
       "issuer": "https://stremio-addons.net",
       "signature": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..3_iKJ-pKhR-LclfTPxvyag.uY747PgjymdL0OMdZrE7HTOVG-8nNWC-LrlJ5tCXm2i2FioXv_ismzWV0_XsLl0Me9cW9D3xog6d4tSHDY8Pe27mbIylUb61MS4VVqg_sFZXUVon2le-fRFrtmMnIqCF.oyYRDftPN2sohMpDMbMbYg"

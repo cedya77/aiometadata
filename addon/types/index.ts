@@ -21,6 +21,7 @@ export interface UserConfig {
     mdblist?: string;
     gemini?: string;
     imdb?: string;
+    traktTokenId?: string;
   };
   /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
   posterRatingProvider?: 'rpdb' | 'top';

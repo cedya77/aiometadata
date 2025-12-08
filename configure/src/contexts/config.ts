@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -11,6 +11,8 @@ export interface CatalogConfig {
   // MDBList sorting options
   sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default';
   order?: 'asc' | 'desc';
+  // Trakt sorting direction
+  sortDirection?: 'asc' | 'desc';
   // Custom cache TTL for MDBList catalogs (in seconds, defaults to 24 hours)
   cacheTTL?: number;
   // Display type override - if defined, used in manifest instead of original type (free-form string)
@@ -86,6 +88,7 @@ export interface AppConfig {
     rpdb: string;
     topPoster: string;
     mdblist: string;
+    traktTokenId?: string;
     customDescriptionBlurb?: string;
   };
   /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
@@ -133,5 +136,6 @@ export interface AppConfig {
     movie?: string;
     series?: string;
   };
+  showDisabledCatalogs?: boolean;
   catalogModeOnly?: boolean;
 }

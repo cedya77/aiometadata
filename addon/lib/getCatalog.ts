@@ -1,7 +1,21 @@
 require("dotenv").config();
 import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
+import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
+import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems } from "../utils/traktUtils.js";
+import * as Utils from '../utils/parseProps.js';
+import * as CATALOG_TYPES from "../static/catalog-types.json";
+import * as moviedb from "./getTmdb.js";
+import * as tvdb from './tvdb.js';
+import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
+import { resolveAllIds } from './id-resolver.js';
+import { cacheWrapTvdbApi, cacheWrap } from './getCache.js';
+import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
+import { getMeta } from './getMeta.js';
+
 const consola = require('consola');
+const database = require('./database.js');
 
 const logger = consola.create({ 
   level: process.env.LOG_LEVEL ? 
@@ -12,21 +26,35 @@ const logger = consola.create({
   formatOptions: {
     colors: true,
     compact: false,
-    date: false
+    date: false,
   },
   tag: 'Catalog'
 });
-import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
-import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import * as Utils from '../utils/parseProps.js';
-import * as CATALOG_TYPES from "../static/catalog-types.json";
-import * as moviedb from "./getTmdb.js";
-import * as tvdb from './tvdb.js';
-import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
-import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap } from './getCache.js';
-import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
-import { getMeta } from './getMeta.js';
+
+/**
+ * Helper to get Trakt access token from database
+ */
+async function getTraktAccessToken(config: any): Promise<string | null> {
+  if (!config.apiKeys?.traktTokenId) {
+    return null;
+  }
+  
+  const tokenData = await database.getOAuthToken(config.apiKeys.traktTokenId);
+  if (!tokenData) {
+    logger.warn(`Trakt token not found in database: ${config.apiKeys.traktTokenId}`);
+    return null;
+  }
+  
+  // Check if token is expired
+  const now = Date.now();
+  if (tokenData.expires_at && tokenData.expires_at < now) {
+    logger.info(`Trakt token expired, needs refresh`);
+    // TODO: Implement token refresh
+    return null;
+  }
+  
+  return tokenData.access_token;
+}
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 import { isReleasedDigitally } from "../utils/parseProps.js";
@@ -145,6 +173,12 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const filteredResults = filterMetasByRegex(customResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
+    else if (id.startsWith('trakt.')) {
+      logger.info(`Routing to Trakt catalog handler for id: ${id}`);
+      const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      const filteredResults = filterMetasByRegex(traktResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
+    }
 
     else {
       logger.warn(`Received request for unknown catalog prefix: ${id}`);
@@ -219,7 +253,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   }
 
   // Sort results by score (highest first)
-  const sortedResults = results.sort((a, b) => b.score - a.score);
+  const sortedResults = results.sort((a: any, b: any) => b.score - a.score);
   
   // Apply client-side pagination
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
@@ -235,7 +269,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   } else {
     preferredProvider = config.providers?.series || 'tvdb';
   }
-  const metas = await Promise.all(paginatedResults.map(async item => {
+  const metas = await Promise.all(paginatedResults.map(async (item: any) => {
     const tvdbId = item.id;
     if (!tvdbId) return null;
     
@@ -284,12 +318,12 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     logger.info(`Page ${page}: fetched ${collections.length} collections from TVDB API`);
     
     // Fetch extended details and translations for each collection in parallel
-    const metas = await Promise.all(collections.map(async col => {
+    const metas = await Promise.all(collections.map(async (col: any) => {
       const extended = await cacheWrapTvdbApi(`collection-extended:${col.id}`, () => tvdb.getCollectionDetails(col.id, config));
       if (!extended || !Array.isArray(extended.entities)) return null;
       
       // Only include collections that have at least one movie
-      const hasMovies = extended.entities.some(e => e.movieId);
+      const hasMovies = extended.entities.some((e: any) => e.movieId);
       if (!hasMovies) return null;
       
       const langCode3 = await to3LetterCode(langCode, config);
@@ -428,9 +462,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   // Top rated, year, and language catalogs should keep TMDB's default sorting, so skip this
   if (res?.results) {
     if (id === 'tmdb.top') {
-      res.results.sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
+      res.results.sort((a: any, b: any) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
     }
-    const metas = await Promise.all(res.results.map(async item => {
+    const metas = await Promise.all(res.results.map(async (item: any) => {
     let stremioId = `tmdb:${item.id}`;
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
@@ -582,7 +616,7 @@ function findLanguageCode(genre: string, languages: any[]): string {
 }
 
 function findProvider(providerId: string): any {
-  const provider = CATALOG_TYPES.streaming[providerId];
+  const provider = (CATALOG_TYPES as any).streaming[providerId];
   if (!provider) throw new Error(`Could not find provider: ${providerId}`);
   return provider;
 }
@@ -677,6 +711,183 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`[StremThru] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
+    logger.error(`Full stack trace:`, err.stack);
+    return [];
+  }
+}
+
+async function getTraktCatalog(
+  type: string, 
+  catalogId: string, 
+  genre: string, 
+  page: number, 
+  language: string, 
+  config: UserConfig, 
+  userUUID: string, 
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    logger.info(`Fetching Trakt catalog: ${catalogId}, Genre: ${genre}, Page: ${page}`);
+    
+    // Get Trakt access token from database
+    const accessToken = await getTraktAccessToken(config);
+    if (!accessToken) {
+      logger.warn(`Trakt not connected for user ${userUUID}`);
+      return [];
+    }
+    
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+    
+    // Get catalog configuration
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    const sort = catalogConfig?.sort;
+    
+    // Determine content type filter for API
+    let traktType: 'movies' | 'shows' | undefined;
+    if (type === 'movie') traktType = 'movies';
+    else if (type === 'series') traktType = 'shows';
+    // If type is 'all', traktType remains undefined
+    
+    let response: any;
+    
+    if (catalogId === 'trakt.upnext') {
+      // Trakt Up Next catalog with last_activities optimization
+      logger.debug('Fetching Trakt Up Next catalog');
+      
+      const cacheKey = `trakt_upnext_${accessToken.substring(0, 8)}`;
+      const timestampKey = `trakt_upnext_timestamp_${accessToken.substring(0, 8)}`;
+      const cacheTTL = 300; // 5 minutes for items
+      const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
+      
+      // Get cached items (may be expired)
+      const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
+      
+      // Get last known timestamp (longer TTL so it persists)
+      const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
+      
+      // Fetch Up Next with optimization - pass the timestamp
+      const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(accessToken, cachedTimestamp);
+      
+      let allItems: any[];
+      
+      if (result.items.length === 0 && cachedData?.items) {
+        // No changes detected, reuse cached items even if expired
+        logger.debug(`Up Next: No activity changes, extending cache for ${cachedData.items.length} items`);
+        allItems = cachedData.items;
+        
+        // Refresh the cache TTL with existing data
+        await cacheWrap(cacheKey, async () => cachedData, cacheTTL);
+      } else {
+        // New data fetched or cache miss, rebuild and cache
+        allItems = result.items;
+        
+        // Cache both items and timestamp
+        await cacheWrap(cacheKey, async () => ({ items: allItems, watched_at: result.watched_at }), cacheTTL);
+        await cacheWrap(timestampKey, async () => result.watched_at, timestampTTL);
+        
+        logger.debug(`Up Next: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at})`);
+      }
+      
+      response = { 
+        items: allItems, 
+        hasMore: false
+      };
+    } else if (catalogId.startsWith('trakt.most_favorited.')) {
+      // Format: trakt.most_favorited.{type}.{period}
+      // Example: trakt.most_favorited.movies.weekly
+      const parts = catalogId.split('.');
+      if (parts.length !== 4) {
+        logger.error(`Invalid Trakt most_favorited ID format: ${catalogId}`);
+        return [];
+      }
+      const favType = parts[2]; // 'movies' or 'shows'
+      const favPeriod = parts[3]; // 'daily', 'weekly', 'monthly', 'all'
+      logger.debug(`Fetching Trakt most favorited: type=${favType}, period=${favPeriod}`);
+      response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genre);
+    } else if (catalogId === 'trakt.watchlist') {
+      // Unified watchlist
+      logger.debug(`Fetching Trakt unified watchlist`);
+      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort);
+    } else if (catalogId === 'trakt.watchlist.movies') {
+      // Movies-only watchlist
+      logger.debug(`Fetching Trakt watchlist (movies only)`);
+      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort);
+    } else if (catalogId === 'trakt.watchlist.series') {
+      // Series-only watchlist
+      logger.debug(`Fetching Trakt watchlist (shows only)`);
+      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort);
+    } else if (catalogId === 'trakt.favorites.movies') {
+      // Movies-only favorites
+      logger.debug(`Fetching Trakt favorites (movies only)`);
+      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort);
+    } else if (catalogId === 'trakt.favorites.shows') {
+      // Shows-only favorites
+      logger.debug(`Fetching Trakt favorites (shows only)`);
+      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort);
+    } else if (catalogId === 'trakt.recommendations.movies') {
+      // Movies-only recommendations
+      logger.debug(`Fetching Trakt recommendations (movies only)`);
+      response = await fetchTraktRecommendationsItems(accessToken, 'movies', page, pageSize);
+    } else if (catalogId === 'trakt.recommendations.shows') {
+      // Shows-only recommendations
+      logger.debug(`Fetching Trakt recommendations (shows only)`);
+      response = await fetchTraktRecommendationsItems(accessToken, 'shows', page, pageSize);
+    } else {
+      // Custom list: trakt.{username}.{listSlug}
+      const parts = catalogId.split('.');
+      if (parts.length < 3) {
+        logger.error(`Invalid Trakt list ID format: ${catalogId}`);
+        return [];
+      }
+      
+      const username = parts[1];
+      const listSlug = parts.slice(2).join('.'); // Handle list slugs with dots
+      
+      logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
+      response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre);
+    }
+    
+    // Log pagination info
+    if (response.totalItems !== undefined && response.totalPages !== undefined) {
+      logger.debug(
+        `Trakt pagination - page ${page}/${response.totalPages}, ` +
+        `items: ${response.items.length}, totalItems: ${response.totalItems}, hasMore: ${response.hasMore}`
+      );
+    } else {
+      logger.debug(
+        `Trakt pagination - page ${page}, items: ${response.items.length}, hasMore: ${response.hasMore}`
+      );
+    }
+    
+    // Early exit for empty pages
+    if (!response.hasMore && response.items.length === 0) {
+      logger.debug(`Trakt early exit - no more items at page ${page}`);
+      return [];
+    }
+    
+    // Parse items into Stremio metas
+    let metas = await parseTraktItems(response.items, type, language, config, includeVideos);
+    
+    // Apply digital release filter if enabled (movies only)
+    if (type === 'movie' && config.hideUnreleasedDigital) {
+      const beforeCount = metas.length;
+      metas = metas.filter(meta => isReleasedDigitally(meta));
+      const afterCount = metas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter (Trakt): filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    // Apply age rating filter
+    metas = applyAgeRatingFilter(metas, type, config);
+    
+    logger.success(`[Trakt] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
+    return metas;
+    
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[Trakt] Error processing catalog ${catalogId}: ${err.message}`);
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, err.stack);
     return [];

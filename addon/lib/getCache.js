@@ -748,6 +748,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isMALCatalog = idOnly.startsWith('mal.');
   const isMALAnimeProvider = config.providers?.anime === 'mal';
   const isMDBListCatalog = idOnly.startsWith('mdblist.');
+  const isTraktCatalog = idOnly.startsWith('trakt.');
   const isStreamingCatalog = idOnly.startsWith('streaming.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
@@ -788,6 +789,13 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   if (isMDBListCatalog) {
     catalogConfig.apiKeys = {
       mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
+    };
+  }
+  
+  // Only include Trakt token ID for Trakt catalogs (user-specific)
+  if (isTraktCatalog) {
+    catalogConfig.apiKeys = {
+      traktTokenId: config.apiKeys?.traktTokenId || ''
     };
   }
   
@@ -833,6 +841,15 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     }
   }
   
+  // Use custom cache TTL for Trakt catalogs if specified
+  if (idOnly.startsWith('trakt.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.info(`Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+    }
+  }
+  
   // Handle custom TTL for custom manifest catalogs
   if (idOnly.startsWith('custom.')) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
@@ -858,7 +875,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
     key = `catalog:${today}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
+  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
     key = `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
   } else {
     key = `catalog:${catalogConfigString}:${catalogKey}`;
@@ -866,7 +883,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
-  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s key:${key}`);
+  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s key:${key}`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state
@@ -1831,6 +1848,13 @@ function cacheWrapMDBListGenres(genreType, method) {
   return cacheWrapGlobal(`mdblist-${genreType}`, method, MDBLIST_GENRES_TTL);
 }
 
+function cacheWrapTraktGenres(genreType, method) {
+  // genreType should be 'movies' or 'shows'
+  cacheLogger.debug(`Caching Trakt genres for type: ${genreType}`);
+  // Use same TTL as MDBList genres (30 days) since Trakt genres are also stable
+  return cacheWrapGlobal(`trakt-genres-${genreType}`, method, MDBLIST_GENRES_TTL);
+}
+
 function cacheWrapStremThruGenres(catalogUrl, method) {
   // Use a hash or simplified key from the catalog URL to avoid super long keys
   const urlKey = Buffer.from(catalogUrl).toString('base64').substring(0, 50);
@@ -2015,6 +2039,7 @@ module.exports = {
   cacheWrapSearch,
   cacheWrapJikanApi,
   cacheWrapMDBListGenres,
+  cacheWrapTraktGenres,
   cacheWrapStremThruGenres,
   cacheWrapStaticCatalog,
   cacheWrapMeta,

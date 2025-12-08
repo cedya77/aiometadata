@@ -74,7 +74,12 @@ const CatalogColumn = ({
 
 const Catalogs = () => {
   const { config, setConfig } = useConfig();
-  const { sessionId, streaming = [], catalogs = [] } = config;
+  const { sessionId, streaming = [], catalogs = [], showDisabledCatalogs } = config;
+  const [showDisabled, setShowDisabled] = useState(showDisabledCatalogs ?? false);
+
+  useEffect(() => {
+    setShowDisabled(showDisabledCatalogs ?? false);
+  }, [showDisabledCatalogs]);
 
   const mouseSensor = useSensor(MouseSensor, {
     activationConstraint: {
@@ -163,13 +168,27 @@ const Catalogs = () => {
     const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
     return streaming.includes(serviceId);
   });
-  const grouped = groupBySource(filteredCatalogs);
+  const visibleCatalogs = filteredCatalogs.filter(cat => showDisabled || cat.enabled);
+  const grouped = groupBySource(visibleCatalogs);
 
   return (
     <main className="md:p-12 px-2 py-12">
       <div className="flex flex-col mb-6">
         <h1 className="text-xl font-semibold mb-1">Catalogs</h1>
         <p className="text-gray-500 text-sm">Manage the catalogs available in the addon.</p>
+        <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-gray-300"
+            checked={showDisabled}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setShowDisabled(next);
+              setConfig(prev => ({ ...prev, showDisabledCatalogs: next }));
+            }}
+          />
+          {showDisabled ? 'Hide Disabled' : 'Show All'}
+        </label>
       </div>
       {Object.entries(grouped).map(([source, groupCatalogs]) => (
         <CollapsibleSection key={source} title={source.toUpperCase()}>

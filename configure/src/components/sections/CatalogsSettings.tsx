@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
+import { TraktIntegration } from './TraktIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -34,6 +35,30 @@ import {
 } from '@/utils/toastHelpers';
 import { toast } from 'sonner';
 
+type TraktSortOption = 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
+
+const TRAKT_SORT_OPTIONS: { value: TraktSortOption; label: string; vip?: boolean }[] = [
+  { value: 'rank', label: 'Rank' },
+  { value: 'added', label: 'Added' },
+  { value: 'title', label: 'Title' },
+  { value: 'released', label: 'Released' },
+  { value: 'runtime', label: 'Runtime' },
+  { value: 'popularity', label: 'Popularity' },
+  { value: 'random', label: 'Random' },
+  { value: 'percentage', label: 'Percentage' },
+  { value: 'imdb_rating', label: 'IMDb Rating', vip: true },
+  { value: 'tmdb_rating', label: 'TMDb Rating', vip: true },
+  { value: 'rt_tomatometer', label: 'RT Tomatometer', vip: true },
+  { value: 'rt_audience', label: 'RT Audience', vip: true },
+  { value: 'metascore', label: 'Metascore', vip: true },
+  { value: 'votes', label: 'Votes', vip: true },
+  { value: 'imdb_votes', label: 'IMDb Votes', vip: true },
+  { value: 'tmdb_votes', label: 'TMDb Votes', vip: true },
+  { value: 'my_rating', label: 'My Rating' },
+  { value: 'watched', label: 'Watched' },
+  { value: 'collected', label: 'Collected' },
+];
+
 const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
@@ -42,6 +67,7 @@ const sourceBadgeStyles = {
   mdblist: "bg-yellow-800/80 text-yellow-200 border-yellow-600/50 hover:bg-yellow-800",
   stremthru: "bg-purple-800/80 text-purple-200 border-purple-600/50 hover:bg-purple-800",
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
+  trakt: "bg-red-800/80 text-red-200 border-red-600/50 hover:bg-red-800",
 };
 
 
@@ -59,7 +85,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL, genreSelection, enableRatingPosters }
+          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters }
           : c
       )
     }));
@@ -189,6 +215,103 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
+const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  const [sort, setSort] = useState<TraktSortOption>(catalog.sort as TraktSortOption || 'added');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  
+  const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
+
+  const handleSave = () => {
+    setConfig(prev => {
+      const updatedCatalogs = prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, minCacheTTL) }
+          : c
+      ) as CatalogConfig[];
+
+      return {
+        ...prev,
+        catalogs: updatedCatalogs,
+      };
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Trakt Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value) => setSort(value as TraktSortOption)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <TooltipProvider>
+                  {TRAKT_SORT_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="flex items-center gap-1">
+                        {option.label}
+                        {option.vip && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span role="img" aria-label="VIP" className="ml-1">💎</span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs whitespace-normal">
+                              VIP Only: Requires Trakt VIP subscription
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </TooltipProvider>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Sort Direction</Label>
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Cache TTL (seconds)</Label>
+            <Input
+              type="number"
+              min={5}
+              value={cacheTTL}
+              onChange={(e) => setCacheTTL(Number(e.target.value) || 0)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Minimum 5 minutes to avoid excessive API calls
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
@@ -200,7 +323,7 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL, enableRatingPosters, pageSize }
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 300), enableRatingPosters, pageSize }
           : c
       )
     }));
@@ -590,14 +713,14 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {catalog.source === 'mdblist' && (
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Sort Settings">
                   <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Sort Settings</TooltipContent>
+              <TooltipContent>{catalog.source === 'trakt' ? 'Trakt Settings' : 'Sort Settings'}</TooltipContent>
             </Tooltip>
           )}
 
@@ -668,7 +791,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -689,6 +812,12 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       <MDBListSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'mdblist'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <TraktSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'trakt'}
         onClose={() => setShowSettings(false)}
       />
 
@@ -846,6 +975,7 @@ function CatalogsSettingsContent({
     selectedIds
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
+  const [isTraktOpen, setIsTraktOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
@@ -1415,13 +1545,20 @@ function CatalogsSettingsContent({
           <Button onClick={() => setIsMdbListOpen(true)} size="sm">
             Manage MDBList Integration
           </Button>
-          {/* Hidden - redundant with Custom Manifest */}
-          {/* <Button onClick={() => setIsStremThruOpen(true)} size="sm">
-            Import StremThru Catalogs
-          </Button> */}
+          <Button onClick={() => setIsTraktOpen(true)} size="sm">
+            Manage Trakt Integration
+          </Button>
           <Button onClick={() => setIsCustomManifestOpen(true)} size="sm">
             Import Custom Manifest
           </Button>
+          <MDBListIntegration
+            isOpen={isMdbListOpen}
+            onClose={() => setIsMdbListOpen(false)}
+          />
+          <TraktIntegration
+            isOpen={isTraktOpen}
+            onClose={() => setIsTraktOpen(false)}
+          />
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1501,6 +1638,10 @@ function CatalogsSettingsContent({
         isOpen={isMdbListOpen}
         onClose={() => setIsMdbListOpen(false)}
       />
+      <TraktIntegration
+        isOpen={isTraktOpen}
+        onClose={() => setIsTraktOpen(false)}
+      />
       <CustomManifestIntegration
         isOpen={isCustomManifestOpen}
         onClose={() => setIsCustomManifestOpen(false)}
@@ -1544,9 +1685,20 @@ function CatalogsSettingsContent({
 }
 
 // Main export component that wraps with SelectionProvider
+// ...existing code...
+
 export function CatalogsSettings() {
-  const { config, hasBuiltInTvdb } = useConfig();
-  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
+  const { config, hasBuiltInTvdb, setConfig } = useConfig();
+  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(config.showDisabledCatalogs ?? false);
+
+  useEffect(() => {
+    setHideDisabledCatalogs(config.showDisabledCatalogs ?? false);
+  }, [config.showDisabledCatalogs]);
+
+  const handleSetHideDisabled = (value: boolean) => {
+    setHideDisabledCatalogs(value);
+    setConfig(prev => ({ ...prev, showDisabledCatalogs: value }));
+  };
 
   // Check if TVDB key is available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
@@ -1571,7 +1723,7 @@ export function CatalogsSettings() {
     <SelectionProvider catalogs={filteredCatalogs}>
       <CatalogsSettingsContent
         hideDisabledCatalogs={hideDisabledCatalogs}
-        setHideDisabledCatalogs={setHideDisabledCatalogs}
+        setHideDisabledCatalogs={handleSetHideDisabled}
       />
     </SelectionProvider>
   );
