@@ -1188,22 +1188,23 @@ const metaConfigString = stableStringify(metaConfig);
    const componentPromises = [];
    
    const basicMeta = {
-     id: metaId,
-     name: meta.name,
-     type: meta.type,
-     description: meta.description,
-     imdb_id: meta.imdb_id,
-     slug: meta.slug,
-     genres: meta.genres,
-     director: meta.director,
-     writer: meta.writer,
-     year: meta.year,
-     releaseInfo: meta.releaseInfo,
-     released: meta.released,
-     runtime: meta.runtime,
-     country: meta.country,
-     imdbRating: meta.imdbRating,
-     behaviorHints: meta.behaviorHints
+      id: metaId,
+      name: meta.name,
+      type: meta.type,
+      description: meta.description,
+      imdb_id: meta.imdb_id,
+      slug: meta.slug,
+      genres: meta.genres,
+      director: meta.director,
+      writer: meta.writer,
+      year: meta.year,
+      releaseInfo: meta.releaseInfo,
+      released: meta.released,
+      runtime: meta.runtime,
+      country: meta.country,
+      imdbRating: meta.imdbRating,
+      behaviorHints: meta.behaviorHints,
+      posterShape: meta.posterShape || 'poster',
    };
    
    componentPromises.push(
@@ -1470,10 +1471,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    const reconstructedMeta = {};
    
    // Start with basic meta
-   const basicComponent = availableComponents.find(c => c.componentName === 'basic');
-   if (basicComponent) {
-     Object.assign(reconstructedMeta, basicComponent.data);
-   }
+  const basicComponent = availableComponents.find(c => c.componentName === 'basic');
+  if (basicComponent) {
+    Object.assign(reconstructedMeta, basicComponent.data);
+    reconstructedMeta.posterShape = basicComponent.data.posterShape;
+  }
    
    // Add other components
    availableComponents.forEach(({ componentName, data }) => {

@@ -9,46 +9,83 @@ async function fetchTraktUpNextEpisodes(
   accessToken: string, 
   cachedTimestamp?: string
 ): Promise<{ items: any[], watched_at: string }> {
+  const startTime = Date.now();
+  
   // First, check if anything has changed since last fetch
+  const activityStart = Date.now();
   const lastActivity = await fetchTraktLastActivity(accessToken);
+  const activityTime = Date.now() - activityStart;
+  logger.info(`Up Next: last_activities fetch took ${activityTime}ms`);
+  
   const currentWatchedAt = lastActivity?.episodes?.watched_at;
   
   // If we have a cached timestamp and nothing has changed, return empty result
   // The caller will use the cached data
   if (cachedTimestamp && currentWatchedAt && cachedTimestamp === currentWatchedAt) {
-    logger.debug(`Up Next: No changes detected (watched_at: ${currentWatchedAt}), using cached data`);
+    const totalTime = Date.now() - startTime;
+    logger.info(`Up Next: No changes detected (watched_at: ${currentWatchedAt}), using cached data [total: ${totalTime}ms]`);
     return { items: [], watched_at: currentWatchedAt };
   }
   
-  logger.debug(`Up Next: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);
+  logger.info(`Up Next: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);
   
   // Fetch all watched shows and build the Up Next list
+  const watchedStart = Date.now();
   const watchedShows = await fetchTraktWatchedShows(accessToken);
+  const watchedTime = Date.now() - watchedStart;
+  logger.info(`Up Next: watched shows fetch took ${watchedTime}ms (${watchedShows.length} shows)`);
+  
+  const progressStart = Date.now();
+  
+  // Parallelize progress fetches with Promise.all - batch size of 30 concurrent requests
+  const BATCH_SIZE = 30;
   const upNextList: any[] = [];
   
-  for (const show of watchedShows) {
-    const showData = show.show;
-    const showId = showData?.ids?.trakt;
-    if (!showId) continue;
+  for (let i = 0; i < watchedShows.length; i += BATCH_SIZE) {
+    const batch = watchedShows.slice(i, i + BATCH_SIZE);
+    const batchStart = Date.now();
     
-    const progress = await fetchTraktShowWatchedProgress(accessToken, showId);
-    if (!progress?.next_episode) continue;
+    const results = await Promise.all(
+      batch.map(async (show) => {
+        const showData = show.show;
+        const showId = showData?.ids?.trakt;
+        if (!showId) return null;
+        
+        try {
+          const progress = await fetchTraktShowWatchedProgress(accessToken, showId);
+          if (!progress?.next_episode) return null;
+          
+          const nextEp = progress.next_episode;
+          return {
+            type: 'show',
+            show: showData,
+            upNextEpisode: {
+              season: nextEp.season,
+              episode: nextEp.number,
+              trakt_id: nextEp.ids.trakt,
+              imdb_id: nextEp.ids.imdb,
+              tvdb_id: nextEp.ids.tvdb,
+            }
+          };
+        } catch (error) {
+          logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error.message}`);
+          return null;
+        }
+      })
+    );
     
-    const nextEp = progress.next_episode;
-    upNextList.push({
-      type: 'show',
-      show: showData,
-      upNextEpisode: {
-        season: nextEp.season,
-        episode: nextEp.number,
-        trakt_id: nextEp.ids.trakt,
-        imdb_id: nextEp.ids.imdb,
-        tvdb_id: nextEp.ids.tvdb,
-      }
-    });
+    // Filter out null results and add to list
+    upNextList.push(...results.filter(item => item !== null));
+    
+    // ...removed Up Next batch debug log...
   }
   
+  const progressTime = Date.now() - progressStart;
+  const totalTime = Date.now() - startTime;
   logger.info(`Up Next: Built list with ${upNextList.length} shows (watched_at: ${currentWatchedAt})`);
+  logger.info(`Up Next: Progress fetches took ${progressTime}ms for ${watchedShows.length} shows (avg: ${Math.round(progressTime/watchedShows.length)}ms/show, ${BATCH_SIZE} concurrent)`);
+  logger.info(`Up Next: Total rebuild time: ${totalTime}ms`);
+  
   return { items: upNextList, watched_at: currentWatchedAt };
 }
 /**
@@ -674,6 +711,7 @@ async function parseTraktItems(
   config: UserConfig, 
   includeVideos: boolean = false
 ): Promise<any[]> {
+  const parseStart = Date.now();
   
   // Filter items by type
   const filteredItems = items.filter(item => {
@@ -682,10 +720,13 @@ async function parseTraktItems(
     return true; // 'all' type
   });
   
-  logger.debug(`Parsing ${filteredItems.length} Trakt items (filtered from ${items.length} total)`);
+  logger.info(`Up Next: Parsing ${filteredItems.length} Trakt items (filtered from ${items.length} total)`);
+  
+  const getMetaTimings: number[] = [];
   
   const metas = await Promise.all(
-    filteredItems.map(async (item: TraktListItem) => {
+    filteredItems.map(async (item: TraktListItem, index: number) => {
+      const itemStart = Date.now();
       try {
         // Get the media object based on type
         const media = item.movie || item.show;
@@ -694,11 +735,9 @@ async function parseTraktItems(
           return null;
         }
         
-        // Check if this is an Up Next item
         const isUpNext = !!item.upNextEpisode;
         const upNextEpisode = item.upNextEpisode;
         
-        // Prefer IMDB ID, fallback to TMDB
         let stremioId: string;
         if (media.ids.imdb) {
           stremioId = media.ids.imdb;
@@ -715,19 +754,16 @@ async function parseTraktItems(
         
         // For Up Next items, use a unique cache key with shorter TTL
         const cacheId = isUpNext ? `upnext_${stremioId}` : stremioId;
-        const cacheTTL = isUpNext ? 5 * 60 : undefined; // 5 minutes for Up Next, default for others
         
-        // For Up Next items, always include videos to get the episode data
         const shouldIncludeVideos = isUpNext ? true : includeVideos;
         
-        // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
+        const getMetaStart = Date.now();
         const result = await cacheWrapMetaSmart(
           config.userUUID, 
           cacheId, 
           async () => {
             const metaResult = await getMeta(metaType, language, stremioId, config, config.userUUID, shouldIncludeVideos);
             
-            // Apply Up Next filtering to the meta before caching
             if (isUpNext && upNextEpisode && metaResult?.meta?.videos && Array.isArray(metaResult.meta.videos)) {
               const upNextVideo = metaResult.meta.videos.find((v: any) => 
                 v.season === upNextEpisode.season && 
@@ -742,7 +778,7 @@ async function parseTraktItems(
                 metaResult.meta.name = `${metaResult.meta.name} - S${upNextEpisode.season}E${upNextEpisode.episode}`;
                 metaResult.meta.posterShape = 'landscape';
                 metaResult.meta.id = cacheId;
-                logger.debug(`Up Next: Filtered to S${upNextEpisode.season}E${upNextEpisode.episode} for ${metaResult.meta.name}`);
+                // ...removed Up Next filter debug log...
               } else {
                 logger.warn(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} not found in videos for ${metaResult.meta.name}`);
               }
@@ -750,11 +786,17 @@ async function parseTraktItems(
             
             return metaResult;
           }, 
-          cacheTTL, 
+          undefined, 
           { enableErrorCaching: true, maxRetries: 2 }, 
           type as any, 
           shouldIncludeVideos
         );
+        
+        const getMetaTime = Date.now() - getMetaStart;
+        getMetaTimings.push(getMetaTime);
+        
+        const itemTime = Date.now() - itemStart;
+        // ...removed Up Next getMeta debug log...
         
         if (result && result.meta) {
           return result.meta;
@@ -768,7 +810,14 @@ async function parseTraktItems(
   );
   
   const validMetas = metas.filter(Boolean);
-  logger.info(`Successfully parsed ${validMetas.length} Trakt items into metas`);
+  const totalParseTime = Date.now() - parseStart;
+  const avgGetMetaTime = getMetaTimings.length > 0 ? Math.round(getMetaTimings.reduce((a, b) => a + b, 0) / getMetaTimings.length) : 0;
+  const maxGetMetaTime = getMetaTimings.length > 0 ? Math.max(...getMetaTimings) : 0;
+  const minGetMetaTime = getMetaTimings.length > 0 ? Math.min(...getMetaTimings) : 0;
+  
+  logger.info(`Up Next: Successfully parsed ${validMetas.length} Trakt items into metas`);
+  logger.info(`Up Next: getMeta timings - avg: ${avgGetMetaTime}ms, min: ${minGetMetaTime}ms, max: ${maxGetMetaTime}ms`);
+  logger.info(`Up Next: Total parsing time: ${totalParseTime}ms`);
   
   return validMetas;
 }

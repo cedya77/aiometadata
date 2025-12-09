@@ -739,7 +739,6 @@ async function getTraktCatalog(
     
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
     
-    // Get catalog configuration
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const sort = catalogConfig?.sort;
     
@@ -753,41 +752,48 @@ async function getTraktCatalog(
     
     if (catalogId === 'trakt.upnext') {
       // Trakt Up Next catalog with last_activities optimization
-      logger.debug('Fetching Trakt Up Next catalog');
+      const upNextStart = Date.now();
+      logger.info('Up Next: Starting catalog fetch');
       
       const cacheKey = `trakt_upnext_${accessToken.substring(0, 8)}`;
       const timestampKey = `trakt_upnext_timestamp_${accessToken.substring(0, 8)}`;
       const cacheTTL = 300; // 5 minutes for items
       const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
       
-      // Get cached items (may be expired)
+      const cacheCheckStart = Date.now();
       const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
       
       // Get last known timestamp (longer TTL so it persists)
       const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
+      const cacheCheckTime = Date.now() - cacheCheckStart;
+      logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
       
-      // Fetch Up Next with optimization - pass the timestamp
+      const fetchStart = Date.now();
       const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(accessToken, cachedTimestamp);
+      const fetchTime = Date.now() - fetchStart;
+      logger.info(`Up Next: fetchTraktUpNextEpisodes took ${fetchTime}ms`);
       
       let allItems: any[];
       
       if (result.items.length === 0 && cachedData?.items) {
-        // No changes detected, reuse cached items even if expired
-        logger.debug(`Up Next: No activity changes, extending cache for ${cachedData.items.length} items`);
+        logger.info(`Up Next: No activity changes, extending cache for ${cachedData.items.length} items`);
         allItems = cachedData.items;
         
-        // Refresh the cache TTL with existing data
         await cacheWrap(cacheKey, async () => cachedData, cacheTTL);
       } else {
-        // New data fetched or cache miss, rebuild and cache
         allItems = result.items;
         
+        const parseStart = Date.now();
         // Cache both items and timestamp
         await cacheWrap(cacheKey, async () => ({ items: allItems, watched_at: result.watched_at }), cacheTTL);
         await cacheWrap(timestampKey, async () => result.watched_at, timestampTTL);
+        const parseTime = Date.now() - parseStart;
         
-        logger.debug(`Up Next: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at})`);
+        logger.info(`Up Next: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at}) [cache write: ${parseTime}ms]`);
       }
+      
+      const totalTime = Date.now() - upNextStart;
+      logger.info(`Up Next: Total catalog fetch time: ${totalTime}ms`);
       
       response = { 
         items: allItems, 
@@ -842,7 +848,7 @@ async function getTraktCatalog(
       }
       
       const username = parts[1];
-      const listSlug = parts.slice(2).join('.'); // Handle list slugs with dots
+      const listSlug = parts.slice(2).join('.'); 
       
       logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
       response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre);
@@ -866,8 +872,10 @@ async function getTraktCatalog(
       return [];
     }
     
-    // Parse items into Stremio metas
+    const parseStart = Date.now();
     let metas = await parseTraktItems(response.items, type, language, config, includeVideos);
+    const parseTime = Date.now() - parseStart;
+    logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
     // Apply digital release filter if enabled (movies only)
     if (type === 'movie' && config.hideUnreleasedDigital) {
