@@ -787,7 +787,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     const newCatalog: CatalogConfig = {
       id: catalogId,
       type: type === 'movies' ? 'movie' : 'series',
-      name: `Trakt Recommendations (${type === 'movies' ? 'Movies' : 'Shows'})`,
+      name: `Trakt Recommendations`,
       enabled: true,
       showInHome: true,
       source: "trakt",

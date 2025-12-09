@@ -34,8 +34,80 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [popularLists, setPopularLists] = useState<any[]>([]);
   const [selectedPopularLists, setSelectedPopularLists] = useState<Set<string>>(new Set());
   const [isLoadingPopularLists, setIsLoadingPopularLists] = useState(false);
+  const [topLists, setTopLists] = useState<any[]>([]);
+  const [selectedTopLists, setSelectedTopLists] = useState<Set<string>>(new Set());
+  const [isLoadingTopLists, setIsLoadingTopLists] = useState(false);
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
+  // Function to import selected top lists
+  const importSelectedTopLists = useCallback(async () => {
+    if (selectedTopLists.size === 0) {
+      toast.error("Please select at least one top list to import.");
+      return;
+    }
+
+    try {
+      setConfig(prev => {
+        let newCatalogs = [...prev.catalogs];
+        let newListsAddedCount = 0;
+
+        selectedTopLists.forEach(listId => {
+          const list = topLists.find(l => l.id === listId);
+          if (!list) return;
+
+          const type = list.mediatype === "movie" ? "movie" : "series";
+          const catalogId = `mdblist.${list.id}`;
+
+          // Check if catalog already exists
+          if (!newCatalogs.some(c => c.id === catalogId)) {
+            // Apply display type overrides if configured
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (type === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
+
+            const newCatalog: CatalogConfig = {
+              id: catalogId,
+              type,
+              name: list.name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist',
+              sort: defaultSort,
+              order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
+              enableRatingPosters: true,
+              ...(displayType && { displayType }),
+            };
+            newCatalogs.push(newCatalog);
+            newListsAddedCount++;
+          }
+        });
+
+        return {
+          ...prev,
+          catalogs: newCatalogs,
+        };
+      });
+
+      toast.success("Top lists imported successfully", {
+        description: `${selectedTopLists.size} top list(s) added to your catalogs`
+      });
+
+      // Reset selection
+      setSelectedTopLists(new Set());
+    } catch (error) {
+      console.error("Error importing top lists:", error);
+      toast.error("Failed to import top lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+    }
+  }, [selectedTopLists, topLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
 
   const popularUsers = [
     { username: 'tvgeniekodi', name: 'Mr. Professor', description: 'Curated TV and movie lists' },
@@ -117,6 +189,48 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     }
     setSelectedPopularLists(newSelection);
   };
+
+  const handleImportTopLists = useCallback(async () => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key first.");
+      return;
+    }
+
+    setIsLoadingTopLists(true);
+    try {
+      const response = await fetch(`https://api.mdblist.com/lists/top?apikey=${tempKey}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch top lists");
+      }
+
+      const topLists = await response.json();
+      if (!Array.isArray(topLists)) {
+        throw new Error("Unexpected response format");
+      }
+
+      const listsWithUser = topLists.map((list: any) => ({
+        ...list,
+        user: list.user_name || "Unknown",
+        username: list.user_name || "unknown",
+        userDescription: `Top list by ${list.user_name || "Unknown"}`
+      }));
+
+      setTopLists(listsWithUser);
+      setSelectedTopLists(new Set());
+
+      toast.success("Top lists loaded", {
+        description: `Found ${listsWithUser.length} top list(s)`
+      });
+    } catch (error) {
+      console.error("Error fetching top lists:", error);
+      toast.error("Failed to load top lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+      setPopularLists([]);
+    } finally {
+      setIsLoadingTopLists(false);
+    }
+  }, [tempKey]);
 
   const fetchCustomUserLists = useCallback(async () => {
     if (!tempKey) {
@@ -1097,6 +1211,116 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                   )}
                 </div>
               )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Top Lists Section */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Community Top Lists</CardTitle>
+                <CardDescription>
+                  Browse the most popular and trending lists from the MDBList community
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  onClick={handleImportTopLists}
+                  disabled={isLoadingTopLists}
+                  variant="outline"
+                  className="w-full h-auto p-4 flex flex-col items-start space-y-2"
+                >
+                  <div className="flex items-center space-x-2 w-full">
+                    {isLoadingTopLists ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                    )}
+                    <span className="font-medium">Browse Top Lists</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-left">
+                    Popular and trending lists from the MDBList community
+                  </p>
+                </Button>
+
+                {/* Top Lists Display */}
+                {topLists.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                      <Switch
+                        id="select-all-top"
+                        checked={selectedTopLists.size === topLists.length && topLists.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedTopLists(new Set(topLists.map(l => l.id)));
+                          } else {
+                            setSelectedTopLists(new Set());
+                          }
+                        }}
+                      />
+                      <Label htmlFor="select-all-top" className="font-medium cursor-pointer">
+                        Select all top lists
+                      </Label>
+                      <Badge variant="outline" className="ml-auto">
+                        {selectedTopLists.size}/{topLists.length}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                      {topLists.map((list) => (
+                        <div key={list.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                          <Switch
+                            id={`top-${list.id}`}
+                            checked={selectedTopLists.has(list.id)}
+                            onCheckedChange={(checked) => {
+                              const newSelection = new Set(selectedTopLists);
+                              if (checked) {
+                                newSelection.add(list.id);
+                              } else {
+                                newSelection.delete(list.id);
+                              }
+                              setSelectedTopLists(newSelection);
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <Label htmlFor={`top-${list.id}`} className="font-medium cursor-pointer">
+                              {list.name}
+                            </Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {list.mediatype}
+                              </Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                by {list.user}
+                              </Badge>
+                              {list.items && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {list.items} items
+                                </Badge>
+                              )}
+                            </div>
+                            {list.description && (
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                {list.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {selectedTopLists.size > 0 && (
+                      <Button 
+                        onClick={importSelectedTopLists} 
+                        className="w-full"
+                        disabled={selectedTopLists.size === 0}
+                      >
+                        Import {selectedTopLists.size} Selected List{selectedTopLists.size !== 1 ? 's' : ''}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

@@ -33,7 +33,7 @@ function sanitizeUrlForLogging(url: string): string {
 
 // Proxy configuration for MDBList requests
 const MDBLIST_SOCKS_PROXY_URL = process.env.MDBLIST_SOCKS_PROXY_URL;
-let mdblistDispatcher;
+let mdblistDispatcher: any;
 
 if (MDBLIST_SOCKS_PROXY_URL) {
   try {
@@ -51,7 +51,7 @@ if (MDBLIST_SOCKS_PROXY_URL) {
       logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
       mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
     }
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
     mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
   }
