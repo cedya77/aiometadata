@@ -25,6 +25,13 @@ export interface CatalogConfig {
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
+  // Trakt list metadata (item count, privacy, author, description)
+  metadata?: {
+    itemCount?: number;
+    privacy?: string;
+    author?: string;
+    description?: string;
+  };
 }
 
 export interface SearchConfig {

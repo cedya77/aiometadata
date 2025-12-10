@@ -617,10 +617,34 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
               <Pencil size={14} />
             </button>
           </div>
-          <div>
-            <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>
+          <div className="flex items-center gap-2 mt-1">
+            {/* Show itemCount and author only on screens >= sm for trakt and mdblist */}
+            <div className="hidden sm:inline-flex gap-2">
+              {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.itemCount !== undefined && (
+                <Badge variant="outline" className="text-xs">
+                  {(catalog as any).metadata.itemCount} items
+                </Badge>
+              )}
+              {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.author && (
+                <Badge variant="outline" className="text-xs">
+                  @{(catalog as any).metadata.author}
+                </Badge>
+              )}
+            </div>
+            {/* Show only type badge on mobile */}
+            <Badge
+              variant="outline"
+              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} flex sm:hidden`}
+            >
               {catalog.displayType || catalog.type}
-            </p>
+            </Badge>
+            {/* Show type badge on desktop as well */}
+            <Badge
+              variant="outline"
+              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} hidden sm:flex`}
+            >
+              {catalog.displayType || catalog.type}
+            </Badge>
           </div>
         </div>
       </div>
@@ -1465,8 +1489,8 @@ function CatalogsSettingsContent({
     setLoadingAction('delete');
 
     try {
-      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom)
-      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom'];
+      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt)
+      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt'];
       const catalogsToDelete = selectedCatalogs.filter(catalog =>
         removableSources.includes(catalog.source)
       );
@@ -1654,7 +1678,7 @@ function CatalogsSettingsContent({
         onConfirm={handleConfirmBulkDelete}
         title="Delete Selected Catalogs"
         description={(() => {
-          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom'];
+          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt'];
           const catalogsToDelete = selectedCatalogs.filter(catalog =>
             removableSources.includes(catalog.source)
           );

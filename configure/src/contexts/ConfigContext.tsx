@@ -200,6 +200,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
                 if (c.sort !== undefined) settings.sort = c.sort;
                 if (c.order !== undefined) settings.order = c.order;
                 if (c.pageSize !== undefined) settings.pageSize = c.pageSize;
+                if (c.metadata !== undefined) settings.metadata = c.metadata;
                 return [`${c.id}-${c.type}`, settings];
               })
           );

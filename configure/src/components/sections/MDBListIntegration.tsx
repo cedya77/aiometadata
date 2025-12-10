@@ -83,6 +83,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               genreSelection: defaultGenreSelection,
               enableRatingPosters: true,
               ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -345,6 +349,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               genreSelection: defaultGenreSelection,
               enableRatingPosters: true,
               ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -415,6 +423,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               genreSelection: defaultGenreSelection,
               enableRatingPosters: true,
               ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -617,6 +629,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
           ...(displayType && { displayType }),
+          metadata: {
+            ...(list.items !== undefined && { itemCount: list.items }),
+            ...(list.user_name ? { author: list.user_name } : {})
+          }
         };
 
         // Prevent duplicates
@@ -660,7 +676,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           order: defaultOrder,
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
-          enableRatingPosters: true
+          enableRatingPosters: true,
+          metadata: {}
         };
 
         setConfig(prev => {
@@ -708,6 +725,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             genreSelection: defaultGenreSelection,
             enableRatingPosters: true,
             ...(movieDisplayType && { displayType: movieDisplayType }),
+            metadata: {}
           };
 
           const seriesCatalog: CatalogConfig = {
@@ -724,6 +742,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             genreSelection: defaultGenreSelection,
             enableRatingPosters: true,
             ...(seriesDisplayType && { displayType: seriesDisplayType }),
+            metadata: {}
           };
 
           // Check for existing catalogs

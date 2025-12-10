@@ -336,7 +336,6 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
           if (!selectedTraktLists.has(list.ids.slug)) return;
 
           const catalogId = `trakt.${traktUsername.trim()}.${list.ids.slug}`;
-          
           // Skip if already exists
           if (newCatalogs.some(c => c.id === catalogId)) {
             return;
@@ -351,6 +350,12 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
             source: "trakt",
             sort: list.sort_by || 'rank',
             sortDirection: list.sort_how === 'desc' ? 'desc' : 'asc',
+            metadata: {
+              itemCount: list.item_count || 0,
+              privacy: list.privacy || "private",
+              author: list.user?.username || traktUsername.trim(),
+              description: list.description || "",
+            },
           };
 
           newCatalogs.push(newCatalog);
@@ -474,54 +479,44 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         toast.error("Failed to fetch list details", {
           description: errorText
         });
-        setListPreview(null);
         setListPreviewPending(false);
         return;
       }
       const listData = await response.json();
-      setListPreview({
-        catalogId,
+      
+      const newCatalog: CatalogConfig = {
+        id: catalogId,
+        type: "all",
         name: listData.name,
-        description: listData.description || "",
-        itemCount: listData.item_count || 0,
-        privacy: listData.privacy || "private",
-        type: listData.type || "custom",
-        username: username,
-        author: listData.user?.username || username,
-      });
+        enabled: true,
+        showInHome: true,
+        source: "trakt",
+        metadata: {
+          itemCount: listData.item_count || 0,
+          privacy: listData.privacy || "private",
+          author: listData.user?.username || username,
+          description: listData.description || "",
+        },
+      };
+      
+      setConfig(prev => ({
+        ...prev,
+        catalogs: [...prev.catalogs, newCatalog],
+      }));
+      
+      toast.success(`Added: ${listData.name}`);
+      setCustomListUrl("");
       setListPreviewPending(false);
     } catch (error) {
       let description = error instanceof Error ? error.message : String(error);
       toast.error("Error adding Trakt list", {
         description
       });
-      setListPreview(null);
       setListPreviewPending(false);
     }
   };
 
-  const handleAddListToCatalogs = () => {
-    if (!listPreview) return;
-    if (config.catalogs.some(c => c.id === listPreview.catalogId)) {
-      toast.error("This list is already added");
-      return;
-    }
-    const newCatalog: CatalogConfig = {
-      id: listPreview.catalogId,
-      type: "all",
-      name: listPreview.name,
-      enabled: true,
-      showInHome: true,
-      source: "trakt",
-    };
-    setConfig(prev => ({
-      ...prev,
-      catalogs: [...prev.catalogs, newCatalog],
-    }));
-    toast.success(`Added: ${newCatalog.name}`);
-    setCustomListUrl("");
-    setListPreview(null);
-  };
+
 
   const handleRemoveWatchlist = () => {
     setConfig(prev => ({
@@ -1942,7 +1937,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                   </div>
                 </div>
 
-                {traktCatalogs.filter(c => !c.id.startsWith("trakt.watchlist")).length > 0 && (
+                {/*traktCatalogs.filter(c => !c.id.startsWith("trakt.watchlist")).length > 0 && (
                   <Card className="mt-6">
                     <CardHeader>
                       <CardTitle>Imported Lists</CardTitle>
@@ -1954,21 +1949,30 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                           .filter(c => !c.id.startsWith("trakt.watchlist"))
                           .map((catalog) => (
                             <div key={catalog.id} className="flex items-center justify-between p-3 border rounded-lg">
-                              <div>
+                              <div className="flex-1">
                                 <h4 className="font-medium">{catalog.name}</h4>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="outline" className="text-xs capitalize">
-                                    {catalog.type}
-                                  </Badge>
-                                  <Badge variant="secondary" className="text-xs">
-                                    {catalog.enabled ? 'Enabled' : 'Disabled'}
-                                  </Badge>
-                                  {catalog.showInHome && (
+                                  {(catalog as any).metadata?.itemCount !== undefined && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {(catalog as any).metadata.itemCount} items
+                                    </Badge>
+                                  )}
+                                  {(catalog as any).metadata?.privacy && (
+                                    <Badge variant="secondary" className="text-xs capitalize">
+                                      {(catalog as any).metadata.privacy}
+                                    </Badge>
+                                  )}
+                                                                   {(catalog as any).metadata?.author && (
                                     <Badge variant="default" className="text-xs">
-                                      Home
+                                      @{(catalog as any).metadata.author}
                                     </Badge>
                                   )}
                                 </div>
+                                {(catalog as any).metadata?.description && (
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                    {(catalog as any).metadata.description}
+                                  </p>
+                                )}
                               </div>
                               <Button
                                 variant="outline"
@@ -1980,7 +1984,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                                   }));
                                   toast.success(`Removed: ${catalog.name}`);
                                 }}
-                                className="text-destructive hover:text-destructive"
+                                className="text-destructive hover:text-destructive ml-3"
                               >
                                 <Trash2 className="w-4 h-4 mr-1" />
                                 Remove
@@ -1990,37 +1994,13 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                       </div>
                     </CardContent>
                   </Card>
-                )}
+                )*/}
               </CardContent>
             </Card>
           )}
         </div>
 
-        {listPreview && (
-          <div className="mt-2">
-            <div className="font-semibold text-lg mb-1">{listPreview.name}</div>
-            <div className="flex flex-wrap gap-2 mb-1">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-xs font-medium">
-                {listPreview.itemCount} items
-              </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-xs font-medium capitalize">
-                {listPreview.privacy}
-              </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-xs font-medium capitalize">
-                {listPreview.type}
-              </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-xs font-medium">
-                @{listPreview.author}
-              </span>
-            </div>
-            {listPreview.description && (
-              <div className="text-xs text-muted-foreground mb-1 line-clamp-2">{listPreview.description}</div>
-            )}
-            <Button size="sm" onClick={handleAddListToCatalogs} disabled={listPreviewPending}>
-              Add List
-            </Button>
-          </div>
-        )}
+
 
         <DialogFooter>
           <Button onClick={onClose} variant="outline">
