@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.13.0](https://github.com/cedya77/aiometadata/compare/v1.12.0...v1.13.0) (2025-12-10)
+
+
+### Features
+
+* add  metadata (itemCount, author) for all MDBList catalog imports and display ([9634c4e](https://github.com/cedya77/aiometadata/commit/9634c4e7dbee2c200fd6995b2369092df5da1aef))
+* add MDBList top list import ([50abe0e](https://github.com/cedya77/aiometadata/commit/50abe0e921fa794ea24265464c168e87a4bb75da))
+* Complete Trakt integration with all catalog types and optimizations ([e9eca39](https://github.com/cedya77/aiometadata/commit/e9eca39c7cdcb963f2374454fb9b7c32504dbab3))
+* **ui:** enable Enter key submission in Header login form ([887f727](https://github.com/cedya77/aiometadata/commit/887f7273328eddfc44202f36a31b627ffa8a450c))
+* **ui:** enable Enter key submission in Header login form ([8b03b0b](https://github.com/cedya77/aiometadata/commit/8b03b0bbf35fabe963dee992e40af0a4eea77538))
+
+
+### Bug Fixes
+
+* **anime art:** use the same art for catalog and meta even when use imdb id for MAL catalogs/search ([0375ccf](https://github.com/cedya77/aiometadata/commit/0375ccfb1a795167936574c74c749a1dbde9c809))
+* **config:** safe SCAN-based deletion for meta cache clearing to avoid callstack/KEYS issues ([86efcce](https://github.com/cedya77/aiometadata/commit/86efcce6fd39070ddbc5ac2cad1b5ae928d99d28))
+* gemini validation ([fd7a09f](https://github.com/cedya77/aiometadata/commit/fd7a09f83695d6fa652ac574f1b482665e5fbf16))
+* gemini validation ([9c28306](https://github.com/cedya77/aiometadata/commit/9c2830662ea3f5ffc6a83d7624c72d0ad14f1b32))
+* **top rating:** use the correct endpoint for api key testing ([6ef0c70](https://github.com/cedya77/aiometadata/commit/6ef0c7099a226b30de0369b6e29844297f3b07bf))
+
 ## [1.12.0](https://github.com/cedya77/aiometadata/compare/v1.11.0...v1.12.0) (2025-11-29)
 
 
