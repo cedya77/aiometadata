@@ -595,15 +595,22 @@ async function fetchTraktListItems(
   page: number,
   limit: number = 20,
   sort?: string,
-  genre?: string
+  genre?: string,
+  sortDirection?: 'asc' | 'desc'
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
     const typeParam = type || 'all';
     let url = `${TRAKT_BASE_URL}/users/${username}/lists/${listSlug}/items/${typeParam}?page=${page}&limit=${limit}`;
+    if (sort) {
+      url += `&sort_by=${encodeURIComponent(sort)}`;
+      if (sortDirection) {
+        url += `&sort_how=${sortDirection}`;
+      }
+    }
     if (genre && genre !== 'all' && genre !== 'none') {
       url += `&genres=${encodeURIComponent(genre)}`;
     }
-    logger.debug(`Trakt list request: user=${username}, list=${listSlug}, type=${typeParam}, page=${page}, genre=${genre || 'none'}`);
+    logger.debug(`Trakt list request: user=${username}, list=${listSlug}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 
         dispatcher: traktDispatcher,

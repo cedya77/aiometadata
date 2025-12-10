@@ -531,6 +531,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       return;
     }
     setIsLoadingTrending(true);
+    setPopularLists([]);
     try {
       const cacheKey = `trakt_trending_${trendingListType}`;
       const data = await apiCache.cachedFetch(
@@ -569,6 +570,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       return;
     }
     setIsLoadingPopular(true);
+    setTrendingLists([]); // Clear trending lists when loading popular
     try {
       const cacheKey = `trakt_popular_${trendingListType}`;
       const data = await apiCache.cachedFetch(
@@ -1240,6 +1242,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                       <Badge variant="outline" className="ml-auto">
                         {selectedTraktLists.size}/{traktUserLists.length}
                       </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-2"
+                        onClick={() => setSelectedTraktLists(new Set())}
+                        disabled={selectedTraktLists.size === 0}
+                      >
+                        Deselect All
+                      </Button>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
@@ -1352,19 +1363,29 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                       <Label>
                         {trendingLists.length > 0 ? 'Trending Lists' : 'Popular Lists'} ({trendingLists.length || popularLists.length})
                       </Label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const allLists = [...trendingLists, ...popularLists];
-                          const allKeys = allLists
-                            .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
-                            .map(item => `${item.list.user.ids.slug}.${item.list.ids.slug}`);
-                          setSelectedTrendingLists(new Set(allKeys));
-                        }}
-                      >
-                        Select All
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const allLists = [...trendingLists, ...popularLists];
+                            const allKeys = allLists
+                              .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
+                              .map(item => `${item.list.user.ids.slug}.${item.list.ids.slug}`);
+                            setSelectedTrendingLists(new Set(allKeys));
+                          }}
+                        >
+                          Select All
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedTrendingLists(new Set())}
+                          disabled={selectedTrendingLists.size === 0}
+                        >
+                          Deselect All
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="space-y-2 max-h-[400px] overflow-y-auto">

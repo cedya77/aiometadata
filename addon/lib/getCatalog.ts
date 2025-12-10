@@ -741,6 +741,7 @@ async function getTraktCatalog(
     
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const sort = catalogConfig?.sort;
+    const sortDirection = catalogConfig?.sortDirection;
     
     // Determine content type filter for API
     let traktType: 'movies' | 'shows' | undefined;
@@ -851,7 +852,7 @@ async function getTraktCatalog(
       const listSlug = parts.slice(2).join('.'); 
       
       logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
-      response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre);
+      response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre, sortDirection);
     }
     
     // Log pagination info
