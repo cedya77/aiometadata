@@ -76,13 +76,11 @@ const getDisplayTypeOverride = (
 
 export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     const [traktClientId, setTraktClientId] = useState<string>("");
-    const [traktClientSecret, setTraktClientSecret] = useState<string>("");
     useEffect(() => {
       fetch("/api/config")
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.trakt) setTraktClientId(data.trakt);
-          if (data && data.traktSecret) setTraktClientSecret(data.traktSecret);
         });
     }, []);
   const { config, setConfig, auth } = useConfig();
@@ -923,11 +921,11 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
                   <div className="space-y-2">
                     <Label>Step 1: Authorize Trakt</Label>
-                    <Button onClick={handleConnect} className="w-full" disabled={!traktClientId || !traktClientSecret}>
+                    <Button onClick={handleConnect} className="w-full" disabled={!traktClientId}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Authorize with Trakt
                     </Button>
-                    {(!traktClientId || !traktClientSecret) && (
+                    {!traktClientId && (
                       <p className="text-xs text-red-500 mt-2">
                         Instance owner has not yet set up the Trakt integration.
                       </p>
@@ -947,7 +945,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                     />
                   </div>
 
-                  <Button onClick={handleSave} disabled={!tempTokenId.trim() || !traktClientId || !traktClientSecret} className="w-full">
+                  <Button onClick={handleSave} disabled={!tempTokenId.trim() || !traktClientId} className="w-full">
                     Connect Trakt
                   </Button>
                 </div>
