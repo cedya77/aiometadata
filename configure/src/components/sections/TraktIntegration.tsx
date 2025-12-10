@@ -927,6 +927,11 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Authorize with Trakt
                     </Button>
+                    {(!traktClientId || !traktClientSecret) && (
+                      <p className="text-xs text-red-500 mt-2">
+                        Instance owner has not yet set up the Trakt integration.
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Opens a new window. You'll receive a Token ID to paste below.
                     </p>
