@@ -319,63 +319,81 @@ export function Header() {
             <DialogTitle>Load Saved Configuration</DialogTitle>
             <DialogDescription>Enter your UUID and password{requireAddonPassword ? ' and addon password' : ''} to load your saved configuration.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {loginError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-                {loginError}
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="uuid">UUID</Label>
-              <Input 
-                id="uuid" 
-                value={uuidInput} 
-                onChange={(e) => setUuidInput(e.target.value)} 
-                placeholder="Your UUID" 
-                disabled={!!uuidFromUrl}
-                className={uuidFromUrl ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}
-              />
-
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault(); // Prevent page reload
+              handleLogin();
+            }}
+          >
+            <div className="space-y-4">
+              {loginError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+                  {loginError}
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="uuid">UUID</Label>
                 <Input 
-                  id="password" 
-                  type={showPassword ? "text" : "password"} 
-                  value={passwordInput} 
-                  onChange={(e) => setPasswordInput(e.target.value)} 
-                  placeholder="Your password" 
+                  id="uuid" 
+                  value={uuidInput} 
+                  onChange={(e) => setUuidInput(e.target.value)} 
+                  placeholder="Your UUID" 
+                  disabled={!!uuidFromUrl}
+                  className={uuidFromUrl ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-2 top-1/2 -translate-y-1/2"
-                  onClick={() => setShowPassword(!showPassword)}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Input 
+                    id="password" 
+                    type={showPassword ? "text" : "password"} 
+                    value={passwordInput} 
+                    onChange={(e) => setPasswordInput(e.target.value)} 
+                    placeholder="Your password" 
+                  />
+                  <Button
+                    type="button" // Important: prevent form submission
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-2 top-1/2 -translate-y-1/2"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+              {requireAddonPassword && isUUIDTrusted === false && (
+                <div className="space-y-2">
+                  <Label htmlFor="addonPassword">Addon Password</Label>
+                  <Input
+                    id="addonPassword"
+                    type="password"
+                    value={addonPasswordInput}
+                    onChange={e => setAddonPasswordInput(e.target.value)}
+                    placeholder="Enter the addon password"
+                    minLength={6}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Required by the addon administrator.</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button 
+                  type="button" // Keep as button to prevent form submission
+                  variant="outline" 
+                  onClick={() => setIsLoginOpen(false)}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" // Change to submit to trigger form submission
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Loading…' : 'Load'}
                 </Button>
               </div>
             </div>
-            {requireAddonPassword && isUUIDTrusted === false && (
-              <div className="space-y-2">
-                <Label htmlFor="addonPassword">Addon Password</Label>
-                <Input
-                  id="addonPassword"
-                  type="password"
-                  value={addonPasswordInput}
-                  onChange={e => setAddonPasswordInput(e.target.value)}
-                  placeholder="Enter the addon password"
-                  minLength={6}
-                />
-                <p className="text-xs text-muted-foreground mt-1">Required by the addon administrator.</p>
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsLoginOpen(false)}>Cancel</Button>
-              <Button onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Loading\u2026' : 'Load'}</Button>
-            </div>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
     </header>
