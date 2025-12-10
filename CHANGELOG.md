@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.13.1](https://github.com/cedya77/aiometadata/compare/v1.13.0...v1.13.1) (2025-12-10)
+
+
+### Bug Fixes
+
+* **trakt ui:** remove trakt secret for integration disabling condition ([b7a7b5d](https://github.com/cedya77/aiometadata/commit/b7a7b5d7f6cfe4fa64af1d42d804637b057ad2b1))
+
 ## [1.13.0](https://github.com/cedya77/aiometadata/compare/v1.12.0...v1.13.0) (2025-12-10)
 
 
