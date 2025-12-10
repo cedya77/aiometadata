@@ -336,37 +336,83 @@ function parseAIResponse(rawText, type) {
       return [];
     }
     
-    // Filter and validate entries
-    const validSuggestions = parsed.filter(entry => {
-      // Check required fields exist
-      if (!entry.type || !entry.title || !entry.year) {
-        logger.warn("Filtering out invalid entry (missing required fields):", entry);
-        return false;
-      }
-      
-      // Validate types
-      if (typeof entry.title !== 'string' || typeof entry.year !== 'number') {
-        logger.warn("Filtering out invalid entry (wrong field types):", entry);
-        return false;
-      }
-      
-      // Validate year is reasonable
-      if (entry.year < 1850 || entry.year > new Date().getFullYear() + 1) {
-        logger.warn("Filtering out invalid entry (unreasonable year):", entry);
-        return false;
-      }
-      
-      return true;
-    });
-    
-    logger.info(`Parsed ${validSuggestions.length} valid suggestions from ${parsed.length} total entries`);
-    return validSuggestions;
+    return validateAndFilterEntries(parsed);
     
   } catch (error) {
+    logger.warn("Direct JSON parse failed, attempting to extract JSON array from text...");
+    
+    // Try to extract JSON array from the text (any content between [ and ])
+    const jsonArrayMatch = cleanText.match(/\[[\s\S]*\]/);
+    
+    if (jsonArrayMatch) {
+      try {
+        const extractedJson = jsonArrayMatch[0];
+        logger.info("Found JSON array in text, attempting to parse...");
+        const parsed = JSON.parse(extractedJson);
+        
+        if (!Array.isArray(parsed)) {
+          logger.error("Extracted content is not an array");
+          return [];
+        }
+        
+        logger.info("Successfully extracted and parsed JSON array from text");
+        return validateAndFilterEntries(parsed);
+        
+      } catch (extractError) {
+        logger.error("Failed to parse extracted JSON array. Error:", extractError.message);
+      }
+    } else {
+      logger.error("No JSON array found in response text");
+    }
+    
     logger.error("Failed to parse JSON response from AI. Error:", error.message);
     logger.error("Raw text:", cleanText.substring(0, 500));
     return [];
   }
+}
+
+/**
+ * Validates and filters suggestion entries.
+ * @param {Array} parsed - The parsed array to validate.
+ * @returns {Array<{type: string, title: string, year: number}>} Array of validated Suggestion objects.
+ */
+function validateAndFilterEntries(parsed) {
+  // Filter and validate entries
+  const validSuggestions = parsed.filter(entry => {
+    // Check required fields exist
+    if (!entry.type || !entry.title || !entry.year) {
+      logger.warn("Filtering out invalid entry (missing required fields):", entry);
+      return false;
+    }
+    
+    // Validate types (with type coercion for year)
+    if (typeof entry.title !== 'string') {
+      logger.warn("Filtering out invalid entry (title is not a string):", entry);
+      return false;
+    }
+    
+    // Coerce year to number if it's a string
+    const year = typeof entry.year === 'number' ? entry.year : Number(entry.year);
+    
+    if (isNaN(year)) {
+      logger.warn("Filtering out invalid entry (year is not a valid number):", entry);
+      return false;
+    }
+    
+    // Validate year is reasonable
+    if (year < 1850 || year > new Date().getFullYear() + 1) {
+      logger.warn("Filtering out invalid entry (unreasonable year):", entry);
+      return false;
+    }
+    
+    // Normalize the year to a number for consistency
+    entry.year = year;
+    
+    return true;
+  });
+  
+  logger.info(`Parsed ${validSuggestions.length} valid suggestions from ${parsed.length} total entries`);
+  return validSuggestions;
 }
 
 module.exports = {
