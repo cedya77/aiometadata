@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.13.2](https://github.com/cedya77/aiometadata/compare/v1.13.1...v1.13.2) (2025-12-10)
+
+
+### Bug Fixes
+
+* **trakt:** add deselect all buttons for multi-select lists ([02c250d](https://github.com/cedya77/aiometadata/commit/02c250d6a530ae5370315d28eb10524aa7529156))
+* **trakt:** fix sort direction parameter not being sent to API requests ([02c250d](https://github.com/cedya77/aiometadata/commit/02c250d6a530ae5370315d28eb10524aa7529156))
+* **trakt:** prevent trending/popular list stacking in UI ([02c250d](https://github.com/cedya77/aiometadata/commit/02c250d6a530ae5370315d28eb10524aa7529156))
+* **trakt:** support official lists with null user slug ([f681857](https://github.com/cedya77/aiometadata/commit/f681857b6d4ca242b221eff90b4b5d536d1369be))
+
 ## [1.13.1](https://github.com/cedya77/aiometadata/compare/v1.13.0...v1.13.1) (2025-12-10)
 
 
