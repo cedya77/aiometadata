@@ -605,15 +605,19 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
   const importSelectedTrendingLists = () => {
     const listsToImport = [...trendingLists, ...popularLists].filter(item => {
-      if (!item?.list?.user?.ids?.slug || !item?.list?.ids?.slug) return false;
+      if (!item?.list?.ids?.slug) return false;
       const list = item.list;
-      const listKey = `${list.user.ids.slug}.${list.ids.slug}`;
+      // For official lists, use username instead of slug
+      const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
+      const listKey = `${userIdentifier}.${list.ids.slug}`;
       return selectedTrendingLists.has(listKey);
     });
 
     listsToImport.forEach(item => {
       const list = item.list;
-      const catalogId = `trakt.${list.user.ids.slug}.${list.ids.slug}`;
+      // For official lists, use username instead of slug
+      const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
+      const catalogId = `trakt.${userIdentifier}.${list.ids.slug}`;
       
       if (config.catalogs.some(c => c.id === catalogId)) {
         return;
@@ -1370,8 +1374,12 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                           onClick={() => {
                             const allLists = [...trendingLists, ...popularLists];
                             const allKeys = allLists
-                              .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
-                              .map(item => `${item.list.user.ids.slug}.${item.list.ids.slug}`);
+                              .filter(item => item?.list?.ids?.slug)
+                              .map(item => {
+                                // For official lists, use username instead of slug
+                                const userIdentifier = item.list.user?.ids?.slug || item.list.user?.username?.toLowerCase() || 'trakt';
+                                return `${userIdentifier}.${item.list.ids.slug}`;
+                              });
                             setSelectedTrendingLists(new Set(allKeys));
                           }}
                         >
@@ -1390,11 +1398,13 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
                     <div className="space-y-2 max-h-[400px] overflow-y-auto">
                       {[...trendingLists, ...popularLists]
-                        .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
+                        .filter(item => item?.list?.ids?.slug)
                         .map((item) => {
                           const list = item.list;
-                          const listKey = `${list.user.ids.slug}.${list.ids.slug}`;
-                          const catalogId = `trakt.${list.user.ids.slug}.${list.ids.slug}`;
+                          // For official lists, use username instead of slug
+                          const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
+                          const listKey = `${userIdentifier}.${list.ids.slug}`;
+                          const catalogId = `trakt.${userIdentifier}.${list.ids.slug}`;
                           const isAlreadyAdded = config.catalogs.some(c => c.id === catalogId);
                         
                           return (
