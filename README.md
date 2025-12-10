@@ -56,6 +56,10 @@ services:
       - ADMIN_KEY=${ADMIN_KEY?}
       - TMDB_SOCKS_PROXY_URL=${TMDB_SOCKS_PROXY_URL?}
       - DATABASE_URI=sqlite://addon/data/db.sqlite
+      # Trakt integration (required for Trakt account features)
+      - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID?}
+      - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET?}
+      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI?}
     # labels:  # Optional: Remove if not using Traefik
     #   - "traefik.enable=true"
     #   - "traefik.http.routers.aiometadata.rule=Host(`${AIOMETADATA_HOSTNAME?}`)"

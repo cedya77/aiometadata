@@ -1,3 +1,7 @@
+### `TRAKT_REDIRECT_URI`
+- **Required for Trakt integration**: Yes
+- **Description**: Redirect URI for Trakt OAuth. Must match the value set in your Trakt app settings.
+- **Example**: `TRAKT_REDIRECT_URI=https://your-domain.com/api/auth/trakt/callback`
 # Environment Variables Configuration
 
 This document describes all available environment variables for AIO Metadata.
@@ -91,10 +95,21 @@ cp .env.example .env
 - **Description**: RPDB (Rating Poster Database) API key
 - **Get it**: https://ratingposterdb.com/
 
+
 ### `MDBLIST_API_KEY`
 - **Optional**: Yes
 - **Description**: MDBList API key for custom lists
 - **Get it**: https://mdblist.com/
+
+### `TRAKT_CLIENT_ID`
+- **Required for Trakt integration**: Yes
+- **Description**: Trakt API client ID for enabling Trakt account integration (watchlists, custom lists, etc.)
+- **Get it**: https://trakt.tv/oauth/applications
+
+### `TRAKT_CLIENT_SECRET`
+- **Required for Trakt integration**: Yes
+- **Description**: Trakt API client secret for enabling Trakt account integration
+- **Get it**: https://trakt.tv/oauth/applications
 
 ### `GEMINI_API_KEY`
 - **Optional**: Yes
