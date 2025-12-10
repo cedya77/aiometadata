@@ -76,12 +76,13 @@ const getDisplayTypeOverride = (
 
 export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     const [traktClientId, setTraktClientId] = useState<string>("");
-    // Fetch Trakt Client ID from /api/config on mount
+    const [traktClientSecret, setTraktClientSecret] = useState<string>("");
     useEffect(() => {
       fetch("/api/config")
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.trakt) setTraktClientId(data.trakt);
+          if (data && data.traktSecret) setTraktClientSecret(data.traktSecret);
         });
     }, []);
   const { config, setConfig, auth } = useConfig();
@@ -922,7 +923,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
                   <div className="space-y-2">
                     <Label>Step 1: Authorize Trakt</Label>
-                    <Button onClick={handleConnect} className="w-full">
+                    <Button onClick={handleConnect} className="w-full" disabled={!traktClientId || !traktClientSecret}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Authorize with Trakt
                     </Button>
@@ -941,7 +942,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                     />
                   </div>
 
-                  <Button onClick={handleSave} disabled={!tempTokenId.trim()} className="w-full">
+                  <Button onClick={handleSave} disabled={!tempTokenId.trim() || !traktClientId || !traktClientSecret} className="w-full">
                     Connect Trakt
                   </Button>
                 </div>
