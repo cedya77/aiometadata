@@ -753,53 +753,62 @@ async function getTraktCatalog(
     
     if (catalogId === 'trakt.upnext') {
       // Trakt Up Next catalog with last_activities optimization
-      const upNextStart = Date.now();
-      logger.info('Up Next: Starting catalog fetch');
-      
-      const cacheKey = `trakt_upnext_${accessToken.substring(0, 8)}`;
-      const timestampKey = `trakt_upnext_timestamp_${accessToken.substring(0, 8)}`;
-      const cacheTTL = 300; // 5 minutes for items
-      const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
-      
-      const cacheCheckStart = Date.now();
-      const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
-      
-      // Get last known timestamp (longer TTL so it persists)
-      const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
-      const cacheCheckTime = Date.now() - cacheCheckStart;
-      logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
-      
-      const fetchStart = Date.now();
-      const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(accessToken, cachedTimestamp);
-      const fetchTime = Date.now() - fetchStart;
-      logger.info(`Up Next: fetchTraktUpNextEpisodes took ${fetchTime}ms`);
-      
-      let allItems: any[];
-      
-      if (result.items.length === 0 && cachedData?.items) {
-        logger.info(`Up Next: No activity changes, extending cache for ${cachedData.items.length} items`);
-        allItems = cachedData.items;
-        
-        await cacheWrap(cacheKey, async () => cachedData, cacheTTL);
+      // Up Next only has one page - return empty for page 2+
+      if (page > 1) {
+        logger.info(`Up Next: Page ${page} requested, returning empty (only page 1 exists)`);
+        response = { 
+          items: [], 
+          hasMore: false
+        };
       } else {
-        allItems = result.items;
+        const upNextStart = Date.now();
+        logger.info('Up Next: Starting catalog fetch');
         
-        const parseStart = Date.now();
-        // Cache both items and timestamp
-        await cacheWrap(cacheKey, async () => ({ items: allItems, watched_at: result.watched_at }), cacheTTL);
-        await cacheWrap(timestampKey, async () => result.watched_at, timestampTTL);
-        const parseTime = Date.now() - parseStart;
+        const cacheKey = `trakt_upnext_${accessToken.substring(0, 8)}`;
+        const timestampKey = `trakt_upnext_timestamp_${accessToken.substring(0, 8)}`;
+        const cacheTTL = 300; // 5 minutes for items
+        const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
         
-        logger.info(`Up Next: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at}) [cache write: ${parseTime}ms]`);
+        const cacheCheckStart = Date.now();
+        const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
+        
+        // Get last known timestamp (longer TTL so it persists)
+        const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
+        const cacheCheckTime = Date.now() - cacheCheckStart;
+        logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
+        
+        const fetchStart = Date.now();
+        const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(accessToken, cachedTimestamp);
+        const fetchTime = Date.now() - fetchStart;
+        logger.info(`Up Next: fetchTraktUpNextEpisodes took ${fetchTime}ms`);
+        
+        let allItems: any[];
+        
+        if (result.items.length === 0 && cachedData?.items) {
+          logger.info(`Up Next: No activity changes, extending cache for ${cachedData.items.length} items`);
+          allItems = cachedData.items;
+          
+          await cacheWrap(cacheKey, async () => cachedData, cacheTTL);
+        } else {
+          allItems = result.items;
+          
+          const parseStart = Date.now();
+          // Cache both items and timestamp
+          await cacheWrap(cacheKey, async () => ({ items: allItems, watched_at: result.watched_at }), cacheTTL);
+          await cacheWrap(timestampKey, async () => result.watched_at, timestampTTL);
+          const parseTime = Date.now() - parseStart;
+          
+          logger.info(`Up Next: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at}) [cache write: ${parseTime}ms]`);
+        }
+        
+        const totalTime = Date.now() - upNextStart;
+        logger.info(`Up Next: Total catalog fetch time: ${totalTime}ms`);
+        
+        response = { 
+          items: allItems, 
+          hasMore: false
+        };
       }
-      
-      const totalTime = Date.now() - upNextStart;
-      logger.info(`Up Next: Total catalog fetch time: ${totalTime}ms`);
-      
-      response = { 
-        items: allItems, 
-        hasMore: false
-      };
     } else if (catalogId.startsWith('trakt.most_favorited.')) {
       // Format: trakt.most_favorited.{type}.{period}
       // Example: trakt.most_favorited.movies.weekly
@@ -815,23 +824,23 @@ async function getTraktCatalog(
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist
       logger.debug(`Fetching Trakt unified watchlist`);
-      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort);
+      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort, sortDirection, genre);
     } else if (catalogId === 'trakt.watchlist.movies') {
       // Movies-only watchlist
       logger.debug(`Fetching Trakt watchlist (movies only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort);
+      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genre);
     } else if (catalogId === 'trakt.watchlist.series') {
       // Series-only watchlist
       logger.debug(`Fetching Trakt watchlist (shows only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort);
+      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genre);
     } else if (catalogId === 'trakt.favorites.movies') {
       // Movies-only favorites
       logger.debug(`Fetching Trakt favorites (movies only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort);
+      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genre);
     } else if (catalogId === 'trakt.favorites.shows') {
       // Shows-only favorites
       logger.debug(`Fetching Trakt favorites (shows only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort);
+      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genre);
     } else if (catalogId === 'trakt.recommendations.movies') {
       // Movies-only recommendations
       logger.debug(`Fetching Trakt recommendations (movies only)`);

@@ -35,66 +35,75 @@ async function fetchTraktUpNextEpisodes(
   const watchedTime = Date.now() - watchedStart;
   logger.info(`Up Next: watched shows fetch took ${watchedTime}ms (${watchedShows.length} shows)`);
   
-  // Limit to 50 most recently watched shows to prevent excessive API calls
-  const MAX_SHOWS = 50;
-  const showsToProcess = watchedShows.slice(0, MAX_SHOWS);
-  if (watchedShows.length > MAX_SHOWS) {
-    logger.info(`Up Next: Limiting to ${MAX_SHOWS} most recent shows (${watchedShows.length - MAX_SHOWS} shows excluded)`);
-  }
-  
   const progressStart = Date.now();
   
-  // Parallelize all show fetches with Promise.all (max 50 shows)
-  const results = await Promise.all(
-    showsToProcess.map(async (show) => {
-      const showData = show.show;
-      const showId = showData?.ids?.trakt;
-      if (!showId) return null;
-      
-      try {
-        // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
-        const response: any = await makeRateLimitedRequest(
-          () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
-            dispatcher: traktDispatcher,
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-              'trakt-api-version': '2',
-              'trakt-api-key': TRAKT_CLIENT_ID
-            }
-          }),
-          `Trakt fetchShowWatchedProgress (${showId})`,
-          1  // Only 1 attempt for individual show fetches (no retries)
-        );
-        const progress = response.data;
-        if (!progress?.next_episode) return null;
-        
-        const nextEp = progress.next_episode;
-        return {
-          type: 'show',
-          show: showData,
-          upNextEpisode: {
-            season: nextEp.season,
-            episode: nextEp.number,
-            trakt_id: nextEp.ids.trakt,
-            imdb_id: nextEp.ids.imdb,
-            tvdb_id: nextEp.ids.tvdb,
-          }
-        };
-      } catch (error: any) {
-        logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error?.message || String(error)}`);
-        return null;
-      }
-    })
-  );
+  const MAX_RESULTS = 50;
+  const BATCH_SIZE = 30;
+  const upNextList: any[] = [];
+  let processedCount = 0;
   
-  // Filter out null results
-  const upNextList = results.filter(item => item !== null);
+  for (let i = 0; i < watchedShows.length && upNextList.length < MAX_RESULTS; i += BATCH_SIZE) {
+    const remainingNeeded = MAX_RESULTS - upNextList.length;
+    const batchSize = Math.min(BATCH_SIZE, watchedShows.length - i, remainingNeeded + 20); // Fetch extra to account for shows without next episodes
+    const batch = watchedShows.slice(i, i + batchSize);
+    
+    const results = await Promise.all(
+      batch.map(async (show) => {
+        const showData = show.show;
+        const showId = showData?.ids?.trakt;
+        if (!showId) return null;
+        
+        try {
+          // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
+          const response: any = await makeRateLimitedRequest(
+            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
+              dispatcher: traktDispatcher,
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+              }
+            }),
+            `Trakt fetchShowWatchedProgress (${showId})`,
+            1  // Only 1 attempt for individual show fetches (no retries)
+          );
+          const progress = response.data;
+          if (!progress?.next_episode) return null;
+          
+          const nextEp = progress.next_episode;
+          return {
+            type: 'show',
+            show: showData,
+            upNextEpisode: {
+              season: nextEp.season,
+              episode: nextEp.number,
+              trakt_id: nextEp.ids.trakt,
+              imdb_id: nextEp.ids.imdb,
+              tvdb_id: nextEp.ids.tvdb,
+            }
+          };
+        } catch (error: any) {
+          logger.error(`Up Next: Failed to fetch progress for show ${showId} (${showData?.title || 'unknown'}): ${error?.message || String(error)}`);
+          if (error?.response?.data) {
+            logger.error(`Up Next: Trakt API response for show ${showId}: ${JSON.stringify(error.response.data)}`);
+          }
+          return null;
+        }
+      })
+    );
+    
+    const validResults = results.filter(item => item !== null);
+    upNextList.push(...validResults.slice(0, MAX_RESULTS - upNextList.length));
+    processedCount += batch.length;
+    
+    if (upNextList.length >= MAX_RESULTS) break;
+  }
   
   const progressTime = Date.now() - progressStart;
   const totalTime = Date.now() - startTime;
-  logger.info(`Up Next: Built list with ${upNextList.length} shows (watched_at: ${currentWatchedAt})`);
-  logger.info(`Up Next: Progress fetches took ${progressTime}ms for ${showsToProcess.length} shows (avg: ${Math.round(progressTime/showsToProcess.length)}ms/show)`);
+  logger.info(`Up Next: Built list with ${upNextList.length} shows from ${processedCount} watched shows (watched_at: ${currentWatchedAt})`);
+  logger.info(`Up Next: Parallel fetches took ${progressTime}ms (avg: ${Math.round(progressTime/processedCount)}ms/show, ${BATCH_SIZE} concurrent)`);
   logger.info(`Up Next: Total rebuild time: ${totalTime}ms`);
   
   return { items: upNextList, watched_at: currentWatchedAt };
@@ -203,7 +212,8 @@ function isPermanentError(error: any): boolean {
   const status = error.response?.status;
   // Consider 4xx errors (except 429 rate limit) as permanent.
   // 401 (unauthorized) and 403 (forbidden) are permanent auth errors
-  return status >= 400 && status < 500 && status !== 429;
+  // Also treat 500 errors as permanent for individual resource fetches (likely bad data on Trakt's side)
+  return (status >= 400 && status < 500 && status !== 429) || status === 500;
 }
 
 // Rate limiting configuration for Trakt API
@@ -390,15 +400,21 @@ async function fetchTraktWatchlistItems(
   type: 'movies' | 'shows' | undefined,
   page: number,
   limit: number = 20,
-  sort?: string
+  sort?: string,
+  sortDirection?: 'asc' | 'desc',
+  genre?: string
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
     // Construct the URL based on type
     const typeParam = type || 'all';
-    const sortParam = sort || 'added';
-    const url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}?page=${page}&limit=${limit}`;
+    const sortParam = sort || 'rank';
+    const sortHow = sortDirection || 'asc';
+    let url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+    if (genre && genre !== 'all' && genre !== 'none') {
+      url += `&genres=${encodeURIComponent(genre)}`;
+    }
     
-    logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}`);
+    logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 
@@ -455,17 +471,23 @@ async function fetchTraktWatchlistItems(
  * @returns Object with items array and pagination info
  */
 async function fetchTraktFavoritesItems(
-  accessToken: string,
+  accessToken: string, 
   type: 'movies' | 'shows',
   page: number,
   limit: number = 20,
-  sort?: string
+  sort?: string,
+  sortDirection?: 'asc' | 'desc',
+  genre?: string
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
     const sortParam = sort || 'rank';
-    const url = `${TRAKT_BASE_URL}/users/me/favorites/${type}/${sortParam}/asc?page=${page}&limit=${limit}`;
+    const sortHow = sortDirection || 'asc';
+    let url = `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+    if (genre && genre !== 'all' && genre !== 'none') {
+      url += `&genres=${encodeURIComponent(genre)}`;
+    }
     
-    logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}`);
+    logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 

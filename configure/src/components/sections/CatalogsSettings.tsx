@@ -1547,19 +1547,22 @@ function CatalogsSettingsContent({
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               <Home className="h-4 w-4 text-blue-500 dark:text-blue-400" /> On Home Board
             </div>
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <button
+              onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
+              className="flex items-center gap-1.5 whitespace-nowrap px-2 py-1 rounded-md border border-border hover:bg-accent transition-colors"
+            >
               {hideDisabledCatalogs ? (
-                <EyeOff className="h-4 w-4 text-orange-500 dark:text-orange-400" />
+                <>
+                  <Eye className="h-4 w-4" />
+                  Show All
+                </>
               ) : (
-                <Eye className="h-4 w-4 text-muted-foreground" />
+                <>
+                  <EyeOff className="h-4 w-4" />
+                  Hide Disabled
+                </>
               )}
-              <button
-                onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {hideDisabledCatalogs ? 'Hide Disabled' : 'Show All'}
-              </button>
-            </div>
+            </button>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
