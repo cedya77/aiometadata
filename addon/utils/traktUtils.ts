@@ -52,7 +52,21 @@ async function fetchTraktUpNextEpisodes(
         if (!showId) return null;
         
         try {
-          const progress = await fetchTraktShowWatchedProgress(accessToken, showId);
+          // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
+          const response: any = await makeRateLimitedRequest(
+            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
+              dispatcher: traktDispatcher,
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+              }
+            }),
+            `Trakt fetchShowWatchedProgress (${showId})`,
+            1  // Only 1 attempt for individual show fetches (no retries)
+          );
+          const progress = response.data;
           if (!progress?.next_episode) return null;
           
           const nextEp = progress.next_episode;
@@ -67,8 +81,8 @@ async function fetchTraktUpNextEpisodes(
               tvdb_id: nextEp.ids.tvdb,
             }
           };
-        } catch (error) {
-          logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error.message}`);
+        } catch (error: any) {
+          logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error?.message || String(error)}`);
           return null;
         }
       })
@@ -607,7 +621,7 @@ async function fetchTraktListItems(
         url += `&sort_how=${sortDirection}`;
       }
     }
-    if (genre && genre !== 'all' && genre !== 'none') {
+    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
       url += `&genres=${encodeURIComponent(genre)}`;
     }
     logger.debug(`Trakt list request: user=${username}, list=${listSlug}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
