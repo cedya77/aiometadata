@@ -35,69 +35,66 @@ async function fetchTraktUpNextEpisodes(
   const watchedTime = Date.now() - watchedStart;
   logger.info(`Up Next: watched shows fetch took ${watchedTime}ms (${watchedShows.length} shows)`);
   
+  // Limit to 50 most recently watched shows to prevent excessive API calls
+  const MAX_SHOWS = 50;
+  const showsToProcess = watchedShows.slice(0, MAX_SHOWS);
+  if (watchedShows.length > MAX_SHOWS) {
+    logger.info(`Up Next: Limiting to ${MAX_SHOWS} most recent shows (${watchedShows.length - MAX_SHOWS} shows excluded)`);
+  }
+  
   const progressStart = Date.now();
   
-  // Parallelize progress fetches with Promise.all - batch size of 30 concurrent requests
-  const BATCH_SIZE = 30;
-  const upNextList: any[] = [];
-  
-  for (let i = 0; i < watchedShows.length; i += BATCH_SIZE) {
-    const batch = watchedShows.slice(i, i + BATCH_SIZE);
-    const batchStart = Date.now();
-    
-    const results = await Promise.all(
-      batch.map(async (show) => {
-        const showData = show.show;
-        const showId = showData?.ids?.trakt;
-        if (!showId) return null;
-        
-        try {
-          // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
-          const response: any = await makeRateLimitedRequest(
-            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
-              dispatcher: traktDispatcher,
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-                'trakt-api-version': '2',
-                'trakt-api-key': TRAKT_CLIENT_ID
-              }
-            }),
-            `Trakt fetchShowWatchedProgress (${showId})`,
-            1  // Only 1 attempt for individual show fetches (no retries)
-          );
-          const progress = response.data;
-          if (!progress?.next_episode) return null;
-          
-          const nextEp = progress.next_episode;
-          return {
-            type: 'show',
-            show: showData,
-            upNextEpisode: {
-              season: nextEp.season,
-              episode: nextEp.number,
-              trakt_id: nextEp.ids.trakt,
-              imdb_id: nextEp.ids.imdb,
-              tvdb_id: nextEp.ids.tvdb,
+  // Parallelize all show fetches with Promise.all (max 50 shows)
+  const results = await Promise.all(
+    showsToProcess.map(async (show) => {
+      const showData = show.show;
+      const showId = showData?.ids?.trakt;
+      if (!showId) return null;
+      
+      try {
+        // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
+        const response: any = await makeRateLimitedRequest(
+          () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
+            dispatcher: traktDispatcher,
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              'trakt-api-version': '2',
+              'trakt-api-key': TRAKT_CLIENT_ID
             }
-          };
-        } catch (error: any) {
-          logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error?.message || String(error)}`);
-          return null;
-        }
-      })
-    );
-    
-    // Filter out null results and add to list
-    upNextList.push(...results.filter(item => item !== null));
-    
-    // ...removed Up Next batch debug log...
-  }
+          }),
+          `Trakt fetchShowWatchedProgress (${showId})`,
+          1  // Only 1 attempt for individual show fetches (no retries)
+        );
+        const progress = response.data;
+        if (!progress?.next_episode) return null;
+        
+        const nextEp = progress.next_episode;
+        return {
+          type: 'show',
+          show: showData,
+          upNextEpisode: {
+            season: nextEp.season,
+            episode: nextEp.number,
+            trakt_id: nextEp.ids.trakt,
+            imdb_id: nextEp.ids.imdb,
+            tvdb_id: nextEp.ids.tvdb,
+          }
+        };
+      } catch (error: any) {
+        logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error?.message || String(error)}`);
+        return null;
+      }
+    })
+  );
+  
+  // Filter out null results
+  const upNextList = results.filter(item => item !== null);
   
   const progressTime = Date.now() - progressStart;
   const totalTime = Date.now() - startTime;
   logger.info(`Up Next: Built list with ${upNextList.length} shows (watched_at: ${currentWatchedAt})`);
-  logger.info(`Up Next: Progress fetches took ${progressTime}ms for ${watchedShows.length} shows (avg: ${Math.round(progressTime/watchedShows.length)}ms/show, ${BATCH_SIZE} concurrent)`);
+  logger.info(`Up Next: Progress fetches took ${progressTime}ms for ${showsToProcess.length} shows (avg: ${Math.round(progressTime/showsToProcess.length)}ms/show)`);
   logger.info(`Up Next: Total rebuild time: ${totalTime}ms`);
   
   return { items: upNextList, watched_at: currentWatchedAt };
