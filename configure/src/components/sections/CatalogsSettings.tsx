@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
+import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -68,6 +69,7 @@ const sourceBadgeStyles = {
   stremthru: "bg-purple-800/80 text-purple-200 border-purple-600/50 hover:bg-purple-800",
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
   trakt: "bg-red-800/80 text-red-200 border-red-600/50 hover:bg-red-800",
+  anilist: "bg-cyan-800/80 text-cyan-200 border-cyan-600/50 hover:bg-cyan-800",
 };
 
 
@@ -395,6 +397,64 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
               </div>
             </div>
           )}
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 300) }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>AniList Catalog Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="anilist-cache-ttl">Cache TTL (seconds)</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                id="anilist-cache-ttl"
+                type="number"
+                value={cacheTTL}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
+                min="300"
+                max="604800"
+                step="3600"
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder={catalogTTL.toString()}
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
+            </p>
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground mb-4">
+          Note: Changes will take effect after you save your configuration in the Configuration Manager.
         </div>
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -759,6 +819,17 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
+          {catalog.source === 'anilist' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="AniList Settings">
+                  <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>AniList Settings</TooltipContent>
+            </Tooltip>
+          )}
+
           {catalog.source === 'custom' && catalog.sourceUrl && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -815,7 +886,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -848,6 +919,12 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       <CustomManifestSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'custom'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <AniListSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'anilist'}
         onClose={() => setShowSettings(false)}
       />
 
@@ -1000,6 +1077,7 @@ function CatalogsSettingsContent({
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isTraktOpen, setIsTraktOpen] = useState(false);
+  const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
@@ -1489,8 +1567,8 @@ function CatalogsSettingsContent({
     setLoadingAction('delete');
 
     try {
-      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt)
-      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt'];
+      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt, anilist)
+      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'anilist'];
       const catalogsToDelete = selectedCatalogs.filter(catalog =>
         removableSources.includes(catalog.source)
       );
@@ -1572,6 +1650,9 @@ function CatalogsSettingsContent({
           <Button onClick={() => setIsTraktOpen(true)} size="sm">
             Manage Trakt Integration
           </Button>
+          <Button onClick={() => setIsAniListOpen(true)} size="sm">
+            Manage AniList Integration
+          </Button>
           <Button onClick={() => setIsCustomManifestOpen(true)} size="sm">
             Import Custom Manifest
           </Button>
@@ -1582,6 +1663,10 @@ function CatalogsSettingsContent({
           <TraktIntegration
             isOpen={isTraktOpen}
             onClose={() => setIsTraktOpen(false)}
+          />
+          <AniListIntegration
+            isOpen={isAniListOpen}
+            onClose={() => setIsAniListOpen(false)}
           />
           <TooltipProvider>
             <Tooltip>
@@ -1678,7 +1763,7 @@ function CatalogsSettingsContent({
         onConfirm={handleConfirmBulkDelete}
         title="Delete Selected Catalogs"
         description={(() => {
-          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt'];
+          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'anilist'];
           const catalogsToDelete = selectedCatalogs.filter(catalog =>
             removableSources.includes(catalog.source)
           );

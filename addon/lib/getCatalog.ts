@@ -4,13 +4,14 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems } from "../utils/traktUtils.js";
+import { fetchListItems } from "./anilistCatalog.js";
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 
@@ -177,6 +178,12 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.info(`Routing to Trakt catalog handler for id: ${id}`);
       const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(traktResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
+    }
+    else if (id.startsWith('anilist.')) {
+      logger.info(`Routing to AniList catalog handler for id: ${id}`);
+      const anilistResults = await getAniListCatalog(type, id, page, language, config, userUUID, includeVideos);
+      const filteredResults = filterMetasByRegex(anilistResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
 
@@ -901,6 +908,154 @@ async function getTraktCatalog(
     logger.error(`Full stack trace:`, err.stack);
     return [];
   }
+}
+
+/**
+ * Get AniList catalog items for a user's list
+ * Handles 'anilist.*' catalog IDs (e.g., anilist.Watching, anilist.Completed)
+ */
+async function getAniListCatalog(
+  type: string,
+  catalogId: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    logger.info(`[AniList] Fetching catalog: ${catalogId}, Page: ${page}`);
+    
+    // Extract list name from catalog ID (format: anilist.<listName>)
+    const listName = catalogId.replace('anilist.', '');
+    if (!listName) {
+      logger.error(`[AniList] Invalid catalog ID format: ${catalogId}`);
+      return [];
+    }
+    
+    // Get the catalog config to retrieve username and custom TTL
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    const username = catalogConfig?.metadata?.username;
+    
+    if (!username) {
+      logger.error(`[AniList] No username found in catalog config for: ${catalogId}`);
+      return [];
+    }
+    
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+    
+    // Get custom cache TTL from catalog config if specified
+    const customCacheTTL = catalogConfig?.cacheTTL || null;
+    
+    // Fetch list items from AniList API with caching
+    const response = await cacheWrapAniListCatalog(
+      username,
+      listName,
+      page,
+      async () => fetchListItems(username, listName, page, pageSize),
+      customCacheTTL,
+      { enableErrorCaching: true }
+    );
+    
+    // Handle cached error responses
+    if (response && (response as any).error) {
+      logger.warn(`[AniList] Cached error for list "${listName}": ${(response as any).message}`);
+      return [];
+    }
+    
+    logger.debug(`[AniList] Fetched ${response.items.length} items from list "${listName}", hasMore: ${response.hasMore}`);
+    
+    // Early exit for empty pages
+    if (response.items.length === 0) {
+      logger.debug(`[AniList] No items at page ${page} for list "${listName}"`);
+      return [];
+    }
+    
+    // Resolve AniList media IDs to Stremio metas
+    const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+    
+    logger.success(`[AniList] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
+    return metas;
+    
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[AniList] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
+    logger.error(`Full stack trace:`, err.stack);
+    return [];
+  }
+}
+
+/**
+ * Resolve AniList media entries to Stremio meta objects
+ * Uses ID mapping to convert AniList IDs to Stremio-compatible IDs
+ */
+async function resolveAniListItemsToMetas(
+  items: Array<{ score: number; media: { id: number; idMal: number | null } }>,
+  type: string,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean
+): Promise<any[]> {
+  const idMapper = require('./id-mapper.js');
+  
+  const metas = await Promise.all(items.map(async (item) => {
+    try {
+      const anilistId = item.media.id;
+      const malId = item.media.idMal;
+      
+      // Try to get mapping from AniList ID first
+      let mapping = idMapper.getMappingByAnilistId(anilistId);
+      
+      // Fallback to MAL ID if AniList mapping not found
+      if (!mapping && malId) {
+        mapping = idMapper.getMappingByMalId(malId);
+      }
+      
+      // Determine the best Stremio ID to use
+      let stremioId: string | null = null;
+      
+      if (mapping) {
+        // Prefer IMDB ID for best compatibility with Stremio
+        if (mapping.imdb_id) {
+          stremioId = mapping.imdb_id;
+        } else if (mapping.kitsu_id) {
+          stremioId = `kitsu:${mapping.kitsu_id}`;
+        } else if (mapping.mal_id) {
+          stremioId = `mal:${mapping.mal_id}`;
+        } else if (mapping.themoviedb_id) {
+          stremioId = `tmdb:${mapping.themoviedb_id}`;
+        }
+      }
+      
+      // Fallback to AniList ID if no mapping found
+      if (!stremioId) {
+        // Try MAL ID as fallback
+        if (malId) {
+          stremioId = `mal:${malId}`;
+      }
+      
+      logger.debug(`[AniList] Resolving AniList ID ${anilistId} -> ${stremioId}`);
+      
+      // Fetch meta using getMeta with the resolved ID
+      const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+        return await getMeta(type, language, stremioId!, config, userUUID, includeVideos);
+      }, undefined, { enableErrorCaching: true, maxRetries: 2 }, type as any, includeVideos);
+      
+      if (result && result.meta) {
+        return result.meta;
+      }
+      
+      return null;
+    } catch (error: any) {
+      logger.warn(`[AniList] Failed to resolve meta for AniList ID ${item.media.id}: ${error.message}`);
+      return null;
+    }
+  }));
+  
+  // Filter out null results
+  return metas.filter(meta => meta !== null);
 }
 
 export { getCatalog };

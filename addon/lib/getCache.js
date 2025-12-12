@@ -27,6 +27,7 @@ const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
 const MDBLIST_GENRES_TTL = 30 * 24 * 60 * 60; // Cache MDBList genres for 30 days
 const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60; // Cache StremThru genres for 7 days
+const ANILIST_CATALOG_TTL = parseInt(process.env.ANILIST_CATALOG_TTL || 1 * 60 * 60, 10); // Default 1 hour for AniList catalogs
 
 // Store current request context for catalog/search operations
 // This allows reconstruction to access the correct RPDB state
@@ -2031,6 +2032,38 @@ async function clearCache(key) {
   }
 }
 
+/**
+ * Generate cache key for AniList catalog data
+ * Includes username, list name, and page for unique identification
+ * @param {string} username - AniList username
+ * @param {string} listName - Name of the AniList list
+ * @param {number} page - Page number for pagination
+ * @returns {string} Cache key
+ */
+function generateAniListCatalogCacheKey(username, listName, page) {
+  return `anilist-catalog:${username}:${listName}:page${page}`;
+}
+
+/**
+ * Cache wrapper for AniList catalog data
+ * Supports configurable TTL from catalog config
+ * @param {string} username - AniList username
+ * @param {string} listName - Name of the AniList list
+ * @param {number} page - Page number for pagination
+ * @param {function} method - Async function to fetch data if not cached
+ * @param {number} customTTL - Optional custom TTL in seconds (defaults to ANILIST_CATALOG_TTL)
+ * @param {object} options - Additional cache options
+ * @returns {Promise<any>} Cached or freshly fetched data
+ */
+async function cacheWrapAniListCatalog(username, listName, page, method, customTTL = null, options = {}) {
+  const key = generateAniListCatalogCacheKey(username, listName, page);
+  const ttl = customTTL !== null ? customTTL : ANILIST_CATALOG_TTL;
+  
+  cacheLogger.info(`[AniList] Cache key: ${key}, TTL: ${ttl}s (${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m)`);
+  
+  return cacheWrap(key, method, ttl, options);
+}
+
 module.exports = {
   redis,
   cacheWrap,
@@ -2056,5 +2089,7 @@ module.exports = {
   logCacheHealth,
   cacheWrapTvdbApi,
   cacheWrapTvmazeApi,
+  cacheWrapAniListCatalog,
+  generateAniListCatalogCacheKey,
   stableStringify
 };

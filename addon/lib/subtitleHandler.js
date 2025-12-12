@@ -1,6 +1,7 @@
 const consola = require('consola');
 const idMapper = require('./id-mapper');
 const { resolveTmdbEpisodeFromKitsu } = require('./id-mapper');
+const anilistTracker = require('./anilistTracker');
 
 // Configure logging level based on environment
 const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
@@ -171,11 +172,34 @@ function shouldTrackWatch(config) {
 }
 
 /**
+ * Check if AniList watch tracking should be enabled for this request
+ * @param {Object} config - User configuration
+ * @returns {boolean} - True if AniList tracking should proceed
+ */
+function shouldTrackAniList(config) {
+  // Check if anilistTokenId exists in config (user has connected their account)
+  // Token ID is stored in apiKeys.anilistTokenId by the frontend
+  if (!config?.apiKeys?.anilistTokenId) {
+    logger.debug('[Watch Tracking] AniList skipped - No AniList account connected');
+    return false;
+  }
+
+  // Check if anilistWatchTracking is enabled
+  if (!config.anilistWatchTracking) {
+    logger.debug('[Watch Tracking] AniList skipped - Feature disabled in user config');
+    return false;
+  }
+
+  logger.debug('[Watch Tracking] AniList enabled - Account connected and tracking enabled');
+  return true;
+}
+
+/**
  * Main handler for subtitle requests - coordinates parsing and tracking
  * @param {string} type - Content type ('movie' or 'series')
  * @param {string} id - Media ID (e.g., 'tt1234567' or 'tt1234567:2:5')
  * @param {Object} config - User configuration including API keys
- * @param {string} userUUID - User identifier for logging
+ * @param {string} userUUID - User identifier for logging and token retrieval
  * @returns {Object} - Empty subtitle response { subtitles: [] } (synchronous return)
  */
 function handleSubtitleRequest(type, id, config, userUUID) {
@@ -183,12 +207,7 @@ function handleSubtitleRequest(type, id, config, userUUID) {
     // Debug logging for all watch tracking attempts with media ID and user UUID
     logger.debug(`[Watch Tracking] Subtitle request received, type: ${type}, id: ${id}`);
 
-    // Check if tracking should be enabled
-    if (!shouldTrackWatch(config)) {
-      return { subtitles: [] };
-    }
-
-    // Parse the media ID
+    // Parse the media ID first (needed for both MDBList and AniList tracking)
     const parsedId = parseMediaId(id);
     if (!parsedId) {
       // Warning logging for invalid media ID formats
@@ -196,15 +215,27 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       return { subtitles: [] };
     }
 
-    // Initiate async tracking without awaiting
-    trackWatchStatus(parsedId, config).catch(error => {
-      logger.error(`[Watch Tracking] Tracking failed for ${id}: ${error.message}`, {
-        stack: error.stack,
-        parsedId: parsedId
+    // MDBList tracking (fire-and-forget)
+    if (shouldTrackWatch(config)) {
+      trackWatchStatus(parsedId, config).catch(error => {
+        logger.error(`[Watch Tracking] MDBList tracking failed for ${id}: ${error.message}`, {
+          stack: error.stack,
+          parsedId: parsedId
+        });
       });
-    });
+    }
 
-    // Return empty subtitles immediately
+    // AniList tracking (fire-and-forget) - executes asynchronously without blocking response
+    if (shouldTrackAniList(config)) {
+      anilistTracker.trackAnimeProgress(parsedId, config, userUUID).catch(error => {
+        logger.error(`[Watch Tracking] AniList tracking failed for ${id}: ${error.message}`, {
+          stack: error.stack,
+          parsedId: parsedId
+        });
+      });
+    }
+
+    // Return empty subtitles immediately (before tracking operations complete)
     return { subtitles: [] };
 
   } catch (error) {
@@ -365,5 +396,6 @@ async function trackWatchStatus(parsedId, config) {
 module.exports = {
   handleSubtitleRequest,
   parseMediaId,
-  shouldTrackWatch
+  shouldTrackWatch,
+  shouldTrackAniList
 };

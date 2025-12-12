@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -25,12 +25,15 @@ export interface CatalogConfig {
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
-  // Trakt list metadata (item count, privacy, author, description)
+  // List metadata (item count, privacy, author, description, AniList-specific fields)
   metadata?: {
     itemCount?: number;
     privacy?: string;
     author?: string;
     description?: string;
+    // AniList-specific metadata
+    username?: string;
+    isCustomList?: boolean;
   };
 }
 
@@ -96,11 +99,13 @@ export interface AppConfig {
     topPoster: string;
     mdblist: string;
     traktTokenId?: string;
+    anilistTokenId?: string;
     customDescriptionBlurb?: string;
   };
   /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
   posterRatingProvider?: 'rpdb' | 'top';
   mdblistWatchTracking: boolean;
+  anilistWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
   enableRatingPostersForLibrary?: boolean;
   ageRating: string;
