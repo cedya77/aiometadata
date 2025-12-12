@@ -3,7 +3,7 @@ import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems } from "../utils/traktUtils.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
@@ -582,12 +582,15 @@ async function buildParameters(type: string, language: string, page: number, id:
         // Filter for TV shows with episodes airing today
         // Use first_air_date to find shows that first aired, but for "airing today" we want shows with episodes today
         // TMDB's discover endpoint doesn't have direct "airing today" filter, so we use air_date range
-        // Use local timezone to get today's date
-        const now = new Date();
-        const todayYear = now.getFullYear();
-        const todayMonth = String(now.getMonth() + 1).padStart(2, '0');
-        const todayDay = String(now.getDate()).padStart(2, '0');
-        const today = `${todayYear}-${todayMonth}-${todayDay}`; // YYYY-MM-DD format in local timezone
+        // Use user's configured timezone (or server timezone as fallback)
+        const userTimezone = config.timezone || process.env.TZ || 'UTC';
+        const formatter = new Intl.DateTimeFormat('en-CA', { 
+          timeZone: userTimezone, 
+          year: 'numeric', 
+          month: '2-digit', 
+          day: '2-digit' 
+        });
+        const today = formatter.format(new Date()); // YYYY-MM-DD format in user's timezone
         parameters['air_date.gte'] = today;
         parameters['air_date.lte'] = today;
         parameters.sort_by = 'popularity.desc';
@@ -809,6 +812,74 @@ async function getTraktCatalog(
           hasMore: false
         };
       }
+    } else if (catalogId === 'trakt.unwatched') {
+      // Trakt Unwatched Episodes catalog (all unwatched episodes grouped per show)
+      if (page > 1) {
+        logger.info(`Unwatched: Page ${page} requested, returning empty (only page 1 exists)`);
+        response = { items: [], hasMore: false };
+      } else {
+        const runStart = Date.now();
+        logger.info('Unwatched: Starting catalog fetch');
+
+        const cacheKey = `trakt_unwatched_${accessToken.substring(0, 8)}`;
+        const timestampKey = `trakt_unwatched_timestamp_${accessToken.substring(0, 8)}`;
+        const cacheTTL = 300; // 5 minutes
+        const timestampTTL = 3600; // 1 hour
+
+        const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
+        const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
+
+        const result = await require('../utils/traktUtils.js').fetchTraktUnwatchedEpisodes(accessToken, cachedTimestamp);
+
+        let allItems: any[];
+        if (result.items.length === 0 && cachedData?.items) {
+          logger.info(`Unwatched: No activity changes, extending cache for ${cachedData.items.length} items`);
+          allItems = cachedData.items;
+          await cacheWrap(cacheKey, async () => cachedData, cacheTTL);
+        } else {
+          allItems = result.items;
+          await cacheWrap(cacheKey, async () => ({ items: allItems, watched_at: result.watched_at }), cacheTTL);
+          await cacheWrap(timestampKey, async () => result.watched_at, timestampTTL);
+          logger.info(`Unwatched: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at})`);
+        }
+
+        const total = Date.now() - runStart;
+        logger.info(`Unwatched: Total catalog fetch time: ${total}ms`);
+
+        response = { items: allItems, hasMore: false };
+      }
+    } else if (catalogId === 'trakt.calendar') {
+      // Trakt Calendar - Shows airing this week
+      // Only shows page 1, returns empty for page 2+
+      if (page > 1) {
+        logger.info(`Trakt Calendar: Page ${page} requested, returning empty (only page 1 exists)`);
+        response = { items: [], hasMore: false };
+      } else {
+        // Get timezone from config or default to UTC
+        const timezone = config.timezone || process.env.TZ || 'UTC';
+        
+        // Get today's date in the user's timezone (YYYY-MM-DD format)
+        // Create a date formatter for the user's timezone
+        const formatter = new Intl.DateTimeFormat('en-CA', { 
+          timeZone: timezone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const startDate = formatter.format(new Date()); // Returns YYYY-MM-DD
+        
+        logger.info(`Trakt Calendar: Fetching today's shows (${startDate}, timezone: ${timezone})`);
+        
+        // Fetch 1 day (today only)
+        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, 1);
+        
+        response = {
+          items: calendarResult.items,
+          hasMore: false
+        };
+        
+        logger.info(`Trakt Calendar: Retrieved ${response.items.length} shows`);
+      }
     } else if (catalogId.startsWith('trakt.most_favorited.')) {
       // Format: trakt.most_favorited.{type}.{period}
       // Example: trakt.most_favorited.movies.weekly
@@ -858,7 +929,14 @@ async function getTraktCatalog(
       }
       
       const username = parts[1];
-      const listSlug = parts.slice(2).join('.'); 
+      let listSlug = parts.slice(2).join('.'); 
+      
+      // Remove .movies or .series suffix if present (from split catalogs)
+      if (listSlug.endsWith('.movies')) {
+        listSlug = listSlug.slice(0, -7); // Remove '.movies'
+      } else if (listSlug.endsWith('.series')) {
+        listSlug = listSlug.slice(0, -7); // Remove '.series'
+      }
       
       logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
       response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre, sortDirection);

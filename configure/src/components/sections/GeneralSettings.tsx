@@ -214,6 +214,45 @@ const castCountOptions = [
     { value: 0, label: 'Unlimited' } 
 ];
 
+// Common timezones for the selector
+const timezoneOptions = [
+  { value: 'UTC', label: 'UTC (GMT+0)' },
+  { value: 'America/New_York', label: 'Eastern Time (US & Canada)' },
+  { value: 'America/Chicago', label: 'Central Time (US & Canada)' },
+  { value: 'America/Denver', label: 'Mountain Time (US & Canada)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (US & Canada)' },
+  { value: 'America/Anchorage', label: 'Alaska' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii' },
+  { value: 'America/Phoenix', label: 'Arizona' },
+  { value: 'America/Toronto', label: 'Toronto' },
+  { value: 'America/Mexico_City', label: 'Mexico City' },
+  { value: 'America/Sao_Paulo', label: 'Brasília' },
+  { value: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires' },
+  { value: 'Europe/London', label: 'London' },
+  { value: 'Europe/Paris', label: 'Paris' },
+  { value: 'Europe/Berlin', label: 'Berlin' },
+  { value: 'Europe/Rome', label: 'Rome' },
+  { value: 'Europe/Madrid', label: 'Madrid' },
+  { value: 'Europe/Amsterdam', label: 'Amsterdam' },
+  { value: 'Europe/Brussels', label: 'Brussels' },
+  { value: 'Europe/Stockholm', label: 'Stockholm' },
+  { value: 'Europe/Warsaw', label: 'Warsaw' },
+  { value: 'Europe/Athens', label: 'Athens' },
+  { value: 'Europe/Moscow', label: 'Moscow' },
+  { value: 'Asia/Dubai', label: 'Dubai' },
+  { value: 'Asia/Kolkata', label: 'India' },
+  { value: 'Asia/Shanghai', label: 'Beijing/Shanghai' },
+  { value: 'Asia/Hong_Kong', label: 'Hong Kong' },
+  { value: 'Asia/Singapore', label: 'Singapore' },
+  { value: 'Asia/Tokyo', label: 'Tokyo' },
+  { value: 'Asia/Seoul', label: 'Seoul' },
+  { value: 'Australia/Sydney', label: 'Sydney' },
+  { value: 'Australia/Melbourne', label: 'Melbourne' },
+  { value: 'Australia/Brisbane', label: 'Brisbane' },
+  { value: 'Australia/Perth', label: 'Perth' },
+  { value: 'Pacific/Auckland', label: 'Auckland' },
+];
+
 export function GeneralSettings() {
   // Use our custom hook to get the current config and the function to update it
   const { config, setConfig } = useConfig();
@@ -258,6 +297,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
   };
 
+  const handleTimezoneChange = (value: string) => {
+    setConfig(prevConfig => ({ ...prevConfig, timezone: value }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -285,6 +328,24 @@ export function GeneralSettings() {
             </SelectTrigger>
             <SelectContent>
               {languageOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Timezone Setting */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="timezone" className="text-lg font-medium">Timezone</Label>
+            <p className="text-sm text-muted-foreground">Select your timezone for calendar-based features (e.g., Trakt Calendar).</p>
+          </div>
+          <Select value={config.timezone || 'UTC'} onValueChange={handleTimezoneChange}>
+            <SelectTrigger id="timezone" className="w-[280px]">
+              <SelectValue placeholder="Select timezone" />
+            </SelectTrigger>
+            <SelectContent>
+              {timezoneOptions.map(opt => (
                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
               ))}
             </SelectContent>

@@ -110,6 +110,7 @@ export interface AppConfig {
   regexExclusionFilter?: string;
   searchEnabled: boolean;
   sessionId: string;
+  timezone?: string;
   catalogs: CatalogConfig[];
   deletedCatalogs?: string[];
   search: {
