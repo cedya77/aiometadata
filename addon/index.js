@@ -372,19 +372,39 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     // Get user info
     const user = await traktClient.getMe(tokens.access_token);
     
-    // Generate UUID for this token
-    const tokenId = crypto.randomUUID();
+    // Check if this Trakt user already has a token in the database
+    const existingTokens = await database.getOAuthTokensByProvider('trakt');
+    const existingToken = existingTokens.find(t => t.user_id === user.username);
     
-    // Store tokens in database
-    const saved = await database.saveOAuthToken(
-      tokenId,
-      'trakt',
-      user.username,
-      tokens.access_token,
-      tokens.refresh_token,
-      tokens.expires_at,
-      tokens.scope || ''
-    );
+    let tokenId;
+    let saved;
+    
+    if (existingToken) {
+      // Update existing token
+      tokenId = existingToken.id;
+      consola.info(`[Trakt OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
+      
+      saved = await database.updateOAuthToken(
+        tokenId,
+        tokens.access_token,
+        tokens.refresh_token,
+        tokens.expires_at
+      );
+    } else {
+      // Create new token
+      tokenId = crypto.randomUUID();
+      consola.info(`[Trakt OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
+      
+      saved = await database.saveOAuthToken(
+        tokenId,
+        'trakt',
+        user.username,
+        tokens.access_token,
+        tokens.refresh_token,
+        tokens.expires_at,
+        tokens.scope || ''
+      );
+    }
     
     if (!saved) {
       return res.status(500).send(`
@@ -397,6 +417,39 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </body>
         </html>
       `);
+    }
+    
+    // Update all user configs that reference Trakt tokens to use the new token ID
+    // This handles both new connections and reconnections
+    try {
+      const allUsers = await database.getAllUsers();
+      for (const dbUser of allUsers) {
+        const userConfig = JSON.parse(dbUser.config || '{}');
+        let configUpdated = false;
+        
+        // If this user has a Trakt token configured, check if we should update it
+        if (userConfig.apiKeys?.traktTokenId) {
+          const currentToken = await database.getOAuthToken(userConfig.apiKeys.traktTokenId);
+          
+          // Update if:
+          // 1. Current token is for the same Trakt user (reconnection case), OR
+          // 2. Current token no longer exists in database (cleanup case)
+          if (!currentToken || currentToken.user_id === user.username) {
+            userConfig.apiKeys.traktTokenId = tokenId;
+            configUpdated = true;
+            consola.info(`[Trakt OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
+          }
+        }
+        
+        // Save updated config if changed
+        if (configUpdated) {
+          await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
+          configCache.del(dbUser.id);
+        }
+      }
+    } catch (configError) {
+      consola.warn(`[Trakt OAuth] Warning: Could not auto-update user configs - ${configError.message}`);
+      // Don't fail the OAuth callback if config updates fail, just warn
     }
     
     // Display success page with token ID
@@ -527,7 +580,7 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
     await database.saveUserConfig(userUUID, user.password_hash, config);
     
     // Invalidate config cache
-    configCache.delete(userUUID);
+    configCache.del(userUUID);
     
     res.json({ success: true });
   } catch (error) {
@@ -602,8 +655,6 @@ addon.get("/anilist/auth", async (req, res) => {
     // Store state in a short-lived way (we'll validate it in callback)
     // For simplicity, we encode it in the URL - in production you might use a session store
     const authUrl = anilistTracker.getAuthorizationUrl(redirectUri, state);
-    
-    consola.info(`[AniList OAuth] Redirecting to: ${authUrl}`);
     
     res.redirect(authUrl);
   } catch (error) {
@@ -812,7 +863,7 @@ addon.post("/anilist/disconnect", async (req, res) => {
     await database.saveUserConfig(userUUID, user.password_hash, config);
     
     // Invalidate config cache
-    configCache.delete(userUUID);
+    configCache.del(userUUID);
     
     res.json({ success: true });
   } catch (error) {
@@ -1229,13 +1280,13 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   // Ensure sort options are included in cache key
   // Trakt uses: sort, sortDirection
   if (id.startsWith('trakt.')) {
-    if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
-    if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
   // MDBList uses: sort, order
   else if (id.startsWith('mdblist.')) {
-    if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
-    if (catalogConfig.order) extraArgs.order = catalogConfig.order;
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
   }
   // Trakt calendar needs today's date in cache key
   if (id === 'trakt.calendar') {

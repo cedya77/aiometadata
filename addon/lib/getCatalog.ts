@@ -46,6 +46,23 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     return null;
   }
   
+  // Validate token data structure
+  if (!tokenData.access_token || typeof tokenData.access_token !== 'string' || tokenData.access_token.startsWith('[object')) {
+    logger.error(`Trakt token is corrupted (access_token: ${typeof tokenData.access_token}, value preview: ${String(tokenData.access_token).substring(0, 30)})`);
+    logger.error(`Please disconnect and reconnect your Trakt account in settings`);
+    return null;
+  }
+  
+  if (!tokenData.refresh_token || typeof tokenData.refresh_token !== 'string') {
+    logger.error(`Trakt token is missing refresh_token. Please disconnect and reconnect your Trakt account`);
+    return null;
+  }
+  
+  if (!tokenData.expires_at || typeof tokenData.expires_at !== 'number' || tokenData.expires_at === 0) {
+    logger.error(`Trakt token has invalid expires_at (${tokenData.expires_at}). Please disconnect and reconnect your Trakt account`);
+    return null;
+  }
+  
   // Check if token is expired or will expire soon (within 1 hour)
   const now = Date.now();
   const oneHour = 60 * 60 * 1000;
@@ -61,17 +78,16 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
         process.env.TRAKT_REDIRECT_URI!
       );
       
-      // Refresh the token
       const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
       
-      await database.updateOAuthToken(config.apiKeys.traktTokenId, {
-        access_token: newTokens.access_token,
-        refresh_token: newTokens.refresh_token,
-        expires_at: newTokens.expires_at,
-        scope: newTokens.scope
-      });
+      await database.updateOAuthToken(
+        config.apiKeys.traktTokenId,
+        newTokens.access_token,
+        newTokens.refresh_token,
+        newTokens.expires_at
+      );
       
-      logger.info(`Trakt token refreshed successfully, expires at: ${new Date(newTokens.expires_at).toISOString()}`);
+      logger.info(`Trakt token refreshed successfully`);
       
       return newTokens.access_token;
     } catch (error: any) {
