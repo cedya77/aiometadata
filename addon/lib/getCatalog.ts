@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
-import { fetchListItems } from "./anilistCatalog.js";
+const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
@@ -1039,7 +1039,7 @@ async function getAniListCatalog(
       username,
       listName,
       page,
-      async () => fetchListItems(username, listName, page, pageSize),
+      async () => anilist.fetchListItems(username, listName, page, pageSize),
       customCacheTTL,
       { enableErrorCaching: true }
     );
@@ -1078,68 +1078,51 @@ async function getAniListCatalog(
  * Uses ID mapping to convert AniList IDs to Stremio-compatible IDs
  */
 async function resolveAniListItemsToMetas(
-  items: Array<{ score: number; media: { id: number; idMal: number | null } }>,
+  items: Array<{ score: number; media: any }>,
   type: string,
   language: string,
   config: UserConfig,
   userUUID: string,
   includeVideos: boolean
 ): Promise<any[]> {
-  const idMapper = require('./id-mapper.js');
-  
-  const metas = await Promise.all(items.map(async (item) => {
-    try {
-      const anilistId = item.media.id;
-      const malId = item.media.idMal;
-      
-      // Try to get mapping from AniList ID first
-      let mapping = idMapper.getMappingByAnilistId(anilistId);
-      
-      // Fallback to MAL ID if AniList mapping not found
-      if (!mapping && malId) {
-        mapping = idMapper.getMappingByMalId(malId);
-      }
-      
-      // Determine the best Stremio ID to use
-      let stremioId: string | null = null;
-      
-      if (mapping) {
-        // Prefer IMDB ID for best compatibility with Stremio
-        if (mapping.imdb_id) {
-          stremioId = mapping.imdb_id;
-        } else if (mapping.kitsu_id) {
-          stremioId = `kitsu:${mapping.kitsu_id}`;
-        } else if (mapping.mal_id) {
-          stremioId = `mal:${mapping.mal_id}`;
-        } else if (mapping.themoviedb_id) {
-          stremioId = `tmdb:${mapping.themoviedb_id}`;
-        }
-      }
-      
-      // Fallback to AniList ID if no mapping found
-      if (!stremioId) {
-        // Try MAL ID as fallback
-        if (malId) {
-          stremioId = `mal:${malId}`;
-      }
-      
-      logger.debug(`[AniList] Resolving AniList ID ${anilistId} -> ${stremioId}`);
-      
-      // Fetch meta using getMeta with the resolved ID
-      const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-        return await getMeta(type, language, stremioId!, config, userUUID, includeVideos);
-      }, undefined, { enableErrorCaching: true, maxRetries: 2 }, type as any, includeVideos);
-      
-      if (result && result.meta) {
-        return result.meta;
-      }
-      
-      return null;
-    } catch (error: any) {
-      logger.warn(`[AniList] Failed to resolve meta for AniList ID ${item.media.id}: ${error.message}`);
-      return null;
-    }
-  }));
+  // Helper function to strip HTML tags from AniList descriptions
+  const stripHtml = (html: string | null | undefined): string => {
+    if (!html) return '';
+    return html
+      .replace(/<br\s*\/?>/gi, '\n') // Convert <br> to newlines
+      .replace(/<\/?[^>]+(>|$)/g, '') // Remove all other HTML tags
+      .replace(/\n\n+/g, '\n\n') // Collapse multiple newlines
+      .trim();
+  };
+
+  // create new items with property mal_id and type, plus additional AniList fields
+  const newItems = items.map(item => {
+    const media = item.media;
+    // Format dates from AniList structure
+    const airedFrom = media.startDate?.year 
+      ? `${media.startDate.year}-${String(media.startDate.month || 1).padStart(2, '0')}-${String(media.startDate.day || 1).padStart(2, '0')}`
+      : null;
+    const airedTo = media.endDate?.year
+      ? `${media.endDate.year}-${String(media.endDate.month || 12).padStart(2, '0')}-${String(media.endDate.day || 31).padStart(2, '0')}`
+      : null;
+    
+    return {
+      mal_id: media.idMal,
+      type: type,
+      title: media.title?.romaji,
+      title_english: media.title?.english,
+      year: media.seasonYear || media.startDate?.year,
+      duration: media.duration ? `${media.duration} min per ep` : null,
+      episodes: media.episodes,
+      synopsis: stripHtml(media.description),
+      aired: {
+        from: airedFrom,
+        to: airedTo
+      },
+      status: airedTo ? 'Finished Airing' : 'Currently Airing'
+    };
+  });
+  const metas= await Utils.parseAnimeCatalogMetaBatch(newItems, config, language);
   
   // Filter out null results
   return metas.filter(meta => meta !== null);

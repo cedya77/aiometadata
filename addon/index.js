@@ -7,6 +7,7 @@ const addon = express();
 //addon.set('trust proxy', true);
 
 const { getCatalog } = require("./lib/getCatalog");
+const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
@@ -589,6 +590,8 @@ addon.get("/anilist/auth", async (req, res) => {
     const clientSecret = process.env.ANILIST_CLIENT_SECRET;
     const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
     
+    consola.info(`[AniList OAuth] Starting auth flow with client_id=${clientId}, redirect_uri=${redirectUri}`);
+    
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: "AniList OAuth not configured. Please set ANILIST_CLIENT_ID and ANILIST_CLIENT_SECRET environment variables." });
     }
@@ -599,6 +602,8 @@ addon.get("/anilist/auth", async (req, res) => {
     // Store state in a short-lived way (we'll validate it in callback)
     // For simplicity, we encode it in the URL - in production you might use a session store
     const authUrl = anilistTracker.getAuthorizationUrl(redirectUri, state);
+    
+    consola.info(`[AniList OAuth] Redirecting to: ${authUrl}`);
     
     res.redirect(authUrl);
   } catch (error) {
@@ -862,8 +867,6 @@ addon.get("/anilist/status/:userUUID", async (req, res) => {
 });
 
 // POST /api/anilist/lists - Get user's AniList anime lists
-const { fetchUserLists } = require('./lib/anilistCatalog');
-
 addon.post("/api/anilist/lists", async (req, res) => {
   try {
     const { tokenId } = req.body;
@@ -891,7 +894,7 @@ addon.post("/api/anilist/lists", async (req, res) => {
     consola.info(`[AniList Lists] Fetching lists for user: ${username}`);
     
     // Fetch user's lists from AniList API
-    const result = await fetchUserLists(username);
+    const result = await anilist.fetchUserLists(username);
     
     res.json({
       success: true,

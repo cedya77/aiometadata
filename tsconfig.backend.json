@@ -44,5 +44,7 @@
       "configure",
       "**/*.test.ts",
       "**/*.spec.ts"
+      ,
+      "addon/lib/anilistCatalog.ts"
     ]
   }  
