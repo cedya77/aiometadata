@@ -46,12 +46,38 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     return null;
   }
   
-  // Check if token is expired
+  // Check if token is expired or will expire soon (within 1 hour)
   const now = Date.now();
-  if (tokenData.expires_at && tokenData.expires_at < now) {
-    logger.info(`Trakt token expired, needs refresh`);
-    // TODO: Implement token refresh
-    return null;
+  const oneHour = 60 * 60 * 1000;
+  
+  if (tokenData.expires_at && tokenData.expires_at < (now + oneHour)) {
+    logger.info(`Trakt token expired or expiring soon, refreshing...`);
+    
+    try {
+      const { TraktClient } = require('./trakt');
+      const traktClient = new TraktClient(
+        process.env.TRAKT_CLIENT_ID!,
+        process.env.TRAKT_CLIENT_SECRET!,
+        process.env.TRAKT_REDIRECT_URI!
+      );
+      
+      // Refresh the token
+      const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
+      
+      await database.updateOAuthToken(config.apiKeys.traktTokenId, {
+        access_token: newTokens.access_token,
+        refresh_token: newTokens.refresh_token,
+        expires_at: newTokens.expires_at,
+        scope: newTokens.scope
+      });
+      
+      logger.info(`Trakt token refreshed successfully, expires at: ${new Date(newTokens.expires_at).toISOString()}`);
+      
+      return newTokens.access_token;
+    } catch (error: any) {
+      logger.error(`Failed to refresh Trakt token: ${error.message}`);
+      return null;
+    }
   }
   
   return tokenData.access_token;
