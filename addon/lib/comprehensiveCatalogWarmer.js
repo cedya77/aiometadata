@@ -620,8 +620,8 @@ class ComprehensiveCatalogWarmer {
             continue;
           }
 
-          // Get enabled catalogs from user config
-          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled);
+          // Get enabled catalogs from user config, excluding Up Next (dynamic catalog)
+          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext');
           
           // Initialize stats for this UUID
           this.stats.uuidStats[uuid] = {

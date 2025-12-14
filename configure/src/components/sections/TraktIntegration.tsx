@@ -87,6 +87,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
   const [tempTokenId, setTempTokenId] = useState(config.apiKeys?.traktTokenId || "");
   const [isConnected, setIsConnected] = useState(!!config.apiKeys?.traktTokenId);
   const [customListUrl, setCustomListUrl] = useState("");
+  const [customListType, setCustomListType] = useState<'all' | 'split'>('all');
   const [disconnecting, setDisconnecting] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loadingUsername, setLoadingUsername] = useState(false);
@@ -483,27 +484,80 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       }
       const listData = await response.json();
       
-      const newCatalog: CatalogConfig = {
-        id: catalogId,
-        type: "all",
-        name: listData.name,
-        enabled: true,
-        showInHome: true,
-        source: "trakt",
-        metadata: {
-          itemCount: listData.item_count || 0,
-          privacy: listData.privacy || "private",
-          author: listData.user?.username || username,
-          description: listData.description || "",
-        },
-      };
+      if (customListType === 'split') {
+        // Create two separate catalogs for movies and series
+        setConfig(prev => {
+          const movieDisplayType = getDisplayTypeOverride('movie', prev.displayTypeOverrides);
+          const seriesDisplayType = getDisplayTypeOverride('series', prev.displayTypeOverrides);
+
+          const newCatalogs: CatalogConfig[] = [
+            {
+              id: `${catalogId}.movies`,
+              type: "movie",
+              name: listData.name,
+              enabled: true,
+              showInHome: true,
+              source: "trakt",
+              sort: customListSortBy as any,
+              sortDirection: customListSortHow,
+              metadata: {
+                privacy: listData.privacy || "private",
+                author: listData.user?.username || username,
+                description: listData.description || "",
+              },
+              ...(movieDisplayType && { displayType: movieDisplayType }),
+            },
+            {
+              id: `${catalogId}.series`,
+              type: "series",
+              name: listData.name,
+              enabled: true,
+              showInHome: true,
+              source: "trakt",
+              sort: customListSortBy as any,
+              sortDirection: customListSortHow,
+              metadata: {
+                privacy: listData.privacy || "private",
+                author: listData.user?.username || username,
+                description: listData.description || "",
+              },
+              ...(seriesDisplayType && { displayType: seriesDisplayType }),
+            },
+          ];
+
+          return {
+            ...prev,
+            catalogs: [...prev.catalogs, ...newCatalogs],
+          };
+        });
+        toast.success(`Added: ${listData.name} (Movies & Series)`);
+      } else {
+        // Create unified catalog
+        const newCatalog: CatalogConfig = {
+          id: catalogId,
+          type: "all",
+          name: listData.name,
+          enabled: true,
+          showInHome: true,
+          source: "trakt",
+          sort: customListSortBy as any,
+          sortDirection: customListSortHow,
+          metadata: {
+            itemCount: listData.item_count || 0,
+            privacy: listData.privacy || "private",
+            author: listData.user?.username || username,
+            description: listData.description || "",
+          },
+        };
+        
+        setConfig(prev => ({
+          ...prev,
+          catalogs: [...prev.catalogs, newCatalog],
+        }));
+        
+        toast.success(`Added: ${listData.name}`);
+      }
       
-      setConfig(prev => ({
-        ...prev,
-        catalogs: [...prev.catalogs, newCatalog],
-      }));
-      
-      toast.success(`Added: ${listData.name}`);
       setCustomListUrl("");
       setListPreviewPending(false);
     } catch (error) {
@@ -605,15 +659,19 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
   const importSelectedTrendingLists = () => {
     const listsToImport = [...trendingLists, ...popularLists].filter(item => {
-      if (!item?.list?.user?.ids?.slug || !item?.list?.ids?.slug) return false;
+      if (!item?.list?.ids?.slug) return false;
       const list = item.list;
-      const listKey = `${list.user.ids.slug}.${list.ids.slug}`;
+      // For official lists, use username instead of slug
+      const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
+      const listKey = `${userIdentifier}.${list.ids.slug}`;
       return selectedTrendingLists.has(listKey);
     });
 
     listsToImport.forEach(item => {
       const list = item.list;
-      const catalogId = `trakt.${list.user.ids.slug}.${list.ids.slug}`;
+      // For official lists, use username instead of slug
+      const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
+      const catalogId = `trakt.${userIdentifier}.${list.ids.slug}`;
       
       if (config.catalogs.some(c => c.id === catalogId)) {
         return;
@@ -851,6 +909,43 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     toast.success("Most Favorited catalog removed");
   };
 
+  const handleAddUnwatched = () => {
+    if (!isConnected) {
+      toast.error("Please connect your Trakt account first");
+      return;
+    }
+
+    setConfig(prev => {
+      const displayType = getDisplayTypeOverride('series', prev.displayTypeOverrides);
+
+      const newCatalog: CatalogConfig = {
+        id: "trakt.unwatched",
+        type: "series",
+        name: "My Recently Aired",
+        enabled: true,
+        showInHome: true,
+        source: "trakt",
+        cacheTTL: 300,
+        ...(displayType && { displayType }),
+      };
+
+      return {
+        ...prev,
+        catalogs: [...prev.catalogs, newCatalog],
+      };
+    });
+
+    toast.success("My Recently Aired catalog added");
+  };
+
+  const handleRemoveUnwatched = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.filter(c => c.id !== "trakt.unwatched"),
+    }));
+    toast.success("My Recently Aired catalog removed");
+  };
+
   const handleAddUpNext = () => {
     if (!isConnected) {
       toast.error("Please connect your Trakt account first");
@@ -888,10 +983,48 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     toast.success("Up Next catalog removed");
   };
 
+  const handleAddCalendar = () => {
+    if (!isConnected) {
+      toast.error("Please connect your Trakt account first");
+      return;
+    }
+
+    setConfig(prev => {
+      const displayType = getDisplayTypeOverride('series', prev.displayTypeOverrides);
+
+      const newCatalog: CatalogConfig = {
+        id: "trakt.calendar",
+        type: "series",
+        name: "Airing Soon",
+        enabled: true,
+        showInHome: true,
+        source: "trakt",
+        cacheTTL: 300, // 5 minutes
+        ...(displayType && { displayType }),
+      };
+
+      return {
+        ...prev,
+        catalogs: [...prev.catalogs, newCatalog],
+      };
+    });
+
+    toast.success("Airing Soon added");
+  };
+
+  const handleRemoveCalendar = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.filter(c => c.id !== "trakt.calendar"),
+    }));
+    toast.success("Airing Soon removed");
+  };
+
   const traktCatalogs = config.catalogs.filter(c => c.id.startsWith("trakt."));
   const hasWatchlist = traktCatalogs.some(c => c.id.startsWith("trakt.watchlist"));
   const mostFavoritedCatalogs = config.catalogs.filter(c => c.id.startsWith("trakt.most_favorited."));
   const upNextCatalog = config.catalogs.find(c => c.id === "trakt.upnext");
+  const unwatchedCatalog = config.catalogs.find(c => c.id === "trakt.unwatched");
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -1370,8 +1503,12 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                           onClick={() => {
                             const allLists = [...trendingLists, ...popularLists];
                             const allKeys = allLists
-                              .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
-                              .map(item => `${item.list.user.ids.slug}.${item.list.ids.slug}`);
+                              .filter(item => item?.list?.ids?.slug)
+                              .map(item => {
+                                // For official lists, use username instead of slug
+                                const userIdentifier = item.list.user?.ids?.slug || item.list.user?.username?.toLowerCase() || 'trakt';
+                                return `${userIdentifier}.${item.list.ids.slug}`;
+                              });
                             setSelectedTrendingLists(new Set(allKeys));
                           }}
                         >
@@ -1390,11 +1527,13 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
                     <div className="space-y-2 max-h-[400px] overflow-y-auto">
                       {[...trendingLists, ...popularLists]
-                        .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
+                        .filter(item => item?.list?.ids?.slug)
                         .map((item) => {
                           const list = item.list;
-                          const listKey = `${list.user.ids.slug}.${list.ids.slug}`;
-                          const catalogId = `trakt.${list.user.ids.slug}.${list.ids.slug}`;
+                          // For official lists, use username instead of slug
+                          const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
+                          const listKey = `${userIdentifier}.${list.ids.slug}`;
+                          const catalogId = `trakt.${userIdentifier}.${list.ids.slug}`;
                           const isAlreadyAdded = config.catalogs.some(c => c.id === catalogId);
                         
                           return (
@@ -1893,6 +2032,88 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
               </Card>
             )}
 
+            {/* My Recently Aired */}
+            {isConnected && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>My Recently Aired</CardTitle>
+                  <CardDescription>All unwatched aired episodes for your in-progress shows</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleAddUnwatched}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={!!unwatchedCatalog}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Recently Aired
+                    </Button>
+                  </div>
+                  {unwatchedCatalog && (
+                    <div className="space-y-2 border-t pt-4">
+                      <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                        <span className="font-medium">My Recently Aired</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRemoveUnwatched}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Groups by show and lists every unwatched aired episode in the videos section. Updates automatically based on your Trakt activity.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Airing Today */}
+            {isConnected && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Airing Soon</CardTitle>
+                  <CardDescription>Shows airing in the next 24 hours from your tracked shows</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleAddCalendar}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={!!config.catalogs.find(c => c.id === 'trakt.calendar')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Calendar
+                    </Button>
+                  </div>
+                  
+                  {config.catalogs.find(c => c.id === 'trakt.calendar') && (
+                    <div className="space-y-2 border-t pt-4">
+                      <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                        <span className="font-medium">Airing Soon</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRemoveCalendar}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    Shows episodes airing in the next 24 hours from shows you're tracking on Trakt. Automatically updates based on your configured timezone.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
           {/* Custom Lists */}
           {isConnected && (
             <Card>
@@ -1910,11 +2131,30 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                       value={customListUrl}
                       onChange={(e) => setCustomListUrl(e.target.value)}
                     />
-                    <Button onClick={handleAddCustomList} disabled={!customListUrl.trim()}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Catalog Type</Label>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => setCustomListType('all')} 
+                      variant={customListType === 'all' ? 'default' : 'outline'}
+                      className="flex-1"
+                    >
+                      Unified
+                    </Button>
+                    <Button 
+                      onClick={() => setCustomListType('split')} 
+                      variant={customListType === 'split' ? 'default' : 'outline'}
+                      className="flex-1"
+                    >
+                      Split by Type
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Unified: Movies and series together. Split: Separate catalogs for each type.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1961,6 +2201,11 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                     </Select>
                   </div>
                 </div>
+
+                <Button onClick={handleAddCustomList} disabled={!customListUrl.trim()} className="w-full">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add List
+                </Button>
 
                 {/*traktCatalogs.filter(c => !c.id.startsWith("trakt.watchlist")).length > 0 && (
                   <Card className="mt-6">

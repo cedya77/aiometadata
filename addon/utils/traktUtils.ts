@@ -37,13 +37,15 @@ async function fetchTraktUpNextEpisodes(
   
   const progressStart = Date.now();
   
-  // Parallelize progress fetches with Promise.all - batch size of 30 concurrent requests
+  const MAX_RESULTS = 50;
   const BATCH_SIZE = 30;
   const upNextList: any[] = [];
+  let processedCount = 0;
   
-  for (let i = 0; i < watchedShows.length; i += BATCH_SIZE) {
-    const batch = watchedShows.slice(i, i + BATCH_SIZE);
-    const batchStart = Date.now();
+  for (let i = 0; i < watchedShows.length && upNextList.length < MAX_RESULTS; i += BATCH_SIZE) {
+    const remainingNeeded = MAX_RESULTS - upNextList.length;
+    const batchSize = Math.min(BATCH_SIZE, watchedShows.length - i, remainingNeeded + 20); // Fetch extra to account for shows without next episodes
+    const batch = watchedShows.slice(i, i + batchSize);
     
     const results = await Promise.all(
       batch.map(async (show) => {
@@ -52,7 +54,21 @@ async function fetchTraktUpNextEpisodes(
         if (!showId) return null;
         
         try {
-          const progress = await fetchTraktShowWatchedProgress(accessToken, showId);
+          // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
+          const response: any = await makeRateLimitedRequest(
+            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
+              dispatcher: traktDispatcher,
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+              }
+            }),
+            `Trakt fetchShowWatchedProgress (${showId})`,
+            1  // Only 1 attempt for individual show fetches (no retries)
+          );
+          const progress = response.data;
           if (!progress?.next_episode) return null;
           
           const nextEp = progress.next_episode;
@@ -67,23 +83,27 @@ async function fetchTraktUpNextEpisodes(
               tvdb_id: nextEp.ids.tvdb,
             }
           };
-        } catch (error) {
-          logger.error(`Up Next: Failed to fetch progress for show ${showId}: ${error.message}`);
+        } catch (error: any) {
+          logger.error(`Up Next: Failed to fetch progress for show ${showId} (${showData?.title || 'unknown'}): ${error?.message || String(error)}`);
+          if (error?.response?.data) {
+            logger.error(`Up Next: Trakt API response for show ${showId}: ${JSON.stringify(error.response.data)}`);
+          }
           return null;
         }
       })
     );
     
-    // Filter out null results and add to list
-    upNextList.push(...results.filter(item => item !== null));
+    const validResults = results.filter(item => item !== null);
+    upNextList.push(...validResults.slice(0, MAX_RESULTS - upNextList.length));
+    processedCount += batch.length;
     
-    // ...removed Up Next batch debug log...
+    if (upNextList.length >= MAX_RESULTS) break;
   }
   
   const progressTime = Date.now() - progressStart;
   const totalTime = Date.now() - startTime;
-  logger.info(`Up Next: Built list with ${upNextList.length} shows (watched_at: ${currentWatchedAt})`);
-  logger.info(`Up Next: Progress fetches took ${progressTime}ms for ${watchedShows.length} shows (avg: ${Math.round(progressTime/watchedShows.length)}ms/show, ${BATCH_SIZE} concurrent)`);
+  logger.info(`Up Next: Built list with ${upNextList.length} shows from ${processedCount} watched shows (watched_at: ${currentWatchedAt})`);
+  logger.info(`Up Next: Parallel fetches took ${progressTime}ms (avg: ${Math.round(progressTime/processedCount)}ms/show, ${BATCH_SIZE} concurrent)`);
   logger.info(`Up Next: Total rebuild time: ${totalTime}ms`);
   
   return { items: upNextList, watched_at: currentWatchedAt };
@@ -154,6 +174,174 @@ async function fetchTraktShowWatchedProgress(accessToken: string, showId: string
   );
   return response.data;
 }
+/**
+ * Fetch Trakt Unwatched episodes for all shows with progress (<100%)
+ * Returns object with items array and last watched timestamp
+ * Each item includes an array of unwatched episodes to render
+ */
+async function fetchTraktUnwatchedEpisodes(
+  accessToken: string,
+  cachedTimestamp?: string
+): Promise<{ items: any[], watched_at: string }> {
+  const startTime = Date.now();
+
+  const activityStart = Date.now();
+  const lastActivity = await fetchTraktLastActivity(accessToken);
+  const activityTime = Date.now() - activityStart;
+  logger.info(`Unwatched: last_activities fetch took ${activityTime}ms`);
+
+  const currentWatchedAt = lastActivity?.episodes?.watched_at;
+  if (cachedTimestamp && currentWatchedAt && cachedTimestamp === currentWatchedAt) {
+    const totalTime = Date.now() - startTime;
+    logger.info(`Unwatched: No changes detected (watched_at: ${currentWatchedAt}), using cached data [total: ${totalTime}ms]`);
+    return { items: [], watched_at: currentWatchedAt };
+  }
+
+  logger.info(`Unwatched: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);
+
+  const watchedStart = Date.now();
+  const watchedShows = await fetchTraktWatchedShows(accessToken);
+  const watchedTime = Date.now() - watchedStart;
+  logger.info(`Unwatched: watched shows fetch took ${watchedTime}ms (${watchedShows.length} shows)`);
+
+  const MAX_SHOWS = 50; // cap number of series to avoid overlong pages
+  const BATCH_SIZE = 30;
+  const items: any[] = [];
+  let processedCount = 0;
+
+  for (let i = 0; i < watchedShows.length && items.length < MAX_SHOWS; i += BATCH_SIZE) {
+    const remainingNeeded = MAX_SHOWS - items.length;
+    const batchSize = Math.min(BATCH_SIZE, watchedShows.length - i, remainingNeeded + 20);
+    const batch = watchedShows.slice(i, i + batchSize);
+
+    const results = await Promise.all(
+      batch.map(async (show) => {
+        const showData = show.show;
+        const showId = showData?.ids?.trakt;
+        if (!showId) return null;
+
+        try {
+          const response: any = await makeRateLimitedRequest(
+            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched?specials=false&count_specials=false`, {
+              dispatcher: traktDispatcher,
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+              }
+            }),
+            `Trakt fetchShowWatchedProgress (unwatched ${showId})`,
+            1
+          );
+          const progress = response.data;
+          if (!progress?.seasons || !Array.isArray(progress.seasons)) return null;
+
+          // Only include shows that are not 100% complete and have unwatched aired episodes
+          if (progress.completed >= progress.aired) return null;
+
+          // Fetch seasons with episode air dates to sort accurately
+          const showSeasonsResp: any = await makeRateLimitedRequest(
+            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/seasons?extended=full,episodes`, {
+              dispatcher: traktDispatcher,
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+              }
+            }),
+            `Trakt fetchShowSeasons (unwatched ${showId})`,
+            1
+          );
+          const seasonsData = Array.isArray(showSeasonsResp.data) ? showSeasonsResp.data : [];
+          const airedMap = new Map<string, string>();
+          for (const season of seasonsData) {
+            if (!season?.episodes || season.number === 0) continue; // skip specials
+            for (const ep of season.episodes) {
+              if (ep.first_aired) {
+                airedMap.set(`S${season.number}E${ep.number}`, ep.first_aired);
+              }
+            }
+          }
+
+          const unwatched: Array<{season:number; episode:number; ids:any; aired?: string}> = [];
+          const fallbackRecent = show.last_watched_at || show.reset_at || null;
+          let mostRecentAired: string | null = fallbackRecent;
+          
+          // Get the next_episode to determine where the user's progress is
+          const nextEp = progress.next_episode;
+          let startSeason = 1;
+          let startEpisode = 1;
+          
+          if (nextEp) {
+            startSeason = nextEp.season;
+            startEpisode = nextEp.number;
+          }
+          
+          for (const season of progress.seasons) {
+            if (!season?.episodes || season.number === 0) continue; // skip specials
+            
+            // Skip seasons before the current progress
+            if (season.number < startSeason) continue;
+            
+            for (const ep of season.episodes) {
+              if (!ep?.completed) {
+                // Skip episodes before the next_episode in the same season
+                if (season.number === startSeason && ep.number < startEpisode) continue;
+                
+                const epKey = `S${season.number}E${ep.number}`;
+                const aired = ep.first_aired || airedMap.get(epKey) || null;
+                unwatched.push({
+                  season: season.number,
+                  episode: ep.number,
+                  ids: ep.ids || {},
+                  aired: aired
+                });
+                
+                // Track most recent aired date for this show
+                if (aired && (!mostRecentAired || new Date(aired) > new Date(mostRecentAired))) {
+                  mostRecentAired = aired;
+                }
+              }
+            }
+          }
+
+          if (unwatched.length === 0) return null;
+
+          return {
+            type: 'show',
+            show: showData,
+            unwatchedEpisodes: unwatched,
+              mostRecentAired: mostRecentAired || fallbackRecent
+          };
+        } catch (error: any) {
+          logger.error(`Unwatched: Failed to fetch progress for show ${showId} (${showData?.title || 'unknown'}): ${error?.message || String(error)}`);
+          if (error?.response?.data) {
+            logger.error(`Unwatched: Trakt API response for show ${showId}: ${JSON.stringify(error.response.data)}`);
+          }
+          return null;
+        }
+      })
+    );
+
+    const valid = results.filter(x => x !== null);
+    items.push(...valid.slice(0, MAX_SHOWS - items.length));
+    processedCount += batch.length;
+  }
+
+  // Sort by most recent aired episode (newest first)
+  items.sort((a: any, b: any) => {
+    const aDate = a.mostRecentAired ? new Date(a.mostRecentAired).getTime() : 0;
+    const bDate = b.mostRecentAired ? new Date(b.mostRecentAired).getTime() : 0;
+    return bDate - aDate; // Descending order (newest first)
+  });
+
+  const totalTime = Date.now() - startTime;
+  logger.info(`Unwatched: Built list with ${items.length} shows from ${processedCount} watched shows, sorted by most recent aired (watched_at: ${currentWatchedAt}) [total: ${totalTime}ms]`);
+
+  return { items, watched_at: currentWatchedAt };
+}
 import { httpGet } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
@@ -192,7 +380,8 @@ function isPermanentError(error: any): boolean {
   const status = error.response?.status;
   // Consider 4xx errors (except 429 rate limit) as permanent.
   // 401 (unauthorized) and 403 (forbidden) are permanent auth errors
-  return status >= 400 && status < 500 && status !== 429;
+  // Also treat 500 errors as permanent for individual resource fetches (likely bad data on Trakt's side)
+  return (status >= 400 && status < 500 && status !== 429) || status === 500;
 }
 
 // Rate limiting configuration for Trakt API
@@ -363,6 +552,17 @@ interface TraktListItem {
     imdb_id: string;
     tvdb_id: number;
   };
+  unwatchedEpisodes?: Array<{
+    season: number;
+    episode: number;
+    ids: {
+      trakt?: number;
+      imdb?: string;
+      tvdb?: number;
+    };
+    aired?: string;
+  }>;
+  mostRecentAired?: string;
 }
 
 /**
@@ -379,15 +579,21 @@ async function fetchTraktWatchlistItems(
   type: 'movies' | 'shows' | undefined,
   page: number,
   limit: number = 20,
-  sort?: string
+  sort?: string,
+  sortDirection?: 'asc' | 'desc',
+  genre?: string
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
     // Construct the URL based on type
     const typeParam = type || 'all';
-    const sortParam = sort || 'added';
-    const url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}?page=${page}&limit=${limit}`;
+    const sortParam = sort || 'rank';
+    const sortHow = sortDirection || 'asc';
+    let url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+    if (genre && genre !== 'all' && genre !== 'none') {
+      url += `&genres=${encodeURIComponent(genre)}`;
+    }
     
-    logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}`);
+    logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 
@@ -444,17 +650,23 @@ async function fetchTraktWatchlistItems(
  * @returns Object with items array and pagination info
  */
 async function fetchTraktFavoritesItems(
-  accessToken: string,
+  accessToken: string, 
   type: 'movies' | 'shows',
   page: number,
   limit: number = 20,
-  sort?: string
+  sort?: string,
+  sortDirection?: 'asc' | 'desc',
+  genre?: string
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
     const sortParam = sort || 'rank';
-    const url = `${TRAKT_BASE_URL}/users/me/favorites/${type}/${sortParam}/asc?page=${page}&limit=${limit}`;
+    const sortHow = sortDirection || 'asc';
+    let url = `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+    if (genre && genre !== 'all' && genre !== 'none') {
+      url += `&genres=${encodeURIComponent(genre)}`;
+    }
     
-    logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}`);
+    logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 
@@ -607,7 +819,7 @@ async function fetchTraktListItems(
         url += `&sort_how=${sortDirection}`;
       }
     }
-    if (genre && genre !== 'all' && genre !== 'none') {
+    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
       url += `&genres=${encodeURIComponent(genre)}`;
     }
     logger.debug(`Trakt list request: user=${username}, list=${listSlug}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
@@ -743,6 +955,7 @@ async function parseTraktItems(
         }
         
         const isUpNext = !!item.upNextEpisode;
+        const hasUnwatchedList = Array.isArray((item as any).unwatchedEpisodes) && (item as any).unwatchedEpisodes.length > 0;
         const upNextEpisode = item.upNextEpisode;
         
         let stremioId: string;
@@ -760,9 +973,9 @@ async function parseTraktItems(
         const metaType = item.type === 'movie' ? 'movie' : 'series';
         
         // For Up Next items, use a unique cache key with shorter TTL
-        const cacheId = isUpNext ? `upnext_${stremioId}` : stremioId;
+        const cacheId = isUpNext ? `upnext_${stremioId}` : (hasUnwatchedList ? `unwatched_${stremioId}` : stremioId);
         
-        const shouldIncludeVideos = isUpNext ? true : includeVideos;
+        const shouldIncludeVideos = (isUpNext || hasUnwatchedList) ? true : includeVideos;
         
         const getMetaStart = Date.now();
         const result = await cacheWrapMetaSmart(
@@ -788,6 +1001,16 @@ async function parseTraktItems(
                 // ...removed Up Next filter debug log...
               } else {
                 logger.warn(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} not found in videos for ${metaResult.meta.name}`);
+              }
+            } else if (hasUnwatchedList && metaResult?.meta?.videos && Array.isArray(metaResult.meta.videos)) {
+              const list = (item as any).unwatchedEpisodes as Array<{season:number; episode:number; ids:any}>;
+              const wanted = new Set(list.map(e => `S${e.season}E${e.episode}`));
+              const filtered = metaResult.meta.videos.filter((v: any) => wanted.has(`S${v.season}E${v.episode}`));
+              if (filtered.length > 0) {
+                metaResult.meta.videos = filtered;
+                metaResult.meta.id = cacheId;
+              } else {
+                logger.warn(`Unwatched episodes not found in videos for ${metaResult.meta.name}; leaving original videos`);
               }
             }
             
@@ -864,6 +1087,80 @@ async function getTraktListDetails(
   }
 }
 
+/**
+ * Fetch calendar shows airing for a user
+ * @param accessToken - User's Trakt access token
+ * @param startDate - Start date in YYYY-MM-DD format
+ * @param days - Number of days to fetch
+ * @returns Object with items array
+ */
+async function fetchTraktCalendarShows(
+  accessToken: string,
+  startDate: string,
+  days: number
+): Promise<{items: any[]}> {
+  try {
+    const url = `${TRAKT_BASE_URL}/calendars/my/shows/${startDate}/${days}`;
+    
+    logger.debug(`Trakt calendar request: startDate=${startDate}, days=${days}`);
+    
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, { 
+        dispatcher: traktDispatcher,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      `Trakt fetchCalendarShows (startDate: ${startDate}, days: ${days})`
+    );
+    
+    const items = Array.isArray(response.data) ? response.data : [];
+    
+    logger.debug(`Trakt calendar - fetched ${items.length} calendar entries`);
+    
+    // Transform calendar entries to match list item format
+    // Group by show to avoid duplicates
+    const showMap = new Map<number, any>();
+    
+    for (const entry of items) {
+      const show = entry.show;
+      const episode = entry.episode;
+      const firstAired = entry.first_aired;
+      
+      if (!show?.ids?.trakt) continue;
+      
+      const showId = show.ids.trakt;
+      
+      // Keep the earliest airing episode for each show
+      if (!showMap.has(showId) || new Date(firstAired) < new Date(showMap.get(showId).first_aired)) {
+        showMap.set(showId, {
+          type: 'show',
+          show: show,
+          first_aired: firstAired,
+          next_episode: {
+            season: episode.season,
+            number: episode.number,
+            title: episode.title,
+            ids: episode.ids
+          }
+        });
+      }
+    }
+    
+    const uniqueItems = Array.from(showMap.values());
+    
+    logger.info(`Trakt calendar - ${uniqueItems.length} unique shows from ${items.length} total entries`);
+    
+    return { items: uniqueItems };
+  } catch (err: any) {
+    logger.error(`Error fetching Trakt calendar shows:`, err.message);
+    return { items: [] };
+  }
+}
+
 export { 
   fetchTraktWatchlistItems, 
   fetchTraktFavoritesItems,
@@ -872,7 +1169,9 @@ export {
   fetchTraktGenres,
   parseTraktItems,
   getTraktListDetails,
-  fetchTraktUpNextEpisodes
+  fetchTraktUpNextEpisodes,
+  fetchTraktCalendarShows,
+  fetchTraktUnwatchedEpisodes
 };
 
 

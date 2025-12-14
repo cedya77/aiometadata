@@ -118,6 +118,24 @@ cp .env.example .env
 
 ---
 
+## Timezone Configuration
+
+### `TZ`
+- **Optional**: Yes
+- **Default**: `UTC`
+- **Description**: Server timezone for date/time operations. Used for Trakt calendar features (shows airing this week). Can be configured per-user in the UI settings.
+- **Example**: `TZ=America/New_York`
+- **Common Values**:
+  - `America/New_York` - Eastern Time
+  - `America/Chicago` - Central Time
+  - `America/Los_Angeles` - Pacific Time
+  - `Europe/London` - UK Time
+  - `Europe/Paris` - Central European Time
+  - `Asia/Tokyo` - Japan Time
+  - `Australia/Sydney` - Australian Eastern Time
+
+---
+
 ## Jikan API Configuration (MyAnimeList)
 
 ### `JIKAN_API_BASE`

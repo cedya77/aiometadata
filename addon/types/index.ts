@@ -48,6 +48,7 @@ export interface UserConfig {
   configVersion?: number;
   userUUID?: string;
   sessionId?: string;
+  timezone?: string;
   [key: string]: any;
 }
 

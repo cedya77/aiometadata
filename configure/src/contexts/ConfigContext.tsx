@@ -128,6 +128,7 @@ const initialConfig: AppConfig = {
   ageRating: 'None',
   searchEnabled: true,
   sessionId: "",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   catalogs: allCatalogDefinitions
     .map(c => ({
       id: c.id,

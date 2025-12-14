@@ -1234,20 +1234,24 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig.order) extraArgs.order = catalogConfig.order;
   }
+  // Trakt calendar needs today's date in cache key
+  if (id === 'trakt.calendar') {
+    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+    const getTodayInTimezone = (tz) => {
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(new Date());
+    };
+    extraArgs.date = getTodayInTimezone(getUserTimezone());
+  }
   if (id === 'tvmaze.schedule') {
-    // Format date in user's local timezone
-    // Uses server's local timezone (better than UTC for most users)
-    // If a timezone header is provided, we could use that, but Stremio doesn't send it
-    const getLocalDateString = () => {
-      const now = new Date();
-      // Get local date components (not UTC) - uses server's timezone
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+    // Format date in user's configured timezone (or server timezone as fallback)
+    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+    const getTodayInTimezone = (tz) => {
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(new Date());
     };
     
-    const dateString = extraArgs.date || getLocalDateString();
+    const dateString = extraArgs.date || getTodayInTimezone(getUserTimezone());
     extraArgs.date = dateString;
     extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
   }
