@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ExternalLink, CheckCircle2, XCircle, Loader2, List, Download } from 'lucide-react';
 import { toast } from "sonner";
@@ -33,6 +34,20 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
   const [selectedLists, setSelectedLists] = useState<Set<string>>(new Set());
   const [isLoadingLists, setIsLoadingLists] = useState(false);
   const [listsLoaded, setListsLoaded] = useState(false);
+
+  // Sorting options for AniList lists
+  const ANILIST_SORT_OPTIONS = [
+    'ADDED_TIME', 'UPDATED_TIME', 'SCORE', 'STATUS', 'PROGRESS', 'MEDIA_POPULARITY', 'MEDIA_TITLE_ROMAJI', 'MEDIA_TITLE_ENGLISH', 'MEDIA_TITLE_NATIVE', 'STARTED_ON', 'FINISHED_ON', 'MEDIA_ID', 'PRIORITY', 'REPEAT', 'PROGRESS_VOLUMES'
+  ] as const;
+  const [sort, setSort] = useState<typeof ANILIST_SORT_OPTIONS[number]>('ADDED_TIME');
+  const [sortDirection, setSortDirection] = useState<'asc'|'desc'>('desc');
+
+  // Public username list fetching
+  const [publicUsername, setPublicUsername] = useState("");
+  const [publicLists, setPublicLists] = useState<AniListList[]>([]);
+  const [selectedPublicLists, setSelectedPublicLists] = useState<Set<string>>(new Set());
+  const [isLoadingPublicLists, setIsLoadingPublicLists] = useState(false);
+  const [publicListsLoaded, setPublicListsLoaded] = useState(false);
 
   const authUrl = "/anilist/auth";
 
@@ -122,10 +137,89 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
     });
   }, []);
 
-  const isListAlreadyImported = useCallback((listName: string): boolean => {
-    const catalogId = `anilist.${listName}`;
-    return config.catalogs.some(c => c.id === catalogId);
+  // Check if a list is already imported, scoped by optional owner username to avoid false positives across users
+  const isListAlreadyImported = useCallback((listName: string, ownerUsername?: string): boolean => {
+    const targetUser = ownerUsername?.toLowerCase().trim();
+    return config.catalogs.some(c => {
+      if (c.source !== 'anilist') return false;
+
+      const metaUser = (c as any).metadata?.username?.toLowerCase?.();
+      const metaListName = (c as any).metadata?.listName || c.name || '';
+
+      // Normalize the catalog id without the provider prefix
+      const idWithoutPrefix = c.id.startsWith('anilist.') ? c.id.slice('anilist.'.length) : c.id;
+
+      // Match on list name using metadata first, fallback to id patterns
+      const matchesList = metaListName === listName || idWithoutPrefix === listName || idWithoutPrefix.endsWith(`.${listName}`);
+
+      // If we have a target user, require username match to consider it already imported
+      if (targetUser) {
+        return matchesList && metaUser === targetUser;
+      }
+
+      return matchesList;
+    });
   }, [config.catalogs]);
+
+  const fetchPublicUserLists = useCallback(async () => {
+    const trimmedUsername = publicUsername.trim();
+    if (!trimmedUsername) {
+      toast.error("Please enter a username");
+      return;
+    }
+
+    setIsLoadingPublicLists(true);
+    setPublicListsLoaded(false);
+    try {
+      const response = await fetch(`/api/anilist/lists/by-username/${encodeURIComponent(trimmedUsername)}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch lists (Status: ${response.status})`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success && Array.isArray(data.lists)) {
+        setPublicLists(data.lists);
+        setPublicListsLoaded(true);
+        setSelectedPublicLists(new Set()); // Reset selection when loading new lists
+        
+        if (data.lists.length === 0) {
+          toast.info("No lists found", {
+            description: `User ${trimmedUsername} has no public anime lists`
+          });
+        } else {
+          toast.success("Lists loaded", {
+            description: `Found ${data.lists.length} list(s) from @${data.username}`
+          });
+        }
+      } else {
+        throw new Error("Invalid response format from server");
+      }
+    } catch (error) {
+      console.error("Error fetching public AniList lists:", error);
+      toast.error("Failed to load lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+      setPublicLists([]);
+      setPublicListsLoaded(false);
+    } finally {
+      setIsLoadingPublicLists(false);
+    }
+  }, [publicUsername]);
+
+  const handlePublicListSelection = useCallback((listName: string, checked: boolean) => {
+    setSelectedPublicLists(prev => {
+      const newSelection = new Set(prev);
+      if (checked) {
+        newSelection.add(listName);
+      } else {
+        newSelection.delete(listName);
+      }
+      return newSelection;
+    });
+  }, []);
 
   const importSelectedLists = useCallback(() => {
     if (selectedLists.size === 0) {
@@ -161,9 +255,12 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             enabled: true,
             showInHome: true,
             source: 'anilist',
+            sort,
+            sortDirection,
             // Include metadata (username, itemCount, isCustomList)
             metadata: {
               username: username || undefined,
+              listName,
               itemCount: list.entryCount,
               isCustomList: list.isCustomList,
             },
@@ -199,6 +296,89 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
       });
     }
   }, [selectedLists, lists, username, setConfig]);
+
+  const importSelectedPublicLists = useCallback(() => {
+    if (selectedPublicLists.size === 0) {
+      toast.error("No lists selected", {
+        description: "Please select at least one list to import"
+      });
+      return;
+    }
+
+    const trimmedUsername = publicUsername.trim();
+    if (!trimmedUsername) {
+      toast.error("Username is required");
+      return;
+    }
+
+    try {
+      let importedCount = 0;
+      let skippedCount = 0;
+
+      setConfig(prev => {
+        const newCatalogs = [...prev.catalogs];
+
+        selectedPublicLists.forEach(listName => {
+          const list = publicLists.find(l => l.name === listName);
+          if (!list) return;
+
+          // Include username in the catalog id to avoid clashing with the logged-in user's lists
+          const catalogId = `anilist.${trimmedUsername}.${listName}`;
+
+          if (newCatalogs.some(c => c.id === catalogId)) {
+            skippedCount++;
+            return;
+          }
+
+          // Create CatalogConfig for each selected list
+          const newCatalog: CatalogConfig = {
+            id: catalogId,
+            name: `${listName} (@${trimmedUsername})`,
+            type: 'anime',
+            enabled: true,
+            showInHome: true,
+            source: 'anilist',
+            sort,
+            sortDirection,
+            // Include metadata (username, itemCount, isCustomList)
+            metadata: {
+              username: trimmedUsername,
+              listName,
+              itemCount: list.entryCount,
+              isCustomList: list.isCustomList,
+            },
+          };
+
+          newCatalogs.push(newCatalog);
+          importedCount++;
+        });
+
+        return {
+          ...prev,
+          catalogs: newCatalogs,
+        };
+      });
+
+      // Show success/error toast notifications 
+      if (importedCount > 0) {
+        toast.success("Lists imported successfully", {
+          description: `${importedCount} list(s) added to your catalogs${skippedCount > 0 ? `, ${skippedCount} already existed` : ''}`
+        });
+      } else if (skippedCount > 0) {
+        toast.info("No new lists imported", {
+          description: `All ${skippedCount} selected list(s) were already imported`
+        });
+      }
+
+      // Reset selection after import
+      setSelectedPublicLists(new Set());
+    } catch (error) {
+      console.error("Error importing public AniList lists:", error);
+      toast.error("Failed to import lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+    }
+  }, [selectedPublicLists, publicLists, publicUsername, setConfig]);
 
   const handleConnect = () => {
     window.open(authUrl, "_blank", "width=600,height=700");
@@ -405,15 +585,154 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             </CardContent>
           </Card>
 
-          {/* Import Lists Section  */}
+          {/* Import Public User Lists Section */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
                 <List className="h-5 w-5" />
-                Import Lists as Catalogs
+                Import Lists by Username
               </CardTitle>
               <CardDescription>
-                Load your AniList anime lists and import them as browsable catalogs in Stremio.
+                Fetch and import anime lists from any AniList user (public lists only).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Username Input */}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Enter AniList username..."
+                  value={publicUsername}
+                  onChange={(e) => setPublicUsername(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && publicUsername.trim()) {
+                      fetchPublicUserLists();
+                    }
+                  }}
+                />
+                <Button
+                  onClick={fetchPublicUserLists}
+                  disabled={!publicUsername.trim() || isLoadingPublicLists}
+                  variant="outline"
+                >
+                  {isLoadingPublicLists ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <List className="h-4 w-4 mr-2" />
+                      Fetch Lists
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Sorting controls for imported catalogs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <span className="text-sm">Sort By</span>
+                  <Select value={sort} onValueChange={(v) => setSort(v as typeof ANILIST_SORT_OPTIONS[number])}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select sort" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ANILIST_SORT_OPTIONS.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt.replace(/_/g, ' ')}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <span className="text-sm">Direction</span>
+                  <Select value={sortDirection} onValueChange={(v) => setSortDirection(v as 'asc'|'desc')}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select direction" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                      <SelectItem value="desc">Descending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Public Lists Display */}
+              {publicListsLoaded && publicLists.length > 0 && (
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-muted-foreground">
+                    Select lists to import ({selectedPublicLists.size} selected)
+                  </div>
+                  <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                    {publicLists.map((list) => {
+                      const alreadyImported = isListAlreadyImported(list.name, publicUsername.trim());
+                      return (
+                        <div
+                          key={list.name}
+                          className="flex items-center justify-between p-3 hover:bg-muted/50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Switch
+                              checked={selectedPublicLists.has(list.name)}
+                              onCheckedChange={(checked) => handlePublicListSelection(list.name, checked)}
+                              disabled={alreadyImported}
+                            />
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{list.name}</span>
+                                {list.isCustomList && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    Custom
+                                  </Badge>
+                                )}
+                                {alreadyImported && (
+                                  <Badge variant="outline" className="text-xs text-green-600 border-green-600">
+                                    Imported
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {list.entryCount} {list.entryCount === 1 ? 'entry' : 'entries'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {publicListsLoaded && publicLists.length === 0 && (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  No public anime lists found for this username.
+                </div>
+              )}
+
+              {/* Import Selected Button */}
+              {publicListsLoaded && publicLists.length > 0 && (
+                <div className="flex justify-end pt-2">
+                  <Button
+                    onClick={importSelectedPublicLists}
+                    disabled={selectedPublicLists.size === 0}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Import Selected ({selectedPublicLists.size})
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Import Your Lists Section  */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <List className="h-5 w-5" />
+                Import Your Lists
+              </CardTitle>
+              <CardDescription>
+                Load your own AniList anime lists and import them as browsable catalogs in Stremio.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -451,7 +770,7 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
                   </div>
                   <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
                     {lists.map((list) => {
-                      const alreadyImported = isListAlreadyImported(list.name);
+                      const alreadyImported = isListAlreadyImported(list.name, username || undefined);
                       return (
                         <div
                           key={list.name}

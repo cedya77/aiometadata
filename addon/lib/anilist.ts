@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { httpPost } = require('../utils/httpClient');
 const { cacheWrapGlobal } = require('./getCache');
 
 const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http') 
@@ -195,7 +195,7 @@ class AniListAPI {
 
     try {
       const response = await this.makeRateLimitedRequest(() => 
-        axios.post(this.baseURL, {
+        httpPost(this.baseURL, {
           query,
           variables: { userName: username }
         }, {
@@ -203,7 +203,7 @@ class AniListAPI {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 15000
+          timeout: 30000
         })
       );
 
@@ -225,7 +225,7 @@ class AniListAPI {
    * Fetch items from a specific list with pagination
    * Returns items: [{ score, media: { id, idMal } }], hasMore, total
    */
-  async fetchListItems(username: string, listName: string, page = 1, pageSize = 50): Promise<any> {
+  async fetchListItems(username: string, listName: string, page = 1, pageSize = 50, sort = 'ADDED_TIME_DESC'): Promise<any> {
     if (!username) {
       throw new Error('Username is required');
     }
@@ -238,10 +238,10 @@ class AniListAPI {
     if (status) {
       // Standard status list - use Page query for pagination
       const query = `
-        query($userName: String, $status: MediaListStatus, $page: Int, $perPage: Int) {
+        query($userName: String, $status: MediaListStatus, $page: Int, $perPage: Int, $sort: [MediaListSort]) {
           Page(page: $page, perPage: $perPage) {
             pageInfo { hasNextPage total }
-            mediaList(userName: $userName, type: ANIME, status: $status) {
+            mediaList(userName: $userName, type: ANIME, status: $status, sort: $sort) {
               score(format: POINT_100)
               media {
                 id
@@ -265,6 +265,11 @@ class AniListAPI {
                 duration
                 format
                 description
+                coverImage {
+                  large
+                  medium
+                  color
+                }
               }
             }
           }
@@ -272,20 +277,21 @@ class AniListAPI {
       `;
 
       const response = await this.makeRateLimitedRequest(() => 
-        axios.post(this.baseURL, {
+        httpPost(this.baseURL, {
           query,
           variables: {
             userName: username,
             status,
             page,
             perPage: pageSize,
+            sort: [sort],
           }
         }, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 15000
+          timeout: 30000
         })
       );
 
@@ -306,8 +312,8 @@ class AniListAPI {
     } else {
       // Custom list - fetch all lists then find and paginate manually
       const query = `
-        query($userName: String) {
-          MediaListCollection(userName: $userName, type: ANIME) {
+        query($userName: String, $sort: [MediaListSort]) {
+          MediaListCollection(userName: $userName, type: ANIME, sort: $sort) {
             lists {
               name
               isCustomList
@@ -336,6 +342,11 @@ class AniListAPI {
                   episodes
                   format
                   description
+                  coverImage {
+                    large
+                    medium
+                    color
+                  }
                 }
               }
             }
@@ -344,15 +355,15 @@ class AniListAPI {
       `;
 
       const response = await this.makeRateLimitedRequest(() => 
-        axios.post(this.baseURL, {
+        httpPost(this.baseURL, {
           query,
-          variables: { userName: username }
+          variables: { userName: username, sort: [sort] }
         }, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 15000
+          timeout: 30000
         })
       );
 
@@ -438,7 +449,7 @@ class AniListAPI {
 
     try {
       const response = await this.makeRateLimitedRequest(() => 
-        axios.post(this.baseURL, {
+        httpPost(this.baseURL, {
           query,
           variables: { malId: malId }
         }, {
@@ -494,14 +505,14 @@ class AniListAPI {
       console.log(`[AniList] Making batch request for ${anilistIds.length} AniList IDs: ${anilistIds.slice(0, 5).join(', ')}${anilistIds.length > 5 ? '...' : ''}`);
       
       const response = await this.makeRateLimitedRequest(() => 
-        axios.post(this.baseURL, {
+        httpPost(this.baseURL, {
           query
         }, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 15000
+          timeout: 30000
         })
       );
 
@@ -562,14 +573,14 @@ class AniListAPI {
       console.log(`[AniList] Making batch request for ${malIds.length} MAL IDs: ${malIds.slice(0, 5).join(', ')}${malIds.length > 5 ? '...' : ''}`);
       
       const response = await this.makeRateLimitedRequest(() => 
-        axios.post(this.baseURL, {
+        httpPost(this.baseURL, {
           query
         }, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 15000
+          timeout: 30000
         })
       );
 

@@ -8,8 +8,8 @@ export interface CatalogConfig {
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
   manifestData?: any; // Store original manifest data for advanced features like skip support
-  // MDBList sorting options
-  sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default';
+  // MDBList, Trakt, and AniList sorting options
+  sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default' | 'MEDIA_ID' | 'SCORE' | 'STATUS' | 'PROGRESS' | 'PROGRESS_VOLUMES' | 'REPEAT' | 'PRIORITY' | 'STARTED_ON' | 'FINISHED_ON' | 'ADDED_TIME' | 'UPDATED_TIME' | 'MEDIA_TITLE_ROMAJI' | 'MEDIA_TITLE_ENGLISH' | 'MEDIA_TITLE_NATIVE' | 'MEDIA_POPULARITY';
   order?: 'asc' | 'desc';
   // Trakt sorting direction
   sortDirection?: 'asc' | 'desc';
@@ -33,6 +33,7 @@ export interface CatalogConfig {
     description?: string;
     // AniList-specific metadata
     username?: string;
+    listName?: string;
     isCustomList?: boolean;
   };
 }

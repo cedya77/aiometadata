@@ -1055,33 +1055,42 @@ async function getAniListCatalog(
   try {
     logger.info(`[AniList] Fetching catalog: ${catalogId}, Page: ${page}`);
     
-    // Extract list name from catalog ID (format: anilist.<listName>)
-    const listName = catalogId.replace('anilist.', '');
-    if (!listName) {
-      logger.error(`[AniList] Invalid catalog ID format: ${catalogId}`);
-      return [];
-    }
-    
-    // Get the catalog config to retrieve username and custom TTL
+    // Get the catalog config to retrieve username, list name and custom TTL
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const username = catalogConfig?.metadata?.username;
+    
+    // Prefer explicit listName metadata; fall back to id parsing to support older configs
+    const idWithoutPrefix = catalogId.replace('anilist.', '');
+    const listName = catalogConfig?.metadata?.listName
+      || (idWithoutPrefix.includes('.') ? idWithoutPrefix.split('.').slice(1).join('.') : idWithoutPrefix);
     
     if (!username) {
       logger.error(`[AniList] No username found in catalog config for: ${catalogId}`);
       return [];
     }
+    if (!listName) {
+      logger.error(`[AniList] No list name resolved for catalog: ${catalogId}`);
+      return [];
+    }
     
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
     
-    // Get custom cache TTL from catalog config if specified
+    // Get custom cache TTL and sort option from catalog config if specified
     const customCacheTTL = catalogConfig?.cacheTTL || null;
+    const sortBase = catalogConfig?.sort || 'ADDED_TIME';
+    const sortDirection = catalogConfig?.sortDirection || 'desc';
+    
+    // Combine sort and direction for AniList (e.g., ADDED_TIME + desc = ADDED_TIME_DESC)
+    const sort = sortDirection === 'desc' ? `${sortBase}_DESC` : sortBase;
+    
+    logger.debug(`[AniList] Using sort: ${sortBase}, direction: ${sortDirection}, combined: ${sort}`);
     
     // Fetch list items from AniList API with caching
     const response = await cacheWrapAniListCatalog(
       username,
       listName,
       page,
-      async () => anilist.fetchListItems(username, listName, page, pageSize),
+      async () => anilist.fetchListItems(username, listName, page, pageSize, sort),
       customCacheTTL,
       { enableErrorCaching: true }
     );
@@ -1157,6 +1166,11 @@ async function resolveAniListItemsToMetas(
       duration: media.duration ? `${media.duration} min per ep` : null,
       episodes: media.episodes,
       synopsis: stripHtml(media.description),
+      images: {
+        jpg: {
+          large_image_url: media.coverImage?.large || media.coverImage?.medium || null
+        }
+      },
       aired: {
         from: airedFrom,
         to: airedTo

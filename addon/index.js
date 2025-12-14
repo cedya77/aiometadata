@@ -449,7 +449,6 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
       }
     } catch (configError) {
       consola.warn(`[Trakt OAuth] Warning: Could not auto-update user configs - ${configError.message}`);
-      // Don't fail the OAuth callback if config updates fail, just warn
     }
     
     // Display success page with token ID
@@ -958,6 +957,35 @@ addon.post("/api/anilist/lists", async (req, res) => {
   }
 });
 
+// GET /api/anilist/lists/by-username/:username - Get available AniList lists by username (public)
+addon.get("/api/anilist/lists/by-username/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    if (!username || typeof username !== 'string' || username.trim().length === 0) {
+      return res.status(400).json({ error: "Username is required and must be a non-empty string" });
+    }
+    
+    const trimmedUsername = username.trim();
+    consola.info(`[AniList Lists] Fetching available lists for username: ${trimmedUsername}`);
+    
+    // Fetch user's lists from AniList API (public endpoint, doesn't require auth)
+    const result = await anilist.fetchUserLists(trimmedUsername);
+    
+    res.json({
+      success: true,
+      username: trimmedUsername,
+      lists: result.lists || []
+    });
+  } catch (error) {
+    consola.error("[AniList Lists] Error fetching lists by username:", error);
+    // Don't expose internal error details to avoid leaking sensitive info
+    res.status(500).json({ 
+      error: "Failed to fetch AniList lists for this username. Please verify the username is correct and the user's lists are public." 
+    });
+  }
+});
+
 // --- ID Mapping Correction Routes (Admin only) ---
 addon.get("/api/corrections", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
@@ -1287,6 +1315,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   else if (id.startsWith('mdblist.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
+  }
+  // AniList uses: sort, sortDirection
+  else if (id.startsWith('anilist.')) {
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
   // Trakt calendar needs today's date in cache key
   if (id === 'trakt.calendar') {

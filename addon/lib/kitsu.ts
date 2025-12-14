@@ -224,7 +224,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
 
 
 /**
- * Fetches the full details for multiple anime by their Kitsu IDs in a single request.
+ * Fetches the full details for multiple anime by their Kitsu IDs with pagination support.
  * @param ids - An array of Kitsu IDs.
  * @returns A promise that resolves to an array of Kitsu anime resource objects.
  */
@@ -234,26 +234,50 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
   }
   
   try {
-    console.log(`[Kitsu Client] Fetching details for IDs: ${ids.join(',')}`);
+    console.log(`[Kitsu Client] Fetching details for ${ids.length} IDs: ${ids.join(',')}`);
     
     // Use direct API call to bypass Kitsu library filter issues
-    const url = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}&include=${appends}`;
+    const baseUrl = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}&include=${appends}&page[size]=20`;
     
-    console.log(`[Kitsu Client] Direct API URL: ${url}`);
+    console.log(`[Kitsu Client] Direct API URL: ${baseUrl}`);
     
-    const response: AxiosResponse<KitsuDirectApiResponse> = await axios.get(url, {
-      headers: {
-        'Accept': 'application/vnd.api+json',
-        'Content-Type': 'application/vnd.api+json'
-      },
-      timeout: 10000
-    });
-    
-    console.log(`[Kitsu Client] Direct API received ${response.data?.data?.length || 0} results`);
-    const receivedIds = response.data?.data?.map(item => item.id) || [];
+    const allData: KitsuAnime[] = [];
+    let nextUrl: string | undefined = baseUrl;
+    let pageCount = 0;
+
+    // Paginate through all results
+    while (nextUrl) {
+      pageCount++;
+      console.log(`[Kitsu Client] Fetching page ${pageCount}...`);
+      
+      const response: AxiosResponse<KitsuDirectApiResponse> = await axios.get(nextUrl, {
+        headers: {
+          'Accept': 'application/vnd.api+json',
+          'Content-Type': 'application/vnd.api+json'
+        },
+        timeout: 10000
+      });
+      
+      const pageData = response.data?.data || [];
+      console.log(`[Kitsu Client] Page ${pageCount} received ${pageData.length} results`);
+      
+      allData.push(...pageData);
+      
+      // Check for next page
+      nextUrl = response.data?.links?.next;
+      if (nextUrl) {
+        console.log(`[Kitsu Client] Found next page, continuing pagination...`);
+      }
+    }
+
+    console.log(`[Kitsu Client] Total results after pagination: ${allData.length} across ${pageCount} page(s)`);
+    const receivedIds = allData.map(item => item.id);
     console.log(`[Kitsu Client] Received IDs: ${receivedIds.join(',')}`);
     
-    return response.data || null;
+    return {
+      data: allData,
+      meta: { count: allData.length }
+    };
     
   } catch (error) {
     console.error(`[Kitsu Client] Error fetching details for IDs ${ids.join(',')}:`, (error as Error).message);
@@ -344,8 +368,8 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
     const included = response.included || []
 
     // try to read from included first
-    let genres = included.filter(i => i.type === 'genres').map(i => i.attributes.name)
-    let characters = included.filter(i => i.type === 'characters').map(i => i.attributes.name)
+    let genres = included.filter((i: any) => i.type === 'genres').map((i: any) => i.attributes.name)
+    let characters = included.filter((i: any) => i.type === 'characters').map((i: any) => i.attributes.name)
 
     // fallback if missing
     if (!genres.length)

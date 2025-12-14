@@ -1,5 +1,5 @@
 const { decompressFromEncodedURIComponent } = require('lz-string');
-const axios = require('axios');
+const { httpHead } = require('./httpClient');
 const fanart = require('./fanart');
 const anilist = require('../lib/anilist');
 const tvdb = require('../lib/tvdb');
@@ -1315,9 +1315,7 @@ function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 
 
 async function checkIfExists(url) {
   try {
-    const response = await axios.head(url, {
-      maxRedirects: 0,
-      validateStatus: () => true,
+    const response = await httpHead(url, {
       headers: { 'User-Agent': 'AIOMetadataAddon/1.0' }
     });
     return response.status === 200;

@@ -60,6 +60,26 @@ const TRAKT_SORT_OPTIONS: { value: TraktSortOption; label: string; vip?: boolean
   { value: 'collected', label: 'Collected' },
 ];
 
+type AniListSortOption = 'MEDIA_ID' | 'SCORE' | 'STATUS' | 'PROGRESS' | 'PROGRESS_VOLUMES' | 'REPEAT' | 'PRIORITY' | 'STARTED_ON' | 'FINISHED_ON' | 'ADDED_TIME' | 'UPDATED_TIME' | 'MEDIA_TITLE_ROMAJI' | 'MEDIA_TITLE_ENGLISH' | 'MEDIA_TITLE_NATIVE' | 'MEDIA_POPULARITY';
+
+const ANILIST_SORT_OPTIONS: { value: AniListSortOption; label: string }[] = [
+  { value: 'ADDED_TIME', label: 'Added Time' },
+  { value: 'UPDATED_TIME', label: 'Updated Time' },
+  { value: 'SCORE', label: 'Score' },
+  { value: 'STATUS', label: 'Status' },
+  { value: 'PROGRESS', label: 'Progress' },
+  { value: 'MEDIA_POPULARITY', label: 'Popularity' },
+  { value: 'MEDIA_TITLE_ROMAJI', label: 'Title (Romaji)' },
+  { value: 'MEDIA_TITLE_ENGLISH', label: 'Title (English)' },
+  { value: 'MEDIA_TITLE_NATIVE', label: 'Title (Native)' },
+  { value: 'STARTED_ON', label: 'Started On' },
+  { value: 'FINISHED_ON', label: 'Finished On' },
+  { value: 'MEDIA_ID', label: 'Media ID' },
+  { value: 'PRIORITY', label: 'Priority' },
+  { value: 'REPEAT', label: 'Repeat' },
+  { value: 'PROGRESS_VOLUMES', label: 'Progress (Volumes)' },
+];
+
 const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
@@ -76,7 +96,7 @@ const sourceBadgeStyles = {
 
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
-  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>(catalog.sort || 'default');
+  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>((catalog.sort as any) || 'default');
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
@@ -409,6 +429,8 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
 
 const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL } = useConfig();
+  const [sort, setSort] = useState<AniListSortOption>(catalog.sort as AniListSortOption || 'ADDED_TIME');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'desc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
 
   const handleSave = () => {
@@ -416,7 +438,7 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL: Math.max(cacheTTL, 300) }
+          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, 300) }
           : c
       )
     }));
@@ -430,6 +452,33 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
           <DialogTitle>AniList Catalog Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value) => setSort(value as AniListSortOption)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ANILIST_SORT_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Sort Direction</Label>
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="anilist-cache-ttl">Cache TTL (seconds)</Label>
             <div className="flex items-center space-x-2">
