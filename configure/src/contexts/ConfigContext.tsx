@@ -123,6 +123,7 @@ const initialConfig: AppConfig = {
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   mdblistWatchTracking: true,
+  anilistWatchTracking: true,
   enableRatingPostersForLibrary: true, // Default to enabled - keep Rating Posters for library items
   ageRating: 'None',
   searchEnabled: true,

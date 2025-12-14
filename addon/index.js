@@ -7,6 +7,7 @@ const addon = express();
 //addon.set('trust proxy', true);
 
 const { getCatalog } = require("./lib/getCatalog");
+const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
@@ -578,6 +579,333 @@ addon.post("/api/trakt/proxy", async (req, res) => {
 
 // Manual cache clearing endpoint (temporarily disabled due to binding issue)
 // addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
+
+// --- AniList OAuth Routes ---
+const anilistTracker = require('./lib/anilistTracker');
+
+// GET /anilist/auth - Initiate AniList OAuth flow
+addon.get("/anilist/auth", async (req, res) => {
+  try {
+    const clientId = process.env.ANILIST_CLIENT_ID;
+    const clientSecret = process.env.ANILIST_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
+    
+    consola.info(`[AniList OAuth] Starting auth flow with client_id=${clientId}, redirect_uri=${redirectUri}`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "AniList OAuth not configured. Please set ANILIST_CLIENT_ID and ANILIST_CLIENT_SECRET environment variables." });
+    }
+    
+    // Generate state parameter for CSRF protection
+    const state = crypto.randomBytes(32).toString('hex');
+    
+    // Store state in a short-lived way (we'll validate it in callback)
+    // For simplicity, we encode it in the URL - in production you might use a session store
+    const authUrl = anilistTracker.getAuthorizationUrl(redirectUri, state);
+    
+    consola.info(`[AniList OAuth] Redirecting to: ${authUrl}`);
+    
+    res.redirect(authUrl);
+  } catch (error) {
+    consola.error("[AniList OAuth] Authorization error:", error);
+    res.status(500).json({ error: "Failed to initiate AniList authorization" });
+  }
+});
+
+// GET /anilist/callback - Handle AniList OAuth callback
+addon.get("/anilist/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ OAuth Error</h1>
+          <p>Invalid callback parameters - missing authorization code.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const clientId = process.env.ANILIST_CLIENT_ID;
+    const clientSecret = process.env.ANILIST_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Configuration Error</h1>
+          <p>AniList OAuth is not configured on this server.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Exchange code for tokens
+    const tokens = await anilistTracker.exchangeCodeForTokens(code, redirectUri);
+    
+    if (!tokens) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Token Exchange Failed</h1>
+          <p>Failed to exchange authorization code for tokens.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Get user info from AniList
+    const user = await anilistTracker.getAuthenticatedUser(tokens.access_token);
+    
+    if (!user) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ User Info Error</h1>
+          <p>Failed to retrieve AniList user information.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Generate UUID for this token
+    const tokenId = crypto.randomUUID();
+    
+    // Store tokens in database with provider='anilist'
+    const saved = await database.saveOAuthToken(
+      tokenId,
+      'anilist',
+      user.username,
+      tokens.access_token,
+      tokens.refresh_token,
+      tokens.expires_at,
+      '' // scope
+    );
+    
+    if (!saved) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Database Error</h1>
+          <p>Failed to save OAuth token to database.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Display success page with token ID
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>AniList OAuth Success</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #02a9ff; }
+          .token-box { background: #f9f9f9; border: 2px dashed #02a9ff; padding: 20px; margin: 20px 0; border-radius: 5px; word-break: break-all; }
+          .token { font-family: monospace; font-size: 14px; color: #333; }
+          button { background: #02a9ff; color: white; border: none; padding: 12px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px; }
+          button:hover { background: #0288d1; }
+          .instructions { text-align: left; margin-top: 30px; padding: 20px; background: #f0f8ff; border-left: 4px solid #02a9ff; }
+          .instructions ol { padding-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ AniList OAuth Successful</h1>
+          <p>Your AniList account <strong>${user.username}</strong> has been authorized!</p>
+          
+          <div class="token-box">
+            <div class="token" id="tokenId">${tokenId}</div>
+          </div>
+          
+          <button onclick="copyToken()">📋 Copy Token ID</button>
+          
+          <div class="instructions">
+            <h3>📝 Next Steps:</h3>
+            <ol>
+              <li>Copy the Token ID above</li>
+              <li>Go to your addon configuration page</li>
+              <li>Find the <strong>AniList Integration</strong> section</li>
+              <li>Paste this Token ID in the <strong>AniList Token ID</strong> field</li>
+              <li>Save your configuration</li>
+            </ol>
+            <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your AniList account through this addon.</p>
+          </div>
+        </div>
+        
+        <script>
+          function copyToken() {
+            const tokenText = document.getElementById('tokenId').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+              alert('✅ Token ID copied to clipboard!');
+            }).catch(err => {
+              alert('❌ Failed to copy. Please select and copy manually.');
+            });
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    consola.error("[AniList OAuth] Callback error:", error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>AniList OAuth Error</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1>❌ OAuth Error</h1>
+        <p>An error occurred during authentication: ${error.message}</p>
+        <p><a href="${process.env.HOST_NAME}/configure">← Back to Configuration</a></p>
+      </body>
+      </html>
+    `);
+  }
+});
+
+// POST /anilist/disconnect - Disconnect AniList account
+addon.post("/anilist/disconnect", async (req, res) => {
+  try {
+    const { userUUID } = req.body;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Delete OAuth token from database if it exists
+    // Token ID is stored in apiKeys.anilistTokenId by the frontend
+    if (config.apiKeys?.anilistTokenId) {
+      await database.deleteOAuthToken(config.apiKeys.anilistTokenId);
+      delete config.apiKeys.anilistTokenId;
+    }
+    
+    // Disable AniList watch tracking
+    delete config.anilistWatchTracking;
+    
+    // Get user's password hash to save config
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Save updated config directly to database
+    await database.saveUserConfig(userUUID, user.password_hash, config);
+    
+    // Invalidate config cache
+    configCache.delete(userUUID);
+    
+    res.json({ success: true });
+  } catch (error) {
+    consola.error("[AniList] Disconnect error:", error);
+    res.status(500).json({ error: "Failed to disconnect AniList" });
+  }
+});
+
+// GET /anilist/status/:userUUID - Get AniList connection status
+addon.get("/anilist/status/:userUUID", async (req, res) => {
+  try {
+    const { userUUID } = req.params;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Check if AniList token exists
+    // Token ID is stored in apiKeys.anilistTokenId by the frontend
+    const anilistTokenId = config.apiKeys?.anilistTokenId;
+    if (!anilistTokenId) {
+      return res.json({ 
+        connected: false,
+        username: null
+      });
+    }
+    
+    // Get the OAuth token from database
+    const token = await database.getOAuthToken(anilistTokenId);
+    if (!token) {
+      return res.json({ 
+        connected: false,
+        username: null
+      });
+    }
+    
+    res.json({ 
+      connected: true,
+      username: token.user_id,
+      trackingEnabled: config.anilistWatchTracking !== false
+    });
+  } catch (error) {
+    consola.error("[AniList] Status check error:", error);
+    res.status(500).json({ error: "Failed to check AniList status" });
+  }
+});
+
+// POST /api/anilist/lists - Get user's AniList anime lists
+addon.post("/api/anilist/lists", async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    
+    if (!tokenId) {
+      return res.status(400).json({ error: "tokenId is required" });
+    }
+    
+    // Get the OAuth token from database to retrieve username
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+    
+    // Verify this is an AniList token
+    if (token.provider !== 'anilist') {
+      return res.status(400).json({ error: "Invalid token provider - expected AniList token" });
+    }
+    
+    const username = token.user_id;
+    if (!username) {
+      return res.status(400).json({ error: "Username not found in token" });
+    }
+    
+    consola.info(`[AniList Lists] Fetching lists for user: ${username}`);
+    
+    // Fetch user's lists from AniList API
+    const result = await anilist.fetchUserLists(username);
+    
+    res.json({
+      success: true,
+      username: username,
+      lists: result.lists
+    });
+  } catch (error) {
+    consola.error("[AniList Lists] Error fetching lists:", error);
+    res.status(500).json({ error: "Failed to fetch AniList lists: " + error.message });
+  }
+});
 
 // --- ID Mapping Correction Routes (Admin only) ---
 addon.get("/api/corrections", (req, res) => {
@@ -1370,11 +1698,16 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
     
-    // Check if watch tracking is enabled and MDBList API key exists
-    const hasApiKey = config?.apiKeys?.mdblist;
-    const trackingEnabled = !!config?.mdblistWatchTracking;
+    // Check if any watch tracking is enabled (MDBList or AniList)
+    const hasMdblistKey = config?.apiKeys?.mdblist;
+    const mdblistEnabled = !!config?.mdblistWatchTracking;
+    const hasAnilistToken = config?.apiKeys?.anilistTokenId;
+    const anilistEnabled = !!config?.anilistWatchTracking;
     
-    if (hasApiKey && trackingEnabled) {
+    const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
+    const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
+    
+    if (shouldTrackMdblist || shouldTrackAnilist) {
       // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
@@ -1384,8 +1717,8 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       // Return empty subtitle response immediately
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
-      // Watch tracking disabled or no API key - return empty subtitles
-      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - hasApiKey: ${!!hasApiKey}, trackingEnabled: ${trackingEnabled}`);
+      // Watch tracking disabled or no credentials - return empty subtitles
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {

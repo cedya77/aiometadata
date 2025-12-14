@@ -364,6 +364,36 @@ async function createStremThruCatalog(userCatalog) {
   }
 }
 
+/**
+ * Create an AniList catalog entry for the manifest
+ * AniList catalogs are user's personal anime lists (Watching, Completed, etc.)
+ */
+function createAniListCatalog(userCatalog) {
+  try {
+    console.log(`[Manifest] Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Use displayType if defined, otherwise use original type (default to 'series' for anime)
+    const catalogType = userCatalog.displayType || userCatalog.type || 'series';
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome || false
+    };
+    
+    console.log(`[Manifest] AniList catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating AniList catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function getManifest(config) {
   const startTime = Date.now();
   console.log('[Manifest] Starting manifest generation...');
@@ -560,6 +590,10 @@ async function getManifest(config) {
         //console.log(`[Manifest] Custom catalog ${userCatalog.id} passed filter`);
         return true;
       }
+      if (userCatalog.id.startsWith('anilist.')) {
+        //console.log(`[Manifest] AniList catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
       if (!catalogDef) {
         console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: no catalog definition`);
         return false;
@@ -591,6 +625,12 @@ async function getManifest(config) {
           console.log(`[Manifest] Processing Custom catalog: ${userCatalog.id}`);
           const result = await createStremThruCatalog(userCatalog);
           console.log(`[Manifest] Custom catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('anilist.')) {
+          console.log(`[Manifest] Processing AniList catalog: ${userCatalog.id}`);
+          const result = createAniListCatalog(userCatalog);
+          console.log(`[Manifest] AniList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);

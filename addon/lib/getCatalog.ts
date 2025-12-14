@@ -4,13 +4,14 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
+const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 
@@ -177,6 +178,12 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.info(`Routing to Trakt catalog handler for id: ${id}`);
       const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(traktResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
+    }
+    else if (id.startsWith('anilist.')) {
+      logger.info(`Routing to AniList catalog handler for id: ${id}`);
+      const anilistResults = await getAniListCatalog(type, id, page, language, config, userUUID, includeVideos);
+      const filteredResults = filterMetasByRegex(anilistResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
 
@@ -988,6 +995,137 @@ async function getTraktCatalog(
     logger.error(`Full stack trace:`, err.stack);
     return [];
   }
+}
+
+/**
+ * Get AniList catalog items for a user's list
+ * Handles 'anilist.*' catalog IDs (e.g., anilist.Watching, anilist.Completed)
+ */
+async function getAniListCatalog(
+  type: string,
+  catalogId: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    logger.info(`[AniList] Fetching catalog: ${catalogId}, Page: ${page}`);
+    
+    // Extract list name from catalog ID (format: anilist.<listName>)
+    const listName = catalogId.replace('anilist.', '');
+    if (!listName) {
+      logger.error(`[AniList] Invalid catalog ID format: ${catalogId}`);
+      return [];
+    }
+    
+    // Get the catalog config to retrieve username and custom TTL
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    const username = catalogConfig?.metadata?.username;
+    
+    if (!username) {
+      logger.error(`[AniList] No username found in catalog config for: ${catalogId}`);
+      return [];
+    }
+    
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+    
+    // Get custom cache TTL from catalog config if specified
+    const customCacheTTL = catalogConfig?.cacheTTL || null;
+    
+    // Fetch list items from AniList API with caching
+    const response = await cacheWrapAniListCatalog(
+      username,
+      listName,
+      page,
+      async () => anilist.fetchListItems(username, listName, page, pageSize),
+      customCacheTTL,
+      { enableErrorCaching: true }
+    );
+    
+    // Handle cached error responses
+    if (response && (response as any).error) {
+      logger.warn(`[AniList] Cached error for list "${listName}": ${(response as any).message}`);
+      return [];
+    }
+    
+    logger.debug(`[AniList] Fetched ${response.items.length} items from list "${listName}", hasMore: ${response.hasMore}`);
+    
+    // Early exit for empty pages
+    if (response.items.length === 0) {
+      logger.debug(`[AniList] No items at page ${page} for list "${listName}"`);
+      return [];
+    }
+    
+    // Resolve AniList media IDs to Stremio metas
+    const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+    
+    logger.success(`[AniList] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
+    return metas;
+    
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[AniList] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
+    logger.error(`Full stack trace:`, err.stack);
+    return [];
+  }
+}
+
+/**
+ * Resolve AniList media entries to Stremio meta objects
+ * Uses ID mapping to convert AniList IDs to Stremio-compatible IDs
+ */
+async function resolveAniListItemsToMetas(
+  items: Array<{ score: number; media: any }>,
+  type: string,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean
+): Promise<any[]> {
+  // Helper function to strip HTML tags from AniList descriptions
+  const stripHtml = (html: string | null | undefined): string => {
+    if (!html) return '';
+    return html
+      .replace(/<br\s*\/?>/gi, '\n') // Convert <br> to newlines
+      .replace(/<\/?[^>]+(>|$)/g, '') // Remove all other HTML tags
+      .replace(/\n\n+/g, '\n\n') // Collapse multiple newlines
+      .trim();
+  };
+
+  // create new items with property mal_id and type, plus additional AniList fields
+  const newItems = items.map(item => {
+    const media = item.media;
+    // Format dates from AniList structure
+    const airedFrom = media.startDate?.year 
+      ? `${media.startDate.year}-${String(media.startDate.month || 1).padStart(2, '0')}-${String(media.startDate.day || 1).padStart(2, '0')}`
+      : null;
+    const airedTo = media.endDate?.year
+      ? `${media.endDate.year}-${String(media.endDate.month || 12).padStart(2, '0')}-${String(media.endDate.day || 31).padStart(2, '0')}`
+      : null;
+    
+    return {
+      mal_id: media.idMal,
+      type: type,
+      title: media.title?.romaji,
+      title_english: media.title?.english,
+      year: media.seasonYear || media.startDate?.year,
+      duration: media.duration ? `${media.duration} min per ep` : null,
+      episodes: media.episodes,
+      synopsis: stripHtml(media.description),
+      aired: {
+        from: airedFrom,
+        to: airedTo
+      },
+      status: airedTo ? 'Finished Airing' : 'Currently Airing'
+    };
+  });
+  const metas= await Utils.parseAnimeCatalogMetaBatch(newItems, config, language);
+  
+  // Filter out null results
+  return metas.filter(meta => meta !== null);
 }
 
 export { getCatalog };

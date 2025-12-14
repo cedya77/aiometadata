@@ -1,11 +1,23 @@
 const axios = require('axios');
 const { cacheWrapGlobal } = require('./getCache');
 
-const host = process.env.HOST_NAME.startsWith('http') 
+const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http') 
   ? process.env.HOST_NAME 
   : `https://${process.env.HOST_NAME}`;
 
 class AniListAPI {
+  baseURL: string;
+  cache: Map<any, any>;
+  cacheTimeout: number;
+  rateLimit: {
+    limit: number;
+    remaining: number;
+    resetTime: number;
+    lastRequestTime: number;
+    minInterval: number;
+  };
+  requestQueue: Array<{ requestFn: () => Promise<any> | any; resolve: (v: any) => void; reject: (e: any) => void }>;
+  isProcessingQueue: boolean;
   constructor() {
     this.baseURL = 'https://graphql.anilist.co';
     this.cache = new Map();
@@ -28,7 +40,7 @@ class AniListAPI {
   /**
    * Rate limiting and retry logic
    */
-  async makeRateLimitedRequest(requestFn, retries = 3) {
+  async makeRateLimitedRequest(requestFn: () => Promise<any>, retries = 3): Promise<any> {
     const now = Date.now();
     
     // Check if we need to wait for rate limit reset
@@ -70,7 +82,7 @@ class AniListAPI {
       this.rateLimit.lastRequestTime = Date.now();
       return response;
       
-    } catch (error) {
+    } catch (error: any) {
       const responseTime = Date.now() - startTime;
       
       // Track failed request
@@ -98,7 +110,6 @@ class AniListAPI {
         
         // Retry the request
         if (retries > 0) {
-          console.log(`[AniList] Rate limit exceeded, waiting ${waitTime}ms until reset`);
           return this.makeRateLimitedRequest(requestFn, retries - 1);
         }
       }
@@ -110,7 +121,7 @@ class AniListAPI {
   /**
    * Queue a request for rate limiting
    */
-  async queueRequest(requestFn) {
+  async queueRequest(requestFn: () => Promise<any>): Promise<any> {
     return new Promise((resolve, reject) => {
       this.requestQueue.push({ requestFn, resolve, reject });
       this.processQueue();
@@ -128,7 +139,9 @@ class AniListAPI {
     this.isProcessingQueue = true;
     
     while (this.requestQueue.length > 0) {
-      const { requestFn, resolve, reject } = this.requestQueue.shift();
+      const item = this.requestQueue.shift();
+      if (!item) break;
+      const { requestFn, resolve, reject } = item;
       
       try {
         const result = await this.makeRateLimitedRequest(requestFn);
@@ -142,9 +155,238 @@ class AniListAPI {
   }
 
   /**
+   * Map list name to AniList MediaListStatus enum
+   */
+  mapListNameToStatus(listName: string): string | null {
+    const statusMap: Record<string, string> = {
+      'Watching': 'CURRENT',
+      'Completed': 'COMPLETED',
+      'Planning': 'PLANNING',
+      'Plan to Watch': 'PLANNING',
+      'Dropped': 'DROPPED',
+      'Paused': 'PAUSED',
+      'On Hold': 'PAUSED',
+      'Rewatching': 'REPEATING',
+    };
+    return statusMap[listName] || null;
+  }
+
+  /**
+   * Fetch all anime lists for a user (names and counts)
+   */
+  async fetchUserLists(username: string): Promise<any> {
+    if (!username) {
+      throw new Error('Username is required');
+    }
+
+    const query = `
+      query($userName: String) {
+        MediaListCollection(userName: $userName, type: ANIME) {
+          lists {
+            name
+            isCustomList
+            entries {
+              media { id }
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await this.makeRateLimitedRequest(() => 
+        axios.post(this.baseURL, {
+          query,
+          variables: { userName: username }
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        })
+      );
+
+      const data = response.data?.data;
+      const lists = data?.MediaListCollection?.lists || [];
+      return {
+        lists: lists.map((list: any) => ({
+          name: list.name,
+          isCustomList: list.isCustomList,
+          entryCount: (list.entries && Array.isArray(list.entries)) ? list.entries.length : 0,
+        }))
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch items from a specific list with pagination
+   * Returns items: [{ score, media: { id, idMal } }], hasMore, total
+   */
+  async fetchListItems(username: string, listName: string, page = 1, pageSize = 50): Promise<any> {
+    if (!username) {
+      throw new Error('Username is required');
+    }
+    if (!listName) {
+      throw new Error('List name is required');
+    }
+
+    const status = this.mapListNameToStatus(listName);
+
+    if (status) {
+      // Standard status list - use Page query for pagination
+      const query = `
+        query($userName: String, $status: MediaListStatus, $page: Int, $perPage: Int) {
+          Page(page: $page, perPage: $perPage) {
+            pageInfo { hasNextPage total }
+            mediaList(userName: $userName, type: ANIME, status: $status) {
+              score(format: POINT_100)
+              media {
+                id
+                idMal
+                title {
+                  english
+                  romaji
+                  native
+                }
+                startDate {
+                  year
+                  month
+                  day
+                }
+                endDate {
+                  year
+                  month
+                  day
+                }
+                seasonYear
+                duration
+                format
+                description
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await this.makeRateLimitedRequest(() => 
+        axios.post(this.baseURL, {
+          query,
+          variables: {
+            userName: username,
+            status,
+            page,
+            perPage: pageSize,
+          }
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        })
+      );
+
+      const data = response.data?.data;
+      const pageInfo = data?.Page?.pageInfo || { hasNextPage: false, total: 0 };
+      const mediaList = data?.Page?.mediaList || [];
+
+      const items = mediaList.map((entry: any) => ({
+        score: entry.score,
+        media: entry.media,
+      }));
+
+      return {
+        items,
+        hasMore: !!pageInfo.hasNextPage,
+        total: pageInfo.total || 0,
+      };
+    } else {
+      // Custom list - fetch all lists then find and paginate manually
+      const query = `
+        query($userName: String) {
+          MediaListCollection(userName: $userName, type: ANIME) {
+            lists {
+              name
+              isCustomList
+              entries {
+                score(format: POINT_100)
+                media {
+                  id
+                  idMal
+                  title {
+                    english
+                    romaji
+                    native
+                  }
+                  startDate {
+                    year
+                    month
+                    day
+                  }
+                  endDate {
+                    year
+                    month
+                    day
+                  }
+                  seasonYear
+                  duration
+                  episodes
+                  format
+                  description
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await this.makeRateLimitedRequest(() => 
+        axios.post(this.baseURL, {
+          query,
+          variables: { userName: username }
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        })
+      );
+
+      const data = response.data?.data;
+      const lists = data?.MediaListCollection?.lists || [];
+      const targetList = lists.find((list: any) => list.name === listName);
+
+      if (!targetList) {
+        return { items: [], hasMore: false, total: 0 };
+      }
+
+      const allEntries = targetList.entries || [];
+      const total = allEntries.length;
+      const startIndex = (page - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
+      const paginatedEntries = allEntries.slice(startIndex, endIndex);
+
+      const items = paginatedEntries.map((entry: any) => ({
+        score: entry.score,
+        media: entry.media,
+      }));
+
+      return {
+        items,
+        hasMore: endIndex < total,
+        total,
+      };
+    }
+  }
+
+  /**
    * GraphQL query for getting anime artwork by MAL ID
    */
-  async getAnimeArtworkByMalId(malId) {
+  async getAnimeArtworkByMalId(malId: number): Promise<any> {
     const query = `
       query ($malId: Int) {
         Media(idMal: $malId, type: ANIME) {
@@ -198,7 +440,7 @@ class AniListAPI {
       const response = await this.makeRateLimitedRequest(() => 
         axios.post(this.baseURL, {
           query,
-          variables: { malId: parseInt(malId) }
+          variables: { malId: malId }
         }, {
           headers: {
             'Content-Type': 'application/json',
@@ -214,7 +456,7 @@ class AniListAPI {
       
       console.log(`[AniList] No anime found for MAL ID: ${malId}`);
       return null;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[AniList] Error fetching anime for MAL ID ${malId}:`, error.message);
       return null;
     }
@@ -223,13 +465,13 @@ class AniListAPI {
   /**
    * GraphQL query for getting multiple anime artworks by AniList IDs (aliasing)
    */
-  async getMultipleAnimeArtworkByAnilistIds(anilistIds) {
+  async getMultipleAnimeArtworkByAnilistIds(anilistIds: number[]): Promise<any[]> {
     if (!anilistIds || anilistIds.length === 0) {
       return [];
     }
 
     // Build dynamic query with aliases - ONLY artwork fields
-    const queryParts = anilistIds.map((anilistId, index) => `
+    const queryParts = anilistIds.map((anilistId: number, index: number) => `
       anime${index}: Media(id: ${anilistId}, type: ANIME) {
         id
         idMal
@@ -279,7 +521,7 @@ class AniListAPI {
       }
 
       return [];
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[AniList] Error fetching multiple anime for AniList IDs ${anilistIds.join(', ')}:`, error.message);
       if (error.response?.data?.errors) {
         console.log(`[AniList] GraphQL errors:`, error.response.data.errors);
@@ -291,13 +533,13 @@ class AniListAPI {
   /**
    * GraphQL query for getting multiple anime artworks by MAL IDs (aliasing) - DEPRECATED
    */
-  async getMultipleAnimeArtwork(malIds) {
+  async getMultipleAnimeArtwork(malIds: number[]): Promise<any[]> {
     if (!malIds || malIds.length === 0) {
       return [];
     }
 
     // Build dynamic query with aliases - ONLY artwork fields
-    const queryParts = malIds.map((malId, index) => `
+    const queryParts = malIds.map((malId: number, index: number) => `
       anime${index}: Media(idMal: ${malId}, type: ANIME) {
         id
         idMal
@@ -345,7 +587,7 @@ class AniListAPI {
       
       console.log(`[AniList] No anime found for MAL IDs: ${malIds.join(', ')}`);
       return [];
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[AniList] Error fetching multiple anime for MAL IDs ${malIds.join(', ')}:`, error.message);
       if (error.response?.data) {
         console.error(`[AniList] GraphQL errors:`, error.response.data.errors);
@@ -357,7 +599,7 @@ class AniListAPI {
   /**
    * Get poster image URL from AniList data
    */
-  getPosterUrl(animeData) {
+  getPosterUrl(animeData: any): string | null {
     if (!animeData?.coverImage?.large) {
       return null;
     }
@@ -369,7 +611,7 @@ class AniListAPI {
    * Converts banner images to full-size backgrounds with proper processing
    * Falls back to cover image if banner is too small
    */
-  getBackgroundUrl(animeData) {
+  getBackgroundUrl(animeData: any): string | null {
     // Prefer banner image, but fall back to cover image if banner is too small
     const bannerUrl = animeData?.bannerImage;
     const coverUrl = animeData?.coverImage?.large;
@@ -402,7 +644,7 @@ class AniListAPI {
   /**
    * Get medium poster URL from AniList data
    */
-  getMediumPosterUrl(animeData) {
+  getMediumPosterUrl(animeData: any): string | null {
     if (!animeData?.coverImage?.medium) {
       return null;
     }
@@ -412,24 +654,25 @@ class AniListAPI {
   /**
    * Get anime color theme from AniList data
    */
-  getAnimeColor(animeData) {
+  getAnimeColor(animeData: any): string | null {
     return animeData?.coverImage?.color || null;
   }
 
   /**
    * Enhanced artwork getter with global caching
    */
-  async getAnimeArtwork(malId) {
+  async getAnimeArtwork(malId: number | string): Promise<any> {
     return cacheWrapGlobal(`anilist-artwork:${malId}`, async () => {
       console.log(`[AniList] Fetching artwork for MAL ID: ${malId}`);
-      return await this.getAnimeArtworkByMalId(malId);
+      const malIdNum = typeof malId === 'string' ? parseInt(malId) : malId;
+      return await this.getAnimeArtworkByMalId(malIdNum);
     }, 30 * 24 * 60 * 60); // 30 days TTL
   }
 
   /**
    * Batch artwork getter using AniList IDs with global caching
    */
-  async getBatchAnimeArtworkByAnilistIds(anilistIds) {
+  async getBatchAnimeArtworkByAnilistIds(anilistIds: number[]): Promise<any[]> {
     if (!anilistIds || anilistIds.length === 0) return [];
     
     const batchSize = 50;
@@ -448,13 +691,13 @@ class AniListAPI {
         }, 30 * 24 * 60 * 60); // 30 days TTL
         
         allResults.push(...batchResults);
-      } catch (error) {
+      } catch (error: any) {
         console.warn(`[AniList] AniList ID batch ${Math.floor(i/batchSize) + 1} failed:`, error.message);
         
         // Fallback to individual cached requests
         console.warn(`[AniList] Falling back to individual requests for batch of ${batch.length}`);
         const individualResults = await Promise.all(
-          batch.map(anilistId => this.getAnimeArtwork(`anilist:${anilistId}`))
+          batch.map((anilistId: number) => this.getAnimeArtwork(`anilist:${anilistId}`))
         );
         allResults.push(...individualResults.filter(Boolean));
       }
@@ -468,7 +711,7 @@ class AniListAPI {
   /**
    * Batch artwork getter with global caching and proper batching (MAL IDs)
    */
-  async getBatchAnimeArtwork(malIds) {
+  async getBatchAnimeArtwork(malIds: number[]): Promise<any[]> {
     if (!malIds || malIds.length === 0) return [];
     
     let batchSize = 50; // Back to 50 with minimal fields
@@ -487,7 +730,7 @@ class AniListAPI {
         }, 30 * 24 * 60 * 60); // 30 days TTL - removed custom classifier for now
         
         allResults.push(...batchResults);
-          } catch (error) {
+          } catch (error: any) {
         console.warn(`[AniList] Batch ${Math.floor(i/batchSize) + 1} failed:`, error.message);
         
         // If complexity error, try smaller batches
@@ -501,7 +744,7 @@ class AniListAPI {
         // Fallback to individual cached requests
         console.warn(`[AniList] Falling back to individual requests for batch of ${batch.length}`);
         const individualResults = await Promise.all(
-          batch.map(malId => this.getAnimeArtwork(malId))
+          batch.map((malId: number) => this.getAnimeArtwork(malId))
         );
         allResults.push(...individualResults.filter(Boolean));
       }
@@ -515,10 +758,10 @@ class AniListAPI {
   /**
    * Get artwork URLs for catalog usage
    */
-  async getCatalogArtwork(malIds) {
+  async getCatalogArtwork(malIds: number[]): Promise<any[]> {
     const animeData = await this.getBatchAnimeArtwork(malIds);
     
-    return animeData.map(anime => ({
+    return animeData.map((anime: any) => ({
       malId: anime.idMal,
       poster: this.getPosterUrl(anime),
       background: this.getBackgroundUrl(anime),
@@ -569,7 +812,7 @@ class AniListAPI {
   getCacheStats() {
     const now = Date.now();
     const validEntries = Array.from(this.cache.values()).filter(
-      entry => now - entry.timestamp < this.cacheTimeout
+      (entry: any) => now - entry.timestamp < this.cacheTimeout
     );
     
     return {
@@ -581,5 +824,5 @@ class AniListAPI {
     };
   }
 }
-
-module.exports = new AniListAPI();
+const anilist = new AniListAPI();
+module.exports = anilist;

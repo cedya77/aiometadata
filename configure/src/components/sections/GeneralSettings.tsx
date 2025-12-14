@@ -293,6 +293,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, mdblistWatchTracking: checked }));
   };
 
+  const handleAniListTrackingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, anilistWatchTracking: checked }));
+  };
+
   const handleEnableRatingPostersForLibraryChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
   };
@@ -445,6 +449,19 @@ export function GeneralSettings() {
             id="mdblist-watch-tracking"
             checked={!!config.mdblistWatchTracking}
             onCheckedChange={handleMDBListTrackingChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="anilist-watch-tracking" className="text-lg font-medium">AniList Watch Tracking</Label>
+            <p className="text-sm text-muted-foreground">
+              Automatically sync anime watch progress to AniList when you play episodes (requires AniList connection in Integrations).
+            </p>
+          </div>
+          <Switch
+            id="anilist-watch-tracking"
+            checked={!!config.anilistWatchTracking}
+            onCheckedChange={handleAniListTrackingChange}
           />
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
