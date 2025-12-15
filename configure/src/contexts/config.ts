@@ -25,7 +25,7 @@ export interface CatalogConfig {
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
-  // List metadata (item count, privacy, author, description, AniList-specific fields)
+  // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings)
   metadata?: {
     itemCount?: number;
     privacy?: string;
@@ -35,6 +35,8 @@ export interface CatalogConfig {
     username?: string;
     listName?: string;
     isCustomList?: boolean;
+    // Trakt Up Next metadata
+    useShowPosterForUpNext?: boolean;
   };
 }
 

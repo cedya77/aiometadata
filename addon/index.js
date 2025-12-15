@@ -1321,6 +1321,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
+  // Trakt up next needs poster preference in cache key
+  if (id === 'trakt.upnext') {
+    if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
+      extraArgs.useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
+    }
+  }
   // Trakt calendar needs today's date in cache key
   if (id === 'trakt.calendar') {
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';

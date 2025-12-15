@@ -2023,6 +2023,25 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                      <div className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="space-y-0.5">
+                          <label className="text-sm font-medium">Use Show Poster</label>
+                          <p className="text-xs text-muted-foreground">Display show poster instead of episode thumbnail</p>
+                        </div>
+                        <Switch
+                          checked={upNextCatalog.metadata?.useShowPosterForUpNext || false}
+                          onCheckedChange={(checked) => {
+                            setConfig(prev => ({
+                              ...prev,
+                              catalogs: prev.catalogs.map(c =>
+                                c.id === 'trakt.upnext'
+                                  ? { ...c, metadata: { ...c.metadata, useShowPosterForUpNext: checked } }
+                                  : c
+                              )
+                            }));
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
                   <p className="text-xs text-muted-foreground">

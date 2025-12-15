@@ -2804,7 +2804,6 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
 
     let relationships = includeObject?.filter(item => item.type === 'mediaRelationships' && ['prequel', 'sequel'].some(role => item.attributes?.role.toLowerCase().includes(role)) && item.relationships?.destination?.data?.type === 'anime') || [];
 
-
     const imdbId = mapping?.imdbId
     const malId = mapping?.malId
     const seriesId = `kitsu:${kitsuData.id}`

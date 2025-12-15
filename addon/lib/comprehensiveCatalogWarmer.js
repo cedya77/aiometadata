@@ -397,6 +397,7 @@ class ComprehensiveCatalogWarmer {
       catalog.showInHome === false && (
         catalogId.startsWith('mdblist.') ||
         catalogId.startsWith('trakt.') ||
+        catalogId.startsWith('anilist.') ||
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
@@ -493,19 +494,22 @@ class ComprehensiveCatalogWarmer {
         const extraArgs = {};
         if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
         if (genreValue) extraArgs.genre = genreValue;
-        
-        if (catalogId.startsWith('trakt.')) {
-          const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+        const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+        if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.')) {
           if (catalogConfig) {
             if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
           }
         }
         else if (catalogId.startsWith('mdblist.')) {
-          const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
           if (catalogConfig) {
             if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
             if (catalogConfig.order) extraArgs.order = catalogConfig.order;
+          }
+        }
+        if (catalogId === 'trakt.upnext') {
+          if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
+            extraArgs.useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
           }
         }
         

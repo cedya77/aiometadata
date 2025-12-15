@@ -152,6 +152,7 @@ interface KitsuApiResponse<T> {
 
 interface KitsuDirectApiResponse {
   data: KitsuAnime[];
+  included?: any[];
   links?: {
     first?: string;
     next?: string;
@@ -242,6 +243,7 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
     console.log(`[Kitsu Client] Direct API URL: ${baseUrl}`);
     
     const allData: KitsuAnime[] = [];
+    const allIncluded: any[] = [];
     let nextUrl: string | undefined = baseUrl;
     let pageCount = 0;
 
@@ -259,9 +261,11 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
       });
       
       const pageData = response.data?.data || [];
-      console.log(`[Kitsu Client] Page ${pageCount} received ${pageData.length} results`);
+      const pageIncluded = response.data?.included || [];
+      console.log(`[Kitsu Client] Page ${pageCount} received ${pageData.length} results, ${pageIncluded.length} included items`);
       
       allData.push(...pageData);
+      allIncluded.push(...pageIncluded);
       
       // Check for next page
       nextUrl = response.data?.links?.next;
@@ -270,12 +274,13 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
       }
     }
 
-    console.log(`[Kitsu Client] Total results after pagination: ${allData.length} across ${pageCount} page(s)`);
+    console.log(`[Kitsu Client] Total results after pagination: ${allData.length} data items, ${allIncluded.length} included items across ${pageCount} page(s)`);
     const receivedIds = allData.map(item => item.id);
     console.log(`[Kitsu Client] Received IDs: ${receivedIds.join(',')}`);
     
     return {
       data: allData,
+      included: allIncluded,
       meta: { count: allData.length }
     };
     

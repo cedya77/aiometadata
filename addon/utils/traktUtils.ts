@@ -72,6 +72,17 @@ async function fetchTraktUpNextEpisodes(
           if (!progress?.next_episode) return null;
           
           const nextEp = progress.next_episode;
+          
+          // Skip episodes that haven't aired yet
+          if (nextEp.first_aired) {
+            const airedDate = new Date(nextEp.first_aired);
+            const now = new Date();
+            if (airedDate > now) {
+              logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - airs on ${airedDate.toISOString()}`);
+              return null;
+            }
+          }
+          
           return {
             type: 'show',
             show: showData,
@@ -589,7 +600,7 @@ async function fetchTraktWatchlistItems(
     const sortParam = sort || 'rank';
     const sortHow = sortDirection || 'asc';
     let url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
-    if (genre && genre !== 'all' && genre !== 'none') {
+    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
       url += `&genres=${encodeURIComponent(genre)}`;
     }
     
@@ -662,7 +673,7 @@ async function fetchTraktFavoritesItems(
     const sortParam = sort || 'rank';
     const sortHow = sortDirection || 'asc';
     let url = `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
-    if (genre && genre !== 'all' && genre !== 'none') {
+    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
       url += `&genres=${encodeURIComponent(genre)}`;
     }
     
@@ -928,7 +939,8 @@ async function parseTraktItems(
   type: string, 
   language: string, 
   config: UserConfig, 
-  includeVideos: boolean = false
+  includeVideos: boolean = false,
+  useShowPoster: boolean = false
 ): Promise<any[]> {
   const parseStart = Date.now();
   
@@ -994,9 +1006,15 @@ async function parseTraktItems(
                 metaResult.meta.videos = [upNextVideo];
                 metaResult.meta.behaviorHints = metaResult.meta.behaviorHints || {};
                 metaResult.meta.behaviorHints.defaultVideoId = upNextVideo.id;
-                metaResult.meta.poster = upNextVideo.thumbnail;
+                
+                // Check if user wants to use show poster or episode thumbnail
+                if (!useShowPoster) {
+                  metaResult.meta.poster = upNextVideo.thumbnail;
+                  metaResult.meta.posterShape = 'landscape';
+                }
+                // If useShowPoster is true, keep the original show poster and posterShape
+                
                 metaResult.meta.name = `${metaResult.meta.name} - S${upNextEpisode.season}E${upNextEpisode.episode}`;
-                metaResult.meta.posterShape = 'landscape';
                 metaResult.meta.id = cacheId;
                 // ...removed Up Next filter debug log...
               } else {
@@ -1019,7 +1037,8 @@ async function parseTraktItems(
           undefined, 
           { enableErrorCaching: true, maxRetries: 2 }, 
           type as any, 
-          shouldIncludeVideos
+          shouldIncludeVideos,
+          useShowPoster
         );
         
         const getMetaTime = Date.now() - getMetaStart;
@@ -1192,7 +1211,7 @@ async function fetchTraktMostFavoritedItems(
 ): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
     let url = `${TRAKT_BASE_URL}/${type}/favorited/${period}?page=${page}&limit=${limit}`;
-    if (genre && genre !== 'all' && genre !== 'none') {
+    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
       url += `&genres=${encodeURIComponent(genre)}`;
     }
     logger.debug(`Trakt most favorited ${type}: period=${period}, page=${page}, limit=${limit}, genre=${genre || 'none'}`);

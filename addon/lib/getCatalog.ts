@@ -1010,7 +1010,10 @@ async function getTraktCatalog(
     }
     
     const parseStart = Date.now();
-    let metas = await parseTraktItems(response.items, type, language, config, includeVideos);
+    // Pass useShowPosterForUpNext setting to items
+    const useShowPoster = catalogConfig?.metadata?.useShowPosterForUpNext || false;
+    logger.debug(`Up Next: useShowPosterForUpNext = ${useShowPoster}`);
+    let metas = await parseTraktItems(response.items, type, language, config, includeVideos, useShowPoster);
     const parseTime = Date.now() - parseStart;
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     

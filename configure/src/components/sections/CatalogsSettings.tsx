@@ -242,14 +242,22 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const [sort, setSort] = useState<TraktSortOption>(catalog.sort as TraktSortOption || 'added');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
   
   const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
+  const isUpNext = catalog.id === 'trakt.upnext';
 
   const handleSave = () => {
     setConfig(prev => {
       const updatedCatalogs = prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, minCacheTTL) }
+          ? { 
+              ...c, 
+              sort, 
+              sortDirection, 
+              cacheTTL: Math.max(cacheTTL, minCacheTTL),
+              ...(isUpNext && { metadata: { ...c.metadata, useShowPosterForUpNext: useShowPoster } })
+            }
           : c
       ) as CatalogConfig[];
 
@@ -322,6 +330,23 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               Minimum 5 minutes to avoid excessive API calls
             </p>
           </div>
+
+          {isUpNext && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Use Show Poster</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Display show poster instead of episode thumbnail
+                  </p>
+                </div>
+                <Switch
+                  checked={useShowPoster}
+                  onCheckedChange={setUseShowPoster}
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
