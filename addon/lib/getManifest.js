@@ -381,9 +381,10 @@ function createAniListCatalog(userCatalog) {
       name: userCatalog.name,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
+        { name: "genre", options: ["None"], isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
-      showInHome: userCatalog.showInHome || false
+      showInHome: userCatalog.showInHome
     };
     
     console.log(`[Manifest] AniList catalog created successfully: ${catalog.id}`);
