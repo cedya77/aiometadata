@@ -89,7 +89,10 @@ let rateLimitState = {
   recentRateLimitHits: 0,
   lastRateLimitTime: 0,
   isRateLimited: false,
-  rateLimitResetTime: 0
+  rateLimitResetTime: 0,
+  lastLimit: undefined as number | undefined,
+  lastRemaining: undefined as number | undefined,
+  lastReset: undefined as number | undefined
 };
 
 /**
@@ -137,23 +140,32 @@ async function makeRateLimitedRequest<T>(
       await sleep(waitTime);
     }
     
-    // ** CRITICAL FIX: Update the timestamp BEFORE making the request. **
-    // This prevents other parallel calls from firing at the same time.
     rateLimitState.lastRequestTime = Date.now();
     const startTime = Date.now();
     
     try {
       const response = await requestFn();
       const responseTime = Date.now() - startTime;
-      
       const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('mdblist', responseTime, true);
-      
+
+      // --- MDBList Rate Limit Header Logging ---
+      // Type guard for headers property
+      const headers = (response && typeof response === 'object' && 'headers' in response && response.headers && typeof response.headers === 'object') ? response.headers as Record<string, string> : undefined;
+      if (headers) {
+        const limit = headers['x-ratelimit-limit'];
+        const remaining = headers['x-ratelimit-remaining'];
+        const reset = headers['x-ratelimit-reset'];
+        logger.debug(`[MDBList] Rate limit: limit=${limit}, remaining=${remaining}, reset=${reset}`);
+        // Optionally update state for diagnostics
+        rateLimitState.lastLimit = limit ? parseInt(limit) : undefined;
+        rateLimitState.lastRemaining = remaining ? parseInt(remaining) : undefined;
+        rateLimitState.lastReset = reset ? parseInt(reset) : undefined;
+      }
+
       // Reset recent hits on success
       rateLimitState.recentRateLimitHits = 0;
-      
       return response;
-      
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
       const requestTracker = require('../lib/requestTracker.js');
@@ -168,23 +180,44 @@ async function makeRateLimitedRequest<T>(
       if (isRateLimitError(error)) {
         rateLimitState.lastRateLimitTime = Date.now();
         rateLimitState.recentRateLimitHits++;
-        
+
+        // --- MDBList Rate Limit Header Logging on Error ---
+        const headers = (error.response && typeof error.response === 'object' && 'headers' in error.response && error.response.headers && typeof error.response.headers === 'object') ? error.response.headers as Record<string, string> : {};
+        const limit = headers['x-ratelimit-limit'];
+        const remaining = headers['x-ratelimit-remaining'];
+        const reset = headers['x-ratelimit-reset'];
+        const retryAfter = headers['retry-after'];
+        logger.warn(`[MDBList] Rate limit error: limit=${limit}, remaining=${remaining}, reset=${reset}, retry-after=${retryAfter}`);
+        rateLimitState.lastLimit = limit ? parseInt(limit) : undefined;
+        rateLimitState.lastRemaining = remaining ? parseInt(remaining) : undefined;
+        rateLimitState.lastReset = reset ? parseInt(reset) : undefined;
+
         if (isLastAttempt) {
           logger.error(`Rate limit exceeded after ${retries} attempts: ${error.message} - ${context}`);
           throw error;
         }
-        
-        let backoffTime = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits -1);
-        const jitter = Math.random() * 1000;
-        const totalDelay = Math.min(backoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
-        
-        logger.warn(`Rate limit hit. Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${retries}) - ${context}`);
-        
+
+        // Prefer Retry-After header if present, otherwise exponential backoff
+        let backoffTime = 0;
+        if (retryAfter) {
+          const retrySeconds = parseInt(retryAfter);
+          if (!isNaN(retrySeconds)) {
+            backoffTime = retrySeconds * 1000;
+          }
+        }
+        if (!backoffTime) {
+          backoffTime = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits - 1);
+          const jitter = Math.random() * 1000;
+          backoffTime = Math.min(backoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
+        }
+
+        logger.warn(`Rate limit hit. Retrying in ${Math.round(backoffTime)}ms (attempt ${attempt}/${retries}) - ${context}`);
+
         // Set a global cooldown period for all subsequent requests.
         rateLimitState.isRateLimited = true;
-        rateLimitState.rateLimitResetTime = Date.now() + totalDelay;
-        
-        await sleep(totalDelay);
+        rateLimitState.rateLimitResetTime = Date.now() + backoffTime;
+
+        await sleep(backoffTime);
         continue; // Go to the next attempt
       }
       
