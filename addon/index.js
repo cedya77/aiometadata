@@ -1323,9 +1323,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   // Trakt up next needs poster preference in cache key
   if (id === 'trakt.upnext') {
-    if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
-      extraArgs.useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
-    }
+      // Always send a boolean, never undefined
+      extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
+        ? catalogConfig.metadata.useShowPosterForUpNext
+        : false;
   }
   // Trakt calendar needs today's date in cache key
   if (id === 'trakt.calendar') {
@@ -1672,9 +1673,28 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   };
   
   try {
-    const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, fullConfig, userUUID, true);
-    }, undefined, cacheOptions, type, true);
+    // Determine useShowPoster for Trakt Up Next
+    let useShowPoster = false;
+    if (type === 'series' && stremioId && stremioId.startsWith('upnext_')) {
+      console.debug('[Meta Route] Detected Trakt Up Next meta request with ID:', stremioId);  
+      const catalogConfig = fullConfig.catalogs?.find(c => c.id === 'trakt.upnext');
+      if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
+        consola.debug('[Meta Route] Using catalog-specific useShowPosterForUpNext setting:', catalogConfig.metadata.useShowPosterForUpNext);
+        useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
+      }
+    }
+    const result = await cacheWrapMetaSmart(
+      userUUID,
+      stremioId,
+      async () => {
+        return await getMeta(type, language, stremioId, fullConfig, userUUID, true);
+      },
+      undefined,
+      cacheOptions,
+      type,
+      true,
+      useShowPoster
+    );
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });

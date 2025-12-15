@@ -1054,7 +1054,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  * Granular component caching for meta objects
  * Caches individual components separately to prevent one bad component from affecting everything
  */
-async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, useShowPoster = true) {
+async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, useShowPoster = false) {
    // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
@@ -1141,7 +1141,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
     };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-     metaConfig.useShowPoster = useShowPoster;
+     metaConfig.useShowPosterForUpNext = useShowPoster;
     }
     if (isAnimeWithImdbId) {
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1316,7 +1316,7 @@ const metaConfigString = stableStringify(metaConfig);
  * This allows for partial cache hits and graceful degradation
  * @param {boolean} includeVideos - Whether videos component is required for this request
  */
-async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = true) {
+async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
    // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided: ${metaId}`);
@@ -1400,7 +1400,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-   metaConfig.useShowPoster = useShowPoster;
+   metaConfig.useShowPosterForUpNext = useShowPoster;
  }
  if (isAnimeWithImdbId) {
   metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1572,7 +1572,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  * This provides granular caching with graceful degradation
  * @param {boolean} includeVideos - Whether videos are required for this request (default: true)
  */
-async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = true) {
+async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
   cacheLogger.info(`Smart meta caching for ${metaId} (type:${type}, videos:${includeVideos}, showPoster:${useShowPoster})`);
    
    // First, try to reconstruct from cached components BEFORE calling method

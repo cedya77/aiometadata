@@ -62,7 +62,8 @@ async function fetchTraktUpNextEpisodes(
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
                 'trakt-api-version': '2',
-                'trakt-api-key': TRAKT_CLIENT_ID
+                'trakt-api-key': TRAKT_CLIENT_ID,
+                'User-Agent': `AIOMetadata/${process.env.npm_package_version || 'dev'} (https://github.com/AIOMetadata/AIOMetadata)`
               }
             }),
             `Trakt fetchShowWatchedProgress (${showId})`,

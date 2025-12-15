@@ -508,9 +508,9 @@ class ComprehensiveCatalogWarmer {
           }
         }
         if (catalogId === 'trakt.upnext') {
-          if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
-            extraArgs.useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
-          }
+          extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
+              ? catalogConfig.metadata.useShowPosterForUpNext
+              : false;
         }
         
           const derivedPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
