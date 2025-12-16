@@ -28,12 +28,13 @@ export const streamingServices = [
     { id: "dpe", name: "Discovery+", icon: "/discovery-plus.webp" },
     { id: "bet", name: "Bet+", icon: "/betp.jpg" },
     { id: "mub", name: "MUBI", icon: "/mubi.jpg" },
-    { id: "sta", name: "Starz", icon: "/starz.jpg" }
+    { id: "sta", name: "Starz", icon: "/starz.jpg" },
+    { id: "crc", name: "Criterion Channel", icon: "/criterionchannel.jpg"}
   ];
   
   export const regions = {
     'United States': [
-      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'cru', 'pmp', 'mgl', 'cts', 'hlu', 'pcp', 'dpe', 'bet', 'mub', 'sta'
+      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'cru', 'pmp', 'mgl', 'cts', 'hlu', 'pcp', 'dpe', 'bet', 'mub', 'sta', 'crc'
     ],
     'Brazil': [
       'nfx', 'nfk', 'dnp', 'atp', 'amp', 'pmp', 'hbm', 'cru', 'clv', 'gop', 'mgl', 'cts', 'mub'
@@ -52,6 +53,7 @@ export const streamingServices = [
     ],
     'Any': [
       'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv', 'bet', 'mub', 'sta',
-      'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'sky', 'wow', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'crv', 'dpe'
+      'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'sky', 'wow', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'crv', 'dpe',
+      'crc'
     ]
   };

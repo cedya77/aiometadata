@@ -293,6 +293,12 @@
       "watchProviderId": 43,
       "country": "US",
       "extraSupported": ["genre", "skip"]
+    },
+    "crc": {
+      "nameKey": "crc",
+      "watchProviderId": 258,
+      "country": "US",
+      "extraSupported": ["genre", "skip"]
     }
   }
 }
