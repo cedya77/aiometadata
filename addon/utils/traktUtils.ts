@@ -252,6 +252,7 @@ async function fetchTraktUnwatchedEpisodes(
           // Only include shows that are not 100% complete and have unwatched aired episodes
           if (progress.completed >= progress.aired) return null;
 
+          logger.debug(`Unwatched: access token ${accessToken}`);
           // Fetch seasons with episode air dates to sort accurately
           const showSeasonsResp: any = await makeRateLimitedRequest(
             () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/seasons?extended=full,episodes`, {
@@ -278,8 +279,7 @@ async function fetchTraktUnwatchedEpisodes(
           }
 
           const unwatched: Array<{season:number; episode:number; ids:any; aired?: string}> = [];
-          const fallbackRecent = show.last_watched_at || show.reset_at || null;
-          let mostRecentAired: string | null = fallbackRecent;
+          let mostRecentAired: string | null = null;
           
           // Get the next_episode to determine where the user's progress is
           const nextEp = progress.next_episode;
@@ -325,7 +325,7 @@ async function fetchTraktUnwatchedEpisodes(
             type: 'show',
             show: showData,
             unwatchedEpisodes: unwatched,
-              mostRecentAired: mostRecentAired || fallbackRecent
+            mostRecentAired: mostRecentAired
           };
         } catch (error: any) {
           logger.error(`Unwatched: Failed to fetch progress for show ${showId} (${showData?.title || 'unknown'}): ${error?.message || String(error)}`);
