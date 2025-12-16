@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.14.0](https://github.com/cedya77/aiometadata/compare/v1.13.2...v1.14.0) (2025-12-16)
+
+
+### Features
+
+* add Criterion Channel streaming provider ([0cd3794](https://github.com/cedya77/aiometadata/commit/0cd3794bb5a940cd7a2f6ee51d0bf815e5b658ea))
+* add Criterion Channel streaming provider ([7f16c68](https://github.com/cedya77/aiometadata/commit/7f16c6801530665a1e844865fae8b3a2913f23ab))
+* **manifest:** add unwatched_ ID prefix ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **mdblist:** add support for external lists ([cca3bd2](https://github.com/cedya77/aiometadata/commit/cca3bd2b4b50fcafc7089ec2c20a2ad94d4cc08a))
+* prevent marking watch status repeatedly ([0888bdb](https://github.com/cedya77/aiometadata/commit/0888bdb163221693f828c440ecda2ee22301d0ee))
+* prevent marking watch status repeatedly ([56755fe](https://github.com/cedya77/aiometadata/commit/56755fe9f1aa1639a69bcf6453d2031bcc08dd5f))
+* **settings:** add timezone configuration ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* start implementing AL tracking and catalogs ([14f0b4c](https://github.com/cedya77/aiometadata/commit/14f0b4cd6d9a1651bb854aac976c8dc4d882fbb1))
+* **trakt up next:** add show poster toggle, cache key support, and Kitsu pagination fix ([a66ce63](https://github.com/cedya77/aiometadata/commit/a66ce63bc847f8fdcb1a4b93e366fd3a0bfdbbdc))
+* **trakt:** add Airing Soon calendar catalog ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **trakt:** add My Recently Aired and Airing Soon catalogs with timezone support ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **trakt:** add My Recently Aired catalog ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **trakt:** enhance custom lists with split option ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+
+
+### Bug Fixes
+
+* finish implementing automatic Trakt token refresh ([3e7c3e9](https://github.com/cedya77/aiometadata/commit/3e7c3e9b25ef1bc423eee234f9fa80c802fb8a66))
+* **mdblist:** type guard response.headers and extend rateLimitState for new rate limit headers ([19ba774](https://github.com/cedya77/aiometadata/commit/19ba774754bcf5ec4550e8a181568b677a014d1e))
+* **streaming catalogs:** resolve issue with some providers showing few items ([47bc793](https://github.com/cedya77/aiometadata/commit/47bc793f9f0924a784409332a3b8c460866f55f8))
+* **trakt:** reduce retries for individual show fetches in Up Next ([d1037bd](https://github.com/cedya77/aiometadata/commit/d1037bd62d8a39e9f9d62742a2817d393b8fd764))
+
 ## [1.13.2](https://github.com/cedya77/aiometadata/compare/v1.13.1...v1.13.2) (2025-12-10)
 
 
