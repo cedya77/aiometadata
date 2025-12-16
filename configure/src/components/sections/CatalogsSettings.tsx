@@ -101,13 +101,15 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
+  const [filterScoreMin, setFilterScoreMin] = useState<number | undefined>(catalog.filter_score_min);
+  const [filterScoreMax, setFilterScoreMax] = useState<number | undefined>(catalog.filter_score_max);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters }
+          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters, filter_score_min: filterScoreMin, filter_score_max: filterScoreMax }
           : c
       )
     }));
@@ -169,6 +171,32 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
                 </SelectContent>
               </Select>
             </div>
+          )}
+          {catalog.source === 'mdblist' && catalog.sourceUrl?.includes('/external/lists/') && (
+            <>
+              <div className="space-y-2">
+                <Label>Minimum Score</Label>
+                <Input
+                  type="number"
+                  value={filterScoreMin ?? ''}
+                  onChange={(e) => setFilterScoreMin(e.target.value ? parseInt(e.target.value) : undefined)}
+                  placeholder="0-100"
+                  min="0"
+                  max="100"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Maximum Score</Label>
+                <Input
+                  type="number"
+                  value={filterScoreMax ?? ''}
+                  onChange={(e) => setFilterScoreMax(e.target.value ? parseInt(e.target.value) : undefined)}
+                  placeholder="0-100"
+                  min="0"
+                  max="100"
+                />
+              </div>
+            </>
           )}
           <div className="space-y-2">
             <Label>Cache TTL (seconds)</Label>

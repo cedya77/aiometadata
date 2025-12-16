@@ -19,6 +19,9 @@ export interface CatalogConfig {
   displayType?: string;
   // Genre selection for MDBList catalogs - which genre set to use
   genreSelection?: 'standard' | 'anime' | 'all';
+  // MDBList external list score filters
+  filter_score_min?: number;
+  filter_score_max?: number;
   // Enable RPDB for this catalog (for poster enhancements)
   enableRatingPosters?: boolean;
   // Randomize items within each page on every load

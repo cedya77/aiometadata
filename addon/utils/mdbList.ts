@@ -490,6 +490,84 @@ async function getGenresFromMDBList(listId: string, apiKey: string): Promise<str
 }
 
 
+async function fetchMDBListExternalItems(
+  url: string,
+  apiKey: string,
+  language: string,
+  page: number,
+  sort?: string,
+  order?: string,
+  genre?: string,
+  catalogType?: string,
+  unified?: boolean,
+  filterScoreMin?: number,
+  filterScoreMax?: number
+): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+  const offset = (page * pageSize) - pageSize;
+
+  try {
+    const urlWithParams = new URL(url);
+    urlWithParams.searchParams.set('apikey', apiKey);
+    urlWithParams.searchParams.set('limit', pageSize.toString());
+    urlWithParams.searchParams.set('offset', offset.toString());
+    urlWithParams.searchParams.set('language', language);
+    urlWithParams.searchParams.set('append_to_response', 'genre,poster');
+    urlWithParams.searchParams.set('unified', String(unified));
+
+    if (sort && sort.trim() !== '') {
+      urlWithParams.searchParams.set('sort', sort);
+    }
+    if (order && order.trim() !== '') {
+      urlWithParams.searchParams.set('order', order);
+    }
+    if (genre && genre.toLowerCase() !== 'none') {
+      urlWithParams.searchParams.set('filter_genre', genre);
+    }
+    if (typeof filterScoreMin === 'number') {
+      urlWithParams.searchParams.set('filter_score_min', String(filterScoreMin));
+    }
+    if (typeof filterScoreMax === 'number') {
+      urlWithParams.searchParams.set('filter_score_max', String(filterScoreMax));
+    }
+
+    const fullUrl = urlWithParams.toString();
+
+    logger.debug(`MDBList external request URL: ${sanitizeUrlForLogging(fullUrl)}`);
+
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(fullUrl, { dispatcher: mdblistDispatcher }),
+      `MDBList fetchMDBListExternalItems (url: ${sanitizeUrlForLogging(url)}, page: ${page})`
+    );
+
+    const hasMore = response.headers?.['x-has-more'] === 'true';
+
+    let items: any[];
+
+    if (unified === false) {
+      if (catalogType === 'series') {
+        items = response.data.shows || [];
+      } else {
+        items = response.data.movies || [];
+      }
+    } else {
+      if (Array.isArray(response.data)) {
+        items = response.data;
+      } else {
+        items = [
+          ...(response.data?.movies || []),
+          ...(response.data?.shows || [])
+        ];
+      }
+    }
+
+    return { items, hasMore };
+  } catch (err: any) {
+    logger.error(`Error retrieving items from URL ${sanitizeUrlForLogging(url)}, page ${page}:`, err.message);
+    return { items: [] };
+  }
+}
+
 async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig, includeVideos: boolean = false): Promise<any[]> {
   let filteredItems = items;
   //console.log(`[MDBList] Filtered items: ${JSON.stringify(filteredItems)}`);
@@ -867,5 +945,5 @@ async function markEpisodeAsWatched(
   }
 }
 
-export { fetchMDBListItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched };
+export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched };
 

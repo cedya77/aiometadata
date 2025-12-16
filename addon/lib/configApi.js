@@ -940,7 +940,6 @@ class ConfigApi {
       
       // Migrate old property names to new ones
       if (config.search?.engineRPDB && !config.search?.engineRatingPosters) {
-        logger.info(`[MIGRATION] Migrating search.engineRPDB to search.engineRatingPosters`);
         config.search.engineRatingPosters = config.search.engineRPDB;
         delete config.search.engineRPDB;
       }
@@ -949,7 +948,6 @@ class ConfigApi {
       if (config.catalogs && Array.isArray(config.catalogs)) {
         config.catalogs = config.catalogs.map(catalog => {
           if (catalog.enableRPDB !== undefined && catalog.enableRatingPosters === undefined) {
-            logger.info(`[MIGRATION] Migrating catalog ${catalog.id} enableRPDB to enableRatingPosters`);
             return {
               ...catalog,
               enableRatingPosters: catalog.enableRPDB,

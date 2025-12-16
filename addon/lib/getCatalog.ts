@@ -400,6 +400,50 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   if (id.startsWith("mdblist.")) {
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const catalogConfig = config.catalogs?.find(c => c.id === id);
+    
+    // Handle external lists via sourceUrl
+    if (catalogConfig?.sourceUrl && catalogConfig.sourceUrl.includes('/external/lists/')) {
+      logger.info(`Fetching MDBList external list from sourceUrl: ${catalogConfig.sourceUrl}`);
+
+      const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
+      const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
+      const unified = catalogConfig.type === 'all';
+      const filterScoreMin = catalogConfig?.filter_score_min;
+      const filterScoreMax = catalogConfig?.filter_score_max;
+
+      const { convertGenreToSlug, fetchMDBListExternalItems } = await import('../utils/mdbList.js');
+      const genreSlug = convertGenreToSlug(genre);
+
+      const response = await fetchMDBListExternalItems(
+        catalogConfig.sourceUrl,
+        config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '',
+        language,
+        page,
+        sort,
+        order,
+        genreSlug,
+        type,
+        unified,
+        filterScoreMin,
+        filterScoreMax
+      );
+
+      let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
+
+      // Apply digital release filter if enabled (movies only)
+      if (type === 'movie' && config.hideUnreleasedDigital) {
+        const beforeCount = metas.length;
+        metas = metas.filter(meta => isReleasedDigitally(meta));
+        const afterCount = metas.length;
+        if (beforeCount !== afterCount) {
+          logger.info(`Digital release filter (MDBList External): filtered out ${beforeCount - afterCount} unreleased movies`);
+        }
+      }
+      metas = applyAgeRatingFilter(metas, type, config);
+      
+      return metas;
+    }
+
     const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
     const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
     logger.debug(`MDBList sorting - sort: ${sort}, order: ${order}`);

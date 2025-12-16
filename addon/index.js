@@ -1315,6 +1315,15 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   else if (id.startsWith('mdblist.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
+    // Add score filters for MDBList external lists
+    if (catalogConfig?.source === 'mdblist' && catalogConfig?.sourceUrl.includes('/external/lists/')) {
+      if (typeof catalogConfig.filter_score_min === 'number') {
+        extraArgs.filter_score_min = catalogConfig.filter_score_min;
+      }
+      if (typeof catalogConfig.filter_score_max === 'number') {
+        extraArgs.filter_score_max = catalogConfig.filter_score_max;
+      }
+    }
   }
   // AniList uses: sort, sortDirection
   else if (id.startsWith('anilist.')) {
