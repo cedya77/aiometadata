@@ -1316,7 +1316,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
     // Add score filters for MDBList external lists
-    if (catalogConfig?.source === 'mdblist' && catalogConfig?.sourceUrl.includes('/external/lists/')) {
+    if (catalogConfig?.source === 'mdblist' && catalogConfig?.sourceUrl && catalogConfig?.sourceUrl.includes('/external/lists/')) {
       if (typeof catalogConfig.filter_score_min === 'number') {
         extraArgs.filter_score_min = catalogConfig.filter_score_min;
       }

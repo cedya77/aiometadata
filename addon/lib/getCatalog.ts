@@ -45,7 +45,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     logger.warn(`Trakt token not found in database: ${config.apiKeys.traktTokenId}`);
     return null;
   }
-  
+  const expiresAt = typeof tokenData.expires_at === 'string' ? parseInt(tokenData.expires_at, 10) : tokenData.expires_at;
   // Validate token data structure
   if (!tokenData.access_token || typeof tokenData.access_token !== 'string' || tokenData.access_token.startsWith('[object')) {
     logger.error(`Trakt token is corrupted (access_token: ${typeof tokenData.access_token}, value preview: ${String(tokenData.access_token).substring(0, 30)})`);
@@ -58,8 +58,8 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     return null;
   }
   
-  if (!tokenData.expires_at || typeof tokenData.expires_at !== 'number' || tokenData.expires_at === 0) {
-    logger.error(`Trakt token has invalid expires_at (${tokenData.expires_at}). Please disconnect and reconnect your Trakt account`);
+  if (!expiresAt || typeof expiresAt !== 'number' || isNaN(expiresAt) || expiresAt === 0) {
+    logger.error(`Trakt token has invalid expires_at (${expiresAt}). Please disconnect and reconnect your Trakt account`);
     return null;
   }
   
