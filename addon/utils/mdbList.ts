@@ -705,11 +705,63 @@ type MovieIdInput =
 type EpisodeIdInput =
   | string
   | {
+    imdb?: string;
+    tmdb?: number | string;
+    trakt?: number | string;
+    tvdb?: number | string;
+  };
+
+// Watch history types
+interface WatchHistoryMovieEntry {
+  last_watched_at: string;
+  movie: {
+    title: string;
+    year: number;
+    ids: {
+      trakt?: number;
       imdb?: string;
-      tmdb?: number | string;
-      trakt?: number | string;
-      tvdb?: number | string;
+      tmdb?: number;
+      kitsu?: number;
+      mdblist?: string;
     };
+  };
+}
+
+interface WatchHistoryEpisodeEntry {
+  last_watched_at: string;
+  episode: {
+    season: number;
+    number: number;
+    name: string;
+    ids: {
+      tmdb?: number;
+    };
+    show: {
+      title: string;
+      year: number;
+      ids: {
+        tmdb?: number;
+        trakt?: number;
+        imdb?: string;
+        mdblist?: string;
+      };
+    };
+  };
+}
+
+interface WatchHistoryResponse {
+  movies: WatchHistoryMovieEntry[];
+  seasons: any[];
+  episodes: WatchHistoryEpisodeEntry[];
+  pagination: {
+    page: number;
+    limit: number;
+    total_movies: number;
+    total_seasons: number;
+    total_episodes: number;
+    has_more: boolean;
+  };
+}
 
 function formatIdSummary(ids: Record<string, string | number>) {
   return Object.entries(ids)
@@ -782,6 +834,95 @@ function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
   return Object.keys(ids).length > 0 ? ids : null;
 }
 
+/**
+ * Fetch user's watch history from MDBList API
+ */
+async function fetchWatchHistory(apiKey: string): Promise<WatchHistoryResponse | null> {
+  if (!apiKey) {
+    logger.debug('[Watch Tracking] Missing API key for fetchWatchHistory');
+    return null;
+  }
+
+  try {
+    const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
+
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, { dispatcher: mdblistDispatcher }),
+      'MDBList fetchWatchHistory'
+    );
+
+    return response.data as WatchHistoryResponse;
+  } catch (error: any) {
+    logger.error(`[Watch Tracking] Failed to fetch watch history: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Check if a movie was recently watched (within the last 30 days)
+ */
+function isMovieRecentlyWatched(
+  normalizedIds: Record<string, string | number>,
+  watchHistory: WatchHistoryResponse
+): boolean {
+  const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  for (const entry of watchHistory.movies) {
+    const movieIds = entry.movie.ids;
+
+    // Check if any of our normalized IDs match any ID in the history entry
+    for (const [key, value] of Object.entries(normalizedIds)) {
+      const historyValue = (movieIds as any)[key];
+      if (historyValue !== undefined && String(historyValue) === String(value)) {
+        // Found a match - check if watched within the last month
+        const watchedAt = new Date(entry.last_watched_at).getTime();
+        if (now - watchedAt < ONE_MONTH_MS) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if an episode was recently watched (within the last 30 days)
+ */
+function isEpisodeRecentlyWatched(
+  normalizedIds: Record<string, string | number>,
+  season: number,
+  episode: number,
+  watchHistory: WatchHistoryResponse
+): boolean {
+  const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  for (const entry of watchHistory.episodes) {
+    const showIds = entry.episode.show.ids;
+    const episodeSeason = entry.episode.season;
+    const episodeNumber = entry.episode.number;
+
+    // Check if any of our normalized IDs match any ID in the show's history entry
+    for (const [key, value] of Object.entries(normalizedIds)) {
+      const historyValue = (showIds as any)[key];
+      if (historyValue !== undefined && String(historyValue) === String(value)) {
+        // Found a match - check if season and episode also match
+        if (episodeSeason === season && episodeNumber === episode) {
+          // Check if watched within the last month
+          const watchedAt = new Date(entry.last_watched_at).getTime();
+          if (now - watchedAt < ONE_MONTH_MS) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 async function markMovieAsWatched(idInput: MovieIdInput, apiKey: string): Promise<boolean> {
   const normalizedIds = normalizeMovieIdInput(idInput);
 
@@ -794,6 +935,15 @@ async function markMovieAsWatched(idInput: MovieIdInput, apiKey: string): Promis
   }
 
   try {
+    // Check if movie was recently watched before sending the request
+    const watchHistory = await fetchWatchHistory(apiKey);
+    if (watchHistory && isMovieRecentlyWatched(normalizedIds, watchHistory)) {
+      logger.debug(
+        `[Watch Tracking] Skipped marking ${formatIdSummary(normalizedIds)} because it's already watched`
+      );
+      return true; // Return true since the movie is already marked as watched
+    }
+
     const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
     const watchedAt = new Date().toISOString();
 
@@ -874,6 +1024,15 @@ async function markEpisodeAsWatched(
   }
 
   try {
+    // Check if episode was recently watched before sending the request
+    const watchHistory = await fetchWatchHistory(apiKey);
+    if (watchHistory && isEpisodeRecentlyWatched(normalizedIds, season, episode, watchHistory)) {
+      logger.debug(
+        `[Watch Tracking] Skipped marking ${formatIdSummary(normalizedIds)} S${season}E${episode} because it's already watched`
+      );
+      return true; // Return true since the episode is already marked as watched
+    }
+
     const url = `https://api.mdblist.com/sync/watched?apikey=${apiKey}`;
     const watchedAt = new Date().toISOString();
 
