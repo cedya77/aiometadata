@@ -1,5 +1,5 @@
 const { decompressFromEncodedURIComponent } = require('lz-string');
-const { httpHead } = require('./httpClient');
+const axios = require('axios');
 const fanart = require('./fanart');
 const anilist = require('../lib/anilist');
 const tvdb = require('../lib/tvdb');
@@ -1315,9 +1315,14 @@ function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 
 
 async function checkIfExists(url) {
   try {
-    const response = await httpHead(url, {
+    const response = await axios.head(url, {
+      maxRedirects: 0,
+      validateStatus: () => true,
       headers: { 'User-Agent': 'AIOMetadataAddon/1.0' }
     });
+    if (response.status === 404) {
+      return false;
+    }
     return response.status === 200;
   } catch (error) {
     if (error.message.includes('Invalid URL')) {

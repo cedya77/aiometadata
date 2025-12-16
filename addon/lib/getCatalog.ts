@@ -639,6 +639,7 @@ async function buildParameters(type: string, language: string, page: number, id:
     parameters.with_watch_providers = provider.watchProviderId
     parameters.watch_region = provider.country;
     parameters.with_watch_monetization_types = "flatrate|free|ads";
+    delete parameters['vote_count.gte'];
   } else {
     switch (id) {
       case "tmdb.top":
