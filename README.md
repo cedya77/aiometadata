@@ -39,27 +39,8 @@ services:
       - "3232:3232"  # Remove this if using Traefik
     # expose:  # Uncomment if using Traefik
     #   - 3232
-    environment:
-      - PORT=3232
-      - TMDB_API=${TMDB_API_KEY?}
-      - TVDB_API_KEY=${TVDB_API_KEY?}
-      - FANART_API_KEY=${FANART_API_KEY?}
-      - MDBLIST_API_KEY=${MDBLIST_API_KEY?}
-      - RPDB_API_KEY=${RPDB_API_KEY?}
-      - HOST_NAME=${AIOMETADATA_HOSTNAME?}
-      - REDIS_URL=redis://aiometadata_redis:6379
-      - META_TTL=604800
-      - CATALOG_TTL=86400
-      - TMDB_TRENDING_TTL=10800
-      - CATALOG_LIST_ITEMS_SIZE=20
-      - LOG_LEVEL=debug
-      - ADMIN_KEY=${ADMIN_KEY?}
-      - TMDB_SOCKS_PROXY_URL=${TMDB_SOCKS_PROXY_URL?}
-      - DATABASE_URI=sqlite://addon/data/db.sqlite
-      # Trakt integration (required for Trakt account features)
-      - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID?}
-      - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET?}
-      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI?}
+    env_file:
+      - .env
     # labels:  # Optional: Remove if not using Traefik
     #   - "traefik.enable=true"
     #   - "traefik.http.routers.aiometadata.rule=Host(`${AIOMETADATA_HOSTNAME?}`)"

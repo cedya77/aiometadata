@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { httpGet, httpHead } = require('../utils/httpClient');
-const { redis } = require('./getCache'); 
+const redis = require('./redisClient');
 const kitsu = require('./kitsu');
 const { numberValueTypes } = require('framer-motion');
 const consola = require('consola');
