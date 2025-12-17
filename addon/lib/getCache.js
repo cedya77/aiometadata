@@ -1492,11 +1492,12 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
        
-       if (posterRatingEnabled && reconstructedMeta.id) {
+      if (posterRatingEnabled && reconstructedMeta.id) {
          // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
          const Utils = require("../utils/parseProps");
-         reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, reconstructedMeta.id, data.poster, language, config);
+         const canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_)/, '');
+         reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
        } else {
          reconstructedMeta.poster = data.poster;
        }
