@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.14.1](https://github.com/cedya77/aiometadata/compare/v1.14.0...v1.14.1) (2025-12-16)
+
+
+### Bug Fixes
+
+* **mdblist:** missing validation condition ([812d6be](https://github.com/cedya77/aiometadata/commit/812d6be080746e3dd5358edf67b8d530aa2f8cc9))
+* **trakt:** convert token expiry to string for postgres users ([812d6be](https://github.com/cedya77/aiometadata/commit/812d6be080746e3dd5358edf67b8d530aa2f8cc9))
+
 ## [1.14.0](https://github.com/cedya77/aiometadata/compare/v1.13.2...v1.14.0) (2025-12-16)
 
 
