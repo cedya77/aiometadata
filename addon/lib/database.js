@@ -619,6 +619,24 @@ class Database {
 
   // --- User Management Methods ---
 
+  // Get all users with raw data (for internal operations like OAuth token updates)
+  async getAllUsers() {
+    try {
+      const query = `SELECT user_uuid, password_hash, config_data FROM user_configs`;
+
+      const rows = await this.allQuery(query);
+
+      return rows.map(row => ({
+        id: row.user_uuid,
+        password_hash: row.password_hash,
+        config: typeof row.config_data === 'string' ? row.config_data : JSON.stringify(row.config_data)
+      }));
+    } catch (error) {
+      logger.error('Error getting all users:', error);
+      return [];
+    }
+  }
+
   // Get all users with basic statistics
   async getAllUsersWithStats() {
     try {
