@@ -392,8 +392,8 @@ function isPermanentError(error: any): boolean {
   const status = error.response?.status;
   // Consider 4xx errors (except 429 rate limit) as permanent.
   // 401 (unauthorized) and 403 (forbidden) are permanent auth errors
-  // Also treat 500 errors as permanent for individual resource fetches (likely bad data on Trakt's side)
-  return (status >= 400 && status < 500 && status !== 429) || status === 500;
+  // 500 errors are now retryable since they can be transient on Trakt's side
+  return status >= 400 && status < 500 && status !== 429;
 }
 
 // Rate limiting configuration for Trakt API
