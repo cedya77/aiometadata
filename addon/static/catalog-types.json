@@ -152,7 +152,7 @@
     },
     "pmp": {
       "nameKey": "pmp",
-      "watchProviderId": 531,
+      "watchProviderId": 2303,
       "country": "US",
       "extraSupported": ["genre", "skip"]
     },
