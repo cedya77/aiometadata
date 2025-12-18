@@ -455,7 +455,7 @@ export function GeneralSettings() {
           <div>
             <Label htmlFor="anilist-watch-tracking" className="text-lg font-medium">AniList Watch Tracking</Label>
             <p className="text-sm text-muted-foreground">
-              Automatically sync anime watch progress to AniList when you play episodes (requires AniList connection in Integrations).
+              Automatically sync anime watch progress when you play episodes (requires connection in Catalogs → 'Manage AniList Integration').
             </p>
           </div>
           <Switch
