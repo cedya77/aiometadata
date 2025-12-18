@@ -3,7 +3,7 @@ import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
@@ -1015,25 +1015,44 @@ async function getTraktCatalog(
       logger.debug(`Fetching Trakt recommendations (shows only)`);
       response = await fetchTraktRecommendationsItems(accessToken, 'shows', page, pageSize);
     } else {
-      // Custom list: trakt.{username}.{listSlug}
+      // Custom list: supports two formats:
+      // - trakt.list.<traktListId>
+      // - trakt.<username>.<listSlug>  (legacy/backwards-compatible)
       const parts = catalogId.split('.');
       if (parts.length < 3) {
         logger.error(`Invalid Trakt list ID format: ${catalogId}`);
         return [];
       }
-      
-      const username = parts[1];
-      let listSlug = parts.slice(2).join('.'); 
-      
-      // Remove .movies or .series suffix if present (from split catalogs)
-      if (listSlug.endsWith('.movies')) {
-        listSlug = listSlug.slice(0, -7); // Remove '.movies'
-      } else if (listSlug.endsWith('.series')) {
-        listSlug = listSlug.slice(0, -7); // Remove '.series'
+
+      if (parts[1] === 'list') {
+        // New numeric list-id format
+        let listId = parts[2];
+        // Remove .movies or .series suffix if present
+        let splitType: string | undefined;
+        if (listId.endsWith('.movies')) {
+          listId = listId.slice(0, -7);
+          splitType = 'movies';
+        } else if (listId.endsWith('.series')) {
+          listId = listId.slice(0, -7);
+          splitType = 'shows';
+        }
+
+        logger.debug(`Fetching Trakt list by id: ${listId} (splitType=${splitType || 'all'})`);
+        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genre, sortDirection);
+      } else {
+        // Legacy username + slug format
+        const username = parts[1];
+        let listSlug = parts.slice(2).join('.');
+        // Remove .movies or .series suffix if present (from split catalogs)
+        if (listSlug.endsWith('.movies')) {
+          listSlug = listSlug.slice(0, -7); // Remove '.movies'
+        } else if (listSlug.endsWith('.series')) {
+          listSlug = listSlug.slice(0, -7); // Remove '.series'
+        }
+
+        logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
+        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre, sortDirection);
       }
-      
-      logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
-      response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre, sortDirection);
     }
     
     // Log pagination info

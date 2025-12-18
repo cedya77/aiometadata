@@ -839,7 +839,7 @@ async function fetchTraktListItems(
       () => httpGet(url, { 
         dispatcher: traktDispatcher,
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
           'Content-Type': 'application/json',
           'trakt-api-version': '2',
           'trakt-api-key': TRAKT_CLIENT_ID
@@ -876,6 +876,85 @@ async function fetchTraktListItems(
     };
   } catch (err: any) {
     logger.error(`Error fetching Trakt list ${username}/${listSlug}, page ${page}:`, err.message);
+    return { items: [], hasMore: false };
+  }
+}
+
+/**
+ * Fetch items from a Trakt list by its numeric Trakt list ID
+ * @param listId - Numeric Trakt list id
+ * @param accessToken - User's Trakt access token
+ * @param type - Content type filter ('movies', 'shows', or undefined for all)
+ * @param page - Page number (1-indexed)
+ * @param limit - Items per page
+ * @param sort - Sort order
+ * @param genre - Genre filter
+ * @param sortDirection - 'asc' or 'desc'
+ */
+async function fetchTraktListItemsById(
+  listId: string | number,
+  accessToken: string,
+  type: 'movies' | 'shows' | undefined,
+  page: number,
+  limit: number = 20,
+  sort?: string,
+  genre?: string,
+  sortDirection?: 'asc' | 'desc'
+): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
+  try {
+    const typeParam = type || 'movie,show';
+    let url = `${TRAKT_BASE_URL}/lists/${listId}/items/${typeParam}?page=${page}&limit=${limit}`;
+    if (sort) {
+      url += `&sort_by=${encodeURIComponent(sort)}`;
+      if (sortDirection) {
+        url += `&sort_how=${sortDirection}`;
+      }
+    }
+    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+      url += `&genres=${encodeURIComponent(genre)}`;
+    }
+
+    logger.debug(`Trakt list request by id: listId=${listId}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, { 
+        dispatcher: traktDispatcher,
+        headers: {
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      `Trakt fetchListItemsById (${listId}, page: ${page}, genre: ${genre || 'none'})`
+    );
+
+    const paginationHeaders = response.headers || {};
+    const totalItems = paginationHeaders['x-pagination-item-count'] 
+      ? parseInt(paginationHeaders['x-pagination-item-count']) 
+      : undefined;
+    const pageCount = paginationHeaders['x-pagination-page-count'] 
+      ? parseInt(paginationHeaders['x-pagination-page-count']) 
+      : undefined;
+    const currentPage = paginationHeaders['x-pagination-page']
+      ? parseInt(paginationHeaders['x-pagination-page'])
+      : page;
+
+    const items = Array.isArray(response.data) ? response.data : [];
+    const hasMore = currentPage < (pageCount || 1);
+
+    logger.debug(
+      `Trakt list pagination by id - ${listId} page ${currentPage}/${pageCount || '?'}, ` +
+      `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
+    );
+
+    return {
+      items,
+      totalItems,
+      hasMore,
+      totalPages: pageCount
+    };
+  } catch (err: any) {
+    logger.error(`Error fetching Trakt list by id ${listId}, page ${page}:`, err.message);
     return { items: [], hasMore: false };
   }
 }
@@ -1091,7 +1170,7 @@ async function getTraktListDetails(
       () => httpGet(url, { 
         dispatcher: traktDispatcher,
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
           'Content-Type': 'application/json',
           'trakt-api-version': '2',
           'trakt-api-key': TRAKT_CLIENT_ID
@@ -1103,6 +1182,38 @@ async function getTraktListDetails(
     return response.data || null;
   } catch (err: any) {
     logger.error(`Error fetching Trakt list details for ${username}/${listSlug}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Get list details by numeric Trakt list ID
+ * @param listId - Numeric Trakt list id
+ * @param accessToken - User's Trakt access token (optional for public lists)
+ */
+async function getTraktListDetailsById(
+  listId: string | number,
+  accessToken?: string
+): Promise<any> {
+  try {
+    const url = `${TRAKT_BASE_URL}/lists/${listId}`;
+
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, { 
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID,
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+        }
+      }),
+      `Trakt getTraktListDetailsById (${listId})`
+    );
+
+    return response.data || null;
+  } catch (err: any) {
+    logger.error(`Error fetching Trakt list details for id ${listId}:`, err.message);
     return null;
   }
 }
@@ -1185,10 +1296,12 @@ export {
   fetchTraktWatchlistItems, 
   fetchTraktFavoritesItems,
   fetchTraktRecommendationsItems,
-  fetchTraktListItems, 
+  fetchTraktListItems,
+  fetchTraktListItemsById,
   fetchTraktGenres,
   parseTraktItems,
   getTraktListDetails,
+  getTraktListDetailsById,
   fetchTraktUpNextEpisodes,
   fetchTraktCalendarShows,
   fetchTraktUnwatchedEpisodes

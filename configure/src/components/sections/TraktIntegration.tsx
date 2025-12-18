@@ -311,12 +311,12 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     }
   };
 
-  const handleTraktListSelection = (listSlug: string, checked: boolean) => {
+  const handleTraktListSelection = (listId: string, checked: boolean) => {
     const newSelection = new Set(selectedTraktLists);
     if (checked) {
-      newSelection.add(listSlug);
+      newSelection.add(listId);
     } else {
-      newSelection.delete(listSlug);
+      newSelection.delete(listId);
     }
     setSelectedTraktLists(newSelection);
   };
@@ -333,9 +333,9 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         let importedCount = 0;
 
         traktUserLists.forEach((list) => {
-          if (!selectedTraktLists.has(list.ids.slug)) return;
+          if (!selectedTraktLists.has(String(list.ids.trakt))) return;
 
-          const catalogId = `trakt.${traktUsername.trim()}.${list.ids.slug}`;
+          const catalogId = `trakt.list.${list.ids.trakt}`;
           // Skip if already exists
           if (newCatalogs.some(c => c.id === catalogId)) {
             return;
@@ -355,6 +355,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
               privacy: list.privacy || "private",
               author: list.user?.username || traktUsername.trim(),
               description: list.description || "",
+              traktListId: list.ids?.trakt
             },
           };
 
@@ -483,16 +484,17 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         return;
       }
       const listData = await response.json();
+      const numericListId = listData?.ids?.trakt;
       
-      if (customListType === 'split') {
+        if (customListType === 'split') {
         // Create two separate catalogs for movies and series
         setConfig(prev => {
           const movieDisplayType = getDisplayTypeOverride('movie', prev.displayTypeOverrides);
           const seriesDisplayType = getDisplayTypeOverride('series', prev.displayTypeOverrides);
-
+          const idBase = numericListId ? `trakt.list.${numericListId}` : `${catalogId}`;
           const newCatalogs: CatalogConfig[] = [
             {
-              id: `${catalogId}.movies`,
+              id: `${idBase}.movies`,
               type: "movie",
               name: listData.name,
               enabled: true,
@@ -504,11 +506,12 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                 privacy: listData.privacy || "private",
                 author: listData.user?.username || username,
                 description: listData.description || "",
+                traktListId: numericListId
               },
               ...(movieDisplayType && { displayType: movieDisplayType }),
             },
             {
-              id: `${catalogId}.series`,
+              id: `${idBase}.series`,
               type: "series",
               name: listData.name,
               enabled: true,
@@ -520,6 +523,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                 privacy: listData.privacy || "private",
                 author: listData.user?.username || username,
                 description: listData.description || "",
+                traktListId: numericListId
               },
               ...(seriesDisplayType && { displayType: seriesDisplayType }),
             },
@@ -531,10 +535,11 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
           };
         });
         toast.success(`Added: ${listData.name} (Movies & Series)`);
-      } else {
+        } else {
         // Create unified catalog
+        const idBase = numericListId ? `trakt.list.${numericListId}` : `${catalogId}`;
         const newCatalog: CatalogConfig = {
-          id: catalogId,
+          id: idBase,
           type: "all",
           name: listData.name,
           enabled: true,
@@ -547,6 +552,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
             privacy: listData.privacy || "private",
             author: listData.user?.username || username,
             description: listData.description || "",
+            traktListId: numericListId
           },
         };
         
@@ -659,19 +665,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
   const importSelectedTrendingLists = () => {
     const listsToImport = [...trendingLists, ...popularLists].filter(item => {
-      if (!item?.list?.ids?.slug) return false;
+      if (!item?.list?.ids?.trakt) return false;
       const list = item.list;
-      // For official lists, use username instead of slug
-      const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
-      const listKey = `${userIdentifier}.${list.ids.slug}`;
+      const listKey = String(list.ids.trakt);
       return selectedTrendingLists.has(listKey);
     });
 
     listsToImport.forEach(item => {
       const list = item.list;
-      // For official lists, use username instead of slug
-      const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
-      const catalogId = `trakt.${userIdentifier}.${list.ids.slug}`;
+      const catalogId = `trakt.list.${list.ids.trakt}`;
       
       if (config.catalogs.some(c => c.id === catalogId)) {
         return;
@@ -742,15 +744,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
   const importSelectedLikedLists = () => {
     const listsToImport = likedLists.filter(item => {
-      if (!item?.list?.user?.ids?.slug || !item?.list?.ids?.slug) return false;
+      if (!item?.list?.ids?.trakt) return false;
       const list = item.list;
-      const listKey = `${list.user.ids.slug}.${list.ids.slug}`;
+      const listKey = String(list.ids.trakt);
       return selectedLikedLists.has(listKey);
     });
 
     listsToImport.forEach(item => {
       const list = item.list;
-      const catalogId = `trakt.${list.user.ids.slug}.${list.ids.slug}`;
+      const catalogId = `trakt.list.${list.ids.trakt}`;
       
       if (config.catalogs.some(c => c.id === catalogId)) {
         return;
@@ -1363,7 +1365,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                         checked={selectedTraktLists.size === traktUserLists.length && traktUserLists.length > 0}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSelectedTraktLists(new Set(traktUserLists.map(l => l.ids.slug)));
+                            setSelectedTraktLists(new Set(traktUserLists.map(l => String(l.ids.trakt))));
                           } else {
                             setSelectedTraktLists(new Set());
                           }
@@ -1388,14 +1390,14 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
                     <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
                       {traktUserLists.map((list) => (
-                        <div key={list.ids.slug} className="flex items-start space-x-3 p-3 border rounded-lg">
+                        <div key={String(list.ids.trakt)} className="flex items-start space-x-3 p-3 border rounded-lg">
                           <Switch
-                            id={`trakt-${list.ids.slug}`}
-                            checked={selectedTraktLists.has(list.ids.slug)}
-                            onCheckedChange={(checked) => handleTraktListSelection(list.ids.slug, checked)}
+                            id={`trakt-${String(list.ids.trakt)}`}
+                            checked={selectedTraktLists.has(String(list.ids.trakt))}
+                            onCheckedChange={(checked) => handleTraktListSelection(String(list.ids.trakt), checked)}
                           />
                           <div className="flex-1 min-w-0">
-                            <Label htmlFor={`trakt-${list.ids.slug}`} className="font-medium cursor-pointer">
+                            <Label htmlFor={`trakt-${String(list.ids.trakt)}`} className="font-medium cursor-pointer">
                               {list.name}
                             </Label>
                             <div className="flex items-center gap-2 mt-1">
@@ -1503,12 +1505,8 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                           onClick={() => {
                             const allLists = [...trendingLists, ...popularLists];
                             const allKeys = allLists
-                              .filter(item => item?.list?.ids?.slug)
-                              .map(item => {
-                                // For official lists, use username instead of slug
-                                const userIdentifier = item.list.user?.ids?.slug || item.list.user?.username?.toLowerCase() || 'trakt';
-                                return `${userIdentifier}.${item.list.ids.slug}`;
-                              });
+                              .filter(item => item?.list?.ids?.trakt)
+                              .map(item => String(item.list.ids.trakt));
                             setSelectedTrendingLists(new Set(allKeys));
                           }}
                         >
@@ -1530,10 +1528,8 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                         .filter(item => item?.list?.ids?.slug)
                         .map((item) => {
                           const list = item.list;
-                          // For official lists, use username instead of slug
-                          const userIdentifier = list.user?.ids?.slug || list.user?.username?.toLowerCase() || 'trakt';
-                          const listKey = `${userIdentifier}.${list.ids.slug}`;
-                          const catalogId = `trakt.${userIdentifier}.${list.ids.slug}`;
+                          const listKey = String(list.ids.trakt);
+                          const catalogId = `trakt.list.${list.ids.trakt}`;
                           const isAlreadyAdded = config.catalogs.some(c => c.id === catalogId);
                         
                           return (
@@ -1652,8 +1648,8 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                         size="sm"
                         onClick={() => {
                           const allKeys = likedLists
-                            .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
-                            .map(item => `${item.list.user.ids.slug}.${item.list.ids.slug}`);
+                            .filter(item => item?.list?.ids?.trakt)
+                            .map(item => String(item.list.ids.trakt));
                           setSelectedLikedLists(new Set(allKeys));
                         }}
                       >
@@ -1666,8 +1662,8 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                         .filter(item => item?.list?.user?.ids?.slug && item?.list?.ids?.slug)
                         .map((item) => {
                           const list = item.list;
-                          const listKey = `${list.user.ids.slug}.${list.ids.slug}`;
-                          const catalogId = `trakt.${list.user.ids.slug}.${list.ids.slug}`;
+                          const listKey = String(list.ids.trakt);
+                          const catalogId = `trakt.list.${list.ids.trakt}`;
                           const isAlreadyAdded = config.catalogs.some(c => c.id === catalogId);
                           
                           return (
