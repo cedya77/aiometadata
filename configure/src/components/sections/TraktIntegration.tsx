@@ -1567,7 +1567,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                                 <h4 className="font-medium">{list.name}</h4>
                                 <div className="flex flex-wrap items-center gap-2 mt-1">
                                   <Badge variant="outline" className="text-xs">
-                                    {list.user.username}
+                                    {list.user?.username || 'Trakt'}
                                   </Badge>
                                   {list.item_count && (
                                     <Badge variant="secondary" className="text-xs">
@@ -1701,7 +1701,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                                 <h4 className="font-medium">{list.name}</h4>
                                 <div className="flex flex-wrap items-center gap-2 mt-1">
                                   <Badge variant="outline" className="text-xs">
-                                    {list.user.username}
+                                    {list.user?.username || 'Trakt'}
                                   </Badge>
                                   {list.item_count && (
                                     <Badge variant="secondary" className="text-xs">
