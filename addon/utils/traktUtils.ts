@@ -54,7 +54,7 @@ async function fetchTraktUpNextEpisodes(
         if (!showId) return null;
         
         try {
-          // Use maxRetries of 1 (only 1 attempt, no retries) for individual show fetches
+          // Use up to 3 attempts for individual show fetches
           const response: any = await makeRateLimitedRequest(
             () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
               dispatcher: traktDispatcher,
@@ -64,16 +64,17 @@ async function fetchTraktUpNextEpisodes(
                 'trakt-api-version': '2',
                 'trakt-api-key': TRAKT_CLIENT_ID,
                 'User-Agent': `AIOMetadata/${process.env.npm_package_version || 'dev'} (https://github.com/AIOMetadata/AIOMetadata)`
+              },
+              params: {
+                'now': Date.now() 
               }
             }),
             `Trakt fetchShowWatchedProgress (${showId})`,
-            1  // Only 1 attempt for individual show fetches (no retries)
+            3  // Allow up to 3 attempts for individual show fetches
           );
           const progress = response.data;
           if (!progress?.next_episode) return null;
-          
-          const nextEp = progress.next_episode;
-          
+          const nextEp = progress.next_episode;          
           // Skip episodes that haven't aired yet
           if (nextEp.first_aired) {
             const airedDate = new Date(nextEp.first_aired);
@@ -461,6 +462,19 @@ function getRetryAfterMs(error: any, fallbackMs: number): number {
   }
 
   return fallbackMs;
+}
+
+/**
+ * Get a stable episode identifier part for cache keys.
+ * Handles multiple shapes: { trakt_id }, { ids: { trakt } }, or { season, episode/number }
+ */
+function getEpisodeIdPart(ep: any): string {
+  const traktId = (ep as any).trakt_id ?? (ep as any).ids?.trakt;
+  if (traktId) return `trakt${traktId}`;
+  const season = ep?.season;
+  const episode = (ep as any).episode ?? (ep as any).number;
+  if (season != null && episode != null) return `S${season}E${String(episode).padStart(2, '0')}`;
+  return 'unknown';
 }
 
 /**
@@ -1097,8 +1111,15 @@ async function parseTraktItems(
         
         const metaType = item.type === 'movie' ? 'movie' : 'series';
         
-        // For Up Next items, use a unique cache key with shorter TTL
-        const cacheId = isUpNext ? `upnext_${stremioId}` : (hasUnwatchedList ? `unwatched_${stremioId}` : stremioId);
+        // For Up Next items, use a unique cache key that includes the next-episode identifier
+        // so cached metas update when the user's next episode advances.
+        let cacheId: string;
+        if (isUpNext && upNextEpisode) {
+          const epIdPart = getEpisodeIdPart(upNextEpisode);
+          cacheId = `upnext_${stremioId}_${epIdPart}`;
+        } else {
+          cacheId = hasUnwatchedList ? `unwatched_${stremioId}` : stremioId;
+        }
         
         const shouldIncludeVideos = (isUpNext || hasUnwatchedList) ? true : includeVideos;
         

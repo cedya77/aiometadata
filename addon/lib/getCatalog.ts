@@ -868,9 +868,11 @@ async function getTraktCatalog(
         
         const cacheCheckStart = Date.now();
         const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
-        
+
         // Get last known timestamp (longer TTL so it persists)
-        const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
+        // Only use the saved timestamp to short-circuit rebuild when we still have cached items.
+        // If the items cache has expired (cachedData is null), force a rebuild by not passing the timestamp.
+        const cachedTimestamp = cachedData ? await cacheWrap(timestampKey, async () => null, timestampTTL) : null;
         const cacheCheckTime = Date.now() - cacheCheckStart;
         logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
         

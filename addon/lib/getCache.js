@@ -1492,11 +1492,15 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
        
-      if (posterRatingEnabled && reconstructedMeta.id) {
+        if (posterRatingEnabled && reconstructedMeta.id) {
          // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
          const Utils = require("../utils/parseProps");
-         const canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_)/, '');
+         // Strip known prefixes used for special metas (upnext_, unwatched_, tun_)
+         let canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_)/, '');
+         // Also strip any trailing episode identifier we append to upnext cache keys
+         // Examples: 'tmdb:123_trakt456' or 'tvdb:789_S1E02' -> keep only the canonical media id
+         canonicalProxyId = canonicalProxyId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');
          reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
        } else {
          reconstructedMeta.poster = data.poster;
