@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.14.2](https://github.com/cedya77/aiometadata/compare/v1.14.1...v1.14.2) (2025-12-18)
+
+
+### Bug Fixes
+
+* add missing func for oAuth token updates ([e4dc777](https://github.com/cedya77/aiometadata/commit/e4dc777034e2f22e42e5f99b506c1065a682102f))
+* address load trending lists error ([1963bae](https://github.com/cedya77/aiometadata/commit/1963bae6bb35aed1af186f0b199ad26f272c28ef))
+* **meta:** strip upnext/unwatched/tun prefixes before rebuilding RPDB proxy URL ([7dd2692](https://github.com/cedya77/aiometadata/commit/7dd26927a571b3a8c13edc019d7c015d42ead54c))
+* **streaming catalogs - paramount:** update provider id ([f11467f](https://github.com/cedya77/aiometadata/commit/f11467fb710653d7e379d23cd686e6b13054aa76))
+* update anilist label ([83e94e5](https://github.com/cedya77/aiometadata/commit/83e94e51f300d4861f7bd13c9d5dbffefc504d02))
+* update anilist label ([f6342c2](https://github.com/cedya77/aiometadata/commit/f6342c2bed6d471cc42bc6657ee291beab03a422))
+
 ## [1.14.1](https://github.com/cedya77/aiometadata/compare/v1.14.0...v1.14.1) (2025-12-16)
 
 
