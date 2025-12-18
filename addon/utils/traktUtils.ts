@@ -431,6 +431,39 @@ function isRateLimitError(error: any): boolean {
 }
 
 /**
+ * Extract retry delay from Trakt's Retry-After header (in seconds)
+ * Falls back to exponential backoff if header is not present
+ */
+function getRetryAfterMs(error: any, fallbackMs: number): number {
+  const headers = error.response?.headers;
+  if (!headers) return fallbackMs;
+
+  // Try to get Retry-After header (value is in seconds)
+  const retryAfter = headers['retry-after'] || headers['Retry-After'];
+  if (retryAfter) {
+    const retrySeconds = parseInt(retryAfter, 10);
+    if (!isNaN(retrySeconds) && retrySeconds > 0) {
+      // Add small jitter (0-1 second) to prevent thundering herd
+      const jitter = Math.random() * 1000;
+      return (retrySeconds * 1000) + jitter;
+    }
+  }
+
+  // Log X-Ratelimit header for debugging if available
+  const rateLimitInfo = headers['x-ratelimit'] || headers['X-Ratelimit'];
+  if (rateLimitInfo) {
+    try {
+      const info = typeof rateLimitInfo === 'string' ? JSON.parse(rateLimitInfo) : rateLimitInfo;
+      logger.debug(`Trakt rate limit info: ${info.name}, remaining: ${info.remaining}/${info.limit}, resets: ${info.until}`);
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
+  return fallbackMs;
+}
+
+/**
  * Rate limiting and retry logic for Trakt API calls
  */
 async function makeRateLimitedRequest<T>(
@@ -495,21 +528,21 @@ async function makeRateLimitedRequest<T>(
           logger.error(`Rate limit exceeded after ${retries} attempts: ${error.message} - ${context}`);
           throw error;
         }
-        
-        let backoffTime = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits - 1);
-        const jitter = Math.random() * 1000;
-        const totalDelay = Math.min(backoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
-        
-        logger.warn(`Rate limit hit. Retrying in ${Math.round(totalDelay)}ms (attempt ${attempt}/${retries}) - ${context}`);
-        
+
+        // Use Trakt's Retry-After header if available, otherwise fall back to exponential backoff
+        const fallbackDelay = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits - 1);
+        const totalDelay = Math.min(getRetryAfterMs(error, fallbackDelay), RATE_LIMIT_CONFIG.maxDelay);
+
+        logger.warn(`Rate limit hit (429). Retrying in ${Math.round(totalDelay / 1000)}s (attempt ${attempt}/${retries}) - ${context}`);
+
         // Set a global cooldown period for all subsequent requests.
         rateLimitState.isRateLimited = true;
         rateLimitState.rateLimitResetTime = Date.now() + totalDelay;
-        
+
         await sleep(totalDelay);
         continue; // Go to the next attempt
       }
-      
+
       // Handle other temporary errors (e.g., 500, timeouts)
       if (isLastAttempt) {
         logger.error(`Request failed after ${retries} attempts: ${error.message} - ${context}`);
