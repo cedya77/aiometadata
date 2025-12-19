@@ -85,7 +85,7 @@ services:
   #    retries: 5
 ```
 
-Create a `.env` file with your API keys and settings as shown in .env.example
+Create a `.env` file with your API keys and settings as shown in [.env.example](.env.example) 
 
 Then run:
 ```bash
