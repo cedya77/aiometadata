@@ -85,42 +85,7 @@ services:
   #    retries: 5
 ```
 
-Create a `.env` file with your API keys and settings:
-
-```bash
-# Required API Keys
-TMDB_API_KEY=your_tmdb_api_key
-# Cache TTL Overrides
-TMDB_TRENDING_TTL=10800
-
-TVDB_API_KEY=your_tvdb_api_key
-FANART_API_KEY=your_fanart_api_key
-MDBLIST_API_KEY=your_mdblist_api_key
-RPDB_API_KEY=your_rpdb_api_key
-
-# Host Configuration
-AIOMETADATA_HOSTNAME=aiometadata.yourdomain.com
-ADMIN_KEY=your_secure_admin_key
-
-# Optional
-TMDB_SOCKS_PROXY_URL=your_socks_proxy_url
-DOCKER_DATA_DIR=/opt/docker
-
-# Cache Warming (Optional)
-# Dedicated TMDB API key for background cache warming of popular/trending content
-# This helps improve performance by pre-caching frequently accessed items
-BUILT_IN_TMDB_API_KEY=your_dedicated_tmdb_api_key
-BUILT_IN_TVDB_API_KEY=your_dedicated_tmdb_api_key
-
-# Cache warming interval in hours (default: 24)
-# Controls how often popular content is re-cached
-CACHE_WARM_INTERVAL_HOURS=24
-
-# Cache warming language (default: en-US)
-# Language to use when warming popular content cache
-# Examples: en-US, fr-FR, de-DE, es-ES, ja-JP, pt-BR
-CACHE_WARM_LANGUAGE=en-US
-```
+Create a `.env` file with your API keys and settings as shown in .env.example
 
 Then run:
 ```bash
