@@ -108,24 +108,28 @@ class RequestTracker {
       // Track content requests (meta requests)
       this.trackContentRequest(req);
 
+      // Use pipeline to batch Redis commands into a single network round-trip
+      const pipeline = redis.pipeline();
+
       // Only increment counters for actual user-facing requests
       if (this.shouldTrackRequest(req)) {
-        redis.incr(`requests:total`).catch(() => {});
-        redis.incr(`requests:${today}`).catch(() => {});
-        redis.incr(`requests:${hour}`).catch(() => {});
-        redis
-          .incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`)
-          .catch(() => {});
+        pipeline.incr(`requests:total`);
+        pipeline.incr(`requests:${today}`);
+        pipeline.incr(`requests:${hour}`);
+        pipeline.incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`);
       }
 
-      // Track active users only for user-facing requests
+      // Set expiration for time-based keys
+      pipeline.expire(`requests:${today}`, 86400 * 30); // 30 days
+      pipeline.expire(`requests:${hour}`, 86400 * 7); // 7 days
+
+      // Execute pipeline (fire-and-forget)
+      pipeline.exec().catch(() => { });
+
+      // Track active users only for user-facing requests (separate call due to complex logic)
       if (this.shouldTrackRequest(req)) {
         await this.trackActiveUser(userIdentifier, req);
       }
-
-      // Set expiration for time-based keys (don't await)
-      redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
-      redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
 
       // Track metadata requests for activity feed
       const normalizedPath = this.normalizeEndpoint(req.path);
@@ -157,36 +161,39 @@ class RequestTracker {
       const endpoint = this.normalizeEndpoint(req.path);
       const statusCode = res.statusCode;
       const shouldTrack = this.shouldTrackRequest(req);
+      const hour = new Date().toISOString().substring(0, 13);
 
-      // Track response times by endpoint (don't await to avoid blocking)
-      redis.lpush(`response_times:${endpoint}`, responseTime).catch(() => {});
-      redis.ltrim(`response_times:${endpoint}`, 0, 99).catch(() => {}); // Keep last 100
+      // Use pipeline to batch Redis commands into a single network round-trip
+      const pipeline = redis.pipeline();
+
+      // Track response times by endpoint
+      pipeline.lpush(`response_times:${endpoint}`, responseTime);
+      pipeline.ltrim(`response_times:${endpoint}`, 0, 99); // Keep last 100
 
       // Track response times by hour for charts
-      const hour = new Date().toISOString().substring(0, 13);
-      redis.lpush(`response_times:${hour}`, responseTime).catch(() => {});
-      redis.ltrim(`response_times:${hour}`, 0, 999).catch(() => {}); // Keep last 1000 for hourly averages
-      redis.expire(`response_times:${hour}`, 86400 * 7).catch(() => {}); // 7 days expiration
+      pipeline.lpush(`response_times:${hour}`, responseTime);
+      pipeline.ltrim(`response_times:${hour}`, 0, 999); // Keep last 1000 for hourly averages
+      pipeline.expire(`response_times:${hour}`, 86400 * 7); // 7 days expiration
 
       // Only track status codes and success/errors for user-facing requests
       if (shouldTrack) {
         // Track status codes
-        redis.incr(`status:${statusCode}:${today}`).catch(() => {});
+        pipeline.incr(`status:${statusCode}:${today}`);
 
         // Track errors
         if (statusCode >= 400) {
-          redis.incr(`errors:total`).catch(() => {});
-          redis.incr(`errors:${today}`).catch(() => {});
-          redis.incr(`errors:${statusCode}:${today}`).catch(() => {});
+          pipeline.incr(`errors:total`);
+          pipeline.incr(`errors:${today}`);
+          pipeline.incr(`errors:${statusCode}:${today}`);
         } else {
-          redis.incr(`success:${today}`).catch(() => {});
+          pipeline.incr(`success:${today}`);
         }
       }
 
-      // Set expiration (don't await)
-      redis.expire(`status:${statusCode}:${today}`, 86400 * 30).catch(() => {});
-      redis.expire(`errors:${statusCode}:${today}`, 86400 * 30).catch(() => {});
-      redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
+      // Set expiration
+      pipeline.expire(`status:${statusCode}:${today}`, 86400 * 30);
+      pipeline.expire(`errors:${statusCode}:${today}`, 86400 * 30);
+      pipeline.expire(`success:${today}`, 86400 * 30);
 
       // Track catalog/search success
       if (req.path.includes("/catalog/")) {
@@ -229,19 +236,16 @@ class RequestTracker {
 
           // Track search success if results were found
           if (resultsCount > 0) {
-            redis
-              .zincrby(`search_success:${today}`, 1, queryNorm)
-              .catch(() => {});
-            redis.expire(`search_success:${today}`, 86400 * 30).catch(() => {});
-            redis
-              .zincrby(`search_success:${today}:${catalogType}`, 1, queryNorm)
-              .catch(() => {});
-            redis
-              .expire(`search_success:${today}:${catalogType}`, 86400 * 30)
-              .catch(() => {});
+            pipeline.zincrby(`search_success:${today}`, 1, queryNorm);
+            pipeline.expire(`search_success:${today}`, 86400 * 30);
+            pipeline.zincrby(`search_success:${today}:${catalogType}`, 1, queryNorm);
+            pipeline.expire(`search_success:${today}:${catalogType}`, 86400 * 30);
           }
         }
       }
+
+      // Execute pipeline (fire-and-forget)
+      pipeline.exec().catch(() => { });
     } catch (error) {
       logger.warn("[Request Tracker] Failed to track response:", error.message);
     }
@@ -274,6 +278,9 @@ class RequestTracker {
       const path = req.path;
       const today = new Date().toISOString().split("T")[0];
 
+      // Use pipeline to batch Redis commands into a single network round-trip
+      const pipeline = redis.pipeline();
+
       // Track meta requests
       if (path.includes("/meta/")) {
         const metaMatch = path.match(/\/meta\/([^\/]+)\/([^\/]+)/);
@@ -287,17 +294,28 @@ class RequestTracker {
           const cleanId = decodeURIComponent(id).replace(/\.(json|xml)$/i, "");
 
           const contentKey = `${type}:${originalId}`;
-          const cleanContentKey = `${type}:${cleanId}`;
+          // const cleanContentKey = `${type}:${cleanId}`; // This variable is not used, can be removed if not needed elsewhere.
 
           // Track popular content
-          redis
-            .zincrby(`popular_content:${today}`, 1, contentKey)
-            .catch(() => {});
-          redis.expire(`popular_content:${today}`, 86400 * 30).catch(() => {}); // 30 days
+          pipeline.zincrby(`popular_content:${today}`, 1, contentKey);
+          pipeline.expire(`popular_content:${today}`, 86400 * 30); // 30 days
         }
       }
 
-      // Track search requests
+      // Track catalog requests by type
+      if (path.includes("/catalog/")) {
+        const catalogMatch = path.match(/\/catalog\/([^\/]+)/);
+        if (catalogMatch) {
+          const [, catalogType] = catalogMatch;
+          pipeline.zincrby(`catalog_requests:${today}`, 1, catalogType);
+          pipeline.expire(`catalog_requests:${today}`, 86400 * 30); // 30 days
+        }
+      }
+
+      // Execute main pipeline (fire-and-forget)
+      pipeline.exec().catch(() => { });
+
+      // Track search requests (separate due to conditional SET NX logic)
       if (path.includes("/catalog/")) {
         let rawSearch = "";
 
@@ -343,38 +361,26 @@ class RequestTracker {
           // Debounce per user + query for a short window to avoid overcounting
           const userHash = this.getImprovedUserIdentifier(req);
           const dedupeKey = `search_dedupe:${today}:${userHash}:${catalogType}:${searchQuery}`;
-          
+
           redis.set(dedupeKey, "1", "NX", "EX", 3)
             .then(setResult => {
               if (setResult) {
-                // Increment both global and per-type aggregates in parallel
-                Promise.all([
-                  redis.zincrby(`search_patterns:${today}`, 1, searchQuery),
-                  redis.expire(`search_patterns:${today}`, 86400 * 30),
-                  redis.zincrby(`search_patterns:${today}:${catalogType}`, 1, searchQuery),
-                  redis.expire(`search_patterns:${today}:${catalogType}`, 86400 * 30)
-                ]).catch(() => {});
+                // Use pipeline for the conditional increments
+                const searchPipeline = redis.pipeline();
+                searchPipeline.zincrby(`search_patterns:${today}`, 1, searchQuery);
+                searchPipeline.expire(`search_patterns:${today}`, 86400 * 30);
+                searchPipeline.zincrby(`search_patterns:${today}:${catalogType}`, 1, searchQuery);
+                searchPipeline.expire(`search_patterns:${today}:${catalogType}`, 86400 * 30);
+                searchPipeline.exec().catch(() => { });
               }
             })
             .catch(() => {
-              // On Redis error, fall back to naive increment
-              Promise.all([
-                redis.zincrby(`search_patterns:${today}`, 1, searchQuery),
-                redis.expire(`search_patterns:${today}`, 86400 * 30)
-              ]).catch(() => {});
+              // On Redis error, fall back to pipeline increment
+              const fallbackPipeline = redis.pipeline();
+              fallbackPipeline.zincrby(`search_patterns:${today}`, 1, searchQuery);
+              fallbackPipeline.expire(`search_patterns:${today}`, 86400 * 30);
+              fallbackPipeline.exec().catch(() => { });
             });
-        }
-      }
-
-      // Track catalog requests by type
-      if (path.includes("/catalog/")) {
-        const catalogMatch = path.match(/\/catalog\/([^\/]+)/);
-        if (catalogMatch) {
-          const [, catalogType] = catalogMatch;
-          redis
-            .zincrby(`catalog_requests:${today}`, 1, catalogType)
-            .catch(() => {});
-          redis.expire(`catalog_requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
         }
       }
     } catch (error) {
@@ -837,8 +843,10 @@ class RequestTracker {
   async trackCacheHit() {
     try {
       const today = new Date().toISOString().split("T")[0];
-      redis.incr(`cache:hits:${today}`).catch(() => {});
-      redis.expire(`cache:hits:${today}`, 86400 * 30).catch(() => {});
+      const pipeline = redis.pipeline();
+      pipeline.incr(`cache:hits:${today}`);
+      pipeline.expire(`cache:hits:${today}`, 86400 * 30);
+      pipeline.exec().catch(() => { });
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to track cache hit:",
@@ -850,8 +858,10 @@ class RequestTracker {
   async trackCacheMiss() {
     try {
       const today = new Date().toISOString().split("T")[0];
-      redis.incr(`cache:misses:${today}`).catch(() => {});
-      redis.expire(`cache:misses:${today}`, 86400 * 30).catch(() => {});
+      const pipeline = redis.pipeline();
+      pipeline.incr(`cache:misses:${today}`);
+      pipeline.expire(`cache:misses:${today}`, 86400 * 30);
+      pipeline.exec().catch(() => { });
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to track cache miss:",
@@ -871,35 +881,26 @@ class RequestTracker {
       const today = new Date().toISOString().split("T")[0];
       const hour = new Date().toISOString().substring(0, 13);
 
+      // Use pipeline to batch Redis commands into a single network round-trip
+      const pipeline = redis.pipeline();
+
       // Track response times hourly
-      redis
-        .lpush(`provider_response_times:${provider}:${hour}`, responseTime)
-        .catch(() => {});
-      redis
-        .ltrim(`provider_response_times:${provider}:${hour}`, 0, 999)
-        .catch(() => {});
-      redis
-        .expire(`provider_response_times:${provider}:${hour}`, 86400 * 7)
-        .catch(() => {}); // 7 days
+      pipeline.lpush(`provider_response_times:${provider}:${hour}`, responseTime);
+      pipeline.ltrim(`provider_response_times:${provider}:${hour}`, 0, 999);
+      pipeline.expire(`provider_response_times:${provider}:${hour}`, 86400 * 7); // 7 days
 
       // Track success/error rates
       if (success) {
-        redis.incr(`provider_success:${provider}:${today}`).catch(() => {});
+        pipeline.incr(`provider_success:${provider}:${today}`);
       } else {
-        redis.incr(`provider_errors:${provider}:${today}`).catch(() => {});
+        pipeline.incr(`provider_errors:${provider}:${today}`);
       }
-      redis
-        .expire(`provider_success:${provider}:${today}`, 86400 * 7)
-        .catch(() => {});
-      redis
-        .expire(`provider_errors:${provider}:${today}`, 86400 * 7)
-        .catch(() => {});
+      pipeline.expire(`provider_success:${provider}:${today}`, 86400 * 7);
+      pipeline.expire(`provider_errors:${provider}:${today}`, 86400 * 7);
 
       // Track hourly calls for rate limiting awareness
-      redis.incr(`provider_calls:${provider}:${hour}`).catch(() => {});
-      redis
-        .expire(`provider_calls:${provider}:${hour}`, 3600 * 24)
-        .catch(() => {}); // 24 hours
+      pipeline.incr(`provider_calls:${provider}:${hour}`);
+      pipeline.expire(`provider_calls:${provider}:${hour}`, 3600 * 24); // 24 hours
 
       // Store real rate limit data if available
       if (rateLimitHeaders) {
@@ -909,15 +910,15 @@ class RequestTracker {
           reset: rateLimitHeaders.reset,
           timestamp: Date.now(),
         };
-
-        redis
-          .setex(
-            `provider_rate_limit:${provider}`,
-            3600,
-            JSON.stringify(rateLimitData),
-          )
-          .catch(() => {});
+        pipeline.setex(
+          `provider_rate_limit:${provider}`,
+          3600,
+          JSON.stringify(rateLimitData),
+        );
       }
+
+      // Execute pipeline (fire-and-forget)
+      pipeline.exec().catch(() => { });
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to track provider call:",
