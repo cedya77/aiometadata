@@ -20,20 +20,10 @@ const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'ParseProps'
-});  
 
+const logger = consola.withTag('ParseProps');
+
+// Check if debug is enabled (CONSOLA_LEVEL >= 4)
 const isDebugEnabled = consola.level >= 4;
 
 /**

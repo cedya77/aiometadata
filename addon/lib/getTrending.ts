@@ -8,19 +8,7 @@ import { isReleasedDigitally } from "../utils/parseProps.js";
 import { filterMetasByRegex } from "../utils/regexFilter.js";
 const consola = require('consola');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'GetTrending'
-}); 
+const logger = consola.withTag('GetTrending'); 
 
 async function getTrending(type: string, language: string, page: number, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   const startTime = performance.now();

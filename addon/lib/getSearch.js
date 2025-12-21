@@ -18,19 +18,9 @@ const { filterMetasByRegex } = require('../utils/regexFilter');
 const consola = require('consola');
 const { cacheWrapMetaSmart } = require('./getCache');
 const wikiMappings = require('./wiki-mapper.js');
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'Search'
-});
+
+
+const logger = consola.withTag('Search');
 const timingMetrics = require('./timing-metrics');
 const { parse } = require("path");
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';

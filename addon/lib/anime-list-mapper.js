@@ -5,10 +5,8 @@ const redis = require('./redisClient');
 const xml2js = require('xml2js');
 const consola = require('consola');
 
-// Configure logging level based on environment (consistent with other modules)
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
-const logger = consola.create({ tag: 'AnimeListMapper' });
+
+const logger = consola.withTag('AnimeListMapper');
 
 // Anime-Lists XML file URL
 const REMOTE_ANIME_LIST_URL = 'https://raw.githubusercontent.com/Anime-Lists/anime-lists/refs/heads/master/anime-list-full.xml';

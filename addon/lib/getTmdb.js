@@ -44,18 +44,18 @@ if (SOCKS_PROXY_URL) {
         userId: proxyUrlObj.username,
         password: proxyUrlObj.password,
       });
-      console.log(`[TMDB] SOCKS proxy is enabled for undici via fetch-socks.`);
+      consola.info(`[TMDB] SOCKS proxy is enabled for undici via fetch-socks.`);
     } else {
-      console.error(`[TMDB] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
+      consola.error(`[TMDB] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
       dispatcher = new Agent({ connect: { timeout: 10000 } });
     }
   } catch (error) {
-    console.error(`[TMDB] Invalid SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
+    consola.error(`[TMDB] Invalid SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
     dispatcher = new Agent({ connect: { timeout: 10000 } });
   }
 } else {
   dispatcher = new Agent({ connect: { timeout: 10000 } });
-  console.log('[TMDB] undici agent is enabled for direct connections.');
+  consola.info('[TMDB] undici agent is enabled for direct connections.');
 }
 
 // A simple in-memory cache
@@ -94,7 +94,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       if (response.status === 429) {
           const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);
           const waitTime = retryAfter * 1000 + 50;
-          console.warn(`[TMDB] Rate limit hit for ${endpoint}. Waiting ${waitTime}ms.`);
+          consola.warn(`[TMDB] Rate limit hit for ${endpoint}. Waiting ${waitTime}ms.`);
           
           // Throw a specific error to be caught by the catch block for retrying
           const rateLimitError = new Error(`Rate limit hit (429)`);
@@ -109,7 +109,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
         
         // Handle 404 errors gracefully - resource not found
         if (response.status === 404) {
-          console.warn(`[TMDB] Resource not found for ${endpoint}: ${errorMessage}`);
+          consola.warn(`[TMDB] Resource not found for ${endpoint}: ${errorMessage}`);
           return null; // Return null instead of throwing for 404s
         }
         
@@ -151,10 +151,10 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
               },
               (err, result) => {
                 if (err) {
-                  console.warn(`[TMDB] Failed to get IMDB ID for season name "${nameToImdbTitle}":`, err);
+                  consola.warn(`[TMDB] Failed to get IMDB ID for season name "${nameToImdbTitle}":`, err);
                   resolve(null);
                 } else {
-                  console.log(`[TMDB] IMDB ID found for name "${nameToImdbTitle} and year "${data.release_date ? data.release_date.substring(0, 4) : ""}":`, result);
+                  consola.debug(`[TMDB] IMDB ID found for name "${nameToImdbTitle}" and year "${data.release_date ? data.release_date.substring(0, 4) : ""}":`, result);
                   resolve(result);
                 }
               }
@@ -167,14 +167,14 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
             year: data.release_date ? data.release_date.substring(0, 4) : '',
             success: !!imdbSearchResult
           });
-          console.log(`[TMDB] nameToImdb lookup took ${duration}ms for "${nameToImdbTitle}" (${type})`);
+          consola.debug(`[TMDB] nameToImdb lookup took ${duration}ms for "${nameToImdbTitle}" (${type})`);
           if (imdbSearchResult) {
               data.imdb_id = imdbSearchResult;
               if (!data.external_ids) data.external_ids = {};
               data.external_ids.imdb_id = imdbSearchResult;
-              console.log(`[TMDB] Successfully found IMDb ID: ${imdbSearchResult} for "${data.original_title || data.title}"`);
+              consola.debug(`[TMDB] Successfully found IMDb ID: ${imdbSearchResult} for "${data.original_title || data.title}"`);
           } else {
-              console.log(`[TMDB] No IMDb ID found for "${data.original_title || data.title}" (${type})`);
+              consola.debug(`[TMDB] No IMDb ID found for "${data.original_title || data.title}" (${type})`);
           }
       }
 
@@ -185,11 +185,11 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
               if (!data.external_ids) data.external_ids = {};
               data.external_ids.imdb_id = cachedImdbId;
           } else { 
-              console.log(`[TMDB] imdb_id in TMDB response: ${data.imdb_id}`);
+              consola.debug(`[TMDB] imdb_id in TMDB response: ${data.imdb_id}`);
               const titleForScraper = data.original_title || data.title || null;
 
               if (titleForScraper) {
-                  console.log(`[TMDB] Attempting to scrape IMDb for title: "${titleForScraper}"`);
+                  consola.debug(`[TMDB] Attempting to scrape IMDb for title: "${titleForScraper}"`);
                   const scrapeStartTime = Date.now();
                   const imdbScrapedResult = await scrapeSingleImdbResultByTitle(titleForScraper, type);
                   
@@ -198,11 +198,11 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
                       const foundImdbId = imdbScrapedResult.imdbId;
                       const foundImdbMeta = await getMetaFromImdbIo(foundImdbId, type);
                       if (!foundImdbMeta) {
-                          console.warn(`[TMDB] IMDb ID ${foundImdbId} type mismatch. returning data without IMDb ID.`);
+                          consola.warn(`[TMDB] IMDb ID ${foundImdbId} type mismatch. returning data without IMDb ID.`);
                           return data;
                       } else {
                         if (foundImdbMeta.releaseInfo?.includes('-') && type === 'movie') {
-                          console.warn(`[TMDB] IMDb ID ${foundImdbId} has a runtime that includes a dash. returning data without IMDb ID.`);
+                          consola.warn(`[TMDB] IMDb ID ${foundImdbId} has a runtime that includes a dash. returning data without IMDb ID.`);
                           return data;
                         }
                       }
@@ -223,17 +223,17 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
                         method: 'scrape'
                       });
                       
-                      console.log(`[TMDB] IMDb scraping took ${scrapeDuration}ms for "${titleForScraper}" (${type})`);
-                      console.log(`[TMDB] IMDb ID found by scraper: ${foundImdbId}`);
+                      consola.debug(`[TMDB] IMDb scraping took ${scrapeDuration}ms for "${titleForScraper}" (${type})`);
+                      consola.debug(`[TMDB] IMDb ID found by scraper: ${foundImdbId}`);
                   } else {
-                      console.warn(`[TMDB] IMDb scraper returned no ID for title: "${titleForScraper}"`);
+                      consola.warn(`[TMDB] IMDb scraper returned no ID for title: "${titleForScraper}"`);
                   }
               } else {
-                  console.warn(`[TMDB] 'original_title'/'title' is null skipping IMDb fallback`);
+                  consola.warn(`[TMDB] 'original_title'/'title' is null skipping IMDb fallback`);
               }
           }
       } else if (data.imdb_id) {
-        console.log(`[TMDB] IMDb ID already present (${data.imdb_id}); skipping fallback for endpoint: ${endpoint}`);
+        consola.debug(`[TMDB] IMDb ID already present (${data.imdb_id}); skipping fallback for endpoint: ${endpoint}`);
       }
 
       return data;
@@ -247,7 +247,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
 
       // Decide if we should retry
       if (attempt < maxRetries && (error.isRetryable || (typeof error.code === 'string' && error.code.startsWith('UND_ERR_')))) {
-        console.log(`[TMDB] Request to ${endpoint} failed. Retrying in ${delay}ms (attempt ${attempt}/${maxRetries}). Error: ${error.message}`);
+        consola.debug(`[TMDB] Request to ${endpoint} failed. Retrying in ${delay}ms (attempt ${attempt}/${maxRetries}). Error: ${error.message}`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         throw lastError;
@@ -522,7 +522,7 @@ async function getTmdbImages(mediaType, tmdbId, config) {
     const imagesData = await makeTmdbRequest(endpoint, getApiKey(config), {}, 'GET', null, config);
     return imagesData || { posters: [], backdrops: [], logos: [] };
   } catch (error) {
-    console.warn(`[TMDB] Failed to get images for ${mediaType} ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get images for ${mediaType} ${tmdbId}:`, error.message);
     return { posters: [], backdrops: [], logos: [] };
   }
 }
@@ -624,7 +624,7 @@ async function getTmdbMoviePoster(tmdbId, config) {
     
     return null;
   } catch (error) {
-    console.warn(`[TMDB] Failed to get movie poster for TMDB ID ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get movie poster for TMDB ID ${tmdbId}:`, error.message);
     return null;
   }
 }
@@ -652,7 +652,7 @@ async function getTmdbSeriesPoster(tmdbId, config) {
     
     return null;
   } catch (error) {
-    console.warn(`[TMDB] Failed to get series poster for TMDB ID ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get series poster for TMDB ID ${tmdbId}:`, error.message);
     return null;
   }
 }
@@ -679,7 +679,7 @@ async function getTmdbMovieBackground(tmdbId, config) {
     
     return null;
   } catch (error) {
-    console.warn(`[TMDB] Failed to get movie background for TMDB ID ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get movie background for TMDB ID ${tmdbId}:`, error.message);
     return null;
   }
 }
@@ -706,7 +706,7 @@ async function getTmdbSeriesBackground(tmdbId, config) {
     
     return null;
   } catch (error) {
-    console.warn(`[TMDB] Failed to get series background for TMDB ID ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get series background for TMDB ID ${tmdbId}:`, error.message);
     return null;
   }
 }
@@ -733,7 +733,7 @@ async function getTmdbMovieLogo(tmdbId, config) {
     
     return null;
   } catch (error) {
-    console.warn(`[TMDB] Failed to get movie logo for TMDB ID ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get movie logo for TMDB ID ${tmdbId}:`, error.message);
     return null;
   }
 }
@@ -760,7 +760,7 @@ async function getTmdbSeriesLogo(tmdbId, config) {
     
     return null;
   } catch (error) {
-    console.warn(`[TMDB] Failed to get series logo for TMDB ID ${tmdbId}:`, error.message);
+    consola.warn(`[TMDB] Failed to get series logo for TMDB ID ${tmdbId}:`, error.message);
     return null;
   }
 }

@@ -1,12 +1,7 @@
 const consola = require('consola');
 const { httpGet, httpPost } = require('../utils/httpClient.js');
 
-const logger = consola.create({
-  level: process.env.LOG_LEVEL ? 
-    parseInt(process.env.LOG_LEVEL) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  tag: 'Trakt'
-});
+const logger = consola.withTag('Trakt');
 
 export const TRAKT_API_BASE = 'https://api.trakt.tv';
 export const TRAKT_API_VERSION = '2';

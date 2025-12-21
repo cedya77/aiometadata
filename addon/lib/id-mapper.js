@@ -6,10 +6,8 @@ const kitsu = require('./kitsu');
 const { numberValueTypes } = require('framer-motion');
 const consola = require('consola');
 
-// Configure logging level based on environment
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
-const logger = consola.create({ tag: 'ID-Mapper' });
+
+const logger = consola.withTag('ID-Mapper');
 
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';

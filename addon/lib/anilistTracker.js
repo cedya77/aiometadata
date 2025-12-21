@@ -13,10 +13,8 @@ const database = require('./database');
 const idMapper = require('./id-mapper');
 const { resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
 
-// Configure logging
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
-const logger = consola.create({ tag: 'AniListTracker' });
+
+const logger = consola.withTag('AniListTracker');
 
 // AniList API configuration
 const ANILIST_GRAPHQL_URL = 'https://graphql.anilist.co';

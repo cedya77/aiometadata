@@ -1,14 +1,8 @@
 const redis = require('./redisClient');
 const consola = require('consola');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  tag: 'Timing-Metrics'
-});
+
+const logger = consola.withTag('Timing-Metrics');
 
 class TimingMetrics {
   constructor() {

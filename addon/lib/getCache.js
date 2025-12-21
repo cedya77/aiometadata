@@ -488,19 +488,19 @@ async function cacheWrap(key, method, ttl, options = {}) {
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
-              cacheLogger.info(`Retrying expired temporary error for ${versionedKey}`);
+              cacheLogger.debug(`[Cache] Retrying expired temporary error for ${versionedKey}`);
               await redis.del(versionedKey);
             } else {
-              cacheLogger.info(`❌ CACHED ERROR for ${versionedKey}`);
+              cacheLogger.debug(`[Cache] Cached error returned for ${versionedKey}`);
               updateCacheHealth(versionedKey, 'cached-error', true);
               return parsed;
             }
           } else if (parsed.error) {
-            cacheLogger.info(`❌ CACHED ERROR for ${versionedKey}`);
+            cacheLogger.debug(`[Cache] Cached error returned for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
           } else {
-            cacheLogger.info(`⚡ HIT for ${versionedKey}`);
+            cacheLogger.debug(`[Cache] HIT for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -546,7 +546,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
         const classification = resultClassifier(result, null, key);
         const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
         
-        cacheLogger.info(`Classification: ${classification.type}, TTL: ${finalTtl}s`);
+        cacheLogger.debug(`[Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
         
         // Skip caching if TTL is 0 (e.g., empty results)
         if (finalTtl > 0) {
@@ -561,7 +561,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
           updateCacheHealth(versionedKey, 'error', false);
           }
         } else {
-          cacheLogger.info(`Skipping cache for ${versionedKey} (TTL: 0)`);
+          cacheLogger.debug(`[Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
         }
     }
     return result;
@@ -576,7 +576,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
         
         // Skip caching if classifier says so
         if (classification.type === 'SKIP_CACHE') {
-          cacheLogger.info(`⏭️ Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
+          cacheLogger.debug(`[Cache] Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
         } else if (errorTtl > 0) {
           try {
             const errorResult = { 
@@ -596,7 +596,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
-        cacheLogger.info(`Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
+        cacheLogger.debug(`[Cache] Retrying ${versionedKey} (attempt ${retries}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
@@ -635,19 +635,19 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
-              globalCacheLogger.info(`Retrying expired temporary error for ${truncateCacheKey(versionedKey)}`);
+              globalCacheLogger.debug(`[Global-Cache] Retrying expired temporary error for ${truncateCacheKey(versionedKey)}`);
               await redis.del(versionedKey);
             } else {
-              globalCacheLogger.info(`❌ CACHED ERROR for ${truncateCacheKey(versionedKey)}`);
+              globalCacheLogger.debug(`[Global-Cache] Cached error returned for ${truncateCacheKey(versionedKey)}`);
               updateCacheHealth(versionedKey, 'cached-error', true);
               return parsed;
             }
           } else if (parsed.error) {
-            globalCacheLogger.info(`❌ CACHED ERROR for ${truncateCacheKey(versionedKey)}`);
+            globalCacheLogger.debug(`[Global-Cache] Cached error returned for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
           } else {
-            globalCacheLogger.info(`⚡ HIT for ${truncateCacheKey(versionedKey)}`);
+            globalCacheLogger.debug(`[Global-Cache] HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -676,7 +676,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
       // Skip caching if result classifier says so
       if (classification.type === 'SKIP_CACHE') {
-        globalCacheLogger.info(`⏭️ Skipping cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
+        globalCacheLogger.debug(`[Global-Cache] Skipping cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
         return result;
       }
 
@@ -690,7 +690,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
         }
       } else {
-        globalCacheLogger.info(`Skipping cache for ${versionedKey} (TTL: 0)`);
+        globalCacheLogger.debug(`[Global-Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
     }
     return result;
   } catch (error) {
@@ -704,7 +704,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
         
         // Skip caching if classifier says so
         if (classification.type === 'SKIP_CACHE') {
-          globalCacheLogger.info(`⏭️ Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
+          globalCacheLogger.debug(`[Global-Cache] Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
         } else if (errorTtl > 0) {
           try {
             const errorResult = { 
@@ -724,7 +724,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
-        globalCacheLogger.info(`🔄 Retrying ${truncateCacheKey(versionedKey)} (attempt ${retries}/${maxRetries})`);
+        globalCacheLogger.debug(`[Global-Cache] Retrying ${truncateCacheKey(versionedKey)} (attempt ${retries}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
@@ -838,10 +838,10 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // User lists can change (items added/removed), and old cached pages could show items that no longer exist
   if (isAuthCatalog) {
     cacheTTL = 0; // Don't cache - user lists change frequently and old pages could be stale
-    cacheLogger.info(`Not caching auth catalog ${idOnly} (user-specific data changes frequently)`);
+    cacheLogger.debug(`[Catalog] Not caching auth catalog ${idOnly} (user-specific data changes frequently)`);
   } else if (isTrendingCatalog) {
     cacheTTL = TMDB_TRENDING_TTL;
-    cacheLogger.info(`Using TMDB trending cache TTL for ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+    cacheLogger.debug(`[Catalog] Using TMDB trending cache TTL for ${idOnly}: ${cacheTTL}s`);
   }
   
   // Use custom cache TTL for MDBList catalogs if specified
@@ -851,14 +851,14 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const decadeCatalogs = ['mal.80sDecade', 'mal.90sDecade', 'mal.00sDecade', 'mal.10sDecade'];
   if (decadeCatalogs.includes(idOnly)) {
     cacheTTL = STATIC_CATALOG_TTL; // 30 days
-    cacheLogger.info(`Using extended cache TTL for decade catalog ${idOnly}: 30 days`);
+    cacheLogger.debug(`[Catalog] Using extended cache TTL for decade catalog ${idOnly}: 30 days`);
   }
   
   if (idOnly.startsWith('mdblist.')) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
     if (catalogConfig?.cacheTTL) {
       cacheTTL = catalogConfig.cacheTTL;
-      cacheLogger.info(`Using custom cache TTL for MDBList catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for MDBList catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
   
@@ -867,7 +867,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
     if (catalogConfig?.cacheTTL) {
       cacheTTL = catalogConfig.cacheTTL;
-      cacheLogger.info(`Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
   
@@ -876,7 +876,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
     if (catalogConfig?.cacheTTL) {
       cacheTTL = catalogConfig.cacheTTL;
-      cacheLogger.info(`Using custom cache TTL for custom manifest catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for custom manifest catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
   
@@ -904,7 +904,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
-  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s key:${key}`);
+  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state
@@ -972,7 +972,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
   const searchConfigString = JSON.stringify(searchConfig);
   const key = `search:${searchConfigString}:${searchKey}`;
   const searchSig = shortSignature(`${searchConfigString}`);
-  cacheLogger.info(`Search key detail [sig:${searchSig}] key:${key}`);
+  cacheLogger.debug(`[Search] Key detail [sig:${searchSig}]`);
   
   // Shorter TTL for search results since they're more dynamic
   const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
@@ -1065,7 +1065,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
   const metaConfigString = stableStringify(metaConfig);
    const key = `meta:${metaConfigString}:${metaId}`;
    const metaSig = shortSignature(`${metaConfigString}`);
-  cacheLogger.info(`Meta key detail (${prefix}/${metaType}) [sig:${metaSig}] key:${key}`);
+  cacheLogger.debug(`[Meta] Key detail (${prefix}/${metaType}) [sig:${metaSig}]`);
    
    return cacheWrap(key, method, ttl, options);
 }
@@ -1598,24 +1598,24 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  * @param {boolean} includeVideos - Whether videos are required for this request (default: true)
  */
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
-  cacheLogger.info(`Smart meta caching for ${metaId} (type:${type}, videos:${includeVideos}, showPoster:${useShowPoster})`);
+  cacheLogger.debug(`[Meta] Smart caching for ${metaId} (type:${type}, videos:${includeVideos}, showPoster:${useShowPoster})`);
    
    // First, try to reconstruct from cached components BEFORE calling method
    const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos, useShowPoster);
   
   if (reconstructedMeta && reconstructedMeta.meta) {
-    cacheLogger.info(`Component reconstruction successful for ${metaId}`);
+    cacheLogger.debug(`[Meta] Component reconstruction successful for ${metaId}`);
     return reconstructedMeta;
   }
    
   const failureReason = reconstructedMeta && reconstructedMeta.errorReason ? ` (reason: ${reconstructedMeta.errorReason})` : '';
-  cacheLogger.info(`Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
+  cacheLogger.debug(`[Meta] Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
   
   const result = await method();
   
   // Handle null/empty results
   if (!result || !result.meta) {
-    cacheLogger.info(`Method returned null/empty result for ${metaId}`);
+    cacheLogger.debug(`[Meta] Method returned null/empty result for ${metaId}`);
     return { meta: null };
   }
   
@@ -2086,7 +2086,7 @@ async function cacheWrapAniListCatalog(username, listName, page, method, customT
   const key = generateAniListCatalogCacheKey(username, listName, page);
   const ttl = customTTL !== null ? customTTL : ANILIST_CATALOG_TTL;
   
-  cacheLogger.info(`[AniList] Cache key: ${key}, TTL: ${ttl}s (${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m)`);
+  cacheLogger.debug(`[AniList] Cache key: ${key}, TTL: ${ttl}s`);
   
   return cacheWrap(key, method, ttl, options);
 }

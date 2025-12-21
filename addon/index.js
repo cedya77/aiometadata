@@ -17,9 +17,6 @@ const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = r
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
 
-// Configure logging level based on environment
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel.toLowerCase()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
 
 // Warm user-specific content based on their config

@@ -363,19 +363,7 @@ import { meta } from "@eslint/js";
 const consola = require('consola');
 const { Agent } = require('undici');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'Trakt'
-});
+const logger = consola.withTag('Trakt');
 
 /**
  * Sanitize URL by removing access token for safe logging

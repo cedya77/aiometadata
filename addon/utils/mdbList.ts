@@ -7,19 +7,7 @@ const consola = require('consola');
 const { socksDispatcher } = require('fetch-socks');
 const { Agent } = require('undici');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'MDBList'
-});
+const logger = consola.withTag('MDBList');
 
 /**
  * Sanitize URL by removing API key for safe logging

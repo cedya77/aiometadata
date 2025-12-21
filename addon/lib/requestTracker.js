@@ -1,22 +1,8 @@
 const redis = require("./redisClient");
 const consola = require("consola");
 
-// Configure Consola for better output with forced colors
-const logger = consola.create({
-  level: process.env.LOG_LEVEL
-    ? (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4)
-    : process.env.NODE_ENV === "production"
-      ? 3
-      : 4,
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false,
-  },
-  tag: "Request-Tracker",
-});
+
+const logger = consola.withTag("Request-Tracker");
 
 class RequestTracker {
   constructor() {
@@ -671,7 +657,7 @@ class RequestTracker {
         cached_at: new Date().toISOString(),
       };
 
-      logger.info(
+      logger.debug(
         `[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
       );
 
@@ -1059,7 +1045,7 @@ class RequestTracker {
   // Track recent activity
   async trackActivity(type, details) {
     try {
-      logger.info(
+      logger.debug(
         `[Request Tracker] Tracking activity: ${type} for ${details.endpoint}`,
       );
 
@@ -1077,7 +1063,7 @@ class RequestTracker {
       await redis.ltrim(activityKey, 0, 99); // Keep only last 100
       await redis.expire(activityKey, 86400 * 7); // 7 days
 
-      logger.info(`[Request Tracker] Activity stored successfully: ${type}`);
+      logger.debug(`[Request Tracker] Activity stored successfully: ${type}`);
     } catch (error) {
       logger.warn("[Request Tracker] Failed to track activity:", error.message);
     }

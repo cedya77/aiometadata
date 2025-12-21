@@ -9,19 +9,7 @@ const consola = require('consola');
 const { httpGet } = require('../utils/httpClient');
 const { mappings } = require('./wiki-mapper.js');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'ID-Resolver'
-});
+const logger = consola.withTag('ID-Resolver');
 
 // Performance tracking counters
 let performanceStats = {
@@ -290,7 +278,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
       cached: false,
       resolution_type: 'anime_mapping'
     });
-    logger.success(` Anime resolution complete for ${stremioId} (took ${duration}ms)`);
+    logger.debug(`[Anime] Resolution complete for ${stremioId} (took ${duration}ms)`);
     return allIds;
   }
 
@@ -339,7 +327,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
               cached: false,
               resolution_type: 'wiki_mapping_complete'
             });
-            logger.success(` Wiki mapping provided all target providers for ${stremioId} (took ${duration}ms)`);
+            logger.debug(`[Wiki] Mapping provided all target providers for ${stremioId} (took ${duration}ms)`);
             return allIds;
           }
         }
@@ -378,7 +366,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
             cached: true,
             resolution_type: 'cache_hit'
           });
-          logger.success(` Cache hit provided all target providers for ${stremioId} (took ${duration}ms)`);
+          logger.debug(`[Cache] Hit provided all target providers for ${stremioId} (took ${duration}ms)`);
           return allIds;
         }
       } else {
@@ -391,7 +379,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
           cached: true,
           resolution_type: 'cache_hit'
         });
-        logger.success(` Cache hit resolution complete for ${stremioId} (took ${duration}ms)`);
+        logger.debug(`[Cache] Hit resolution complete for ${stremioId} (took ${duration}ms)`);
         return allIds;
       }
     }
@@ -488,7 +476,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     }
     
     if (!allIds.tvdbId && allIds.imdbId && needsTvdb) {
-        console.log('Finding TVDB ID for IMDB ID', allIds.imdbId);
+        logger.debug(`[Secondary API] Finding TVDB ID for IMDB ID ${allIds.imdbId}`);
         const tvdbFindStartTime = Date.now();
         logger.debug(`[Secondary API] TVDB find by IMDB - targetProviders: [${targetProviders.join(', ')}]`);
         secondaryPromises.push(
@@ -703,7 +691,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   
   logger.debug(` API lookup phase took ${apiDuration}ms for ${stremioId}`);
   const duration = totalDuration;
-  logger.success(` Resolution complete for ${stremioId} (took ${duration}ms)`);
+  logger.debug(`[Resolution] Complete for ${stremioId} (took ${duration}ms)`);
   logger.debug(` Final resolved IDs for ${stremioId} (type: ${type}):`, allIds);
   return allIds;
 }

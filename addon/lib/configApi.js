@@ -2,19 +2,9 @@ const crypto = require('crypto');
 const { request } = require("undici");
 const database = require('./database');
 const consola = require('consola');
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'ConfigApi'
-});
+
+
+const logger = consola.withTag('ConfigApi');
 
 // Import the config cache
 const configCache = require('./configCache');
