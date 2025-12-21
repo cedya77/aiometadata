@@ -35,6 +35,12 @@ cp .env.example .env
 - **Description**: Node environment mode
 - **Example**: `NODE_ENV=production`
 
+
+### `ADDON_LOGO_URL`
+- **Required**: No
+- **Description**: Override the logo URL in the manifest. If not set, defaults to `${HOST_NAME}/logo.png`.
+- **Example**: `ADDON_LOGO_URL=https://yourdomain.com/yourlogo.png`
+
 ### `LOG_LEVEL`
 - **Default**: `info` (production), `debug` (development)
 - **Options**: `silent`, `info`, `debug`
