@@ -81,6 +81,17 @@ function shuffleMetas(metas = []) {
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
 
+// Global CORS middleware: ensure every response includes CORS headers
+// This prevents browser blocks when a route returns early or on errors
+addon.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  // Reply to preflight immediately
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // Add request tracking middleware
 addon.use(requestTracker.middleware());
 
