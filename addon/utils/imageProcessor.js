@@ -16,7 +16,8 @@ const ALLOWED_DOMAINS = [
   'myanimelist.net',
   'kitsu.io',
   'anilist.co',
-  'anidb.net'
+  'anidb.net',
+  'top-streaming.stream'
 ];
 
 // Allowed file extensions

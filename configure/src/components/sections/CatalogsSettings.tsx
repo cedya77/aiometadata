@@ -842,7 +842,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
 
-          {config.apiKeys?.rpdb && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
             <Tooltip>
             <TooltipTrigger asChild>
               <Button
