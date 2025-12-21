@@ -12,9 +12,15 @@ const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } = require('./getCache');
 
-const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+
+const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
+  ? process.env.HOST_NAME
+  : `https://${process.env.HOST_NAME}`;
+
+// Allow logo override via env var
+const manifestLogoUrl = process.env.ADDON_LOGO_URL && process.env.ADDON_LOGO_URL.trim() !== ''
+  ? process.env.ADDON_LOGO_URL.trim()
+  : `${host}/logo.png`;
 
 // Manifest cache TTL (5 minutes)
 const MANIFEST_CACHE_TTL = 5 * 60;
@@ -897,7 +903,7 @@ async function getManifest(config) {
   const manifest = {
     id: packageJson.name,
     version: packageJson.version,
-    logo: `${host}/logo.png`,
+    logo: manifestLogoUrl,
     background: `${host}/background.png`,
     name: addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
