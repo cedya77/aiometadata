@@ -74,6 +74,9 @@ const SELF_HEALING_CONFIG = {
   corruptedEntryThreshold: parseInt(process.env.CACHE_CORRUPTED_THRESHOLD || '10', 10)
 };
 
+const MAX_TRACKED_KEYS = parseInt(process.env.MAX_TRACKED_KEYS || '20000', 10);
+const KEYS_TO_KEEP_AFTER_PRUNE = parseInt(process.env.KEYS_TO_KEEP_AFTER_PRUNE || '5000', 10);
+
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
 const { cache } = require('sharp');
@@ -344,9 +347,26 @@ function logCacheHealth() {
   const topKeys = Array.from(cacheHealth.keyAccessCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-  
+
   if (topKeys.length > 0) {
     cacheHealthLogger.info('Most accessed keys:', topKeys.map(([key, count]) => `${key}:${count}`).join(', '));
+  }
+
+  // Prune keyAccessCounts Map if threshold exceeded to prevent memory leak
+  if (cacheHealth.keyAccessCounts.size > MAX_TRACKED_KEYS) {
+    const oldSize = cacheHealth.keyAccessCounts.size;
+
+    // Sort by access count (frequency) and keep top N keys
+    const sorted = Array.from(cacheHealth.keyAccessCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, KEYS_TO_KEEP_AFTER_PRUNE);
+
+    cacheHealth.keyAccessCounts.clear();
+    for (const [key, count] of sorted) {
+      cacheHealth.keyAccessCounts.set(key, count);
+    }
+
+    cacheHealthLogger.info(`Pruned keyAccessCounts Map: ${oldSize} -> ${KEYS_TO_KEEP_AFTER_PRUNE} keys`);
   }
 }
 
