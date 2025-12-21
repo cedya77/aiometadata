@@ -680,7 +680,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     if (allIds?.malId) {
       allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
       allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
-      allIds.tvdbId = (await wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
+      allIds.tvdbId = (wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
     }
   }
 

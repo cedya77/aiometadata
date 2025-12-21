@@ -300,13 +300,13 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     try {
       let wikiMapping = null;
       if (allIds.tmdbId && (type === 'movie' || type === 'series')) {
-        wikiMapping = await mappings.getByTmdbId(allIds.tmdbId.toString(), type);
+        wikiMapping = mappings.getByTmdbId(allIds.tmdbId.toString(), type);
       } else if (allIds.tvdbId && (type === 'movie' || type === 'series')) {
-        wikiMapping = await mappings.getByTvdbId(allIds.tvdbId.toString());
+        wikiMapping = mappings.getByTvdbId(allIds.tvdbId.toString());
       } else if (allIds.imdbId && (type === 'movie' || type === 'series')) {
-        wikiMapping = await mappings.getByImdbId(allIds.imdbId, type);
+        wikiMapping = mappings.getByImdbId(allIds.imdbId, type);
       } else if (allIds.tvmazeId && type === 'series') {
-        wikiMapping = await mappings.getSeriesByTvmaze(allIds.tvmazeId.toString());
+        wikiMapping = mappings.getSeriesByTvmaze(allIds.tvmazeId.toString());
       }
       
       if (wikiMapping) {

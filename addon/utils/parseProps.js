@@ -1987,7 +1987,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         const stremioType = item.attributes.subtype === 'movie' ? 'movie' : 'series';
         let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(id)?.externals.tmdb : mapping?.themoviedb_id;
         let imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(id)?.externals.imdb : mapping?.imdb_id;
-        let tvdbId = stremioType === 'movie' ? (await wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.thetvdb_id;
+        let tvdbId = stremioType === 'movie' ? (wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.thetvdb_id;
         let finalPosterUrl = await getAnimePosterUrl(id, mapping, stremioType, config, language, anilistArtworkMap, item.attributes.posterImage?.original, kitsuArtworkMap);
         let kitsuReleaseInfo = item.attributes.startDate ? item.attributes.startDate.substring(0, 4) : null;
         if (stremioType === 'series' && item.attributes.startDate) {
@@ -2073,7 +2073,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
     const mapping = idMapper.getMappingByMalId(malId);
     let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
     let imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
-    let tvdbId = stremioType === 'movie' ? (await wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.thetvdb_id;
+    let tvdbId = stremioType === 'movie' ? (wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.thetvdb_id;
     
     /*if(mapping && !mapping.imdb_id && mapping.themoviedb_id){
       const allIds = await resolveAllIds(mapping.themoviedb_id, stremioType, config, {}, ['imdb']);
@@ -3107,7 +3107,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
   let finalPosterUrl = posterUrl || `${host}/missing_poster.png`;
   let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
   let imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
-  let tvdbId = stremioType === 'movie' ? (await wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.thetvdb_id;
+  let tvdbId = stremioType === 'movie' ? (wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.thetvdb_id;
 
   if (useAniList && anilistArtworkMap.has(malId)) {
     const anilistData = anilistArtworkMap.get(malId);
