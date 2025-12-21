@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.15.0](https://github.com/cedya77/aiometadata/compare/v1.14.2...v1.15.0) (2025-12-21)
+
+
+### Features
+
+* **manifest:** allow logo override via ADDON_LOGO_URL env var ([790bf62](https://github.com/cedya77/aiometadata/commit/790bf62d38ff455377cd512de502f0cbf9bd7297))
+
+
+### Bug Fixes
+
+* **cors:** add global CORS middleware to ensure all responses include CORS headers ([f7e6880](https://github.com/cedya77/aiometadata/commit/f7e68807e14fdaa568c227366e5f3f1484929d45))
+* Hide Episode Spoilers now works with TOP API ([88dea98](https://github.com/cedya77/aiometadata/commit/88dea98abe4d2bbae878fb526b693c1491a27338))
+* prevent unbounded growth on cacheHealth metrics ([a914290](https://github.com/cedya77/aiometadata/commit/a91429064cff243817b3d61001eb7f65bee681ca))
+* treat 500 as retryable ([dcb1376](https://github.com/cedya77/aiometadata/commit/dcb13760dccb0573b6e92e78d8a0049ca18ef2b9))
+* treat 500 as retryable ([7a5fbb6](https://github.com/cedya77/aiometadata/commit/7a5fbb69b1c68773f353d2cac71997f91e74618a))
+* **up next:** invalidate meta cache via ep number ([5765133](https://github.com/cedya77/aiometadata/commit/57651331dec2f8843680719ad5bdd0634b45c4f0))
+* use retry-after header for trakt ([9908807](https://github.com/cedya77/aiometadata/commit/9908807aaee8b47506866877165ed719c9f4f596))
+* use retry-after header for trakt ([0065151](https://github.com/cedya77/aiometadata/commit/006515173a1fda4598019f16c957d651b41a9d77))
+
+
+### Performance Improvements
+
+* Optimize anime ID lookups from O(N) to O(1) ([c306a86](https://github.com/cedya77/aiometadata/commit/c306a86d7da47d2d75330c0e1a7807d53c81cd20))
+* use redis pipeline for requestTracker.js ([3dd4e8f](https://github.com/cedya77/aiometadata/commit/3dd4e8fe60729dbc4a7cbb28365d85971eea5e5e))
+
 ## [1.14.2](https://github.com/cedya77/aiometadata/compare/v1.14.1...v1.14.2) (2025-12-18)
 
 
