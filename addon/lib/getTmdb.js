@@ -161,7 +161,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
             );
           });
           const duration = Date.now() - startTime;
-          await timingMetrics.recordTiming('nameToImdb_lookup', duration, { 
+          timingMetrics.recordTiming('nameToImdb_lookup', duration, { 
             type, 
             title: data.original_title || data.title,
             year: data.release_date ? data.release_date.substring(0, 4) : '',
@@ -216,7 +216,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
                       const scrapeDuration = Date.now() - scrapeStartTime;
                   
                   // Record timing metrics for IMDb scraping
-                      await timingMetrics.recordTiming('imdb_scrape_lookup', scrapeDuration, { 
+                      timingMetrics.recordTiming('imdb_scrape_lookup', scrapeDuration, { 
                         type, 
                         title: titleForScraper,
                         success: !!(imdbScrapedResult && imdbScrapedResult.imdbId),

@@ -19,28 +19,29 @@ class TimingMetrics {
   }
 
   /**
-   * Record a timing measurement
+   * Record a timing measurement (fire-and-forget with Redis pipeline)
    * @param {string} metric - The metric name (e.g., 'id_resolution', 'nameToImdb', 'api_lookup')
    * @param {number} duration - Duration in milliseconds
    * @param {Object} metadata - Additional metadata (e.g., { type: 'movie', cached: true })
    */
-  async recordTiming(metric, duration, metadata = {}) {
+  recordTiming(metric, duration, metadata = {}) {
     try {
       const key = `${this.keyPrefix}${metric}`;
-      const data = {
+      const data = JSON.stringify({
         timestamp: Date.now(),
         duration,
         metadata
-      };
+      });
 
-      // Add to Redis list (FIFO)
-      await this.redis.lpush(key, JSON.stringify(data));
-      
-      // Trim to max samples
-      await this.redis.ltrim(key, 0, this.maxSamples - 1);
-      
-      // Set TTL if this is the first entry
-      await this.redis.expire(key, this.ttl);
+      // Pipeline: 3 commands in 1 round-trip (fire-and-forget)
+      this.redis.pipeline()
+        .lpush(key, data)
+        .ltrim(key, 0, this.maxSamples - 1)
+        .expire(key, this.ttl)
+        .exec()
+        .catch(error => {
+          logger.error(`Failed to record timing metric ${metric}:`, error.message);
+        });
 
       logger.debug(`Recorded timing: ${metric} = ${duration}ms`, metadata);
     } catch (error) {

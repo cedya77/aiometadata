@@ -94,7 +94,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
     const duration = Date.now() - startTime;
     
     // Record timing metrics for TMDB external IDs
-    await timingMetrics.recordTiming('tmdb_external_ids', duration, { 
+    timingMetrics.recordTiming('tmdb_external_ids', duration, { 
       type, 
       tmdbId,
       success: true,
@@ -103,7 +103,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
     });
     
     // Record provider-specific timing
-    await timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
+    timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
       operation: 'external_ids',
       tmdbId,
       success: true
@@ -117,7 +117,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('tmdb_external_ids', duration, { 
+    timingMetrics.recordTiming('tmdb_external_ids', duration, { 
       type, 
       tmdbId,
       success: false,
@@ -126,8 +126,8 @@ async function _fetchFromTmdb(tmdbId, type, config) {
       error: error.message
     });
     
-    // Record provider-specific timing for failures
-    await timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
+    // Record provider-specific timing for failures (fire-and-forget)
+    timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
       operation: 'external_ids',
       tmdbId,
       success: false,
@@ -150,16 +150,16 @@ async function _fetchFromTvdb(tvdbId, type, config) {
 
     const duration = Date.now() - startTime;
     
-    // Record timing metrics for TVDB
-    await timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
+    // Record timing metrics for TVDB (fire-and-forget)
+    timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
       type, 
       tvdbId,
       success: true,
       provider: 'tvdb'
     });
     
-    // Record provider-specific timing
-    await timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
+    // Record provider-specific timing (fire-and-forget)
+    timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
       operation: 'remote_ids',
       tvdbId,
       success: true
@@ -174,7 +174,7 @@ async function _fetchFromTvdb(tvdbId, type, config) {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
+    timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
       type, 
       tvdbId,
       success: false,
@@ -183,7 +183,7 @@ async function _fetchFromTvdb(tvdbId, type, config) {
     });
     
     // Record provider-specific timing for failures
-    await timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
+    timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
       operation: 'remote_ids',
       tvdbId,
       success: false,
@@ -204,14 +204,14 @@ async function _fetchFromTvmaze(tvmazeId, config) {
     const duration = Date.now() - startTime;
     
     // Record timing metrics for TVMaze
-    await timingMetrics.recordTiming('tvmaze_externals', duration, { 
+    timingMetrics.recordTiming('tvmaze_externals', duration, { 
       tvmazeId,
       success: true,
       provider: 'tvmaze'
     });
     
     // Record provider-specific timing
-    await timingMetrics.recordTiming('api_tvmaze_series', duration, {
+    timingMetrics.recordTiming('api_tvmaze_series', duration, {
       operation: 'externals',
       tvmazeId,
       success: true
@@ -224,7 +224,7 @@ async function _fetchFromTvmaze(tvmazeId, config) {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('tvmaze_externals', duration, { 
+    timingMetrics.recordTiming('tvmaze_externals', duration, { 
       tvmazeId,
       success: false,
       provider: 'tvmaze',
@@ -232,7 +232,7 @@ async function _fetchFromTvmaze(tvmazeId, config) {
     });
     
     // Record provider-specific timing for failures
-    await timingMetrics.recordTiming('api_tvmaze_series', duration, {
+    timingMetrics.recordTiming('api_tvmaze_series', duration, {
       operation: 'externals',
       tvmazeId,
       success: false,
@@ -284,7 +284,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     performanceStats.animeResolutions++;
     _handleAnimeMapping(allIds);
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('id_resolution_anime', duration, { 
+    timingMetrics.recordTiming('id_resolution_anime', duration, { 
       type, 
       stremioId,
       cached: false,
@@ -333,7 +333,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
           if (hasAllTargets) {
             performanceStats.wikiMappingEarlyReturns++;
             const duration = Date.now() - startTime;
-            await timingMetrics.recordTiming('id_resolution_wiki', duration, { 
+            timingMetrics.recordTiming('id_resolution_wiki', duration, { 
               type, 
               stremioId,
               cached: false,
@@ -372,7 +372,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
         if (hasAllTargets) {
           performanceStats.cacheEarlyReturns++;
           const duration = Date.now() - startTime;
-          await timingMetrics.recordTiming('id_resolution_cache', duration, { 
+          timingMetrics.recordTiming('id_resolution_cache', duration, { 
             type, 
             stremioId,
             cached: true,
@@ -385,7 +385,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
         // If no target providers specified, return cache hit immediately
         performanceStats.cacheEarlyReturns++;
         const duration = Date.now() - startTime;
-        await timingMetrics.recordTiming('id_resolution_cache', duration, { 
+        timingMetrics.recordTiming('id_resolution_cache', duration, { 
           type, 
           stremioId,
           cached: true,
@@ -633,7 +633,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
         
         // Record individual secondary API call timings
         for (const timing of secondaryTimings) {
-            await timingMetrics.recordTiming(`secondary_${timing.operation}`, timing.duration, {
+            timingMetrics.recordTiming(`secondary_${timing.operation}`, timing.duration, {
                 type: timing.type,
                 success: timing.success,
                 provider: timing.provider,
@@ -642,7 +642,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
             });
             
             // Also record provider-specific secondary timing
-            await timingMetrics.recordTiming(`secondary_${timing.provider}_${timing.type}`, timing.duration, {
+            timingMetrics.recordTiming(`secondary_${timing.provider}_${timing.type}`, timing.duration, {
                 operation: timing.operation,
                 success: timing.success,
                 sourceId: timing.sourceId,
@@ -686,7 +686,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   const totalDuration = Date.now() - startTime;
   
   // Record API lookup timing
-  await timingMetrics.recordTiming('api_lookup', apiDuration, { 
+  timingMetrics.recordTiming('api_lookup', apiDuration, { 
     type, 
     stremioId,
     cached: false,
@@ -694,7 +694,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   });
   
   // Record total resolution timing
-  await timingMetrics.recordTiming('id_resolution_total', totalDuration, { 
+  timingMetrics.recordTiming('id_resolution_total', totalDuration, { 
     type, 
     stremioId,
     cached: false,
