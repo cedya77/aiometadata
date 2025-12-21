@@ -923,54 +923,48 @@ class ConfigApi {
         throw new Error('userUUID is required');
       }
 
-      // Check memory cache first
-      const cached = configCache.get(userUUID);
-      if (cached) {
-      logger.debug(`⚡ Config cache HIT for user ${userUUID.substring(0, 8)}...`);
-        return cached;
-      }
+      // Use getOrLoad for stampede protection - only one DB load per expired key
+      return await configCache.getOrLoad(userUUID, async () => {
+        logger.debug(`❌ Config cache MISS for user ${userUUID.substring(0, 8)}..., loading from database`);
 
-      logger.debug(`❌ Config cache MISS for user ${userUUID.substring(0, 8)}..., loading from database`);
-
-      // Load from database
-      const config = await database.getUserConfig(userUUID);
-      if (!config) {
-        throw new Error(`No configuration found for userUUID: ${userUUID}`);
-      }
-      
-      // Migrate old property names to new ones
-      if (config.search?.engineRPDB && !config.search?.engineRatingPosters) {
-        config.search.engineRatingPosters = config.search.engineRPDB;
-        delete config.search.engineRPDB;
-      }
-      
-      // Migrate catalogs
-      if (config.catalogs && Array.isArray(config.catalogs)) {
-        config.catalogs = config.catalogs.map(catalog => {
-          if (catalog.enableRPDB !== undefined && catalog.enableRatingPosters === undefined) {
-            return {
-              ...catalog,
-              enableRatingPosters: catalog.enableRPDB,
-              enableRPDB: undefined
-            };
-          }
-          return catalog;
-        });
-      }
-
-      // Strip instance-specific fields that shouldn't be returned from saved config
-      const sanitizedConfig = {
-        ...config,
-        apiKeys: {
-          ...config.apiKeys,
-          customDescriptionBlurb: undefined
+        // Load from database
+        const config = await database.getUserConfig(userUUID);
+        if (!config) {
+          throw new Error(`No configuration found for userUUID: ${userUUID}`);
         }
-      };
+        
+        // Migrate old property names to new ones
+        if (config.search?.engineRPDB && !config.search?.engineRatingPosters) {
+          config.search.engineRatingPosters = config.search.engineRPDB;
+          delete config.search.engineRPDB;
+        }
+        
+        // Migrate catalogs
+        if (config.catalogs && Array.isArray(config.catalogs)) {
+          config.catalogs = config.catalogs.map(catalog => {
+            if (catalog.enableRPDB !== undefined && catalog.enableRatingPosters === undefined) {
+              return {
+                ...catalog,
+                enableRatingPosters: catalog.enableRPDB,
+                enableRPDB: undefined
+              };
+            }
+            return catalog;
+          });
+        }
 
-      // Store in memory cache
-      configCache.set(userUUID, sanitizedConfig);
+        // Strip instance-specific fields that shouldn't be returned from saved config
+        const sanitizedConfig = {
+          ...config,
+          apiKeys: {
+            ...config.apiKeys,
+            customDescriptionBlurb: undefined
+          }
+        };
 
-      return sanitizedConfig;
+        logger.debug(`⚡ Config loaded and cached for user ${userUUID.substring(0, 8)}...`);
+        return sanitizedConfig;
+      });
     } catch (error) {
       logger.error('loadConfigFromDatabase error:', error);
       throw error;

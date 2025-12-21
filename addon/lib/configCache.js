@@ -1,19 +1,27 @@
 // ============================================================================
-// IN-MEMORY CONFIG CACHE
+// IN-MEMORY CONFIG CACHE WITH STAMPEDE PROTECTION
 // ============================================================================
-// Simple in-memory cache with TTL, LRU eviction, and automatic cleanup
+// In-memory cache with TTL, LRU eviction, automatic cleanup, and promise
+// coalescing to prevent cache stampedes (multiple concurrent DB loads for
+// the same expired key).
 
 const consola = require('consola');
 const logger = consola.withTag('ConfigCache');
 
 class ConfigCache {
-  constructor(ttlMs = 60000, maxSize = 1000) { // 60 seconds default TTL, 1000 entries max
+  constructor(ttlMs = 300000, maxSize = 1000) { // 5 minutes default TTL, 1000 entries max
     this.cache = new Map();
+    this.pendingLoads = new Map(); // Track in-flight load promises
     this.ttlMs = ttlMs;
     this.maxSize = maxSize;
     this.cleanupInterval = null;
   }
 
+  /**
+   * Get a value from cache
+   * @param {string} key - Cache key
+   * @returns {any|null} - Cached value or null if not found/expired
+   */
   get(key) {
     const entry = this.cache.get(key);
     if (!entry) {
@@ -33,7 +41,15 @@ class ConfigCache {
     return entry.value;
   }
 
+  /**
+   * Set a value in cache
+   * @param {string} key - Cache key
+   * @param {any} value - Value to cache
+   */
   set(key, value) {
+    // Clear any pending load for this key since we now have the value
+    this.pendingLoads.delete(key);
+    
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else {
@@ -52,12 +68,71 @@ class ConfigCache {
     });
   }
 
+  /**
+   * Delete a key from cache
+   * @param {string} key - Cache key
+   */
   del(key) {
     this.cache.delete(key);
+    this.pendingLoads.delete(key);
   }
 
+  /**
+   * Clear all cache entries
+   */
   clear() {
     this.cache.clear();
+    this.pendingLoads.clear();
+  }
+
+  /**
+   * Get or load with stampede protection.
+   * If the key is not in cache, calls the loader function. If multiple
+   * concurrent requests try to load the same key, they all share the same
+   * promise (preventing multiple DB queries for the same config).
+   * 
+   * @param {string} key - Cache key
+   * @param {Function} loader - Async function to load the value if not cached
+   * @returns {Promise<any>} - The cached or loaded value
+   */
+  async getOrLoad(key, loader) {
+    // Check cache first
+    const cached = this.get(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    // Check if there's already a pending load for this key
+    if (this.pendingLoads.has(key)) {
+      logger.debug(`🔄 Config load already in progress for ${key.substring(0, 8)}..., waiting...`);
+      return this.pendingLoads.get(key);
+    }
+
+    // Create a new load promise
+    const loadPromise = (async () => {
+      try {
+        const value = await loader();
+        this.set(key, value);
+        return value;
+      } finally {
+        // Always clean up the pending load entry
+        this.pendingLoads.delete(key);
+      }
+    })();
+
+    // Store the promise so concurrent requests can share it
+    this.pendingLoads.set(key, loadPromise);
+
+    return loadPromise;
+  }
+
+  /**
+   * Check if a load is pending for a key
+   * @param {string} key - Cache key
+   * @returns {boolean}
+   */
+  isLoadPending(key) {
+    return this.pendingLoads.has(key);
   }
 
   // Periodic cleanup of expired entries
@@ -89,7 +164,8 @@ class ConfigCache {
   }
 }
 
-const configCache = new ConfigCache(60000, 1000);
+// Create singleton with 5 minute TTL (increased from 60s for better performance)
+const configCache = new ConfigCache(300000, 1000);
 configCache.startCleanup();
 
 module.exports = configCache;
