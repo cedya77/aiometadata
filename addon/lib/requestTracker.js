@@ -118,9 +118,9 @@ class RequestTracker {
           .catch(() => {});
       }
 
-      // Track active users only for user-facing requests
+      // Track active users only for user-facing requests (fire-and-forget)
       if (this.shouldTrackRequest(req)) {
-        await this.trackActiveUser(userIdentifier, req);
+        this.trackActiveUser(userIdentifier, req).catch(() => {});
       }
 
       // Set expiration for time-based keys (don't await)
@@ -1381,17 +1381,13 @@ class RequestTracker {
         count: 1,
       };
 
-      // Store in Redis with 7 day TTL
-      await redis.set(
-        `error_log:${errorId}`,
-        JSON.stringify(errorLog),
-        "EX",
-        86400 * 7,
-      );
-
-      // Also track in a sorted set by timestamp for easy retrieval
-      await redis.zadd("error_logs", Date.now(), errorId);
-      await redis.expire("error_logs", 86400 * 7);
+      // Store in Redis with 7 day TTL using pipeline (fire-and-forget)
+      redis.pipeline()
+        .set(`error_log:${errorId}`, JSON.stringify(errorLog), "EX", 86400 * 7)
+        .zadd("error_logs", Date.now(), errorId)
+        .expire("error_logs", 86400 * 7)
+        .exec()
+        .catch(() => {});
 
       logger.info(`[Request Tracker] Logged ${level}: ${message}`);
     } catch (error) {

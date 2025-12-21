@@ -1199,10 +1199,10 @@ const metaConfigString = stableStringify(metaConfig);
     return { meta: null };
   }
   
-  // Capture metadata for dashboard display
+  // Capture metadata for dashboard display (fire-and-forget)
   try {
     const requestTracker = require('./requestTracker');
-    await requestTracker.captureMetadataFromComponents(metaId, meta, meta.type);
+    requestTracker.captureMetadataFromComponents(metaId, meta, meta.type).catch(() => {});
   } catch (error) {
     cacheLogger.warn(`Failed to capture metadata for dashboard: ${error.message}`);
   }
@@ -1578,10 +1578,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     }
   }
   
-  // Capture metadata for dashboard display
+  // Capture metadata for dashboard display (fire-and-forget)
   try {
     const requestTracker = require('./requestTracker');
-    await requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type);
+    requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type).catch(() => {});
   } catch (error) {
     cacheLogger.warn(`Failed to capture reconstructed metadata for dashboard: ${error.message}`);
   }
