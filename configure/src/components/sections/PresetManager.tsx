@@ -461,7 +461,7 @@ export function PresetManager() {
       
       for (const user of selectedUsers) {
         try {
-          const response = await fetch(`https://api.mdblist.com/lists/user/${user.username}?apikey=${apiKey}&sort=${userListSort}`);
+          const response = await fetch(`/api/mdblist/lists/user?apikey=${apiKey}&username=${user.username}&sort=${userListSort}`);
           
           // Check for authentication/authorization errors
           if (response.status === 401 || response.status === 403) {
