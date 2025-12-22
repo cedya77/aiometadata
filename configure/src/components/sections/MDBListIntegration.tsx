@@ -127,7 +127,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsLoadingExternalLists(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/external/lists/user?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/external/lists/user?apikey=${tempKey}`);
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(`User not found or has no public external lists`);
@@ -284,7 +284,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsLoadingPopularLists(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user/${username}?apikey=${tempKey}&sort=${userListSort}`);
+      const response = await fetch(`/api/mdblist/lists/user?apikey=${tempKey}&username=${username}&sort=${userListSort}`);
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(`User "${username}" not found or has no public lists`);
@@ -358,7 +358,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsLoadingTopLists(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/top?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/lists/top?apikey=${tempKey}`);
       if (!response.ok) {
         throw new Error("Failed to fetch top lists");
       }
@@ -405,7 +405,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsLoadingCustomUser(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user/${customUsername.trim()}?apikey=${tempKey}&sort=${userListSort}`);
+      const response = await fetch(`/api/mdblist/lists/user?apikey=${tempKey}&username=${encodeURIComponent(customUsername.trim())}&sort=${userListSort}`);
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(`User "${customUsername}" not found or has no public lists`);
@@ -618,7 +618,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsChecking(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/lists/user?apikey=${tempKey}`);
       if (!response.ok) {
         throw new Error(`API request failed (Status: ${response.status})`);
       }
@@ -756,7 +756,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       const listName = path.replace('/lists/', '');
       if (!listName) throw new Error("Invalid MDBList URL format.");
 
-      const response = await fetch(`https://api.mdblist.com/lists/${listName}?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/lists/${encodeURIComponent(listName)}?apikey=${tempKey}`);
       if (!response.ok) throw new Error(`Error fetching list (Status: ${response.status})`);
 
       const [list] = await response.json();

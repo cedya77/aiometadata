@@ -1104,5 +1104,15 @@ async function markEpisodeAsWatched(
   }
 }
 
-export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched };
+/**
+ * Wrapper for proxy endpoints - makes a rate-limited GET request to MDBList
+ */
+async function makeRateLimitedMDBListRequest(url: string, context: string = 'MDBList Proxy'): Promise<any> {
+  return await makeRateLimitedRequest(
+    () => httpGet(url, { dispatcher: mdblistDispatcher }),
+    context
+  );
+}
+
+export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched, makeRateLimitedMDBListRequest };
 
