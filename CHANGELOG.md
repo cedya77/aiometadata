@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.16.0](https://github.com/cedya77/aiometadata/compare/v1.15.0...v1.16.0) (2025-12-22)
+
+
+### Features
+
+* proxy frontend MDBList calls through backend rate limiter ([bfd1278](https://github.com/cedya77/aiometadata/commit/bfd1278659202bfdeac2ac2b9f4d1e84e43fce97))
+* proxy frontend MDBList calls through backend rate limiter ([553cea2](https://github.com/cedya77/aiometadata/commit/553cea200995943ff2ed6c537bbb816f2193aecb))
+
 ## [1.15.0](https://github.com/cedya77/aiometadata/compare/v1.14.2...v1.15.0) (2025-12-21)
 
 
