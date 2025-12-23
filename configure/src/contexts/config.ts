@@ -3,26 +3,44 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
   manifestData?: any; // Store original manifest data for advanced features like skip support
-  // MDBList sorting options
-  sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default';
+  // MDBList, Trakt, and AniList sorting options
+  sort?: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default' | 'MEDIA_ID' | 'SCORE' | 'STATUS' | 'PROGRESS' | 'PROGRESS_VOLUMES' | 'REPEAT' | 'PRIORITY' | 'STARTED_ON' | 'FINISHED_ON' | 'ADDED_TIME' | 'UPDATED_TIME' | 'MEDIA_TITLE_ROMAJI' | 'MEDIA_TITLE_ENGLISH' | 'MEDIA_TITLE_NATIVE' | 'MEDIA_POPULARITY';
   order?: 'asc' | 'desc';
+  // Trakt sorting direction
+  sortDirection?: 'asc' | 'desc';
   // Custom cache TTL for MDBList catalogs (in seconds, defaults to 24 hours)
   cacheTTL?: number;
   // Display type override - if defined, used in manifest instead of original type (free-form string)
   displayType?: string;
   // Genre selection for MDBList catalogs - which genre set to use
   genreSelection?: 'standard' | 'anime' | 'all';
+  // MDBList external list score filters
+  filter_score_min?: number;
+  filter_score_max?: number;
   // Enable RPDB for this catalog (for poster enhancements)
-  enableRPDB?: boolean;
+  enableRatingPosters?: boolean;
   // Randomize items within each page on every load
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
+  // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings)
+  metadata?: {
+    itemCount?: number;
+    privacy?: string;
+    author?: string;
+    description?: string;
+    // AniList-specific metadata
+    username?: string;
+    listName?: string;
+    isCustomList?: boolean;
+    // Trakt Up Next metadata
+    useShowPosterForUpNext?: boolean;
+  };
 }
 
 export interface SearchConfig {
@@ -86,13 +104,16 @@ export interface AppConfig {
     rpdb: string;
     topPoster: string;
     mdblist: string;
+    traktTokenId?: string;
+    anilistTokenId?: string;
     customDescriptionBlurb?: string;
   };
   /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
   posterRatingProvider?: 'rpdb' | 'top';
   mdblistWatchTracking: boolean;
+  anilistWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
-  enableRPDBForLibrary?: boolean;
+  enableRatingPostersForLibrary?: boolean;
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;
@@ -100,6 +121,7 @@ export interface AppConfig {
   regexExclusionFilter?: string;
   searchEnabled: boolean;
   sessionId: string;
+  timezone?: string;
   catalogs: CatalogConfig[];
   deletedCatalogs?: string[];
   search: {
@@ -118,7 +140,7 @@ export interface AppConfig {
       [engine: string]: boolean;
     };
     // RPDB enable/disable per search engine
-    engineRPDB?: {
+    engineRatingPosters?: {
       [engine: string]: boolean;
     };
     // Custom names for search providers
@@ -133,5 +155,6 @@ export interface AppConfig {
     movie?: string;
     series?: string;
   };
+  showDisabledCatalogs?: boolean;
   catalogModeOnly?: boolean;
 }

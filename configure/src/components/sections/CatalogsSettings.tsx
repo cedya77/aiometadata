@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
+import { TraktIntegration } from './TraktIntegration';
+import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -34,6 +36,50 @@ import {
 } from '@/utils/toastHelpers';
 import { toast } from 'sonner';
 
+type TraktSortOption = 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
+
+const TRAKT_SORT_OPTIONS: { value: TraktSortOption; label: string; vip?: boolean }[] = [
+  { value: 'rank', label: 'Rank' },
+  { value: 'added', label: 'Added' },
+  { value: 'title', label: 'Title' },
+  { value: 'released', label: 'Released' },
+  { value: 'runtime', label: 'Runtime' },
+  { value: 'popularity', label: 'Popularity' },
+  { value: 'random', label: 'Random' },
+  { value: 'percentage', label: 'Percentage' },
+  { value: 'imdb_rating', label: 'IMDb Rating', vip: true },
+  { value: 'tmdb_rating', label: 'TMDb Rating', vip: true },
+  { value: 'rt_tomatometer', label: 'RT Tomatometer', vip: true },
+  { value: 'rt_audience', label: 'RT Audience', vip: true },
+  { value: 'metascore', label: 'Metascore', vip: true },
+  { value: 'votes', label: 'Votes', vip: true },
+  { value: 'imdb_votes', label: 'IMDb Votes', vip: true },
+  { value: 'tmdb_votes', label: 'TMDb Votes', vip: true },
+  { value: 'my_rating', label: 'My Rating' },
+  { value: 'watched', label: 'Watched' },
+  { value: 'collected', label: 'Collected' },
+];
+
+type AniListSortOption = 'MEDIA_ID' | 'SCORE' | 'STATUS' | 'PROGRESS' | 'PROGRESS_VOLUMES' | 'REPEAT' | 'PRIORITY' | 'STARTED_ON' | 'FINISHED_ON' | 'ADDED_TIME' | 'UPDATED_TIME' | 'MEDIA_TITLE_ROMAJI' | 'MEDIA_TITLE_ENGLISH' | 'MEDIA_TITLE_NATIVE' | 'MEDIA_POPULARITY';
+
+const ANILIST_SORT_OPTIONS: { value: AniListSortOption; label: string }[] = [
+  { value: 'ADDED_TIME', label: 'Added Time' },
+  { value: 'UPDATED_TIME', label: 'Updated Time' },
+  { value: 'SCORE', label: 'Score' },
+  { value: 'STATUS', label: 'Status' },
+  { value: 'PROGRESS', label: 'Progress' },
+  { value: 'MEDIA_POPULARITY', label: 'Popularity' },
+  { value: 'MEDIA_TITLE_ROMAJI', label: 'Title (Romaji)' },
+  { value: 'MEDIA_TITLE_ENGLISH', label: 'Title (English)' },
+  { value: 'MEDIA_TITLE_NATIVE', label: 'Title (Native)' },
+  { value: 'STARTED_ON', label: 'Started On' },
+  { value: 'FINISHED_ON', label: 'Finished On' },
+  { value: 'MEDIA_ID', label: 'Media ID' },
+  { value: 'PRIORITY', label: 'Priority' },
+  { value: 'REPEAT', label: 'Repeat' },
+  { value: 'PROGRESS_VOLUMES', label: 'Progress (Volumes)' },
+];
+
 const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
@@ -42,24 +88,28 @@ const sourceBadgeStyles = {
   mdblist: "bg-yellow-800/80 text-yellow-200 border-yellow-600/50 hover:bg-yellow-800",
   stremthru: "bg-purple-800/80 text-purple-200 border-purple-600/50 hover:bg-purple-800",
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
+  trakt: "bg-red-800/80 text-red-200 border-red-600/50 hover:bg-red-800",
+  anilist: "bg-cyan-800/80 text-cyan-200 border-cyan-600/50 hover:bg-cyan-800",
 };
 
 
 
 const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
-  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>(catalog.sort || 'default');
+  const [sort, setSort] = useState<'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default'>((catalog.sort as any) || 'default');
   const [order, setOrder] = useState<'asc' | 'desc'>(catalog.order || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [genreSelection, setGenreSelection] = useState<GenreSelection>(catalog.genreSelection || 'standard');
-  const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
+  const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
+  const [filterScoreMin, setFilterScoreMin] = useState<number | undefined>(catalog.filter_score_min);
+  const [filterScoreMax, setFilterScoreMax] = useState<number | undefined>(catalog.filter_score_max);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL, genreSelection, enableRPDB }
+          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters, filter_score_min: filterScoreMin, filter_score_max: filterScoreMax }
           : c
       )
     }));
@@ -122,6 +172,32 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </Select>
             </div>
           )}
+          {catalog.source === 'mdblist' && catalog.sourceUrl?.includes('/external/lists/') && (
+            <>
+              <div className="space-y-2">
+                <Label>Minimum Score</Label>
+                <Input
+                  type="number"
+                  value={filterScoreMin ?? ''}
+                  onChange={(e) => setFilterScoreMin(e.target.value ? parseInt(e.target.value) : undefined)}
+                  placeholder="0-100"
+                  min="0"
+                  max="100"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Maximum Score</Label>
+                <Input
+                  type="number"
+                  value={filterScoreMax ?? ''}
+                  onChange={(e) => setFilterScoreMax(e.target.value ? parseInt(e.target.value) : undefined)}
+                  placeholder="0-100"
+                  min="0"
+                  max="100"
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
             <Label>Cache TTL (seconds)</Label>
             <div className="flex items-center space-x-2">
@@ -163,15 +239,15 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="mdblist-rpdb-toggle">Enable RPDB</Label>
+                  <Label htmlFor="mdblist-rating-posters-toggle">Enable Rating Posters</Label>
                   <p className="text-xs text-muted-foreground">
-                    Use RatingPosterDB for enhanced posters
+                    Use RatingPosterDB or other providers for enhanced posters
                   </p>
                 </div>
                 <Switch
-                  id="mdblist-rpdb-toggle"
-                  checked={enableRPDB}
-                  onCheckedChange={setEnableRPDB}
+                  id="mdblist-rating-posters-toggle"
+                  checked={enableRatingPosters}
+                  onCheckedChange={setEnableRatingPosters}
                 />
               </div>
             </div>
@@ -189,10 +265,132 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
+const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  const [sort, setSort] = useState<TraktSortOption>(catalog.sort as TraktSortOption || 'added');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
+  
+  const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
+  const isUpNext = catalog.id === 'trakt.upnext';
+
+  const handleSave = () => {
+    setConfig(prev => {
+      const updatedCatalogs = prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { 
+              ...c, 
+              sort, 
+              sortDirection, 
+              cacheTTL: Math.max(cacheTTL, minCacheTTL),
+              ...(isUpNext && { metadata: { ...c.metadata, useShowPosterForUpNext: useShowPoster } })
+            }
+          : c
+      ) as CatalogConfig[];
+
+      return {
+        ...prev,
+        catalogs: updatedCatalogs,
+      };
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Trakt Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value) => setSort(value as TraktSortOption)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <TooltipProvider>
+                  {TRAKT_SORT_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="flex items-center gap-1">
+                        {option.label}
+                        {option.vip && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span role="img" aria-label="VIP" className="ml-1">💎</span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs whitespace-normal">
+                              VIP Only: Requires Trakt VIP subscription
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </TooltipProvider>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Sort Direction</Label>
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Cache TTL (seconds)</Label>
+            <Input
+              type="number"
+              min={5}
+              value={cacheTTL}
+              onChange={(e) => setCacheTTL(Number(e.target.value) || 0)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Minimum 5 minutes to avoid excessive API calls
+            </p>
+          </div>
+
+          {isUpNext && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Use Show Poster</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Display show poster instead of episode thumbnail
+                  </p>
+                </div>
+                <Switch
+                  checked={useShowPoster}
+                  onCheckedChange={setUseShowPoster}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
-  const [enableRPDB, setEnableRPDB] = useState<boolean>(catalog.enableRPDB !== false);
+  const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [pageSize, setPageSize] = useState<number>(catalog.pageSize || 100);
 
   const handleSave = () => {
@@ -200,7 +398,7 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL, enableRPDB, pageSize }
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 300), enableRatingPosters, pageSize }
           : c
       )
     }));
@@ -259,19 +457,106 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="custom-rpdb-toggle">Enable RPDB</Label>
+                  <Label htmlFor="custom-rating-posters-toggle">Enable Rating Posters</Label>
                   <p className="text-xs text-muted-foreground">
-                    Use RatingPosterDB for enhanced posters
+                    Use RatingPosterDB or other providers for enhanced posters
                   </p>
                 </div>
                 <Switch
-                  id="custom-rpdb-toggle"
-                  checked={enableRPDB}
-                  onCheckedChange={setEnableRPDB}
+                  id="custom-rating-posters-toggle"
+                  checked={enableRatingPosters}
+                  onCheckedChange={setEnableRatingPosters}
                 />
               </div>
             </div>
           )}
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  const [sort, setSort] = useState<AniListSortOption>(catalog.sort as AniListSortOption || 'ADDED_TIME');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'desc');
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, 300) }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>AniList Catalog Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value) => setSort(value as AniListSortOption)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ANILIST_SORT_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Sort Direction</Label>
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="anilist-cache-ttl">Cache TTL (seconds)</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                id="anilist-cache-ttl"
+                type="number"
+                value={cacheTTL}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
+                min="300"
+                max="604800"
+                step="3600"
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder={catalogTTL.toString()}
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
+            </p>
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground mb-4">
+          Note: Changes will take effect after you save your configuration in the Configuration Manager.
         </div>
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -337,11 +622,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     }));
   };
 
-  const handleToggleRPDB = () => {
+  const handleToggleRatingPosters = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRPDB: !c.enableRPDB } : c
+        (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRatingPosters: !c.enableRatingPosters } : c
       )
     }));
   };
@@ -494,10 +779,34 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
               <Pencil size={14} />
             </button>
           </div>
-          <div>
-            <p className={`text-sm transition-colors ${catalog.enabled ? 'text-muted-foreground' : 'text-muted-foreground/50'} capitalize`}>
+          <div className="flex items-center gap-2 mt-1">
+            {/* Show itemCount and author only on screens >= sm for trakt and mdblist */}
+            <div className="hidden sm:inline-flex gap-2">
+              {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.itemCount !== undefined && (
+                <Badge variant="outline" className="text-xs">
+                  {(catalog as any).metadata.itemCount} items
+                </Badge>
+              )}
+              {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.author && (
+                <Badge variant="outline" className="text-xs">
+                  @{(catalog as any).metadata.author}
+                </Badge>
+              )}
+            </div>
+            {/* Show only type badge on mobile */}
+            <Badge
+              variant="outline"
+              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} flex sm:hidden`}
+            >
               {catalog.displayType || catalog.type}
-            </p>
+            </Badge>
+            {/* Show type badge on desktop as well */}
+            <Badge
+              variant="outline"
+              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} hidden sm:flex`}
+            >
+              {catalog.displayType || catalog.type}
+            </Badge>
           </div>
         </div>
       </div>
@@ -533,21 +842,21 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
 
-          {config.apiKeys?.rpdb && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleToggleRPDB}
-                  disabled={!catalog.enabled}
-                  className="disabled:opacity-20 disabled:cursor-not-allowed"
-                >
-                  <Star className={`h-5 w-5 transition-colors ${catalog.enableRPDB !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent><p>{catalog.enableRPDB !== false && catalog.enabled ? 'RPDB Enabled' : 'RPDB Disabled'}</p></TooltipContent>
-            </Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleRatingPosters}
+                disabled={!catalog.enabled}
+                className="disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <Star className={`h-5 w-5 transition-colors ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{catalog.enableRatingPosters !== false && catalog.enabled ? 'Rating Posters Enabled' : 'Rating Posters Disabled'}</p></TooltipContent>
+          </Tooltip>
           )}
 
           <Tooltip>
@@ -590,14 +899,14 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {catalog.source === 'mdblist' && (
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Sort Settings">
                   <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Sort Settings</TooltipContent>
+              <TooltipContent>{catalog.source === 'trakt' ? 'Trakt Settings' : 'Sort Settings'}</TooltipContent>
             </Tooltip>
           )}
 
@@ -609,6 +918,17 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Cache Settings</TooltipContent>
+            </Tooltip>
+          )}
+
+          {catalog.source === 'anilist' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="AniList Settings">
+                  <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>AniList Settings</TooltipContent>
             </Tooltip>
           )}
 
@@ -668,7 +988,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -692,9 +1012,21 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         onClose={() => setShowSettings(false)}
       />
 
+      <TraktSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'trakt'}
+        onClose={() => setShowSettings(false)}
+      />
+
       <CustomManifestSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'custom'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <AniListSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'anilist'}
         onClose={() => setShowSettings(false)}
       />
 
@@ -846,6 +1178,8 @@ function CatalogsSettingsContent({
     selectedIds
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
+  const [isTraktOpen, setIsTraktOpen] = useState(false);
+  const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
@@ -858,8 +1192,8 @@ function CatalogsSettingsContent({
     | 'removeFromHome'
     | 'delete'
     | 'invert'
-    | 'enableRPDB'
-    | 'disableRPDB'
+    | 'enableRatingPosters'
+    | 'disableRatingPosters'
     | 'enableRandomize'
     | 'disableRandomize'
     | null
@@ -1017,7 +1351,7 @@ function CatalogsSettingsContent({
         showInHome: c.showOnHomeByDefault || false,
       }));
       const userCatalogSettings = new Map(
-        prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome, enableRPDB: c.enableRPDB }])
+        prev.catalogs.map(c => [`${c.id}-${c.type}`, { enabled: c.enabled, showInHome: c.showInHome, enableRatingPosters: c.enableRatingPosters }])
       );
       const userCatalogKeys = new Set(prev.catalogs.map(c => `${c.id}-${c.type}`));
       const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`));
@@ -1202,64 +1536,64 @@ function CatalogsSettingsContent({
     }
   };
 
-  const handleBulkEnableRPDB = async () => {
+  const handleBulkEnableRatingPosters = async () => {
     setIsLoading(true);
-    setLoadingAction('enableRPDB');
+    setLoadingAction('enableRatingPosters');
 
     try {
-      // Filter selected catalogs to only those with RPDB disabled
-      const catalogsToEnableRPDB = selectedCatalogs.filter(catalog => catalog.enableRPDB === false);
+      // Filter selected catalogs to only those with Rating posters disabled
+      const catalogsToEnableRatingPosters = selectedCatalogs.filter(catalog => catalog.enableRatingPosters === false);
 
       // Update config state to enable RPDB for selected catalogs
-      if (catalogsToEnableRPDB.length > 0) {
+      if (catalogsToEnableRatingPosters.length > 0) {
         setConfig(prev => ({
           ...prev,
           catalogs: prev.catalogs.map(c => {
             const catalogKey = `${c.id}-${c.type}`;
-            const shouldEnableRPDB = catalogsToEnableRPDB.some(
+            const shouldEnableRatingPosters = catalogsToEnableRatingPosters.some(
               cat => `${cat.id}-${cat.type}` === catalogKey
             );
-            return shouldEnableRPDB ? { ...c, enableRPDB: true } : c;
+            return shouldEnableRatingPosters ? { ...c, enableRatingPosters: true } : c;
           })
         }));
       }
 
       // Show toast notification
-      toast.success(`RPDB enabled for ${catalogsToEnableRPDB.length} catalog${catalogsToEnableRPDB.length === 1 ? '' : 's'}`);
+      toast.success(`Rating Posters enabled for ${catalogsToEnableRatingPosters.length} catalog${catalogsToEnableRatingPosters.length === 1 ? '' : 's'}`);
     } catch (error) {
-      showBulkActionError('enable RPDB', error as Error);
+      showBulkActionError('enable Rating Posters', error as Error);
     } finally {
       setIsLoading(false);
       setLoadingAction(null);
     }
   };
 
-  const handleBulkDisableRPDB = async () => {
+  const handleBulkDisableRatingPosters = async () => {
     setIsLoading(true);
-    setLoadingAction('disableRPDB');
+    setLoadingAction('disableRatingPosters');
 
     try {
-      // Filter selected catalogs to only those with RPDB enabled
-      const catalogsToDisableRPDB = selectedCatalogs.filter(catalog => catalog.enableRPDB !== false);
+      // Filter selected catalogs to only those with Rating posters enabled
+      const catalogsToDisableRatingPosters = selectedCatalogs.filter(catalog => catalog.enableRatingPosters !== false);
 
       // Update config state to disable RPDB for selected catalogs
-      if (catalogsToDisableRPDB.length > 0) {
+      if (catalogsToDisableRatingPosters.length > 0) {
         setConfig(prev => ({
           ...prev,
           catalogs: prev.catalogs.map(c => {
             const catalogKey = `${c.id}-${c.type}`;
-            const shouldDisableRPDB = catalogsToDisableRPDB.some(
+            const shouldDisableRatingPosters = catalogsToDisableRatingPosters.some(
               cat => `${cat.id}-${cat.type}` === catalogKey
             );
-            return shouldDisableRPDB ? { ...c, enableRPDB: false } : c;
+            return shouldDisableRatingPosters ? { ...c, enableRatingPosters: false } : c;
           })
         }));
       }
 
       // Show toast notification
-      toast.success(`RPDB disabled for ${catalogsToDisableRPDB.length} catalog${catalogsToDisableRPDB.length === 1 ? '' : 's'}`);
+      toast.success(`Rating Posters disabled for ${catalogsToDisableRatingPosters.length} catalog${catalogsToDisableRatingPosters.length === 1 ? '' : 's'}`);
     } catch (error) {
-      showBulkActionError('disable RPDB', error as Error);
+      showBulkActionError('disable Rating Posters', error as Error);
     } finally {
       setIsLoading(false);
       setLoadingAction(null);
@@ -1335,8 +1669,8 @@ function CatalogsSettingsContent({
     setLoadingAction('delete');
 
     try {
-      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom)
-      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom'];
+      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt, anilist)
+      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'anilist'];
       const catalogsToDelete = selectedCatalogs.filter(catalog =>
         removableSources.includes(catalog.source)
       );
@@ -1393,19 +1727,22 @@ function CatalogsSettingsContent({
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               <Home className="h-4 w-4 text-blue-500 dark:text-blue-400" /> On Home Board
             </div>
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <button
+              onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
+              className="flex items-center gap-1.5 whitespace-nowrap px-2 py-1 rounded-md border border-border hover:bg-accent transition-colors"
+            >
               {hideDisabledCatalogs ? (
-                <EyeOff className="h-4 w-4 text-orange-500 dark:text-orange-400" />
+                <>
+                  <Eye className="h-4 w-4" />
+                  Show All
+                </>
               ) : (
-                <Eye className="h-4 w-4 text-muted-foreground" />
+                <>
+                  <EyeOff className="h-4 w-4" />
+                  Hide Disabled
+                </>
               )}
-              <button
-                onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {hideDisabledCatalogs ? 'Hide Disabled' : 'Show All'}
-              </button>
-            </div>
+            </button>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1415,13 +1752,27 @@ function CatalogsSettingsContent({
           <Button onClick={() => setIsMdbListOpen(true)} size="sm">
             Manage MDBList Integration
           </Button>
-          {/* Hidden - redundant with Custom Manifest */}
-          {/* <Button onClick={() => setIsStremThruOpen(true)} size="sm">
-            Import StremThru Catalogs
-          </Button> */}
+          <Button onClick={() => setIsTraktOpen(true)} size="sm">
+            Manage Trakt Integration
+          </Button>
+          <Button onClick={() => setIsAniListOpen(true)} size="sm">
+            Manage AniList Integration
+          </Button>
           <Button onClick={() => setIsCustomManifestOpen(true)} size="sm">
             Import Custom Manifest
           </Button>
+          <MDBListIntegration
+            isOpen={isMdbListOpen}
+            onClose={() => setIsMdbListOpen(false)}
+          />
+          <TraktIntegration
+            isOpen={isTraktOpen}
+            onClose={() => setIsTraktOpen(false)}
+          />
+          <AniListIntegration
+            isOpen={isAniListOpen}
+            onClose={() => setIsAniListOpen(false)}
+          />
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1446,11 +1797,11 @@ function CatalogsSettingsContent({
           onDeleteSelected={handleBulkDelete}
           onInvertSelection={invertSelection}
           onClearSelection={deselectAll}
-          onEnableRPDB={handleBulkEnableRPDB}
-          onDisableRPDB={handleBulkDisableRPDB}
+          onEnableRatingPosters={handleBulkEnableRatingPosters}
+          onDisableRatingPosters={handleBulkDisableRatingPosters}
           onEnableRandomize={handleBulkEnableRandomize}
           onDisableRandomize={handleBulkDisableRandomize}
-          hasRPDBKey={!!config.apiKeys?.rpdb}
+          hasRatingPostersKey={!!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster}
           isLoading={isLoading}
           loadingAction={loadingAction}
         />
@@ -1501,6 +1852,10 @@ function CatalogsSettingsContent({
         isOpen={isMdbListOpen}
         onClose={() => setIsMdbListOpen(false)}
       />
+      <TraktIntegration
+        isOpen={isTraktOpen}
+        onClose={() => setIsTraktOpen(false)}
+      />
       <CustomManifestIntegration
         isOpen={isCustomManifestOpen}
         onClose={() => setIsCustomManifestOpen(false)}
@@ -1513,7 +1868,7 @@ function CatalogsSettingsContent({
         onConfirm={handleConfirmBulkDelete}
         title="Delete Selected Catalogs"
         description={(() => {
-          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom'];
+          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'anilist'];
           const catalogsToDelete = selectedCatalogs.filter(catalog =>
             removableSources.includes(catalog.source)
           );
@@ -1544,9 +1899,20 @@ function CatalogsSettingsContent({
 }
 
 // Main export component that wraps with SelectionProvider
+// ...existing code...
+
 export function CatalogsSettings() {
-  const { config, hasBuiltInTvdb } = useConfig();
-  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(false);
+  const { config, hasBuiltInTvdb, setConfig } = useConfig();
+  const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(config.showDisabledCatalogs ?? false);
+
+  useEffect(() => {
+    setHideDisabledCatalogs(config.showDisabledCatalogs ?? false);
+  }, [config.showDisabledCatalogs]);
+
+  const handleSetHideDisabled = (value: boolean) => {
+    setHideDisabledCatalogs(value);
+    setConfig(prev => ({ ...prev, showDisabledCatalogs: value }));
+  };
 
   // Check if TVDB key is available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
@@ -1571,7 +1937,7 @@ export function CatalogsSettings() {
     <SelectionProvider catalogs={filteredCatalogs}>
       <CatalogsSettingsContent
         hideDisabledCatalogs={hideDisabledCatalogs}
-        setHideDisabledCatalogs={setHideDisabledCatalogs}
+        setHideDisabledCatalogs={handleSetHideDisabled}
       />
     </SelectionProvider>
   );

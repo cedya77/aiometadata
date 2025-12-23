@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { httpGet, httpHead } = require('../utils/httpClient');
-const { redis } = require('./getCache'); 
+const redis = require('./redisClient');
 const kitsu = require('./kitsu');
 const { numberValueTypes } = require('framer-motion');
 const consola = require('consola');
@@ -32,6 +32,12 @@ let tvdbIdMap = new Map();
 const franchiseMapCache = new Map();
 const tmdbFranchiseInfoCache = new Map();
 const tmdbSeasonCache = new Map();
+
+// Auxiliary index maps for O(1) lookups (instead of O(N) Array.from().find())
+let kitsuIdMap = new Map();
+let anidbIdMap = new Map();
+let anilistIdMap = new Map();
+let imdbIdMap = new Map();
 
 async function getTmdbSeasonInfo(tmdbId) {
   if (tmdbSeasonCache.has(tmdbId)) {
@@ -71,10 +77,24 @@ function processAndIndexData(jsonData) {
   tvdbIdMap.clear();
   tvdbIdToAnimeListMap.clear();
   imdbIdToAnimeListMap.clear();
+  
+  // Clear auxiliary index maps
+  kitsuIdMap.clear();
+  anidbIdMap.clear();
+  anilistIdMap.clear();
+  imdbIdMap.clear();
+  
   for (const item of animeList) {
     if (item.mal_id) {
       animeIdMap.set(item.mal_id, item);
     }
+    
+    // Build auxiliary indices for O(1) lookups
+    if (item.kitsu_id) kitsuIdMap.set(item.kitsu_id, item);
+    if (item.anidb_id) anidbIdMap.set(item.anidb_id, item);
+    if (item.anilist_id) anilistIdMap.set(item.anilist_id, item);
+    if (item.imdb_id) imdbIdMap.set(item.imdb_id, item);
+    
     if (item.thetvdb_id) {
       const tvdbId = item.thetvdb_id;
       // If we haven't seen this TVDB ID before, create a new array for it
@@ -736,28 +756,28 @@ function getMappingByMalId(malId) {
 function getMappingByKitsuId(kitsuId) {
   if (!isInitialized) return null;
   const numericKitsuId = parseInt(kitsuId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.kitsu_id === numericKitsuId);
-  return mapping || null;
+  // O(1) lookup using auxiliary index map
+  return kitsuIdMap.get(numericKitsuId) || null;
 }
 
 function getMappingByAnidbId(anidbId) {
   if (!isInitialized) return null;
   const numericAnidbId = parseInt(anidbId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.anidb_id === numericAnidbId);
-  return mapping || null;
+  // O(1) lookup using auxiliary index map
+  return anidbIdMap.get(numericAnidbId) || null;
 }
 
 function getMappingByAnilistId(anilistId) {
   if (!isInitialized) return null;
   const numericAnilistId = parseInt(anilistId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.anilist_id === numericAnilistId);
-  return mapping || null;
+  // O(1) lookup using auxiliary index map
+  return anilistIdMap.get(numericAnilistId) || null;
 }
 
 function getMappingByImdbId(imdbId) {
   if (!isInitialized) return null;
-  const mapping = Array.from(animeIdMap.values()).find(item => item.imdb_id === imdbId);
-  return mapping || null;
+  // O(1) lookup using auxiliary index map (IMDB IDs are strings, no need to parse)
+  return imdbIdMap.get(imdbId) || null;
 }
 
 /**

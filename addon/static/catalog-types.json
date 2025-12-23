@@ -152,7 +152,7 @@
     },
     "pmp": {
       "nameKey": "pmp",
-      "watchProviderId": 531,
+      "watchProviderId": 2303,
       "country": "US",
       "extraSupported": ["genre", "skip"]
     },
@@ -291,6 +291,12 @@
     "sta": {
       "nameKey": "sta",
       "watchProviderId": 43,
+      "country": "US",
+      "extraSupported": ["genre", "skip"]
+    },
+    "crc": {
+      "nameKey": "crc",
+      "watchProviderId": 258,
       "country": "US",
       "extraSupported": ["genre", "skip"]
     }

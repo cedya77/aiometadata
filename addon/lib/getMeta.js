@@ -1,6 +1,5 @@
 require("dotenv").config();
 const Utils = require("../utils/parseProps");
-const { isRPDBEnabled } = require("../utils/parseProps");
 const moviedb = require("./getTmdb");
 const tvdb = require("./tvdb");
 const imdb = require("./imdb");
@@ -188,46 +187,9 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     }
 
     if(isTraktUpNextId) {
+      // Legacy support for external Trakt Up Next addon (tun_ prefix)
       if(meta.id && meta.id.startsWith('tt')) {
         meta.id = `tun_${meta.id}`;
-      }
-    }
-    
-    if(isTraktUpNextId && includeVideos) {
-      logger.debug(`[Meta] Fetching Trakt Up Next videos for ${meta.id}`);
-      // Fetch videos from Trakt Up Next addon
-      try {
-        // Find a custom catalog with tun_ prefix to get the manifest URL
-        const traktCatalog = config.catalogs?.find(c => 
-          (c.source === 'custom') && 
-          c.sourceUrl && 
-          c.manifestData?.idPrefixes?.includes('tun_')
-        );
-        logger.debug(`[Meta] Trakt Up Next catalog: ${JSON.stringify(traktCatalog)}`);
-        if (traktCatalog && traktCatalog.sourceUrl) {
-          // Extract base URL from catalog URL
-          // catalogUrl: https://up-next.../catalog/series/...json
-          // baseUrl: https://up-next.../
-          const baseUrl = traktCatalog.sourceUrl.split('/catalog/')[0];
-          const metaUrl = `${baseUrl}/meta/${type}/tun_${stremioId}.json`;
-          
-          logger.debug(`[Meta] Fetching Trakt Up Next videos from: ${metaUrl}`);
-          
-          const { request } = require("undici");
-          const response = await request(metaUrl, {
-            method: 'GET',
-            headers: { 'User-Agent': 'aiometadata-addon/1.0' },
-            bodyTimeout: 10000
-          });
-          
-          const traktMeta = await response.body.json();
-          if (traktMeta?.meta?.videos) {
-            meta.videos = traktMeta.meta.videos;
-            logger.debug(`[Meta] Retrieved ${meta.videos.length} videos from Trakt Up Next`);
-          }
-        }
-      } catch (error) {
-        logger.warn(`[Meta] Failed to fetch Trakt Up Next videos:`, error.message || error || 'Unknown error');
       }
     }
     return { meta };
@@ -931,9 +893,14 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
           );
           
           if (topPosterThumbnail) {
+            // Apply blur if enabled
+            const finalThumbnail = config.blurThumbs && topPosterThumbnail !== `${host}/missing_thumbnail.png`
+              ? `${host}/api/image/blur?url=${encodeURIComponent(topPosterThumbnail)}`
+              : topPosterThumbnail;
+            
             return {
               ...video,
-              thumbnail: topPosterThumbnail
+              thumbnail: finalThumbnail
             };
           }
         }
@@ -2836,7 +2803,6 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       kitsuData.attributes.subtype?.toLowerCase() === 'movie' ? 'movie' : 'series'
 
     let relationships = includeObject?.filter(item => item.type === 'mediaRelationships' && ['prequel', 'sequel'].some(role => item.attributes?.role.toLowerCase().includes(role)) && item.relationships?.destination?.data?.type === 'anime') || [];
-
 
     const imdbId = mapping?.imdbId
     const malId = mapping?.malId

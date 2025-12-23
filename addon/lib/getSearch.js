@@ -1,10 +1,7 @@
-//new current
-
 require("dotenv").config();
 const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
-const { isRPDBEnabled } = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { getImdbRating } = require("./getImdbRating");
 const { to3LetterCode } = require("./language-map"); 
@@ -277,7 +274,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           
           // Apply RPDB for series (non-movies)
           let finalPoster = poster || `${host}/missing_poster.png`;
-          if (config.apiKeys?.rpdb && isRPDBEnabled(config)) {
+          if (Utils.isPosterRatingEnabled(config)) {
             let proxyId = null;
             if (imdbId) {
               proxyId = imdbId;
@@ -705,7 +702,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     // Step 1: Search TMDB for the title
     const searchParams = {
       query: title,
-      language: language,
+      language: 'en-US', 
       include_adult: config.includeAdult || false,
       page: 1
     };
@@ -773,6 +770,24 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
           include_image_language: imageLanguages 
         }, config);
     
+    // --- Safety Filter: Keyword Blacklist ---
+    if (config.includeAdult === false) {
+      const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga'];
+      const keywordsObject = details.keywords;
+      
+      if (keywordsObject) {
+        // Keywords can be in `results` (TV) or `keywords` (Movie)
+        const keywords = keywordsObject.results || keywordsObject.keywords || [];
+        
+        for (const keyword of keywords) {
+          if (adultKeywordBlacklist.includes(keyword.name.toLowerCase())) {
+            logger.debug(`Item "${title}" filtered because of blacklist keyword "${keyword.name}"`);
+            return null;
+          }
+        }
+      }
+    }
+    
     // Resolve IDs
     let allIds = {
       tmdbId: details.id,
@@ -814,10 +829,12 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     
     // Assemble final meta
     parsed.id = stremioId;
-    parsed.poster = (config.apiKeys?.rpdb && isRPDBEnabled(config)) ? posterProxyUrl : validPosterUrl;
+    parsed.poster = Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl;
     parsed.imdbRating = imdbRating;
     parsed.logo = logoUrl;
     parsed.background = backgroundUrl;
+//    parsed.popularity = match.popularity;
+//    parsed.score = match.vote_average;
     parsed.certification = type === 'movie'
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
@@ -831,7 +848,9 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
         null
       );
     }
-    
+
+    parsed.app_extras = { releaseDates: details.release_dates };
+
     return parsed;
     
   } catch (error) {

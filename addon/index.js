@@ -7,6 +7,7 @@ const addon = express();
 //addon.set('trust proxy', true);
 
 const { getCatalog } = require("./lib/getCatalog");
+const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
 const { getMeta } = require("./lib/getMeta");
@@ -49,12 +50,23 @@ const { getTrending } = require("./lib/getTrending");
 const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
+const { TraktClient } = require('./lib/trakt');
 const axios = require('axios');
 const jikan = require('./lib/mal');
 const tvmaze = require('./lib/tvmaze');
 const packageJson = require('../package.json');
 const ADDON_VERSION = packageJson.version;
 const sharp = require('sharp');
+
+// Normalize redirect URIs to always include a scheme
+const normalizeRedirectUri = (uri) => {
+  if (!uri) return uri;
+  const trimmed = uri.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  return `https://${trimmed.replace(/^\/+/, '')}`;
+};
 
 function shuffleMetas(metas = []) {
   const shuffled = Array.isArray(metas) ? metas.slice() : [];
@@ -68,6 +80,17 @@ function shuffleMetas(metas = []) {
 // Parse JSON and URL-encoded bodies for API routes
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
+
+// Global CORS middleware: ensure every response includes CORS headers
+// This prevents browser blocks when a route returns early or on errors
+addon.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  // Reply to preflight immediately
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 // Add request tracking middleware
 addon.use(requestTracker.middleware());
@@ -271,6 +294,7 @@ const respond = function (req, res, data, opts) {
       rpdb: process.env.RPDB_API_KEY || "",
       mdblist: process.env.MDBLIST_API_KEY || "",
       gemini: process.env.GEMINI_API_KEY || "",
+      trakt: process.env.TRAKT_CLIENT_ID || "",
       customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
       addonVersion: ADDON_VERSION,
       hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
@@ -293,8 +317,773 @@ addon.put("/api/config/update/:userUUID", configApi.updateConfig.bind(configApi)
 addon.post("/api/config/migrate", configApi.migrateFromLocalStorage.bind(configApi));
 addon.get('/api/config/is-trusted/:uuid', configApi.isTrusted.bind(configApi));
 addon.post("/api/test-keys", configApi.testApiKeys);
+
+// --- Trakt OAuth Routes ---
+addon.get("/api/auth/trakt/authorize", async (req, res) => {
+  try {
+    const clientId = process.env.TRAKT_CLIENT_ID;
+    const clientSecret = process.env.TRAKT_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "Trakt OAuth not configured. Please set TRAKT_CLIENT_ID and TRAKT_CLIENT_SECRET environment variables." });
+    }
+    
+    const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
+    
+    // Get authorization URL (no state needed - token ID generated in callback)
+    const authUrl = traktClient.getAuthorizationUrl();
+    
+    res.redirect(authUrl);
+  } catch (error) {
+    consola.error("[Trakt OAuth] Authorization error:", error);
+    res.status(500).json({ error: "Failed to initiate Trakt authorization" });
+  }
+});
+
+addon.get("/api/auth/trakt/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ OAuth Error</h1>
+          <p>Invalid callback parameters - missing authorization code.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const clientId = process.env.TRAKT_CLIENT_ID;
+    const clientSecret = process.env.TRAKT_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Configuration Error</h1>
+          <p>Trakt OAuth is not configured on this server.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
+    
+    // Exchange code for tokens
+    const tokens = await traktClient.exchangeCodeForToken(code);
+    
+    // Get user info
+    const user = await traktClient.getMe(tokens.access_token);
+    
+    // Check if this Trakt user already has a token in the database
+    const existingTokens = await database.getOAuthTokensByProvider('trakt');
+    const existingToken = existingTokens.find(t => t.user_id === user.username);
+    
+    let tokenId;
+    let saved;
+    
+    if (existingToken) {
+      // Update existing token
+      tokenId = existingToken.id;
+      consola.info(`[Trakt OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
+      
+      saved = await database.updateOAuthToken(
+        tokenId,
+        tokens.access_token,
+        tokens.refresh_token,
+        tokens.expires_at
+      );
+    } else {
+      // Create new token
+      tokenId = crypto.randomUUID();
+      consola.info(`[Trakt OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
+      
+      saved = await database.saveOAuthToken(
+        tokenId,
+        'trakt',
+        user.username,
+        tokens.access_token,
+        tokens.refresh_token,
+        tokens.expires_at,
+        tokens.scope || ''
+      );
+    }
+    
+    if (!saved) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Database Error</h1>
+          <p>Failed to save OAuth token to database.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Update all user configs that reference Trakt tokens to use the new token ID
+    // This handles both new connections and reconnections
+    try {
+      const allUsers = await database.getAllUsers();
+      for (const dbUser of allUsers) {
+        const userConfig = JSON.parse(dbUser.config || '{}');
+        let configUpdated = false;
+        
+        // If this user has a Trakt token configured, check if we should update it
+        if (userConfig.apiKeys?.traktTokenId) {
+          const currentToken = await database.getOAuthToken(userConfig.apiKeys.traktTokenId);
+          
+          // Update if:
+          // 1. Current token is for the same Trakt user (reconnection case), OR
+          // 2. Current token no longer exists in database (cleanup case)
+          if (!currentToken || currentToken.user_id === user.username) {
+            userConfig.apiKeys.traktTokenId = tokenId;
+            configUpdated = true;
+            consola.info(`[Trakt OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
+          }
+        }
+        
+        // Save updated config if changed
+        if (configUpdated) {
+          await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
+          configCache.del(dbUser.id);
+        }
+      }
+    } catch (configError) {
+      consola.warn(`[Trakt OAuth] Warning: Could not auto-update user configs - ${configError.message}`);
+    }
+    
+    // Display success page with token ID
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Trakt OAuth Success</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #ed1c24; }
+          .token-box { background: #f9f9f9; border: 2px dashed #ed1c24; padding: 20px; margin: 20px 0; border-radius: 5px; word-break: break-all; }
+          .token { font-family: monospace; font-size: 14px; color: #333; }
+          button { background: #ed1c24; color: white; border: none; padding: 12px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px; }
+          button:hover { background: #c41a20; }
+          .instructions { text-align: left; margin-top: 30px; padding: 20px; background: #f0f8ff; border-left: 4px solid #007acc; }
+          .instructions ol { padding-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Trakt OAuth Successful</h1>
+          <p>Your Trakt account <strong>${user.username}</strong> has been authorized!</p>
+          
+          <div class="token-box">
+            <div class="token" id="tokenId">${tokenId}</div>
+          </div>
+          
+          <button onclick="copyToken()">📋 Copy Token ID</button>
+          
+          <div class="instructions">
+            <h3>📝 Next Steps:</h3>
+            <ol>
+              <li>Copy the Token ID above</li>
+              <li>Go to your addon configuration page</li>
+              <li>Find the <strong>Trakt Integration</strong> section</li>
+              <li>Paste this Token ID in the <strong>Trakt Token ID</strong> field</li>
+              <li>Save your configuration</li>
+            </ol>
+            <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your Trakt account through this addon.</p>
+          </div>
+        </div>
+        
+        <script>
+          function copyToken() {
+            const tokenText = document.getElementById('tokenId').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+              alert('✅ Token ID copied to clipboard!');
+            }).catch(err => {
+              alert('❌ Failed to copy. Please select and copy manually.');
+            });
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    consola.error("[Trakt OAuth] Callback error:", error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Trakt OAuth Error</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1>❌ OAuth Error</h1>
+        <p>An error occurred during authentication: ${error.message}</p>
+        <p><a href="${process.env.HOST_NAME}/configure">← Back to Configuration</a></p>
+      </body>
+      </html>
+    `);
+  }
+});
+
+// Generic OAuth token info endpoint
+const configCache = require('./lib/configCache');
+
+// Generic OAuth token info endpoint
+addon.post("/api/oauth/token/info", async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    if (!tokenId) {
+      return res.status(400).json({ error: "tokenId is required" });
+    }
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+    res.json({ provider: token.provider, username: token.user_id, expiresAt: token.expires_at });
+  } catch (error) {
+    consola.error("[OAuth] Token info fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch token info" });
+  }
+});
+
+addon.post("/api/auth/trakt/disconnect", async (req, res) => {
+  try {
+    const { userUUID } = req.body;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Delete OAuth token from database if it exists
+    if (config.apiKeys?.traktTokenId) {
+      await database.deleteOAuthToken(config.apiKeys.traktTokenId);
+      delete config.apiKeys.traktTokenId;
+    }
+    
+    // Remove Trakt user info
+    delete config.traktUser;
+    
+    // Remove Trakt catalogs
+    config.catalogs = (config.catalogs || []).filter(c => !c.id.startsWith('trakt.'));
+    
+    // Get user's password hash to save config
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Save updated config directly to database
+    await database.saveUserConfig(userUUID, user.password_hash, config);
+    
+    // Invalidate config cache
+    configCache.del(userUUID);
+    
+    res.json({ success: true });
+  } catch (error) {
+    consola.error("[Trakt] Disconnect error:", error);
+    res.status(500).json({ error: "Failed to disconnect Trakt" });
+  }
+});
+
+// Proxy endpoint for authenticated Trakt API calls
+addon.post("/api/trakt/proxy", async (req, res) => {
+  try {
+    const { tokenId, endpoint, method = 'GET' } = req.body;
+    
+    if (!tokenId || !endpoint) {
+      return res.status(400).json({ error: "tokenId and endpoint are required" });
+    }
+
+    // Get the access token from database
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+
+    // Make the authenticated request to Trakt API
+    const response = await fetch(`https://api.trakt.tv${endpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token.access_token}`,
+        'trakt-api-version': '2',
+        'trakt-api-key': process.env.TRAKT_CLIENT_ID || '',
+        'User-Agent': 'AIOMetadata/1.0',
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      consola.error(`[Trakt Proxy] API error: ${response.status} - ${errorText}`);
+      return res.status(response.status).json({ error: `Trakt API returned ${response.status}` });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error:", error);
+    res.status(500).json({ error: "Failed to proxy Trakt request" });
+  }
+});
+
 // Manual cache clearing endpoint (temporarily disabled due to binding issue)
 // addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
+
+// --- MDBList Proxy Endpoints ---
+// These proxy frontend MDBList calls through the backend rate limiter
+const { makeRateLimitedMDBListRequest } = require('./utils/mdbList');
+
+// Proxy: Get user's lists
+addon.get("/api/mdblist/lists/user", async (req, res) => {
+  try {
+    const { apikey, username, sort } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    let url = username 
+      ? `https://api.mdblist.com/lists/user/${username}?apikey=${apikey}`
+      : `https://api.mdblist.com/lists/user?apikey=${apikey}`;
+    
+    if (sort) {
+      url += `&sort=${sort}`;
+    }
+    
+    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get User Lists');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching user lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user lists" });
+  }
+});
+
+// Proxy: Get top lists
+addon.get("/api/mdblist/lists/top", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/lists/top?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get Top Lists');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching top lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch top lists" });
+  }
+});
+
+// Proxy: Get list details by ID/slug
+addon.get("/api/mdblist/lists/:listId", async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/lists/${listId}?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, `MDBList Proxy - Get List ${listId}`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching list details:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch list details" });
+  }
+});
+
+// Proxy: Get external lists for current user
+addon.get("/api/mdblist/external/lists/user", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/external/lists/user?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get External User Lists');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching external lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch external lists" });
+  }
+});
+
+// --- AniList OAuth Routes ---
+const anilistTracker = require('./lib/anilistTracker');
+
+// GET /anilist/auth - Initiate AniList OAuth flow
+addon.get("/anilist/auth", async (req, res) => {
+  try {
+    const clientId = process.env.ANILIST_CLIENT_ID;
+    const clientSecret = process.env.ANILIST_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
+    
+    consola.info(`[AniList OAuth] Starting auth flow with client_id=${clientId}, redirect_uri=${redirectUri}`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "AniList OAuth not configured. Please set ANILIST_CLIENT_ID and ANILIST_CLIENT_SECRET environment variables." });
+    }
+    
+    // Generate state parameter for CSRF protection
+    const state = crypto.randomBytes(32).toString('hex');
+    
+    // Store state in a short-lived way (we'll validate it in callback)
+    // For simplicity, we encode it in the URL - in production you might use a session store
+    const authUrl = anilistTracker.getAuthorizationUrl(redirectUri, state);
+    
+    res.redirect(authUrl);
+  } catch (error) {
+    consola.error("[AniList OAuth] Authorization error:", error);
+    res.status(500).json({ error: "Failed to initiate AniList authorization" });
+  }
+});
+
+// GET /anilist/callback - Handle AniList OAuth callback
+addon.get("/anilist/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ OAuth Error</h1>
+          <p>Invalid callback parameters - missing authorization code.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const clientId = process.env.ANILIST_CLIENT_ID;
+    const clientSecret = process.env.ANILIST_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Configuration Error</h1>
+          <p>AniList OAuth is not configured on this server.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Exchange code for tokens
+    const tokens = await anilistTracker.exchangeCodeForTokens(code, redirectUri);
+    
+    if (!tokens) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Token Exchange Failed</h1>
+          <p>Failed to exchange authorization code for tokens.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Get user info from AniList
+    const user = await anilistTracker.getAuthenticatedUser(tokens.access_token);
+    
+    if (!user) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ User Info Error</h1>
+          <p>Failed to retrieve AniList user information.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Generate UUID for this token
+    const tokenId = crypto.randomUUID();
+    
+    // Store tokens in database with provider='anilist'
+    const saved = await database.saveOAuthToken(
+      tokenId,
+      'anilist',
+      user.username,
+      tokens.access_token,
+      tokens.refresh_token,
+      tokens.expires_at,
+      '' // scope
+    );
+    
+    if (!saved) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>AniList OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Database Error</h1>
+          <p>Failed to save OAuth token to database.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Display success page with token ID
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>AniList OAuth Success</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #02a9ff; }
+          .token-box { background: #f9f9f9; border: 2px dashed #02a9ff; padding: 20px; margin: 20px 0; border-radius: 5px; word-break: break-all; }
+          .token { font-family: monospace; font-size: 14px; color: #333; }
+          button { background: #02a9ff; color: white; border: none; padding: 12px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px; }
+          button:hover { background: #0288d1; }
+          .instructions { text-align: left; margin-top: 30px; padding: 20px; background: #f0f8ff; border-left: 4px solid #02a9ff; }
+          .instructions ol { padding-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ AniList OAuth Successful</h1>
+          <p>Your AniList account <strong>${user.username}</strong> has been authorized!</p>
+          
+          <div class="token-box">
+            <div class="token" id="tokenId">${tokenId}</div>
+          </div>
+          
+          <button onclick="copyToken()">📋 Copy Token ID</button>
+          
+          <div class="instructions">
+            <h3>📝 Next Steps:</h3>
+            <ol>
+              <li>Copy the Token ID above</li>
+              <li>Go to your addon configuration page</li>
+              <li>Find the <strong>AniList Integration</strong> section</li>
+              <li>Paste this Token ID in the <strong>AniList Token ID</strong> field</li>
+              <li>Save your configuration</li>
+            </ol>
+            <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your AniList account through this addon.</p>
+          </div>
+        </div>
+        
+        <script>
+          function copyToken() {
+            const tokenText = document.getElementById('tokenId').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+              alert('✅ Token ID copied to clipboard!');
+            }).catch(err => {
+              alert('❌ Failed to copy. Please select and copy manually.');
+            });
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    consola.error("[AniList OAuth] Callback error:", error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>AniList OAuth Error</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1>❌ OAuth Error</h1>
+        <p>An error occurred during authentication: ${error.message}</p>
+        <p><a href="${process.env.HOST_NAME}/configure">← Back to Configuration</a></p>
+      </body>
+      </html>
+    `);
+  }
+});
+
+// POST /anilist/disconnect - Disconnect AniList account
+addon.post("/anilist/disconnect", async (req, res) => {
+  try {
+    const { userUUID } = req.body;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Delete OAuth token from database if it exists
+    // Token ID is stored in apiKeys.anilistTokenId by the frontend
+    if (config.apiKeys?.anilistTokenId) {
+      await database.deleteOAuthToken(config.apiKeys.anilistTokenId);
+      delete config.apiKeys.anilistTokenId;
+    }
+    
+    // Disable AniList watch tracking
+    delete config.anilistWatchTracking;
+    
+    // Get user's password hash to save config
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Save updated config directly to database
+    await database.saveUserConfig(userUUID, user.password_hash, config);
+    
+    // Invalidate config cache
+    configCache.del(userUUID);
+    
+    res.json({ success: true });
+  } catch (error) {
+    consola.error("[AniList] Disconnect error:", error);
+    res.status(500).json({ error: "Failed to disconnect AniList" });
+  }
+});
+
+// GET /anilist/status/:userUUID - Get AniList connection status
+addon.get("/anilist/status/:userUUID", async (req, res) => {
+  try {
+    const { userUUID } = req.params;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Check if AniList token exists
+    // Token ID is stored in apiKeys.anilistTokenId by the frontend
+    const anilistTokenId = config.apiKeys?.anilistTokenId;
+    if (!anilistTokenId) {
+      return res.json({ 
+        connected: false,
+        username: null
+      });
+    }
+    
+    // Get the OAuth token from database
+    const token = await database.getOAuthToken(anilistTokenId);
+    if (!token) {
+      return res.json({ 
+        connected: false,
+        username: null
+      });
+    }
+    
+    res.json({ 
+      connected: true,
+      username: token.user_id,
+      trackingEnabled: config.anilistWatchTracking !== false
+    });
+  } catch (error) {
+    consola.error("[AniList] Status check error:", error);
+    res.status(500).json({ error: "Failed to check AniList status" });
+  }
+});
+
+// POST /api/anilist/lists - Get user's AniList anime lists
+addon.post("/api/anilist/lists", async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    
+    if (!tokenId) {
+      return res.status(400).json({ error: "tokenId is required" });
+    }
+    
+    // Get the OAuth token from database to retrieve username
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+    
+    // Verify this is an AniList token
+    if (token.provider !== 'anilist') {
+      return res.status(400).json({ error: "Invalid token provider - expected AniList token" });
+    }
+    
+    const username = token.user_id;
+    if (!username) {
+      return res.status(400).json({ error: "Username not found in token" });
+    }
+    
+    consola.info(`[AniList Lists] Fetching lists for user: ${username}`);
+    
+    // Fetch user's lists from AniList API
+    const result = await anilist.fetchUserLists(username);
+    
+    res.json({
+      success: true,
+      username: username,
+      lists: result.lists
+    });
+  } catch (error) {
+    consola.error("[AniList Lists] Error fetching lists:", error);
+    res.status(500).json({ error: "Failed to fetch AniList lists: " + error.message });
+  }
+});
+
+// GET /api/anilist/lists/by-username/:username - Get available AniList lists by username (public)
+addon.get("/api/anilist/lists/by-username/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    if (!username || typeof username !== 'string' || username.trim().length === 0) {
+      return res.status(400).json({ error: "Username is required and must be a non-empty string" });
+    }
+    
+    const trimmedUsername = username.trim();
+    consola.info(`[AniList Lists] Fetching available lists for username: ${trimmedUsername}`);
+    
+    // Fetch user's lists from AniList API (public endpoint, doesn't require auth)
+    const result = await anilist.fetchUserLists(trimmedUsername);
+    
+    res.json({
+      success: true,
+      username: trimmedUsername,
+      lists: result.lists || []
+    });
+  } catch (error) {
+    consola.error("[AniList Lists] Error fetching lists by username:", error);
+    // Don't expose internal error details to avoid leaking sensitive info
+    res.status(500).json({ 
+      error: "Failed to fetch AniList lists for this username. Please verify the username is correct and the user's lists are public." 
+    });
+  }
+});
 
 // --- ID Mapping Correction Routes (Admin only) ---
 addon.get("/api/corrections", (req, res) => {
@@ -582,17 +1371,19 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   );
   const actualType = catalogConfig ? catalogConfig.type : type;
   
-  const hasRpdbKey =
-    (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0);
+  // Check if user has either RPDB or Top Poster API key
+  const hasRatingPosterKey =
+    (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0) ||
+    (config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
 
-  if (catalogConfig && !hasRpdbKey) {
-    catalogConfig.enableRPDB = false;
+  if (catalogConfig && !hasRatingPosterKey) {
+    catalogConfig.enableRatingPosters = false;
   }
 
-  //consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
-  //consola.debug(`[CATALOG ROUTE] enableRPDB value:`, catalogConfig?.enableRPDB, `(type: ${typeof catalogConfig?.enableRPDB})`);
+  consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
+  //consola.debug(`[CATALOG ROUTE] enableRatingPosters value:`, catalogConfig?.enableRatingPosters, `(type: ${typeof catalogConfig?.enableRatingPosters})`);
   
-  // Add current catalog config to global config for per-catalog settings (like enableRPDB)
+  // Add current catalog config to global config for per-catalog settings (like enableRatingPosters)
   config._currentCatalogConfig = catalogConfig;
   
   const language = config.language || DEFAULT_LANGUAGE;
@@ -613,20 +1404,56 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   const cacheWrapper = cacheWrapCatalog;
 
   extraArgs = extraArgs || {};
+  // Ensure sort options are included in cache key
+  // Trakt uses: sort, sortDirection
+  if (id.startsWith('trakt.')) {
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+  }
+  // MDBList uses: sort, order
+  else if (id.startsWith('mdblist.')) {
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
+    // Add score filters for MDBList external lists
+    if (catalogConfig?.source === 'mdblist' && catalogConfig?.sourceUrl && catalogConfig?.sourceUrl.includes('/external/lists/')) {
+      if (typeof catalogConfig.filter_score_min === 'number') {
+        extraArgs.filter_score_min = catalogConfig.filter_score_min;
+      }
+      if (typeof catalogConfig.filter_score_max === 'number') {
+        extraArgs.filter_score_max = catalogConfig.filter_score_max;
+      }
+    }
+  }
+  // AniList uses: sort, sortDirection
+  else if (id.startsWith('anilist.')) {
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+  }
+  // Trakt up next needs poster preference in cache key
+  if (id === 'trakt.upnext') {
+      // Always send a boolean, never undefined
+      extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
+        ? catalogConfig.metadata.useShowPosterForUpNext
+        : false;
+  }
+  // Trakt calendar needs today's date in cache key
+  if (id === 'trakt.calendar') {
+    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+    const getTodayInTimezone = (tz) => {
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(new Date());
+    };
+    extraArgs.date = getTodayInTimezone(getUserTimezone());
+  }
   if (id === 'tvmaze.schedule') {
-    // Format date in user's local timezone
-    // Uses server's local timezone (better than UTC for most users)
-    // If a timezone header is provided, we could use that, but Stremio doesn't send it
-    const getLocalDateString = () => {
-      const now = new Date();
-      // Get local date components (not UTC) - uses server's timezone
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+    // Format date in user's configured timezone (or server timezone as fallback)
+    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+    const getTodayInTimezone = (tz) => {
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(new Date());
     };
     
-    const dateString = extraArgs.date || getLocalDateString();
+    const dateString = extraArgs.date || getTodayInTimezone(getUserTimezone());
     extraArgs.date = dateString;
     extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
   }
@@ -672,7 +1499,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
         const pageSize = id.includes(`mal.`) ? 25 : 
-                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
+                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || id.startsWith('trakt.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
@@ -954,9 +1781,28 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   };
   
   try {
-    const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, fullConfig, userUUID, true);
-    }, undefined, cacheOptions, type, true);
+    // Determine useShowPoster for Trakt Up Next
+    let useShowPoster = false;
+    if (type === 'series' && stremioId && stremioId.startsWith('upnext_')) {
+      console.debug('[Meta Route] Detected Trakt Up Next meta request with ID:', stremioId);  
+      const catalogConfig = fullConfig.catalogs?.find(c => c.id === 'trakt.upnext');
+      if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
+        consola.debug('[Meta Route] Using catalog-specific useShowPosterForUpNext setting:', catalogConfig.metadata.useShowPosterForUpNext);
+        useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
+      }
+    }
+    const result = await cacheWrapMetaSmart(
+      userUUID,
+      stremioId,
+      async () => {
+        return await getMeta(type, language, stremioId, fullConfig, userUUID, true);
+      },
+      undefined,
+      cacheOptions,
+      type,
+      true,
+      useShowPoster
+    );
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
@@ -997,11 +1843,11 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     }*/
     
     // Extract actual poster URL from RPDB proxy URL for meta route
-    // Only remove RPDB proxy if enableRPDBForLibrary is disabled
+    // Only remove RPDB proxy if enableRatingPostersForLibrary is disabled
     // Meta routes (continue watching/library) should keep RPDB if the option is enabled
     if (result.meta.poster && result.meta.poster.includes('/poster/') && result.meta.poster.includes('fallback=')) {
       // Check if RPDB should be kept for library items (continue watching/library)
-      const keepRPDBForLibrary = config.enableRPDBForLibrary !== false; // Default to true
+      const keepRPDBForLibrary = config.enableRatingPostersForLibrary !== false; // Default to true
       
       if (!keepRPDBForLibrary) {
         // User has disabled RPDB for library items, extract fallback URL
@@ -1070,11 +1916,16 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
     
-    // Check if watch tracking is enabled and MDBList API key exists
-    const hasApiKey = config?.apiKeys?.mdblist;
-    const trackingEnabled = !!config?.mdblistWatchTracking;
+    // Check if any watch tracking is enabled (MDBList or AniList)
+    const hasMdblistKey = config?.apiKeys?.mdblist;
+    const mdblistEnabled = !!config?.mdblistWatchTracking;
+    const hasAnilistToken = config?.apiKeys?.anilistTokenId;
+    const anilistEnabled = !!config?.anilistWatchTracking;
     
-    if (hasApiKey && trackingEnabled) {
+    const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
+    const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
+    
+    if (shouldTrackMdblist || shouldTrackAnilist) {
       // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
@@ -1084,8 +1935,8 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       // Return empty subtitle response immediately
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
-      // Watch tracking disabled or no API key - return empty subtitles
-      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - hasApiKey: ${!!hasApiKey}, trackingEnabled: ${trackingEnabled}`);
+      // Watch tracking disabled or no credentials - return empty subtitles
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {
@@ -1439,7 +2290,7 @@ addon.post('/api/admin/prune-id-mappings', async (req, res) => {
 addon.get('/api/admin/users', async (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
+       return res.status(401).json({ error: 'Unauthorized' });
   }
   
   try {
@@ -1803,7 +2654,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
   }
 });
 
-addon.get('aapi/cache/invalidation-status/:userUUID', async (req, res) => {
+addon.get('api/cache/invalidation-status/:userUUID', async (req, res) => {
   try {
     const { userUUID } = req.params;
     

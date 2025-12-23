@@ -2,6 +2,123 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.16.0](https://github.com/cedya77/aiometadata/compare/v1.15.0...v1.16.0) (2025-12-22)
+
+
+### Features
+
+* proxy frontend MDBList calls through backend rate limiter ([bfd1278](https://github.com/cedya77/aiometadata/commit/bfd1278659202bfdeac2ac2b9f4d1e84e43fce97))
+* proxy frontend MDBList calls through backend rate limiter ([553cea2](https://github.com/cedya77/aiometadata/commit/553cea200995943ff2ed6c537bbb816f2193aecb))
+
+## [1.15.0](https://github.com/cedya77/aiometadata/compare/v1.14.2...v1.15.0) (2025-12-21)
+
+
+### Features
+
+* **manifest:** allow logo override via ADDON_LOGO_URL env var ([790bf62](https://github.com/cedya77/aiometadata/commit/790bf62d38ff455377cd512de502f0cbf9bd7297))
+
+
+### Bug Fixes
+
+* **cors:** add global CORS middleware to ensure all responses include CORS headers ([f7e6880](https://github.com/cedya77/aiometadata/commit/f7e68807e14fdaa568c227366e5f3f1484929d45))
+* Hide Episode Spoilers now works with TOP API ([88dea98](https://github.com/cedya77/aiometadata/commit/88dea98abe4d2bbae878fb526b693c1491a27338))
+* prevent unbounded growth on cacheHealth metrics ([a914290](https://github.com/cedya77/aiometadata/commit/a91429064cff243817b3d61001eb7f65bee681ca))
+* treat 500 as retryable ([dcb1376](https://github.com/cedya77/aiometadata/commit/dcb13760dccb0573b6e92e78d8a0049ca18ef2b9))
+* treat 500 as retryable ([7a5fbb6](https://github.com/cedya77/aiometadata/commit/7a5fbb69b1c68773f353d2cac71997f91e74618a))
+* **up next:** invalidate meta cache via ep number ([5765133](https://github.com/cedya77/aiometadata/commit/57651331dec2f8843680719ad5bdd0634b45c4f0))
+* use retry-after header for trakt ([9908807](https://github.com/cedya77/aiometadata/commit/9908807aaee8b47506866877165ed719c9f4f596))
+* use retry-after header for trakt ([0065151](https://github.com/cedya77/aiometadata/commit/006515173a1fda4598019f16c957d651b41a9d77))
+
+
+### Performance Improvements
+
+* Optimize anime ID lookups from O(N) to O(1) ([c306a86](https://github.com/cedya77/aiometadata/commit/c306a86d7da47d2d75330c0e1a7807d53c81cd20))
+* use redis pipeline for requestTracker.js ([3dd4e8f](https://github.com/cedya77/aiometadata/commit/3dd4e8fe60729dbc4a7cbb28365d85971eea5e5e))
+
+## [1.14.2](https://github.com/cedya77/aiometadata/compare/v1.14.1...v1.14.2) (2025-12-18)
+
+
+### Bug Fixes
+
+* add missing func for oAuth token updates ([e4dc777](https://github.com/cedya77/aiometadata/commit/e4dc777034e2f22e42e5f99b506c1065a682102f))
+* address load trending lists error ([1963bae](https://github.com/cedya77/aiometadata/commit/1963bae6bb35aed1af186f0b199ad26f272c28ef))
+* **meta:** strip upnext/unwatched/tun prefixes before rebuilding RPDB proxy URL ([7dd2692](https://github.com/cedya77/aiometadata/commit/7dd26927a571b3a8c13edc019d7c015d42ead54c))
+* **streaming catalogs - paramount:** update provider id ([f11467f](https://github.com/cedya77/aiometadata/commit/f11467fb710653d7e379d23cd686e6b13054aa76))
+* update anilist label ([83e94e5](https://github.com/cedya77/aiometadata/commit/83e94e51f300d4861f7bd13c9d5dbffefc504d02))
+* update anilist label ([f6342c2](https://github.com/cedya77/aiometadata/commit/f6342c2bed6d471cc42bc6657ee291beab03a422))
+
+## [1.14.1](https://github.com/cedya77/aiometadata/compare/v1.14.0...v1.14.1) (2025-12-16)
+
+
+### Bug Fixes
+
+* **mdblist:** missing validation condition ([812d6be](https://github.com/cedya77/aiometadata/commit/812d6be080746e3dd5358edf67b8d530aa2f8cc9))
+* **trakt:** convert token expiry to string for postgres users ([812d6be](https://github.com/cedya77/aiometadata/commit/812d6be080746e3dd5358edf67b8d530aa2f8cc9))
+
+## [1.14.0](https://github.com/cedya77/aiometadata/compare/v1.13.2...v1.14.0) (2025-12-16)
+
+
+### Features
+
+* add Criterion Channel streaming provider ([0cd3794](https://github.com/cedya77/aiometadata/commit/0cd3794bb5a940cd7a2f6ee51d0bf815e5b658ea))
+* add Criterion Channel streaming provider ([7f16c68](https://github.com/cedya77/aiometadata/commit/7f16c6801530665a1e844865fae8b3a2913f23ab))
+* **manifest:** add unwatched_ ID prefix ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **mdblist:** add support for external lists ([cca3bd2](https://github.com/cedya77/aiometadata/commit/cca3bd2b4b50fcafc7089ec2c20a2ad94d4cc08a))
+* prevent marking watch status repeatedly ([0888bdb](https://github.com/cedya77/aiometadata/commit/0888bdb163221693f828c440ecda2ee22301d0ee))
+* prevent marking watch status repeatedly ([56755fe](https://github.com/cedya77/aiometadata/commit/56755fe9f1aa1639a69bcf6453d2031bcc08dd5f))
+* **settings:** add timezone configuration ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* start implementing AL tracking and catalogs ([14f0b4c](https://github.com/cedya77/aiometadata/commit/14f0b4cd6d9a1651bb854aac976c8dc4d882fbb1))
+* **trakt up next:** add show poster toggle, cache key support, and Kitsu pagination fix ([a66ce63](https://github.com/cedya77/aiometadata/commit/a66ce63bc847f8fdcb1a4b93e366fd3a0bfdbbdc))
+* **trakt:** add Airing Soon calendar catalog ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **trakt:** add My Recently Aired and Airing Soon catalogs with timezone support ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **trakt:** add My Recently Aired catalog ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+* **trakt:** enhance custom lists with split option ([a14d8e3](https://github.com/cedya77/aiometadata/commit/a14d8e3fbabcde7cd1426465355da805d8e8d206))
+
+
+### Bug Fixes
+
+* finish implementing automatic Trakt token refresh ([3e7c3e9](https://github.com/cedya77/aiometadata/commit/3e7c3e9b25ef1bc423eee234f9fa80c802fb8a66))
+* **mdblist:** type guard response.headers and extend rateLimitState for new rate limit headers ([19ba774](https://github.com/cedya77/aiometadata/commit/19ba774754bcf5ec4550e8a181568b677a014d1e))
+* **streaming catalogs:** resolve issue with some providers showing few items ([47bc793](https://github.com/cedya77/aiometadata/commit/47bc793f9f0924a784409332a3b8c460866f55f8))
+* **trakt:** reduce retries for individual show fetches in Up Next ([d1037bd](https://github.com/cedya77/aiometadata/commit/d1037bd62d8a39e9f9d62742a2817d393b8fd764))
+
+## [1.13.2](https://github.com/cedya77/aiometadata/compare/v1.13.1...v1.13.2) (2025-12-10)
+
+
+### Bug Fixes
+
+* **trakt:** add deselect all buttons for multi-select lists ([02c250d](https://github.com/cedya77/aiometadata/commit/02c250d6a530ae5370315d28eb10524aa7529156))
+* **trakt:** fix sort direction parameter not being sent to API requests ([02c250d](https://github.com/cedya77/aiometadata/commit/02c250d6a530ae5370315d28eb10524aa7529156))
+* **trakt:** prevent trending/popular list stacking in UI ([02c250d](https://github.com/cedya77/aiometadata/commit/02c250d6a530ae5370315d28eb10524aa7529156))
+* **trakt:** support official lists with null user slug ([f681857](https://github.com/cedya77/aiometadata/commit/f681857b6d4ca242b221eff90b4b5d536d1369be))
+
+## [1.13.1](https://github.com/cedya77/aiometadata/compare/v1.13.0...v1.13.1) (2025-12-10)
+
+
+### Bug Fixes
+
+* **trakt ui:** remove trakt secret for integration disabling condition ([b7a7b5d](https://github.com/cedya77/aiometadata/commit/b7a7b5d7f6cfe4fa64af1d42d804637b057ad2b1))
+
+## [1.13.0](https://github.com/cedya77/aiometadata/compare/v1.12.0...v1.13.0) (2025-12-10)
+
+
+### Features
+
+* add  metadata (itemCount, author) for all MDBList catalog imports and display ([9634c4e](https://github.com/cedya77/aiometadata/commit/9634c4e7dbee2c200fd6995b2369092df5da1aef))
+* add MDBList top list import ([50abe0e](https://github.com/cedya77/aiometadata/commit/50abe0e921fa794ea24265464c168e87a4bb75da))
+* Complete Trakt integration with all catalog types and optimizations ([e9eca39](https://github.com/cedya77/aiometadata/commit/e9eca39c7cdcb963f2374454fb9b7c32504dbab3))
+* **ui:** enable Enter key submission in Header login form ([887f727](https://github.com/cedya77/aiometadata/commit/887f7273328eddfc44202f36a31b627ffa8a450c))
+* **ui:** enable Enter key submission in Header login form ([8b03b0b](https://github.com/cedya77/aiometadata/commit/8b03b0bbf35fabe963dee992e40af0a4eea77538))
+
+
+### Bug Fixes
+
+* **anime art:** use the same art for catalog and meta even when use imdb id for MAL catalogs/search ([0375ccf](https://github.com/cedya77/aiometadata/commit/0375ccfb1a795167936574c74c749a1dbde9c809))
+* **config:** safe SCAN-based deletion for meta cache clearing to avoid callstack/KEYS issues ([86efcce](https://github.com/cedya77/aiometadata/commit/86efcce6fd39070ddbc5ac2cad1b5ae928d99d28))
+* gemini validation ([fd7a09f](https://github.com/cedya77/aiometadata/commit/fd7a09f83695d6fa652ac574f1b482665e5fbf16))
+* gemini validation ([9c28306](https://github.com/cedya77/aiometadata/commit/9c2830662ea3f5ffc6a83d7624c72d0ad14f1b32))
+* **top rating:** use the correct endpoint for api key testing ([6ef0c70](https://github.com/cedya77/aiometadata/commit/6ef0c7099a226b30de0369b6e29844297f3b07bf))
+
 ## [1.12.0](https://github.com/cedya77/aiometadata/compare/v1.11.0...v1.12.0) (2025-11-29)
 
 

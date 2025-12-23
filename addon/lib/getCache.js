@@ -27,6 +27,7 @@ const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
 const MDBLIST_GENRES_TTL = 30 * 24 * 60 * 60; // Cache MDBList genres for 30 days
 const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60; // Cache StremThru genres for 7 days
+const ANILIST_CATALOG_TTL = parseInt(process.env.ANILIST_CATALOG_TTL || 1 * 60 * 60, 10); // Default 1 hour for AniList catalogs
 
 // Store current request context for catalog/search operations
 // This allows reconstruction to access the correct RPDB state
@@ -73,8 +74,12 @@ const SELF_HEALING_CONFIG = {
   corruptedEntryThreshold: parseInt(process.env.CACHE_CORRUPTED_THRESHOLD || '10', 10)
 };
 
+const MAX_TRACKED_KEYS = parseInt(process.env.MAX_TRACKED_KEYS || '20000', 10);
+const KEYS_TO_KEEP_AFTER_PRUNE = parseInt(process.env.KEYS_TO_KEEP_AFTER_PRUNE || '5000', 10);
+
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
+const { cache } = require('sharp');
 
 /**
  * Safely delete Redis keys matching a pattern using SCAN and pipelined DELs to avoid memory/stack spikes
@@ -342,9 +347,26 @@ function logCacheHealth() {
   const topKeys = Array.from(cacheHealth.keyAccessCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-  
+
   if (topKeys.length > 0) {
     cacheHealthLogger.info('Most accessed keys:', topKeys.map(([key, count]) => `${key}:${count}`).join(', '));
+  }
+
+  // Prune keyAccessCounts Map if threshold exceeded to prevent memory leak
+  if (cacheHealth.keyAccessCounts.size > MAX_TRACKED_KEYS) {
+    const oldSize = cacheHealth.keyAccessCounts.size;
+
+    // Sort by access count (frequency) and keep top N keys
+    const sorted = Array.from(cacheHealth.keyAccessCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, KEYS_TO_KEEP_AFTER_PRUNE);
+
+    cacheHealth.keyAccessCounts.clear();
+    for (const [key, count] of sorted) {
+      cacheHealth.keyAccessCounts.set(key, count);
+    }
+
+    cacheHealthLogger.info(`Pruned keyAccessCounts Map: ${oldSize} -> ${KEYS_TO_KEEP_AFTER_PRUNE} keys`);
   }
 }
 
@@ -747,13 +769,14 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isMALCatalog = idOnly.startsWith('mal.');
   const isMALAnimeProvider = config.providers?.anime === 'mal';
   const isMDBListCatalog = idOnly.startsWith('mdblist.');
+  const isTraktCatalog = idOnly.startsWith('trakt.');
   const isStreamingCatalog = idOnly.startsWith('streaming.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
-  // Find the catalog config to get per-catalog settings (like enableRPDB)
+  // Find the catalog config to get per-catalog settings (like enableRatingPosters)
   // Match by both id AND type to handle duplicate IDs (e.g., tvdb.trending for movie vs series)
   const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly && c.type === catalogType);
-  const enableRPDB = catalogFromConfig?.enableRPDB !== false; // Default to true if not explicitly disabled
+  const enableRatingPosters = catalogFromConfig?.enableRatingPosters !== false; // Default to true if not explicitly disabled
   
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
@@ -778,7 +801,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     
     // Poster rating provider and API key (affects poster generation)
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: enableRPDB ? (config.posterRatingProvider === 'top' 
+    posterRatingApiKey: enableRatingPosters ? (config.posterRatingProvider === 'top' 
       ? (config.apiKeys?.topPoster || '') 
       : (config.apiKeys?.rpdb || '')) : ''
   };
@@ -787,6 +810,13 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   if (isMDBListCatalog) {
     catalogConfig.apiKeys = {
       mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
+    };
+  }
+  
+  // Only include Trakt token ID for Trakt catalogs (user-specific)
+  if (isTraktCatalog) {
+    catalogConfig.apiKeys = {
+      traktTokenId: config.apiKeys?.traktTokenId || ''
     };
   }
   
@@ -832,6 +862,15 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     }
   }
   
+  // Use custom cache TTL for Trakt catalogs if specified
+  if (idOnly.startsWith('trakt.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.info(`Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL} seconds (${Math.floor(cacheTTL / 3600)}h ${Math.floor((cacheTTL % 3600) / 60)}m)`);
+    }
+  }
+  
   // Handle custom TTL for custom manifest catalogs
   if (idOnly.startsWith('custom.')) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
@@ -857,7 +896,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
     key = `catalog:${today}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
+  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
     key = `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
   } else {
     key = `catalog:${catalogConfigString}:${catalogKey}`;
@@ -865,7 +904,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
-  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s key:${key}`);
+  cacheLogger.info(`Catalog key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s key:${key}`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state
@@ -899,8 +938,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     return { metas: [] };
   }
   
-  // Get RPDB enablement state for this search engine
-  const rpdbEnabled = searchEngine ? (config.search?.engineRPDB?.[searchEngine] !== false) : true;
+  // Get rating posters enablement state for this search engine
+  const ratingPostersEnabled = searchEngine ? (config.search?.engineRatingPosters?.[searchEngine] !== false) : true;
   
   // Search-specific config (only relevant parameters for search results)
   const searchConfig = {
@@ -925,7 +964,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
     // Poster rating provider and API key (affects poster generation)
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: rpdbEnabled ? (config.posterRatingProvider === 'top' 
+    posterRatingApiKey: ratingPostersEnabled ? (config.posterRatingProvider === 'top' 
       ? (config.apiKeys?.topPoster || '') 
       : (config.apiKeys?.rpdb || '')) : ''
   };
@@ -1035,7 +1074,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  * Granular component caching for meta objects
  * Caches individual components separately to prevent one bad component from affecting everything
  */
-async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
+async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, useShowPoster = false) {
    // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
@@ -1122,6 +1161,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
     };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
+     metaConfig.useShowPosterForUpNext = useShowPoster;
     }
     if (isAnimeWithImdbId) {
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1170,22 +1210,23 @@ const metaConfigString = stableStringify(metaConfig);
    const componentPromises = [];
    
    const basicMeta = {
-     id: metaId,
-     name: meta.name,
-     type: meta.type,
-     description: meta.description,
-     imdb_id: meta.imdb_id,
-     slug: meta.slug,
-     genres: meta.genres,
-     director: meta.director,
-     writer: meta.writer,
-     year: meta.year,
-     releaseInfo: meta.releaseInfo,
-     released: meta.released,
-     runtime: meta.runtime,
-     country: meta.country,
-     imdbRating: meta.imdbRating,
-     behaviorHints: meta.behaviorHints
+      id: metaId,
+      name: meta.name,
+      type: meta.type,
+      description: meta.description,
+      imdb_id: meta.imdb_id,
+      slug: meta.slug,
+      genres: meta.genres,
+      director: meta.director,
+      writer: meta.writer,
+      year: meta.year,
+      releaseInfo: meta.releaseInfo,
+      released: meta.released,
+      runtime: meta.runtime,
+      country: meta.country,
+      imdbRating: meta.imdbRating,
+      behaviorHints: meta.behaviorHints,
+      posterShape: meta.posterShape || 'poster',
    };
    
    componentPromises.push(
@@ -1295,7 +1336,7 @@ const metaConfigString = stableStringify(metaConfig);
  * This allows for partial cache hits and graceful degradation
  * @param {boolean} includeVideos - Whether videos component is required for this request
  */
-async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
+async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
    // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided: ${metaId}`);
@@ -1379,6 +1420,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
+   metaConfig.useShowPosterForUpNext = useShowPoster;
  }
  if (isAnimeWithImdbId) {
   metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
@@ -1452,10 +1494,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    const reconstructedMeta = {};
    
    // Start with basic meta
-   const basicComponent = availableComponents.find(c => c.componentName === 'basic');
-   if (basicComponent) {
-     Object.assign(reconstructedMeta, basicComponent.data);
-   }
+  const basicComponent = availableComponents.find(c => c.componentName === 'basic');
+  if (basicComponent) {
+    Object.assign(reconstructedMeta, basicComponent.data);
+    reconstructedMeta.posterShape = basicComponent.data.posterShape;
+  }
    
    // Add other components
    availableComponents.forEach(({ componentName, data }) => {
@@ -1464,16 +1507,21 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      if (componentName === 'poster') {
        // Apply poster rating logic during reconstruction if enabled
        // Use module-level context to get accurate enablement state
-       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRPDB !== false;
+       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRatingPosters !== false;
        const host = process.env.HOST_NAME.startsWith('http')
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
        
-       if (posterRatingEnabled && reconstructedMeta.id) {
+        if (posterRatingEnabled && reconstructedMeta.id) {
          // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
          const Utils = require("../utils/parseProps");
-         reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, reconstructedMeta.id, data.poster, language, config);
+         // Strip known prefixes used for special metas (upnext_, unwatched_, tun_)
+         let canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_)/, '');
+         // Also strip any trailing episode identifier we append to upnext cache keys
+         // Examples: 'tmdb:123_trakt456' or 'tvdb:789_S1E02' -> keep only the canonical media id
+         canonicalProxyId = canonicalProxyId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');
+         reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
        } else {
          reconstructedMeta.poster = data.poster;
        }
@@ -1549,11 +1597,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  * This provides granular caching with graceful degradation
  * @param {boolean} includeVideos - Whether videos are required for this request (default: true)
  */
-async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true) {
-  cacheLogger.info(`Smart meta caching for ${metaId} (type:${type}, videos:${includeVideos})`);
+async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
+  cacheLogger.info(`Smart meta caching for ${metaId} (type:${type}, videos:${includeVideos}, showPoster:${useShowPoster})`);
    
    // First, try to reconstruct from cached components BEFORE calling method
-   const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos);
+   const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos, useShowPoster);
   
   if (reconstructedMeta && reconstructedMeta.meta) {
     cacheLogger.info(`Component reconstruction successful for ${metaId}`);
@@ -1584,7 +1632,7 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
     idToCache = metaId;
   }
   
-  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type);
+  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type, useShowPoster);
 }
 
 /**
@@ -1830,6 +1878,13 @@ function cacheWrapMDBListGenres(genreType, method) {
   return cacheWrapGlobal(`mdblist-${genreType}`, method, MDBLIST_GENRES_TTL);
 }
 
+function cacheWrapTraktGenres(genreType, method) {
+  // genreType should be 'movies' or 'shows'
+  cacheLogger.debug(`Caching Trakt genres for type: ${genreType}`);
+  // Use same TTL as MDBList genres (30 days) since Trakt genres are also stable
+  return cacheWrapGlobal(`trakt-genres-${genreType}`, method, MDBLIST_GENRES_TTL);
+}
+
 function cacheWrapStremThruGenres(catalogUrl, method) {
   // Use a hash or simplified key from the catalog URL to avoid super long keys
   const urlKey = Buffer.from(catalogUrl).toString('base64').substring(0, 50);
@@ -2004,6 +2059,38 @@ async function clearCache(key) {
   }
 }
 
+/**
+ * Generate cache key for AniList catalog data
+ * Includes username, list name, and page for unique identification
+ * @param {string} username - AniList username
+ * @param {string} listName - Name of the AniList list
+ * @param {number} page - Page number for pagination
+ * @returns {string} Cache key
+ */
+function generateAniListCatalogCacheKey(username, listName, page) {
+  return `anilist-catalog:${username}:${listName}:page${page}`;
+}
+
+/**
+ * Cache wrapper for AniList catalog data
+ * Supports configurable TTL from catalog config
+ * @param {string} username - AniList username
+ * @param {string} listName - Name of the AniList list
+ * @param {number} page - Page number for pagination
+ * @param {function} method - Async function to fetch data if not cached
+ * @param {number} customTTL - Optional custom TTL in seconds (defaults to ANILIST_CATALOG_TTL)
+ * @param {object} options - Additional cache options
+ * @returns {Promise<any>} Cached or freshly fetched data
+ */
+async function cacheWrapAniListCatalog(username, listName, page, method, customTTL = null, options = {}) {
+  const key = generateAniListCatalogCacheKey(username, listName, page);
+  const ttl = customTTL !== null ? customTTL : ANILIST_CATALOG_TTL;
+  
+  cacheLogger.info(`[AniList] Cache key: ${key}, TTL: ${ttl}s (${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m)`);
+  
+  return cacheWrap(key, method, ttl, options);
+}
+
 module.exports = {
   redis,
   cacheWrap,
@@ -2014,6 +2101,7 @@ module.exports = {
   cacheWrapSearch,
   cacheWrapJikanApi,
   cacheWrapMDBListGenres,
+  cacheWrapTraktGenres,
   cacheWrapStremThruGenres,
   cacheWrapStaticCatalog,
   cacheWrapMeta,
@@ -2028,5 +2116,7 @@ module.exports = {
   logCacheHealth,
   cacheWrapTvdbApi,
   cacheWrapTvmazeApi,
+  cacheWrapAniListCatalog,
+  generateAniListCatalogCacheKey,
   stableStringify
 };

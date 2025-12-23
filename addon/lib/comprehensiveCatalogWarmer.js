@@ -384,18 +384,20 @@ class ComprehensiveCatalogWarmer {
       throw new Error('UUID is required for catalog warming');
     }
     
-    // Set current catalog config for per-catalog settings (like enableRPDB)
+    // Set current catalog config for per-catalog settings (like enableRatingPosters)
     config._currentCatalogConfig = catalog;
     
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
-             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('custom.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
+             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.')|| catalogId.startsWith('custom.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
              parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
     const shouldIncludeGenreNone = (
       catalog.showInHome === false && (
         catalogId.startsWith('mdblist.') ||
+        catalogId.startsWith('trakt.') ||
+        catalogId.startsWith('anilist.') ||
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
@@ -492,6 +494,34 @@ class ComprehensiveCatalogWarmer {
         const extraArgs = {};
         if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
         if (genreValue) extraArgs.genre = genreValue;
+        const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+        if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.')) {
+          if (catalogConfig) {
+            if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
+            if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+          }
+        }
+        else if (catalogId.startsWith('mdblist.')) {
+          if (catalogConfig) {
+            if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
+            if (catalogConfig.order) extraArgs.order = catalogConfig.order;
+            // Add score filters for MDBList external lists
+            if (catalogConfig.source === 'mdblist' && catalogConfig.sourceUrl && catalogConfig.sourceUrl.includes('/external/lists/')) {
+              if (typeof catalogConfig.filter_score_min === 'number') {
+                extraArgs.filter_score_min = catalogConfig.filter_score_min;
+              }
+              if (typeof catalogConfig.filter_score_max === 'number') {
+                extraArgs.filter_score_max = catalogConfig.filter_score_max;
+              }
+            }
+          }
+        }
+        if (catalogId === 'trakt.upnext') {
+          extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
+              ? catalogConfig.metadata.useShowPosterForUpNext
+              : false;
+        }
+        
           const derivedPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
           const actualType = catalog.type;
           const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;
@@ -603,8 +633,8 @@ class ComprehensiveCatalogWarmer {
             continue;
           }
 
-          // Get enabled catalogs from user config
-          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled);
+          // Get enabled catalogs from user config, excluding Up Next (dynamic catalog)
+          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext');
           
           // Initialize stats for this UUID
           this.stats.uuidStats[uuid] = {

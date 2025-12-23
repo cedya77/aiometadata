@@ -34,8 +34,240 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [popularLists, setPopularLists] = useState<any[]>([]);
   const [selectedPopularLists, setSelectedPopularLists] = useState<Set<string>>(new Set());
   const [isLoadingPopularLists, setIsLoadingPopularLists] = useState(false);
+  const [topLists, setTopLists] = useState<any[]>([]);
+  const [selectedTopLists, setSelectedTopLists] = useState<Set<string>>(new Set());
+  const [isLoadingTopLists, setIsLoadingTopLists] = useState(false);
+
+  const [externalLists, setExternalLists] = useState<any[]>([]);
+  const [selectedExternalLists, setSelectedExternalLists] = useState<Set<string>>(new Set());
+  const [isLoadingExternalLists, setIsLoadingExternalLists] = useState(false);
+  const [externalUnifiedSettings, setExternalUnifiedSettings] = useState<Record<string, boolean>>({});
+
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
+  // Function to import selected top lists
+  const importSelectedTopLists = useCallback(async () => {
+    if (selectedTopLists.size === 0) {
+      toast.error("Please select at least one top list to import.");
+      return;
+    }
+
+    try {
+      setConfig(prev => {
+        let newCatalogs = [...prev.catalogs];
+        let newListsAddedCount = 0;
+
+        selectedTopLists.forEach(listId => {
+          const list = topLists.find(l => l.id === listId);
+          if (!list) return;
+
+          const type = list.mediatype === "movie" ? "movie" : "series";
+          const catalogId = `mdblist.${list.id}`;
+
+          // Check if catalog already exists
+          if (!newCatalogs.some(c => c.id === catalogId)) {
+            // Apply display type overrides if configured
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) {
+                displayType = prev.displayTypeOverrides.movie;
+              } else if (type === 'series' && prev.displayTypeOverrides.series) {
+                displayType = prev.displayTypeOverrides.series;
+              }
+            }
+
+            const newCatalog: CatalogConfig = {
+              id: catalogId,
+              type,
+              name: list.name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist',
+              sort: defaultSort,
+              order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
+              enableRatingPosters: true,
+              ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
+            };
+            newCatalogs.push(newCatalog);
+            newListsAddedCount++;
+          }
+        });
+
+        return {
+          ...prev,
+          catalogs: newCatalogs,
+        };
+      });
+
+      toast.success("Top lists imported successfully", {
+        description: `${selectedTopLists.size} top list(s) added to your catalogs`
+      });
+
+      // Reset selection
+      setSelectedTopLists(new Set());
+    } catch (error) {
+      console.error("Error importing top lists:", error);
+      toast.error("Failed to import top lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+    }
+  }, [selectedTopLists, topLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
+
+  const fetchExternalUserLists = useCallback(async () => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key first.");
+      return;
+    }
+
+    setIsLoadingExternalLists(true);
+    try {
+      const response = await fetch(`/api/mdblist/external/lists/user?apikey=${tempKey}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`User not found or has no public external lists`);
+        }
+        throw new Error(`Failed to fetch lists (Status: ${response.status})`);
+      }
+
+      const userLists = await response.json();
+      if (!Array.isArray(userLists)) {
+        throw new Error("Invalid response format from MDBList API");
+      }
+
+      if (userLists.length === 0) {
+        toast.info("No external lists found", {
+          description: `You have no public external lists available`
+        });
+        setExternalLists([]);
+      } else {
+        const initialUnifiedSettings: Record<string, boolean> = {};
+        userLists.forEach((list: any) => {
+          initialUnifiedSettings[list.id] = true; // Default all to unified
+        });
+        setExternalUnifiedSettings(initialUnifiedSettings);        
+        setExternalLists(userLists);
+        setSelectedExternalLists(new Set());
+        toast.success("External lists loaded", {
+          description: `Found ${userLists.length} list(s)`
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching external user lists:", error);
+      toast.error("Failed to load external user lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+      setExternalLists([]);
+    } finally {
+      setIsLoadingExternalLists(false);
+    }
+  }, [tempKey]);
+
+  const handleExternalListSelection = (listId: string, checked: boolean) => {
+    const newSelection = new Set(selectedExternalLists);
+    if (checked) {
+      newSelection.add(listId);
+    } else {
+      newSelection.delete(listId);
+    }
+    setSelectedExternalLists(newSelection);
+  };
+
+  const importSelectedExternalLists = useCallback(async () => {
+    if (selectedExternalLists.size === 0) {
+      toast.error("Please select at least one external list to import.");
+      return;
+    }
+
+    try {
+      setConfig(prev => {
+        let newCatalogs = [...prev.catalogs];
+        selectedExternalLists.forEach(listId => {
+          const list = externalLists.find(l => l.id === listId);
+          if (!list) return;
+
+          let listType: 'movie' | 'series' | 'all';
+          if (list.mediatype) {
+            listType = list.mediatype === "movie" ? "movie" : "series";
+          } else {
+            const movieCount = list.items - (list.items_show || 0);
+            const showCount = list.items_show || 0;
+            if (movieCount > 0 && showCount === 0) {
+              listType = 'movie';
+            } else if (showCount > 0 && movieCount === 0) {
+              listType = 'series';
+            } else {
+              listType = 'all';
+            }
+          }
+          
+          const createCatalog = (type: 'movie' | 'series' | 'all', id: string, name: string, sourceUrl: string) => {
+            if (newCatalogs.some(c => c.id === id)) return;
+            
+            let displayType = undefined;
+            if (prev.displayTypeOverrides) {
+              if (type === 'movie' && prev.displayTypeOverrides.movie) displayType = prev.displayTypeOverrides.movie;
+              else if (type === 'series' && prev.displayTypeOverrides.series) displayType = prev.displayTypeOverrides.series;
+            }
+
+            const newCatalog: CatalogConfig = {
+              id,
+              type,
+              name,
+              enabled: true,
+              showInHome: true,
+              source: 'mdblist',
+              sourceUrl,
+              sort: defaultSort,
+              order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
+              enableRatingPosters: true,
+              ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
+            };
+            newCatalogs.push(newCatalog);
+          };
+
+          if (listType === 'all' && externalUnifiedSettings[list.id] === false) {
+            // Create separate movie and series catalogs
+            const movieCatalogId = `mdblist.${list.id}.movies`;
+            const seriesCatalogId = `mdblist.${list.id}.series`;
+            const sourceUrl = `https://api.mdblist.com/external/lists/${list.id}/items`;
+              
+            createCatalog('movie', movieCatalogId, `${list.name} (Movies)`, sourceUrl);
+            createCatalog('series', seriesCatalogId, `${list.name} (Series)`, sourceUrl);
+          } else {
+            // Create a single catalog (either unified 'all' or specific 'movie'/'series')
+            const catalogId = `mdblist.${list.id}`;
+            const sourceUrl = `https://api.mdblist.com/external/lists/${list.id}/items`;
+            createCatalog(listType, catalogId, list.name, sourceUrl);
+          }
+        });
+
+        return { ...prev, catalogs: newCatalogs };
+      });
+
+      toast.success("External lists imported successfully", {
+        description: `${selectedExternalLists.size} list(s) processed and added to your catalogs`
+      });
+      setSelectedExternalLists(new Set());
+      
+    } catch (error) {
+      console.error("Error importing external user lists:", error);
+      toast.error("Failed to import external user lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+    }
+  }, [selectedExternalLists, externalLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection, externalUnifiedSettings]);
 
   const popularUsers = [
     { username: 'tvgeniekodi', name: 'Mr. Professor', description: 'Curated TV and movie lists' },
@@ -52,7 +284,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsLoadingPopularLists(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user/${username}?apikey=${tempKey}&sort=${userListSort}`);
+      const response = await fetch(`/api/mdblist/lists/user?apikey=${tempKey}&username=${username}&sort=${userListSort}`);
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(`User "${username}" not found or has no public lists`);
@@ -118,6 +350,48 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     setSelectedPopularLists(newSelection);
   };
 
+  const handleImportTopLists = useCallback(async () => {
+    if (!tempKey) {
+      toast.error("Please enter your MDBList API key first.");
+      return;
+    }
+
+    setIsLoadingTopLists(true);
+    try {
+      const response = await fetch(`/api/mdblist/lists/top?apikey=${tempKey}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch top lists");
+      }
+
+      const topLists = await response.json();
+      if (!Array.isArray(topLists)) {
+        throw new Error("Unexpected response format");
+      }
+
+      const listsWithUser = topLists.map((list: any) => ({
+        ...list,
+        user: list.user_name || "Unknown",
+        username: list.user_name || "unknown",
+        userDescription: `Top list by ${list.user_name || "Unknown"}`
+      }));
+
+      setTopLists(listsWithUser);
+      setSelectedTopLists(new Set());
+
+      toast.success("Top lists loaded", {
+        description: `Found ${listsWithUser.length} top list(s)`
+      });
+    } catch (error) {
+      console.error("Error fetching top lists:", error);
+      toast.error("Failed to load top lists", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
+      setPopularLists([]);
+    } finally {
+      setIsLoadingTopLists(false);
+    }
+  }, [tempKey]);
+
   const fetchCustomUserLists = useCallback(async () => {
     if (!tempKey) {
       toast.error("Please enter your MDBList API key first.");
@@ -131,7 +405,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsLoadingCustomUser(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user/${customUsername.trim()}?apikey=${tempKey}&sort=${userListSort}`);
+      const response = await fetch(`/api/mdblist/lists/user?apikey=${tempKey}&username=${encodeURIComponent(customUsername.trim())}&sort=${userListSort}`);
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(`User "${customUsername}" not found or has no public lists`);
@@ -229,8 +503,12 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRPDB: true,
+              enableRatingPosters: true,
               ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -299,8 +577,12 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRPDB: true,
+              enableRatingPosters: true,
               ...(displayType && { displayType }),
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name ? { author: list.user_name } : {})
+              }
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
@@ -336,7 +618,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
     setIsChecking(true);
     try {
-      const response = await fetch(`https://api.mdblist.com/lists/user?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/lists/user?apikey=${tempKey}`);
       if (!response.ok) {
         throw new Error(`API request failed (Status: ${response.status})`);
       }
@@ -390,7 +672,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRPDB: true,
+              enableRatingPosters: true,
               ...(displayType && { displayType }),
             };
             newCatalogs.push(newCatalog);
@@ -474,7 +756,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       const listName = path.replace('/lists/', '');
       if (!listName) throw new Error("Invalid MDBList URL format.");
 
-      const response = await fetch(`https://api.mdblist.com/lists/${listName}?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/lists/${encodeURIComponent(listName)}?apikey=${tempKey}`);
       if (!response.ok) throw new Error(`Error fetching list (Status: ${response.status})`);
 
       const [list] = await response.json();
@@ -503,6 +785,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
           ...(displayType && { displayType }),
+          metadata: {
+            ...(list.items !== undefined && { itemCount: list.items }),
+            ...(list.user_name ? { author: list.user_name } : {})
+          }
         };
 
         // Prevent duplicates
@@ -546,7 +832,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           order: defaultOrder,
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
-          enableRPDB: true
+          enableRatingPosters: true,
+          metadata: {}
         };
 
         setConfig(prev => {
@@ -592,8 +879,9 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
             genreSelection: defaultGenreSelection,
-            enableRPDB: true,
+            enableRatingPosters: true,
             ...(movieDisplayType && { displayType: movieDisplayType }),
+            metadata: {}
           };
 
           const seriesCatalog: CatalogConfig = {
@@ -608,8 +896,9 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
             genreSelection: defaultGenreSelection,
-            enableRPDB: true,
+            enableRatingPosters: true,
             ...(seriesDisplayType && { displayType: seriesDisplayType }),
+            metadata: {}
           };
 
           // Check for existing catalogs
@@ -645,7 +934,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>MDBList Integration</DialogTitle>
+          <div className="flex items-center gap-3">
+            <img src="https://mdblist.com//static/mdblist_logo.png" alt="MDBList Logo" className="h-7 w-auto" />
+            <DialogTitle>MDBList Integration</DialogTitle>
+          </div>
           <DialogDescription>
             Import your public and private lists from MDBList.com to use as catalogs.
           </DialogDescription>
@@ -1090,6 +1382,250 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                       disabled={selectedPopularLists.size === 0}
                     >
                       Import {selectedPopularLists.size} Selected List{selectedPopularLists.size !== 1 ? 's' : ''}
+                    </Button>
+                  )}
+                </div>
+              )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Top Lists Section */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Community Top Lists</CardTitle>
+                <CardDescription>
+                  Browse the most popular and trending lists from the MDBList community
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  onClick={handleImportTopLists}
+                  disabled={isLoadingTopLists}
+                  variant="outline"
+                  className="w-full h-auto p-4 flex flex-col items-start space-y-2"
+                >
+                  <div className="flex items-center space-x-2 w-full">
+                    {isLoadingTopLists ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                    )}
+                    <span className="font-medium">Browse Top Lists</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-left">
+                    Popular and trending lists from the MDBList community
+                  </p>
+                </Button>
+
+                {/* Top Lists Display */}
+                {topLists.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                      <Switch
+                        id="select-all-top"
+                        checked={selectedTopLists.size === topLists.length && topLists.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedTopLists(new Set(topLists.map(l => l.id)));
+                          } else {
+                            setSelectedTopLists(new Set());
+                          }
+                        }}
+                      />
+                      <Label htmlFor="select-all-top" className="font-medium cursor-pointer">
+                        Select all top lists
+                      </Label>
+                      <Badge variant="outline" className="ml-auto">
+                        {selectedTopLists.size}/{topLists.length}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                      {topLists.map((list) => (
+                        <div key={list.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                          <Switch
+                            id={`top-${list.id}`}
+                            checked={selectedTopLists.has(list.id)}
+                            onCheckedChange={(checked) => {
+                              const newSelection = new Set(selectedTopLists);
+                              if (checked) {
+                                newSelection.add(list.id);
+                              } else {
+                                newSelection.delete(list.id);
+                              }
+                              setSelectedTopLists(newSelection);
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <Label htmlFor={`top-${list.id}`} className="font-medium cursor-pointer">
+                              {list.name}
+                            </Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {list.mediatype}
+                              </Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                by {list.user}
+                              </Badge>
+                              {list.items && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {list.items} items
+                                </Badge>
+                              )}
+                            </div>
+                            {list.description && (
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                {list.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {selectedTopLists.size > 0 && (
+                      <Button 
+                        onClick={importSelectedTopLists} 
+                        className="w-full"
+                        disabled={selectedTopLists.size === 0}
+                      >
+                        Import {selectedTopLists.size} Selected List{selectedTopLists.size !== 1 ? 's' : ''}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* External Lists Section */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Import My External Lists</CardTitle>
+                <CardDescription>
+                  Import your external lists from Trakt, IMDb, Letterboxd, etc.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+              <Button 
+                onClick={fetchExternalUserLists} 
+                disabled={isLoadingExternalLists} 
+                variant="outline"
+                className="w-full"
+              >
+                {isLoadingExternalLists ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  "Load My External Lists"
+                )}
+              </Button>
+
+              {/* External Lists Display */}
+              {externalLists.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                    <Switch
+                      id="select-all-external"
+                      checked={selectedExternalLists.size === externalLists.length && externalLists.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedExternalLists(new Set(externalLists.map(l => l.id)));
+                        } else {
+                          setSelectedExternalLists(new Set());
+                        }
+                      }}
+                    />
+                    <Label htmlFor="select-all-external" className="font-medium cursor-pointer">
+                      Select all my external lists
+                    </Label>
+                    <Badge variant="outline" className="ml-auto">
+                      {selectedExternalLists.size}/{externalLists.length}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                    {externalLists.map((list) => {
+                      const movieCount = list.items - (list.items_show || 0);
+                      const showCount = list.items_show || 0;
+                      const listType = (() => {
+                        if (list.mediatype) return list.mediatype;
+                        if (movieCount > 0 && showCount > 0) return 'all';
+                        if (movieCount > 0) return 'movie';
+                        if (showCount > 0) return 'series';
+                        return 'Empty';
+                      })();
+                      const isMixedType = listType === 'all';
+
+                      return (
+                        <div key={list.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                          <Switch
+                            id={`external-${list.id}`}
+                            checked={selectedExternalLists.has(list.id)}
+                            onCheckedChange={(checked) => handleExternalListSelection(list.id, checked)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <Label htmlFor={`external-${list.id}`} className="font-medium cursor-pointer">
+                              {list.name}
+                            </Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {listType}
+                              </Badge>
+                              <Badge variant="secondary" className="text-xs capitalize">
+                                {list.source}
+                              </Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                by {list.user_name}
+                              </Badge>
+                              {list.items > 0 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {list.items} items
+                                </Badge>
+                              )}
+                            </div>
+                            {list.description && (
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                {list.description}
+                              </p>
+                            )}
+                            {isMixedType && (
+                              <div className="flex items-center justify-between mt-2 p-2 border rounded-md bg-muted/50">
+                                <div className="space-y-0.5">
+                                  <Label htmlFor={`unified-switch-${list.id}`} className="text-sm font-medium">Unified Format</Label>
+                                  <p className="text-xs text-muted-foreground">
+                                    {externalUnifiedSettings[list.id] ?? true
+                                      ? "One catalog for all media types"
+                                      : "Separate catalogs for movies & series"}
+                                  </p>
+                                </div>
+                                <Switch
+                                  id={`unified-switch-${list.id}`}
+                                  checked={externalUnifiedSettings[list.id] ?? true}
+                                  onCheckedChange={(checked) => {
+                                    setExternalUnifiedSettings(prev => ({ ...prev, [list.id]: checked }));
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {selectedExternalLists.size > 0 && (
+                    <Button 
+                      onClick={importSelectedExternalLists} 
+                      className="w-full"
+                      disabled={selectedExternalLists.size === 0}
+                    >
+                      Import {selectedExternalLists.size} Selected List{selectedExternalLists.size !== 1 ? 's' : ''}
                     </Button>
                   )}
                 </div>

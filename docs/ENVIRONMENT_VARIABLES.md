@@ -1,3 +1,7 @@
+### `TRAKT_REDIRECT_URI`
+- **Required for Trakt integration**: Yes
+- **Description**: Redirect URI for Trakt OAuth. Must match the value set in your Trakt app settings.
+- **Example**: `TRAKT_REDIRECT_URI=https://your-domain.com/api/auth/trakt/callback`
 # Environment Variables Configuration
 
 This document describes all available environment variables for AIO Metadata.
@@ -30,6 +34,12 @@ cp .env.example .env
 - **Options**: `development`, `production`
 - **Description**: Node environment mode
 - **Example**: `NODE_ENV=production`
+
+
+### `ADDON_LOGO_URL`
+- **Required**: No
+- **Description**: Override the logo URL in the manifest. If not set, defaults to `${HOST_NAME}/logo.png`.
+- **Example**: `ADDON_LOGO_URL=https://yourdomain.com/yourlogo.png`
 
 ### `LOG_LEVEL`
 - **Default**: `info` (production), `debug` (development)
@@ -91,15 +101,44 @@ cp .env.example .env
 - **Description**: RPDB (Rating Poster Database) API key
 - **Get it**: https://ratingposterdb.com/
 
+
 ### `MDBLIST_API_KEY`
 - **Optional**: Yes
 - **Description**: MDBList API key for custom lists
 - **Get it**: https://mdblist.com/
 
+### `TRAKT_CLIENT_ID`
+- **Required for Trakt integration**: Yes
+- **Description**: Trakt API client ID for enabling Trakt account integration (watchlists, custom lists, etc.)
+- **Get it**: https://trakt.tv/oauth/applications
+
+### `TRAKT_CLIENT_SECRET`
+- **Required for Trakt integration**: Yes
+- **Description**: Trakt API client secret for enabling Trakt account integration
+- **Get it**: https://trakt.tv/oauth/applications
+
 ### `GEMINI_API_KEY`
 - **Optional**: Yes
 - **Description**: Google Gemini API key for AI search features
 - **Get it**: https://makersuite.google.com/app/apikey
+
+---
+
+## Timezone Configuration
+
+### `TZ`
+- **Optional**: Yes
+- **Default**: `UTC`
+- **Description**: Server timezone for date/time operations. Used for Trakt calendar features (shows airing this week). Can be configured per-user in the UI settings.
+- **Example**: `TZ=America/New_York`
+- **Common Values**:
+  - `America/New_York` - Eastern Time
+  - `America/Chicago` - Central Time
+  - `America/Los_Angeles` - Pacific Time
+  - `Europe/London` - UK Time
+  - `Europe/Paris` - Central European Time
+  - `Asia/Tokyo` - Japan Time
+  - `Australia/Sydney` - Australian Eastern Time
 
 ---
 

@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
-const { redis } = require('./getCache');
+const redis = require('./redisClient');
 const xml2js = require('xml2js');
 const consola = require('consola');
 

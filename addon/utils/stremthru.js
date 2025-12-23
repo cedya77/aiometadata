@@ -1,8 +1,7 @@
-const { request } = require("undici");
+const { httpGet } = require("./httpClient");
 const { cacheWrapMetaSmart } = require("../lib/getCache");
 const { getMeta } = require("../lib/getMeta");
 const Utils = require("./parseProps");
-const { isRPDBEnabled } = require("./parseProps");
 const idMapper = require("../lib/id-mapper");
 const imdb = require("../lib/imdb");
 const { getImdbRating } = require("../lib/getImdbRating");
@@ -20,15 +19,16 @@ const host = process.env.HOST_NAME.startsWith('http')
  */
 async function _makeRequest(url) {
   try {
-    const response = await request(new URL(url).toString(), {
-      method: 'GET',
-      headers: { 'User-Agent': 'aiometadata-addon/1.0' },
-      bodyTimeout: 30000
-    });
-    return await response.body.json();
+    const response = await httpGet(url, { headers: { 'User-Agent': 'aiometadata-addon/1.0' }, timeout: 30000 });
+    return response.data;
   } catch (err) {
-    console.error(`[StremThru] Request to ${url} failed:`, err.message);
-    throw err; // Re-throw to be caught by the caller
+    if (err.response) {
+      const { status, data } = err.response;
+      console.error(`[StremThru] HTTP error from ${url} (status: ${status}): ${typeof data === 'string' ? data.slice(0,100) : ''}`);
+    } else {
+      console.error(`[StremThru] Request to ${url} failed:`, err.message);
+    }
+    throw err;
   }
 }
 
@@ -120,7 +120,7 @@ async function _processStandardItem(item, provider, language, config, includeVid
  */
 function _createFallbackMeta(item, language, config) {
     const fallbackPosterUrl = item.poster || `${host}/missing_poster.png`;
-    const posterProxyUrl = (config.apiKeys?.rpdb && isRPDBEnabled(config))
+    const posterProxyUrl = Utils.isPosterRatingEnabled(config)
         ? `${host}/poster/${item.type}/${item.id}?fallback=${encodeURIComponent(fallbackPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`
         : fallbackPosterUrl;
     

@@ -3,6 +3,7 @@ const { getGenreList } = require("./getGenreList");
 const { getLanguages } = require("./getLanguages");
 const { getGenresFromMDBList, fetchMDBListGenres } = require("../utils/mdbList");
 const { getGenresFromStremThruCatalog, fetchStremThruCatalog } = require("../utils/stremthru");
+const { fetchTraktGenres } = require("../utils/traktUtils");
 const { getGenresBySelection } = require("../static/genres");
 const packageJson = require("../../package.json");
 const catalogsTranslations = require("../static/translations.json");
@@ -11,9 +12,15 @@ const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } = require('./getCache');
 
-const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+
+const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
+  ? process.env.HOST_NAME
+  : `https://${process.env.HOST_NAME}`;
+
+// Allow logo override via env var
+const manifestLogoUrl = process.env.ADDON_LOGO_URL && process.env.ADDON_LOGO_URL.trim() !== ''
+  ? process.env.ADDON_LOGO_URL.trim()
+  : `${host}/logo.png`;
 
 // Manifest cache TTL (5 minutes)
 const MANIFEST_CACHE_TTL = 5 * 60;
@@ -216,6 +223,60 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
   }
 }
 
+async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = []) {
+  try {
+    console.log(`[Manifest] Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Determine which genre list to use based on catalog type
+    let genres = [];
+    if (userCatalog.type === 'movie' && prefetchedMovieGenres.length > 0) {
+      genres = prefetchedMovieGenres;
+      console.log(`[Manifest] Trakt using ${genres.length} pre-fetched movie genres`);
+    } else if (userCatalog.type === 'series' && prefetchedShowGenres.length > 0) {
+      genres = prefetchedShowGenres;
+      console.log(`[Manifest] Trakt using ${genres.length} pre-fetched show genres`);
+    } else if (userCatalog.type === 'all') {
+      // Combine both movie and show genres for 'all' type
+      genres = [...new Set([...prefetchedMovieGenres, ...prefetchedShowGenres])];
+      console.log(`[Manifest] Trakt using ${genres.length} combined genres`);
+    } else {
+      console.log(`[Manifest] Trakt no pre-fetched genres available for type: ${userCatalog.type}`);
+    }
+    
+    // Add "None" option when showInHome is false to work around Stremio's genre requirement
+    const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
+    
+    // Use displayType if defined, otherwise use original type
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+    // Only add genre extra if genres are available
+    if (genreOptions.length > 0) {
+      catalog.extra.unshift({ 
+        name: "genre", 
+        options: genreOptions, 
+        isRequired: userCatalog.showInHome ? false : true 
+      });
+    }
+    
+    console.log(`[Manifest] Trakt catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating Trakt catalog ${userCatalog.id}:`, error.message);
+    return null; // Return null instead of throwing to prevent manifest failure
+  }
+}
+
 async function createStremThruCatalog(userCatalog) {
   try {
     //console.log(`[Manifest] Creating StremThru catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -306,6 +367,37 @@ async function createStremThruCatalog(userCatalog) {
   } catch (error) {
     console.error(`[Manifest] Error creating StremThru catalog ${userCatalog.id}:`, error.message);
     return null; // Return null instead of throwing to prevent manifest failure
+  }
+}
+
+/**
+ * Create an AniList catalog entry for the manifest
+ * AniList catalogs are user's personal anime lists (Watching, Completed, etc.)
+ */
+function createAniListCatalog(userCatalog) {
+  try {
+    console.log(`[Manifest] Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Use displayType if defined, otherwise use original type (default to 'series' for anime)
+    const catalogType = userCatalog.displayType || userCatalog.type || 'series';
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "genre", options: ["None"], isRequired: userCatalog.showInHome ? false : true },
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+    console.log(`[Manifest] AniList catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating AniList catalog ${userCatalog.id}:`, error.message);
+    return null;
   }
 }
 
@@ -408,8 +500,6 @@ async function getManifest(config) {
           const defaultTitle = studio.titles.find(t => t.type === 'Default');
           return defaultTitle ? defaultTitle.title : null;
         }).filter(Boolean);
-        // Ensure a consistent alphabetical ordering for manifest catalog options
-        studioNames = studioNames.sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
         console.log(`[Manifest] Studio list fetched successfully (${studioNames.length} studios)`);
       } catch (error) {
         console.warn('[Manifest] Studio list fetch failed, using empty list:', error.message);
@@ -453,6 +543,7 @@ async function getManifest(config) {
   const genres_tvdb_all_names = genres_tvdb_all.map(g => g.name).sort();
   const filterLanguages = setOrderLanguage(language, languagesArray);
   const isMDBList = (id) => id.startsWith("mdblist.");
+  const isTrakt = (id) => id.startsWith("trakt.");
   const options = { years, genres_movie: genres_movie_names, genres_series: genres_series_names, filterLanguages };
 
   // Pre-fetch MDBList genres once to avoid repeated API calls
@@ -471,11 +562,31 @@ async function getManifest(config) {
     }
   }
 
+  // Pre-fetch Trakt genres once to avoid repeated API calls
+  let traktGenresMovies = [];
+  let traktGenresShows = [];
+  if (enabledCatalogs.some(c => c.id.startsWith('trakt.'))) {
+    console.log('[Manifest] Pre-fetching Trakt genres for all catalogs...');
+    try {
+      [traktGenresMovies, traktGenresShows] = await Promise.all([
+        fetchTraktGenres('movies'),
+        fetchTraktGenres('shows')
+      ]);
+      console.log(`[Manifest] Pre-fetched ${traktGenresMovies.length} movie genres and ${traktGenresShows.length} show genres from Trakt`);
+    } catch (error) {
+      console.warn('[Manifest] Failed to pre-fetch Trakt genres, catalogs will have no genres:', error.message);
+    }
+  }
+
   let catalogs = await Promise.all(enabledCatalogs
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
       if (isMDBList(userCatalog.id)) {
         //console.log(`[Manifest] MDBList catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
+      if (isTrakt(userCatalog.id)) {
+        //console.log(`[Manifest] Trakt catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
@@ -484,6 +595,10 @@ async function getManifest(config) {
       }
       if (userCatalog.id.startsWith('custom.')) {
         //console.log(`[Manifest] Custom catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
+      if (userCatalog.id.startsWith('anilist.')) {
+        //console.log(`[Manifest] AniList catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (!catalogDef) {
@@ -501,6 +616,12 @@ async function getManifest(config) {
           console.log(`[Manifest] MDBList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
+      if (isTrakt(userCatalog.id)) {
+          console.log(`[Manifest] Processing Trakt catalog: ${userCatalog.id}`);
+          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
+          console.log(`[Manifest] Trakt catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
           //console.log(`[Manifest] Processing StremThru catalog: ${userCatalog.id}`);
           const result = await createStremThruCatalog(userCatalog);
@@ -511,6 +632,12 @@ async function getManifest(config) {
           console.log(`[Manifest] Processing Custom catalog: ${userCatalog.id}`);
           const result = await createStremThruCatalog(userCatalog);
           console.log(`[Manifest] Custom catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('anilist.')) {
+          console.log(`[Manifest] Processing AniList catalog: ${userCatalog.id}`);
+          const result = createAniListCatalog(userCatalog);
+          console.log(`[Manifest] AniList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
@@ -776,13 +903,13 @@ async function getManifest(config) {
   const manifest = {
     id: packageJson.name,
     version: packageJson.version,
-    logo: `${host}/logo.png`,
+    logo: manifestLogoUrl,
     background: `${host}/background.png`,
     name: addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
     resources,
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],
-    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "tun_"],
+    idPrefixes: ["tmdb:", "tt", "tvdb:", "mal:", "tvmaze:", "kitsu:", "anidb:", "anilist:", "tvdbc:", "upnext_", "unwatched_"],
     stremioAddonsConfig: {
       "issuer": "https://stremio-addons.net",
       "signature": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..3_iKJ-pKhR-LclfTPxvyag.uY747PgjymdL0OMdZrE7HTOVG-8nNWC-LrlJ5tCXm2i2FioXv_ismzWV0_XsLl0Me9cW9D3xog6d4tSHDY8Pe27mbIylUb61MS4VVqg_sFZXUVon2le-fRFrtmMnIqCF.oyYRDftPN2sohMpDMbMbYg"

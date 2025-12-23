@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
-const { redis } = require('./getCache');
+const redis = require('./redisClient');
 
 /**
  * One-time migration to fix cache files after the path bug fix.

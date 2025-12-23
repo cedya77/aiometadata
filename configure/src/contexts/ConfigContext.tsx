@@ -91,6 +91,7 @@ const initialConfig: AppConfig = {
   showMetaProviderAttribution: false,
   castCount: 10,
   displayAgeRating: false,
+  showDisabledCatalogs: false,
   sfw: false,
   hideUnreleasedDigital: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', forceAnimeForDetectedImdb: false },
@@ -122,10 +123,12 @@ const initialConfig: AppConfig = {
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   mdblistWatchTracking: true,
-  enableRPDBForLibrary: true, // Default to enabled - keep RPDB posters for library items
+  anilistWatchTracking: true,
+  enableRatingPostersForLibrary: true, // Default to enabled - keep Rating Posters for library items
   ageRating: 'None',
   searchEnabled: true,
   sessionId: "",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   catalogs: allCatalogDefinitions
     .map(c => ({
       id: c.id,
@@ -134,7 +137,7 @@ const initialConfig: AppConfig = {
       source: c.source,
       enabled: c.isEnabledByDefault || false,
       showInHome: c.showOnHomeByDefault || false,
-      enableRPDB: true, // Default to enabled for new catalogs
+      enableRatingPosters: true, // Default to enabled for new catalogs
       randomizePerPage: false,
     })),
   search: {
@@ -167,7 +170,7 @@ const defaultCatalogs = allCatalogDefinitions.map(c => ({
   source: c.source,
   enabled: c.isEnabledByDefault || false,
   showInHome: c.showOnHomeByDefault || false,
-  enableRPDB: true, // Default to enabled for new catalogs
+  enableRatingPosters: true, // Default to enabled for new catalogs
   randomizePerPage: false,
 }));
 
@@ -191,7 +194,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
                   enabled: c.enabled,
                   showInHome: c.showInHome,
                 };
-                if (c.enableRPDB !== undefined) settings.enableRPDB = c.enableRPDB;
+                if (c.enableRatingPosters !== undefined) settings.enableRatingPosters = c.enableRatingPosters;
                 if (c.randomizePerPage !== undefined) settings.randomizePerPage = c.randomizePerPage;
                 if (c.displayType !== undefined) settings.displayType = c.displayType;
                 if (c.cacheTTL !== undefined) settings.cacheTTL = c.cacheTTL;
@@ -199,6 +202,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
                 if (c.sort !== undefined) settings.sort = c.sort;
                 if (c.order !== undefined) settings.order = c.order;
                 if (c.pageSize !== undefined) settings.pageSize = c.pageSize;
+                if (c.metadata !== undefined) settings.metadata = c.metadata;
                 return [`${c.id}-${c.type}`, settings];
               })
           );

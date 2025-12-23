@@ -21,7 +21,12 @@ export interface UserConfig {
     mdblist?: string;
     gemini?: string;
     imdb?: string;
+    traktTokenId?: string;
+    /** AniList OAuth token ID stored in oauth_tokens table */
+    anilistTokenId?: string;
   };
+  /** Enable/disable AniList watch tracking (default: true when connected) */
+  anilistWatchTracking?: boolean;
   /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
   posterRatingProvider?: 'rpdb' | 'top';
   catalogs?: Catalog[];
@@ -43,6 +48,7 @@ export interface UserConfig {
   configVersion?: number;
   userUUID?: string;
   sessionId?: string;
+  timezone?: string;
   [key: string]: any;
 }
 
@@ -128,6 +134,75 @@ export interface AnimeData {
   episodes?: number;
   status?: string;
   [key: string]: any;
+}
+
+// AniList Watch Tracking Types
+
+/** AniList media list status types */
+export type AniListMediaListStatus = 'CURRENT' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REPEATING';
+
+/** AniList media list entry representing user's relationship with an anime */
+export interface AniListMediaEntry {
+  /** Media list entry ID */
+  id: number;
+  /** Current watch status */
+  status: AniListMediaListStatus;
+  /** Number of episodes watched */
+  progress: number;
+  /** User's score for the media */
+  score: number;
+}
+
+/** AniList media information */
+export interface AniListMedia {
+  /** AniList media ID */
+  id: number;
+  /** MyAnimeList ID */
+  idMal: number;
+  /** Total episode count (null if unknown) */
+  episodes: number | null;
+  /** User's list entry (null if not on list) */
+  mediaListEntry: AniListMediaEntry | null;
+}
+
+/** AniList tracker configuration */
+export interface AniListTrackerConfig {
+  /** OAuth access token */
+  accessToken: string;
+  /** OAuth refresh token */
+  refreshToken: string;
+  /** Token expiration timestamp in milliseconds */
+  expiresAt: number;
+  /** User's UUID */
+  userUUID: string;
+}
+
+/** AniList GraphQL query response for media status */
+export interface AniListMediaQueryResponse {
+  data: {
+    Media: {
+      id: number;
+      idMal: number;
+      episodes: number | null;
+      mediaListEntry: {
+        id: number;
+        status: AniListMediaListStatus;
+        progress: number;
+        score: number;
+      } | null;
+    };
+  };
+}
+
+/** AniList GraphQL mutation response for progress update */
+export interface AniListSaveMediaListEntryResponse {
+  data: {
+    SaveMediaListEntry: {
+      id: number;
+      progress: number;
+      status: AniListMediaListStatus;
+    };
+  };
 }
 
 export interface RequestContext {

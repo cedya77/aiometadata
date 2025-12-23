@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 const { parse } = require('csv-parse/sync');
-const { redis } = require('./getCache');
+const redis = require('./redisClient');
 const { request } = require('undici');
 
 const REMOTE_SERIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidata-Fetcher/refs/heads/main/data/tv_mappings.csv';

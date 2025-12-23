@@ -16,16 +16,16 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 // Sortable Search Provider Item Component
-function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, onEngineRPDBChange, getProviderDisplayName, getProviderBaseLabel, getProviderCustomName, hasRPDBKey, engineRPDBEnabled }: {
+function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, onengineRatingPostersChange, getProviderDisplayName, getProviderBaseLabel, getProviderCustomName, hasRPDBKey, engineRatingPostersEnabled }: {
   provider: { id: string; type: string; provider: string };
   onEditProviderName: (providerId: string) => void;
   onEngineEnabledChange: (engine: string, checked: boolean) => void;
-  onEngineRPDBChange: (engine: string, checked: boolean) => void;
+  onengineRatingPostersChange: (engine: string, checked: boolean) => void;
   getProviderDisplayName: (providerId: string) => string;
   getProviderBaseLabel: (providerId: string) => string;
   getProviderCustomName: (providerId: string) => string;
   hasRPDBKey: boolean;
-  engineRPDBEnabled: boolean;
+  engineRatingPostersEnabled: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: provider.id });
 
@@ -72,11 +72,11 @@ function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnab
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => onEngineRPDBChange(provider.provider, !engineRPDBEnabled)}
+          onClick={() => onengineRatingPostersChange(provider.provider, !engineRatingPostersEnabled)}
           className="px-2"
-          title={engineRPDBEnabled ? 'RPDB Enabled' : 'RPDB Disabled'}
+          title={engineRatingPostersEnabled ? 'Rating posters enabled' : 'Rating posters disabled'}
         >
-          <Star className={`h-4 w-4 ${engineRPDBEnabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+          <Star className={`h-4 w-4 ${engineRatingPostersEnabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
         </Button>
       )}
       <Switch
@@ -256,22 +256,22 @@ export function SearchSettings() {
     }));
   };
 
-  const handleEngineRPDBChange = (engine: string, checked: boolean) => {
+  const handleengineRatingPostersChange = (engine: string, checked: boolean) => {
     setConfig(prev => ({
       ...prev,
       search: {
         ...prev.search,
-        engineRPDB: {
-          ...prev.search.engineRPDB,
+        engineRatingPosters: {
+          ...prev.search.engineRatingPosters,
           [engine]: checked,
         },
       },
     }));
   };
 
-  // Check if TVDB key and RPDB key are available
+  // Check if TVDB key and rating poster keys are available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
-  const hasRPDBKey = !!config.apiKeys?.rpdb;
+  const hasRPDBKey = !!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster;
   
   const movieSearchProviders = allSearchProviders.filter(p => {
     if (p.mediaType.includes('movie')) {
@@ -350,11 +350,11 @@ export function SearchSettings() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleEngineRPDBChange(config.search.providers.movie, !(config.search.engineRPDB?.[config.search.providers.movie] ?? true))}
+                                    onClick={() => handleengineRatingPostersChange(config.search.providers.movie, !(config.search.engineRatingPosters?.[config.search.providers.movie] ?? true))}
                                     className="px-2"
-                                    title={(config.search.engineRPDB?.[config.search.providers.movie] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                    title={(config.search.engineRatingPosters?.[config.search.providers.movie] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
                                 >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
                                 </Button>
                             )}
                             <Switch
@@ -393,11 +393,11 @@ export function SearchSettings() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleEngineRPDBChange(config.search.providers.series, !(config.search.engineRPDB?.[config.search.providers.series] ?? true))}
+                                    onClick={() => handleengineRatingPostersChange(config.search.providers.series, !(config.search.engineRatingPosters?.[config.search.providers.series] ?? true))}
                                     className="px-2"
-                                    title={(config.search.engineRPDB?.[config.search.providers.series] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                    title={(config.search.engineRatingPosters?.[config.search.providers.series] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
                                 >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
                                 </Button>
                             )}
                             <Switch
@@ -434,11 +434,11 @@ export function SearchSettings() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleEngineRPDBChange(config.search.providers.anime_series, !(config.search.engineRPDB?.[config.search.providers.anime_series] ?? true))}
+                                    onClick={() => handleengineRatingPostersChange(config.search.providers.anime_series, !(config.search.engineRatingPosters?.[config.search.providers.anime_series] ?? true))}
                                     className="px-2"
-                                    title={(config.search.engineRPDB?.[config.search.providers.anime_series] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                    title={(config.search.engineRatingPosters?.[config.search.providers.anime_series] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
                                 >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.anime_series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.anime_series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
                                 </Button>
                             )}
                             <Switch
@@ -475,11 +475,11 @@ export function SearchSettings() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleEngineRPDBChange(config.search.providers.anime_movie, !(config.search.engineRPDB?.[config.search.providers.anime_movie] ?? true))}
+                                    onClick={() => handleengineRatingPostersChange(config.search.providers.anime_movie, !(config.search.engineRatingPosters?.[config.search.providers.anime_movie] ?? true))}
                                     className="px-2"
-                                    title={(config.search.engineRPDB?.[config.search.providers.anime_movie] ?? true) ? 'RPDB Enabled' : 'RPDB Disabled'}
+                                    title={(config.search.engineRatingPosters?.[config.search.providers.anime_movie] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
                                 >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRPDB?.[config.search.providers.anime_movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.anime_movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
                                 </Button>
                             )}
                             <Switch
@@ -590,12 +590,12 @@ export function SearchSettings() {
                                         provider={provider}
                                         onEditProviderName={handleEditProviderName}
                                         onEngineEnabledChange={handleEngineEnabledChange}
-                                        onEngineRPDBChange={handleEngineRPDBChange}
+                                        onengineRatingPostersChange={handleengineRatingPostersChange}
                                         getProviderDisplayName={getProviderDisplayName}
                                         getProviderBaseLabel={getProviderBaseLabel}
                                         getProviderCustomName={getProviderCustomName}
                                         hasRPDBKey={hasRPDBKey}
-                                        engineRPDBEnabled={config.search.engineRPDB?.[provider.provider] ?? true}
+                                        engineRatingPostersEnabled={config.search.engineRatingPosters?.[provider.provider] ?? true}
                                     />
                                 ))}
                             </div>

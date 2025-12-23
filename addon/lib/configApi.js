@@ -966,6 +966,26 @@ class ConfigApi {
       if (!config) {
         throw new Error(`No configuration found for userUUID: ${userUUID}`);
       }
+      
+      // Migrate old property names to new ones
+      if (config.search?.engineRPDB && !config.search?.engineRatingPosters) {
+        config.search.engineRatingPosters = config.search.engineRPDB;
+        delete config.search.engineRPDB;
+      }
+      
+      // Migrate catalogs
+      if (config.catalogs && Array.isArray(config.catalogs)) {
+        config.catalogs = config.catalogs.map(catalog => {
+          if (catalog.enableRPDB !== undefined && catalog.enableRatingPosters === undefined) {
+            return {
+              ...catalog,
+              enableRatingPosters: catalog.enableRPDB,
+              enableRPDB: undefined
+            };
+          }
+          return catalog;
+        });
+      }
 
       // Strip instance-specific fields that shouldn't be returned from saved config
       const sanitizedConfig = {
@@ -1202,6 +1222,19 @@ class ConfigApi {
             response &&
             response.statusCode === 200 &&
             response.data?.valid === true
+          );
+        },
+
+        topPoster: async (key) => {
+          const url = `https://api.top-streaming.stream/auth/verify/${key}`;
+          const response = await serviceRequest(url, { method: "GET" }).catch(
+            () => null,
+          );
+          return (
+            response &&
+            response.statusCode === 200 &&
+            response.data?.valid === true &&
+            response.data?.is_active === true
           );
         },
 
