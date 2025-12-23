@@ -518,7 +518,7 @@ async function getFullSchedule(date: string, country: string): Promise<TVmazeSch
   const hasCountry = country != null && country.trim().length > 0;
   const normalizedCountry = hasCountry ? country.trim() : 'default';
   const cacheKey = `schedule-full:${normalizedCountry}:${date}`;
-  console.log(`getFullSchedule: ${cacheKey}`);
+  //console.log(`getFullSchedule: ${cacheKey}`);
 
   return cacheWrapTvmazeApi(cacheKey, async () => {
     // Only include country parameter if it's provided and non-empty
@@ -528,7 +528,7 @@ async function getFullSchedule(date: string, country: string): Promise<TVmazeSch
     const context = hasCountry 
       ? `getFullSchedule for ${normalizedCountry} on ${date}`
       : `getFullSchedule on ${date}`;
-    console.log(`getFullSchedule: ${url}`);
+    //console.log(`getFullSchedule: ${url}`);
 
     return await retryApiCall(async () => {
       const response = await httpGet(url, DEFAULT_HTTP_CONFIG);
