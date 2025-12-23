@@ -117,6 +117,7 @@ export interface AppConfig {
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;
+  hideUnreleasedDigitalSearch: boolean;
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
   searchEnabled: boolean;

@@ -124,6 +124,7 @@ async function ensureSystemConfig() {
       castCount: 10,
       sfw: false,
       hideUnreleasedDigital: false,
+      hideUnreleasedDigitalSearch: false,
       providers: { 
         movie: 'tmdb', 
         series: 'tvdb', 

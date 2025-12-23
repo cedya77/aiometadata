@@ -30,6 +30,10 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, hideUnreleasedDigital: checked }));
   };
 
+  const handleHideUnreleasedDigitalSearchChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, hideUnreleasedDigitalSearch: checked }));
+  };
+
   const handleExclusionKeywordsChange = (value: string) => {
     setConfig(prev => ({ ...prev, exclusionKeywords: value }));
   };
@@ -96,13 +100,23 @@ export function FiltersSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="hide-unreleased-digital"
-              checked={config.hideUnreleasedDigital ?? false}
-              onCheckedChange={handleHideUnreleasedDigitalChange}
-            />
-            <Label htmlFor="hide-unreleased-digital">Hide Unreleased Movies</Label>
+          <div className="flex flex-col space-y-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="hide-unreleased-digital"
+                checked={config.hideUnreleasedDigital ?? false}
+                onCheckedChange={handleHideUnreleasedDigitalChange}
+              />
+              <Label htmlFor="hide-unreleased-digital">Hide Unreleased Movies in Catalogs</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="hide-unreleased-digital-search"
+                checked={config.hideUnreleasedDigitalSearch ?? false}
+                onCheckedChange={handleHideUnreleasedDigitalSearchChange}
+              />
+              <Label htmlFor="hide-unreleased-digital-search">Hide Unreleased Movies in Search</Label>
+            </div>
           </div>
         </CardContent>
       </Card>

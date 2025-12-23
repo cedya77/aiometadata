@@ -959,6 +959,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     // Add display settings that affect search results
     blurThumbs: config.blurThumbs || false,
     showPrefix: config.showPrefix || false,
+    hideUnreleasedDigitalSearch: config.hideUnreleasedDigitalSearch || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
     useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,

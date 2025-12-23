@@ -39,6 +39,7 @@ export interface UserConfig {
   includeAdult?: boolean;
   ageRating?: string;
   hideUnreleasedDigital?: boolean;
+  hideUnreleasedDigitalSearch?: boolean;
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
   tvdbSeasonType?: string;

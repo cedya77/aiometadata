@@ -932,7 +932,7 @@ async function performAiSearch(query, language, config) {
     }
     
     // Apply digital release filter for movies only
-    if (config.hideUnreleasedDigital) {
+    if (config.hideUnreleasedDigitalSearch) {
       const beforeCount = filteredResults.length;
       filteredResults = filteredResults.filter(meta => 
         meta.type !== 'movie' || Utils.isReleasedDigitally(meta)

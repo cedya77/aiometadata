@@ -186,6 +186,7 @@ const respond = function (req, res, data, opts) {
           includeAdult: req.userConfig.includeAdult,
           ageRating: req.userConfig.ageRating,
           hideUnreleasedDigital: req.userConfig.hideUnreleasedDigital,
+          hideUnreleasedDigitalSearch: req.userConfig.hideUnreleasedDigitalSearch,
           exclusionKeywords: req.userConfig.exclusionKeywords,
           regexExclusionFilter: req.userConfig.regexExclusionFilter,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
