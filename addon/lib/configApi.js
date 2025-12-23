@@ -1,11 +1,39 @@
 const crypto = require('crypto');
-const { request } = require("undici");
+const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
+
+// Gemini dispatcher configuration for API key testing
+// Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
+const createGeminiDispatcher = () => {
+  // First check for Gemini-specific proxy
+  const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
+  if (geminiProxy) {
+    try {
+      return new ProxyAgent({ uri: new URL(geminiProxy).toString() });
+    } catch (error) {
+      console.warn("Invalid Gemini proxy URL:", geminiProxy);
+    }
+  }
+  // Fall back to global proxy
+  const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
+  if (globalProxy) {
+    try {
+      return new ProxyAgent({ uri: new URL(globalProxy).toString() });
+    } catch (error) {
+      console.warn("Invalid global proxy URL:", globalProxy);
+    }
+  }
+  // No proxy configured - use direct connection
+  return new Agent({
+    keepAliveTimeout: 10000,
+    connections: 10,
+  });
+};
+
+const geminiDispatcher = createGeminiDispatcher();
 const consola = require('consola');
 
-
 const logger = consola.withTag('ConfigApi');
-
 // Import the config cache
 const configCache = require('./configCache');
 const { deleteKeysByPattern } = require('./redisUtils');
@@ -1116,8 +1144,12 @@ class ConfigApi {
       const testFunctions = {
         gemini: async (key) => {
           // Validate by listing available models - no token usage
+          // Use Gemini-specific proxy if configured
           const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
+          const response = await serviceRequest(url, {
+            method: "GET",
+            dispatcher: geminiDispatcher
+          }).catch(
             () => null,
           );
           return !!(response && response.statusCode === 200 && response.data?.models);

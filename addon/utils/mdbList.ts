@@ -5,7 +5,7 @@ import { cacheWrapMetaSmart, cacheWrapMDBListGenres } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const { socksDispatcher } = require('fetch-socks');
-const { Agent } = require('undici');
+const { Agent, ProxyAgent } = require('undici');
 
 const logger = consola.withTag('MDBList');
 
@@ -19,8 +19,11 @@ function sanitizeUrlForLogging(url: string): string {
   return url.replace(/([?&]apikey=)[^&]+/gi, '$1[REDACTED]');
 }
 
-// Proxy configuration for MDBList requests
+
+// MDBList dispatcher configuration
+// Priority: MDBLIST_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
 const MDBLIST_SOCKS_PROXY_URL = process.env.MDBLIST_SOCKS_PROXY_URL;
+const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
 let mdblistDispatcher: any;
 
 if (MDBLIST_SOCKS_PROXY_URL) {
@@ -36,16 +39,31 @@ if (MDBLIST_SOCKS_PROXY_URL) {
       });
       logger.info(`[MDBList] SOCKS proxy is enabled for MDBList API via fetch-socks.`);
     } else {
-      logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
-      mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+      logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
+      mdblistDispatcher = null; // Will be set below
     }
   } catch (error: any) {
-    logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
-    mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+    logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
+    mdblistDispatcher = null; // Will be set below
   }
-} else {
-  mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
-  logger.info('[MDBList] undici agent is enabled for direct connections.');
+}
+
+// Fallback to HTTP proxy or direct connection
+if (!mdblistDispatcher) {
+  if (HTTP_PROXY_URL) {
+    try {
+      // ProxyAgent may need to be imported if not already
+      const { ProxyAgent } = require('undici');
+      mdblistDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      logger.info('[MDBList] Using global HTTP proxy.');
+    } catch (error: any) {
+      logger.error(`[MDBList] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
+      mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+    }
+  } else {
+    mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+    logger.info('[MDBList] undici agent is enabled for direct connections.');
+  }
 }
 
 /**
@@ -1092,5 +1110,15 @@ async function markEpisodeAsWatched(
   }
 }
 
-export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched };
+/**
+ * Wrapper for proxy endpoints - makes a rate-limited GET request to MDBList
+ */
+async function makeRateLimitedMDBListRequest(url: string, context: string = 'MDBList Proxy'): Promise<any> {
+  return await makeRateLimitedRequest(
+    () => httpGet(url, { dispatcher: mdblistDispatcher }),
+    context
+  );
+}
+
+export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched, makeRateLimitedMDBListRequest };
 

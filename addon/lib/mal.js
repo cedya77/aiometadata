@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { httpGet } = require('../utils/httpClient');
 const { socksDispatcher } = require('fetch-socks');
-const { Agent } = require('undici');
+const { Agent, ProxyAgent } = require('undici');
 const consola = require('consola');
 const logger = consola.withTag('MAL');
 
@@ -15,21 +15,23 @@ setInterval(() => {
   const now = Date.now();
   const maxAge = 24 * 60 * 60 * 1000; // 24 hours (matches Jikan's cache duration)
   let cleaned = 0;
-  
+
   for (const [url, entry] of etagCache.entries()) {
     if (now - entry.timestamp > maxAge) {
       etagCache.delete(url);
       cleaned++;
     }
   }
-  
+
   if (cleaned > 0) {
     logger.debug(`Cleaned ${cleaned} expired ETag entries. Cache size: ${etagCache.size}`);
   }
 }, 60 * 60 * 1000); // Run every hour
 
-// Proxy configuration for MAL requests
+// MAL/Jikan dispatcher configuration
+// Priority: MAL_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
 const MAL_SOCKS_PROXY_URL = process.env.MAL_SOCKS_PROXY_URL;
+const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
 let malDispatcher;
 
 if (MAL_SOCKS_PROXY_URL) {
@@ -45,16 +47,29 @@ if (MAL_SOCKS_PROXY_URL) {
       });
       logger.info(`SOCKS proxy is enabled for Jikan API via fetch-socks.`);
     } else {
-      logger.warn(`Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
-      malDispatcher = new Agent({ connect: { timeout: 30000 } });
+      logger.warn(`Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
+      malDispatcher = null; // Will be set below
     }
   } catch (error) {
-    logger.warn(`Invalid MAL_SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
-    malDispatcher = new Agent({ connect: { timeout: 30000 } });
+    logger.warn(`Invalid MAL_SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
+    malDispatcher = null; // Will be set below
   }
-} else {
-  malDispatcher = new Agent({ connect: { timeout: 30000 } });
-  logger.info('undici agent is enabled for direct connections.');
+}
+
+// Fallback to HTTP proxy or direct connection
+if (!malDispatcher) {
+  if (HTTP_PROXY_URL) {
+    try {
+      malDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      logger.info('Using global HTTP proxy for Jikan API.');
+    } catch (error) {
+      logger.warn(`Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
+      malDispatcher = new Agent({ connect: { timeout: 30000 } });
+    }
+  } else {
+    malDispatcher = new Agent({ connect: { timeout: 30000 } });
+    logger.info('undici agent is enabled for direct connections.');
+  }
 }
 
 const BASE_REQUEST_DELAY = 400;  // 400ms = ~2.5 req/sec (safer margin under 3 req/sec limit)

@@ -1,14 +1,50 @@
-const { request, Agent } = require('undici');
+const { request, Agent, ProxyAgent } = require('undici');
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
-// Shared connection pool for all requests to Gemini API
-const geminiAgent = new Agent({
-  keepAliveTimeout: 30000,      // Keep connections alive for 30s
-  keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
-  connections: 50,              // Max concurrent connections
-  pipelining: 1,                // HTTP/1.1 pipelining
-});
+// Gemini dispatcher configuration
+// Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
+const getGeminiProxyUrl = () => {
+  // First check for Gemini-specific proxy
+  const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
+  if (geminiProxy) {
+    try {
+      return new URL(geminiProxy).toString();
+    } catch (error) {
+      console.warn('Invalid Gemini proxy URL:', geminiProxy);
+    }
+  }
+  // Fall back to global proxy
+  const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
+  if (globalProxy) {
+    try {
+      return new URL(globalProxy).toString();
+    } catch (error) {
+      console.warn('Invalid global proxy URL:', globalProxy);
+    }
+  }
+  return null;
+};
+
+// Create Gemini dispatcher
+// Uses Gemini-specific proxy if set, otherwise global proxy, otherwise direct connection
+const createGeminiDispatcher = () => {
+  const proxyUrl = getGeminiProxyUrl();
+  if (proxyUrl) {
+    return new ProxyAgent({ uri: proxyUrl });
+  }
+  // No proxy configured - use direct connection
+  return new Agent({
+    keepAliveTimeout: 30000,      // Keep connections alive for 30s
+    keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
+    connections: 50,              // Max concurrent connections
+    pipelining: 1,                // HTTP/1.1 pipelining
+  });
+};
+
+// Shared dispatcher for all requests to Gemini API
+// This is always a dedicated Agent/ProxyAgent, never using the global dispatcher
+const geminiDispatcher = createGeminiDispatcher();
 
 /**
  * Generate content using Gemini API with optional Google Search grounding.
@@ -43,7 +79,7 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify(body),
-    dispatcher: geminiAgent,
+    dispatcher: geminiDispatcher,
     headersTimeout: timeout,
     bodyTimeout: timeout,
   });
@@ -77,14 +113,14 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
  * Get agent stats for monitoring/debugging.
  */
 function getAgentStats() {
-  return geminiAgent.stats;
+  return geminiDispatcher.stats;
 }
 
 /**
  * Close the agent and all connections (for graceful shutdown).
  */
 async function closeAgent() {
-  await geminiAgent.close();
+  await geminiDispatcher.close();
 }
 
 module.exports = {

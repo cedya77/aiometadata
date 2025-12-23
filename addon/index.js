@@ -78,6 +78,17 @@ function shuffleMetas(metas = []) {
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
 
+// Global CORS middleware: ensure every response includes CORS headers
+// This prevents browser blocks when a route returns early or on errors
+addon.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  // Reply to preflight immediately
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // Add request tracking middleware
 addon.use(requestTracker.middleware());
 
@@ -628,6 +639,94 @@ addon.post("/api/trakt/proxy", async (req, res) => {
 
 // Manual cache clearing endpoint (temporarily disabled due to binding issue)
 // addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
+
+// --- MDBList Proxy Endpoints ---
+// These proxy frontend MDBList calls through the backend rate limiter
+const { makeRateLimitedMDBListRequest } = require('./utils/mdbList');
+
+// Proxy: Get user's lists
+addon.get("/api/mdblist/lists/user", async (req, res) => {
+  try {
+    const { apikey, username, sort } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    let url = username 
+      ? `https://api.mdblist.com/lists/user/${username}?apikey=${apikey}`
+      : `https://api.mdblist.com/lists/user?apikey=${apikey}`;
+    
+    if (sort) {
+      url += `&sort=${sort}`;
+    }
+    
+    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get User Lists');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching user lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user lists" });
+  }
+});
+
+// Proxy: Get top lists
+addon.get("/api/mdblist/lists/top", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/lists/top?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get Top Lists');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching top lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch top lists" });
+  }
+});
+
+// Proxy: Get list details by ID/slug
+addon.get("/api/mdblist/lists/:listId", async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/lists/${listId}?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, `MDBList Proxy - Get List ${listId}`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching list details:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch list details" });
+  }
+});
+
+// Proxy: Get external lists for current user
+addon.get("/api/mdblist/external/lists/user", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/external/lists/user?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get External User Lists');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching external lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch external lists" });
+  }
+});
 
 // --- AniList OAuth Routes ---
 const anilistTracker = require('./lib/anilistTracker');

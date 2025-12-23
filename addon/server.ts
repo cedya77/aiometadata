@@ -1,3 +1,6 @@
+// Initialize global HTTP proxy before any other imports that use undici
+import './utils/httpClient.js';
+
 import * as express from 'express';
 import { startServerWithCacheWarming } from './index.js';
 import { initializeMapper } from './lib/id-mapper.js';

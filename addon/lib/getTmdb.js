@@ -1,4 +1,4 @@
-const { fetch, Agent } = require('undici');
+const { fetch, Agent, ProxyAgent } = require('undici');
 const { socksDispatcher } = require('fetch-socks');
 const { scrapeSingleImdbResultByTitle, getMetaFromImdbIo } = require('./imdb');
 const requestTracker = require('./requestTracker');
@@ -17,20 +17,23 @@ const TMDB_API_URL = 'https://api.themoviedb.org/3';
  */
 function selectTmdbImageByLang(images, config) {
   if (!Array.isArray(images) || images.length === 0) return undefined;
-  
+
   // If englishArtOnly is enabled, force English language selection
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
-  
+
   let filtered = images.filter(img => img.iso_639_1 === targetLang);
   if (filtered.length === 0) filtered = images.filter(img => img.iso_639_1 === 'en');
   if (filtered.length === 0) filtered = images;
-  
+
   filtered.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
-  
+
   return filtered[0];
 }
 
+// TMDB dispatcher configuration
+// Priority: TMDB_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
 const SOCKS_PROXY_URL = process.env.TMDB_SOCKS_PROXY_URL;
+const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
 let dispatcher;
 
 if (SOCKS_PROXY_URL) {
@@ -46,16 +49,29 @@ if (SOCKS_PROXY_URL) {
       });
       consola.info(`[TMDB] SOCKS proxy is enabled for undici via fetch-socks.`);
     } else {
-      consola.error(`[TMDB] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Using direct connection.`);
-      dispatcher = new Agent({ connect: { timeout: 10000 } });
+      console.error(`[TMDB] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
+      dispatcher = null; // Will be set below
     }
   } catch (error) {
-    consola.error(`[TMDB] Invalid SOCKS_PROXY_URL. Using direct connection. Error: ${error.message}`);
-    dispatcher = new Agent({ connect: { timeout: 10000 } });
+    console.error(`[TMDB] Invalid SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
+    dispatcher = null; // Will be set below
   }
-} else {
-  dispatcher = new Agent({ connect: { timeout: 10000 } });
-  consola.info('[TMDB] undici agent is enabled for direct connections.');
+}
+
+// Fallback to HTTP proxy or direct connection
+if (!dispatcher) {
+  if (HTTP_PROXY_URL) {
+    try {
+      dispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      console.log('[TMDB] Using global HTTP proxy.');
+    } catch (error) {
+      console.error(`[TMDB] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
+      dispatcher = new Agent({ connect: { timeout: 10000 } });
+    }
+  } else {
+    dispatcher = new Agent({ connect: { timeout: 10000 } });
+    console.log('[TMDB] undici agent is enabled for direct connections.');
+  }
 }
 
 // A simple in-memory cache
