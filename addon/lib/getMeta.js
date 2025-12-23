@@ -23,10 +23,8 @@ const consola = require('consola');
 const { cp } = require("fs");
 const wikiMappings = require('./wiki-mapper.js');
 
-// Configure logging level based on environment (consistent with other modules)
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
-const logger = consola.create({ tag: 'Meta' });
+
+const logger = consola.withTag('Meta');
 
 
 const processLogo = (logoUrl) => {
@@ -98,13 +96,13 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     }
     const shouldIncludeVideos = !isTraktUpNextId && includeVideos;
     // --- TVDB Collections Meta Handler ---
-    logger.info(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
+    logger.debug(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
     const [prefix, sourceId] = stremioId.split(':');
     if (prefix === 'tvdbc') {
       return await handleTvdbCollection(sourceId, language, config, userUUID);
     }
     let meta;
-    logger.info(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
+    logger.debug(`[Meta] Processing ${stremioId} (type: ${type})`);
     const isImdbIdAnime = stremioId.startsWith('tt') && !!idMapper.getMappingByImdbId(stremioId);
     const isAnime = stremioId.startsWith('mal:') || 
                     stremioId.startsWith('kitsu:') || 
@@ -166,7 +164,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     if(!targetProviders.has(preferredProvider)) {
       targetProviders.add(preferredProvider);
     }
-    logger.info(`[Meta] Target providers: ${Array.from(targetProviders)}`);
+    logger.debug(`[Meta] Target providers: ${Array.from(targetProviders)}`);
     const allIds =  await resolveAllIds(stremioId, type, config, {}, Array.from(targetProviders));
     switch (finalType) {
       case 'movie':
@@ -182,7 +180,7 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
 
     // Check if meta was successfully retrieved
     if (!meta) {
-      logger.warn(`[Meta] No metadata found for ${stremioId}`);
+      logger.debug(`[Meta] No metadata found for ${stremioId}`);
       return { meta: null };
     }
 
@@ -451,7 +449,7 @@ function collectGenresFromItems(items) {
 
 // --- Movie Worker ---
 async function getMovieMeta(stremioId, preferredProvider, language, config, userUUID, allIds) {
-  logger.info(`[MovieMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
+  logger.debug(`[MovieMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
   
   // Try preferred provider first
   if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
@@ -535,7 +533,7 @@ async function getMovieMeta(stremioId, preferredProvider, language, config, user
 }
 
 async function getSeriesMeta(preferredProvider, stremioId, language, config, userUUID, allIds, includeVideos) {
-  logger.info(`[SeriesMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
+  logger.debug(`[SeriesMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
   // Try preferred provider
   if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
@@ -674,20 +672,20 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
 // --- Anime worker ---
 
 async function getAnimeMeta(preferredProvider, stremioId, language, config, userUUID, allIds, type, isAnime, includeVideos) {
-  logger.info(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
+  logger.debug(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
   if (type === 'movie') {
     if (allIds?.malId) {
       allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
       allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
-      allIds.tvdbId = (await wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
+      allIds.tvdbId = (wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
     }
   }
 
   // --- Preferred Provider Logic ---
   try {
     if (preferredProvider && preferredProvider !== 'kitsu' && preferredProvider !== 'mal') {
-      logger.info(`[AnimeMeta] Attempting preferred provider '${preferredProvider}' for ${stremioId}.`);
+      logger.debug(`[AnimeMeta] Attempting preferred provider '${preferredProvider}' for ${stremioId}.`);
       if (preferredProvider === 'tmdb' && allIds?.tmdbId) {
         const langCode = language.split('-')[0];
         const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
@@ -715,7 +713,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
             return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, isAnime, includeVideos);
           }
         } else if (type === 'movie') {
-          logger.info(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
+          logger.debug(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
           const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
           if (!movieData) {
             if (allIds?.imdbId) {
@@ -743,7 +741,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
         }
       }
-      logger.info(`[AnimeMeta] No ID found for preferred provider '${preferredProvider}'.`);
+      logger.debug(`[AnimeMeta] No ID found for preferred provider '${preferredProvider}'.`);
     }
   } catch (e) {
     logger.warn(`[AnimeMeta] Preferred provider '${preferredProvider}' failed for ${stremioId}. Falling back. Error: ${e.message}`);
@@ -755,7 +753,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   // 1. Try Kitsu (if it's the preferred provider OR as a fallback, but not if MAL was the preferred provider)
   if (allIds?.kitsuId && (preferredProvider === 'kitsu' || preferredProvider !== 'mal')) {
     try {
-      logger.info(`[AnimeMeta] Using provider 'kitsu' for ${stremioId} (Kitsu ID: ${allIds.kitsuId})`);
+      logger.debug(`[AnimeMeta] Using provider 'kitsu' for ${stremioId} (Kitsu ID: ${allIds.kitsuId})`);
       const kitsuDetails = await cacheWrapGlobal(
         `kitsu-anime-${allIds.kitsuId}-genres,episodes,mediaRelationships.destination`,
         () => kitsu.getMultipleAnimeDetails([allIds.kitsuId], 'genres,episodes,mediaRelationships.destination'),
@@ -783,7 +781,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   // 2. Try MAL (if it's the preferred provider OR as the final fallback)
   if (allIds?.malId) {
     try {
-      logger.info(`[AnimeMeta] Using provider 'mal' for ${stremioId}`);
+      logger.debug(`[AnimeMeta] Using provider 'mal' for ${stremioId}`);
       const [details, characters, episodes] = await Promise.all([
         cacheWrapJikanApi(`anime-details-${allIds.malId}`, () => jikan.getAnimeDetails(allIds.malId)),
         includeVideos ? cacheWrapJikanApi(`anime-characters-${allIds.malId}`, () => jikan.getAnimeCharacters(allIds.malId)) : null,
@@ -1580,7 +1578,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   // Prefer user's language, fallback to English, then all available
   const finalTrailers = userLangTrailers.length > 0 ? userLangTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
 
-  logger.info(`[TmdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
+  logger.debug(`[TmdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
   const meta = {
     id: imdbId || stremioId,
     type: 'series',
@@ -2089,7 +2087,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
 
   //console.log(tvdbShow.artworks?.find(a => a.type === 2)?.image);
-  logger.info(`[TvdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
+  logger.debug(`[TvdbSeriesMeta] imdbId: ${imdbId}, stremioId: ${stremioId}`);
   const meta = {
     id: isAnime ? config.mal?.useImdbIdForCatalogAndSearch ? imdbId : stremioId : imdbId || stremioId,
     type: 'series',

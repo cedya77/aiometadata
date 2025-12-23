@@ -9,19 +9,7 @@ const consola = require('consola');
 const { httpGet } = require('../utils/httpClient');
 const { mappings } = require('./wiki-mapper.js');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'ID-Resolver'
-});
+const logger = consola.withTag('ID-Resolver');
 
 // Performance tracking counters
 let performanceStats = {
@@ -94,7 +82,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
     const duration = Date.now() - startTime;
     
     // Record timing metrics for TMDB external IDs
-    await timingMetrics.recordTiming('tmdb_external_ids', duration, { 
+    timingMetrics.recordTiming('tmdb_external_ids', duration, { 
       type, 
       tmdbId,
       success: true,
@@ -103,7 +91,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
     });
     
     // Record provider-specific timing
-    await timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
+    timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
       operation: 'external_ids',
       tmdbId,
       success: true
@@ -117,7 +105,7 @@ async function _fetchFromTmdb(tmdbId, type, config) {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('tmdb_external_ids', duration, { 
+    timingMetrics.recordTiming('tmdb_external_ids', duration, { 
       type, 
       tmdbId,
       success: false,
@@ -126,8 +114,8 @@ async function _fetchFromTmdb(tmdbId, type, config) {
       error: error.message
     });
     
-    // Record provider-specific timing for failures
-    await timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
+    // Record provider-specific timing for failures (fire-and-forget)
+    timingMetrics.recordTiming(`api_tmdb_${type}`, duration, {
       operation: 'external_ids',
       tmdbId,
       success: false,
@@ -150,16 +138,16 @@ async function _fetchFromTvdb(tvdbId, type, config) {
 
     const duration = Date.now() - startTime;
     
-    // Record timing metrics for TVDB
-    await timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
+    // Record timing metrics for TVDB (fire-and-forget)
+    timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
       type, 
       tvdbId,
       success: true,
       provider: 'tvdb'
     });
     
-    // Record provider-specific timing
-    await timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
+    // Record provider-specific timing (fire-and-forget)
+    timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
       operation: 'remote_ids',
       tvdbId,
       success: true
@@ -174,7 +162,7 @@ async function _fetchFromTvdb(tvdbId, type, config) {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
+    timingMetrics.recordTiming('tvdb_remote_ids', duration, { 
       type, 
       tvdbId,
       success: false,
@@ -183,7 +171,7 @@ async function _fetchFromTvdb(tvdbId, type, config) {
     });
     
     // Record provider-specific timing for failures
-    await timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
+    timingMetrics.recordTiming(`api_tvdb_${type}`, duration, {
       operation: 'remote_ids',
       tvdbId,
       success: false,
@@ -204,14 +192,14 @@ async function _fetchFromTvmaze(tvmazeId, config) {
     const duration = Date.now() - startTime;
     
     // Record timing metrics for TVMaze
-    await timingMetrics.recordTiming('tvmaze_externals', duration, { 
+    timingMetrics.recordTiming('tvmaze_externals', duration, { 
       tvmazeId,
       success: true,
       provider: 'tvmaze'
     });
     
     // Record provider-specific timing
-    await timingMetrics.recordTiming('api_tvmaze_series', duration, {
+    timingMetrics.recordTiming('api_tvmaze_series', duration, {
       operation: 'externals',
       tvmazeId,
       success: true
@@ -224,7 +212,7 @@ async function _fetchFromTvmaze(tvmazeId, config) {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('tvmaze_externals', duration, { 
+    timingMetrics.recordTiming('tvmaze_externals', duration, { 
       tvmazeId,
       success: false,
       provider: 'tvmaze',
@@ -232,7 +220,7 @@ async function _fetchFromTvmaze(tvmazeId, config) {
     });
     
     // Record provider-specific timing for failures
-    await timingMetrics.recordTiming('api_tvmaze_series', duration, {
+    timingMetrics.recordTiming('api_tvmaze_series', duration, {
       operation: 'externals',
       tvmazeId,
       success: false,
@@ -284,13 +272,13 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     performanceStats.animeResolutions++;
     _handleAnimeMapping(allIds);
     const duration = Date.now() - startTime;
-    await timingMetrics.recordTiming('id_resolution_anime', duration, { 
+    timingMetrics.recordTiming('id_resolution_anime', duration, { 
       type, 
       stremioId,
       cached: false,
       resolution_type: 'anime_mapping'
     });
-    logger.success(` Anime resolution complete for ${stremioId} (took ${duration}ms)`);
+    logger.debug(`[Anime] Resolution complete for ${stremioId} (took ${duration}ms)`);
     return allIds;
   }
 
@@ -300,13 +288,13 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     try {
       let wikiMapping = null;
       if (allIds.tmdbId && (type === 'movie' || type === 'series')) {
-        wikiMapping = await mappings.getByTmdbId(allIds.tmdbId.toString(), type);
+        wikiMapping = mappings.getByTmdbId(allIds.tmdbId.toString(), type);
       } else if (allIds.tvdbId && (type === 'movie' || type === 'series')) {
-        wikiMapping = await mappings.getByTvdbId(allIds.tvdbId.toString());
+        wikiMapping = mappings.getByTvdbId(allIds.tvdbId.toString());
       } else if (allIds.imdbId && (type === 'movie' || type === 'series')) {
-        wikiMapping = await mappings.getByImdbId(allIds.imdbId, type);
+        wikiMapping = mappings.getByImdbId(allIds.imdbId, type);
       } else if (allIds.tvmazeId && type === 'series') {
-        wikiMapping = await mappings.getSeriesByTvmaze(allIds.tvmazeId.toString());
+        wikiMapping = mappings.getSeriesByTvmaze(allIds.tvmazeId.toString());
       }
       
       if (wikiMapping) {
@@ -333,13 +321,13 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
           if (hasAllTargets) {
             performanceStats.wikiMappingEarlyReturns++;
             const duration = Date.now() - startTime;
-            await timingMetrics.recordTiming('id_resolution_wiki', duration, { 
+            timingMetrics.recordTiming('id_resolution_wiki', duration, { 
               type, 
               stremioId,
               cached: false,
               resolution_type: 'wiki_mapping_complete'
             });
-            logger.success(` Wiki mapping provided all target providers for ${stremioId} (took ${duration}ms)`);
+            logger.debug(`[Wiki] Mapping provided all target providers for ${stremioId} (took ${duration}ms)`);
             return allIds;
           }
         }
@@ -372,26 +360,26 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
         if (hasAllTargets) {
           performanceStats.cacheEarlyReturns++;
           const duration = Date.now() - startTime;
-          await timingMetrics.recordTiming('id_resolution_cache', duration, { 
+          timingMetrics.recordTiming('id_resolution_cache', duration, { 
             type, 
             stremioId,
             cached: true,
             resolution_type: 'cache_hit'
           });
-          logger.success(` Cache hit provided all target providers for ${stremioId} (took ${duration}ms)`);
+          logger.debug(`[Cache] Hit provided all target providers for ${stremioId} (took ${duration}ms)`);
           return allIds;
         }
       } else {
         // If no target providers specified, return cache hit immediately
         performanceStats.cacheEarlyReturns++;
         const duration = Date.now() - startTime;
-        await timingMetrics.recordTiming('id_resolution_cache', duration, { 
+        timingMetrics.recordTiming('id_resolution_cache', duration, { 
           type, 
           stremioId,
           cached: true,
           resolution_type: 'cache_hit'
         });
-        logger.success(` Cache hit resolution complete for ${stremioId} (took ${duration}ms)`);
+        logger.debug(`[Cache] Hit resolution complete for ${stremioId} (took ${duration}ms)`);
         return allIds;
       }
     }
@@ -488,7 +476,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
     }
     
     if (!allIds.tvdbId && allIds.imdbId && needsTvdb) {
-        console.log('Finding TVDB ID for IMDB ID', allIds.imdbId);
+        logger.debug(`[Secondary API] Finding TVDB ID for IMDB ID ${allIds.imdbId}`);
         const tvdbFindStartTime = Date.now();
         logger.debug(`[Secondary API] TVDB find by IMDB - targetProviders: [${targetProviders.join(', ')}]`);
         secondaryPromises.push(
@@ -633,7 +621,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
         
         // Record individual secondary API call timings
         for (const timing of secondaryTimings) {
-            await timingMetrics.recordTiming(`secondary_${timing.operation}`, timing.duration, {
+            timingMetrics.recordTiming(`secondary_${timing.operation}`, timing.duration, {
                 type: timing.type,
                 success: timing.success,
                 provider: timing.provider,
@@ -642,7 +630,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
             });
             
             // Also record provider-specific secondary timing
-            await timingMetrics.recordTiming(`secondary_${timing.provider}_${timing.type}`, timing.duration, {
+            timingMetrics.recordTiming(`secondary_${timing.provider}_${timing.type}`, timing.duration, {
                 operation: timing.operation,
                 success: timing.success,
                 sourceId: timing.sourceId,
@@ -686,7 +674,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   const totalDuration = Date.now() - startTime;
   
   // Record API lookup timing
-  await timingMetrics.recordTiming('api_lookup', apiDuration, { 
+  timingMetrics.recordTiming('api_lookup', apiDuration, { 
     type, 
     stremioId,
     cached: false,
@@ -694,7 +682,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   });
   
   // Record total resolution timing
-  await timingMetrics.recordTiming('id_resolution_total', totalDuration, { 
+  timingMetrics.recordTiming('id_resolution_total', totalDuration, { 
     type, 
     stremioId,
     cached: false,
@@ -703,7 +691,7 @@ async function resolveAllIds(stremioId, type, config, prefetchedIds = {}, target
   
   logger.debug(` API lookup phase took ${apiDuration}ms for ${stremioId}`);
   const duration = totalDuration;
-  logger.success(` Resolution complete for ${stremioId} (took ${duration}ms)`);
+  logger.debug(`[Resolution] Complete for ${stremioId} (took ${duration}ms)`);
   logger.debug(` Final resolved IDs for ${stremioId} (type: ${type}):`, allIds);
   return allIds;
 }

@@ -17,9 +17,6 @@ const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = r
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
 
-// Configure logging level based on environment
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel.toLowerCase()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
 
 // Warm user-specific content based on their config
@@ -1882,14 +1879,14 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   } catch (error) {
     consola.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
     
-    // Log error for dashboard
+    // Log error for dashboard (fire-and-forget)
     try {
-      await requestTracker.logError('error', `Meta route failed for ${stremioId}`, {
+      requestTracker.logError('error', `Meta route failed for ${stremioId}`, {
         stremioId,
         type,
         error: error.message,
         stack: error.stack
-      });
+      }).catch(() => {});
     } catch (logError) {
       consola.warn('Failed to log error:', logError.message);
     }

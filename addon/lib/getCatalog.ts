@@ -18,19 +18,7 @@ import { getMeta } from './getMeta.js';
 const consola = require('consola');
 const database = require('./database.js');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false,
-  },
-  tag: 'Catalog'
-});
+const logger = consola.withTag('Catalog');
 
 /**
  * Helper to get Trakt access token from database

@@ -1,22 +1,8 @@
 const redis = require("./redisClient");
 const consola = require("consola");
 
-// Configure Consola for better output with forced colors
-const logger = consola.create({
-  level: process.env.LOG_LEVEL
-    ? (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4)
-    : process.env.NODE_ENV === "production"
-      ? 3
-      : 4,
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false,
-  },
-  tag: "Request-Tracker",
-});
+
+const logger = consola.withTag("Request-Tracker");
 
 class RequestTracker {
   constructor() {
@@ -118,9 +104,9 @@ class RequestTracker {
           .catch(() => {});
       }
 
-      // Track active users only for user-facing requests
+      // Track active users only for user-facing requests (fire-and-forget)
       if (this.shouldTrackRequest(req)) {
-        await this.trackActiveUser(userIdentifier, req);
+        this.trackActiveUser(userIdentifier, req).catch(() => {});
       }
 
       // Set expiration for time-based keys (don't await)
@@ -671,7 +657,7 @@ class RequestTracker {
         cached_at: new Date().toISOString(),
       };
 
-      logger.info(
+      logger.debug(
         `[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
       );
 
@@ -1059,7 +1045,7 @@ class RequestTracker {
   // Track recent activity
   async trackActivity(type, details) {
     try {
-      logger.info(
+      logger.debug(
         `[Request Tracker] Tracking activity: ${type} for ${details.endpoint}`,
       );
 
@@ -1077,7 +1063,7 @@ class RequestTracker {
       await redis.ltrim(activityKey, 0, 99); // Keep only last 100
       await redis.expire(activityKey, 86400 * 7); // 7 days
 
-      logger.info(`[Request Tracker] Activity stored successfully: ${type}`);
+      logger.debug(`[Request Tracker] Activity stored successfully: ${type}`);
     } catch (error) {
       logger.warn("[Request Tracker] Failed to track activity:", error.message);
     }
@@ -1381,17 +1367,13 @@ class RequestTracker {
         count: 1,
       };
 
-      // Store in Redis with 7 day TTL
-      await redis.set(
-        `error_log:${errorId}`,
-        JSON.stringify(errorLog),
-        "EX",
-        86400 * 7,
-      );
-
-      // Also track in a sorted set by timestamp for easy retrieval
-      await redis.zadd("error_logs", Date.now(), errorId);
-      await redis.expire("error_logs", 86400 * 7);
+      // Store in Redis with 7 day TTL using pipeline (fire-and-forget)
+      redis.pipeline()
+        .set(`error_log:${errorId}`, JSON.stringify(errorLog), "EX", 86400 * 7)
+        .zadd("error_logs", Date.now(), errorId)
+        .expire("error_logs", 86400 * 7)
+        .exec()
+        .catch(() => {});
 
       logger.info(`[Request Tracker] Logged ${level}: ${message}`);
     } catch (error) {

@@ -2,19 +2,8 @@ require('dotenv').config();
 const { generateContent } = require('./gemini-client');
 const consola = require('consola');
 
-const logger = consola.create({ 
-  level: process.env.LOG_LEVEL ? 
-    (consola.LogLevels[process.env.LOG_LEVEL.toLowerCase()] ?? 4) : 
-    (process.env.NODE_ENV === 'production' ? 3 : 4),
-  fancy: true,
-  colors: true,
-  formatOptions: {
-    colors: true,
-    compact: false,
-    date: false
-  },
-  tag: 'GeminiService'
-});
+
+const logger = consola.withTag('GeminiService');
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite";
 

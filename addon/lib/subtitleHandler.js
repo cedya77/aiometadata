@@ -3,10 +3,8 @@ const idMapper = require('./id-mapper');
 const { resolveTmdbEpisodeFromKitsu } = require('./id-mapper');
 const anilistTracker = require('./anilistTracker');
 
-// Configure logging level based on environment
-const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
-consola.level = consola.LogLevels[logLevel?.toLowerCase?.()] ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
-const logger = consola.create({ tag: 'SubtitleHandler' });
+
+const logger = consola.withTag('SubtitleHandler');
 
 /**
  * Parse Stremio media IDs into structured identifiers supported by MDBList.
