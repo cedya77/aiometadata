@@ -1,6 +1,6 @@
 const redis = require("./redisClient");
 const consola = require("consola");
-
+const { isMetricsDisabled } = require('./metricsConfig');
 
 const logger = consola.withTag("Request-Tracker");
 
@@ -84,6 +84,10 @@ class RequestTracker {
 
   // Track incoming request
   async trackRequest(req) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const today = new Date().toISOString().split("T")[0];
       const hour = new Date().toISOString().substring(0, 13);
@@ -138,6 +142,10 @@ class RequestTracker {
 
   // Track response
   async trackResponse(req, res, responseTime) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const today = new Date().toISOString().split("T")[0];
       const endpoint = this.normalizeEndpoint(req.path);
@@ -256,6 +264,10 @@ class RequestTracker {
 
   // Track content requests (meta, search, catalog)
   async trackContentRequest(req) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const path = req.path;
       const today = new Date().toISOString().split("T")[0];
@@ -574,6 +586,10 @@ class RequestTracker {
 
   // Capture metadata from cache key (for cache hits)
   async captureMetadataFromCacheKey(cacheKey, meta) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       if (!meta || !meta.name) return;
 
@@ -598,6 +614,10 @@ class RequestTracker {
 
   // Capture metadata from complete meta components (better approach!)
   async captureMetadataFromComponents(metaId, meta, metaType) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       if (!meta || !meta.name) return;
 
@@ -704,6 +724,10 @@ class RequestTracker {
 
   // Capture metadata when content is cached (legacy approach)
   async captureMetadata(cacheKey, result) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const meta = result?.meta || result;
       if (!meta || !meta.name) return;
@@ -821,6 +845,10 @@ class RequestTracker {
 
   // Track cache hit/miss
   async trackCacheHit() {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const today = new Date().toISOString().split("T")[0];
       redis.incr(`cache:hits:${today}`).catch(() => {});
@@ -834,6 +862,10 @@ class RequestTracker {
   }
 
   async trackCacheMiss() {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const today = new Date().toISOString().split("T")[0];
       redis.incr(`cache:misses:${today}`).catch(() => {});
@@ -853,6 +885,10 @@ class RequestTracker {
     success = true,
     rateLimitHeaders = null,
   ) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const today = new Date().toISOString().split("T")[0];
       const hour = new Date().toISOString().substring(0, 13);
@@ -1044,6 +1080,10 @@ class RequestTracker {
 
   // Track recent activity
   async trackActivity(type, details) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       logger.debug(
         `[Request Tracker] Tracking activity: ${type} for ${details.endpoint}`,
@@ -1354,6 +1394,10 @@ class RequestTracker {
 
   // Log detailed error for dashboard
   async logError(level, message, details = {}) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const errorId = Date.now().toString();
       const timestamp = new Date().toISOString();
