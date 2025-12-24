@@ -104,11 +104,6 @@ const detectEnvironment = (systemData: any): string => {
     return "Docker";
   }
 
-  // Check for Kubernetes
-  if (process.env.KUBERNETES_SERVICE_HOST) {
-    return "Kubernetes";
-  }
-
   // Platform-based detection
   if (platform === "linux") {
     return "Linux";
@@ -1900,8 +1895,13 @@ function DashboardSystem({ data, loading }) {
 
   useEffect(() => {
     if (data) {
-      setSystemConfig(data.systemConfig);
-      setResourceUsage(data.resourceUsage);
+      // Only update if data.systemConfig exists to prevent undefined crash
+      if (data.systemConfig) {
+        setSystemConfig(data.systemConfig);
+      }
+      if (data.resourceUsage) {
+        setResourceUsage(data.resourceUsage);
+      }
       if (data.providerStatus) {
         setProviderStatus(data.providerStatus);
       }
@@ -3588,6 +3588,7 @@ export function Dashboard() {
           <AdminLogin />
         </div>
 
+
         <Accordion type="single" collapsible className="w-full">
           {dashboardPages.map((page, index) => (
             <AccordionItem
@@ -3624,6 +3625,16 @@ export function Dashboard() {
         </div>
         <AdminLogin />
       </div>
+
+      {/* Metrics Disabled Banner */}
+      {dashboardData.overview?.metricsDisabled && (
+        <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            Metrics have been disabled on this instance
+          </p>
+        </div>
+      )}
 
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-1 bg-muted overflow-x-auto">
