@@ -274,6 +274,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   
   const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
   const isUpNext = catalog.id === 'trakt.upnext';
+  const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.');
 
   const handleSave = () => {
     setConfig(prev => {
@@ -304,47 +305,51 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
           <DialogTitle>Trakt Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Sort By</Label>
-            <Select value={sort} onValueChange={(value) => setSort(value as TraktSortOption)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <TooltipProvider>
-                  {TRAKT_SORT_OPTIONS.map(option => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <span className="flex items-center gap-1">
-                        {option.label}
-                        {option.vip && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span role="img" aria-label="VIP" className="ml-1">💎</span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="max-w-xs whitespace-normal">
-                              VIP Only: Requires Trakt VIP subscription
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </TooltipProvider>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Sort Direction</Label>
-            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asc">Ascending</SelectItem>
-                <SelectItem value="desc">Descending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {showSortOptions && (
+            <>
+              <div className="space-y-2">
+                <Label>Sort By</Label>
+                <Select value={sort} onValueChange={(value) => setSort(value as TraktSortOption)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <TooltipProvider>
+                      {TRAKT_SORT_OPTIONS.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <span className="flex items-center gap-1">
+                            {option.label}
+                            {option.vip && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span role="img" aria-label="VIP" className="ml-1">💎</span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-xs whitespace-normal">
+                                  VIP Only: Requires Trakt VIP subscription
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </TooltipProvider>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Sort Direction</Label>
+                <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="asc">Ascending</SelectItem>
+                    <SelectItem value="desc">Descending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
 
           <div className="space-y-2">
             <Label>Cache TTL (seconds)</Label>

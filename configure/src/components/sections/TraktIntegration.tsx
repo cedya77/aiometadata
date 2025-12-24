@@ -700,6 +700,45 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     setSelectedTrendingLists(new Set());
   };
 
+  // Handlers to add single-catalog trending/popular endpoints as catalogs
+  const handleAddTrendingCatalog = (type: 'movies' | 'shows') => {
+    const id = `trakt.trending.${type}`;
+    if (config.catalogs.some(c => c.id === id)) {
+      toast.info(`Trending ${type} catalog already added.`);
+      return;
+    }
+    const newCatalog: CatalogConfig = {
+      id,
+      type: type === 'movies' ? 'movie' : 'series',
+      name: `Trakt Trending ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      enabled: true,
+      showInHome: true,
+      source: 'trakt',
+      metadata: { traktEndpoint: `trending/${type}` }
+    };
+    setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+    toast.success(`Added Trakt Trending ${type}`);
+  };
+
+  const handleAddPopularCatalog = (type: 'movies' | 'shows') => {
+    const id = `trakt.popular.${type}`;
+    if (config.catalogs.some(c => c.id === id)) {
+      toast.info(`Popular ${type} catalog already added.`);
+      return;
+    }
+    const newCatalog: CatalogConfig = {
+      id,
+      type: type === 'movies' ? 'movie' : 'series',
+      name: `Trakt Popular ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      enabled: true,
+      showInHome: true,
+      source: 'trakt',
+      metadata: { traktEndpoint: `popular/${type}` }
+    };
+    setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+    toast.success(`Added Trakt Popular ${type}`);
+  };
+
   const fetchLikedLists = async () => {
     if (!isConnected || !config.apiKeys?.traktTokenId) {
       toast.error('Not connected to Trakt or token not available');
@@ -1597,7 +1636,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                         })}
                     </div>
 
-                    {selectedTrendingLists.size > 0 && (
+                      {selectedTrendingLists.size > 0 && (
                       <Button
                         onClick={importSelectedTrendingLists}
                         className="w-full"
@@ -1610,6 +1649,60 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
               </CardContent>
             </Card>
           )}
+
+            {isConnected && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Trending & Popular Catalogs</CardTitle>
+                  <CardDescription>Import Trakt trending or popular movies/shows as single catalogs</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleAddTrendingCatalog('movies')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'trakt.trending.movies')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Trending Movies
+                    </Button>
+                    <Button
+                      onClick={() => handleAddTrendingCatalog('shows')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'trakt.trending.shows')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Trending Shows
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleAddPopularCatalog('movies')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'trakt.popular.movies')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Popular Movies
+                    </Button>
+                    <Button
+                      onClick={() => handleAddPopularCatalog('shows')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'trakt.popular.shows')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Popular Shows
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    These catalogs use Trakt's trending and popular endpoints for movies and shows. They update automatically.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
           {/* Liked Lists */}
           {isConnected && (

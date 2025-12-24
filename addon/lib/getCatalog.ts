@@ -976,6 +976,22 @@ async function getTraktCatalog(
       const favPeriod = parts[3]; // 'daily', 'weekly', 'monthly', 'all'
       logger.debug(`Fetching Trakt most favorited: type=${favType}, period=${favPeriod}`);
       response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genre);
+    } else if (catalogId === 'trakt.trending.movies') {
+      logger.debug('Fetching Trakt trending movies');
+      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('movies', page, pageSize, genre);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
+    } else if (catalogId === 'trakt.trending.shows') {
+      logger.debug('Fetching Trakt trending shows');
+      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('shows', page, pageSize, genre);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
+    } else if (catalogId === 'trakt.popular.movies') {
+      logger.debug('Fetching Trakt popular movies');
+      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('movies', page, pageSize, genre);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
+    } else if (catalogId === 'trakt.popular.shows') {
+      logger.debug('Fetching Trakt popular shows');
+      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('shows', page, pageSize, genre);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist
       logger.debug(`Fetching Trakt unified watchlist`);
