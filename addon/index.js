@@ -690,6 +690,26 @@ addon.get("/api/mdblist/lists/top", async (req, res) => {
   }
 });
 
+// Proxy: Get list details by username/listname
+addon.get("/api/mdblist/lists/:username/:listname", async (req, res) => {
+  try {
+    const { username, listname } = req.params;
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    const url = `https://api.mdblist.com/lists/${username}/${listname}?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, `MDBList Proxy - Get User List ${username}/${listname}`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching user list details:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user list details" });
+  }
+});
+
 // Proxy: Get list details by ID/slug
 addon.get("/api/mdblist/lists/:listId", async (req, res) => {
   try {

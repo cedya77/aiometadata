@@ -17,6 +17,26 @@ interface MDBListIntegrationProps {
   onClose: () => void;
 }
 
+const getMdbListType = (list: any): 'movie' | 'series' | 'all' => {
+  const movies = list.movies ?? (list.items - (list.shows ?? list.items_show ?? 0));
+  const shows = list.shows ?? list.items_show ?? 0;
+
+  if (movies > 0 && shows > 0) {
+    return 'all';
+  }
+  if (movies > 0) {
+    return 'movie';
+  }
+  if (shows > 0) {
+    return 'series';
+  }
+  // Fallback for empty lists or lists with no movie/show counts
+  if (list.mediatype && typeof list.mediatype === 'string') {
+    return list.mediatype === 'movie' ? 'movie' : 'series';
+  }
+  return 'all'; // Default for empty or unknown
+}
+
 export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps) {
   const { config, setConfig, catalogTTL } = useConfig();
   const [tempKey, setTempKey] = useState(config.apiKeys.mdblist || "");
@@ -61,7 +81,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = topLists.find(l => l.id === listId);
           if (!list) return;
 
-          const type = list.mediatype === "movie" ? "movie" : "series";
+          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
 
           // Check if catalog already exists
@@ -191,20 +211,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = externalLists.find(l => l.id === listId);
           if (!list) return;
 
-          let listType: 'movie' | 'series' | 'all';
-          if (list.mediatype) {
-            listType = list.mediatype === "movie" ? "movie" : "series";
-          } else {
-            const movieCount = list.items - (list.items_show || 0);
-            const showCount = list.items_show || 0;
-            if (movieCount > 0 && showCount === 0) {
-              listType = 'movie';
-            } else if (showCount > 0 && movieCount === 0) {
-              listType = 'series';
-            } else {
-              listType = 'all';
-            }
-          }
+          const listType = getMdbListType(list);
           
           const createCatalog = (type: 'movie' | 'series' | 'all', id: string, name: string, sourceUrl: string) => {
             if (newCatalogs.some(c => c.id === id)) return;
@@ -477,7 +484,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = customUserLists.find(l => l.id === listId);
           if (!list) return;
 
-          const type = list.mediatype === "movie" ? "movie" : "series";
+          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
           
           // Check if catalog already exists
@@ -551,7 +558,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = popularLists.find(l => l.id === listId);
           if (!list) return;
 
-          const type = list.mediatype === "movie" ? "movie" : "series";
+          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
           
           // Check if catalog already exists
@@ -644,7 +651,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
         // Process each list from the API
         listsFromApi.forEach((list: any) => {
-          const type = list.mediatype === "movie" ? "movie" : "series";
+          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
           const catalogKey = `${catalogId}-${type}`;
           
@@ -753,14 +760,18 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     }
     try {
       const path = new URL(customListUrl).pathname;
-      const listName = path.replace('/lists/', '');
-      if (!listName) throw new Error("Invalid MDBList URL format.");
+      const parts = path.split('/').filter(p => p);
+      if (parts.length < 3 || parts[0] !== 'lists') {
+        throw new Error("Invalid MDBList URL format.");
+      }
+      const username = parts[1];
+      const listname = parts.slice(2).join('/');
 
-      const response = await fetch(`/api/mdblist/lists/${encodeURIComponent(listName)}?apikey=${tempKey}`);
+      const response = await fetch(`/api/mdblist/lists/${encodeURIComponent(username)}/${encodeURIComponent(listname)}?apikey=${tempKey}`);
       if (!response.ok) throw new Error(`Error fetching list (Status: ${response.status})`);
 
       const [list] = await response.json();
-      const type = list.mediatype === "movie" ? "movie" : "series";
+      const type = getMdbListType(list);
       
       setConfig(prev => {
         // Apply display type overrides if configured

@@ -258,7 +258,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     if (listId === 'watchlist') {
       url = `https://api.mdblist.com/watchlist/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
     } else {
-      url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster`;
+      url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
     }
     
     // Add sort and order parameters if provided and not empty
@@ -578,7 +578,6 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   let filteredItems = items;
   //console.log(`[MDBList] Filtered items: ${JSON.stringify(filteredItems)}`);
 
-  const targetMediaType = type === 'series' ? 'show' : 'movie';
   //const batchMediaInfo = await fetchMDBListBatchMediaInfo('tmdb', targetMediaType, filteredItems.map(item => item.id), config.apiKeys?.mdblist || '');
   //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo)}`);
   
