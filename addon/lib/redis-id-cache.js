@@ -113,7 +113,7 @@ class RedisIdCache {
     if (!this.redis) return;
 
     if (!tmdbId) {
-      logger.warn(`[Redis ID Cache] Cannot save mapping: a TMDB ID is required as the canonical anchor.`);
+      logger.debug(`[Redis ID Cache] Cannot save mapping: a TMDB ID is required as the canonical anchor.`);
       return;
     }
 

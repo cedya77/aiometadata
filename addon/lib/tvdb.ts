@@ -712,7 +712,8 @@ async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', sea
   const cacheKey = `series-episodes:${tvdbId}:${language}:${seasonType}`;
 
   return cacheWrapTvdbApi(cacheKey, async () => {
-    console.log(`[TVDB] Fetching episodes for ${tvdbId} with type: '${seasonType}' and lang: '${language}'`);
+    const consola = require('consola');
+    consola.debug(`[TVDB] Fetching episodes for ${tvdbId} with type: '${seasonType}' and lang: '${language}'`);
     let result = await _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config);
  
     if ((!result || result.episodes.length === 0) && seasonType !== 'official') {
@@ -746,7 +747,8 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
     requestTracker.trackProviderCall('tvdb', responseTime, true);
     
     const results = (response.data as any)?.data || [];
-    console.log(`Found TVDB ID for IMDB ID ${imdbId}:`, results);
+    const consola = require('consola');
+    consola.debug(`[TVDB] Found TVDB ID for IMDB ID ${imdbId}:`, results);
     return results;
   } catch (error) {
     // Track failed request

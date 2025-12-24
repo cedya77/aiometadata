@@ -105,7 +105,7 @@ function to3LetterCountryCode(countryCode2: string | undefined): string {
   if (!countryCode2) {
     return 'usa';
   }
-  console.log(`Converting country code: ${countryCode2}`);
+  //console.log(`Converting country code: ${countryCode2}`);
   const countryData = getCountryISO3(countryCode2.toUpperCase());
   
   return countryData ? countryData.toLowerCase() : 'usa';

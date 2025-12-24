@@ -152,7 +152,8 @@ export async function getImdbRating(imdbId: string, type: ContentType = 'movie')
     }
     
     // Fallback to Cinemeta
-    console.log(`[IMDb Ratings] Rating not found in dataset for ${imdbId}, falling back to Cinemeta...`);
+    const consola = require('consola');
+    consola.debug(`[IMDb Ratings] Rating not found in dataset for ${imdbId}, falling back to Cinemeta...`);
     const cinemetaStart = performance.now();
     const cinemetaRating = await getCinemetaRating(imdbId, type);
     const cinemetaEnd = performance.now();

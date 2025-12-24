@@ -2689,6 +2689,7 @@ addon.get('api/cache/invalidation-status/:userUUID', async (req, res) => {
 
 // --- Dashboard API Routes (Admin only) ---
 const DashboardAPI = require('./lib/dashboardApi');
+const { isMetricsDisabled } = require('./lib/metricsConfig');
 
 // Create a singleton instance of DashboardAPI that persists across requests
 let dashboardApiInstance = null;
@@ -2717,9 +2718,39 @@ addon.use('/api/dashboard', noCache);
 
 
 addon.get("/api/dashboard/overview", (req, res) => {
-  
   try {
     const dashboardApi = getDashboardAPI();
+    
+    // If metrics are disabled, return minimal essential data with disabled flag
+    if (isMetricsDisabled()) {
+      Promise.all([
+        dashboardApi.getSystemOverview(),
+        dashboardApi.getSystemConfig(),
+        dashboardApi.getResourceUsage(),
+        dashboardApi.getMaintenanceTasks(),
+      ]).then(([systemOverview, systemConfig, resourceUsage, maintenanceTasks]) => {
+        res.json({
+          metricsDisabled: true,
+          message: "Metrics have been disabled on this instance",
+          systemOverview,
+          systemConfig,
+          resourceUsage,
+          maintenanceTasks,
+          // Empty metrics data
+          quickStats: null,
+          cachePerformance: null,
+          providerPerformance: null,
+          errorLogs: [],
+          imdbRatingsStats: null,
+          timestamp: new Date().toISOString(),
+        });
+      }).catch(error => {
+        consola.error('[Dashboard API] Error:', error);
+        res.status(500).json({ error: 'Failed to fetch dashboard data' });
+      });
+      return;
+    }
+    
     dashboardApi.getAllDashboardData()
       .then(data => res.json(data))
       .catch(error => {
@@ -2733,6 +2764,14 @@ addon.get("/api/dashboard/overview", (req, res) => {
 });
 
 addon.get("/api/dashboard/stats", (req, res) => {
+  // Check if metrics are disabled
+  if (isMetricsDisabled()) {
+    return res.json({ 
+      metricsDisabled: true,
+      message: "Metrics have been disabled on this instance"
+    });
+  }
+  
   const adminKey = process.env.ADMIN_KEY;
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -2760,6 +2799,22 @@ addon.get("/api/dashboard/system", (req, res) => {
   
   try {
     const dashboardApi = getDashboardAPI();
+    
+    // If metrics disabled, don't fetch recentActivity
+    if (isMetricsDisabled()) {
+      Promise.all([
+        dashboardApi.getSystemConfig(),
+        dashboardApi.getResourceUsage(),
+        dashboardApi.getProviderStatus(),
+      ]).then(([systemConfig, resourceUsage, providerStatus]) => {
+        res.json({ systemConfig, resourceUsage, providerStatus, recentActivity: [] });
+      }).catch(error => {
+        consola.error('[Dashboard API] Error:', error);
+        res.status(500).json({ error: 'Failed to fetch system data' });
+      });
+      return;
+    }
+    
     Promise.all([
       dashboardApi.getSystemConfig(),
       dashboardApi.getResourceUsage(),
@@ -2803,6 +2858,14 @@ addon.get("/api/dashboard/operations", (req, res) => {
 
 // Enhanced timing metrics API endpoint
 addon.get("/api/dashboard/timing", async (req, res) => {
+  // Check if metrics are disabled
+  if (isMetricsDisabled()) {
+    return res.json({ 
+      metricsDisabled: true,
+      message: "Metrics have been disabled on this instance"
+    });
+  }
+  
   try {
     const timingMetrics = require('./lib/timing-metrics');
     
@@ -2896,6 +2959,13 @@ addon.post("/api/dashboard/users/clear", (req, res) => {
 });
 
 addon.get("/api/dashboard/analytics", async (req, res) => {
+  // Check if metrics are disabled
+  if (isMetricsDisabled()) {
+    return res.json({ 
+      metricsDisabled: true,
+      message: "Metrics have been disabled on this instance"
+    });
+  }
   
   try {
     const { getPerformanceStats } = require('./lib/id-resolver.js');
@@ -2981,6 +3051,14 @@ addon.post("/api/dashboard/test-errors", (req, res) => {
 });
 
 addon.get("/api/dashboard/content", (req, res) => {
+  // Check if metrics are disabled
+  if (isMetricsDisabled()) {
+    return res.json({ 
+      metricsDisabled: true,
+      message: "Metrics have been disabled on this instance"
+    });
+  }
+  
   try {
     const limit = parseInt(req.query.limit) || 10;
     Promise.all([
@@ -3009,6 +3087,9 @@ addon.get("/api/dashboard/content", (req, res) => {
 });
 
 addon.get("/api/dashboard/users", (req, res) => {
+  // Users endpoint is NOT disabled when metrics are disabled
+  // It provides user management which is essential for admin UI
+  
   const adminKey = process.env.ADMIN_KEY;
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });

@@ -181,37 +181,37 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       return { metas: filteredMetas };
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
-      logger.info(`Routing to TVDB catalog handler for id: ${id}`);
+      logger.debug(`Routing to TVDB catalog handler for id: ${id}`);
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
       const filteredResults = filterMetasByRegex(tvdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
-      logger.info(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
+      logger.debug(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(tmdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
     else if (id.startsWith('stremthru.')) {
-      logger.info(`Routing to StremThru catalog handler for id: ${id}`);
+      logger.debug(`Routing to StremThru catalog handler for id: ${id}`);
       const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(stremthruResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
     else if (id.startsWith('custom.')) {
-      logger.info(`Routing to Custom Manifest catalog handler for id: ${id}`);
+      logger.debug(`Routing to Custom Manifest catalog handler for id: ${id}`);
       const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(customResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
     else if (id.startsWith('trakt.')) {
-      logger.info(`Routing to Trakt catalog handler for id: ${id}`);
+      logger.debug(`Routing to Trakt catalog handler for id: ${id}`);
       const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(traktResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
     else if (id.startsWith('anilist.')) {
-      logger.info(`Routing to AniList catalog handler for id: ${id}`);
+      logger.debug(`Routing to AniList catalog handler for id: ${id}`);
       const anilistResults = await getAniListCatalog(type, id, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(anilistResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
@@ -528,8 +528,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     });
     queryParams.append('api_key', config.apiKeys?.tmdb || process.env.TMDB_API || '');
     const fullUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
-    logger.info(`[Airing Today] Full TMDB API URL: ${fullUrl}`);
-    logger.info(`[Airing Today] Parameters: ${JSON.stringify(parameters, null, 2)}`);
+    // Note: Full URL/params logging removed to avoid exposing API keys in logs
   }
 
   const fetchFunction = type === "movie" 

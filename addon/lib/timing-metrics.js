@@ -1,6 +1,6 @@
 const redis = require('./redisClient');
 const consola = require('consola');
-
+const { isMetricsDisabled } = require('./metricsConfig');
 
 const logger = consola.withTag('Timing-Metrics');
 
@@ -19,6 +19,10 @@ class TimingMetrics {
    * @param {Object} metadata - Additional metadata (e.g., { type: 'movie', cached: true })
    */
   recordTiming(metric, duration, metadata = {}) {
+    // Skip metrics collection if disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
     try {
       const key = `${this.keyPrefix}${metric}`;
       const data = JSON.stringify({

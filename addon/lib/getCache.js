@@ -323,6 +323,12 @@ function updateCacheHealth(key, type, success = true) {
  * Log cache health statistics
  */
 function logCacheHealth() {
+  // Skip logging if metrics are disabled
+  const { isMetricsDisabled } = require('./metricsConfig');
+  if (isMetricsDisabled()) {
+    return;
+  }
+  
   const total = cacheHealth.hits + cacheHealth.misses;
   const hitRate = total > 0 ? ((cacheHealth.hits / total) * 100).toFixed(2) : '0.00';
   const errorRate = total > 0 ? ((cacheHealth.errors / total) * 100).toFixed(2) : '0.00';
