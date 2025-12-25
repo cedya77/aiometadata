@@ -2015,6 +2015,8 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           }] : [],
         };
       }));
+      // Filter out null metas before further processing
+      metas = metas.filter(Boolean);
       if(config.ageRating.toLowerCase() !== 'none') {
         // Map user ratings to Kitsu ratings
         const KITSU_RATING_MAP = {

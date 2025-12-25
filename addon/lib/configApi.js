@@ -1222,11 +1222,16 @@ class ConfigApi {
         },
 
         mdblist: async (key) => {
-          const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
-            () => null,
-          );
-          return response && response.statusCode === 200;
+          try {
+            const { makeRateLimitedMDBListRequest } = require('../utils/mdbList');
+            const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
+            const response = await makeRateLimitedMDBListRequest(url, 'MDBList API Key Test');
+            // Rate-limited request returns response with .data property on success
+            return response && (response.data !== undefined || Array.isArray(response.data));
+          } catch (error) {
+            // Rate limiter throws on failure, return false
+            return false;
+          }
         },
       };
 
