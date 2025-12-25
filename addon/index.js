@@ -54,6 +54,8 @@ const tvmaze = require('./lib/tvmaze');
 const packageJson = require('../package.json');
 const ADDON_VERSION = packageJson.version;
 const sharp = require('sharp');
+const idMapper = require('./lib/id-mapper');
+const wikiMappings = require('./lib/wiki-mapper.js');
 
 // Normalize redirect URIs to always include a scheme
 const normalizeRedirectUri = (uri) => {
@@ -2065,6 +2067,297 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
   }
 });
 
+// --- Rating Route ---
+// POST endpoint to submit ratings to external services (Trakt, AniList, MDBList)
+addon.post("/stremio/:userUUID/rating", async function (req, res) {
+  const { userUUID } = req.params;
+  const { ids, type, score, services } = req.body;
+
+  try {
+    // Validate input
+    if (!ids || !ids.stremio || !type || typeof score !== 'number' || score < 1 || score > 10) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "Invalid request. Required: ids.stremio, type (movie/series), score (1-10)" 
+      });
+    }
+
+    // Load user config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ ok: false, error: "User config not found" });
+    }
+
+    const stremioId = ids.stremio;
+    const results = {
+      trakt: { success: false, error: null },
+      anilist: { success: false, error: null },
+      mdblist: { success: false, error: null }
+    };
+
+    const isImdbIdAnime = stremioId.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(stremioId) && type === 'movie';
+    const isTmdbIdAnime = stremioId.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', '')) && type === 'movie';
+    // Check if the Stremio ID is from an anime provider (anilist, mal, kitsu, anidb)
+    const isAnimeId = stremioId && typeof stremioId === 'string' && (
+      stremioId.startsWith('anilist:') || 
+      stremioId.startsWith('mal:') || 
+      stremioId.startsWith('kitsu:') || 
+      stremioId.startsWith('anidb:')
+    );
+
+    const finalType = isAnimeId ? 'anime' : type === 'series' ? 'series' : 'movie';
+    // Resolve all IDs needed for different services
+    const { resolveAllIds } = require('./lib/id-resolver');
+    const allIds = await resolveAllIds(stremioId, finalType, config);
+    if (type === 'movie') {
+      if (allIds?.malId) {
+        allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
+        allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
+        allIds.tvdbId = (wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
+      }
+    }
+
+    // Send rating to Trakt if enabled and selected
+    const sendToTrakt = services ? (services.trakt === true) : true; // Default to true if services not specified
+    if (sendToTrakt && config.apiKeys?.traktTokenId) {
+      try {
+        const token = await database.getOAuthToken(config.apiKeys.traktTokenId);
+        if (token && token.access_token) {
+          const { httpPost } = require('./utils/httpClient');
+          const { Agent } = require('undici');
+          const traktDispatcher = new Agent({ connect: { timeout: 30000 } });
+          
+          // Import the rate limiting function from traktUtils
+          // Since makeRateLimitedRequest is not exported, we'll use a similar pattern
+          const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
+          const TRAKT_BASE_URL = 'https://api.trakt.tv';
+          
+          const traktType = type === 'series' ? 'shows' : 'movies';
+          const tmdbId = allIds.tmdbId;
+          const imdbId = allIds.imdbId;
+          const tvdbId = allIds.tvdbId;
+          
+          if (tmdbId || imdbId || tvdbId) {
+            // Build IDs object for Trakt (only include non-null values)
+            const ids = {};
+            if (tmdbId) ids.tmdb = parseInt(tmdbId);
+            if (imdbId) ids.imdb = imdbId;
+            if (tvdbId) ids.tvdb = parseInt(tvdbId);
+            
+            // Trakt sync/ratings payload format
+            const payload = {
+              [traktType]: [
+                {
+                  rating: Math.round(score),
+                  ids: ids
+                }
+              ]
+            };
+
+            // Use httpPost directly with rate limiting considerations
+            // Trakt returns 201 (Created) on successful rating submission
+            const response = await httpPost(`${TRAKT_BASE_URL}/sync/ratings`, payload, {
+              dispatcher: traktDispatcher,
+              headers: {
+                'Authorization': `Bearer ${token.access_token}`,
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+              }
+            });
+            
+            // httpClient treats 200-299 as success, so 201 is handled correctly
+            results.trakt.success = true;
+            consola.info(`[Rating] Successfully rated ${traktType} on Trakt with score ${score} (status: ${response.status})`);
+          } else {
+            results.trakt.error = "No Trakt ID found for this item";
+          }
+        }
+      } catch (error) {
+        results.trakt.error = error.message || "Failed to rate on Trakt";
+        consola.error(`[Rating] Trakt error:`, error.message);
+      }
+    }
+
+    // Send rating to AniList if enabled and selected (only if Stremio ID is from anime provider)
+    const sendToAniList = services ? (services.anilist === true) : true; // Default to true if services not specified
+    if (sendToAniList && (isAnimeId || isImdbIdAnime || isTmdbIdAnime) && config.apiKeys?.anilistTokenId) {
+      try {
+        const token = await database.getOAuthToken(config.apiKeys.anilistTokenId);
+        if (token && token.access_token) {
+          let anilistId = null; 
+          if (stremioId.startsWith('anilist:')) {
+            anilistId = stremioId.replace('anilist:', '');
+          } else if (stremioId.startsWith('mal:')) {
+            anilistId = idMapper.getMappingByMalId(stremioId.replace('mal:', ''))?.anilist_id;
+          } else if (stremioId.startsWith('kitsu:')) {
+            anilistId = idMapper.getMappingByKitsuId(stremioId.replace('kitsu:', ''))?.anilist_id;
+          } else if (stremioId.startsWith('anidb:')) {
+            anilistId = idMapper.getMappingByAnidbId(stremioId.replace('anidb:', ''))?.anilist_id;
+          }
+
+          if (isImdbIdAnime) {
+            const malId =  idMapper.getTraktAnimeMovieByImdbId(stremioId)?.myanimelist.id;
+            if (malId) {
+              anilistId = idMapper.getMappingByMalId(malId)?.anilist_id;
+            }
+          } else if (isTmdbIdAnime) {
+            const malId = idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', ''))?.myanimelist.id;
+            if (malId) {
+              anilistId = idMapper.getMappingByMalId(malId)?.anilist_id;
+            }
+          }
+          if (anilistId) {
+            const anilist = require('./lib/anilist');
+            // Extract numeric ID - could be number, string like "anilist:123", or "123"
+            let anilistIdNum;
+            if (typeof anilistId === 'number') {
+              anilistIdNum = anilistId;
+            } else if (typeof anilistId === 'string') {
+              anilistIdNum = parseInt(anilistId.replace(/^anilist:/, '').replace(/^mal:/, ''));
+            } else {
+              anilistIdNum = parseInt(anilistId);
+            }
+            
+            if (isNaN(anilistIdNum)) {
+              results.anilist.error = "Invalid AniList/MAL ID format";
+            } else {
+              // AniList uses 1-100 scale, convert from 1-10
+              const anilistScore = Math.round(score * 10);
+              
+              // Validate score is within valid range (1-100)
+              if (anilistScore < 1 || anilistScore > 100) {
+                results.anilist.error = `Invalid score: ${anilistScore} (must be 1-100)`;
+              } else {
+                const mutation = `
+                  mutation SaveMediaListEntry($mediaId: Int, $score: Float) {
+                    SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+                      mediaId
+                      score
+                    }
+                  }
+                `;
+                
+                const variables = {
+                  id: anilistIdNum,
+                  score: anilistScore
+                };
+                
+                consola.debug(`[Rating] AniList mutation - mediaId: ${anilistIdNum}, score: ${anilistScore}, accessToken: ${token.access_token}`);
+                
+                // Use the queueRequest method from anilist instance
+                const response = await anilist.queueRequest(async () => {
+                  const { httpPost } = require('./utils/httpClient');
+                  return await httpPost('https://graphql.anilist.co', {
+                    query: mutation,
+                    variables: variables
+                  }, {
+                    headers: {
+                      'Authorization': `Bearer ${token.access_token}`,
+                      'Content-Type': 'application/json'
+                    }
+                  });
+                });
+                
+                // Check for GraphQL errors
+                if (response?.data?.errors && response.data.errors.length > 0) {
+                  const errorMessage = response.data.errors[0]?.message || 'Unknown GraphQL error';
+                  results.anilist.error = `AniList API error: ${errorMessage}`;
+                  consola.error(`[Rating] AniList GraphQL error:`, response.data.errors);
+                } else if (response?.data?.data?.SaveMediaListEntry) {
+                  results.anilist.success = true;
+                  consola.info(`[Rating] Successfully rated anime ${anilistIdNum} on AniList with score ${anilistScore}`);
+                } else {
+                  results.anilist.error = `AniList API returned unexpected response: ${JSON.stringify(response?.data)}`;
+                  consola.error(`[Rating] AniList unexpected response:`, response);
+                }
+              }
+            }
+          } else {
+            results.anilist.error = "No AniList/MAL ID found for this item";
+          }
+        }
+      } catch (error) {
+        results.anilist.error = error.message || "Failed to rate on AniList";
+        consola.error(`[Rating] AniList error:`, error.message);
+      }
+    }
+
+    // Send rating to MDBList if enabled and selected
+    const sendToMDBList = services ? (services.mdblist === true) : true; // Default to true if services not specified
+    if (sendToMDBList && config.apiKeys?.mdblist) {
+      try {
+        const mdblistApiKey = config.apiKeys.mdblist;
+        const { httpPost } = require('./utils/httpClient');
+        
+        const tmdbId = allIds.tmdbId;
+        const imdbId = allIds.imdbId;
+        const tvdbId = allIds.tvdbId;
+        
+        if (tmdbId || imdbId || tvdbId) {
+          const mdblistType = type === 'series' ? 'shows' : 'movies';
+          
+          // Build IDs object for MDBList
+          const ids = {};
+          if (tmdbId) ids.tmdb = parseInt(tmdbId);
+          if (imdbId) ids.imdb = imdbId;
+          if (tvdbId) ids.tvdb = parseInt(tvdbId);
+          
+          // MDBList sync/ratings endpoint: POST /sync/ratings?apikey=...
+          const url = `https://api.mdblist.com/sync/ratings?apikey=${mdblistApiKey}`;
+          
+          // Build payload according to MDBList API format
+          const payload = {
+            [mdblistType]: [
+              {
+                ids: ids,
+                rating: Math.round(score)
+              }
+            ]
+          };
+          
+          await httpPost(url, payload, {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          results.mdblist.success = true;
+          consola.info(`[Rating] Successfully rated ${type} on MDBList with score ${score}`);
+        } else {
+          results.mdblist.error = "No TMDB or IMDb ID found for this item";
+        }
+      } catch (error) {
+        results.mdblist.error = error.message || "Failed to rate on MDBList";
+        consola.error(`[Rating] MDBList error:`, error.message);
+      }
+    }
+
+    // Check if at least one service succeeded
+    const anySuccess = results.trakt.success || results.anilist.success || results.mdblist.success;
+    
+    if (anySuccess) {
+      return res.json({ 
+        ok: true, 
+        results,
+        message: "Rating submitted successfully to at least one service"
+      });
+    } else {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "Failed to submit rating to any service",
+        results
+      });
+    }
+  } catch (error) {
+    consola.error(`[Rating] Error in rating route:`, error);
+    return res.status(500).json({ 
+      ok: false, 
+      error: error.message || "Internal server error" 
+    });
+  }
+});
+
 // Proxy endpoint for fetching manifests from internal Docker network URLs
 addon.get("/api/proxy-manifest", async function (req, res) {
   const { url } = req.query;
@@ -2375,6 +2668,171 @@ addon.get("/dashboard", (req, res) => {
 // Dashboard with trailing slash
 addon.get("/dashboard/", (req, res) => {
   res.redirect('/dashboard');
+});
+
+// Rating Page Route
+// Access via: /stremio/:userUUID/rating?id=stremioId&type=Series&title=Title
+// Or: /rating?user=userUUID&id=stremioId&type=Series&title=Title
+addon.get("/stremio/:userUUID/rating", async function (req, res) {
+  const { userUUID } = req.params;
+  const { id, type } = req.query;
+  
+  // No cache to prevent cross-instance contamination
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
+  const indexPath = path.join(__dirname, '../dist/index.html');
+  const fs = require('fs');
+  
+  try {
+    let html = fs.readFileSync(indexPath, 'utf8');
+    
+    let metaTitle = '';
+    let metaPoster = '';
+    let metaDescription = '';
+    
+    // Use type from URL query parameter (source of truth)
+    // Normalize: Series/series -> Series, Movie/movie -> Movie
+    let metaType = 'Series'; // Default
+    if (type) {
+      const normalizedType = type.toLowerCase();
+      metaType = normalizedType === 'series' ? 'Series' : 'Movie';
+    }
+    
+    // Check which services are available for this user
+    let availableServices = {
+      trakt: false,
+      anilist: false,
+      mdblist: false
+    };
+    const isImdbIdAnime = id.startsWith('tt') && !!idMapper.getMappingByImdbId(id) && type === 'movie';
+    const isTmdbIdAnime = id.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(id.replace('tmdb:', '')) && type === 'movie';
+    // Check if the Stremio ID in URL is from an anime provider (anilist, mal, kitsu, anidb)
+    const isAnimeId = id && typeof id === 'string' && (
+      id.startsWith('anilist:') || 
+      id.startsWith('mal:') || 
+      id.startsWith('kitsu:') || 
+      id.startsWith('anidb:') ||
+      isImdbIdAnime ||
+      isTmdbIdAnime
+    );
+    
+    try {
+      const config = await loadConfigFromDatabase(userUUID);
+      if (config) {
+        // Check Trakt
+        if (config.apiKeys?.traktTokenId) {
+          const token = await database.getOAuthToken(config.apiKeys.traktTokenId);
+          availableServices.trakt = !!(token && token.access_token);
+        }
+        
+        // Check AniList (only if Stremio ID is from anime provider and user has AniList configured)
+        if (isAnimeId && config.apiKeys?.anilistTokenId) {
+          const token = await database.getOAuthToken(config.apiKeys.anilistTokenId);
+          availableServices.anilist = !!(token && token.access_token);
+        }
+        
+        // Check MDBList
+        availableServices.mdblist = !!config.apiKeys?.mdblist;
+      }
+    } catch (error) {
+      consola.warn('[Rating Page] Failed to check available services:', error.message);
+    }
+    
+    if (id && userUUID) {
+      try {
+        // Use the type from URL to look up metadata
+        const stremioType = metaType.toLowerCase();
+        const contentKey = `${stremioType}:${id}`;
+        
+        // Try to get metadata from cache with multiple key variants (same as dashboard)
+        const tryKeys = [];
+        // exact member key (often includes .json or provider prefix)
+        tryKeys.push(`content_metadata:${contentKey}`);
+        // decoded variant without extension
+        const parts = contentKey.split(":");
+        const keyType = parts[0];
+        const rawId = parts.slice(1).join(":");
+        const decoded = decodeURIComponent(rawId || "");
+        const cleanId = decoded.replace(/\.(json|xml)$/i, "");
+        tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
+        // encoded + .json variant from captureMetadataFromComponents
+        const encodedJson = encodeURIComponent(cleanId) + ".json";
+        tryKeys.push(`content_metadata:${keyType}:${encodedJson}`);
+        // provider variants (tmdb:123 etc.) if present in original
+        if (cleanId.includes(":")) {
+          tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
+          const providerEncoded = encodeURIComponent(cleanId) + ".json";
+          tryKeys.push(`content_metadata:${keyType}:${providerEncoded}`);
+        }
+        
+        let metadataStr = null;
+        for (const k of tryKeys) {
+          try {
+            metadataStr = await redis.get(k);
+            if (metadataStr) break;
+          } catch (_) {}
+        }
+        
+        if (metadataStr) {
+          const metadata = JSON.parse(metadataStr);
+          metaTitle = metadata.title || metadata.name || '';
+          metaPoster = metadata.poster || '';
+          metaDescription = metadata.description || '';
+        }
+      } catch (error) {
+        consola.warn('[Rating Page] Failed to read metadata from cache:', error.message);
+        // Continue with empty values - frontend will handle fallback
+      }
+    }
+    
+    const pageTitle = metaTitle ? `Rate ${metaTitle} - AIO Metadata` : 'Rate This Title - AIO Metadata';
+    html = html.replace(
+      /<title>.*?<\/title>/,
+      `<title>${pageTitle}</title>`
+    );
+    
+    const ratingScript = `
+      <script>
+        window.RATING_MODE = true;
+        window.RATING_USER = ${JSON.stringify(userUUID)};
+        window.RATING_ID = ${JSON.stringify(id || '')};
+        window.RATING_TYPE = ${JSON.stringify(metaType)};
+        window.RATING_TITLE = ${JSON.stringify(metaTitle || req.query.title || '')};
+        window.RATING_POSTER = ${JSON.stringify(metaPoster)};
+        window.RATING_DESCRIPTION = ${JSON.stringify(metaDescription)};
+        window.RATING_AVAILABLE_SERVICES = ${JSON.stringify(availableServices)};
+      </script>
+    `;
+    
+    // Add rating-specific script
+    html = html.replace(
+      '</head>',
+      ratingScript + '</head>'
+    );
+    
+    res.send(html);
+  } catch (error) {
+    consola.error('Error serving rating page:', error);
+    res.status(500).send('Error loading rating page');
+  }
+});
+
+addon.get("/rating", (req, res) => {
+  const { user, id, type, title } = req.query;
+  
+  if (!user || !id) {
+    return res.status(400).send('Missing required parameters: user and id');
+  }
+  
+  // Redirect to the proper route format
+  const params = new URLSearchParams();
+  if (id) params.set('id', id);
+  if (type) params.set('type', type);
+  if (title) params.set('title', title);
+  
+  res.redirect(`/stremio/${user}/rating?${params.toString()}`);
 });
 
 addon.get('/api/config/addon-info', (req, res) => {

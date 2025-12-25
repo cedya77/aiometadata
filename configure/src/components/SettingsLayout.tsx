@@ -13,6 +13,7 @@ import { SearchSettings } from './sections/SearchSettings';
 import { PresetManager } from './sections/PresetManager';
 import { ConfigurationManager } from './ConfigurationManager';
 import { Dashboard } from './Dashboard';
+import RatingPage from './RatingPage';
 
 const settingsPages = [
   { value: 'presets', title: 'Presets', component: <PresetManager /> },
@@ -36,6 +37,16 @@ export function SettingsLayout() {
   
   // Check if we're in dashboard mode FIRST (before mobile check)
   const isDashboardMode = typeof window !== 'undefined' && (window as any).DASHBOARD_MODE;
+  const isRatingMode = typeof window !== 'undefined' && (window as any).RATING_MODE;
+
+  // If in dashboard mode, show only the dashboard (regardless of mobile/desktop)
+  if (isRatingMode) {
+    return (
+      <div className="w-full">
+        <RatingPage />
+      </div>
+    );
+  }
 
   // If in dashboard mode, show only the dashboard (regardless of mobile/desktop)
   if (isDashboardMode) {
