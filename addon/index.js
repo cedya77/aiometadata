@@ -2620,57 +2620,7 @@ addon.get('/resize-image', async function (req, res) {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
   });
 
-addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
-addon.use('/configure', express.static(path.join(__dirname, '../dist')));
-addon.use(express.static(path.join(__dirname, '../public')));
-addon.use(express.static(path.join(__dirname, '../dist')));
-
-// Dedicated Dashboard Page Route
-addon.get("/dashboard", (req, res) => {
-  // Serve the same HTML but with dashboard-specific handling
-  const indexPath = path.join(__dirname, '../dist/index.html');
-  const fs = require('fs');
-  
-  try {
-    let html = fs.readFileSync(indexPath, 'utf8');
-    
-    // Inject dashboard-specific meta tags and title
-    html = html.replace(
-      /<title>.*?<\/title>/,
-      '<title>AIO Metadata Dashboard</title>'
-    );
-    
-    // Add dashboard-specific script to auto-navigate to dashboard
-    html = html.replace(
-      '</head>',
-      `  <script>
-        window.DASHBOARD_MODE = true;
-        window.addEventListener('DOMContentLoaded', function() {
-          // Auto-navigate to dashboard tab when page loads
-          setTimeout(function() {
-            const dashboardTab = document.querySelector('[data-value="dashboard"], [value="dashboard"]');
-            if (dashboardTab) {
-              dashboardTab.click();
-            }
-          }, 100);
-        });
-      </script>
-      </head>`
-    );
-    
-    res.send(html);
-  } catch (error) {
-    consola.error('Error serving dashboard page:', error);
-    res.status(500).send('Error loading dashboard');
-  }
-});
-
-// Dashboard with trailing slash
-addon.get("/dashboard/", (req, res) => {
-  res.redirect('/dashboard');
-});
-
-// Rating Page Route
+// Rating Page Route - MUST be before static middleware
 // Access via: /stremio/:userUUID/rating?id=stremioId&type=Series&title=Title
 // Or: /rating?user=userUUID&id=stremioId&type=Series&title=Title
 addon.get("/stremio/:userUUID/rating", async function (req, res) {
@@ -2706,8 +2656,8 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
       anilist: false,
       mdblist: false
     };
-    const isImdbIdAnime = id.startsWith('tt') && !!idMapper.getMappingByImdbId(id) && type === 'movie';
-    const isTmdbIdAnime = id.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(id.replace('tmdb:', '')) && type === 'movie';
+    const isImdbIdAnime = id && id.startsWith('tt') && !!idMapper.getMappingByImdbId(id) && metaType === 'Movie';
+    const isTmdbIdAnime = id && id.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(id.replace('tmdb:', '')) && metaType === 'Movie';
     // Check if the Stremio ID in URL is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = id && typeof id === 'string' && (
       id.startsWith('anilist:') || 
@@ -2833,6 +2783,56 @@ addon.get("/rating", (req, res) => {
   if (title) params.set('title', title);
   
   res.redirect(`/stremio/${user}/rating?${params.toString()}`);
+});
+
+addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
+addon.use('/configure', express.static(path.join(__dirname, '../dist')));
+addon.use(express.static(path.join(__dirname, '../public')));
+addon.use(express.static(path.join(__dirname, '../dist')));
+
+// Dedicated Dashboard Page Route
+addon.get("/dashboard", (req, res) => {
+  // Serve the same HTML but with dashboard-specific handling
+  const indexPath = path.join(__dirname, '../dist/index.html');
+  const fs = require('fs');
+  
+  try {
+    let html = fs.readFileSync(indexPath, 'utf8');
+    
+    // Inject dashboard-specific meta tags and title
+    html = html.replace(
+      /<title>.*?<\/title>/,
+      '<title>AIO Metadata Dashboard</title>'
+    );
+    
+    // Add dashboard-specific script to auto-navigate to dashboard
+    html = html.replace(
+      '</head>',
+      `  <script>
+        window.DASHBOARD_MODE = true;
+        window.addEventListener('DOMContentLoaded', function() {
+          // Auto-navigate to dashboard tab when page loads
+          setTimeout(function() {
+            const dashboardTab = document.querySelector('[data-value="dashboard"], [value="dashboard"]');
+            if (dashboardTab) {
+              dashboardTab.click();
+            }
+          }, 100);
+        });
+      </script>
+      </head>`
+    );
+    
+    res.send(html);
+  } catch (error) {
+    consola.error('Error serving dashboard page:', error);
+    res.status(500).send('Error loading dashboard');
+  }
+});
+
+// Dashboard with trailing slash
+addon.get("/dashboard/", (req, res) => {
+  res.redirect('/dashboard');
 });
 
 addon.get('/api/config/addon-info', (req, res) => {
