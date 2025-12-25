@@ -612,29 +612,17 @@ addon.post("/api/trakt/proxy", async (req, res) => {
       return res.status(404).json({ error: "Token not found" });
     }
 
-    // Make the authenticated request to Trakt API
-    const response = await fetch(`https://api.trakt.tv${endpoint}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token.access_token}`,
-        'trakt-api-version': '2',
-        'trakt-api-key': process.env.TRAKT_CLIENT_ID || '',
-        'User-Agent': 'AIOMetadata/1.0',
-      }
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      consola.error(`[Trakt Proxy] API error: ${response.status} - ${errorText}`);
-      return res.status(response.status).json({ error: `Trakt API returned ${response.status}` });
-    }
-
-    const data = await response.json();
-    res.json(data);
+    const { makeAuthenticatedRateLimitedTraktRequest } = require('./utils/traktUtils');
+    
+    // Make the authenticated, rate-limited request to Trakt API
+    const traktUrl = `https://api.trakt.tv${endpoint}`;
+    const response = await makeAuthenticatedRateLimitedTraktRequest(traktUrl, token.access_token, `Trakt Proxy - ${endpoint}`);
+    res.json(response.data);
   } catch (error) {
-    consola.error("[Trakt Proxy] Error:", error);
-    res.status(500).json({ error: "Failed to proxy Trakt request" });
+    consola.error("[Trakt Proxy] Error:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to proxy Trakt request" });
   }
 });
 
@@ -746,6 +734,116 @@ addon.get("/api/mdblist/external/lists/user", async (req, res) => {
     consola.error("[MDBList Proxy] Error fetching external lists:", error.message);
     const status = error.response?.status || 500;
     res.status(status).json({ error: error.message || "Failed to fetch external lists" });
+  }
+});
+
+// --- Trakt Proxy Endpoints ---
+// These proxy frontend Trakt calls through the backend rate limiter
+
+// Proxy: Get user stats
+addon.get("/api/trakt/users/:username/stats", async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    if (!username) {
+      return res.status(400).json({ error: "username is required" });
+    }
+    
+
+    const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
+    const url = `https://api.trakt.tv/users/${encodeURIComponent(username)}/stats`;
+    const response = await makeRateLimitedTraktRequest(url, `Trakt Proxy - Get User Stats (${username})`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error fetching user stats:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user stats" });
+  }
+});
+
+// Proxy: Get user's lists
+addon.get("/api/trakt/users/:username/lists", async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    if (!username) {
+      return res.status(400).json({ error: "username is required" });
+    }
+    
+
+    const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
+    const url = `https://api.trakt.tv/users/${encodeURIComponent(username)}/lists`;
+    const response = await makeRateLimitedTraktRequest(url, `Trakt Proxy - Get User Lists (${username})`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error fetching user lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user lists" });
+  }
+});
+
+// Proxy: Get specific list details
+addon.get("/api/trakt/users/:username/lists/:slug", async (req, res) => {
+  try {
+    const { username, slug } = req.params;
+    
+    if (!username || !slug) {
+      return res.status(400).json({ error: "username and slug are required" });
+    }
+    
+
+    const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
+    const url = `https://api.trakt.tv/users/${encodeURIComponent(username)}/lists/${encodeURIComponent(slug)}`;
+    const response = await makeRateLimitedTraktRequest(url, `Trakt Proxy - Get List Details (${username}/${slug})`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error fetching list details:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch list details" });
+  }
+});
+
+// Proxy: Get trending lists
+addon.get("/api/trakt/lists/trending/:type", async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { limit = '100' } = req.query;
+    
+    if (!type) {
+      return res.status(400).json({ error: "type is required (personal or official)" });
+    }
+    
+
+    const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
+    const url = `https://api.trakt.tv/lists/trending/${encodeURIComponent(type)}?limit=${limit}`;
+    const response = await makeRateLimitedTraktRequest(url, `Trakt Proxy - Get Trending Lists (${type})`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error fetching trending lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch trending lists" });
+  }
+});
+
+// Proxy: Get popular lists
+addon.get("/api/trakt/lists/popular/:type", async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { limit = '100' } = req.query;
+    
+    if (!type) {
+      return res.status(400).json({ error: "type is required (personal or official)" });
+    }
+    
+
+    const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
+    const url = `https://api.trakt.tv/lists/popular/${encodeURIComponent(type)}?limit=${limit}`;
+    const response = await makeRateLimitedTraktRequest(url, `Trakt Proxy - Get Popular Lists (${type})`);
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[Trakt Proxy] Error fetching popular lists:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch popular lists" });
   }
 });
 

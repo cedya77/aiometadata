@@ -1346,8 +1346,52 @@ export {
   getTraktListDetailsById,
   fetchTraktUpNextEpisodes,
   fetchTraktCalendarShows,
-  fetchTraktUnwatchedEpisodes
+  fetchTraktUnwatchedEpisodes,
+  makeRateLimitedTraktRequest,
+  makeAuthenticatedRateLimitedTraktRequest
 };
+
+/**
+ * Wrapper for proxy endpoints - makes a rate-limited GET request to Trakt
+ * @param url - Full Trakt API URL
+ * @param context - Context string for logging
+ * @returns Response with data property
+ */
+async function makeRateLimitedTraktRequest(url: string, context: string = 'Trakt Proxy'): Promise<any> {
+  return await makeRateLimitedRequest(
+    () => httpGet(url, { 
+      dispatcher: traktDispatcher,
+      headers: {
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': TRAKT_CLIENT_ID
+      }
+    }),
+    context
+  );
+}
+
+/**
+ * Wrapper for authenticated proxy endpoints - makes a rate-limited GET request with OAuth Bearer token
+ * @param url - Full Trakt API URL
+ * @param accessToken - OAuth access token for authenticated requests
+ * @param context - Context string for logging
+ * @returns Response with data property
+ */
+async function makeAuthenticatedRateLimitedTraktRequest(url: string, accessToken: string, context: string = 'Trakt Proxy (Auth)'): Promise<any> {
+  return await makeRateLimitedRequest(
+    () => httpGet(url, { 
+      dispatcher: traktDispatcher,
+      headers: {
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': TRAKT_CLIENT_ID,
+        'Authorization': `Bearer ${accessToken}`
+      }
+    }),
+    context
+  );
+}
 
 
 /**

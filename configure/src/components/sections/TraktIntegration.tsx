@@ -152,14 +152,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       apiCache.cachedFetch(
         cacheKey,
         async () => {
-          const response = await fetch(`https://api.trakt.tv/users/${username}/stats`, {
-            headers: {
-              'Content-Type': 'application/json',
-              'trakt-api-version': '2',
-              'trakt-api-key': traktClientId,
-              'User-Agent': 'AIOMetadata/1.0',
-            }
-          });
+          const response = await fetch(`/api/trakt/users/${username}/stats`);
           return response.ok ? await response.json() : null;
         },
         15 * 60 * 1000 // Cache for 15 minutes
@@ -263,14 +256,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       const userLists = await apiCache.cachedFetch(
         cacheKey,
         async () => {
-          const response = await fetch(`https://api.trakt.tv/users/${traktUsername.trim()}/lists`, {
-            headers: {
-              'Content-Type': 'application/json',
-              'trakt-api-version': '2',
-              'trakt-api-key': traktClientId,
-              'User-Agent': 'AIOMetadata/1.0',
-            }
-          });
+          const response = await fetch(`/api/trakt/users/${traktUsername.trim()}/lists`);
           
           if (!response.ok) {
             if (response.status === 404) {
@@ -463,14 +449,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       if (!traktClientId) {
         throw new Error('Trakt Client ID not configured. Please set TRAKT_CLIENT_ID in your server environment.');
       }
-      const response = await fetch(`https://api.trakt.tv/users/${username}/lists/${listSlug}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': traktClientId,
-          'User-Agent': 'AIOMetadata/1.0',
-        }
-      });
+      const response = await fetch(`/api/trakt/users/${username}/lists/${listSlug}`);
       if (!response.ok) {
         let errorText = `HTTP ${response.status}`;
         try {
@@ -597,14 +576,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       const data = await apiCache.cachedFetch(
         cacheKey,
         async () => {
-          const response = await fetch(`https://api.trakt.tv/lists/trending/${trendingListType}?limit=100`, {
-            headers: {
-              'Content-Type': 'application/json',
-              'trakt-api-version': '2',
-              'trakt-api-key': traktClientId,
-              'User-Agent': 'AIOMetadata/1.0',
-            }
-          });
+          const response = await fetch(`/api/trakt/lists/trending/${trendingListType}?limit=100`);
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
           }
@@ -636,14 +608,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
       const data = await apiCache.cachedFetch(
         cacheKey,
         async () => {
-          const response = await fetch(`https://api.trakt.tv/lists/popular/${trendingListType}?limit=100`, {
-            headers: {
-              'Content-Type': 'application/json',
-              'trakt-api-version': '2',
-              'trakt-api-key': traktClientId,
-              'User-Agent': 'AIOMetadata/1.0',
-            }
-          });
+          const response = await fetch(`/api/trakt/lists/popular/${trendingListType}?limit=100`);
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
           }

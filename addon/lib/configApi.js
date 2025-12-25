@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
-const { makeRateLimitedMDBListRequest } = require('../utils/mdbList');
 
 // Gemini dispatcher configuration for API key testing
 // Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
@@ -1224,6 +1223,7 @@ class ConfigApi {
 
         mdblist: async (key) => {
           try {
+            const { makeRateLimitedMDBListRequest } = require('../utils/mdbList');
             const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
             const response = await makeRateLimitedMDBListRequest(url, 'MDBList API Key Test');
             // Rate-limited request returns response with .data property on success
