@@ -816,17 +816,17 @@ class AniListAPI {
     }
     
     const mutation = `
-      mutation SaveMediaListEntry($mediaId: Int, $score: Float) {
-        SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+      mutation SaveMediaListEntry($mediaId: Int, $scoreRaw: Float) {
+        SaveMediaListEntry(mediaId: $mediaId, scoreRaw: $scoreRaw) {
           mediaId
-          score
+          scoreRaw
         }
       }
     `;
     
     const variables = {
       mediaId: mediaId,
-      score: score
+      scoreRaw: score
     };
     
     try {
