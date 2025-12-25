@@ -2132,7 +2132,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
           const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
           const TRAKT_BASE_URL = 'https://api.trakt.tv';
           
-          const traktType = type === 'series' ? 'shows' : 'movies';
+          const traktType = type.toLowerCase() === 'series' ? 'shows' : 'movies';
           const tmdbId = allIds.tmdbId;
           const imdbId = allIds.imdbId;
           const tvdbId = allIds.tvdbId;
@@ -2233,21 +2233,20 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
                 
                 try {
                   // Use the submitRating method from anilist instance (uses makeRateLimitedRequest internally)
+                  // The method now handles error extraction internally
                   const response = await anilist.submitRating(anilistIdNum, anilistScore, token.access_token);
                   
-                  // Check for GraphQL errors
-                  if (response?.data?.errors && response.data.errors.length > 0) {
-                    const errorMessage = response.data.errors[0]?.message || 'Unknown GraphQL error';
-                    results.anilist.error = `AniList API error: ${errorMessage}`;
-                    consola.error(`[Rating] AniList GraphQL error:`, response.data.errors);
-                  } else if (response?.data?.data?.SaveMediaListEntry) {
+                  // Check for successful response
+                  if (response?.data?.data?.SaveMediaListEntry) {
                     results.anilist.success = true;
                     consola.info(`[Rating] Successfully rated anime ${anilistIdNum} on AniList with score ${anilistScore}`);
                   } else {
+                    // This shouldn't happen as submitRating throws on errors, but handle it just in case
                     results.anilist.error = `AniList API returned unexpected response: ${JSON.stringify(response?.data)}`;
                     consola.error(`[Rating] AniList unexpected response:`, response);
                   }
                 } catch (error) {
+                  // Error message is already formatted by submitRating method
                   results.anilist.error = error.message || "Failed to submit rating to AniList";
                   consola.error(`[Rating] AniList submission error:`, error.message);
                 }

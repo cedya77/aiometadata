@@ -816,10 +816,9 @@ class AniListAPI {
     }
     
     const mutation = `
-      mutation SaveMediaListEntry($mediaId: Int, $scoreRaw: Float) {
+      mutation SaveMediaListEntry($mediaId: Int, $scoreRaw: Int) {
         SaveMediaListEntry(mediaId: $mediaId, scoreRaw: $scoreRaw) {
           mediaId
-          scoreRaw
         }
       }
     `;
@@ -843,9 +842,32 @@ class AniListAPI {
         })
       );
       
+      // Check for GraphQL errors in the response
+      if (response?.data?.errors && Array.isArray(response.data.errors) && response.data.errors.length > 0) {
+        const errorMessages = response.data.errors.map((e: any) => e.message || 'Unknown error').join(', ');
+        throw new Error(`AniList API error: ${errorMessages}`);
+      }
+      
       return response;
     } catch (error: any) {
-      throw error;
+      // If error has response data with errors, extract them
+      if (error?.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+        const errorMessages = error.response.data.errors.map((e: any) => e.message || 'Unknown error').join(', ');
+        throw new Error(`AniList API error: ${errorMessages}`);
+      }
+      // If error has response data (might be a string or object)
+      if (error?.response?.data) {
+        const errorData = typeof error.response.data === 'string' 
+          ? error.response.data 
+          : JSON.stringify(error.response.data);
+        throw new Error(`AniList API error (${error.response.status}): ${errorData}`);
+      }
+      // If error already has a message, preserve it
+      if (error?.message) {
+        throw error;
+      }
+      // Otherwise, throw a generic error
+      throw new Error(`Failed to submit rating to AniList: ${error.toString()}`);
     }
   }
 
