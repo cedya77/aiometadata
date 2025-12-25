@@ -183,63 +183,34 @@ class ConfigApi {
         try {
           const patterns = [];
           
-          // Map config changes to specific cache components that need clearing
-          // This ensures we only clear what's actually affected by the change
+
           
-          // Cast-related changes
+          // Log config changes for debugging (no global meta cache clearing)
           if (config.castCount !== undefined && config.castCount !== oldConfig?.castCount) {
-            patterns.push(`meta-cast:*`);  // Cast components
-            patterns.push(`meta-videos:*`); // Episode components (might include cast info)
-            logger.debug(`Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
+            logger.debug(`Cast count changed from ${oldConfig?.castCount} to ${config.castCount} - new requests will use new cache key`);
           }
-          
-          // Language changes - affects all meta content
           if (config.language !== undefined && config.language !== oldConfig?.language) {
-            patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
-            patterns.push(`search:*`); // Also clear search cache since language affects search results
-            logger.debug(`Language changed from ${oldConfig?.language} to ${config.language}`);
-            logger.debug(`DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
+            logger.debug(`Language changed from ${oldConfig?.language} to ${config.language} - new requests will use new cache key`);
           }
-          
-          // Blur thumbs changes - affects poster/background display
           if (config.blurThumbs !== undefined && config.blurThumbs !== oldConfig?.blurThumbs) {
-            patterns.push(`meta-poster:*`); // Poster components
-            patterns.push(`meta-background:*`); // Background components
-            patterns.push(`meta-videos:*`); // Videos components
-            patterns.push(`search:*`); // Also clear search cache since blur affects search results
-            logger.debug(`Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
-            logger.debug('Added patterns for poster, background, and search cache for blur change');
+            logger.debug(`Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs} - new requests will use new cache key`);
           }
-          
-          // Show prefix changes - affects basic meta display
           if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
-            patterns.push(`meta-basic:*`); // Basic meta components
-            patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            logger.debug(`Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
-            logger.debug('Added patterns for basic meta and search cache for prefix change');
+            logger.debug(`Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix} - new requests will use new cache key`);
           }
-          
-
-          // Show meta provider attribution changes - affects basic meta display
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
-            patterns.push(`meta-basic:*`); // Basic meta components
-            patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            logger.debug(`Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
-            logger.debug('Added patterns for basic meta and search cache for show meta provider attribution change');
+            logger.debug(`Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution} - new requests will use new cache key`);
           }
 
-          // API key changes - affects poster/background components and search results
+          // API key changes - only clear catalog cache (user-scoped), not global meta cache
           if (config.apiKeys && oldConfig?.apiKeys) {
             const rpdbChanged = config.apiKeys.rpdb !== oldConfig.apiKeys.rpdb;
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              patterns.push(`meta-poster:*`); // Poster components affected by RPDB
-              patterns.push(`meta-background:*`); // Background components affected by RPDB
-              patterns.push(`search:*`); // Search results affected by API keys
-              patterns.push(`catalog:*`); // Catalog results affected by API keys
-              logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
-              logger.debug(`DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
+              // RPDB/MDBList API key changes affect catalog rendering, clear user's catalogs
+              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
 
@@ -288,40 +259,29 @@ class ConfigApi {
             }
             
             if (artProvidersChanged) {
-              patterns.push(`meta:*`);
-              patterns.push(`meta-*:*`);
-              patterns.push(`search:*`);
-              patterns.push(`catalog:*`);
-              logger.debug('Art providers changed - clearing cache');
+              // Art provider changes are reflected in new cache keys, no need to clear globally
+              logger.debug('Art providers changed - new requests will use new cache key');
               logger.debug('Old art providers:', oldConfig?.artProviders);
               logger.debug('New art providers:', config.artProviders);
             }
           }
           
-          // Meta provider changes - affects all components since it changes the data source
+          // Meta provider changes - new config creates new cache keys
           if (config.providers && oldConfig?.providers) {
             logger.debug('Comparing providers - old:', oldConfig.providers, 'new:', config.providers);
             const providersChanged = Object.keys(config.providers).some(key => 
               config.providers[key] !== oldConfig.providers?.[key]
             );
-            logger.debug('Providers changed:', providersChanged);
             if (providersChanged) {
-              patterns.push(`meta:*`);
-              patterns.push(`meta-*:*`);
-              patterns.push(`search:*`);
-              patterns.push(`catalog:*`);
+              logger.debug('Providers changed - new requests will use new cache key');
             }
           } else {
             logger.debug('No providers to compare - old:', oldConfig?.providers, 'new:', config.providers);
           }
           
-          // SFW mode changes
+          // SFW mode changes - new config creates new cache keys
           if (config.sfw !== undefined && config.sfw !== oldConfig?.sfw) {
-            // SFW affects content filtering, so clear all components
-            patterns.push(`meta-*:*`); // All meta components
-            patterns.push(`search:*`); // Also clear search cache since SFW affects search results
-            logger.debug(`SFW mode changed from ${oldConfig?.sfw} to ${config.sfw}`);
-            logger.debug('Added patterns for meta and search cache for SFW change');
+            logger.debug(`SFW mode changed from ${oldConfig?.sfw} to ${config.sfw} - new requests will use new cache key`);
           }
           
           // MDBList catalog changes - affects specific catalog cache
@@ -392,69 +352,9 @@ class ConfigApi {
             }
           }
           
-          // If we have any config changes that affect meta, clear ALL cache for this user
-          // This ensures we don't miss any cache entries and forces fresh data
-          if (patterns.some(p => p.includes('meta-'))) {
-            try {
-              // Clear ALL cache entries for this user (nuclear option)
-              // Use SCAN + pipeline in batches to avoid loading many keys into memory
-              async function deleteKeysByPattern(pattern, batchSize = 500) {
-                let cursor = '0';
-                let deletedCount = 0;
-                do {
-                  const reply = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 1000);
-                  cursor = reply[0];
-                  const keys = reply[1] || [];
-                  if (keys && keys.length > 0) {
-                    // delete in smaller chunks using pipeline
-                    for (let i = 0; i < keys.length; i += batchSize) {
-                      const chunk = keys.slice(i, i + batchSize);
-                      const pipeline = redis.pipeline();
-                      for (const k of chunk) pipeline.del(k);
-                      await pipeline.exec();
-                      deletedCount += chunk.length;
-                    }
-                  }
-                } while (cursor !== '0');
-                return deletedCount;
-              }
-
-              logger.debug('Nuclear option - deleting meta keys using SCAN+pipeline...');
-              const nuked = await deleteKeysByPattern(`meta-*:*`);
-              if (nuked > 0) {
-                totalCleared += nuked;
-                logger.info(`NUCLEAR OPTION: Cleared ${nuked} total meta cache entries for user`);
-              }
-              
-              // Also try clearing with more specific patterns (matching actual cache key format)
-              const specificPatterns = [
-                `meta-basic:*`,
-                `meta-poster:*`,
-                `meta-background:*`,
-                `meta-logo:*`,
-                `meta-cast:*`,
-                `meta-videos:*`,
-                `meta-director:*`,
-                `meta-writer:*`,
-                `meta-links:*`,
-                `meta-trailers:*`,
-                `meta-extras:*`
-              ];
-              
-              for (const pattern of specificPatterns) {
-                const count = await deleteKeysByPattern(pattern);
-                if (count > 0) {
-                  logger.debug(`Specific pattern "${pattern}" cleared ${count} keys`);
-                  totalCleared += count;
-                } else {
-                  logger.debug(`Specific pattern "${pattern}" found no keys`);
-                }
-              }
-              
-            } catch (fallbackError) {
-              logger.warn('Fallback cache clearing failed:', fallbackError.message);
-            }
-          }
+          // NOTE: Nuclear option removed - meta cache uses config hash in keys,
+          // so new config = new cache keys = fresh data automatically.
+          // Old entries expire naturally via TTL. This prevents cross-user cache pollution.
           
           if (totalCleared > 0) {
             logger.info(`Total affected cache cleared: ${totalCleared} entries`);
@@ -624,60 +524,33 @@ class ConfigApi {
         try {
           const patterns = [];
           
-          // Map config changes to specific cache components that need clearing
-          // This ensures we only clear what's actually affected by the change
+
           
-          // Cast-related changes
+          // Log config changes for debugging (no global meta cache clearing)
           if (config.castCount !== undefined && config.castCount !== oldConfig?.castCount) {
-            patterns.push(`meta-cast:*`);  // Cast components
-            patterns.push(`meta-videos:*`); // Episode components (might include cast info)
-            logger.debug(`Cast count changed from ${oldConfig?.castCount} to ${config.castCount}`);
+            logger.debug(`Cast count changed from ${oldConfig?.castCount} to ${config.castCount} - new requests will use new cache key`);
           }
-          
-          // Language changes - affects all meta content
           if (config.language !== undefined && config.language !== oldConfig?.language) {
-            patterns.push(`v*:meta-*:*`); // All meta components since language affects everything
-            patterns.push(`search:*`); // Also clear search cache since language affects search results
-            logger.debug(`Language changed from ${oldConfig?.language} to ${config.language}`);
-            logger.debug(`DEBUG: Added pattern "v*:meta-*:*" and "search:*" for language change`);
+            logger.debug(`Language changed from ${oldConfig?.language} to ${config.language} - new requests will use new cache key`);
           }
-          
-          // Blur thumbs changes - affects poster/background display
           if (config.blurThumbs !== undefined && config.blurThumbs !== oldConfig?.blurThumbs) {
-            patterns.push(`meta-poster:*`); // Poster components
-            patterns.push(`meta-background:*`); // Background components
-            patterns.push(`search:*`); // Also clear search cache since blur affects search results
-            logger.debug(`Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs}`);
-            logger.debug(`DEBUG: Added patterns for poster, background, and search cache for blur change`);
+            logger.debug(`Blur thumbs changed from ${oldConfig?.blurThumbs} to ${config.blurThumbs} - new requests will use new cache key`);
           }
-          
-          // Show prefix changes - affects basic meta display
           if (config.showPrefix !== undefined && config.showPrefix !== oldConfig?.showPrefix) {
-            patterns.push(`meta-basic:*`); // Basic meta components
-            patterns.push(`search:*`); // Also clear search cache since prefix affects search results
-            logger.debug(`Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix}`);
-            logger.debug(`DEBUG: Added patterns for basic meta and search cache for prefix change`);
+            logger.debug(`Show prefix changed from ${oldConfig?.showPrefix} to ${config.showPrefix} - new requests will use new cache key`);
           }
-          // show meta provider attribution changes - affects basic meta display
           if (config.showMetaProviderAttribution !== undefined && config.showMetaProviderAttribution !== oldConfig?.showMetaProviderAttribution) {
-            patterns.push(`meta-basic:*`); // Basic meta components
-            patterns.push(`search:*`);
-            logger.debug(`Show meta provider attribution changed from ${oldConfig?.showMetaProviderAttribution} to ${config.showMetaProviderAttribution}`);
-            logger.debug(`DEBUG: Added patterns for basic meta and search cache for show meta provider attribution change`);
+            logger.debug(`Show meta provider attribution changed - new requests will use new cache key`);
           }
 
-          // API key changes - affects poster/background components and search results
+          // API key changes - only clear catalog cache (user-scoped), not global meta cache
           if (config.apiKeys && oldConfig?.apiKeys) {
             const rpdbChanged = config.apiKeys.rpdb !== oldConfig.apiKeys.rpdb;
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              patterns.push(`meta-poster:*`); // Poster components affected by RPDB
-              patterns.push(`meta-background:*`); // Background components affected by RPDB
-              patterns.push(`search:*`); // Search results affected by API keys
-              patterns.push(`catalog:*`); // Catalog results affected by API keys
-              logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged}`);
-              logger.debug(`DEBUG: Added patterns for poster, background, search, and catalog cache for API key changes`);
+              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
 
@@ -743,23 +616,14 @@ class ConfigApi {
             }
             
             if (artProvidersChanged) {
-              patterns.push(`meta-poster:*`); // Poster components
-              patterns.push(`meta-background:*`); // Background components
-              patterns.push(`meta-banner:*`); // Banner components
-              patterns.push(`meta-logo:*`); // Logo components
-              patterns.push(`search:*`); // Also clear search cache since art affects search results
-              logger.debug(`Art providers changed - added patterns for all art-related components`);
+              // Art provider changes are reflected in new cache keys, no need to clear globally
+              logger.debug(`Art providers changed - new requests will use new cache key`);
             } else {
               logger.debug(`Art providers unchanged`);
             }
           } else if (config.artProviders !== oldConfig?.artProviders) {
             // One exists and the other doesn't
-            patterns.push(`meta-poster:*`); // Poster components
-            patterns.push(`meta-background:*`); // Background components
-            patterns.push(`meta-banner:*`); // Banner components
-            patterns.push(`meta-logo:*`); // Logo components
-            patterns.push(`search:*`); // Also clear search cache since art affects search results
-            logger.debug(`Art providers changed from ${oldConfig?.artProviders ? 'exists' : 'null'} to ${config.artProviders ? 'exists' : 'null'}`);
+            logger.debug(`Art providers changed from ${oldConfig?.artProviders ? 'exists' : 'null'} to ${config.artProviders ? 'exists' : 'null'} - new requests will use new cache key`);
           } else {
             logger.debug(`No art providers in config or oldConfig`);
           }
