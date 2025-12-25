@@ -800,6 +800,56 @@ class AniListAPI {
   }
 
   /**
+   * Submit a rating to AniList
+   * @param mediaId - AniList media ID
+   * @param score - Rating score (1-100 scale)
+   * @param accessToken - OAuth access token
+   * @returns Promise with the response data
+   */
+  async submitRating(mediaId: number, score: number, accessToken: string): Promise<any> {
+    if (!mediaId || !accessToken) {
+      throw new Error('mediaId and accessToken are required');
+    }
+    
+    if (score < 1 || score > 100) {
+      throw new Error('score must be between 1 and 100');
+    }
+    
+    const mutation = `
+      mutation SaveMediaListEntry($mediaId: Int, $score: Float) {
+        SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+          mediaId
+          score
+        }
+      }
+    `;
+    
+    const variables = {
+      mediaId: mediaId,
+      score: score
+    };
+    
+    try {
+      const response = await this.makeRateLimitedRequest(() => 
+        httpPost(this.baseURL, {
+          query: mutation,
+          variables: variables
+        }, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        })
+      );
+      
+      return response;
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  /**
    * Get rate limit status
    */
   getRateLimitStatus() {

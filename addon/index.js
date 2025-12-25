@@ -2229,47 +2229,27 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
               if (anilistScore < 1 || anilistScore > 100) {
                 results.anilist.error = `Invalid score: ${anilistScore} (must be 1-100)`;
               } else {
-                const mutation = `
-                  mutation SaveMediaListEntry($mediaId: Int, $score: Float) {
-                    SaveMediaListEntry(mediaId: $mediaId, score: $score) {
-                      mediaId
-                      score
-                    }
+                consola.debug(`[Rating] AniList rating - mediaId: ${anilistIdNum}, score: ${anilistScore}`);
+                
+                try {
+                  // Use the submitRating method from anilist instance (uses makeRateLimitedRequest internally)
+                  const response = await anilist.submitRating(anilistIdNum, anilistScore, token.access_token);
+                  
+                  // Check for GraphQL errors
+                  if (response?.data?.errors && response.data.errors.length > 0) {
+                    const errorMessage = response.data.errors[0]?.message || 'Unknown GraphQL error';
+                    results.anilist.error = `AniList API error: ${errorMessage}`;
+                    consola.error(`[Rating] AniList GraphQL error:`, response.data.errors);
+                  } else if (response?.data?.data?.SaveMediaListEntry) {
+                    results.anilist.success = true;
+                    consola.info(`[Rating] Successfully rated anime ${anilistIdNum} on AniList with score ${anilistScore}`);
+                  } else {
+                    results.anilist.error = `AniList API returned unexpected response: ${JSON.stringify(response?.data)}`;
+                    consola.error(`[Rating] AniList unexpected response:`, response);
                   }
-                `;
-                
-                const variables = {
-                  id: anilistIdNum,
-                  score: anilistScore
-                };
-                
-                consola.debug(`[Rating] AniList mutation - mediaId: ${anilistIdNum}, score: ${anilistScore}, accessToken: ${token.access_token}`);
-                
-                // Use the queueRequest method from anilist instance
-                const response = await anilist.queueRequest(async () => {
-                  const { httpPost } = require('./utils/httpClient');
-                  return await httpPost('https://graphql.anilist.co', {
-                    query: mutation,
-                    variables: variables
-                  }, {
-                    headers: {
-                      'Authorization': `Bearer ${token.access_token}`,
-                      'Content-Type': 'application/json'
-                    }
-                  });
-                });
-                
-                // Check for GraphQL errors
-                if (response?.data?.errors && response.data.errors.length > 0) {
-                  const errorMessage = response.data.errors[0]?.message || 'Unknown GraphQL error';
-                  results.anilist.error = `AniList API error: ${errorMessage}`;
-                  consola.error(`[Rating] AniList GraphQL error:`, response.data.errors);
-                } else if (response?.data?.data?.SaveMediaListEntry) {
-                  results.anilist.success = true;
-                  consola.info(`[Rating] Successfully rated anime ${anilistIdNum} on AniList with score ${anilistScore}`);
-                } else {
-                  results.anilist.error = `AniList API returned unexpected response: ${JSON.stringify(response?.data)}`;
-                  consola.error(`[Rating] AniList unexpected response:`, response);
+                } catch (error) {
+                  results.anilist.error = error.message || "Failed to submit rating to AniList";
+                  consola.error(`[Rating] AniList submission error:`, error.message);
                 }
               }
             }
