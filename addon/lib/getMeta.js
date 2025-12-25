@@ -89,31 +89,11 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
       return { meta: null };
     }
     
-    // --- Handle custom ID prefixes (e.g., "tun_tt6128300", "upnext_tt123_trakt456", "unwatched_tt123") ---
+    // --- Handle custom ID prefixes (e.g., "tun_tt6128300") ---
     const isTraktUpNextId = stremioId.startsWith('tun_');
     if (isTraktUpNextId) {
       stremioId = stremioId.replace(/^tun_/, '');
     }
-    
-    // Handle upnext_ prefix: format is "upnext_{baseId}_{episodeIdPart}"
-    // Extract the base media ID (e.g., "upnext_tt2595486_trakt1155534" -> "tt2595486")
-    const isUpNextPrefixId = stremioId.startsWith('upnext_');
-    if (isUpNextPrefixId) {
-      // Match patterns like: upnext_tt123_xxx, upnext_tmdb:123_xxx, upnext_tvdb:123_xxx
-      const upnextMatch = stremioId.match(/^upnext_(tt\d+|tmdb:\d+|tvdb:\d+)_/);
-      if (upnextMatch) {
-        logger.debug(`[Meta] Extracting base ID from upnext: ${stremioId} -> ${upnextMatch[1]}`);
-        stremioId = upnextMatch[1];
-      }
-    }
-    
-    // Handle unwatched_ prefix: format is "unwatched_{baseId}"
-    const isUnwatchedPrefixId = stremioId.startsWith('unwatched_');
-    if (isUnwatchedPrefixId) {
-      stremioId = stremioId.replace(/^unwatched_/, '');
-      logger.debug(`[Meta] Stripped unwatched_ prefix, new ID: ${stremioId}`);
-    }
-    
     const shouldIncludeVideos = !isTraktUpNextId && includeVideos;
     // --- TVDB Collections Meta Handler ---
     logger.debug(`[Meta] Starting process for ${stremioId} (type: ${type}, language: ${language})`);
