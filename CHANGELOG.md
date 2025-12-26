@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.17.0](https://github.com/cedya77/aiometadata/compare/v1.16.0...v1.17.0) (2025-12-26)
+
+
+### Features
+
+* add DISABLE_METRICS env var to disable metrics collection ([71c044f](https://github.com/cedya77/aiometadata/commit/71c044ff73d72835418c187213350a9f4e951f21))
+* Add Rate Me button as genre in meta pages ([fa2c218](https://github.com/cedya77/aiometadata/commit/fa2c218451297c6c5ebe18cdbcca1a6c99bfee43))
+* Add rating page with multi-service support (Trakt, AniList, MDBList) ([228ada5](https://github.com/cedya77/aiometadata/commit/228ada57585b006e362b3b4873f98c07aec6bc97))
+* **search:** add option to filter digital releases for searches only ([67f2ada](https://github.com/cedya77/aiometadata/commit/67f2adaa7f293fea85b5e55d4d74f9cf91a9d7af))
+* support blur endpoint for TOP Poster API ([fc6143a](https://github.com/cedya77/aiometadata/commit/fc6143a556dd983672c87e798a5f8721d88a9c6c))
+* support blur endpoint for TOP Poster API ([424c127](https://github.com/cedya77/aiometadata/commit/424c1271eef3a13e057337035c77f8778b935100))
+* **trakt:** Add trakt trending/popular movies/shows catalogs ([911f4a1](https://github.com/cedya77/aiometadata/commit/911f4a1d679f6528a93f9b70a9086d5561e0b22f))
+
+
+### Bug Fixes
+
+* address TUN bug, enhance cache efficiency ([5fe3880](https://github.com/cedya77/aiometadata/commit/5fe3880d0660d5edfe5067c2c0418cf66f7be295))
+* enable necessary metrics for Ratings page functionality ([95e63bd](https://github.com/cedya77/aiometadata/commit/95e63bd5cb7f2b8cf60baf38481777098641717e))
+* enable necessary metrics for Ratings page functionality ([7a6a419](https://github.com/cedya77/aiometadata/commit/7a6a419762a6b50ba5dee4ed7862f86d16d15926))
+* ensure MDBList API key test uses rate limiter ([0e40ba4](https://github.com/cedya77/aiometadata/commit/0e40ba4e73368ba23edef9a747a52e20b7494f27))
+* **mdblist:** fix import by list url ([2778c7a](https://github.com/cedya77/aiometadata/commit/2778c7ad9043e6b773f6a9c484755b6edf816fae))
+* **mdblist:** pass unified paramater to query for mixed lists so that order is kept ([2778c7a](https://github.com/cedya77/aiometadata/commit/2778c7ad9043e6b773f6a9c484755b6edf816fae))
+* proxy frontend Trakt calls through backend rate limiter ([17d80b7](https://github.com/cedya77/aiometadata/commit/17d80b7e71ef75a44cc52809cb8b7bd29aaa77fd))
+* **trakt:** Filter dropped shows from Trakt Up Next and Recently Aired catalogs ([9cea060](https://github.com/cedya77/aiometadata/commit/9cea060b61b62a0129baa723917ecba819d38fe3))
+
+
+### Reverts
+
+* discard getMeta.js changes from PR 181 ([3dd7ddf](https://github.com/cedya77/aiometadata/commit/3dd7ddfef51cdd54f15f7538f22001b85fa56cee))
+
 ## [1.16.0](https://github.com/cedya77/aiometadata/compare/v1.15.0...v1.16.0) (2025-12-22)
 
 
