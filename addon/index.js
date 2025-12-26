@@ -1983,37 +1983,6 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       // If keepRPDBForLibrary is true (default), keep the RPDB proxy URL as-is
     }
     
-    // Add "Rate Me" genre button if enabled
-    if (config.showRateMeButton && result.meta && result.meta.id) {
-      const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
-        ? process.env.HOST_NAME
-        : `https://${process.env.HOST_NAME}`;
-      
-      // Build rating page URL
-      const ratingUrl = `${host}/stremio/${userUUID}/rating?id=${encodeURIComponent(result.meta.id)}&type=${type}`;
-      
-      // Ensure genres array exists
-      if (!result.meta.genres) {
-        result.meta.genres = [];
-      }
-      
-      // Add "Rate Me" as a genre (Stremio will display it as a clickable genre)
-      // The genre will link to the rating page
-      result.meta.genres.push(`⭐ Rate Me`);
-      
-      // Also add it to links if links array exists (for better compatibility)
-      if (!result.meta.links) {
-        result.meta.links = [];
-      }
-      
-      // Add rating link
-      result.meta.links.push({
-        name: '⭐ Rate Me',
-        category: 'Genres',
-        url: ratingUrl
-      });
-    }
-    
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
     
@@ -2045,6 +2014,27 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     
     res.status(500).send("Internal Server Error");
   }
+});
+
+// --- Stream route for rating page ---
+addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) {
+  const { userUUID, type, id } = req.params;
+  const config = await loadConfigFromDatabase(userUUID);
+  if (!config) {
+    consola.debug(`[Stream Route] No config found for user: ${userUUID}`);
+    return respond(req, res, { streams: [] }, { cacheMaxAge: 0 });
+  }
+  let streamUrl = null;
+  consola.debug(`[Stream Route] Showing rate me button: ${config.showRateMeButton}, id: ${id}`);
+  if (config.showRateMeButton && id) {
+    const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
+      ? process.env.HOST_NAME
+      : `https://${process.env.HOST_NAME}`;
+    
+    // Build rating page URL
+    streamUrl = `${host}/stremio/${userUUID}/rating?id=${encodeURIComponent(id)}&type=${type}`;
+  }
+  return respond(req, res, { streams: streamUrl ? [{ externalUrl: streamUrl, name: `⭐ Rate Me` }] : [] }, { cacheMaxAge: 0 });
 });
 
 // --- Subtitle Route (for watch tracking) ---
