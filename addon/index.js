@@ -2031,8 +2031,23 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`;
     
+    // For series, strip out season:episode from id
+    // IMDb: "tt1234567:1:5" -> "tt1234567"
+    // Others: "kitsu:12345:1:5" -> "kitsu:12345", "tmdb:12345:1:5" -> "tmdb:12345"
+    let cleanId = id;
+    if (type === 'series') {
+      const parts = id.split(':');
+      if (parts[0].startsWith('tt')) {
+        // IMDb ID - just take the first part
+        cleanId = parts[0];
+      } else if (parts.length >= 2) {
+        // Provider ID (kitsu:, tmdb:, etc.) - take provider:id
+        cleanId = `${parts[0]}:${parts[1]}`;
+      }
+    }
+    
     // Build rating page URL
-    streamUrl = `${host}/stremio/${userUUID}/rating?id=${encodeURIComponent(id)}&type=${type}`;
+    streamUrl = `${host}/stremio/${userUUID}/rating?id=${encodeURIComponent(cleanId)}&type=${type}`;
   }
   return respond(req, res, { streams: streamUrl ? [{ externalUrl: streamUrl, name: `⭐ Rate Me` }] : [] }, { cacheMaxAge: 0 });
 });
