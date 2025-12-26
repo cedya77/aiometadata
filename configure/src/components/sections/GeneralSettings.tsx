@@ -301,6 +301,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
   };
 
+  const handleShowRateMeButtonChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, showRateMeButton: checked }));
+  };
+
   const handleTimezoneChange = (value: string) => {
     setConfig(prevConfig => ({ ...prevConfig, timezone: value }));
   };
@@ -475,6 +479,19 @@ export function GeneralSettings() {
             id="enable-rating-posters-for-library"
             checked={config.enableRatingPostersForLibrary !== false}
             onCheckedChange={handleEnableRatingPostersForLibraryChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="show-rate-me-button" className="text-lg font-medium">Show Rate Me Button</Label>
+            <p className="text-sm text-muted-foreground">
+              Display a "⭐ Rate Me" genre button in meta pages that links to the rating page for quick access to rate content.
+            </p>
+          </div>
+          <Switch
+            id="show-rate-me-button"
+            checked={!!config.showRateMeButton}
+            onCheckedChange={handleShowRateMeButtonChange}
           />
         </div>
         

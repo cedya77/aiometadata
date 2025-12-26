@@ -114,6 +114,8 @@ export interface AppConfig {
   anilistWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
   enableRatingPostersForLibrary?: boolean;
+  /** If true, display a "⭐ Rate Me" genre button in meta pages that links to the rating page */
+  showRateMeButton?: boolean;
   ageRating: string;
   sfw: boolean;
   hideUnreleasedDigital: boolean;

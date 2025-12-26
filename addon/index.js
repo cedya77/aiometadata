@@ -1983,6 +1983,37 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       // If keepRPDBForLibrary is true (default), keep the RPDB proxy URL as-is
     }
     
+    // Add "Rate Me" genre button if enabled
+    if (config.showRateMeButton && result.meta && result.meta.id) {
+      const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
+        ? process.env.HOST_NAME
+        : `https://${process.env.HOST_NAME}`;
+      
+      // Build rating page URL
+      const ratingUrl = `${host}/stremio/${userUUID}/rating?id=${encodeURIComponent(result.meta.id)}&type=${type}`;
+      
+      // Ensure genres array exists
+      if (!result.meta.genres) {
+        result.meta.genres = [];
+      }
+      
+      // Add "Rate Me" as a genre (Stremio will display it as a clickable genre)
+      // The genre will link to the rating page
+      result.meta.genres.push(`⭐ Rate Me`);
+      
+      // Also add it to links if links array exists (for better compatibility)
+      if (!result.meta.links) {
+        result.meta.links = [];
+      }
+      
+      // Add rating link
+      result.meta.links.push({
+        name: '⭐ Rate Me',
+        category: 'Genres',
+        url: ratingUrl
+      });
+    }
+    
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
     
@@ -2635,7 +2666,8 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
       anilist: false,
       mdblist: false
     };
-    const isImdbIdAnime = id && id.startsWith('tt') && !!idMapper.getMappingByImdbId(id) && metaType === 'Movie';
+    consola.debug(`[Rating Page] Checking if ID is anime - id: ${id}, metaType: ${metaType}, gettraktanimemoviebyimdbid: ${JSON.stringify(idMapper.getTraktAnimeMovieByImdbId(id))}`);  
+    const isImdbIdAnime = id && id.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(id) && metaType === 'Movie';
     const isTmdbIdAnime = id && id.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(id.replace('tmdb:', '')) && metaType === 'Movie';
     // Check if the Stremio ID in URL is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = id && typeof id === 'string' && (
