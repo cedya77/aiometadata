@@ -29,11 +29,21 @@ async function fetchTraktUpNextEpisodes(
   
   logger.info(`Up Next: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);
   
-  // Fetch all watched shows and build the Up Next list
+  // Fetch all watched shows and dropped shows
   const watchedStart = Date.now();
-  const watchedShows = await fetchTraktWatchedShows(accessToken);
+  const [watchedShows, droppedShowIds] = await Promise.all([
+    fetchTraktWatchedShows(accessToken),
+    fetchTraktDroppedShows(accessToken)
+  ]);
   const watchedTime = Date.now() - watchedStart;
-  logger.info(`Up Next: watched shows fetch took ${watchedTime}ms (${watchedShows.length} shows)`);
+  
+  // Filter out dropped shows
+  const activeWatchedShows = watchedShows.filter(show => {
+    const showId = show?.show?.ids?.trakt;
+    return showId && !droppedShowIds.has(showId);
+  });
+  
+  logger.info(`Up Next: watched shows fetch took ${watchedTime}ms (${watchedShows.length} total, ${activeWatchedShows.length} active after filtering ${droppedShowIds.size} dropped)`);
   
   const progressStart = Date.now();
   
@@ -42,10 +52,10 @@ async function fetchTraktUpNextEpisodes(
   const upNextList: any[] = [];
   let processedCount = 0;
   
-  for (let i = 0; i < watchedShows.length && upNextList.length < MAX_RESULTS; i += BATCH_SIZE) {
+  for (let i = 0; i < activeWatchedShows.length && upNextList.length < MAX_RESULTS; i += BATCH_SIZE) {
     const remainingNeeded = MAX_RESULTS - upNextList.length;
-    const batchSize = Math.min(BATCH_SIZE, watchedShows.length - i, remainingNeeded + 20); // Fetch extra to account for shows without next episodes
-    const batch = watchedShows.slice(i, i + batchSize);
+    const batchSize = Math.min(BATCH_SIZE, activeWatchedShows.length - i, remainingNeeded + 20); // Fetch extra to account for shows without next episodes
+    const batch = activeWatchedShows.slice(i, i + batchSize);
     
     const results = await Promise.all(
       batch.map(async (show) => {
@@ -166,6 +176,65 @@ async function fetchTraktWatchedShows(accessToken: string): Promise<any[]> {
 }
 
 /**
+ * Fetch dropped shows for a user (OAuth required)
+ * Handles pagination to fetch all dropped shows across multiple pages
+ * @param accessToken - User's Trakt access token
+ * @returns Set of dropped show IDs
+ */
+async function fetchTraktDroppedShows(accessToken: string): Promise<Set<number>> {
+  try {
+    const droppedIds = new Set<number>();
+    let currentPage = 1;
+    let totalPages = 1;
+    const limit = 100; // Max items per page
+    
+    // Loop through all pages
+    do {
+      const url = `${TRAKT_BASE_URL}/users/hidden/dropped?type=show&page=${currentPage}&limit=${limit}`;
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, {
+          dispatcher: traktDispatcher,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        'Trakt fetchDroppedShows'
+      );
+      
+      // Extract pagination info from headers
+      const paginationHeaders = response.headers || {};
+      totalPages = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : 1;
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : 0;
+      
+      // Add dropped show IDs from this page
+      if (Array.isArray(response.data)) {
+        for (const item of response.data) {
+          if (item?.show?.ids?.trakt) {
+            droppedIds.add(item.show.ids.trakt);
+          }
+        }
+      }
+      
+      logger.debug(`Dropped shows page ${currentPage}/${totalPages}: ${response.data?.length || 0} items, total: ${totalItems}`);
+      currentPage++;
+    } while (currentPage <= totalPages);
+    
+    logger.info(`Fetched ${droppedIds.size} dropped shows from Trakt (${totalPages} page${totalPages !== 1 ? 's' : ''})`);
+    return droppedIds;
+  } catch (error: any) {
+    logger.error(`Failed to fetch dropped shows: ${error?.message || String(error)}`);
+    return new Set<number>(); // Return empty set on error, don't fail the whole operation
+  }
+}
+
+/**
  * Fetch watched progress for a show (OAuth required)
  * @param accessToken - User's Trakt access token
  * @param showId - Trakt show ID
@@ -213,19 +282,29 @@ async function fetchTraktUnwatchedEpisodes(
   logger.info(`Unwatched: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);
 
   const watchedStart = Date.now();
-  const watchedShows = await fetchTraktWatchedShows(accessToken);
+  const [watchedShows, droppedShowIds] = await Promise.all([
+    fetchTraktWatchedShows(accessToken),
+    fetchTraktDroppedShows(accessToken)
+  ]);
   const watchedTime = Date.now() - watchedStart;
-  logger.info(`Unwatched: watched shows fetch took ${watchedTime}ms (${watchedShows.length} shows)`);
+  
+  // Filter out dropped shows
+  const activeWatchedShows = watchedShows.filter(show => {
+    const showId = show?.show?.ids?.trakt;
+    return showId && !droppedShowIds.has(showId);
+  });
+  
+  logger.info(`Unwatched: watched shows fetch took ${watchedTime}ms (${watchedShows.length} total, ${activeWatchedShows.length} active after filtering ${droppedShowIds.size} dropped)`);
 
   const MAX_SHOWS = 50; // cap number of series to avoid overlong pages
   const BATCH_SIZE = 30;
   const items: any[] = [];
   let processedCount = 0;
 
-  for (let i = 0; i < watchedShows.length && items.length < MAX_SHOWS; i += BATCH_SIZE) {
+  for (let i = 0; i < activeWatchedShows.length && items.length < MAX_SHOWS; i += BATCH_SIZE) {
     const remainingNeeded = MAX_SHOWS - items.length;
-    const batchSize = Math.min(BATCH_SIZE, watchedShows.length - i, remainingNeeded + 20);
-    const batch = watchedShows.slice(i, i + batchSize);
+    const batchSize = Math.min(BATCH_SIZE, activeWatchedShows.length - i, remainingNeeded + 20);
+    const batch = activeWatchedShows.slice(i, i + batchSize);
 
     const results = await Promise.all(
       batch.map(async (show) => {

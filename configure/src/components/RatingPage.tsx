@@ -40,11 +40,11 @@ function StarRating({ value, onChange, max = 10 }: StarRatingProps) {
       <div className="transition-transform duration-150 hover:scale-110">
         <svg viewBox="0 0 24 24" className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground/40 dark:text-muted-foreground/30">
           <path d="M12 .587l3.668 7.431L24 9.748l-6 5.847L19.335 24 12 19.897 4.665 24 6 15.595 0 9.748l8.332-1.73z" fill="none" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-        <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ width: `${fill}%` }}>
+      </svg>
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ width: `${fill}%` }}>
           <svg viewBox="0 0 24 24" className="w-8 h-8 sm:w-10 sm:h-10 text-cyan-400 dark:text-cyan-500 drop-shadow-lg">
-            <path d="M12 .587l3.668 7.431L24 9.748l-6 5.847L19.335 24 12 19.897 4.665 24 6 15.595 0 9.748l8.332-1.73z" fill="currentColor" />
-          </svg>
+          <path d="M12 .587l3.668 7.431L24 9.748l-6 5.847L19.335 24 12 19.897 4.665 24 6 15.595 0 9.748l8.332-1.73z" fill="currentColor" />
+        </svg>
         </div>
       </div>
     </div>
@@ -329,7 +329,7 @@ export default function RatingPage(): JSX.Element {
                 </Button>
               </div>
               
-              <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4 sm:gap-6 p-3 sm:p-5 md:p-6 lg:p-8">
                   {/* Poster Section */}
                   {poster && (
@@ -375,7 +375,7 @@ export default function RatingPage(): JSX.Element {
                           Your Rating
                         </div>
                         <div className="w-full">
-                          <StarRating value={score} onChange={setScore} />
+                  <StarRating value={score} onChange={setScore} />
                         </div>
                         <div className="flex items-baseline gap-2 mt-1 sm:mt-2">
                           <span className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-cyan-500 dark:from-cyan-500 dark:to-cyan-600 bg-clip-text text-transparent">
@@ -498,7 +498,7 @@ export default function RatingPage(): JSX.Element {
               </form>
             </div>
           </div>
-        </Card>
+      </Card>
       </div>
     </div>
   );
