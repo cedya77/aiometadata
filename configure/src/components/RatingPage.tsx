@@ -275,6 +275,21 @@ export default function RatingPage(): JSX.Element {
     );
   }
 
+  const handleClose = () => {
+    // Try to close the window (works if opened by script)
+    if (window.opener) {
+      window.close();
+    } else {
+      // Fallback: try to go back in history
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        // Last resort: redirect to configure page
+        window.location.href = '/configure';
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-background/95 dark:from-background dark:via-background dark:to-background/98 flex items-start justify-center p-2 sm:p-4 md:p-6 pt-2 sm:pt-4 pb-4 sm:pb-6">
       <div className="w-full max-w-4xl mt-2 sm:mt-4">
@@ -291,6 +306,29 @@ export default function RatingPage(): JSX.Element {
             )}
             
             <div className="relative z-10">
+              {/* Close Button */}
+              <div className="flex justify-end p-3 sm:p-4 md:p-6">
+                <Button
+                  type="button"
+                  onClick={handleClose}
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-full w-8 h-8 sm:w-10 sm:h-10 p-0"
+                  aria-label="Close rating page"
+                >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className="h-5 w-5 sm:h-6 sm:w-6" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor" 
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </Button>
+              </div>
+              
               <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4 sm:gap-6 p-3 sm:p-5 md:p-6 lg:p-8">
                   {/* Poster Section */}

@@ -2126,8 +2126,8 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
       mdblist: { success: false, error: null }
     };
 
-    const isImdbIdAnime = stremioId.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(stremioId) && type === 'movie';
-    const isTmdbIdAnime = stremioId.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', '')) && type === 'movie';
+    const isImdbIdAnime = stremioId.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(stremioId) && type.toLowerCase() === 'movie';
+    const isTmdbIdAnime = stremioId.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', '')) && type.toLowerCase() === 'movie';
     // Check if the Stremio ID is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = stremioId && typeof stremioId === 'string' && (
       stremioId.startsWith('anilist:') || 
@@ -2136,11 +2136,11 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
       stremioId.startsWith('anidb:')
     );
 
-    const finalType = isAnimeId ? 'anime' : type === 'series' ? 'series' : 'movie';
+    const finalType = isAnimeId ? 'anime' : type.toLowerCase() === 'series' ? 'series' : 'movie';
     // Resolve all IDs needed for different services
     const { resolveAllIds } = require('./lib/id-resolver');
     const allIds = await resolveAllIds(stremioId, finalType, config);
-    if (type === 'movie') {
+    if (type.toLowerCase() === 'movie') {
       if (allIds?.malId) {
         allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
         allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
@@ -2255,7 +2255,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
             } else {
               // AniList uses 1-100 scale, convert from 1-10
               const anilistScore = Math.round(score * 10);
-              
+
               // Validate score is within valid range (1-100)
               if (anilistScore < 1 || anilistScore > 100) {
                 results.anilist.error = `Invalid score: ${anilistScore} (must be 1-100)`;
@@ -2305,7 +2305,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
         const tvdbId = allIds.tvdbId;
         
         if (tmdbId || imdbId || tvdbId) {
-          const mdblistType = type === 'series' ? 'shows' : 'movies';
+          const mdblistType = type.toLowerCase() === 'series' ? 'shows' : 'movies';
           
           // Build IDs object for MDBList
           const ids = {};
