@@ -613,11 +613,9 @@ class RequestTracker {
   }
 
   // Capture metadata from complete meta components (better approach!)
+  // NOTE: This function intentionally runs even when DISABLE_METRICS=true because it stores
+  // content_metadata for the rating page functionality, not just telemetry/analytics metrics.
   async captureMetadataFromComponents(metaId, meta, metaType) {
-    // Skip metrics collection if disabled
-    if (isMetricsDisabled()) {
-      return;
-    }
     try {
       if (!meta || !meta.name) return;
 

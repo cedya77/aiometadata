@@ -1268,9 +1268,18 @@ function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = nul
 /**
  * Get Top Poster API episode thumbnail URL with rating overlay
  * Format: /{api_key}/{id_type}/thumbnail/{media_id}/S{season}E{episode}.jpg
+ * @param {object} ids - Object with tmdbId and/or imdbId
+ * @param {number} season - Season number
+ * @param {number} episode - Episode number
+ * @param {string} topPosterKey - API key for Top Poster
+ * @param {string} resolution - Image resolution (default: 'original')
+ * @param {string|null} fallbackUrl - Fallback URL if thumbnail not available
+ * @param {object} options - Additional options
+ * @param {boolean} options.blur - Whether to request a blurred thumbnail (for spoiler protection)
  */
-function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 'original', fallbackUrl = null) {
+function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 'original', fallbackUrl = null, options = {}) {
     const { tmdbId, imdbId } = ids;
+    const { blur = false } = options;
     let baseUrl = `https://api.top-streaming.stream`;
     let idType = null;
     let fullMediaId = null;
@@ -1298,6 +1307,9 @@ function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 
     }
     if (fallbackUrl) {
         params.append('fallback_url', fallbackUrl);
+    }
+    if (blur) {
+        params.append('blur', 'true');
     }
     
     return params.toString() ? `${urlPath}?${params.toString()}` : urlPath;
