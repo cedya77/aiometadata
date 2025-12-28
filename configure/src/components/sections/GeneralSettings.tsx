@@ -208,10 +208,10 @@ const languageOptions = [
 ];
 
 const castCountOptions = [
-    { value: 5, label: '5 Members' },
-    { value: 10, label: '10 Members' },
-    { value: 15, label: '15 Members' },
-    { value: 0, label: 'Unlimited' } 
+  { value: 5, label: '5 Members' },
+  { value: 10, label: '10 Members' },
+  { value: 15, label: '15 Members' },
+  { value: 0, label: 'Unlimited' }
 ];
 
 // Common timezones for the selector
@@ -309,6 +309,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, timezone: value }));
   };
 
+  const handleStrictRegionFilteringChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, strictRegionFiltering: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -358,6 +362,19 @@ export function GeneralSettings() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Strict Region Filtering Setting */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="strict-region-filtering" className="text-lg font-medium">Strict Region Filtering</Label>
+            <p className="text-sm text-muted-foreground">Restrict results to content available in the selected language region (e.g., Italian to Italy). Includes local releases of international content.</p>
+          </div>
+          <Switch
+            id="strict-region-filtering"
+            checked={!!config.strictRegionFiltering}
+            onCheckedChange={handleStrictRegionFilteringChange}
+          />
         </div>
 
         {/* Include Adult Setting */}
@@ -494,7 +511,7 @@ export function GeneralSettings() {
             onCheckedChange={handleShowRateMeButtonChange}
           />
         </div>
-        
+
       </div>
     </div>
   );
