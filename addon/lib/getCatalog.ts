@@ -645,6 +645,17 @@ async function buildParameters(type: string, language: string, page: number, id:
   const languages = await getLanguages(config);
   const parameters: any = { language, page, 'vote_count.gte': 50 };
 
+  // Apply API-level region filtering if enabled
+  if (config.strictRegionFiltering && language) {
+    const regionCode = language.split('-')[1];
+    if (regionCode) {
+      // 'region' parameter acts as a filter for release dates in discover/movie
+      parameters.region = regionCode.toUpperCase();
+      // For TV shows or as fallback, strict filtering often implies watch availability too
+      parameters.watch_region = regionCode.toUpperCase();
+    }
+  }
+
   /*if (id === 'tmdb.top' && type === 'series') {
     logger.debug('Applying genre exclusion for popular series catalog.');
 
