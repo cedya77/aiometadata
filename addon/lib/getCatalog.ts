@@ -651,15 +651,16 @@ async function buildParameters(type: string, language: string, page: number, id:
     if (regionCode) {
       // 'region' parameter acts as a filter for release dates in discover/movie
       parameters.region = regionCode.toUpperCase();
+      // Ensure provider lookups use the correct region (for Streaming catalogs)
+      parameters.watch_region = regionCode.toUpperCase();
 
       // For Movies, limit to Theatrical (3) and Digital (4)
       if (type === 'movie') {
         parameters.with_release_type = '3|4';
       }
 
-      // For TV shows, we must specify monetization types for watch_region to work effectively
+      // For TV shows, we must specify monetization types for watch_region to work effectively as a general filter
       if (type === 'series') {
-        parameters.watch_region = regionCode.toUpperCase();
         parameters.with_watch_monetization_types = 'flatrate|free|ads|rent|buy';
       }
     }
