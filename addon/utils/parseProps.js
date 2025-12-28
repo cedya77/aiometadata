@@ -1296,6 +1296,28 @@ function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 
   if (!idType || !fullMediaId || !season || !episode) {
     return null;
   }
+function getTopPosterThumbnail(config, ids, season, episode, topPosterKey, resolution = 'original', fallbackUrl = null, options = {}) {
+    if (!isPosterRatingEnabled(config)) {
+        return fallbackUrl;
+    }
+    const { tmdbId, imdbId } = ids;
+    const { blur = false } = options;
+    let baseUrl = `https://api.top-streaming.stream`;
+    let idType = null;
+    let fullMediaId = null;
+    
+    // Top Poster API supports only IMDb and TMDB for thumbnails
+    if (tmdbId) {
+        idType = 'tmdb';
+        fullMediaId = `series-${tmdbId}`;
+    } else if (imdbId) {
+        idType = 'imdb';
+        fullMediaId = imdbId;
+    }
+    
+    if (!idType || !fullMediaId || !season || !episode) {
+        return null;
+    }
 
   // Top Poster API format: /{api_key}/{id_type}/thumbnail/{media_id}/S{season}E{episode}.jpg
   const urlPath = `${baseUrl}/${topPosterKey}/${idType}/thumbnail/${fullMediaId}/S${season}E${episode}.jpg`;
