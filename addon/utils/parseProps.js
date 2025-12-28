@@ -3038,8 +3038,16 @@ function isReleasedInCountry(meta, countryCode, type) {
     );
 
     if (countryRelease && countryRelease.release_dates?.length > 0) {
-      logger.debug(`[isReleasedInCountry] Movie ${meta.name || meta.id} was released in ${upperCountryCode}`);
-      return true;
+      // Filter out Premieres (Type 1) - we only want items that are actually available
+      // 1: Premiere, 2: Theatrical (Limited), 3: Theatrical, 4: Digital, 5: Physical, 6: TV
+      const validTypes = [2, 3, 4, 5, 6];
+      const hasValidRelease = countryRelease.release_dates.some(r => validTypes.includes(r.type));
+
+      if (hasValidRelease) {
+        logger.debug(`[isReleasedInCountry] Movie ${meta.name || meta.id} was released in ${upperCountryCode} (Valid Type)`);
+        return true;
+      }
+      logger.debug(`[isReleasedInCountry] Movie ${meta.name || meta.id} has release data for ${upperCountryCode} but no valid commercial release (likely only Premiere)`);
     }
 
     logger.debug(`[isReleasedInCountry] Movie ${meta.name || meta.id} was NOT released in ${upperCountryCode}`);
