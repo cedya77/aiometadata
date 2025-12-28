@@ -580,7 +580,32 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     ? () => moviedb.discoverMovie(parameters, config)
     : () => moviedb.discoverTv(parameters, config);
 
-  const res: any = await fetchFunction();
+  let res: any = await fetchFunction();
+  let fallbackTriggered = false;
+
+  // Fallback for Streaming Catalogs if strict filtering yields no results
+  if (config.strictRegionFiltering && id.includes("streaming") && (!res?.results || res.results.length === 0)) {
+    const regionUsed = parameters.watch_region;
+    const provider = findProvider(id.split(".")[1]);
+    const fallbackRegion = provider.country || 'US';
+
+    if (regionUsed !== fallbackRegion) {
+      logger.info(`[Strict Region Fallback] No items found for ${id} in ${regionUsed}. Falling back to ${fallbackRegion}.`);
+
+      parameters.watch_region = fallbackRegion;
+
+      // Remove strict region constraints to allow fallback content
+      delete parameters.region;
+      delete parameters.with_release_type;
+
+      // Re-fetch
+      res = type === "movie"
+        ? await moviedb.discoverMovie(parameters, config)
+        : await moviedb.discoverTv(parameters, config);
+
+      fallbackTriggered = true;
+    }
+  }
   // define preferred provider as string
 
   // Sort results by release date (newest first) for catalogs that explicitly sort by release date
@@ -615,7 +640,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
     // Apply strict region filtering if enabled
     // Filters content based on distribution country (where it was released), not origin country
-    if (config.strictRegionFiltering && language) {
+    // Skip if fallback was triggered (we want to show the fallback content even if not in region)
+    if (config.strictRegionFiltering && language && !fallbackTriggered) {
       const regionCode = language.split('-')[1]; // Extract country code (e.g., "IT" from "it-IT")
       if (regionCode && regionCode.length === 2) {
         const beforeCount = validMetas.length;
@@ -720,7 +746,9 @@ async function buildParameters(type: string, language: string, page: number, id:
       parameters.with_genres = findGenreId(genre, genreList);
     }
     parameters.with_watch_providers = provider.watchProviderId
-    parameters.watch_region = provider.country;
+    if (!parameters.watch_region) {
+      parameters.watch_region = provider.country;
+    }
     parameters.with_watch_monetization_types = "flatrate|free|ads";
     delete parameters['vote_count.gte'];
   } else {
