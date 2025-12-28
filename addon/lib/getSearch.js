@@ -661,7 +661,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
       });
       logger.debug(`Age rating filter applied: ${hydratedMetas.length} -> ${filteredResults.length} results.`);
   }
-  if (type === 'movie' && config.hideUnreleasedDigital) {
+  if (type === 'movie' && config.hideUnreleasedDigitalSearch) {
     const beforeCount = filteredResults.length;
     filteredResults = filteredResults.filter(meta => Utils.isReleasedDigitally(meta));
     const afterCount = filteredResults.length;

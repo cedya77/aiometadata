@@ -883,6 +883,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
         if (!isNaN(season) && !isNaN(episode)) {
           // Pass blur option to Top Poster API when blurThumbs is enabled
           const topPosterThumbnail = Utils.getTopPosterThumbnail(
+            config,
             { tmdbId, imdbId },
             season,
             episode,
@@ -1479,6 +1480,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
         if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
           // Pass blur option to Top Poster API when blurThumbs is enabled
           const topPosterThumbnail = Utils.getTopPosterThumbnail(
+            config,
             { tmdbId, imdbId },
             ep.season_number,
             ep.episode_number,
@@ -1946,6 +1948,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
             // Pass blur option to Top Poster API when blurThumbs is enabled
             const topPosterThumbnail = Utils.getTopPosterThumbnail(
+              config,
               { tmdbId, imdbId },
               episode.seasonNumber,
               episode.number,
@@ -2248,6 +2251,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
       if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
         // Pass blur option to Top Poster API when blurThumbs is enabled
         const topPosterThumbnail = Utils.getTopPosterThumbnail(
+          config,
           { tmdbId, imdbId },
           0, // Special episodes are season 0
           specialCount,
@@ -2317,6 +2321,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
       if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
         // Pass blur option to Top Poster API when blurThumbs is enabled
         const topPosterThumbnail = Utils.getTopPosterThumbnail(
+          config,
           { tmdbId, imdbId },
           actualSeason,
           episode.number,
@@ -2573,6 +2578,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           try {
             // Pass blur option to Top Poster API when blurThumbs is enabled
             const topPosterThumbnail = Utils.getTopPosterThumbnail(
+              config,
               { tmdbId: tmdbEpisode.tmdbId, imdbId },
               tmdbEpisode.seasonNumber,
               tmdbEpisode.episodeNumber,
@@ -3028,6 +3034,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           try {
             // Pass blur option to Top Poster API when blurThumbs is enabled
             const topPosterThumbnail = Utils.getTopPosterThumbnail(
+              config,
               { tmdbId: tmdbEpisode.tmdbId, imdbId },
               tmdbEpisode.seasonNumber,
               tmdbEpisode.episodeNumber,

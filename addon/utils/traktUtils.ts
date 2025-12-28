@@ -1235,6 +1235,19 @@ async function parseTraktItems(
                 if (!useShowPoster) {
                   metaResult.meta.poster = upNextVideo.thumbnail;
                   metaResult.meta.posterShape = 'landscape';
+                  if (metaResult.meta.poster && metaResult.meta.poster.includes('/poster/') && metaResult.meta.poster.includes('fallback=')) {
+                    
+                    try {
+                      const url = new URL(metaResult.meta.poster);
+                      const fallback = url.searchParams.get('fallback');
+                      if (fallback) {
+                        metaResult.meta.poster = decodeURIComponent(fallback);
+                      }
+                    } catch (e) {
+                      // Keep original if URL parsing fails
+                      consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
+                    }
+                  }
                 }
                 // If useShowPoster is true, keep the original show poster and posterShape
                 

@@ -1277,7 +1277,10 @@ function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = nul
  * @param {object} options - Additional options
  * @param {boolean} options.blur - Whether to request a blurred thumbnail (for spoiler protection)
  */
-function getTopPosterThumbnail(ids, season, episode, topPosterKey, resolution = 'original', fallbackUrl = null, options = {}) {
+function getTopPosterThumbnail(config, ids, season, episode, topPosterKey, resolution = 'original', fallbackUrl = null, options = {}) {
+    if (!isPosterRatingEnabled(config)) {
+        return fallbackUrl;
+    }
     const { tmdbId, imdbId } = ids;
     const { blur = false } = options;
     let baseUrl = `https://api.top-streaming.stream`;
