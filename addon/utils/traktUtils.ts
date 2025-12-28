@@ -1213,12 +1213,18 @@ async function parseTraktItems(
         
         const shouldIncludeVideos = (isUpNext || hasUnwatchedList) ? true : includeVideos;
         
+        // For Trakt Up Next items using episode thumbnails (!useShowPoster), disable rating posters
+        // Rating posters should only apply to show posters, not episode thumbnails
+        const configForMeta = isUpNext && !useShowPoster
+          ? { ...config, _disableRatingPostersForUpNext: true }
+          : config;
+        
         const getMetaStart = Date.now();
         const result = await cacheWrapMetaSmart(
           config.userUUID, 
           cacheId, 
           async () => {
-            const metaResult = await getMeta(metaType, language, stremioId, config, config.userUUID, shouldIncludeVideos);
+            const metaResult = await getMeta(metaType, language, stremioId, configForMeta, config.userUUID, shouldIncludeVideos);
             
             if (isUpNext && upNextEpisode && metaResult?.meta?.videos && Array.isArray(metaResult.meta.videos)) {
               const upNextVideo = metaResult.meta.videos.find((v: any) => 

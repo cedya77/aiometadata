@@ -33,7 +33,9 @@ const ANILIST_CATALOG_TTL = parseInt(process.env.ANILIST_CATALOG_TTL || 1 * 60 *
 // This allows reconstruction to access the correct RPDB state
 let currentRequestContext = {
   catalogConfig: null,
-  searchEngine: null
+  searchEngine: null,
+  isUpNext: false,
+  useShowPoster: true
 };
 
 // Enhanced error caching strategy with self-healing
@@ -926,12 +928,19 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state
   currentRequestContext.catalogConfig = catalogFromConfig;
+  // For Trakt Up Next, set useShowPoster context from catalog config
+  if (idOnly === 'trakt.upnext') {
+    currentRequestContext.useShowPoster = catalogFromConfig?.metadata?.useShowPosterForUpNext || false;
+  } else {
+    currentRequestContext.useShowPoster = true; // Default to true for non-Up Next catalogs
+  }
   
   try {
     return await cacheWrap(key, method, cacheTTL, options);
   } finally {
     // Clear context after request completes
     currentRequestContext.catalogConfig = null;
+    currentRequestContext.useShowPoster = true;
   }
   }
 
@@ -1523,9 +1532,20 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      if (componentName === 'basic') return; // Already handled
      
      if (componentName === 'poster') {
-       // Apply poster rating logic during reconstruction if enabled
-       // Use module-level context to get accurate enablement state
-       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRatingPosters !== false;
+       // Apply poster rating logic during reconstruction
+       // Set _currentCatalogConfig on config so buildPosterProxyUrl respects per-catalog settings
+       const catalogConfig = currentRequestContext.catalogConfig;
+       if (catalogConfig) {
+         config._currentCatalogConfig = catalogConfig;
+       }
+       // For Trakt Up Next items using episode thumbnails (!useShowPoster), disable rating posters
+       // Use metaId (the cache key) to detect Up Next items, as it contains the upnext_ prefix
+       const isUpNextItem = metaId?.startsWith('upnext_');
+       if (isUpNextItem && !currentRequestContext.useShowPoster) {
+         config._disableRatingPostersForUpNext = true;
+       }
+       const Utils = require("../utils/parseProps");
+       const posterRatingEnabled = Utils.isPosterRatingEnabled(config);
        const host = process.env.HOST_NAME.startsWith('http')
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
@@ -1533,7 +1553,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
         if (posterRatingEnabled && reconstructedMeta.id) {
          // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
-         const Utils = require("../utils/parseProps");
          // Strip known prefixes used for special metas (upnext_, unwatched_, tun_)
          let canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_)/, '');
          // Also strip any trailing episode identifier we append to upnext cache keys

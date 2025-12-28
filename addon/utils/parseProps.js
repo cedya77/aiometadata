@@ -31,6 +31,12 @@ const isDebugEnabled = consola.level >= 4;
  * Checks per-catalog settings if available, otherwise defaults to true
  */
 function isRatingPostersEnabled(config) {
+  // For Trakt Up Next items using episode thumbnails, disable rating posters
+  // (only enable when useShowPoster is true AND rating posters are enabled for the catalog)
+  if (config._disableRatingPostersForUpNext) {
+    return false;
+  }
+  
   // Check catalog-level RatingPosters setting (for catalog routes)
   if (config._currentCatalogConfig) {
     return config._currentCatalogConfig.enableRatingPosters !== false;
