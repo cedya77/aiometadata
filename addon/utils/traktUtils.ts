@@ -1078,18 +1078,41 @@ async function fetchTraktListItemsById(
  * @param type - 'movies' or 'shows'
  * @returns Array of genre slugs
  */
-async function fetchTraktGenres(type: 'movies' | 'shows'): Promise<string[]> {
+async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]> {
+  if (type === 'all') {
+    try {
+      const [movies, shows] = await Promise.all([
+        fetchTraktGenres('movies'),
+        fetchTraktGenres('shows')
+      ]);
+      
+      // Combine
+      const combined = [...movies, ...shows];
+      
+      // Deduplicate by slug using a Map
+      const uniqueMap = new Map();
+      combined.forEach(item => {
+        if (item && item.slug) {
+          uniqueMap.set(item.slug, item);
+        }
+      });
+      
+      const unique = Array.from(uniqueMap.values());
+      
+      // Sort alphabetically by name
+      return unique.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    } catch (err) {
+      return [];
+    }
+  }
+
   try {
-    // Use cache wrapper to avoid repeated API calls
     const { cacheWrapTraktGenres } = require('../lib/getCache.js');
-    
     return await cacheWrapTraktGenres(type, async () => {
       const url = `${TRAKT_BASE_URL}/genres/${type}`;
-      
       logger.debug(`Fetching Trakt genres from API for type: ${type}`);
-      
       const response: any = await makeRateLimitedRequest(
-        () => httpGet(url, { 
+        () => httpGet(url, {
           dispatcher: traktDispatcher,
           headers: {
             'Content-Type': 'application/json',
@@ -1099,17 +1122,17 @@ async function fetchTraktGenres(type: 'movies' | 'shows'): Promise<string[]> {
         }),
         `Trakt fetchGenres (${type})`
       );
-      
+
       if (!Array.isArray(response.data)) {
         logger.warn(`Trakt genres API returned non-array response for ${type}`);
         return [];
       }
-      
-      // Trakt returns objects like: { name: "Action", slug: "action" }
+
+      // Return objects with name and slug
       const genres = response.data
-        .map((g: any) => g.slug)
-        .filter(Boolean);
-      
+        .map((g: any) => ({ name: g.name, slug: g.slug }))
+        .filter((g: any) => g.name && g.slug);
+
       logger.info(`Successfully fetched and cached ${genres.length} ${type} genres from Trakt API`);
       return genres;
     });

@@ -26,15 +26,35 @@ const logger = consola.withTag('Catalog');
  */
 async function getTraktAccessToken(config: any): Promise<string | null> {
   if (!config.apiKeys?.traktTokenId) {
+    logger.debug(`No Trakt token ID configured for user`);
     return null;
   }
   
-  const tokenData = await database.getOAuthToken(config.apiKeys.traktTokenId);
-  if (!tokenData) {
-    logger.warn(`Trakt token not found in database: ${config.apiKeys.traktTokenId}`);
+  const tokenId = config.apiKeys.traktTokenId;
+  logger.debug(`Attempting to retrieve Trakt token: ${tokenId}`);
+  
+  let tokenData;
+  try {
+    tokenData = await database.getOAuthToken(tokenId);
+  } catch (error: any) {
+    logger.error(`Database error while retrieving Trakt token ${tokenId}: ${error.message}`);
     return null;
   }
+  
+  if (!tokenData) {
+    logger.warn(`Trakt token not found in database: ${tokenId}`);
+    logger.warn(`This could indicate:`);
+    logger.warn(`1. Token was deleted/disconnected`);
+    logger.warn(`2. Database connection issue`);
+    logger.warn(`3. Configuration mismatch`);
+    logger.warn(`Please check your Trakt connection in settings`);
+    return null;
+  }
+  
+  logger.debug(`Found Trakt token for user: ${tokenData.user_id}, provider: ${tokenData.provider}`);
+  
   const expiresAt = typeof tokenData.expires_at === 'string' ? parseInt(tokenData.expires_at, 10) : tokenData.expires_at;
+  
   // Validate token data structure
   if (!tokenData.access_token || typeof tokenData.access_token !== 'string' || tokenData.access_token.startsWith('[object')) {
     logger.error(`Trakt token is corrupted (access_token: ${typeof tokenData.access_token}, value preview: ${String(tokenData.access_token).substring(0, 30)})`);
@@ -57,7 +77,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   const oneHour = 60 * 60 * 1000;
   
   if (tokenData.expires_at && tokenData.expires_at < (now + oneHour)) {
-    logger.info(`Trakt token expired or expiring soon, refreshing...`);
+    logger.info(`Trakt token expired or expiring soon (expires: ${new Date(tokenData.expires_at).toISOString()}), refreshing...`);
     
     try {
       const { TraktClient } = require('./trakt');
@@ -69,22 +89,40 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
       
       const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
       
-      await database.updateOAuthToken(
-        config.apiKeys.traktTokenId,
+      const updateSuccess = await database.updateOAuthToken(
+        tokenId,
         newTokens.access_token,
         newTokens.refresh_token,
         newTokens.expires_at
       );
       
-      logger.info(`Trakt token refreshed successfully`);
+      if (!updateSuccess) {
+        logger.error(`Failed to update Trakt token in database after refresh`);
+        return null;
+      }
+      
+      logger.info(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
       
       return newTokens.access_token;
     } catch (error: any) {
       logger.error(`Failed to refresh Trakt token: ${error.message}`);
+      logger.error(`Stack trace:`, error.stack);
+      
+      // If refresh fails, check if the token still exists in database
+      try {
+        const stillExists = await database.getOAuthToken(tokenId);
+        if (!stillExists) {
+          logger.error(`Trakt token was deleted during refresh attempt`);
+        }
+      } catch (dbError: any) {
+        logger.error(`Database error during token existence check: ${dbError.message}`);
+      }
+      
       return null;
     }
   }
   
+  logger.debug(`Using valid Trakt token (expires: ${new Date(tokenData.expires_at).toISOString()})`);
   return tokenData.access_token;
 }
 import { cacheWrapMetaSmart } from './getCache.js';
@@ -833,12 +871,25 @@ async function getTraktCatalog(
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const sort = catalogConfig?.sort;
     const sortDirection = catalogConfig?.sortDirection;
-    
     // Determine content type filter for API
     let traktType: 'movies' | 'shows' | undefined;
     if (type === 'movie') traktType = 'movies';
     else if (type === 'series') traktType = 'shows';
     // If type is 'all', traktType remains undefined
+
+    let genreSlug = undefined;
+    if (genre && genre !== 'None') {
+       // Fetch the full genre objects list (cached)
+       const genreList = await require('../utils/traktUtils.js').fetchTraktGenres(traktType || 'all');
+       
+       // Find the object where name matches the user selection
+       const genreObj = genreList.find((g: any) => g.name === genre);
+       
+       // Use the slug if found, otherwise fallback to lowercase (handles legacy/manual inputs)
+       genreSlug = genreObj ? genreObj.slug : genre.toLowerCase();
+       
+       logger.debug(`[Trakt] Resolved genre '${genre}' to slug '${genreSlug}'`);
+    }
     
     let response: any;
     
@@ -981,43 +1032,43 @@ async function getTraktCatalog(
       const favType = parts[2]; // 'movies' or 'shows'
       const favPeriod = parts[3]; // 'daily', 'weekly', 'monthly', 'all'
       logger.debug(`Fetching Trakt most favorited: type=${favType}, period=${favPeriod}`);
-      response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genre);
+      response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genreSlug);
     } else if (catalogId === 'trakt.trending.movies') {
       logger.debug('Fetching Trakt trending movies');
-      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('movies', page, pageSize, genre);
+      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('movies', page, pageSize, genreSlug);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.trending.shows') {
       logger.debug('Fetching Trakt trending shows');
-      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('shows', page, pageSize, genre);
+      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('shows', page, pageSize, genreSlug);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.popular.movies') {
       logger.debug('Fetching Trakt popular movies');
-      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('movies', page, pageSize, genre);
+      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('movies', page, pageSize, genreSlug);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.popular.shows') {
       logger.debug('Fetching Trakt popular shows');
-      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('shows', page, pageSize, genre);
+      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('shows', page, pageSize, genreSlug);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist
       logger.debug(`Fetching Trakt unified watchlist`);
-      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort, sortDirection, genre);
+      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort, sortDirection, genreSlug);
     } else if (catalogId === 'trakt.watchlist.movies') {
       // Movies-only watchlist
       logger.debug(`Fetching Trakt watchlist (movies only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genre);
+      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug);
     } else if (catalogId === 'trakt.watchlist.series') {
       // Series-only watchlist
       logger.debug(`Fetching Trakt watchlist (shows only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genre);
+      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug);
     } else if (catalogId === 'trakt.favorites.movies') {
       // Movies-only favorites
       logger.debug(`Fetching Trakt favorites (movies only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genre);
+      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug);
     } else if (catalogId === 'trakt.favorites.shows') {
       // Shows-only favorites
       logger.debug(`Fetching Trakt favorites (shows only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genre);
+      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug);
     } else if (catalogId === 'trakt.recommendations.movies') {
       // Movies-only recommendations
       logger.debug(`Fetching Trakt recommendations (movies only)`);
@@ -1050,7 +1101,7 @@ async function getTraktCatalog(
         }
 
         logger.debug(`Fetching Trakt list by id: ${listId} (splitType=${splitType || 'all'})`);
-        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genre, sortDirection);
+        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection);
       } else {
         // Legacy username + slug format
         const username = parts[1];
@@ -1063,7 +1114,7 @@ async function getTraktCatalog(
         }
 
         logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
-        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genre, sortDirection);
+        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection);
       }
     }
     

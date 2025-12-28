@@ -69,8 +69,39 @@ let malIdToTraktMovieMap = new Map();
 let tmdbIdToTraktMovieMap = new Map();
 let imdbIdToTraktMovieMap = new Map();
 
-function processAndIndexData(jsonData) {
-  const animeList = JSON.parse(jsonData);
+function processAndIndexData(data) {
+  let animeList;
+  
+  if (Array.isArray(data)) {
+    // It's already an array, use it directly
+    animeList = data;
+  } else if (typeof data === 'string') {
+    try {
+      // First parse attempt
+      const parsed = JSON.parse(data);
+      
+      if (Array.isArray(parsed)) {
+        animeList = parsed;
+      } else if (typeof parsed === 'string') {
+        // Handle double-encoded string case
+        try {
+          const doubleParsed = JSON.parse(parsed);
+          if (Array.isArray(doubleParsed)) {
+            animeList = doubleParsed;
+          }
+        } catch (e) {
+          // Ignore second parse error
+        }
+      }
+    } catch (e) {
+      throw new Error(`Failed to parse anime list JSON: ${e.message}`);
+    }
+  }
+
+  if (!animeList || !Array.isArray(animeList)) {
+    throw new Error(`Anime list expected to be an array, got ${typeof animeList}`);
+  }
+
   animeIdMap.clear();
   tvdbIdMap.clear();
   tvdbIdToAnimeListMap.clear();
@@ -146,17 +177,33 @@ async function downloadAndProcessAnimeList() {
 
     logger.debug('[ID Mapper] Downloading full list...');
     const response = await httpGet(REMOTE_MAPPING_URL);
-    const jsonData = JSON.stringify(response.data);
+    let dataToCache;
+    let dataForProcessing;
+
+    if (typeof response.data === 'string') {
+        // It came back as a string (likely text/plain header)
+        dataToCache = response.data;
+        // Verify it's valid JSON before caching
+        try {
+             dataForProcessing = JSON.parse(response.data);
+        } catch (e) {
+             throw new Error("Invalid JSON received from remote");
+        }
+    } else {
+        // It came back as an object/array (application/json header)
+        dataForProcessing = response.data;
+        dataToCache = JSON.stringify(response.data);
+    }
 
     
     await fs.mkdir(path.dirname(LOCAL_CACHE_PATH), { recursive: true });
-    await fs.writeFile(LOCAL_CACHE_PATH, jsonData, 'utf-8');
+    await fs.writeFile(LOCAL_CACHE_PATH, dataToCache, 'utf-8');
     
     if (useRedisCache) {
       await redis.set(REDIS_ETAG_KEY, response.headers.etag);
     }
     
-    processAndIndexData(jsonData);
+    processAndIndexData(dataForProcessing);
 
   } catch (error) {
     logger.error(`[ID Mapper] An error occurred during remote download: ${error.message}`);
@@ -165,7 +212,7 @@ async function downloadAndProcessAnimeList() {
     try {
       const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
       logger.debug('[ID Mapper] Successfully loaded data from local cache on fallback.');
-      processAndIndexData(fileContent);
+      processAndIndexData(fileContent); 
     } catch (fallbackError) {
       logger.error('[ID Mapper] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
     }

@@ -49,6 +49,23 @@ class ConfigApi {
     this.initialized = true;
   }
 
+  async sanitizeTraktToken(config) {
+    if (config?.apiKeys?.traktTokenId) {
+        const token = await database.getOAuthToken(config.apiKeys.traktTokenId);
+        if (!token) {
+            logger.warn(`[Config Protection] Attempted to save config with dead Trakt token ${config.apiKeys.traktTokenId}. Removing it.`);
+            // Strip the dead token so we don't save a broken state
+            delete config.apiKeys.traktTokenId;
+            
+            // Optional: Also disable Trakt-specific settings to prevent errors
+            if (config.trakt) delete config.trakt;
+            
+            return { cleaned: true };
+        }
+    }
+    return { cleaned: false };
+  }
+
   // Validate required API keys
   validateRequiredKeys(config) {
     const requiredKeys = ['tmdb'];
@@ -138,6 +155,8 @@ class ConfigApi {
           missingKeys: validation.missingKeys
         });
       }
+
+      await this.sanitizeTraktToken(config);
 
       // Use existing UUID if provided, otherwise generate a new one
       const userUUID = existingUUID || database.generateUserUUID();
@@ -479,6 +498,8 @@ class ConfigApi {
           missingKeys: validation.missingKeys
         });
       }
+      
+      await this.sanitizeTraktToken(config);
 
       // Verify existing config exists
       const existingConfig = await database.verifyUserAndGetConfig(userUUID, password);

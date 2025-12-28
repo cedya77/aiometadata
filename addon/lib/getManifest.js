@@ -229,6 +229,7 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
     
     // Determine which genre list to use based on catalog type
     let genres = [];
+    // Select the correct list of genre objects
     if (userCatalog.type === 'movie' && prefetchedMovieGenres.length > 0) {
       genres = prefetchedMovieGenres;
       console.log(`[Manifest] Trakt using ${genres.length} pre-fetched movie genres`);
@@ -236,15 +237,18 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
       genres = prefetchedShowGenres;
       console.log(`[Manifest] Trakt using ${genres.length} pre-fetched show genres`);
     } else if (userCatalog.type === 'all') {
-      // Combine both movie and show genres for 'all' type
-      genres = [...new Set([...prefetchedMovieGenres, ...prefetchedShowGenres])];
+      const combined = [...prefetchedMovieGenres, ...prefetchedShowGenres];
+      const uniqueMap = new Map(combined.map(g => [g.slug, g]));
+      genres = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      
       console.log(`[Manifest] Trakt using ${genres.length} combined genres`);
     } else {
       console.log(`[Manifest] Trakt no pre-fetched genres available for type: ${userCatalog.type}`);
     }
+
+    const genreNames = genres.map(g => g.name);
     
-    // Add "None" option when showInHome is false to work around Stremio's genre requirement
-    const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
+    const genreOptions = userCatalog.showInHome ? genreNames : ['None', ...genreNames];
     
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;

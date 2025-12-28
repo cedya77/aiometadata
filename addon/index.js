@@ -385,7 +385,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     
     // Check if this Trakt user already has a token in the database
     const existingTokens = await database.getOAuthTokensByProvider('trakt');
-    const existingToken = existingTokens.find(t => t.user_id === user.username);
+    const existingToken = existingTokens.find(t => t.user_id.toLowerCase() === user.username.toLowerCase());
     
     let tokenId;
     let saved;
