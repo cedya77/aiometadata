@@ -50,6 +50,8 @@ export interface UserConfig {
   userUUID?: string;
   sessionId?: string;
   timezone?: string;
+  /** If true, restrict catalog results to content from the region matching the display language */
+  strictRegionFiltering?: boolean;
   [key: string]: any;
 }
 
