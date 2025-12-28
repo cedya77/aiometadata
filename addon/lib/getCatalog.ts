@@ -1370,7 +1370,7 @@ async function getLetterboxdCatalog(
     logger.info(`Retrieved ${allItems.length} items from Letterboxd list`);
     let filteredItems = allItems;
     if (genreName && genreName.toLowerCase() !== 'none') {
-      filteredItems = filteredItems.filter(item => item.genre_ids.includes(getLetterboxdGenreIdByName(genreName)));
+      filteredItems = filteredItems.filter((item: any) => item.genre_ids.includes(getLetterboxdGenreIdByName(genreName)));
     }
 
     // Calculate pagination - use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
