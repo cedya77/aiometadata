@@ -127,7 +127,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
 }
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
-import { isReleasedDigitally } from "../utils/parseProps.js";
+import { isReleasedDigitally, isReleasedInCountry } from "../utils/parseProps.js";
 import { filterMetasByRegex } from "../utils/regexFilter.js";
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
@@ -613,6 +613,24 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
 
+    // Apply strict region filtering if enabled
+    // Filters content based on distribution country (where it was released), not origin country
+    if (config.strictRegionFiltering && language) {
+      const regionCode = language.split('-')[1]; // Extract country code (e.g., "IT" from "it-IT")
+      if (regionCode && regionCode.length === 2) {
+        const beforeCount = validMetas.length;
+        validMetas = validMetas.filter(meta => {
+          const released = isReleasedInCountry(meta, regionCode, type);
+          // If null (no data), keep the item to avoid false positives
+          return released === null || released === true;
+        });
+        const afterCount = validMetas.length;
+        if (beforeCount !== afterCount) {
+          logger.info(`Strict region filter (${regionCode.toUpperCase()}): filtered out ${beforeCount - afterCount} items not distributed in country`);
+        }
+      }
+    }
+
     return validMetas;
   } else {
     return [];
@@ -638,15 +656,10 @@ async function buildParameters(type: string, language: string, page: number, id:
   }*/
   parameters.include_adult = config.includeAdult;
 
-  // Apply strict region filtering if enabled
-  // This restricts results to content from the region matching the display language
-  if (config.strictRegionFiltering && language) {
-    const regionCode = language.split('-')[1]; // Extract country code (e.g., "IT" from "it-IT")
-    if (regionCode && regionCode.length === 2) {
-      parameters.with_origin_country = regionCode.toUpperCase();
-      logger.debug(`Strict region filtering enabled: filtering to origin country ${regionCode.toUpperCase()}`);
-    }
-  }
+  // NOTE: Strict region filtering is now applied post-fetch using isReleasedInCountry()
+  // This allows filtering by distribution country (where content was released) 
+  // instead of origin country (where it was produced)
+  // See getTmdbAndMdbListCatalog() for the actual filter application
 
   if (config.ageRating) {
     switch (config.ageRating) {
