@@ -621,8 +621,12 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         const beforeCount = validMetas.length;
         validMetas = validMetas.filter(meta => {
           const released = isReleasedInCountry(meta, regionCode, type);
-          // If null (no data), keep the item to avoid false positives
-          return released === null || released === true;
+          // Log each movie's filter result for debugging
+          if (released === null) {
+            logger.warn(`[Strict Region Filter] Movie "${meta.name}" has NO release data - keeping by default (permissive mode)`);
+            return true; // Permissive mode: if we don't know, keep it
+          }
+          return released;
         });
         const afterCount = validMetas.length;
         if (beforeCount !== afterCount) {
