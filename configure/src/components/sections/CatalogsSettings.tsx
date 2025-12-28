@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
+import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
@@ -235,7 +236,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               Choose which genre set to use for this specific list.
             </p>
           </div>
-          {config.apiKeys?.rpdb && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -392,6 +393,73 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   );
 };
 
+const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL, config } = useConfig();
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 7200), enableRatingPosters }
+          : c
+      )
+    }));
+    onClose();
+  };
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Letterboxd Catalog Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="letterboxd-cache-ttl">Cache TTL (seconds)</Label>
+            <Input
+              id="letterboxd-cache-ttl"
+              type="number"
+              value={cacheTTL}
+              onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
+              min="7200"
+              max="604800"
+              step="3600"
+              className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder={catalogTTL.toString()}
+            />
+            <p className="text-xs text-muted-foreground">
+              How long to cache this catalog before refreshing. Range: 2 hours to 7 days.
+            </p>
+          </div>
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="custom-rating-posters-toggle">Enable Rating Posters</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Use RatingPosterDB or other providers for enhanced posters
+                  </p>
+                </div>
+                <Switch
+                  id="custom-rating-posters-toggle"
+                  checked={enableRatingPosters}
+                  onCheckedChange={setEnableRatingPosters}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
@@ -458,7 +526,7 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
               Number of items per page for this catalog. Default: 100. This should match the imported addon's page size for accurate pagination.
             </p>
           </div>
-          {config.apiKeys?.rpdb && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -904,14 +972,14 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'letterboxd') && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Sort Settings">
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`}>
                   <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{catalog.source === 'trakt' ? 'Trakt Settings' : 'Sort Settings'}</TooltipContent>
+              <TooltipContent>{`${catalog.source} Settings`}</TooltipContent>
             </Tooltip>
           )}
 
@@ -993,7 +1061,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist' || catalog.source === 'letterboxd') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -1020,6 +1088,12 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       <TraktSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'trakt'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <LetterboxdSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'letterboxd'}
         onClose={() => setShowSettings(false)}
       />
 
@@ -1184,6 +1258,7 @@ function CatalogsSettingsContent({
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isTraktOpen, setIsTraktOpen] = useState(false);
+  const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
@@ -1760,6 +1835,9 @@ function CatalogsSettingsContent({
           <Button onClick={() => setIsTraktOpen(true)} size="sm">
             Manage Trakt Integration
           </Button>
+          <Button onClick={() => setIsLetterboxdOpen(true)} size="sm">
+            Manage Letterboxd Integration
+          </Button>
           <Button onClick={() => setIsAniListOpen(true)} size="sm">
             Manage AniList Integration
           </Button>
@@ -1773,6 +1851,10 @@ function CatalogsSettingsContent({
           <TraktIntegration
             isOpen={isTraktOpen}
             onClose={() => setIsTraktOpen(false)}
+          />
+          <LetterboxdIntegration
+            isOpen={isLetterboxdOpen}
+            onClose={() => setIsLetterboxdOpen(false)}
           />
           <AniListIntegration
             isOpen={isAniListOpen}
@@ -1860,6 +1942,10 @@ function CatalogsSettingsContent({
       <TraktIntegration
         isOpen={isTraktOpen}
         onClose={() => setIsTraktOpen(false)}
+      />
+      <LetterboxdIntegration
+        isOpen={isLetterboxdOpen}
+        onClose={() => setIsLetterboxdOpen(false)}
       />
       <CustomManifestIntegration
         isOpen={isCustomManifestOpen}

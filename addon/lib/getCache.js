@@ -776,6 +776,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isMALAnimeProvider = config.providers?.anime === 'mal';
   const isMDBListCatalog = idOnly.startsWith('mdblist.');
   const isTraktCatalog = idOnly.startsWith('trakt.');
+  const isLetterboxdCatalog = idOnly.startsWith('letterboxd.');
   const isStreamingCatalog = idOnly.startsWith('streaming.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
@@ -874,6 +875,16 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     if (catalogConfig?.cacheTTL) {
       cacheTTL = catalogConfig.cacheTTL;
       cacheLogger.debug(`[Catalog] Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL}s`);
+    }
+  }
+  
+  // Use custom cache TTL for Letterboxd catalogs if specified
+  // StremThru returns cache-control headers suggesting 900s (15min), but allow user override
+  if (idOnly.startsWith('letterboxd.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for Letterboxd catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
   

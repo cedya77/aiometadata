@@ -277,6 +277,55 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
   }
 }
 
+async function createLetterboxdCatalog(userCatalog) {
+  try {
+    console.log(`[Manifest] Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Use displayType if defined, otherwise use original type
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    const genreNameById = {
+      "8G":  "Action",
+      "9k":  "Adventure",
+      "8m":  "Animation",
+      "7I":  "Comedy",
+      "9Y":  "Crime",
+      "ai":  "Documentary",
+      "7S":  "Drama",
+      "8w":  "Family",
+      "82":  "Fantasy",
+      "90":  "History",
+      "aC":  "Horror",
+      "b6":  "Music",
+      "aW":  "Mystery",
+      "8c":  "Romance",
+      "9a":  "Science Fiction",
+      "a8":  "Thriller",
+      "1hO": "TV Movie",
+      "9u":  "War",
+      "8Q":  "Western",
+    };
+    let genreOptions = Object.values(genreNameById).sort((a, b) => a.localeCompare(b));
+    genreOptions = userCatalog.showInHome ? genreOptions : ['None', ...genreOptions];
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+    console.log(`[Manifest] Letterboxd catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating Letterboxd catalog ${userCatalog.id}:`, error.message);
+    return null; // Return null instead of throwing to prevent manifest failure
+  }
+}
+
 async function createStremThruCatalog(userCatalog) {
   try {
     //console.log(`[Manifest] Creating StremThru catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -601,6 +650,10 @@ async function getManifest(config) {
         //console.log(`[Manifest] AniList catalog ${userCatalog.id} passed filter`);
         return true;
       }
+      if (userCatalog.id.startsWith('letterboxd.')) {
+        //console.log(`[Manifest] Letterboxd catalog ${userCatalog.id} passed filter`);
+        return true;
+      }
       if (!catalogDef) {
         console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: no catalog definition`);
         return false;
@@ -638,6 +691,12 @@ async function getManifest(config) {
           console.log(`[Manifest] Processing AniList catalog: ${userCatalog.id}`);
           const result = createAniListCatalog(userCatalog);
           console.log(`[Manifest] AniList catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('letterboxd.')) {
+          console.log(`[Manifest] Processing Letterboxd catalog: ${userCatalog.id}`);
+          const result = await createLetterboxdCatalog(userCatalog);
+          console.log(`[Manifest] Letterboxd catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);

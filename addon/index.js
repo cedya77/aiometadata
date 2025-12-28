@@ -849,6 +849,62 @@ addon.get("/api/trakt/lists/popular/:type", async (req, res) => {
   }
 });
 
+// --- Letterboxd Routes (via StremThru) ---
+
+// POST /api/letterboxd/extract-identifier - Extract x-letterboxd-identifier from URL
+addon.post("/api/letterboxd/extract-identifier", async (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: "url is required" });
+    }
+
+    const { extractLetterboxdIdentifier, validateLetterboxdUrl } = require('./utils/letterboxdUtils');
+    
+    // Validate URL first
+    const validation = validateLetterboxdUrl(url);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error || "Invalid Letterboxd URL" });
+    }
+
+    // Extract identifier
+    const identifier = await extractLetterboxdIdentifier(url);
+    
+    res.json({
+      identifier,
+      isWatchlist: validation.isWatchlist,
+      username: validation.username,
+      listSlug: validation.listSlug
+    });
+  } catch (error) {
+    consola.error("[Letterboxd] Error extracting identifier:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to extract Letterboxd identifier" });
+  }
+});
+
+// POST /api/letterboxd/list - Fetch Letterboxd list from StremThru
+addon.post("/api/letterboxd/list", async (req, res) => {
+  try {
+    const { identifier, isWatchlist } = req.body;
+    
+    if (!identifier) {
+      return res.status(400).json({ error: "identifier is required" });
+    }
+
+    const { fetchLetterboxdList } = require('./utils/letterboxdUtils');
+    
+    const listData = await fetchLetterboxdList(identifier, isWatchlist || false);
+    
+    res.json(listData);
+  } catch (error) {
+    consola.error("[Letterboxd] Error fetching list:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch Letterboxd list" });
+  }
+});
+
 // --- AniList OAuth Routes ---
 const anilistTracker = require('./lib/anilistTracker');
 
@@ -1617,7 +1673,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
         const pageSize = id.includes(`mal.`) ? 25 : 
-                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || id.startsWith('trakt.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
+                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || id.startsWith('trakt.') || id.startsWith('letterboxd.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];

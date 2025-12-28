@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -28,7 +28,7 @@ export interface CatalogConfig {
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
-  // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings)
+  // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings, Letterboxd-specific fields)
   metadata?: {
     itemCount?: number;
     privacy?: string;
@@ -40,6 +40,10 @@ export interface CatalogConfig {
     isCustomList?: boolean;
     // Trakt Up Next metadata
     useShowPosterForUpNext?: boolean;
+    // Letterboxd-specific metadata
+    isWatchlist?: boolean;
+    identifier?: string;
+    url?: string;
   };
 }
 

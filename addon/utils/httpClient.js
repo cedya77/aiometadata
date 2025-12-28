@@ -35,12 +35,9 @@ async function httpRequest(url, options = {}) {
     method = 'GET',
     data,
     headers = {},
-    // AGGRESSIVE TIMEOUT: If an API can't respond in 8 seconds, we give up.
-    // This is a tunable value, but 8000ms is a good starting point for "fast".
-    timeout = 8000, 
-    dispatcher  
+    timeout = 8000,
+    dispatcher
   } = options;
-  
 
   const requestOptions = {
     method,
@@ -50,7 +47,7 @@ async function httpRequest(url, options = {}) {
     },
     bodyTimeout: timeout,
     headersTimeout: timeout,
-    connectTimeout: timeout, // A single, consistent timeout for all phases.
+    connectTimeout: timeout,
     dispatcher: dispatcher || undefined,
   };
 
@@ -63,17 +60,40 @@ async function httpRequest(url, options = {}) {
 
   try {
     const { statusCode, headers, body } = await request(url, requestOptions);
-    
+
+    const contentType =
+      headers['content-type'] ||
+      headers['Content-Type'] ||
+      '';
+
     if (statusCode >= 200 && statusCode < 300) {
+      // HEAD usually has no body; don't try to parse
+      if (method === 'HEAD') {
+        return {
+          data: null,
+          status: statusCode,
+          headers
+        };
+      }
+
       const text = await body.text();
-      const responseData = text ? JSON.parse(text) : null;
+
+      let responseData = null;
+
+      // Only parse as JSON if the server says it is JSON
+      if (contentType.includes('application/json')) {
+        responseData = text ? JSON.parse(text) : null;
+      } else {
+        // For HTML / plain text / whatever else, just return raw text
+        responseData = text;
+      }
+
       return {
         data: responseData,
         status: statusCode,
         headers
       };
     } else if (statusCode === 304) {
-      // 304 Not Modified - throw with special status for cache handling
       const error = new Error(`Not Modified`);
       error.response = {
         status: 304,
@@ -81,7 +101,6 @@ async function httpRequest(url, options = {}) {
       };
       throw error;
     } else {
-      // It's still a successful HTTP transaction, just not a 2xx one. Fail fast.
       const errorText = await body.text();
       const error = new Error(`Request failed with status code ${statusCode}`);
       error.response = {
@@ -92,12 +111,10 @@ async function httpRequest(url, options = {}) {
       throw error;
     }
   } catch (error) {
-    // Any error (timeout, connection refused, etc.) is thrown immediately.
-    // The calling function is now responsible for handling it.
-    // We do not retry here.
     throw error;
   }
 }
+
 
 /**
  * Convenience method for GET requests

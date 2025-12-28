@@ -844,7 +844,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   processCreditsPhotos(imdbData.credits_cast);
   processCreditsPhotos(imdbData.credits_crew);
 
-  imdbData.poster = posterProxyUrl;
+  imdbData.poster = posterProxyUrl || `${host}/missing_poster.png`;
   imdbData.background = background;
   imdbData.logo = logoUrl;
 
@@ -941,7 +941,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   processCreditsPhotos(imdbData.credits_cast);
   processCreditsPhotos(imdbData.credits_crew);
 
-  imdbData.poster = posterProxyUrl;
+  imdbData.poster = posterProxyUrl || `${host}/missing_poster.png`;
   imdbData.background = background;
   imdbData.logo = logoUrl;
 

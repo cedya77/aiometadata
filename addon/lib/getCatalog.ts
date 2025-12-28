@@ -4,6 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
+import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
@@ -214,6 +215,12 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.debug(`Routing to AniList catalog handler for id: ${id}`);
       const anilistResults = await getAniListCatalog(type, id, page, language, config, userUUID, includeVideos);
       const filteredResults = filterMetasByRegex(anilistResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      return { metas: filteredResults };
+    }
+    else if (id.startsWith('letterboxd.')) {
+      logger.debug(`Routing to Letterboxd catalog handler for id: ${id}`);
+      const letterboxdResults = await getLetterboxdCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      const filteredResults = filterMetasByRegex(letterboxdResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredResults };
     }
 
@@ -1254,6 +1261,96 @@ async function resolveAniListItemsToMetas(
   
   // Filter out null results
   return metas.filter(meta => meta !== null);
+}
+
+/**
+ * Get Letterboxd catalog via StremThru API
+ */
+async function getLetterboxdCatalog(
+  type: string,
+  catalogId: string,
+  genreName: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    // Extract identifier from catalog ID (format: letterboxd.<identifier>)
+    const identifier = catalogId.replace('letterboxd.', '');
+    
+    if (!identifier) {
+      logger.error(`Invalid Letterboxd catalog ID: ${catalogId}`);
+      return [];
+    }
+
+    // Find catalog config to determine if it's a watchlist
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    const isWatchlist = catalogConfig?.metadata?.isWatchlist || false;
+
+    logger.info(`Fetching Letterboxd ${isWatchlist ? 'watchlist' : 'list'}: ${identifier}, Page: ${page}`);
+
+    // Fetch list data from StremThru
+    // cache wrap the fetchLetterboxdList call with the custom cache TTL from the catalog config with a minimum of 2hrs
+    const listData = await cacheWrap(
+      `letterboxd-list:${identifier}:${isWatchlist}`,
+      async () => await fetchLetterboxdList(identifier, isWatchlist),
+      catalogConfig?.cacheTTL || 7200,
+      { enableErrorCaching: true, maxRetries: 2 }
+    );
+    
+    if (!listData?.data?.items) {
+      logger.warn(`No items found in Letterboxd list: ${identifier}`);
+      return [];
+    }
+
+    const allItems = listData.data.items;
+    logger.info(`Retrieved ${allItems.length} items from Letterboxd list`);
+    let filteredItems = allItems;
+    if( genreName && genreName.toLowerCase() !== 'none') {
+      filteredItems = filteredItems.filter(item => item.genre_ids.includes(getLetterboxdGenreIdByName(genreName)));
+    }
+
+    // Calculate pagination - use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const pageItems = filteredItems.slice(startIndex, endIndex);
+
+    if (pageItems.length === 0) {
+      logger.info(`No items on page ${page} for Letterboxd list ${identifier}`);
+      return [];
+    }
+
+    logger.debug(`Processing ${pageItems.length} items for page ${page}`);
+
+    // Parse items using the helper function
+    let metas = await parseLetterboxdItems(
+      pageItems,
+      type,
+      language,
+      config,
+      includeVideos
+    );
+
+    if (type === 'movie' && config.hideUnreleasedDigital) {
+      const before = metas.length;
+      metas = metas.filter(meta => isReleasedDigitally(meta));
+      const after = metas.length;
+      if (before !== after) {
+        logger.debug(`Digital release filter (Letterboxd): filtered out ${before - after} unreleased movies`);
+      }
+    }
+    metas = applyAgeRatingFilter(metas, type, config);
+
+    logger.debug(`Successfully processed ${metas.length} Letterboxd items`);
+    return metas;
+  } catch (error: any) {
+    logger.error(`Error in getLetterboxdCatalog: ${error.message}`);
+    logger.error(`Stack trace:`, error.stack);
+    return [];
+  }
 }
 
 export { getCatalog };
