@@ -4,7 +4,7 @@ const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { getImdbRating } = require("./getImdbRating");
-const { to3LetterCode } = require("./language-map"); 
+const { to3LetterCode } = require("./language-map");
 const jikan = require('./mal');
 const moviedb = require('./getTmdb');
 const imdb = require('./imdb');
@@ -31,18 +31,18 @@ function getTvdbCertification(contentRatings, countryCode, contentType) {
     return null;
   }
 
-  let certification = contentRatings.find(rating => 
-    rating.country?.toLowerCase() === countryCode?.toLowerCase() && 
+  let certification = contentRatings.find(rating =>
+    rating.country?.toLowerCase() === countryCode?.toLowerCase() &&
     (!contentType || rating.contentType === contentType || rating.contentType === '')
   );
-  
+
   if (!certification) {
-    certification = contentRatings.find(rating => 
-      rating.country?.toLowerCase() === 'usa' && 
+    certification = contentRatings.find(rating =>
+      rating.country?.toLowerCase() === 'usa' &&
       (!contentType || rating.contentType === contentType || rating.contentType === '')
     );
   }
-  
+
   return certification?.name || null;
 }
 
@@ -53,7 +53,7 @@ function getDefaultProvider(type) {
   if (type === 'anime.movie') return 'mal.search.movie';
   if (type === 'anime.series') return 'mal.search.series';
   if (type === 'anime') return 'mal.search.series';
-  return 'tmdb.search'; 
+  return 'tmdb.search';
 }
 
 function sanitizeQuery(query) {
@@ -69,8 +69,8 @@ function isImdbId(query) {
 }
 
 const host = process.env.HOST_NAME.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  ? process.env.HOST_NAME
+  : `https://${process.env.HOST_NAME}`;
 
 const findArtwork = (artworks, type, lang, config) => {
   // If englishArtOnly is enabled, prefer English artwork first
@@ -92,13 +92,13 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   const overviewTranslations = extendedRecord.translations?.overviewTranslations || [];
   const nameTranslations = extendedRecord.translations?.nameTranslations || [];
   const translatedName = nameTranslations.find(t => t.language === langCode3)?.name
-                       || nameTranslations.find(t => t.language === 'eng')?.name
-                       || extendedRecord.name;
+    || nameTranslations.find(t => t.language === 'eng')?.name
+    || extendedRecord.name;
 
   const overview = overviewTranslations.find(t => t.language === langCode3)?.overview
-                   || overviewTranslations.find(t => t.language === 'eng')?.overview
-                   || extendedRecord.overview;
-  
+    || overviewTranslations.find(t => t.language === 'eng')?.overview
+    || extendedRecord.overview;
+
   let tmdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TheMovieDB.com')?.id;
   let imdbId = extendedRecord.remoteIds?.find(id => id.sourceName === 'IMDB')?.id;
   let tvmazeId = extendedRecord.remoteIds?.find(id => id.sourceName === 'TV Maze')?.id;
@@ -113,13 +113,13 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   tmdbId = allIds.tmdbId;
   imdbId = allIds.imdbId;
   tvmazeId = allIds.tvmazeId;
-  logger.debug('Resolved IDs:', {tmdbId, imdbId, tvmazeId, tvdbId});
-  
+  logger.debug('Resolved IDs:', { tmdbId, imdbId, tvmazeId, tvdbId });
+
   const rawPosterUrl = findArtwork(extendedRecord.artworks, type === 'movie' ? 14 : 2, langCode3, config);
 
   const fallbackImage = `${host}/missing_poster.png`;
   const posterUrl = rawPosterUrl || fallbackImage;
-  
+
   const validPosterUrl = posterUrl && typeof posterUrl === 'string' && !posterUrl.includes('undefined') && posterUrl !== 'null' ? posterUrl : fallbackImage;
   // Top Poster API only supports IMDb and TMDB IDs, not TVDB
   // Use IMDb or TMDB ID if available when Top Poster API is selected
@@ -128,31 +128,31 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     posterProxyId = imdbId || `tmdb:${tmdbId}`;
   }
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, type, posterProxyId, validPosterUrl, language, config);
-  
+
   let certification = null;
   try {
     const langParts = language.split('-');
     const countryCode = langParts[1] || langParts[0];
     const contentType = type === 'movie' ? 'movie' : '';
-    
+
     if (extendedRecord.contentRatings) {
       certification = getTvdbCertification(extendedRecord.contentRatings, countryCode, contentType);
     }
   } catch (error) {
     logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
   }
-  
+
   let stremioId = `tvdb:${extendedRecord.id}`;
-  if(imdbId) stremioId = imdbId;
+  if (imdbId) stremioId = imdbId;
   const logoUrl = findArtwork(extendedRecord.artworks, type === 'movie' ? 25 : 23, langCode3, config);
-  const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId? imdb.getLogoFromImdb(imdbId) : null;
-  
+  const validLogoUrl = logoUrl && typeof logoUrl === 'string' && !logoUrl.includes('undefined') && logoUrl !== 'null' ? logoUrl : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
+
   return {
     id: stremioId,
     type: type,
-    name: translatedName, 
+    name: translatedName,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl,
-    _rawPosterUrl: rawPosterUrl, 
+    _rawPosterUrl: rawPosterUrl,
     year: extendedRecord.year,
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
@@ -167,13 +167,13 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
 
 async function performAnimeSearch(type, query, language, config, page = 1) {
   let searchResults = [];
-  switch(type){
+  switch (type) {
     case 'movie':
       logger.debug('Performing anime search for movie:', query);
       searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
     case 'series':
-      const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
+      const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ? new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
         return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
@@ -183,20 +183,20 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
       const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
-    return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
-  });
+        return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
+      });
       break;
 
   }
-  
+
   // Early return if no search results
   if (!searchResults || searchResults.length === 0) {
     logger.info(`No anime results found for query: "${query}"`);
     return [];
   }
-  
+
   logger.debug(`Found ${searchResults.length} anime results for query: "${query}"`);
-  
+
   // Use batch processing for better performance and to avoid rate limits
   const metas = await Utils.parseAnimeCatalogMetaBatch(searchResults, config, language);
   //console.log(metas); 
@@ -205,32 +205,32 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 
 async function performKitsuSearch(type, query, language, config, page = 1) {
   logger.debug(`Performing Kitsu search for ${type}:`, query);
-  
+
   try {
     const KITSU_RATING_MAP = {
       'G': 'G',
       'PG': 'PG',
-      'PG-13': 'PG-13',  
+      'PG-13': 'PG-13',
       'R': 'R',
       'NC-17': 'R18',
       'NONE': 'none'
     };
-    const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
+    const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ? new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
     const searchResults = await kitsu.searchByName(
       query,
       type === 'movie'
         ? ['movie']
         : desiredTvTypes,
-        KITSU_RATING_MAP[config.ageRating.toUpperCase()]
+      KITSU_RATING_MAP[config.ageRating.toUpperCase()]
     );
-    
+
     if (!searchResults || searchResults.length === 0) {
       logger.info(`No Kitsu results found for query: "${query}"`);
       return [];
     }
-    
+
     logger.debug(`Found ${searchResults.length} Kitsu results for query: "${query}" of type ${type}`);
-    
+
     // Parse Kitsu results into Stremio meta format
     const metas = await Promise.all(
       searchResults.map(async (item) => {
@@ -245,23 +245,23 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           const imdbRating = imdbId ? await getImdbRating(imdbId, type) : 'N/A';
           let id = imdbId || `kitsu:${kitsuId}`;
           const preferredProvider = config.providers?.anime || 'mal';
-          if(preferredProvider === 'kitsu') {
+          if (preferredProvider === 'kitsu') {
             id = `kitsu:${kitsuId}`;
-          } else if(preferredProvider === 'mal') {
+          } else if (preferredProvider === 'mal') {
             id = `mal:${mapping?.mal_id}`;
-          } 
-          if((config.mal?.useImdbIdForCatalogAndSearch && type === 'series')){
+          }
+          if ((config.mal?.useImdbIdForCatalogAndSearch && type === 'series')) {
             return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
               const { getMeta } = await import("../lib/getMeta");
               return await getMeta(type, language, `kitsu:${kitsuId}`, config, config.userUUID, false);
-            }, undefined, {enableErrorCaching: true, maxRetries: 2}, type, false))?.meta || null;
+            }, undefined, { enableErrorCaching: true, maxRetries: 2 }, type, false))?.meta || null;
           }
-          
-          
-          const background = mapping?.mal_id ? await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.coverImage?.original}, config) : item.coverImage?.original;
-          const poster = mapping?.mal_id ? await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.posterImage?.original}, config) : item.posterImage?.original;
-          const logo = type === 'movie' ? tmdbId ? await moviedb.getTmdbMovieLogo(tmdbId, config) : null : await Utils.getAnimeLogo({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series'}, config);
-          
+
+
+          const background = mapping?.mal_id ? await Utils.getAnimeBg({ malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.coverImage?.original }, config) : item.coverImage?.original;
+          const poster = mapping?.mal_id ? await Utils.getAnimePoster({ malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.posterImage?.original }, config) : item.posterImage?.original;
+          const logo = type === 'movie' ? tmdbId ? await moviedb.getTmdbMovieLogo(tmdbId, config) : null : await Utils.getAnimeLogo({ malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series' }, config);
+
           // Apply RPDB for series (non-movies)
           let finalPoster = poster || `${host}/missing_poster.png`;
           if (Utils.isPosterRatingEnabled(config)) {
@@ -277,11 +277,11 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
               finalPoster = Utils.buildPosterProxyUrl(host, 'series', proxyId, finalPoster, language, config);
             }
           }
-          
+
           return {
             id: `kitsu:${kitsuId}`,
             type: type === 'movie' ? 'movie' : 'series',
-            name: Utils.getKitsuLocalizedTitle(item.titles, language) || item.canonicalTitle, 
+            name: Utils.getKitsuLocalizedTitle(item.titles, language) || item.canonicalTitle,
             poster: finalPoster,
             logo: logo || null,
             background: type === 'movie' ? item.coverImage?.original : background || null,
@@ -300,7 +300,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
         }
       })
     );
-    
+
     return metas.filter(Boolean);
   } catch (error) {
     logger.error(`Kitsu search failed for "${query}":`, error.message);
@@ -336,7 +336,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     try {
       const findResult = await moviedb.find({ id: query.trim(), external_source: 'imdb_id' }, config);
       const results = type === 'movie' ? findResult.movie_results : findResult.tv_results;
-      
+
       if (results && results.length > 0) {
         const media = results[0];
         media.media_type = type === 'movie' ? 'movie' : 'tv';
@@ -352,245 +352,245 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     }
   } else {
     // STEP 1: GATHER ALL POTENTIAL IDs IN PARALLEL (from title search and person search)
-  const addRawResult = (media) => {
+    const addRawResult = (media) => {
       if (media && media.id && !rawResults.has(media.id)) {
-          media.media_type = type === 'movie' ? 'movie' : 'tv';
-          rawResults.set(media.id, media);
+        media.media_type = type === 'movie' ? 'movie' : 'tv';
+        rawResults.set(media.id, media);
       }
-  };
+    };
 
-  const shouldSearchPersons = (() => {
-    if (!searchPersons) return false; // Respect the explicit parameter
-    
-    // Skip if contains invalid symbols or standalone numbers/years
-    // Symbols: : ( ) [ ] ? ! $ # @ &
-    // Numbers: "3", "1999" (matches) but NOT "3rd", "1st" (doesn't match)
-    const invalidNamePattern = /[:()[\]?!$#@&]|\b\d+\b/;
-    if (invalidNamePattern.test(query)) {
-      logger.debug(`Skipping person search due to invalid characters or numbers: "${query}"`);
-      return false;
-    }
-    
-    // If checks pass, it's plausible the user is searching for a person.
-    return true;
-  })();
+    const shouldSearchPersons = (() => {
+      if (!searchPersons) return false; // Respect the explicit parameter
 
-  // Run the initial title search and person search concurrently
-  const [titleRes, personCredits] = await Promise.all([
+      // Skip if contains invalid symbols or standalone numbers/years
+      // Symbols: : ( ) [ ] ? ! $ # @ &
+      // Numbers: "3", "1999" (matches) but NOT "3rd", "1st" (doesn't match)
+      const invalidNamePattern = /[:()[\]?!$#@&]|\b\d+\b/;
+      if (invalidNamePattern.test(query)) {
+        logger.debug(`Skipping person search due to invalid characters or numbers: "${query}"`);
+        return false;
+      }
+
+      // If checks pass, it's plausible the user is searching for a person.
+      return true;
+    })();
+
+    // Run the initial title search and person search concurrently
+    const [titleRes, personCredits] = await Promise.all([
       type === 'movie'
-          ? moviedb.searchMovie({ query, language, include_adult: config.includeAdult, page }, config)
-          : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config),
-      
-      shouldSearchPersons
-          ? moviedb.searchPerson({ query, language: 'en-US' }, config).then(async personRes => {
-              if (personRes.results?.length > 0) {
-                const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-                const topPerson = sortedPersons[0];
-                
-                logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
-                
-                // Thresholds for person validation
-                const MIN_QUALITY_WORK_VOTES = 4000;
-                const MIN_RECOGNIZED_WORK_VOTES = 100;
-                const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
-                const MIN_POPULARITY_PRIMARY_NAME = 2.5;
-                
-                // Check work recognition
-                const knownFor = topPerson.known_for || [];
-                const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
-                logger.debug(`Person ${topPerson.name} highest vote count in known_for: ${highestVoteCount}`);
-                
-                // Early exit: skip if person has very low popularity or no profile picture
-                const personPopularity = topPerson.popularity || 0;
-                if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK || !topPerson.profile_path) {
-                  logger.debug(`Skipping person ${topPerson.name} - too low popularity or missing profile picture`);
-                  return [];
-                }
-                
-                // Early exit: person must have at least one recognized work
-                if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES) {
-                  logger.debug(`Skipping person ${topPerson.name} - no recognized work (highest vote count: ${highestVoteCount})`);
-                  return [];
-                }
-                
-                // Normalize names for strict matching
-                // Handles: diacritics, periods (initials), hyphens
-                const normalizeNameForMatching = (name) => {
-                  return name
-                    .toLowerCase()
-                    .normalize('NFD')
-                    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics (Penélope → Penelope)
-                    .replace(/\./g, '') // Remove periods (Samuel L. → Samuel L)
-                    .replace(/-/g, ' ') // Hyphens to spaces (Jean-Claude → Jean Claude)
-                    .replace(/\s+/g, ' ') // Multiple spaces to single
-                    .trim();
-                };
-                
-                const queryNorm = normalizeNameForMatching(query);
-                const personNameNorm = normalizeNameForMatching(topPerson.name);
-                
-                // Early exit: skip if normalization resulted in empty strings
-                if (!queryNorm || !personNameNorm) {
-                  logger.debug(`Skipping person ${topPerson.name} - empty string after normalization`);
-                  return [];
-                }
-                
-                // Split into words for analysis
-                const queryWords = queryNorm.split(' ').filter(w => w); // Filter empty strings
-                const personWords = personNameNorm.split(' ').filter(w => w);
-                
-                // Check work quality (needed for single-word validation)
-                const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
-                
-                // Match type 1: Exact match
-                const isExactMatch = queryNorm === personNameNorm;
-                
-                // Match type 2: Middle initial tolerance
-                // User searches "Samuel Jackson", API returns "Samuel L Jackson"
-                // Only matches if the middle word is a single letter (initial)
-                const isMiddleNameMatch = personWords.length === 3 && queryWords.length === 2 &&
-                  queryWords[0] === personWords[0] && 
-                  queryWords[1] === personWords[2] &&
-                  personWords[1].length === 1; // Middle word must be single-letter initial
-                
-                // Match type 3: Suffix tolerance
-                // User searches "Robert Downey", API returns "Robert Downey Jr"
-                // Only matches if API name ends with a suffix (Jr, Sr, II, III, IV, V)
-                const suffixPattern = /^(jr|sr|ii|iii|iv|v)$/i;
-                const isSuffixMatch = personWords.length >= 3 && 
-                  queryWords.length === personWords.length - 1 &&
-                  suffixPattern.test(personWords[personWords.length - 1]) &&
-                  queryWords.every((word, index) => word === personWords[index]);
-                
-                // Match type 4: Single word match (requires quality check)
-                // User searches "Lucy", API returns "Lucy" - must have high quality work
-                const isSingleWordMatch = queryWords.length === 1 && personWords.length === 1 &&
-                  queryWords[0] === personWords[0] &&
-                  hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
-                
-                const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
-                
-                // Name must match
-                if (!primaryNameMatches) {
-                  logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name`);
-                  return [];
-                }
-                
-                // Check if person meets quality/popularity requirements
-                const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
-                const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
-                
-                if (passesQualityCheck || passesPopularityCheck) {
-                  logger.debug(`Person match confirmed: ${topPerson.name} (popularity: ${personPopularity})`);
-                } else {
-                  logger.debug(`Skipping person ${topPerson.name} - insufficient popularity (${personPopularity})`);
-                  return [];
-                }
-                
-                const credits = type === 'movie'
-                    ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
-                    : await moviedb.personTvCredits({ id: topPerson.id, language }, config);
-                  // Combine cast and crew from the most relevant person
-                  return [...(credits.cast || []), ...(credits.crew || [])];
-              }
-              return []; // Return empty array if no person is found
-          })
-          : Promise.resolve([]) // Return empty array if person search is disabled or filtered out
-  ]);
+        ? moviedb.searchMovie({ query, language, include_adult: config.includeAdult, page }, config)
+        : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config),
 
-  // Add all found items to our raw results map, tagging them by source
-  if (titleRes?.results) {
-    titleRes.results.forEach(media => {
+      shouldSearchPersons
+        ? moviedb.searchPerson({ query, language: 'en-US' }, config).then(async personRes => {
+          if (personRes.results?.length > 0) {
+            const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+            const topPerson = sortedPersons[0];
+
+            logger.debug(`Person found: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
+
+            // Thresholds for person validation
+            const MIN_QUALITY_WORK_VOTES = 4000;
+            const MIN_RECOGNIZED_WORK_VOTES = 100;
+            const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
+            const MIN_POPULARITY_PRIMARY_NAME = 2.5;
+
+            // Check work recognition
+            const knownFor = topPerson.known_for || [];
+            const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
+            logger.debug(`Person ${topPerson.name} highest vote count in known_for: ${highestVoteCount}`);
+
+            // Early exit: skip if person has very low popularity or no profile picture
+            const personPopularity = topPerson.popularity || 0;
+            if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK || !topPerson.profile_path) {
+              logger.debug(`Skipping person ${topPerson.name} - too low popularity or missing profile picture`);
+              return [];
+            }
+
+            // Early exit: person must have at least one recognized work
+            if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES) {
+              logger.debug(`Skipping person ${topPerson.name} - no recognized work (highest vote count: ${highestVoteCount})`);
+              return [];
+            }
+
+            // Normalize names for strict matching
+            // Handles: diacritics, periods (initials), hyphens
+            const normalizeNameForMatching = (name) => {
+              return name
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '') // Remove diacritics (Penélope → Penelope)
+                .replace(/\./g, '') // Remove periods (Samuel L. → Samuel L)
+                .replace(/-/g, ' ') // Hyphens to spaces (Jean-Claude → Jean Claude)
+                .replace(/\s+/g, ' ') // Multiple spaces to single
+                .trim();
+            };
+
+            const queryNorm = normalizeNameForMatching(query);
+            const personNameNorm = normalizeNameForMatching(topPerson.name);
+
+            // Early exit: skip if normalization resulted in empty strings
+            if (!queryNorm || !personNameNorm) {
+              logger.debug(`Skipping person ${topPerson.name} - empty string after normalization`);
+              return [];
+            }
+
+            // Split into words for analysis
+            const queryWords = queryNorm.split(' ').filter(w => w); // Filter empty strings
+            const personWords = personNameNorm.split(' ').filter(w => w);
+
+            // Check work quality (needed for single-word validation)
+            const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
+
+            // Match type 1: Exact match
+            const isExactMatch = queryNorm === personNameNorm;
+
+            // Match type 2: Middle initial tolerance
+            // User searches "Samuel Jackson", API returns "Samuel L Jackson"
+            // Only matches if the middle word is a single letter (initial)
+            const isMiddleNameMatch = personWords.length === 3 && queryWords.length === 2 &&
+              queryWords[0] === personWords[0] &&
+              queryWords[1] === personWords[2] &&
+              personWords[1].length === 1; // Middle word must be single-letter initial
+
+            // Match type 3: Suffix tolerance
+            // User searches "Robert Downey", API returns "Robert Downey Jr"
+            // Only matches if API name ends with a suffix (Jr, Sr, II, III, IV, V)
+            const suffixPattern = /^(jr|sr|ii|iii|iv|v)$/i;
+            const isSuffixMatch = personWords.length >= 3 &&
+              queryWords.length === personWords.length - 1 &&
+              suffixPattern.test(personWords[personWords.length - 1]) &&
+              queryWords.every((word, index) => word === personWords[index]);
+
+            // Match type 4: Single word match (requires quality check)
+            // User searches "Lucy", API returns "Lucy" - must have high quality work
+            const isSingleWordMatch = queryWords.length === 1 && personWords.length === 1 &&
+              queryWords[0] === personWords[0] &&
+              hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+
+            const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
+
+            // Name must match
+            if (!primaryNameMatches) {
+              logger.debug(`Skipping person ${topPerson.name} - query "${query}" doesn't match name`);
+              return [];
+            }
+
+            // Check if person meets quality/popularity requirements
+            const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+            const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
+
+            if (passesQualityCheck || passesPopularityCheck) {
+              logger.debug(`Person match confirmed: ${topPerson.name} (popularity: ${personPopularity})`);
+            } else {
+              logger.debug(`Skipping person ${topPerson.name} - insufficient popularity (${personPopularity})`);
+              return [];
+            }
+
+            const credits = type === 'movie'
+              ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
+              : await moviedb.personTvCredits({ id: topPerson.id, language }, config);
+            // Combine cast and crew from the most relevant person
+            return [...(credits.cast || []), ...(credits.crew || [])];
+          }
+          return []; // Return empty array if no person is found
+        })
+        : Promise.resolve([]) // Return empty array if person search is disabled or filtered out
+    ]);
+
+    // Add all found items to our raw results map, tagging them by source
+    if (titleRes?.results) {
+      titleRes.results.forEach(media => {
         media.matchType = 'title'; // Tag as a direct title match
         addRawResult(media);
-    });
-  }
-  personCredits.forEach(media => {
+      });
+    }
+    personCredits.forEach(media => {
       media.matchType = 'person'; // Tag as a match from a person's filmography
       addRawResult(media);
-  });
-  // number of results from people search
-  logger.debug(`TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
-  logger.debug(`TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+    });
+    // number of results from people search
+    logger.debug(`TMDB gathered ${personCredits.length} unique potential results from people search in ${Date.now() - startTime}ms`);
+    logger.debug(`TMDB gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
   }
-  
+
   const sortedRawResults = Utils.sortSearchResults(Array.from(rawResults.values()), query).slice(0, 25);
 
   // STEP 2: HYDRATE ALL RESULTS IN PARALLEL
 
   const hydrationPromises = sortedRawResults.map(async (media) => {
     try {
-        const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
-        // Filter out items that don't match the search type (e.g., a movie found in an actor's TV credits)
-        if(mediaType !== type) {
-          logger.debug(`Filtering out ${media.title || media.name} - mediaType: ${mediaType}, searchType: ${type}`);
-          return null;
-        }
-
-        let logoUrl; let backgroundUrl; let posterUrl;
-        const langCode = language.split('-')[0]; 
-        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-        // OPTIMIZATION: Fetch details, external_ids, certifications, and keywords in ONE call
-        const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords, release_dates", include_image_language: imageLanguages }, config)
-            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
-        
-        let allIds = {
-            tmdbId: details.id,
-            imdbId: details.external_ids?.imdb_id || details.imdb_id,
-            tvdbId: details.external_ids?.tvdb_id
-        };
-        allIds = await resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds, ['imdb']);
-        const selectedBg = details.images?.backdrops?.find(b => b.iso_639_1 === 'xx')
-          || details.images?.backdrops?.find(b => b.iso_639_1 === null)
-          || details.images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
-          || details.images?.backdrops?.[0];
-        const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
-        const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
-        const fallbackImage = `${host}/missing_poster.png`;
-        logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
-        backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null;
-        posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster?.file_path}` : details.poster_path ? `https://image.tmdb.org/t/p/original${details.poster_path}` : fallbackImage;
-
-        // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
-        const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null;
-        
-        // Debug: Check for malformed poster URLs
-        if (!posterUrl || posterUrl === 'null' || posterUrl.includes('undefined')) {
-          logger.warn(`Malformed poster URL for ${media.title || media.name}: ${posterUrl}`);
-        }
-        
-        // Ensure we always have a valid poster URL
-        const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
-          ? posterUrl 
-          : fallbackImage;
-        
-        const posterProxyUrl = Utils.buildPosterProxyUrl(host, mediaType, `tmdb:${media.id}`, validPosterUrl, language, config);
-        
-        let stremioId = `tmdb:${media.id}`; // Default to TMDB
-        if(allIds?.imdbId) stremioId = allIds.imdbId;
-        
-        // Assemble the final meta object
-        const parsed = Utils.parseMedia(details, mediaType, [], config);
-        if (!parsed) return null; // In case parsing fails
-        parsed.id = stremioId;
-        parsed.poster = Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl;
-        parsed.imdbRating = imdbRating;
-        parsed.logo = logoUrl;
-        parsed.background = backgroundUrl;
-        parsed.certification = mediaType === 'movie'
-            ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
-            : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
-        parsed.popularity = media.popularity;
-        parsed.score = media.score;
-        if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
-        parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
-        if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        parsed.app_extras = { releaseDates: details.release_dates };
-        return { parsed, details }; // Return both for keyword filtering
-    } catch (error) {
-        logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
+      const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
+      // Filter out items that don't match the search type (e.g., a movie found in an actor's TV credits)
+      if (mediaType !== type) {
+        logger.debug(`Filtering out ${media.title || media.name} - mediaType: ${mediaType}, searchType: ${type}`);
         return null;
+      }
+
+      let logoUrl; let backgroundUrl; let posterUrl;
+      const langCode = language.split('-')[0];
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      // OPTIMIZATION: Fetch details, external_ids, certifications, and keywords in ONE call
+      const details = mediaType === 'movie'
+        ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords, release_dates", include_image_language: imageLanguages }, config)
+        : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
+
+      let allIds = {
+        tmdbId: details.id,
+        imdbId: details.external_ids?.imdb_id || details.imdb_id,
+        tvdbId: details.external_ids?.tvdb_id
+      };
+      allIds = await resolveAllIds(`tmdb:${media.id}`, mediaType, config, allIds, ['imdb']);
+      const selectedBg = details.images?.backdrops?.find(b => b.iso_639_1 === 'xx')
+        || details.images?.backdrops?.find(b => b.iso_639_1 === null)
+        || details.images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
+        || details.images?.backdrops?.[0];
+      const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
+      const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
+      const fallbackImage = `${host}/missing_poster.png`;
+      logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
+      backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null;
+      posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster?.file_path}` : details.poster_path ? `https://image.tmdb.org/t/p/original${details.poster_path}` : fallbackImage;
+
+      // OPTIMIZATION: Fetch poster, rating, logo, and resolve final stremio ID in parallel
+      const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null;
+
+      // Debug: Check for malformed poster URLs
+      if (!posterUrl || posterUrl === 'null' || posterUrl.includes('undefined')) {
+        logger.warn(`Malformed poster URL for ${media.title || media.name}: ${posterUrl}`);
+      }
+
+      // Ensure we always have a valid poster URL
+      const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined')
+        ? posterUrl
+        : fallbackImage;
+
+      const posterProxyUrl = Utils.buildPosterProxyUrl(host, mediaType, `tmdb:${media.id}`, validPosterUrl, language, config);
+
+      let stremioId = `tmdb:${media.id}`; // Default to TMDB
+      if (allIds?.imdbId) stremioId = allIds.imdbId;
+
+      // Assemble the final meta object
+      const parsed = Utils.parseMedia(details, mediaType, [], config);
+      if (!parsed) return null; // In case parsing fails
+      parsed.id = stremioId;
+      parsed.poster = Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl;
+      parsed.imdbRating = imdbRating;
+      parsed.logo = logoUrl;
+      parsed.background = backgroundUrl;
+      parsed.certification = mediaType === 'movie'
+        ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
+        : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
+      parsed.popularity = media.popularity;
+      parsed.score = media.score;
+      if (allIds.imdbId) parsed.imdb_id = allIds.imdbId;
+      parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
+      if (type === 'series') parsed.runtime = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
+      parsed.app_extras = { releaseDates: details.release_dates };
+      return { parsed, details }; // Return both for keyword filtering
+    } catch (error) {
+      logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
+      return null;
     }
   });
 
@@ -603,63 +603,63 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga'];
     logger.debug(`Filtering results with adult keyword blacklist as includeAdult is false.`);
     keywordFilteredResults = hydratedResults.filter(result => {
-        const keywordsObject = result.details.keywords;
-        if (!keywordsObject) {
-            return true; // No keywords, can't filter, so we keep it.
-        }
+      const keywordsObject = result.details.keywords;
+      if (!keywordsObject) {
+        return true; // No keywords, can't filter, so we keep it.
+      }
 
-        // Keywords can be in `results` (for TV) or `keywords` (for movies)
-        const keywords = keywordsObject.results || keywordsObject.keywords || [];
-        
-        for (const keyword of keywords) {
-            const keywordName = keyword.name.toLowerCase();
-            if (adultKeywordBlacklist.includes(keywordName)) {
-                logger.info(`Item "${result.parsed.name}" was filtered because of keyword "${keyword.name}"`);
-                return false; // Filter this item out
-            }
+      // Keywords can be in `results` (for TV) or `keywords` (for movies)
+      const keywords = keywordsObject.results || keywordsObject.keywords || [];
+
+      for (const keyword of keywords) {
+        const keywordName = keyword.name.toLowerCase();
+        if (adultKeywordBlacklist.includes(keywordName)) {
+          logger.info(`Item "${result.parsed.name}" was filtered because of keyword "${keyword.name}"`);
+          return false; // Filter this item out
         }
-        return true; // Keep this item
+      }
+      return true; // Keep this item
     });
     logger.debug(`Keyword filtering applied: ${hydratedResults.length} -> ${keywordFilteredResults.length} results.`);
   } else {
     keywordFilteredResults = hydratedResults;
   }
-  
+
   const hydratedMetas = keywordFilteredResults.map(result => result.parsed);
 
   // STEP 4: FINAL SORTING AND FILTERING
   let filteredResults = hydratedMetas;
   if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
-      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
-      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
-      const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+    const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+    const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+    const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
 
-      filteredResults = filteredResults.filter(result => {
-          const cert = result.certification;
-          
-          // If rating is PG-13 or lower, exclude items without certification as they could be inappropriate
-          const isTvRating = type === 'series';
-          const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
-          const isUserRatingRestrictive = userRating === 'PG-13' || 
-                                         (movieRatingHierarchy.indexOf(userRating) !== -1 && 
-                                          movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
-                                         (tvRatingHierarchy.indexOf(userRating) !== -1 && 
-                                          tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
-          
-          if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
-              return !isUserRatingRestrictive; // Exclude items without certification if user rating is restrictive
-          }
-          
-          const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
-          const userRatingIndex = ratingHierarchy.indexOf(userRating);
-          const resultRatingIndex = ratingHierarchy.indexOf(cert);
-          
-          if (userRatingIndex === -1) return true;
-          if (resultRatingIndex === -1) return true; // Allow items with unknown ratings
-          
-          return resultRatingIndex <= userRatingIndex;
-      });
-      logger.debug(`Age rating filter applied: ${hydratedMetas.length} -> ${filteredResults.length} results.`);
+    filteredResults = filteredResults.filter(result => {
+      const cert = result.certification;
+
+      // If rating is PG-13 or lower, exclude items without certification as they could be inappropriate
+      const isTvRating = type === 'series';
+      const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+      const isUserRatingRestrictive = userRating === 'PG-13' ||
+        (movieRatingHierarchy.indexOf(userRating) !== -1 &&
+          movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+        (tvRatingHierarchy.indexOf(userRating) !== -1 &&
+          tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+
+      if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+        return !isUserRatingRestrictive; // Exclude items without certification if user rating is restrictive
+      }
+
+      const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+      const userRatingIndex = ratingHierarchy.indexOf(userRating);
+      const resultRatingIndex = ratingHierarchy.indexOf(cert);
+
+      if (userRatingIndex === -1) return true;
+      if (resultRatingIndex === -1) return true; // Allow items with unknown ratings
+
+      return resultRatingIndex <= userRatingIndex;
+    });
+    logger.debug(`Age rating filter applied: ${hydratedMetas.length} -> ${filteredResults.length} results.`);
   }
   if (type === 'movie' && config.hideUnreleasedDigital) {
     const beforeCount = filteredResults.length;
@@ -667,6 +667,24 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     const afterCount = filteredResults.length;
     if (beforeCount !== afterCount) {
       logger.info(`Digital release filter (TMDB): filtered out ${beforeCount - afterCount} unreleased movies`);
+    }
+  }
+
+  // Apply strict region filtering if enabled
+  // Filters content based on distribution country (where it was released), not origin country
+  if (config.strictRegionFiltering && language) {
+    const regionCode = language.split('-')[1]; // Extract country code (e.g., "IT" from "it-IT")
+    if (regionCode && regionCode.length === 2) {
+      const beforeCount = filteredResults.length;
+      filteredResults = filteredResults.filter(meta => {
+        const released = Utils.isReleasedInCountry(meta, regionCode, type);
+        // If null (no data), keep the item to avoid false positives
+        return released === null || released === true;
+      });
+      const afterCount = filteredResults.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Strict region filter (${regionCode.toUpperCase()}): filtered out ${beforeCount - afterCount} items not distributed in country`);
+      }
     }
   }
 
@@ -687,25 +705,25 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
  */
 async function matchAndEnrichFromTMDB(suggestion, language, config) {
   const { title, year, type } = suggestion;
-  
+
   try {
     // Step 1: Search TMDB for the title
     const searchParams = {
       query: title,
-      language: 'en-US', 
+      language: 'en-US',
       include_adult: config.includeAdult || false,
       page: 1
     };
-    
+
     const searchResults = type === 'movie'
       ? await moviedb.searchMovie(searchParams, config)
       : await moviedb.searchTv(searchParams, config);
-    
+
     if (!searchResults?.results || searchResults.results.length === 0) {
       logger.debug(`No TMDB match found for "${title}" (${year})`);
       return null;
     }
-    
+
     // Step 2: Find the best match from results
     const normalizeTitle = (t) => t
       .toLowerCase()
@@ -713,62 +731,62 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
       .replace(/[^\w\s]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-    
+
     const normalizedSearchTitle = normalizeTitle(title);
-    
+
     let match = null;
     for (const result of searchResults.results) {
       const resultTitle = type === 'movie' ? result.title : result.name;
       const resultOriginalTitle = type === 'movie' ? result.original_title : result.original_name;
-      const resultYear = type === 'movie' 
+      const resultYear = type === 'movie'
         ? result.release_date?.substring(0, 4)
         : result.first_air_date?.substring(0, 4);
-      
+
       // Check both localized title and original title for matches
       const titleMatch = normalizeTitle(resultTitle) === normalizedSearchTitle ||
         (resultOriginalTitle && normalizeTitle(resultOriginalTitle) === normalizedSearchTitle);
       const yearMatch = resultYear && Math.abs(parseInt(resultYear) - parseInt(year)) <= 1;
-      
+
       if (titleMatch && yearMatch) {
         match = result;
         logger.debug(`Matched "${title}" (${year}) -> "${resultTitle}" (${resultYear}) TMDB ID: ${result.id}`);
         break;
       }
     }
-    
+
     if (!match) {
       logger.debug(`Failed to match "${title}" (${year}) - no matching results in TMDB`);
       return null;
     }
-    
+
     // Step 3: Immediately enrich the matched result (no separate phase)
     const tmdbId = match.id;
     const langCode = language.split('-')[0];
     const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-    
+
     const details = type === 'movie'
-      ? await moviedb.movieInfo({ 
-          id: tmdbId, 
-          language, 
-          append_to_response: "external_ids,release_dates,images,keywords",
-          include_image_language: imageLanguages 
-        }, config)
-      : await moviedb.tvInfo({ 
-          id: tmdbId, 
-          language, 
-          append_to_response: "external_ids,content_ratings,images,keywords",
-          include_image_language: imageLanguages 
-        }, config);
-    
+      ? await moviedb.movieInfo({
+        id: tmdbId,
+        language,
+        append_to_response: "external_ids,release_dates,images,keywords",
+        include_image_language: imageLanguages
+      }, config)
+      : await moviedb.tvInfo({
+        id: tmdbId,
+        language,
+        append_to_response: "external_ids,content_ratings,images,keywords",
+        include_image_language: imageLanguages
+      }, config);
+
     // --- Safety Filter: Keyword Blacklist ---
     if (config.includeAdult === false) {
       const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga'];
       const keywordsObject = details.keywords;
-      
+
       if (keywordsObject) {
         // Keywords can be in `results` (TV) or `keywords` (Movie)
         const keywords = keywordsObject.results || keywordsObject.keywords || [];
-        
+
         for (const keyword of keywords) {
           if (adultKeywordBlacklist.includes(keyword.name.toLowerCase())) {
             logger.debug(`Item "${title}" filtered because of blacklist keyword "${keyword.name}"`);
@@ -777,7 +795,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
         }
       }
     }
-    
+
     // Resolve IDs
     let allIds = {
       tmdbId: details.id,
@@ -785,7 +803,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
       tvdbId: details.external_ids?.tvdb_id
     };
     allIds = await resolveAllIds(`tmdb:${tmdbId}`, type, config, allIds, ['imdb']);
-    
+
     // Select images
     const selectedBg = details.images?.backdrops?.find(b => b.iso_639_1 === 'xx')
       || details.images?.backdrops?.find(b => b.iso_639_1 === null)
@@ -793,38 +811,38 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
       || details.images?.backdrops?.[0];
     const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
     const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
-    
+
     const fallbackImage = `${host}/missing_poster.png`;
     const logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo.file_path}` : null;
-    const backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg.file_path}` 
+    const backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg.file_path}`
       : details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null;
-    const posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster.file_path}` 
+    const posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster.file_path}`
       : details.poster_path ? `https://image.tmdb.org/t/p/original${details.poster_path}` : fallbackImage;
-    
-    const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
+
+    const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined')
       ? posterUrl : fallbackImage;
-    
+
     const posterProxyUrl = `${host}/poster/${type}/tmdb:${tmdbId}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
-    
+
     // Get IMDB rating
     const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, type) : null;
-    
+
     // Determine Stremio ID
     let stremioId = `tmdb:${tmdbId}`;
     if (allIds?.imdbId) stremioId = allIds.imdbId;
-    
+
     // Parse media
     const parsed = Utils.parseMedia(details, type, [], config);
     if (!parsed) return null;
-    
+
     // Assemble final meta
     parsed.id = stremioId;
     parsed.poster = Utils.isPosterRatingEnabled(config) ? posterProxyUrl : validPosterUrl;
     parsed.imdbRating = imdbRating;
     parsed.logo = logoUrl;
     parsed.background = backgroundUrl;
-//    parsed.popularity = match.popularity;
-//    parsed.score = match.vote_average;
+    //    parsed.popularity = match.popularity;
+    //    parsed.score = match.vote_average;
     parsed.certification = type === 'movie'
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
@@ -832,9 +850,9 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
     if (type === 'series') {
       parsed.runtime = Utils.parseRunTime(
-        details.episode_run_time?.[0] ?? 
-        details.last_episode_to_air?.runtime ?? 
-        details.next_episode_to_air?.runtime ?? 
+        details.episode_run_time?.[0] ??
+        details.last_episode_to_air?.runtime ??
+        details.next_episode_to_air?.runtime ??
         null
       );
     }
@@ -842,7 +860,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     parsed.app_extras = { releaseDates: details.release_dates };
 
     return parsed;
-    
+
   } catch (error) {
     logger.error(`Failed to match/enrich "${title}" (${year}):`, error.message);
     return null;
@@ -862,38 +880,38 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
 async function performAiSearch(query, language, config) {
   const startTime = Date.now();
   logger.info(`Starting AI search for query: "${query}"`);
-  
+
   try {
     // Phase 1: AI Generation and Parsing
     const geminiKey = config.apiKeys?.gemini;
     const suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language);
-    
+
     if (!suggestions || suggestions.length === 0) {
       logger.info('Gemini returned no suggestions.');
       return [];
     }
-    
+
     logger.debug(`Gemini returned ${suggestions.length} suggestions`);
-    
+
     // Phase 2: Combined TMDB matching + enrichment (single parallel operation)
     // This eliminates the async barrier between separate match and enrich phases
     logger.info(`Starting combined TMDB match+enrich for ${suggestions.length} suggestions`);
     const enrichStart = Date.now();
-    
+
     const enrichPromises = suggestions.map(suggestion =>
       matchAndEnrichFromTMDB(suggestion, language, config)
     );
-    
+
     const enrichedResults = await Promise.all(enrichPromises);
     const enrichTime = Date.now() - enrichStart;
-    
+
     // Filter out null results (failed matches or enrichments)
     const validResults = enrichedResults.filter(Boolean);
     logger.info(`TMDB match+enrich completed in ${enrichTime}ms. Got ${validResults.length} of ${suggestions.length} suggestions`);
-    
+
     // Phase 4: Apply content filters
     let filteredResults = validResults;
-    
+
     // Apply age rating filter (works for both movies and series)
     if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
       const beforeCount = filteredResults.length;
@@ -905,36 +923,36 @@ async function performAiSearch(query, language, config) {
         const cert = result.certification;
         const isTvRating = result.type === 'series';
         const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
-        const isUserRatingRestrictive = userRating === 'PG-13' || 
-                                       (movieRatingHierarchy.indexOf(userRating) !== -1 && 
-                                        movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
-                                       (tvRatingHierarchy.indexOf(userRating) !== -1 && 
-                                        tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
-        
+        const isUserRatingRestrictive = userRating === 'PG-13' ||
+          (movieRatingHierarchy.indexOf(userRating) !== -1 &&
+            movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+          (tvRatingHierarchy.indexOf(userRating) !== -1 &&
+            tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+
         if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
           return !isUserRatingRestrictive;
         }
-        
+
         const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
         const userRatingIndex = ratingHierarchy.indexOf(userRating);
         const resultRatingIndex = ratingHierarchy.indexOf(cert);
-        
+
         if (userRatingIndex === -1) return true;
         if (resultRatingIndex === -1) return true;
-        
+
         return resultRatingIndex <= userRatingIndex;
       });
-      
+
       const afterCount = filteredResults.length;
       if (beforeCount !== afterCount) {
         logger.info(`Age rating filter: ${beforeCount} -> ${afterCount} results`);
       }
     }
-    
+
     // Apply digital release filter for movies only
     if (config.hideUnreleasedDigitalSearch) {
       const beforeCount = filteredResults.length;
-      filteredResults = filteredResults.filter(meta => 
+      filteredResults = filteredResults.filter(meta =>
         meta.type !== 'movie' || Utils.isReleasedDigitally(meta)
       );
       const afterCount = filteredResults.length;
@@ -942,7 +960,7 @@ async function performAiSearch(query, language, config) {
         logger.info(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
       }
     }
-    
+
     // Apply exclusion keyword and regex filters
     if (config.exclusionKeywords || config.regexExclusionFilter) {
       const beforeCount = filteredResults.length;
@@ -952,12 +970,12 @@ async function performAiSearch(query, language, config) {
         logger.info(`Content exclusion filter: ${beforeCount} -> ${afterCount} results`);
       }
     }
-    
+
     const totalTime = Date.now() - startTime;
     logger.success(`AI search completed in ${totalTime}ms. Returning ${filteredResults.length} results.`);
-    
+
     return filteredResults;
-    
+
   } catch (error) {
     const totalTime = Date.now() - startTime;
     logger.error(`AI search failed after ${totalTime}ms:`, error.message);
@@ -976,7 +994,7 @@ async function performTvdbCollectionsSearch(query, language, config) {
   try {
     // Search for collections
     const collectionsResults = await tvdb.searchCollections(sanitizedQuery, config);
-    
+
     if (!collectionsResults || collectionsResults.length === 0) {
       logger.info('No TVDB collections found for query.');
       return [];
@@ -1024,7 +1042,7 @@ async function performTvdbCollectionsSearch(query, language, config) {
 
     const finalMetas = metas.filter(Boolean);
     logger.info(`Successfully parsed ${finalMetas.length} collections into Stremio metas.`);
-    
+
     return finalMetas;
   } catch (error) {
     logger.error('Error in TVDB collections search:', error.message);
@@ -1039,32 +1057,32 @@ async function performTvdbSearch(type, query, language, config) {
     try {
       const imdbId = query.trim();
       const results = await tvdb.findByImdbId(imdbId, config);
-      
+
       if (!results || results.length === 0) {
         logger.info(`No TVDB results found for IMDb ID ${imdbId}`);
         return [];
       }
-      
+
       // TVDB findByImdbId returns results with either movie or series property
-      const tvdbId = type === 'movie' 
-        ? results[0]?.movie?.id 
+      const tvdbId = type === 'movie'
+        ? results[0]?.movie?.id
         : results[0]?.series?.id;
-      
+
       if (!tvdbId) {
         logger.info(`No ${type} found in TVDB for IMDb ID ${imdbId}`);
         return [];
       }
-      
+
       // Fetch extended details
-      const extendedRecord = type === 'movie' 
+      const extendedRecord = type === 'movie'
         ? await tvdb.getMovieExtended(tvdbId, config)
         : await tvdb.getSeriesExtended(tvdbId, config);
-      
+
       if (!extendedRecord) {
         logger.warn(`Could not fetch extended details for TVDB ID ${tvdbId}`);
         return [];
       }
-      
+
       // Parse and return the result
       const parsed = await parseTvdbSearchResult(type, extendedRecord, language, config);
       return parsed ? [parsed] : [];
@@ -1073,32 +1091,32 @@ async function performTvdbSearch(type, query, language, config) {
       return [];
     }
   }
-  
+
   const sanitizedQuery = sanitizeQuery(query);
   if (!sanitizedQuery) return [];
 
-  const idMap = new Map(); 
+  const idMap = new Map();
 
   // STEP 1: GATHER IDs FROM TITLE AND PEOPLE SEARCHES IN PARALLEL
   const searchStartTime = Date.now();
   logger.info(`Starting TVDB parallel search for: "${sanitizedQuery}"`);
 
   const shouldSearchPersons = (() => {
-    
+
     // Check for symbols that are unlikely in a 'person''s name
     const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
     if (nameInvalidatingSymbols.test(query)) {
       logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
       return false;
     }
-    
+
     // If checks pass, it's plausible the user is searching for a person.
     return true;
   })();
 
   const [titleResults, peopleResults] = await Promise.all([
-    type === 'movie' 
-      ? tvdb.searchMovies(sanitizedQuery, config) 
+    type === 'movie'
+      ? tvdb.searchMovies(sanitizedQuery, config)
       : tvdb.searchSeries(sanitizedQuery, config),
     shouldSearchPersons ? tvdb.searchPeople(sanitizedQuery, config) : Promise.resolve([])
   ]);
@@ -1111,7 +1129,7 @@ async function performTvdbSearch(type, query, language, config) {
       idMap.set(String(resultId), type);
     }
   });
-  
+
   // Process people results to find related movies/series
   if (peopleResults && peopleResults.length > 0) {
     const topPerson = peopleResults[0];
@@ -1124,16 +1142,16 @@ async function performTvdbSearch(type, query, language, config) {
             const creditType = credit.seriesId ? 'series' : 'movie';
             const creditId = credit.seriesId || credit.movieId;
             // Only add if it matches the type we are searching for
-            if (creditId && creditType === type) { 
+            if (creditId && creditType === type) {
               idMap.set(String(creditId), creditType);
             }
-        });
+          });
       }
     } catch (e) {
       logger.warn(`Could not fetch person details for ${topPerson.name}:`, e.message);
     }
   }
-  
+
   const uniqueIds = Array.from(idMap.keys());
   if (uniqueIds.length === 0) {
     logger.info('No unique TVDB IDs found after initial search.');
@@ -1143,15 +1161,15 @@ async function performTvdbSearch(type, query, language, config) {
 
   // STEP 2: FETCH EXTENDED DETAILS FOR ALL UNIQUE IDs IN PARALLEL
   const detailPromises = uniqueIds.map(id => {
-    return type === 'movie' 
-      ? tvdb.getMovieExtended(id, config) 
+    return type === 'movie'
+      ? tvdb.getMovieExtended(id, config)
       : tvdb.getSeriesExtended(id, config);
   });
-  
+
   const detailedResults = (await Promise.allSettled(detailPromises))
     .filter(res => res.status === 'fulfilled' && res.value)
     .map(res => res.value); // Extract successful results
-    
+
   logger.debug(`Successfully fetched extended details for ${detailedResults.length} items.`);
 
   // STEP 3: PARSE ALL DETAILED RESULTS INTO STREMIO METAS IN PARALLEL
@@ -1159,7 +1177,7 @@ async function performTvdbSearch(type, query, language, config) {
   const parsePromises = detailedResults.map(record =>
     parseTvdbSearchResult(type, record, language, config)
   );
-    
+
   const finalResults = (await Promise.all(parsePromises)).filter(Boolean);
   logger.info(`Successfully parsed ${finalResults.length} items into Stremio metas.`);
 
@@ -1175,30 +1193,30 @@ async function performTvdbSearch(type, query, language, config) {
 
     ageFilteredResults = sortedResults.filter(result => {
       const cert = result.certification;
-      
+
       // If rating is PG-13 or lower, exclude items without certification as they could be inappropriate
       const isTvRating = type === 'series';
       const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
-      const isUserRatingRestrictive = userRating === 'PG-13' || 
-                                     (movieRatingHierarchy.indexOf(userRating) !== -1 && 
-                                      movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
-                                     (tvRatingHierarchy.indexOf(userRating) !== -1 && 
-                                      tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
-      
+      const isUserRatingRestrictive = userRating === 'PG-13' ||
+        (movieRatingHierarchy.indexOf(userRating) !== -1 &&
+          movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+        (tvRatingHierarchy.indexOf(userRating) !== -1 &&
+          tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+
       if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
         return !isUserRatingRestrictive; // Exclude items without certification if user rating is restrictive
       }
-      
+
       const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
       const userRatingIndex = ratingHierarchy.indexOf(userRating);
       const resultRatingIndex = ratingHierarchy.indexOf(cert);
-      
+
       if (userRatingIndex === -1) return true; // If user rating is invalid, don't filter
       if (resultRatingIndex === -1) return true; // Allow items with unknown ratings
-      
+
       return resultRatingIndex <= userRatingIndex;
     });
-    
+
     logger.debug(`TVDB filtered ${finalResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
   }
   logger.info(`TVDB search results completed in ${Date.now() - searchStartTime}ms`);
@@ -1213,12 +1231,12 @@ async function performTvmazeSearch(query, language, config) {
     try {
       const imdbId = query.trim();
       const show = await tvmaze.getShowByImdbId(imdbId);
-      
+
       if (!show) {
         logger.info(`No TVMaze show found for IMDb ID ${imdbId}`);
         return [];
       }
-      
+
       // Parse and return the result
       const parsed = await parseTvmazeResult(show, config);
       return parsed ? [parsed] : [];
@@ -1227,7 +1245,7 @@ async function performTvmazeSearch(query, language, config) {
       return [];
     }
   }
-  
+
   const sanitizedQuery = sanitizeTvmazeQuery(query);
   if (!sanitizedQuery) return [];
 
@@ -1244,10 +1262,10 @@ async function performTvmazeSearch(query, language, config) {
     tvmaze.searchShows(sanitizedQuery),
     shouldSearchPersons ? tvmaze.searchPeople(sanitizedQuery) : Promise.resolve([])
   ]);
-  
+
   const searchResults = new Map();
   const processedIds = new Set();
-  
+
   const addResult = async (show, score = 0) => {
     const parsed = await parseTvmazeResult(show, config);
     if (parsed && show?.id && !processedIds.has(show.id)) {
@@ -1265,14 +1283,14 @@ async function performTvmazeSearch(query, language, config) {
     const castCredits = await tvmaze.getPersonCastCredits(personId);
     await Promise.all(castCredits.map(credit => addResult(credit._embedded.show, 0)));
   }
-  
+
   if (searchResults.size > 0) {
     // Sort by score (highest first) and remove the _score property
     return Array.from(searchResults.values())
       .sort((a, b) => (b._score || 0) - (a._score || 0))
       .map(({ _score, ...result }) => result);
   }
-  
+
   // --- TIER 2 & 3 FALLBACKS ---
   logger.info(`Initial searches failed for "${query}". Trying fallback tiers...`);
   /*const tvdbResults = await tvdb.search(query);
@@ -1284,7 +1302,7 @@ async function performTvmazeSearch(query, language, config) {
       if (finalShow) return [parseTvmazeResult(finalShow)].filter(Boolean);
     }
   }*/
-  
+
   const tmdbResults = await moviedb.searchTv({ query: query, language }, config);
   if (tmdbResults?.results?.length > 0) {
     const topTmdbResult = tmdbResults.results[0];
@@ -1311,8 +1329,8 @@ async function parseTvmazeResult(show, config) {
   const tvdbId = show.externals?.thetvdb;
   const tmdbId = show.externals?.themoviedb;
   // use preferred provider id as id. tvmaze are type series only.
-  let stremioId = `tvmaze:${show.id}` ;
-  if(imdbId) stremioId = imdbId;
+  let stremioId = `tvmaze:${show.id}`;
+  if (imdbId) stremioId = imdbId;
   var fallbackImage = show.image?.original || `${host}/missing_poster.png`;
   // Top Poster API only supports IMDb and TMDB IDs, not TVDB
   // Use IMDb or TMDB ID if available when Top Poster API is selected
@@ -1325,7 +1343,7 @@ async function parseTvmazeResult(show, config) {
       posterProxyId = null;
     }
   }
-  const posterProxyUrl = posterProxyId 
+  const posterProxyUrl = posterProxyId
     ? Utils.buildPosterProxyUrl(host, 'series', posterProxyId, show.image?.original || '', show.language, config)
     : fallbackImage;
   const logoUrl = imdbId ? imdb.getLogoFromImdb(imdbId) : tvdbId ? await tvdb.getSeriesLogo(tvdbId, config) : null;
@@ -1366,9 +1384,9 @@ function getProviderFromSearchId(searchId) {
 
 async function getSearch(id, type, language, extra, config) {
   const searchStartTime = Date.now();
-  
+
   const queryText = extra?.search || extra?.genre_id || extra?.va_id || 'N/A';
-  
+
   try {
     if (!extra) {
       logger.warn(`Search request for id '${id}' received with no 'extra' argument.`);
@@ -1377,8 +1395,8 @@ async function getSearch(id, type, language, extra, config) {
     // Timing handled by logger.info at completion
 
     let metas = [];
-     const pageSize = 25; 
-    
+    const pageSize = 25;
+
     const page = extra.skip ? Math.floor(parseInt(extra.skip) / pageSize) + 1 : 1;
     switch (id) {
       case 'mal.genre_search':
@@ -1387,13 +1405,13 @@ async function getSearch(id, type, language, extra, config) {
           metas = await Utils.parseAnimeCatalogMetaBatch(results, config, language, false);
         }
         break;
-      
+
       case 'mal.va_search':
         if (extra.va_id) {
           const roles = await jikan.getAnimeByVoiceActor(extra.va_id);
           const animeResults = roles.map(role => role.anime);
           const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeResults, config, language, false);
-          
+
           metas = batchMetas.map((meta, index) => {
             if (roles[index]) {
               meta.description = `Role: ${roles[index].character.name}`;
@@ -1424,7 +1442,7 @@ async function getSearch(id, type, language, extra, config) {
 
       case 'gemini.search':
         if (extra.search) {
-          const query = extra.search;    
+          const query = extra.search;
           // Perform single AI search that returns mixed movie/series results
           metas = await performAiSearch(query, language, config);
         }
@@ -1446,41 +1464,41 @@ async function getSearch(id, type, language, extra, config) {
           } else if (type === 'collection') {
             providerId = 'tvdb.collections.search';
           }
-          
+
           providerId = providerId || getDefaultProvider(type);
           // Regular search always uses keyword search providers
           // AI search is now handled by the dedicated 'gemini.search' catalog
           logger.debug(`Performing direct keyword search for type '${type}' using provider '${providerId}'`);
-          
+
           switch (providerId) {
-              case 'mal.search.series':
-                metas = await performAnimeSearch('series', query, language, config, page);
-                break;
-              case 'mal.search.movie':
-                metas = await performAnimeSearch('movie', query, language, config, page);
-                break;
-              case 'kitsu.search.series':
-                metas = await performKitsuSearch('series', query, language, config, page);
-                break;
-              case 'kitsu.search.movie':
-                metas = await performKitsuSearch('movie', query, language, config, page);
-                break;
-              case 'tmdb.search':
-                metas = await performTmdbSearch(type, query, language, config, true, page);
-                break;
-              case 'tvdb.search':
-                metas = await performTvdbSearch(type, query, language, config);
-                break;
-              case 'tvdb.collections.search':
-                metas = await performTvdbCollectionsSearch(query, language, config);
-                break;
-              case 'tvmaze.search':
-                metas = await performTvmazeSearch(query, language, config);
-                break;
+            case 'mal.search.series':
+              metas = await performAnimeSearch('series', query, language, config, page);
+              break;
+            case 'mal.search.movie':
+              metas = await performAnimeSearch('movie', query, language, config, page);
+              break;
+            case 'kitsu.search.series':
+              metas = await performKitsuSearch('series', query, language, config, page);
+              break;
+            case 'kitsu.search.movie':
+              metas = await performKitsuSearch('movie', query, language, config, page);
+              break;
+            case 'tmdb.search':
+              metas = await performTmdbSearch(type, query, language, config, true, page);
+              break;
+            case 'tvdb.search':
+              metas = await performTvdbSearch(type, query, language, config);
+              break;
+            case 'tvdb.collections.search':
+              metas = await performTvdbCollectionsSearch(query, language, config);
+              break;
+            case 'tvmaze.search':
+              metas = await performTvmazeSearch(query, language, config);
+              break;
           }
         }
         break;
-      
+
       default:
         logger.warn(`Received unknown search ID: '${id}'`);
         break;
@@ -1488,10 +1506,10 @@ async function getSearch(id, type, language, extra, config) {
 
     const searchDuration = Date.now() - searchStartTime;
     logger.info(`Search completed in ${searchDuration}ms for "${queryText}" (${id})`);
-    
+
     // Record search timing metrics
     let actualProvider = getProviderFromSearchId(id);
-    
+
     // For generic 'search' case, determine the actual provider used
     if (id === 'search' && extra.search) {
       let providerId;
@@ -1504,7 +1522,7 @@ async function getSearch(id, type, language, extra, config) {
       } else if (type === 'anime.series') {
         providerId = config.search?.providers?.anime_series;
       }
-      
+
       if (providerId) {
         // Extract the actual provider name from the provider ID
         if (providerId.includes('mal.')) actualProvider = 'mal';
@@ -1514,7 +1532,7 @@ async function getSearch(id, type, language, extra, config) {
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
       }
     }
-    
+
     timingMetrics.recordTiming('search_operation', searchDuration, {
       searchId: id,
       searchType: type,
@@ -1522,7 +1540,7 @@ async function getSearch(id, type, language, extra, config) {
       resultCount: metas.length,
       provider: actualProvider
     });
-    
+
     // Also record provider-specific timing
     timingMetrics.recordTiming(`search_${actualProvider}`, searchDuration, {
       searchId: id,
@@ -1530,7 +1548,7 @@ async function getSearch(id, type, language, extra, config) {
       queryText: queryText,
       resultCount: metas.length
     });
-    
+
     // Apply content exclusion filters if configured
     if (config.exclusionKeywords || config.regexExclusionFilter) {
       const beforeCount = metas.length;
@@ -1540,15 +1558,15 @@ async function getSearch(id, type, language, extra, config) {
         logger.info(`Content filter excluded ${beforeCount - afterCount} search results`);
       }
     }
-    
+
     return { metas };
   } catch (error) {
     const searchDuration = Date.now() - searchStartTime;
     logger.error(`Search failed after ${searchDuration}ms for "${queryText}" (${id}):`, error);
-    
+
     // Record failed search timing
     let actualProvider = getProviderFromSearchId(id);
-    
+
     // For generic 'search' case, determine the actual provider used
     if (id === 'search' && extra.search) {
       let providerId;
@@ -1561,7 +1579,7 @@ async function getSearch(id, type, language, extra, config) {
       } else if (type === 'anime.series') {
         providerId = config.search?.providers?.anime_series;
       }
-      
+
       if (providerId) {
         // Extract the actual provider name from the provider ID
         if (providerId.includes('mal.')) actualProvider = 'mal';
@@ -1571,7 +1589,7 @@ async function getSearch(id, type, language, extra, config) {
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
       }
     }
-    
+
     timingMetrics.recordTiming('search_operation', searchDuration, {
       searchId: id,
       searchType: type,
@@ -1580,7 +1598,7 @@ async function getSearch(id, type, language, extra, config) {
       error: error.message,
       provider: actualProvider
     });
-    
+
     // Also record provider-specific timing for failures
     timingMetrics.recordTiming(`search_${actualProvider}`, searchDuration, {
       searchId: id,
@@ -1589,7 +1607,7 @@ async function getSearch(id, type, language, extra, config) {
       resultCount: 0,
       error: error.message
     });
-    
+
     return { metas: [] };
   }
 }
