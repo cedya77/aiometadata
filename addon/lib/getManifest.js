@@ -963,7 +963,9 @@ async function getManifest(config) {
   // Add subtitles resource for watch tracking
   resources.push("subtitles");
   // Add stream resource for rating page
-  resources.push("stream");
+  if(config.showRateMeButton) {
+    resources.push("stream");
+  }
   
   const manifest = {
     id: packageJson.name,
