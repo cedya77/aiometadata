@@ -3026,9 +3026,11 @@ function isReleasedInCountry(meta, countryCode, type) {
     // Check movie release_dates
     const releaseDates = meta.app_extras?.releaseDates?.results;
     if (!releaseDates || !Array.isArray(releaseDates)) {
-      logger.debug(`[isReleasedInCountry] No release data for movie ${meta.name || meta.id}`);
+      logger.debug(`[isReleasedInCountry] No release data for movie ${meta.name || meta.id} - has app_extras: ${!!meta.app_extras}, has releaseDates: ${!!meta.app_extras?.releaseDates}`);
       return null; // No data available
     }
+
+    logger.debug(`[isReleasedInCountry] Movie ${meta.name || meta.id} has release data for ${releaseDates.length} countries: ${releaseDates.map(r => r.iso_3166_1).join(', ')}`);
 
     // Check if there's any release in the target country
     const countryRelease = releaseDates.find(
