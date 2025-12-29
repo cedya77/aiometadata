@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.18.1](https://github.com/cedya77/aiometadata/compare/v1.18.0...v1.18.1) (2025-12-29)
+
+
+### Bug Fixes
+
+* trakt refresh token logic ([0f37952](https://github.com/cedya77/aiometadata/commit/0f379521397570c9b7b195945f4dfce97008e5a9))
+* trakt refresh token logic ([e79b3a6](https://github.com/cedya77/aiometadata/commit/e79b3a62e02cf38106f98ce637feaf3d49f4b22e))
+
+## [1.18.0](https://github.com/cedya77/aiometadata/compare/v1.17.0...v1.18.0) (2025-12-28)
+
+
+### Features
+
+* **letterboxd:** Add letterboxd integration with list/watchlist url import support ([47d0464](https://github.com/cedya77/aiometadata/commit/47d0464d55dd58a8dd7a7b0be4ded5bba269e43a))
+* **rate me:** only add stream resource when rate me is activated ([38a2824](https://github.com/cedya77/aiometadata/commit/38a282444e205fd3ad1d098018ee193d547e6cf8))
+
+
+### Bug Fixes
+
+* **imdb meta:** show age rating for imdb meta ([3ce2ba7](https://github.com/cedya77/aiometadata/commit/3ce2ba77c44e1f7d44a0c4c64a173692f13fae5e))
+* **search:** fix digital release filter not being correctly disabled for search only ([fa17c2f](https://github.com/cedya77/aiometadata/commit/fa17c2fee361021d00e4e102c53819dde7006a88))
+* **trakt genres:** show name instead of slug in stremio ([1f0cf69](https://github.com/cedya77/aiometadata/commit/1f0cf697b632e87135f736525793c10113028994))
+* **up next:** prevent rpdb from applying to thumbnails ([fa17c2f](https://github.com/cedya77/aiometadata/commit/fa17c2fee361021d00e4e102c53819dde7006a88))
+
 ## [1.17.0](https://github.com/cedya77/aiometadata/compare/v1.16.0...v1.17.0) (2025-12-26)
 
 
