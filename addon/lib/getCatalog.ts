@@ -76,8 +76,8 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   const now = Date.now();
   const oneHour = 60 * 60 * 1000;
   
-  if (tokenData.expires_at && tokenData.expires_at < (now + oneHour)) {
-    logger.info(`Trakt token expired or expiring soon (expires: ${new Date(tokenData.expires_at).toISOString()}), refreshing...`);
+  if (expiresAt && expiresAt < (now + oneHour)) {
+    logger.info(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
     
     try {
       const { TraktClient } = require('./trakt');
@@ -122,7 +122,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     }
   }
   
-  logger.debug(`Using valid Trakt token (expires: ${new Date(tokenData.expires_at).toISOString()})`);
+  logger.debug(`Using valid Trakt token (expires: ${new Date(expiresAt).toISOString()})`);
   return tokenData.access_token;
 }
 import { cacheWrapMetaSmart } from './getCache.js';
