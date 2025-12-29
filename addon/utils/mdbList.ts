@@ -82,10 +82,10 @@ const host = process.env.HOST_NAME?.startsWith('http')
 // Rate limiting configuration for MDBList API
 const RATE_LIMIT_CONFIG = {
   maxRetries: 5,
-  baseDelay: 1000, // 1 second base delay
-  maxDelay: 30000, // 30 seconds max delay
-  rateLimitDelay: 5000, // 5 seconds for rate limit backoff
-  minInterval: 200, // Minimum 200ms between requests
+  baseDelay: 1000,
+  maxDelay: 30000,
+  rateLimitDelay: 5000,
+  minInterval: 210, 
   backoffMultiplier: 2
 };
 
@@ -102,12 +102,35 @@ interface RateLimitState {
 
 const rateLimitStates = new Map<string, RateLimitState>();
 
-// Global state for IP-level request spacing (shared across all API keys)
 let globalLastRequestTime = 0;
+let globalRequestPromise = Promise.resolve();
 
 /**
- * Get or create state for a specific API key
+ * Global throttle to satisfy Cloudflare IP limits
+ * Forces requests into a single-file line
  */
+async function globalThrottle(): Promise<void> {
+  // Chain this request to the previous one
+  const currentRequest = globalRequestPromise.then(async () => {
+    const now = Date.now();
+    const timeSinceLast = now - globalLastRequestTime;
+    
+    if (timeSinceLast < RATE_LIMIT_CONFIG.minInterval) {
+      const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLast;
+      await sleep(waitTime);
+    }
+    
+    globalLastRequestTime = Date.now();
+  });
+
+  // Update the global chain
+  globalRequestPromise = currentRequest;
+  
+  // Wait for our turn
+  await currentRequest;
+}
+// ---------------------------------------
+
 function getRateLimitState(apiKey: string = 'global'): RateLimitState {
   if (!rateLimitStates.has(apiKey)) {
     rateLimitStates.set(apiKey, {
@@ -123,16 +146,10 @@ function getRateLimitState(apiKey: string = 'global'): RateLimitState {
   return rateLimitStates.get(apiKey)!;
 }
 
-/**
- * Sleep function for delays
- */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Check if error is a rate limit error
- */
 function isRateLimitError(error: any): boolean {
   return error.response?.status === 429 || error.response?.status === 503;
 }
@@ -153,25 +170,20 @@ async function makeRateLimitedRequest<T>(
     attempt++;
     const isLastAttempt = attempt === retries;
 
-    let now = Date.now();
+    const now = Date.now();
     
-    // Check if we're in a cooldown period from a previous rate limit hit (per API key)
+    // 1. Check User-specific Penalty Box (from previous 429 errors)
     if (state.isRateLimited && state.rateLimitResetTime > now) {
       const waitTime = state.rateLimitResetTime - now;
       logger.debug(`Rate limit cooldown active for key ending in ...${apiKey.slice(-4)}, waiting ${waitTime}ms - ${context}`);
       await sleep(waitTime);
-      now = Date.now(); // Refresh timestamp after sleep
     }
-    state.isRateLimited = false; // Cooldown is over
+    state.isRateLimited = false;
 
-    // Enforce minimum interval between all requests
-    const timeSinceLastRequest = now - globalLastRequestTime;
-    if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
-      const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
-      await sleep(waitTime);
-    }
+    // 2. Enforce GLOBAL IP Limit (The Fix)
+    // This pauses execution until it is safe to send relative to ALL other users
+    await globalThrottle();
     
-    globalLastRequestTime = Date.now();
     const startTime = Date.now();
     
     try {
@@ -181,20 +193,17 @@ async function makeRateLimitedRequest<T>(
       requestTracker.trackProviderCall('mdblist', responseTime, true);
 
       // --- MDBList Rate Limit Header Logging ---
-      // Type guard for headers property
       const headers = (response && typeof response === 'object' && 'headers' in response && response.headers && typeof response.headers === 'object') ? response.headers as Record<string, string> : undefined;
       if (headers) {
         const limit = headers['x-ratelimit-limit'];
         const remaining = headers['x-ratelimit-remaining'];
         const reset = headers['x-ratelimit-reset'];
         logger.debug(`[MDBList] Rate limit: limit=${limit}, remaining=${remaining}, reset=${reset}`);
-        // Optionally update state for diagnostics
         state.lastLimit = limit ? parseInt(limit) : undefined;
         state.lastRemaining = remaining ? parseInt(remaining) : undefined;
         state.lastReset = reset ? parseInt(reset) : undefined;
       }
 
-      // Reset recent hits on success
       state.recentRateLimitHits = 0;
       return response;
     } catch (error: any) {
@@ -212,7 +221,6 @@ async function makeRateLimitedRequest<T>(
         state.lastRateLimitTime = Date.now();
         state.recentRateLimitHits++;
 
-        // --- MDBList Rate Limit Header Logging on Error ---
         const headers = (error.response && typeof error.response === 'object' && 'headers' in error.response && error.response.headers && typeof error.response.headers === 'object') ? error.response.headers as Record<string, string> : {};
         const limit = headers['x-ratelimit-limit'];
         const remaining = headers['x-ratelimit-remaining'];
@@ -228,7 +236,6 @@ async function makeRateLimitedRequest<T>(
           throw error;
         }
 
-        // Prefer Retry-After header if present, otherwise exponential backoff
         let backoffTime = 0;
         if (retryAfter) {
           const retrySeconds = parseInt(retryAfter);
@@ -244,15 +251,14 @@ async function makeRateLimitedRequest<T>(
 
         logger.warn(`Rate limit hit. Retrying in ${Math.round(backoffTime)}ms (attempt ${attempt}/${retries}) - ${context}`);
 
-        // Set a global cooldown period for all subsequent requests.
+        // Set User Penalty Box
         state.isRateLimited = true;
         state.rateLimitResetTime = Date.now() + backoffTime;
 
         await sleep(backoffTime);
-        continue; // Go to the next attempt
+        continue;
       }
       
-      // Handle other temporary errors (e.g., 500, timeouts)
       if (isLastAttempt) {
         logger.error(`Request failed after ${retries} attempts: ${error.message} - ${context}`);
         throw error;
