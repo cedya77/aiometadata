@@ -389,7 +389,7 @@ class ComprehensiveCatalogWarmer {
     
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
-             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.')|| catalogId.startsWith('custom.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
+             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.')|| catalogId.startsWith('custom.') || catalogId.startsWith('letterboxd.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
              parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
@@ -398,6 +398,7 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('mdblist.') ||
         catalogId.startsWith('trakt.') ||
         catalogId.startsWith('anilist.') ||
+        catalogId.startsWith('letterboxd.') ||
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
