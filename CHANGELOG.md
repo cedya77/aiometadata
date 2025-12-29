@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.18.1](https://github.com/cedya77/aiometadata/compare/v1.18.0...v1.18.1) (2025-12-29)
+
+
+### Bug Fixes
+
+* trakt refresh token logic ([0f37952](https://github.com/cedya77/aiometadata/commit/0f379521397570c9b7b195945f4dfce97008e5a9))
+* trakt refresh token logic ([e79b3a6](https://github.com/cedya77/aiometadata/commit/e79b3a62e02cf38106f98ce637feaf3d49f4b22e))
+
 ## [1.18.0](https://github.com/cedya77/aiometadata/compare/v1.17.0...v1.18.0) (2025-12-28)
 
 
