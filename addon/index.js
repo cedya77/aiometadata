@@ -1527,22 +1527,39 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
 // --- Catalog Route under /stremio/:userUUID prefix ---
 addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
-  
-  // Load config from database
   const config = await loadConfigFromDatabase(userUUID);
+  
   if (!config) {
     return res.status(404).send({ error: "User configuration not found" });
   }
-  
-  // Add userUUID to config for per-user token caching
   config.userUUID = userUUID;
-  
-  // Find the catalog in config and use original type (not displayType)
-  // The 'type' parameter from URL could be either the original type or displayType from manifest
-  // Match by id AND either type matches original type OR displayType
-  const catalogConfig = config.catalogs?.find(c => 
+
+  // 1. Try to find the catalog config using the exact ID from the URL
+  // This handles standard cases like "mal.top_series" correctly
+  let catalogConfig = config.catalogs?.find(c =>
     c.id === id && (c.type === type || c.displayType === type)
   );
+
+  let cleanId = id;
+
+  // 2. If NOT found, check if it's a suffixed ID (created by getManifest for display overrides)
+  // e.g. "streaming.nfx_series" -> "streaming.nfx"
+  if (!catalogConfig) {
+    const strippedId = id.replace(/_(movie|series|anime)$/, '');
+    
+    // Only proceed if a replacement actually happened
+    if (strippedId !== id) {
+      const strippedConfig = config.catalogs?.find(c =>
+        c.id === strippedId && (c.type === type || c.displayType === type)
+      );
+      
+      // If we found a config using the stripped ID, that's our real ID
+      if (strippedConfig) {
+        cleanId = strippedId;
+        catalogConfig = strippedConfig;
+      }
+    }
+  }
   const actualType = catalogConfig ? catalogConfig.type : type;
   
   // Check if user has either RPDB or Top Poster API key
@@ -1580,12 +1597,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   extraArgs = extraArgs || {};
   // Ensure sort options are included in cache key
   // Trakt uses: sort, sortDirection
-  if (id.startsWith('trakt.')) {
+  if (cleanId.startsWith('trakt.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
   // MDBList uses: sort, order
-  else if (id.startsWith('mdblist.')) {
+  else if (cleanId.startsWith('mdblist.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.order) extraArgs.order = catalogConfig.order;
     // Add score filters for MDBList external lists
@@ -1599,19 +1616,19 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     }
   }
   // AniList uses: sort, sortDirection
-  else if (id.startsWith('anilist.')) {
+  else if (cleanId.startsWith('anilist.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
   // Trakt up next needs poster preference in cache key
-  if (id === 'trakt.upnext') {
+  if (cleanId === 'trakt.upnext') {
       // Always send a boolean, never undefined
       extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
         ? catalogConfig.metadata.useShowPosterForUpNext
         : false;
   }
   // Trakt calendar needs today's date in cache key
-  if (id === 'trakt.calendar') {
+  if (cleanId === 'trakt.calendar') {
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
     const getTodayInTimezone = (tz) => {
       const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -1619,7 +1636,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     };
     extraArgs.date = getTodayInTimezone(getUserTimezone());
   }
-  if (id === 'tvmaze.schedule') {
+  if (cleanId === 'tvmaze.schedule') {
     // Format date in user's configured timezone (or server timezone as fallback)
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
     const getTodayInTimezone = (tz) => {
@@ -1632,7 +1649,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
   }
 
-  const catalogKey = `${id}:${actualType}:${stableStringify(extraArgs)}`;
+  const catalogKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
   
   const cacheOptions = {
     enableErrorCaching: true,
@@ -1642,10 +1659,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   try {
     let responseData;
       
-      if (id === 'search' || id === 'gemini.search') {
+      if (cleanId === 'search' || cleanId === 'gemini.search') {
       // Determine which search engine is being used based on type
       let searchEngine = null;
-      if (id === 'gemini.search') {
+      if (cleanId === 'gemini.search') {
         searchEngine = 'gemini.search';
       } else if (actualType === 'movie') {
         searchEngine = config.search?.providers?.movie;
@@ -1661,10 +1678,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       config._currentSearchEngine = searchEngine;
       
       // Use search-specific cache wrapper
-      const searchKey = `${id}:${actualType}:${stableStringify(extraArgs)}`;
+      const searchKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
-        const searchResult = await getSearch(id, actualType, language, extraArgs, config);
+        const searchResult = await getSearch(cleanId, actualType, language, extraArgs, config);
         return { metas: searchResult.metas || [] };
       }, searchEngine, cacheOptions);
       } else {
@@ -1672,12 +1689,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
-        const pageSize = id.includes(`mal.`) ? 25 : 
-                         (id.startsWith('stremthru.') || id.startsWith('mdblist.') || id.startsWith('custom.') || id.startsWith('trakt.') || id.startsWith('letterboxd.') || (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.'))) ? 
+        const pageSize = cleanId.includes(`mal.`) ? 25 : 
+                         (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
-        switch (id) {
+        switch (cleanId) {
           case "tmdb.trending":
             //consola.debug(`[CATALOG ROUTE 2] tmdb.trending called with type=${actualType}, language=${language}, page=${page}`);
             metas = (await getTrending(...args, genreName, config, userUUID, false)).metas;
@@ -1689,13 +1706,13 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = (await getWatchList(...args, genreName, sessionId, config, userUUID, false)).metas;
             break;
           case "tvdb.genres": {
-            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, false)).metas;
+            metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false)).metas;
             break;
           }
           case "tvdb.collections": {
             // TVDB expects 0-based page
             const tvdbPage = Math.max(0, page - 1);
-            metas = (await getCatalog(actualType, language, tvdbPage, id, genreName, config, userUUID)).metas;
+            metas = (await getCatalog(actualType, language, tvdbPage, cleanId, genreName, config, userUUID)).metas;
             break;
           }
           case 'mal.airing':
@@ -1717,44 +1734,44 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               'mal.10sDecade': ['2010-01-01', '2019-12-31'],
               'mal.20sDecade': ['2020-01-01', '2029-12-31'],
             };
-            if (id === 'mal.airing') {
+            if (cleanId === 'mal.airing') {
               const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
                 return await jikan.getAiringNow(page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (id === 'mal.upcoming') {
+            } else if (cleanId === 'mal.upcoming') {
               const animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
                 return await jikan.getUpcoming(page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (id === 'mal.top_movies') {
+            } else if (cleanId === 'mal.top_movies') {
               const animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {
                 return await jikan.getTopAnimeByType('movie', page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (id === 'mal.top_series') {
+            } else if (cleanId === 'mal.top_series') {
               const animeResults = await cacheWrapJikanApi(`mal-top-series-${page}-${config.sfw}`, async () => {
                 return await jikan.getTopAnimeByType('tv', page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (id === 'mal.most_popular') {
+            } else if (cleanId === 'mal.most_popular') {
               //consola.debug(`[CATALOG ROUTE 2] mal.most_popular called with type=${actualType}, language=${language}, page=${page}`);
               const animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
                 return await jikan.getTopAnimeByFilter('bypopularity', page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (id === 'mal.most_favorites') {
+            } else if (cleanId === 'mal.most_favorites') {
               const animeResults = await cacheWrapJikanApi(`mal-most-favorites-${page}-${config.sfw}`, async () => {
                 return await jikan.getTopAnimeByFilter('favorite', page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (id === 'mal.top_anime') {
+            } else if (cleanId === 'mal.top_anime') {
               const animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
                 return await jikan.getTopAnimeByType('anime', page, config);
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else {
-            const [startDate, endDate] = decadeMap[id];
+            const [startDate, endDate] = decadeMap[cleanId];
             const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
               //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
               return await jikan.getAnimeGenres();
@@ -1764,7 +1781,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
               if (selectedGenre) {
                 const genreId = selectedGenre.mal_id;
-                    const animeResults = await cacheWrapJikanApi(`mal-${id}-${page}-${genreId}-${config.sfw}`, async () => {
+                    const animeResults = await cacheWrapJikanApi(`mal-${cleanId}-${page}-${genreId}-${config.sfw}`, async () => {
                   return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
                 });
                     metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
@@ -1908,7 +1925,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             break;
           }
           default:
-            metas = (await getCatalog(actualType, language, page, id, genreName, config, userUUID, false)).metas;
+            metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false)).metas;
             break;
       }
       return { metas: metas || [] };

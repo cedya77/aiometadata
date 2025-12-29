@@ -393,11 +393,12 @@ function handleAbsoluteNumbering(animeEntry, tvdbSeason, tvdbEpisode) {
   for (const mapping of mappingList) {
     const mappingTvdbSeason = parseInt(mapping.$.tvdbseason);
     if (mappingTvdbSeason === tvdbSeason) {
+      const offset = parseInt(mapping.$.offset) || 0; // Default to 0 if no offset
       // Check if this mapping has start/end range
       if (mapping.$.start && mapping.$.end) {
         const anidbStart = parseInt(mapping.$.start);
         const anidbEnd = parseInt(mapping.$.end);
-        const offset = parseInt(mapping.$.offset) || 0; // Default to 0 if no offset
+       
         
         // Calculate the AniDB episode for this TVDB episode
         const anidbEpisode = tvdbEpisode - offset;
@@ -415,6 +416,25 @@ function handleAbsoluteNumbering(animeEntry, tvdbSeason, tvdbEpisode) {
               type: 'absolute_numbering',
               start: anidbStart,
               end: anidbEnd,
+              offset: offset
+            }
+          };
+        }
+      }
+      else if (mapping.$.start && !mapping.$.end) {
+        const anidbStart = parseInt(mapping.$.start);
+        const anidbEpisode = tvdbEpisode - offset;
+
+        if (anidbEpisode >= anidbStart) {
+          return {
+            anidbId: parseInt(animeEntry.$.anidbid),
+            anidbSeason: parseInt(mapping.$.anidbseason),
+            anidbEpisode: anidbEpisode,
+            episodeOffset: offset,
+            animeName: animeEntry.name,
+            mappingInfo: {
+              type: 'absolute_numbering_open',
+              start: anidbStart,
               offset: offset
             }
           };
