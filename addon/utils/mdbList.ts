@@ -91,7 +91,6 @@ const RATE_LIMIT_CONFIG = {
 
 
 interface RateLimitState {
-  lastRequestTime: number;
   recentRateLimitHits: number;
   lastRateLimitTime: number;
   isRateLimited: boolean;
@@ -103,13 +102,15 @@ interface RateLimitState {
 
 const rateLimitStates = new Map<string, RateLimitState>();
 
+// Global state for IP-level request spacing (shared across all API keys)
+let globalLastRequestTime = 0;
+
 /**
  * Get or create state for a specific API key
  */
 function getRateLimitState(apiKey: string = 'global'): RateLimitState {
   if (!rateLimitStates.has(apiKey)) {
     rateLimitStates.set(apiKey, {
-      lastRequestTime: 0,
       recentRateLimitHits: 0,
       lastRateLimitTime: 0,
       isRateLimited: false,
@@ -152,24 +153,25 @@ async function makeRateLimitedRequest<T>(
     attempt++;
     const isLastAttempt = attempt === retries;
 
-    const now = Date.now();
+    let now = Date.now();
     
-    // Check if we're in a global cooldown period from a previous rate limit hit.
+    // Check if we're in a cooldown period from a previous rate limit hit (per API key)
     if (state.isRateLimited && state.rateLimitResetTime > now) {
       const waitTime = state.rateLimitResetTime - now;
       logger.debug(`Rate limit cooldown active for key ending in ...${apiKey.slice(-4)}, waiting ${waitTime}ms - ${context}`);
       await sleep(waitTime);
+      now = Date.now(); // Refresh timestamp after sleep
     }
     state.isRateLimited = false; // Cooldown is over
 
-    // Enforce minimum interval between every single request attempt.
-    const timeSinceLastRequest = now - state.lastRequestTime;
+    // Enforce minimum interval between all requests
+    const timeSinceLastRequest = now - globalLastRequestTime;
     if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
       const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
       await sleep(waitTime);
     }
     
-    state.lastRequestTime = Date.now();
+    globalLastRequestTime = Date.now();
     const startTime = Date.now();
     
     try {
