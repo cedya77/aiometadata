@@ -210,21 +210,17 @@ export async function parseLetterboxdItems(
         const idMap = item.id_map || {};
         const imdbId = idMap.imdb;
         const tmdbId = idMap.tmdb;
-        const malId = idMap.mal; // For anime titles
+        const malId = idMap.anime?.mal; // For anime titles
 
-        if (!imdbId && !tmdbId) {
-          logger.warn(`Letterboxd item missing both IMDB and TMDB IDs: ${item.title}`);
+        if (!imdbId && !tmdbId && !malId) {
+          logger.warn(`Letterboxd item missing both IMDB, TMDB and MAL IDs: ${item.title}`);
           return null;
         }
 
         // Prefer IMDB ID, fallback to TMDB
-        const stremioId = imdbId || `tmdb:${tmdbId}`;
-        const itemType = item.type || 'movie'; // Letterboxd is primarily movies
+        const stremioId = imdbId || `tmdb:${tmdbId}` || `mal:${malId}`;
+        const itemType = item.type === 'show' ? 'series' : 'movie';
 
-        // Filter by type if specified
-        if (type !== 'all' && type !== 'movie' && itemType !== type) {
-          return null;
-        }
 
         const result = await cacheWrapMetaSmart(
           config.userUUID,

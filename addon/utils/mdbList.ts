@@ -89,17 +89,38 @@ const RATE_LIMIT_CONFIG = {
   backoffMultiplier: 2
 };
 
-// Rate limiting state
-let rateLimitState = {
-  lastRequestTime: 0,
-  recentRateLimitHits: 0,
-  lastRateLimitTime: 0,
-  isRateLimited: false,
-  rateLimitResetTime: 0,
-  lastLimit: undefined as number | undefined,
-  lastRemaining: undefined as number | undefined,
-  lastReset: undefined as number | undefined
-};
+
+interface RateLimitState {
+  lastRequestTime: number;
+  recentRateLimitHits: number;
+  lastRateLimitTime: number;
+  isRateLimited: boolean;
+  rateLimitResetTime: number;
+  lastLimit?: number;
+  lastRemaining?: number;
+  lastReset?: number;
+}
+
+const rateLimitStates = new Map<string, RateLimitState>();
+
+/**
+ * Get or create state for a specific API key
+ */
+function getRateLimitState(apiKey: string = 'global'): RateLimitState {
+  if (!rateLimitStates.has(apiKey)) {
+    rateLimitStates.set(apiKey, {
+      lastRequestTime: 0,
+      recentRateLimitHits: 0,
+      lastRateLimitTime: 0,
+      isRateLimited: false,
+      rateLimitResetTime: 0,
+      lastLimit: undefined,
+      lastRemaining: undefined,
+      lastReset: undefined
+    });
+  }
+  return rateLimitStates.get(apiKey)!;
+}
 
 /**
  * Sleep function for delays
@@ -120,10 +141,12 @@ function isRateLimitError(error: any): boolean {
  */
 async function makeRateLimitedRequest<T>(
   requestFn: () => Promise<T>, 
+  apiKey: string,
   context: string = 'MDBList', 
   retries: number = RATE_LIMIT_CONFIG.maxRetries
 ): Promise<T> {
   let attempt = 0;
+  const state = getRateLimitState(apiKey);
   
   while (attempt < retries) {
     attempt++;
@@ -132,21 +155,21 @@ async function makeRateLimitedRequest<T>(
     const now = Date.now();
     
     // Check if we're in a global cooldown period from a previous rate limit hit.
-    if (rateLimitState.isRateLimited && rateLimitState.rateLimitResetTime > now) {
-      const waitTime = rateLimitState.rateLimitResetTime - now;
-      logger.debug(`Global rate limit cooldown active, waiting ${waitTime}ms - ${context}`);
+    if (state.isRateLimited && state.rateLimitResetTime > now) {
+      const waitTime = state.rateLimitResetTime - now;
+      logger.debug(`Rate limit cooldown active for key ending in ...${apiKey.slice(-4)}, waiting ${waitTime}ms - ${context}`);
       await sleep(waitTime);
     }
-    rateLimitState.isRateLimited = false; // Cooldown is over
+    state.isRateLimited = false; // Cooldown is over
 
     // Enforce minimum interval between every single request attempt.
-    const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
+    const timeSinceLastRequest = now - state.lastRequestTime;
     if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
       const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
       await sleep(waitTime);
     }
     
-    rateLimitState.lastRequestTime = Date.now();
+    state.lastRequestTime = Date.now();
     const startTime = Date.now();
     
     try {
@@ -164,13 +187,13 @@ async function makeRateLimitedRequest<T>(
         const reset = headers['x-ratelimit-reset'];
         logger.debug(`[MDBList] Rate limit: limit=${limit}, remaining=${remaining}, reset=${reset}`);
         // Optionally update state for diagnostics
-        rateLimitState.lastLimit = limit ? parseInt(limit) : undefined;
-        rateLimitState.lastRemaining = remaining ? parseInt(remaining) : undefined;
-        rateLimitState.lastReset = reset ? parseInt(reset) : undefined;
+        state.lastLimit = limit ? parseInt(limit) : undefined;
+        state.lastRemaining = remaining ? parseInt(remaining) : undefined;
+        state.lastReset = reset ? parseInt(reset) : undefined;
       }
 
       // Reset recent hits on success
-      rateLimitState.recentRateLimitHits = 0;
+      state.recentRateLimitHits = 0;
       return response;
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
@@ -184,8 +207,8 @@ async function makeRateLimitedRequest<T>(
       }
       
       if (isRateLimitError(error)) {
-        rateLimitState.lastRateLimitTime = Date.now();
-        rateLimitState.recentRateLimitHits++;
+        state.lastRateLimitTime = Date.now();
+        state.recentRateLimitHits++;
 
         // --- MDBList Rate Limit Header Logging on Error ---
         const headers = (error.response && typeof error.response === 'object' && 'headers' in error.response && error.response.headers && typeof error.response.headers === 'object') ? error.response.headers as Record<string, string> : {};
@@ -194,9 +217,9 @@ async function makeRateLimitedRequest<T>(
         const reset = headers['x-ratelimit-reset'];
         const retryAfter = headers['retry-after'];
         logger.warn(`[MDBList] Rate limit error: limit=${limit}, remaining=${remaining}, reset=${reset}, retry-after=${retryAfter}`);
-        rateLimitState.lastLimit = limit ? parseInt(limit) : undefined;
-        rateLimitState.lastRemaining = remaining ? parseInt(remaining) : undefined;
-        rateLimitState.lastReset = reset ? parseInt(reset) : undefined;
+        state.lastLimit = limit ? parseInt(limit) : undefined;
+        state.lastRemaining = remaining ? parseInt(remaining) : undefined;
+        state.lastReset = reset ? parseInt(reset) : undefined;
 
         if (isLastAttempt) {
           logger.error(`Rate limit exceeded after ${retries} attempts: ${error.message} - ${context}`);
@@ -212,7 +235,7 @@ async function makeRateLimitedRequest<T>(
           }
         }
         if (!backoffTime) {
-          backoffTime = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits - 1);
+          backoffTime = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, state.recentRateLimitHits - 1);
           const jitter = Math.random() * 1000;
           backoffTime = Math.min(backoffTime + jitter, RATE_LIMIT_CONFIG.maxDelay);
         }
@@ -220,8 +243,8 @@ async function makeRateLimitedRequest<T>(
         logger.warn(`Rate limit hit. Retrying in ${Math.round(backoffTime)}ms (attempt ${attempt}/${retries}) - ${context}`);
 
         // Set a global cooldown period for all subsequent requests.
-        rateLimitState.isRateLimited = true;
-        rateLimitState.rateLimitResetTime = Date.now() + backoffTime;
+        state.isRateLimited = true;
+        state.rateLimitResetTime = Date.now() + backoffTime;
 
         await sleep(backoffTime);
         continue; // Go to the next attempt
@@ -277,6 +300,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { dispatcher: mdblistDispatcher }),
+      apiKey,
       `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
     );
     
@@ -385,6 +409,7 @@ async function getMediaRatingFromMDBList(mediaProvider: string, mediaType: strin
   try {
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { dispatcher: mdblistDispatcher }),
+      apiKey,
       context
     );
     return response.data?.ratings || [];
@@ -442,6 +467,7 @@ async function fetchMDBListBatchMediaInfo(mediaProvider: string, mediaType: stri
           timeout: 30000, // 30 second timeout for batch requests
           dispatcher: mdblistDispatcher
         }),
+        apiKey,
         `MDBList batch media info (batch ${batchNumber}/${totalBatches})`
       );
 
@@ -543,6 +569,7 @@ async function fetchMDBListExternalItems(
 
     const response: any = await makeRateLimitedRequest(
       () => httpGet(fullUrl, { dispatcher: mdblistDispatcher }),
+      apiKey,
       `MDBList fetchMDBListExternalItems (url: ${sanitizeUrlForLogging(url)}, page: ${page})`
     );
 
@@ -672,7 +699,7 @@ async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Pro
 
         logger.info(`Successfully fetched ${genres.length} ${isAnime ? 'anime' : 'standard'} genres from MDBList API`);
         return genres;
-      }, `MDBList Genres API (anime=${animeParam})`);
+      }, apiKey, `MDBList Genres API (anime=${animeParam})`);
     });
   } catch (err: any) {
     logger.error(`Error fetching MDBList genres (anime=${isAnime}):`, err.message);
@@ -853,6 +880,7 @@ async function fetchWatchHistory(apiKey: string): Promise<WatchHistoryResponse |
 
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { dispatcher: mdblistDispatcher }),
+      apiKey,
       'MDBList fetchWatchHistory'
     );
 
@@ -974,6 +1002,7 @@ async function markMovieAsWatched(idInput: MovieIdInput, apiKey: string): Promis
           timeout: 10000,
           dispatcher: mdblistDispatcher
         }),
+      apiKey,
       `MDBList markMovieAsWatched (${formatIdSummary(normalizedIds)})`
     );
 
@@ -1073,6 +1102,7 @@ async function markEpisodeAsWatched(
           timeout: 10000,
           dispatcher: mdblistDispatcher
         }),
+      apiKey,
       `MDBList markEpisodeAsWatched (${formatIdSummary(normalizedIds)}, S${season}E${episode})`
     );
 
@@ -1112,9 +1142,10 @@ async function markEpisodeAsWatched(
 /**
  * Wrapper for proxy endpoints - makes a rate-limited GET request to MDBList
  */
-async function makeRateLimitedMDBListRequest(url: string, context: string = 'MDBList Proxy'): Promise<any> {
+async function makeRateLimitedMDBListRequest(url: string, apiKey: string, context: string = 'MDBList Proxy'): Promise<any> {
   return await makeRateLimitedRequest(
     () => httpGet(url, { dispatcher: mdblistDispatcher }),
+    apiKey,
     context
   );
 }

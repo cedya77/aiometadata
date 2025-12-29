@@ -652,7 +652,7 @@ addon.get("/api/mdblist/lists/user", async (req, res) => {
       url += `&sort=${sort}`;
     }
     
-    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get User Lists');
+    const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get User Lists');
     res.json(response.data);
   } catch (error) {
     consola.error("[MDBList Proxy] Error fetching user lists:", error.message);
@@ -671,7 +671,7 @@ addon.get("/api/mdblist/lists/top", async (req, res) => {
     }
     
     const url = `https://api.mdblist.com/lists/top?apikey=${apikey}`;
-    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get Top Lists');
+    const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get Top Lists');
     res.json(response.data);
   } catch (error) {
     consola.error("[MDBList Proxy] Error fetching top lists:", error.message);
@@ -691,7 +691,7 @@ addon.get("/api/mdblist/lists/:username/:listname", async (req, res) => {
     }
     
     const url = `https://api.mdblist.com/lists/${username}/${listname}?apikey=${apikey}`;
-    const response = await makeRateLimitedMDBListRequest(url, `MDBList Proxy - Get User List ${username}/${listname}`);
+    const response = await makeRateLimitedMDBListRequest(url, apikey, `MDBList Proxy - Get User List ${username}/${listname}`);
     res.json(response.data);
   } catch (error) {
     consola.error("[MDBList Proxy] Error fetching user list details:", error.message);
@@ -711,7 +711,7 @@ addon.get("/api/mdblist/lists/:listId", async (req, res) => {
     }
     
     const url = `https://api.mdblist.com/lists/${listId}?apikey=${apikey}`;
-    const response = await makeRateLimitedMDBListRequest(url, `MDBList Proxy - Get List ${listId}`);
+    const response = await makeRateLimitedMDBListRequest(url, apikey, `MDBList Proxy - Get List ${listId}`);
     res.json(response.data);
   } catch (error) {
     consola.error("[MDBList Proxy] Error fetching list details:", error.message);
@@ -730,7 +730,7 @@ addon.get("/api/mdblist/external/lists/user", async (req, res) => {
     }
     
     const url = `https://api.mdblist.com/external/lists/user?apikey=${apikey}`;
-    const response = await makeRateLimitedMDBListRequest(url, 'MDBList Proxy - Get External User Lists');
+    const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get External User Lists');
     res.json(response.data);
   } catch (error) {
     consola.error("[MDBList Proxy] Error fetching external lists:", error.message);
