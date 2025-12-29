@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.18.2](https://github.com/cedya77/aiometadata/compare/v1.18.1...v1.18.2) (2025-12-29)
+
+
+### Bug Fixes
+
+* **letterboxd:** fix error when letterboxd would return type show for series ([f1ce58c](https://github.com/cedya77/aiometadata/commit/f1ce58c726376d1358410c7e869b97d250f6faab))
+* **mdblist:** implement a per key rate limiter to avoid global cooldown ([f1ce58c](https://github.com/cedya77/aiometadata/commit/f1ce58c726376d1358410c7e869b97d250f6faab))
+
 ## [1.18.1](https://github.com/cedya77/aiometadata/compare/v1.18.0...v1.18.1) (2025-12-29)
 
 
