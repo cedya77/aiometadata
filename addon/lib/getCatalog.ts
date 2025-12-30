@@ -672,6 +672,23 @@ async function buildParameters(type: string, language: string, page: number, id:
     parameters.watch_region = provider.country;
     parameters.with_watch_monetization_types = "flatrate|free|ads";
     delete parameters['vote_count.gte'];
+    const catalogConfig = config._currentCatalogConfig;
+    if (catalogConfig?.sort) {
+      const direction = catalogConfig.sortDirection || 'desc';
+      let sortField = catalogConfig.sort;
+      
+      if (sortField === 'release_date') {
+        sortField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+      }
+      
+      parameters.sort_by = `${sortField}.${direction}`;
+      
+      if (sortField === 'vote_average') {
+        parameters['vote_count.gte'] = 50; 
+      }
+    } else {
+       parameters.sort_by = 'popularity.desc';
+    }
   } else {
     switch (id) {
       case "tmdb.top":

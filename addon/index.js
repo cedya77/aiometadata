@@ -1615,6 +1615,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
     }
   }
+  // Streaming uses: sort
+  else if (cleanId.startsWith('streaming.')) {
+    if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
+    if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+  }
   // AniList uses: sort, sortDirection
   else if (cleanId.startsWith('anilist.')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
