@@ -18,6 +18,11 @@ interface MDBListIntegrationProps {
 }
 
 const getMdbListType = (list: any): 'movie' | 'series' | 'all' => {
+  if (list.mediatype) {
+    if (list.mediatype === 'movie') return 'movie';
+    if (list.mediatype === 'show') return 'series';
+  }
+
   const movies = list.movies ?? (list.items - (list.shows ?? list.items_show ?? 0));
   const shows = list.shows ?? list.items_show ?? 0;
 
@@ -30,11 +35,11 @@ const getMdbListType = (list: any): 'movie' | 'series' | 'all' => {
   if (shows > 0) {
     return 'series';
   }
-  // Fallback for empty lists or lists with no movie/show counts
+  
   if (list.mediatype && typeof list.mediatype === 'string') {
     return list.mediatype === 'movie' ? 'movie' : 'series';
   }
-  return 'all'; // Default for empty or unknown
+  return 'all';
 }
 
 export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps) {
