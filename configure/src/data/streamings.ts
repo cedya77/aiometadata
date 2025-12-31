@@ -30,7 +30,7 @@ export const streamingServices = [
     { id: "mub", name: "MUBI", icon: "/mubi.jpg" },
     { id: "sta", name: "Starz", icon: "/starz.jpg" },
     { id: "crc", name: "Criterion Channel", icon: "/criterionchannel.jpg"},
-    { id: "hid", name: "HIDIVE", icon: "/HIDIVE.webp"}
+    { id: "hid", name: "HIDIVE", icon: "/HIDIVE.png"}
   ];
   
   export const regions = {
