@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.19.1](https://github.com/cedya77/aiometadata/compare/v1.19.0...v1.19.1) (2025-12-31)
+
+
+### Bug Fixes
+
+* **user management:** resolve issue with password reset ([4be921a](https://github.com/cedya77/aiometadata/commit/4be921abc54654e83766a90f10ad7d68e8cb3bec))
+
+
+### Reverts
+
+* temporarily revert to fribbs previous list update containing imdb ids ([a980fe1](https://github.com/cedya77/aiometadata/commit/a980fe16d770286b0a25af1d58bb73050ce7c2e8))
+
 ## [1.19.0](https://github.com/cedya77/aiometadata/compare/v1.18.2...v1.19.0) (2025-12-31)
 
 
