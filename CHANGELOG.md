@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.19.0](https://github.com/cedya77/aiometadata/compare/v1.18.2...v1.19.0) (2025-12-31)
+
+
+### Features
+
+* add HIDIVE as streaming provider ([8e17731](https://github.com/cedya77/aiometadata/commit/8e17731bebeaeb42b47e9c359fc577dbc8dff905))
+* add sort options to streaming catalogs ([ed4cdb3](https://github.com/cedya77/aiometadata/commit/ed4cdb39b6574f6e5d4a074138d4b9faa86d7350))
+
+
+### Bug Fixes
+
+* **manifest:** make id generation more unique to fix edge cases with display types ([aee5a5b](https://github.com/cedya77/aiometadata/commit/aee5a5b5537d81f2f13a8ba53454f41c57a9ce8d))
+* **mdblist:** fix list type assignement when adding lists via username ([136a477](https://github.com/cedya77/aiometadata/commit/136a4779bb86326d8339294fb2b0bc1131d4ecb1))
+
 ## [1.18.2](https://github.com/cedya77/aiometadata/compare/v1.18.1...v1.18.2) (2025-12-29)
 
 
