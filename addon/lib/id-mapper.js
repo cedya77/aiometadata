@@ -10,7 +10,7 @@ const consola = require('consola');
 const logger = consola.withTag('ID-Mapper');
 
 // from  https://github.com/Fribb/anime-lists
-const REMOTE_MAPPING_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
+const REMOTE_MAPPING_URL ='https://raw.githubusercontent.com/Fribb/anime-lists/6fcf06d8588befdc0232b823fa1e3940874c387b/anime-list-full.json'  //'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
 const REMOTE_KITSU_TO_IMDB_MAPPING_URL = 'https://raw.githubusercontent.com/TheBeastLT/stremio-kitsu-anime/bbf149474f610885629b95b1b9ce4408c3c1353d/static/data/imdb_mapping.json';
 const REMOTE_TRAKT_ANIME_MOVIES_URL = 'https://raw.githubusercontent.com/rensetsu/db.trakt.extended-anitrakt/refs/heads/main/movies_ex.json';
 const LOCAL_CACHE_PATH = path.join(process.cwd(), 'addon', 'data', 'anime-list-full.json.cache');
@@ -159,23 +159,23 @@ async function downloadAndProcessAnimeList() {
       const headers = (await httpHead(REMOTE_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
 
-      logger.debug(`[ID Mapper] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+      logger.debug(`[ID Mapper] [Fribb\'s Anime-List] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
         try {
-          logger.debug('[ID Mapper] No changes detected. Loading from local disk cache...');
+          logger.debug('[ID Mapper] [Fribb\'s Anime-List] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
           processAndIndexData(fileContent);
           return;
         } catch (e) {
-          logger.warn('[ID Mapper] ETag matched, but local cache was unreadable. Forcing re-download.');
+          logger.warn('[ID Mapper] [Fribb\'s Anime-List] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
       }
     } else {
-      logger.debug('[ID Mapper] Redis cache is disabled. Proceeding to download.');
+      logger.debug('[ID Mapper] [Fribb\'s Anime-List] Redis cache is disabled. Proceeding to download.');
     }
 
-    logger.debug('[ID Mapper] Downloading full list...');
+    logger.debug('[ID Mapper] [Fribb\'s Anime-List] Downloading full list...');
     const response = await httpGet(REMOTE_MAPPING_URL);
     let dataToCache;
     let dataForProcessing;
@@ -206,15 +206,15 @@ async function downloadAndProcessAnimeList() {
     processAndIndexData(dataForProcessing);
 
   } catch (error) {
-    logger.error(`[ID Mapper] An error occurred during remote download: ${error.message}`);
+    logger.error(`[ID Mapper] [Fribb\'s Anime-List] An error occurred during remote download: ${error.message}`);
     logger.debug('[ID Mapper] Attempting to fall back to local disk cache...');
     
     try {
       const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
-      logger.debug('[ID Mapper] Successfully loaded data from local cache on fallback.');
+      logger.debug('[ID Mapper] [Fribb\'s Anime-List] Successfully loaded data from local cache on fallback.');
       processAndIndexData(fileContent); 
     } catch (fallbackError) {
-      logger.error('[ID Mapper] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
+      logger.error('[ID Mapper] [Fribb\'s Anime-List] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
     }
   }
 }
