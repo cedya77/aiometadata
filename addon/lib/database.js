@@ -747,7 +747,7 @@ class Database {
     try {
       // Generate a new random password
       const newPassword = Math.random().toString(36).slice(-8);
-      const hashedPassword = this.hashPassword(newPassword);
+      const hashedPassword = await this.hashPassword(newPassword);
 
       const query = this.type === 'sqlite'
         ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'

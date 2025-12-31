@@ -496,7 +496,7 @@ class ComprehensiveCatalogWarmer {
         if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
         if (genreValue) extraArgs.genre = genreValue;
         const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
-        if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.')) {
+        if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.') || catalogId.startsWith('streaming.')) {
           if (catalogConfig) {
             if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
