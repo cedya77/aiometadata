@@ -114,6 +114,7 @@ export interface AppConfig {
   };
   /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
   posterRatingProvider?: 'rpdb' | 'top';
+  usePosterProxy: boolean;
   mdblistWatchTracking: boolean;
   anilistWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */

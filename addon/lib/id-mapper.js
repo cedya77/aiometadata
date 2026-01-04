@@ -69,6 +69,7 @@ let malIdToTraktMovieMap = new Map();
 let tmdbIdToTraktMovieMap = new Map();
 let imdbIdToTraktMovieMap = new Map();
 
+
 function processAndIndexData(data) {
   let animeList;
   
@@ -2012,5 +2013,6 @@ module.exports = {
   getCinemetaVideosForImdbIoSeries,
   getTraktAnimeMovieByMalId,
   getTraktAnimeMovieByTmdbId,
-  getTraktAnimeMovieByImdbId
+  getTraktAnimeMovieByImdbId,
+  isInitialized: () => isInitialized
 };
