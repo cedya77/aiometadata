@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
+import { useConfig } from '@/contexts/ConfigContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Loader2, ExternalLink, AlertCircle } from 'lucide-react';
 import { toast } from "sonner";
+import { createLetterboxdCatalog } from '@/utils/catalogUtils';
 
 interface LetterboxdIntegrationProps {
   isOpen: boolean;
@@ -104,29 +105,15 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
         return;
       }
 
-      // Apply display type overrides if configured
-      let displayType = undefined;
-      if (config.displayTypeOverrides?.movie) {
-        displayType = config.displayTypeOverrides.movie;
-      }
-
-      const newCatalog: CatalogConfig = {
-        id: catalogId,
-        type: 'movie', // Letterboxd is primarily movies
-        name: listTitle,
-        enabled: true,
-        showInHome: true,
-        source: 'letterboxd',
+      const newCatalog = createLetterboxdCatalog({
+        identifier,
+        title: listTitle,
+        itemCount,
+        isWatchlist,
+        url: listUrl,
         cacheTTL: defaultCacheTTL,
-        enableRatingPosters: true,
-        ...(displayType && { displayType }),
-        metadata: {
-          itemCount,
-          isWatchlist,
-          identifier,
-          url: listUrl
-        }
-      };
+        displayTypeOverrides: config.displayTypeOverrides,
+      });
 
       setConfig(prev => ({
         ...prev,

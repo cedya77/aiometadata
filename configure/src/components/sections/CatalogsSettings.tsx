@@ -4,6 +4,7 @@ import { TraktIntegration } from './TraktIntegration';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
+import { QuickAddDialog } from '@/components/QuickAddDialog';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -13,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -1338,6 +1339,7 @@ function CatalogsSettingsContent({
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
@@ -1877,50 +1879,153 @@ function CatalogsSettingsContent({
           <p className="text-muted-foreground">
             Drag to reorder. Click icons to toggle visibility.
           </p>
-          <div className="flex items-center space-x-6 pt-2 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               <Eye className="h-4 w-4 text-green-500 dark:text-green-400" /> Enabled
             </div>
             <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <Home className="h-4 w-4 text-blue-500 dark:text-blue-400" /> On Home Board
+              <Home className="h-4 w-4 text-blue-500 dark:text-blue-400" /> Home
             </div>
             <button
               onClick={() => setHideDisabledCatalogs(!hideDisabledCatalogs)}
-              className="flex items-center gap-1.5 whitespace-nowrap px-2 py-1 rounded-md border border-border hover:bg-accent transition-colors"
+              className="flex items-center gap-1.5 whitespace-nowrap px-2 py-1 rounded-md border border-border hover:bg-accent transition-colors text-xs sm:text-sm"
             >
               {hideDisabledCatalogs ? (
                 <>
-                  <Eye className="h-4 w-4" />
-                  Show All
+                  <Eye className="h-4 w-4 flex-shrink-0" />
+                  <span>Show All</span>
                 </>
               ) : (
                 <>
-                  <EyeOff className="h-4 w-4" />
-                  Hide Disabled
+                  <EyeOff className="h-4 w-4 flex-shrink-0" />
+                  <span className="hidden sm:inline">Hide Disabled</span>
+                  <span className="sm:hidden">Hide Disabled</span>
                 </>
               )}
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={handleOpenStreamingDialog} size="sm">
-            Manage Streaming Providers
-          </Button>
-          <Button onClick={() => setIsMdbListOpen(true)} size="sm">
-            Manage MDBList Integration
-          </Button>
-          <Button onClick={() => setIsTraktOpen(true)} size="sm">
-            Manage Trakt Integration
-          </Button>
-          <Button onClick={() => setIsLetterboxdOpen(true)} size="sm">
-            Manage Letterboxd Integration
-          </Button>
-          <Button onClick={() => setIsAniListOpen(true)} size="sm">
-            Manage AniList Integration
-          </Button>
-          <Button onClick={() => setIsCustomManifestOpen(true)} size="sm">
-            Import Custom Manifest
-          </Button>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Button onClick={() => setIsQuickAddOpen(true)} size="sm" variant="default">
+              <Link className="h-4 w-4 mr-2" />
+              Quick Add
+            </Button>
+            
+            <div className="hidden sm:block h-6 w-px bg-border" /> {/* Divider - hidden on mobile */}
+            
+            <TooltipProvider delayDuration={200}>
+              <div className="flex items-center flex-wrap gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setIsMdbListOpen(true)} 
+                      aria-label="MDBList Integration"
+                      className="h-9 w-9"
+                    >
+                      <img src="/mdblist_icon.png" alt="MDBList" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>MDBList Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setIsTraktOpen(true)} 
+                      aria-label="Trakt Integration"
+                      className="h-9 w-9"
+                    >
+                      <img src="/trakt_icon.png" alt="Trakt" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Trakt Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setIsLetterboxdOpen(true)} 
+                      aria-label="Letterboxd Integration"
+                      className="h-9 w-9"
+                    >
+                      <img src="/letterboxd_icon.png" alt="Letterboxd" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Letterboxd Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setIsAniListOpen(true)} 
+                      aria-label="AniList Integration"
+                      className="h-9 w-9"
+                    >
+                      <img src="/anilist_icon.png" alt="AniList" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>AniList Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={handleOpenStreamingDialog} 
+                      aria-label="Streaming Providers"
+                      className="h-9 w-9"
+                    >
+                      <img src="/streamingservices_icon.png" alt="Streaming" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Streaming Providers</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setIsCustomManifestOpen(true)} 
+                      aria-label="Import Custom Manifest"
+                      className="h-9 w-9"
+                    >
+                      <img src="/manifest_icon.png" alt="Manifest" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Import Custom Manifest</TooltipContent>
+                </Tooltip>
+
+                <div className="h-6 w-px bg-border mx-1" /> {/* Divider */}
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={handleReloadCatalogs} aria-label="Reload Catalogs" className="h-9 w-9">
+                      <RefreshCw className="w-5 h-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Refresh catalogs to look for updates</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          </div>
+          
+          {/* Hint for users */}
+          <p className="text-xs text-muted-foreground">
+            Tap service icons above for advanced integration settings
+          </p>
+          
+          {/* Dialog components */}
           <MDBListIntegration
             isOpen={isMdbListOpen}
             onClose={() => setIsMdbListOpen(false)}
@@ -1937,16 +2042,6 @@ function CatalogsSettingsContent({
             isOpen={isAniListOpen}
             onClose={() => setIsAniListOpen(false)}
           />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleReloadCatalogs} aria-label="Reload Catalogs">
-                  <RefreshCw className="w-5 h-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Refresh catalogs to look for updates</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </div>
       </div>
 
@@ -2027,6 +2122,10 @@ function CatalogsSettingsContent({
       <CustomManifestIntegration
         isOpen={isCustomManifestOpen}
         onClose={() => setIsCustomManifestOpen(false)}
+      />
+      <QuickAddDialog
+        isOpen={isQuickAddOpen}
+        onClose={() => setIsQuickAddOpen(false)}
       />
 
       {/* Bulk Delete Confirmation Dialog */}

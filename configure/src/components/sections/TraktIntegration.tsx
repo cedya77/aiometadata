@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ExternalLink, CheckCircle2, XCircle, Trash2, Plus, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
+import { createTraktCatalog } from '@/utils/catalogUtils';
 
 interface TraktIntegrationProps {
   isOpen: boolean;
@@ -327,23 +328,11 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
             return;
           }
 
-          const newCatalog: CatalogConfig = {
-            id: catalogId,
-            type: "all",
-            name: list.name,
-            enabled: true,
-            showInHome: true,
-            source: "trakt",
-            sort: list.sort_by || 'rank',
-            sortDirection: list.sort_how === 'desc' ? 'desc' : 'asc',
-            metadata: {
-              itemCount: list.item_count || 0,
-              privacy: list.privacy || "private",
-              author: list.user?.username || traktUsername.trim(),
-              description: list.description || "",
-              traktListId: list.ids?.trakt
-            },
-          };
+          const newCatalog = createTraktCatalog({
+            list,
+            username: traktUsername.trim(),
+            displayTypeOverrides: prev.displayTypeOverrides,
+          });
 
           newCatalogs.push(newCatalog);
           importedCount++;
@@ -468,72 +457,43 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         if (customListType === 'split') {
         // Create two separate catalogs for movies and series
         setConfig(prev => {
-          const movieDisplayType = getDisplayTypeOverride('movie', prev.displayTypeOverrides);
-          const seriesDisplayType = getDisplayTypeOverride('series', prev.displayTypeOverrides);
           const idBase = numericListId ? `trakt.list.${numericListId}` : `${catalogId}`;
-          const newCatalogs: CatalogConfig[] = [
-            {
-              id: `${idBase}.movies`,
-              type: "movie",
-              name: listData.name,
-              enabled: true,
-              showInHome: true,
-              source: "trakt",
-              sort: customListSortBy as any,
-              sortDirection: customListSortHow,
-              metadata: {
-                privacy: listData.privacy || "private",
-                author: listData.user?.username || username,
-                description: listData.description || "",
-                traktListId: numericListId
-              },
-              ...(movieDisplayType && { displayType: movieDisplayType }),
-            },
-            {
-              id: `${idBase}.series`,
-              type: "series",
-              name: listData.name,
-              enabled: true,
-              showInHome: true,
-              source: "trakt",
-              sort: customListSortBy as any,
-              sortDirection: customListSortHow,
-              metadata: {
-                privacy: listData.privacy || "private",
-                author: listData.user?.username || username,
-                description: listData.description || "",
-                traktListId: numericListId
-              },
-              ...(seriesDisplayType && { displayType: seriesDisplayType }),
-            },
-          ];
+          
+          const movieCatalog = createTraktCatalog({
+            list: listData,
+            username,
+            sort: customListSortBy,
+            sortDirection: customListSortHow,
+            displayTypeOverrides: prev.displayTypeOverrides,
+            catalogType: 'movie',
+          });
+          movieCatalog.id = `${idBase}.movies`;
+          
+          const seriesCatalog = createTraktCatalog({
+            list: listData,
+            username,
+            sort: customListSortBy,
+            sortDirection: customListSortHow,
+            displayTypeOverrides: prev.displayTypeOverrides,
+            catalogType: 'series',
+          });
+          seriesCatalog.id = `${idBase}.series`;
 
           return {
             ...prev,
-            catalogs: [...prev.catalogs, ...newCatalogs],
+            catalogs: [...prev.catalogs, movieCatalog, seriesCatalog],
           };
         });
         toast.success(`Added: ${listData.name} (Movies & Series)`);
         } else {
         // Create unified catalog
-        const idBase = numericListId ? `trakt.list.${numericListId}` : `${catalogId}`;
-        const newCatalog: CatalogConfig = {
-          id: idBase,
-          type: "all",
-          name: listData.name,
-          enabled: true,
-          showInHome: true,
-          source: "trakt",
-          sort: customListSortBy as any,
+        const newCatalog = createTraktCatalog({
+          list: listData,
+          username,
+          sort: customListSortBy,
           sortDirection: customListSortHow,
-          metadata: {
-            itemCount: listData.item_count || 0,
-            privacy: listData.privacy || "private",
-            author: listData.user?.username || username,
-            description: listData.description || "",
-            traktListId: numericListId
-          },
-        };
+          displayTypeOverrides: config.displayTypeOverrides,
+        });
         
         setConfig(prev => ({
           ...prev,
@@ -644,16 +604,10 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         return;
       }
 
-      const newCatalog: CatalogConfig = {
-        id: catalogId,
-        type: "all",
-        name: list.name,
-        enabled: true,
-        showInHome: true,
-        source: "trakt",
-        sort: list.sort_by || 'rank',
-        sortDirection: list.sort_how === 'desc' ? 'desc' : 'asc',
-      };
+      const newCatalog = createTraktCatalog({
+        list,
+        displayTypeOverrides: config.displayTypeOverrides,
+      });
 
       setConfig(prev => ({
         ...prev,
@@ -762,16 +716,10 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         return;
       }
 
-      const newCatalog: CatalogConfig = {
-        id: catalogId,
-        type: "all",
-        name: list.name,
-        enabled: true,
-        showInHome: true,
-        source: "trakt",
-        sort: list.sort_by || 'rank',
-        sortDirection: list.sort_how === 'desc' ? 'desc' : 'asc',
-      };
+      const newCatalog = createTraktCatalog({
+        list,
+        displayTypeOverrides: config.displayTypeOverrides,
+      });
 
       setConfig(prev => ({
         ...prev,
