@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useRef  } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { AppConfig, CatalogConfig, SearchConfig } from "./config";
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { allCatalogDefinitions, allSearchProviders } from "@/data/catalogs";
-import { LoadingScreen } from "@/components/LoadingScreen"; 
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 interface AuthState {
   authenticated: boolean;
@@ -38,19 +38,19 @@ function initializeConfigFromSources(): AppConfig | null {
   }
   hasInitialized = true;
 
-  let loadedConfig: any = null; 
+  let loadedConfig: any = null;
 
   try {
     const pathParts = window.location.pathname.split('/');
     const configStringIndex = pathParts.findIndex(p => p.toLowerCase() === 'configure');
-    
+
     // Only load config from URL if it's NOT a Stremio UUID-based URL
     // Stremio UUID URLs should require authentication
-    const isStremioUUIDUrl = pathParts.includes('stremio') && 
-                            configStringIndex > 1 && 
-                            pathParts[configStringIndex - 2] && 
-                            pathParts[configStringIndex - 2].match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-    
+    const isStremioUUIDUrl = pathParts.includes('stremio') &&
+      configStringIndex > 1 &&
+      pathParts[configStringIndex - 2] &&
+      pathParts[configStringIndex - 2].match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+
     if (configStringIndex > 0 && pathParts[configStringIndex - 1] && !isStremioUUIDUrl) {
       const decompressed = decompressFromEncodedURIComponent(pathParts[configStringIndex - 1]);
       if (decompressed) {
@@ -67,12 +67,12 @@ function initializeConfigFromSources(): AppConfig | null {
     const providers = loadedConfig.search?.providers;
     if (providers && providers.anime) {
       console.log("[Config Migration] Old 'anime' provider found. Upgrading configuration...");
-      
+
       providers.anime_movie = providers.anime_movie || 'mal.search.movie';
       providers.anime_series = providers.anime_series || 'mal.search.series';
-      
+
       delete providers.anime;
-      
+
       // Migration completed - config will be saved to database when user saves
     }
   }
@@ -96,7 +96,7 @@ const initialConfig: AppConfig = {
   hideUnreleasedDigital: false,
   hideUnreleasedDigitalSearch: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', forceAnimeForDetectedImdb: false },
-  artProviders: { 
+  artProviders: {
     movie: { poster: 'meta', background: 'meta', logo: 'meta' },
     series: { poster: 'meta', background: 'meta', logo: 'meta' },
     anime: { poster: 'meta', background: 'imdb', logo: 'imdb' },
@@ -104,7 +104,7 @@ const initialConfig: AppConfig = {
   },
   tvdbSeasonType: 'default',
   mal: {
-    skipFiller: false, 
+    skipFiller: false,
     skipRecap: false,
     allowEpisodeMarking: false,
     useImdbIdForCatalogAndSearch: false,
@@ -113,14 +113,14 @@ const initialConfig: AppConfig = {
     scrapeImdb: false,
     forceLatinCastNames: false,
   },
-  apiKeys: { 
-    gemini: "", 
+  apiKeys: {
+    gemini: "",
     tmdb: "",
     tvdb: "",
-    fanart: "", 
-    rpdb: "", 
+    fanart: "",
+    rpdb: "",
     topPoster: "",
-    mdblist: "" 
+    mdblist: ""
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   usePosterProxy: false,
@@ -132,6 +132,7 @@ const initialConfig: AppConfig = {
   searchEnabled: true,
   sessionId: "",
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  strictRegionFiltering: false,
   catalogs: allCatalogDefinitions
     .map(c => ({
       id: c.id,
@@ -185,49 +186,49 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<AppConfig>(() => {
     if (preloadedConfig) {
       let hydratedCatalogs: CatalogConfig[] = [...defaultCatalogs] as CatalogConfig[];
-      
+
       if (preloadedConfig.catalogs && preloadedConfig.catalogs.length > 0) {
-          const userCatalogSettings = new Map(
-              preloadedConfig.catalogs.map(c => {
-                const settings: CatalogConfig = {
-                  id: c.id,
-                  name: c.name,
-                  type: c.type as any,
-                  source: c.source as any,
-                  enabled: c.enabled,
-                  showInHome: c.showInHome,
-                };
-                if (c.enableRatingPosters !== undefined) settings.enableRatingPosters = c.enableRatingPosters;
-                if (c.randomizePerPage !== undefined) settings.randomizePerPage = c.randomizePerPage;
-                if (c.displayType !== undefined) settings.displayType = c.displayType;
-                if (c.cacheTTL !== undefined) settings.cacheTTL = c.cacheTTL;
-                if (c.genreSelection !== undefined) settings.genreSelection = c.genreSelection;
-                if (c.sort !== undefined) settings.sort = c.sort;
-                if (c.order !== undefined) settings.order = c.order;
-                if (c.pageSize !== undefined) settings.pageSize = c.pageSize;
-                if (c.metadata !== undefined) settings.metadata = c.metadata;
-                return [`${c.id}-${c.type}`, settings];
-              })
-          );
+        const userCatalogSettings = new Map(
+          preloadedConfig.catalogs.map(c => {
+            const settings: CatalogConfig = {
+              id: c.id,
+              name: c.name,
+              type: c.type as any,
+              source: c.source as any,
+              enabled: c.enabled,
+              showInHome: c.showInHome,
+            };
+            if (c.enableRatingPosters !== undefined) settings.enableRatingPosters = c.enableRatingPosters;
+            if (c.randomizePerPage !== undefined) settings.randomizePerPage = c.randomizePerPage;
+            if (c.displayType !== undefined) settings.displayType = c.displayType;
+            if (c.cacheTTL !== undefined) settings.cacheTTL = c.cacheTTL;
+            if (c.genreSelection !== undefined) settings.genreSelection = c.genreSelection;
+            if (c.sort !== undefined) settings.sort = c.sort;
+            if (c.order !== undefined) settings.order = c.order;
+            if (c.pageSize !== undefined) settings.pageSize = c.pageSize;
+            if (c.metadata !== undefined) settings.metadata = c.metadata;
+            return [`${c.id}-${c.type}`, settings];
+          })
+        );
 
-          // Always merge in new catalogs from allCatalogDefinitions
-          // MIGRATION: Ensure all catalogs from allCatalogDefinitions are present in user configs
-          const userCatalogKeys = new Set(preloadedConfig.catalogs.map(c => `${c.id}-${c.type}`));
-          const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`));
-          const mergedCatalogs = [
-            ...missingCatalogs,
-            ...preloadedConfig.catalogs
-          ];
+        // Always merge in new catalogs from allCatalogDefinitions
+        // MIGRATION: Ensure all catalogs from allCatalogDefinitions are present in user configs
+        const userCatalogKeys = new Set(preloadedConfig.catalogs.map(c => `${c.id}-${c.type}`));
+        const missingCatalogs = defaultCatalogs.filter(def => !userCatalogKeys.has(`${def.id}-${def.type}`));
+        const mergedCatalogs = [
+          ...missingCatalogs,
+          ...preloadedConfig.catalogs
+        ];
 
-          hydratedCatalogs = mergedCatalogs.map(defaultCatalog => {
-              const key = `${defaultCatalog.id}-${defaultCatalog.type}`;
-              if (userCatalogSettings.has(key)) {
-                  return { ...defaultCatalog, ...userCatalogSettings.get(key) } as CatalogConfig;
-              }
-              return defaultCatalog as CatalogConfig;
-          });
+        hydratedCatalogs = mergedCatalogs.map(defaultCatalog => {
+          const key = `${defaultCatalog.id}-${defaultCatalog.type}`;
+          if (userCatalogSettings.has(key)) {
+            return { ...defaultCatalog, ...userCatalogSettings.get(key) } as CatalogConfig;
+          }
+          return defaultCatalog as CatalogConfig;
+        });
 
-          // Remove the old forEach that pushed missing userCatalogs (now handled above)
+        // Remove the old forEach that pushed missing userCatalogs (now handled above)
       }
       // Hydrate search.engineEnabled
       const hydratedEngineEnabled = { ...initialConfig.search.engineEnabled, ...(preloadedConfig.search?.engineEnabled || {}) };
@@ -239,12 +240,12 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         artProviders: (() => {
           const defaultArtProviders = initialConfig.artProviders;
           const userArtProviders = preloadedConfig.artProviders;
-          
+
           if (!userArtProviders) return defaultArtProviders;
-          
+
           // Migrate legacy string format to new nested format
           const migratedArtProviders = { ...defaultArtProviders };
-          
+
           ['movie', 'series', 'anime'].forEach(contentType => {
             const userValue = userArtProviders[contentType];
             if (typeof userValue === 'string') {
@@ -262,12 +263,12 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
               };
             }
           });
-          
+
           // Handle englishArtOnly property
           if (userArtProviders.englishArtOnly !== undefined) {
             migratedArtProviders.englishArtOnly = userArtProviders.englishArtOnly;
           }
-          
+
           return migratedArtProviders;
         })(),
         search: {

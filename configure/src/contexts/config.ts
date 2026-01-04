@@ -130,6 +130,8 @@ export interface AppConfig {
   searchEnabled: boolean;
   sessionId: string;
   timezone?: string;
+  /** If true, restrict catalog results to content from the region matching the display language (e.g., it-IT filters to Italian content) */
+  strictRegionFiltering?: boolean;
   catalogs: CatalogConfig[];
   deletedCatalogs?: string[];
   search: {
