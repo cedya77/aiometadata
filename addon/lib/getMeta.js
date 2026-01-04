@@ -1809,6 +1809,57 @@ async function tvdbAbsoluteToImdbHelper(tvdbShow, config){
   return seasonLayoutMap;
 }
 
+function normalizeTvdbSeasons(seasons, episodes) {
+  const hasYearSeasons = seasons.some(s => s.number > 1900);
+  
+  if (!hasYearSeasons) {
+    return { seasons, episodes };
+  }
+
+  const sortedSeasons = [...seasons].sort((a, b) => a.number - b.number);
+  
+  const seasonMap = new Map();
+  const normalizedSeasons = [];
+  
+  const specials = sortedSeasons.find(s => s.number === 0);
+  if (specials) {
+    normalizedSeasons.push(specials);
+  }
+
+  let seasonCounter = 1;
+  sortedSeasons.forEach(season => {
+    if (season.number === 0) return;
+    
+    seasonMap.set(season.number, seasonCounter);
+    
+    normalizedSeasons.push({
+      ...season,
+      number: seasonCounter,
+      name: season.name || `Season ${seasonCounter} (${season.number})`
+    });
+    
+    seasonCounter++;
+  });
+
+  const normalizedEpisodes = episodes.map(ep => {
+    if (ep.seasonNumber === 0) return ep;
+    
+    const newSeasonNumber = seasonMap.get(ep.seasonNumber);
+    if (newSeasonNumber) {
+      return {
+        ...ep,
+        seasonNumber: newSeasonNumber,
+        originalSeasonNumber: ep.seasonNumber
+      };
+    }
+    return ep;
+  });
+
+  return { seasons: normalizedSeasons, episodes: normalizedEpisodes };
+}
+
+
+
 async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, language, config, userUUID, enrichmentData = {}, isAnime = false, includeVideos = true) {
   const { year, image: tvdbPosterPath, remoteIds, characters, episodes } = tvdbShow;
   const { allIds } = enrichmentData;
@@ -1910,9 +1961,15 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
   }
   let videos = [];
-  const officialSeasons = (tvdbShow.seasons || [])
+  let officialSeasons = (tvdbShow.seasons || [])
     .filter(s => s.type?.type === 'official')
-        .sort((a, b) => a.number - b.number);
+    .sort((a, b) => a.number - b.number);
+    
+  let episodeList = tvdbEpisodes.episodes || [];
+
+  const normalizedData = normalizeTvdbSeasons(officialSeasons, episodeList);
+  officialSeasons = normalizedData.seasons;
+  episodeList = normalizedData.episodes;
 
   const seasonPosters = officialSeasons.map(s => s.image);
 
@@ -1959,7 +2016,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
     
     videos = await Promise.all(
-      (tvdbEpisodes.episodes || []).map(async (episode) => {
+      episodeList.map(async (episode) => {
           // Use Top Poster API for episode thumbnails if enabled (Premium feature)
           let thumbnailUrl = null;
           let usingTopPoster = false;
