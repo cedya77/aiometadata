@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useConfig,  CatalogConfig} from '@/contexts/ConfigContext';
+import { useConfig } from '@/contexts/ConfigContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -11,35 +11,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Loader2 } from 'lucide-react';
 import { toast } from "sonner";
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
+import { getMdbListType, createMDBListCatalog } from '@/utils/catalogUtils';
+import type { CatalogConfig } from '@/contexts/ConfigContext';
 
 interface MDBListIntegrationProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-const getMdbListType = (list: any): 'movie' | 'series' | 'all' => {
-  if (list.mediatype) {
-    if (list.mediatype === 'movie') return 'movie';
-    if (list.mediatype === 'show') return 'series';
-  }
-
-  const movies = list.movies ?? (list.items - (list.shows ?? list.items_show ?? 0));
-  const shows = list.shows ?? list.items_show ?? 0;
-
-  if (movies > 0 && shows > 0) {
-    return 'all';
-  }
-  if (movies > 0) {
-    return 'movie';
-  }
-  if (shows > 0) {
-    return 'series';
-  }
-  
-  if (list.mediatype && typeof list.mediatype === 'string') {
-    return list.mediatype === 'movie' ? 'movie' : 'series';
-  }
-  return 'all';
 }
 
 export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps) {
@@ -86,39 +63,18 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = topLists.find(l => l.id === listId);
           if (!list) return;
 
-          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
 
           // Check if catalog already exists
           if (!newCatalogs.some(c => c.id === catalogId)) {
-            // Apply display type overrides if configured
-            let displayType = undefined;
-            if (prev.displayTypeOverrides) {
-              if (type === 'movie' && prev.displayTypeOverrides.movie) {
-                displayType = prev.displayTypeOverrides.movie;
-              } else if (type === 'series' && prev.displayTypeOverrides.series) {
-                displayType = prev.displayTypeOverrides.series;
-              }
-            }
-
-            const newCatalog: CatalogConfig = {
-              id: catalogId,
-              type,
-              name: list.name,
-              enabled: true,
-              showInHome: true,
-              source: 'mdblist',
+            const newCatalog = createMDBListCatalog({
+              list,
               sort: defaultSort,
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRatingPosters: true,
-              ...(displayType && { displayType }),
-              metadata: {
-                ...(list.items !== undefined && { itemCount: list.items }),
-                ...(list.user_name ? { author: list.user_name } : {})
-              }
-            };
+              displayTypeOverrides: prev.displayTypeOverrides,
+            });
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
           }
@@ -217,51 +173,59 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           if (!list) return;
 
           const listType = getMdbListType(list);
-          
-          const createCatalog = (type: 'movie' | 'series' | 'all', id: string, name: string, sourceUrl: string) => {
-            if (newCatalogs.some(c => c.id === id)) return;
-            
-            let displayType = undefined;
-            if (prev.displayTypeOverrides) {
-              if (type === 'movie' && prev.displayTypeOverrides.movie) displayType = prev.displayTypeOverrides.movie;
-              else if (type === 'series' && prev.displayTypeOverrides.series) displayType = prev.displayTypeOverrides.series;
-            }
-
-            const newCatalog: CatalogConfig = {
-              id,
-              type,
-              name,
-              enabled: true,
-              showInHome: true,
-              source: 'mdblist',
-              sourceUrl,
-              sort: defaultSort,
-              order: defaultOrder,
-              cacheTTL: defaultCacheTTL,
-              genreSelection: defaultGenreSelection,
-              enableRatingPosters: true,
-              ...(displayType && { displayType }),
-              metadata: {
-                ...(list.items !== undefined && { itemCount: list.items }),
-                ...(list.user_name ? { author: list.user_name } : {})
-              }
-            };
-            newCatalogs.push(newCatalog);
-          };
+          const sourceUrl = `https://api.mdblist.com/external/lists/${list.id}/items`;
 
           if (listType === 'all' && externalUnifiedSettings[list.id] === false) {
             // Create separate movie and series catalogs
             const movieCatalogId = `mdblist.${list.id}.movies`;
             const seriesCatalogId = `mdblist.${list.id}.series`;
-            const sourceUrl = `https://api.mdblist.com/external/lists/${list.id}/items`;
               
-            createCatalog('movie', movieCatalogId, `${list.name} (Movies)`, sourceUrl);
-            createCatalog('series', seriesCatalogId, `${list.name} (Series)`, sourceUrl);
+            if (!newCatalogs.some(c => c.id === movieCatalogId)) {
+              const movieCatalog = createMDBListCatalog({
+                list: { ...list, id: `${list.id}.movies`, name: `${list.name} (Movies)` },
+                sort: defaultSort,
+                order: defaultOrder,
+                cacheTTL: defaultCacheTTL,
+                genreSelection: defaultGenreSelection,
+                displayTypeOverrides: prev.displayTypeOverrides,
+                sourceUrl,
+              });
+              // Override type to movie for split catalog
+              movieCatalog.type = 'movie';
+              movieCatalog.id = movieCatalogId;
+              newCatalogs.push(movieCatalog);
+            }
+            
+            if (!newCatalogs.some(c => c.id === seriesCatalogId)) {
+              const seriesCatalog = createMDBListCatalog({
+                list: { ...list, id: `${list.id}.series`, name: `${list.name} (Series)` },
+                sort: defaultSort,
+                order: defaultOrder,
+                cacheTTL: defaultCacheTTL,
+                genreSelection: defaultGenreSelection,
+                displayTypeOverrides: prev.displayTypeOverrides,
+                sourceUrl,
+              });
+              // Override type to series for split catalog
+              seriesCatalog.type = 'series';
+              seriesCatalog.id = seriesCatalogId;
+              newCatalogs.push(seriesCatalog);
+            }
           } else {
             // Create a single catalog (either unified 'all' or specific 'movie'/'series')
             const catalogId = `mdblist.${list.id}`;
-            const sourceUrl = `https://api.mdblist.com/external/lists/${list.id}/items`;
-            createCatalog(listType, catalogId, list.name, sourceUrl);
+            if (!newCatalogs.some(c => c.id === catalogId)) {
+              const newCatalog = createMDBListCatalog({
+                list,
+                sort: defaultSort,
+                order: defaultOrder,
+                cacheTTL: defaultCacheTTL,
+                genreSelection: defaultGenreSelection,
+                displayTypeOverrides: prev.displayTypeOverrides,
+                sourceUrl,
+              });
+              newCatalogs.push(newCatalog);
+            }
           }
         });
 
@@ -489,39 +453,18 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = customUserLists.find(l => l.id === listId);
           if (!list) return;
 
-          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
           
           // Check if catalog already exists
           if (!newCatalogs.some(c => c.id === catalogId)) {
-            // Apply display type overrides if configured
-            let displayType = undefined;
-            if (prev.displayTypeOverrides) {
-              if (type === 'movie' && prev.displayTypeOverrides.movie) {
-                displayType = prev.displayTypeOverrides.movie;
-              } else if (type === 'series' && prev.displayTypeOverrides.series) {
-                displayType = prev.displayTypeOverrides.series;
-              }
-            }
-            
-            const newCatalog: CatalogConfig = {
-              id: catalogId,
-              type,
-              name: list.name,
-              enabled: true,
-              showInHome: true,
-              source: 'mdblist',
+            const newCatalog = createMDBListCatalog({
+              list,
               sort: defaultSort,
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRatingPosters: true,
-              ...(displayType && { displayType }),
-              metadata: {
-                ...(list.items !== undefined && { itemCount: list.items }),
-                ...(list.user_name ? { author: list.user_name } : {})
-              }
-            };
+              displayTypeOverrides: prev.displayTypeOverrides,
+            });
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
           }
@@ -563,39 +506,18 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = popularLists.find(l => l.id === listId);
           if (!list) return;
 
-          const type = getMdbListType(list);
           const catalogId = `mdblist.${list.id}`;
           
           // Check if catalog already exists
           if (!newCatalogs.some(c => c.id === catalogId)) {
-            // Apply display type overrides if configured
-            let displayType = undefined;
-            if (prev.displayTypeOverrides) {
-              if (type === 'movie' && prev.displayTypeOverrides.movie) {
-                displayType = prev.displayTypeOverrides.movie;
-              } else if (type === 'series' && prev.displayTypeOverrides.series) {
-                displayType = prev.displayTypeOverrides.series;
-              }
-            }
-            
-            const newCatalog: CatalogConfig = {
-              id: catalogId,
-              type,
-              name: list.name,
-              enabled: true,
-              showInHome: true,
-              source: 'mdblist',
+            const newCatalog = createMDBListCatalog({
+              list,
               sort: defaultSort,
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRatingPosters: true,
-              ...(displayType && { displayType }),
-              metadata: {
-                ...(list.items !== undefined && { itemCount: list.items }),
-                ...(list.user_name ? { author: list.user_name } : {})
-              }
-            };
+              displayTypeOverrides: prev.displayTypeOverrides,
+            });
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
           }
@@ -662,31 +584,15 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           
           // Check if catalog already exists
           if (!existingMdbListIds.has(catalogKey)) {
-            // Apply display type overrides if configured
-            let displayType = undefined;
-            if (prev.displayTypeOverrides) {
-              if (type === 'movie' && prev.displayTypeOverrides.movie) {
-                displayType = prev.displayTypeOverrides.movie;
-              } else if (type === 'series' && prev.displayTypeOverrides.series) {
-                displayType = prev.displayTypeOverrides.series;
-              }
-            }
-            
             // Add new catalog at the end
-            const newCatalog: CatalogConfig = {
-              id: catalogId,
-              type,
-              name: list.name,
-              enabled: true,
-              showInHome: true,
-              source: 'mdblist',
+            const newCatalog = createMDBListCatalog({
+              list,
               sort: defaultSort,
               order: defaultOrder,
               cacheTTL: defaultCacheTTL,
               genreSelection: defaultGenreSelection,
-              enableRatingPosters: true,
-              ...(displayType && { displayType }),
-            };
+              displayTypeOverrides: prev.displayTypeOverrides,
+            });
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
           } else {
@@ -776,36 +682,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       if (!response.ok) throw new Error(`Error fetching list (Status: ${response.status})`);
 
       const [list] = await response.json();
-      const type = getMdbListType(list);
       
       setConfig(prev => {
-        // Apply display type overrides if configured
-        let displayType = undefined;
-        if (prev.displayTypeOverrides) {
-          if (type === 'movie' && prev.displayTypeOverrides.movie) {
-            displayType = prev.displayTypeOverrides.movie;
-          } else if (type === 'series' && prev.displayTypeOverrides.series) {
-            displayType = prev.displayTypeOverrides.series;
-          }
-        }
-        
-        const newCatalog: CatalogConfig = {
-          id: `mdblist.${list.id}`,
-          type,
-          name: list.name,
-          enabled: true,
-          showInHome: true,
-          source: 'mdblist',
+        const newCatalog = createMDBListCatalog({
+          list,
           sort: defaultSort,
           order: defaultOrder,
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
-          ...(displayType && { displayType }),
-          metadata: {
-            ...(list.items !== undefined && { itemCount: list.items }),
-            ...(list.user_name ? { author: list.user_name } : {})
-          }
-        };
+          displayTypeOverrides: prev.displayTypeOverrides,
+        });
 
         // Prevent duplicates
         if (prev.catalogs.some(c => c.id === newCatalog.id)) {

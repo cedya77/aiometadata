@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
+import { useConfig } from '@/contexts/ConfigContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { createCustomManifestCatalog } from '@/utils/catalogUtils';
 
 interface CustomManifestIntegrationProps {
   isOpen: boolean;
@@ -209,47 +210,14 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
           const existingCatalog = newCatalogs.find(c => c.id === uniqueCatalogId);
           
           if (!existingCatalog) {
-            // Construct the full catalog URL with proper encoding
-            const encodedCatalogId = encodeURIComponent(catalog.id);
-            const catalogUrl = `${manifestUrl.replace('/manifest.json', '')}/catalog/${catalog.type}/${encodedCatalogId}.json`;
-            
-            // Debug logging
-            console.log('Debug - manifestUrl:', manifestUrl);
-            console.log('Debug - catalog.type:', catalog.type);
-            console.log('Debug - catalog.id:', catalog.id);
-            console.log('Debug - constructed catalogUrl:', catalogUrl);
-            
-            // Add new catalog
-            const catalogType = catalog.type as 'movie' | 'series' | 'anime';
-            
-            // Apply display type overrides if configured
-            let displayType = undefined;
-            if (prev.displayTypeOverrides) {
-              if (catalogType === 'movie' && prev.displayTypeOverrides.movie) {
-                displayType = prev.displayTypeOverrides.movie;
-              } else if (catalogType === 'series' && prev.displayTypeOverrides.series) {
-                displayType = prev.displayTypeOverrides.series;
-              }
-            }
-            
-            const newCatalog: CatalogConfig = {
-              id: uniqueCatalogId,
-              type: catalogType,
-              name: catalog.name,
-              enabled: true,
-              showInHome: true,
-              source: 'custom', // Use 'custom' source for custom manifests
-              sourceUrl: catalogUrl, // Store the actual catalog URL
-              genres: catalog.genres || [], // Store genres from manifest
-              cacheTTL: defaultCacheTTL, // Add custom TTL support
-              pageSize: defaultPageSize, // Add page size support
-              enableRatingPosters: true,
-              manifestData: { 
-                ...catalog, 
-                idPrefixes: manifest.idPrefixes // Store manifest idPrefixes for tun_ detection
-              },
-              ...(displayType && { displayType }), // Include displayType if defined
-            };
+            const newCatalog = createCustomManifestCatalog({
+              manifest,
+              catalog,
+              manifestUrl,
+              cacheTTL: defaultCacheTTL,
+              pageSize: defaultPageSize,
+              displayTypeOverrides: prev.displayTypeOverrides,
+            });
             newCatalogs.push(newCatalog);
             newCatalogsAdded++;
           }
@@ -279,7 +247,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
         description: error instanceof Error ? error.message : "Unknown error occurred"
       });
     }
-  }, [manifest, selectedCatalogs, setConfig, manifestUrl, onClose, currentCustomCatalogs]);
+  }, [manifest, selectedCatalogs, setConfig, manifestUrl, onClose, defaultCacheTTL, defaultPageSize]);
 
   const removeCustomCatalog = (catalogId: string) => {
     setConfig(prev => ({
