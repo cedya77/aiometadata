@@ -174,7 +174,7 @@ class TimingMetrics {
    */
   async getProviderTimingBreakdown() {
     try {
-      const providerMetrics = ['search_tmdb', 'search_tvdb', 'search_tvmaze', 'search_mal'];
+      const providerMetrics = ['search_tmdb', 'search_tvdb', 'search_tvmaze', 'search_mal', 'search_kitsu'];
       const secondaryMetrics = [
         'secondary_tmdb_find_by_imdb', 
         'secondary_tvdb_find_by_imdb', 

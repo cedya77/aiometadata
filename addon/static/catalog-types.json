@@ -299,6 +299,12 @@
       "watchProviderId": 258,
       "country": "US",
       "extraSupported": ["genre", "skip"]
+    },
+    "hid": {
+      "nameKey": "hid",
+      "watchProviderId": 2390,
+      "country": "US",
+      "extraSupported": ["genre", "skip"]
     }
   }
 }

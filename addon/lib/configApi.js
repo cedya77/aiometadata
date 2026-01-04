@@ -1110,7 +1110,7 @@ class ConfigApi {
           try {
             const { makeRateLimitedMDBListRequest } = require('../utils/mdbList');
             const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
-            const response = await makeRateLimitedMDBListRequest(url, 'MDBList API Key Test');
+            const response = await makeRateLimitedMDBListRequest(url, key, 'MDBList API Key Test');
             // Rate-limited request returns response with .data property on success
             return response && (response.data !== undefined || Array.isArray(response.data));
           } catch (error) {

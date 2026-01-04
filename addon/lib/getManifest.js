@@ -121,9 +121,13 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
 
   // Use displayType if defined, otherwise use original type
   const catalogType = displayType || type;
+  let finalId = id;
+  if (displayType) {
+    finalId = `${id}_${type}`;
+  }
 
   return {
-    id,
+    id: finalId,
     type: catalogType,
     name: catalogName,
     pageSize: pageSize,

@@ -857,7 +857,8 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     const seriesData = await moviedb.tvInfo({ id: tmdbId, language: config.language, append_to_response: "content_ratings,videos", include_video_language: videoLanguages }, config);
     imdbData.app_extras = imdbData.app_extras || {};
     if(seriesData){
-      imdbData.app_extras.certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+      const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+      imdbData.app_extras.certification = certification;
       if (seriesData.videos) {
         const allTrailers = Utils.parseTrailers(seriesData.videos);
         const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
@@ -867,6 +868,14 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
         const finalTrailers = filteredTrailers.length > 0 ? filteredTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
 
         imdbData.trailers = finalTrailers;
+      }
+      if (certification && config.displayAgeRating) {
+        const certificationLink = {
+          name: certification,
+          category: 'Genres',
+          url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${language}`
+        };
+        imdbData.links.unshift(certificationLink);
       }
     }
   }
@@ -956,7 +965,16 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     imdbData.app_extras = imdbData.app_extras || {};
     imdbData.released = movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
-    imdbData.app_extras.certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
+    const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates); 
+    imdbData.app_extras.certification = certification;
+    if (certification && config.displayAgeRating) {
+      const certificationLink = {
+        name: certification,
+        category: 'Genres',
+        url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
+      };
+      imdbData.links.unshift(certificationLink);
+    }
     if (movieData.videos) {
       const allTrailers = Utils.parseTrailers(movieData.videos);
       const allTrailerStreams = Utils.parseTrailerStream(movieData.videos);
@@ -1791,6 +1809,57 @@ async function tvdbAbsoluteToImdbHelper(tvdbShow, config){
   return seasonLayoutMap;
 }
 
+function normalizeTvdbSeasons(seasons, episodes) {
+  const hasYearSeasons = seasons.some(s => s.number > 1900);
+  
+  if (!hasYearSeasons) {
+    return { seasons, episodes };
+  }
+
+  const sortedSeasons = [...seasons].sort((a, b) => a.number - b.number);
+  
+  const seasonMap = new Map();
+  const normalizedSeasons = [];
+  
+  const specials = sortedSeasons.find(s => s.number === 0);
+  if (specials) {
+    normalizedSeasons.push(specials);
+  }
+
+  let seasonCounter = 1;
+  sortedSeasons.forEach(season => {
+    if (season.number === 0) return;
+    
+    seasonMap.set(season.number, seasonCounter);
+    
+    normalizedSeasons.push({
+      ...season,
+      number: seasonCounter,
+      name: season.name || `Season ${seasonCounter} (${season.number})`
+    });
+    
+    seasonCounter++;
+  });
+
+  const normalizedEpisodes = episodes.map(ep => {
+    if (ep.seasonNumber === 0) return ep;
+    
+    const newSeasonNumber = seasonMap.get(ep.seasonNumber);
+    if (newSeasonNumber) {
+      return {
+        ...ep,
+        seasonNumber: newSeasonNumber,
+        originalSeasonNumber: ep.seasonNumber
+      };
+    }
+    return ep;
+  });
+
+  return { seasons: normalizedSeasons, episodes: normalizedEpisodes };
+}
+
+
+
 async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, language, config, userUUID, enrichmentData = {}, isAnime = false, includeVideos = true) {
   const { year, image: tvdbPosterPath, remoteIds, characters, episodes } = tvdbShow;
   const { allIds } = enrichmentData;
@@ -1892,9 +1961,15 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
   }
   let videos = [];
-  const officialSeasons = (tvdbShow.seasons || [])
+  let officialSeasons = (tvdbShow.seasons || [])
     .filter(s => s.type?.type === 'official')
-        .sort((a, b) => a.number - b.number);
+    .sort((a, b) => a.number - b.number);
+    
+  let episodeList = tvdbEpisodes.episodes || [];
+
+  const normalizedData = normalizeTvdbSeasons(officialSeasons, episodeList);
+  officialSeasons = normalizedData.seasons;
+  episodeList = normalizedData.episodes;
 
   const seasonPosters = officialSeasons.map(s => s.image);
 
@@ -1941,7 +2016,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
     
     videos = await Promise.all(
-      (tvdbEpisodes.episodes || []).map(async (episode) => {
+      episodeList.map(async (episode) => {
           // Use Top Poster API for episode thumbnails if enabled (Premium feature)
           let thumbnailUrl = null;
           let usingTopPoster = false;

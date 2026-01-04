@@ -38,6 +38,13 @@ import {
 import { toast } from 'sonner';
 
 type TraktSortOption = 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
+type StreamingSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
+const STREAMING_SORT_OPTIONS: { value: StreamingSortOption; label: string }[] = [
+  { value: 'popularity', label: 'Popularity' },
+  { value: 'release_date', label: 'Release Date' },
+  { value: 'vote_average', label: 'Top Rated' },
+  { value: 'revenue', label: 'Revenue' },
+];
 
 const TRAKT_SORT_OPTIONS: { value: TraktSortOption; label: string; vip?: boolean }[] = [
   { value: 'rank', label: 'Rank' },
@@ -640,6 +647,69 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
+const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  const [sort, setSort] = useState<StreamingSortOption>((catalog.sort as StreamingSortOption) || 'popularity');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, sort, sortDirection }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Streaming Catalog Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value) => setSort(value as StreamingSortOption)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STREAMING_SORT_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Sort Direction</Label>
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">Descending</SelectItem>
+                <SelectItem value="asc">Ascending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig, config } = useConfig();
   const { toggleSelection, isSelected } = useSelection();
@@ -972,7 +1042,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'letterboxd') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'letterboxd' || catalog.source === 'streaming') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`}>
@@ -1097,11 +1167,18 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         onClose={() => setShowSettings(false)}
       />
 
+      <StreamingSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'streaming'}
+        onClose={() => setShowSettings(false)}
+      />
+
       <CustomManifestSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'custom'}
         onClose={() => setShowSettings(false)}
       />
+
 
       <AniListSettingsDialog
         catalog={catalog}

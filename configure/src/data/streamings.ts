@@ -29,7 +29,8 @@ export const streamingServices = [
     { id: "bet", name: "Bet+", icon: "/betp.jpg" },
     { id: "mub", name: "MUBI", icon: "/mubi.jpg" },
     { id: "sta", name: "Starz", icon: "/starz.jpg" },
-    { id: "crc", name: "Criterion Channel", icon: "/criterionchannel.jpg"}
+    { id: "crc", name: "Criterion Channel", icon: "/criterionchannel.jpg"},
+    { id: "hid", name: "HIDIVE", icon: "/HIDIVE.png"}
   ];
   
   export const regions = {
@@ -54,6 +55,6 @@ export const streamingServices = [
     'Any': [
       'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv', 'bet', 'mub', 'sta',
       'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'sky', 'wow', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'crv', 'dpe',
-      'crc'
+      'crc', 'hid'
     ]
   };

@@ -810,7 +810,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
     posterRatingApiKey: enableRatingPosters ? (config.posterRatingProvider === 'top' 
       ? (config.apiKeys?.topPoster || '') 
-      : (config.apiKeys?.rpdb || '')) : ''
+      : (config.apiKeys?.rpdb || '')) : '',
+    usePosterProxy: !!config.usePosterProxy,
   };
   
   // Only include MDBList API key for MDBList catalogs
@@ -984,7 +985,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
     posterRatingApiKey: ratingPostersEnabled ? (config.posterRatingProvider === 'top' 
       ? (config.apiKeys?.topPoster || '') 
-      : (config.apiKeys?.rpdb || '')) : ''
+      : (config.apiKeys?.rpdb || '')) : '',
+    usePosterProxy: !!config.usePosterProxy,
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
@@ -1031,6 +1033,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      
      // Poster rating provider (affects poster URLs)
      posterRatingProvider: config.posterRatingProvider || 'rpdb',
+     usePosterProxy: !!config.usePosterProxy,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
        topPoster: config.apiKeys?.topPoster || ''
@@ -1073,9 +1076,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
        logo: resolveArtProvider('series', 'logo', config)
      };
      // TVDB season type only matters for TVDB series
-     if (prefix === 'tvdb') {
-       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-     }
+     metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
 
    }
    
@@ -1128,6 +1129,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      displayAgeRating: config.displayAgeRating || false,
      // Poster rating provider (affects poster URLs)
      posterRatingProvider: config.posterRatingProvider || 'rpdb',
+     usePosterProxy: !!config.usePosterProxy,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
        topPoster: config.apiKeys?.topPoster || ''
@@ -1171,12 +1173,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
        background: resolveArtProvider('series', 'background', config),
        logo: resolveArtProvider('series', 'logo', config)
      };
-     if (prefix === 'tvdb') {
-       metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-     }
-    metaConfig.tmdb = {
-     scrapeImdb: config.tmdb?.scrapeImdb || false,
-     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
+     metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+     metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false,
+      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
     };
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
      metaConfig.useShowPosterForUpNext = useShowPoster;
@@ -1389,6 +1389,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
      posterRatingProvider: config.posterRatingProvider || 'rpdb',
+     usePosterProxy: !!config.usePosterProxy,
      apiKeys: { 
        rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
        topPoster: config.apiKeys?.topPoster || ''
@@ -1430,13 +1431,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
       background: resolveArtProvider('series', 'background', config),
       logo: resolveArtProvider('series', 'logo', config)
     };
-   if (prefix === 'tvdb') {
-     metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-   }
-   metaConfig.tmdb = {
-    scrapeImdb: config.tmdb?.scrapeImdb || false,
-    forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
-   };
+    metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
+    metaConfig.tmdb = {
+      scrapeImdb: config.tmdb?.scrapeImdb || false,
+      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
+    };
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
    metaConfig.useShowPosterForUpNext = useShowPoster;
  }
@@ -1744,9 +1743,7 @@ async function cacheMetaComponent(userUUID, metaId, componentName, componentData
        background: resolveArtProvider('series', 'background', config),
        logo: resolveArtProvider('series', 'logo', config)
      };
-      if (prefix === 'tvdb') {
-        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-      }
+      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
       metaConfig.tmdb = {
         scrapeImdb: config.tmdb?.scrapeImdb || false
       };
@@ -1836,9 +1833,7 @@ async function getCachedMetaComponent(userUUID, metaId, componentName, type = nu
        background: resolveArtProvider('series', 'background', config),
        logo: resolveArtProvider('series', 'logo', config)
      };
-      if (prefix === 'tvdb') {
-        metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-      }
+      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
       metaConfig.tmdb = {
         scrapeImdb: config.tmdb?.scrapeImdb || false
       };
@@ -1947,7 +1942,7 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
-    
+    usePosterProxy: !!config.usePosterProxy,
     // Anime-specific settings (for MAL catalogs)
     mal: config.mal || {}
   };

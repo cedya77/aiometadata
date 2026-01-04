@@ -79,6 +79,10 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   if (tokenData.expires_at && tokenData.expires_at < (now + oneHour)) {
     logger.info(`Trakt token expired or expiring soon (expires: ${new Date(tokenData.expires_at).toISOString()}), refreshing...`);
 
+  
+  if (expiresAt && expiresAt < (now + oneHour)) {
+    logger.info(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
+    
     try {
       const { TraktClient } = require('./trakt');
       const traktClient = new TraktClient(
@@ -123,6 +127,8 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   }
 
   logger.debug(`Using valid Trakt token (expires: ${new Date(tokenData.expires_at).toISOString()})`);
+  
+  logger.debug(`Using valid Trakt token (expires: ${new Date(expiresAt).toISOString()})`);
   return tokenData.access_token;
 }
 import { cacheWrapMetaSmart } from './getCache.js';
@@ -299,9 +305,6 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     lang: 'eng',
     sort: 'score'
   };
-  if (isTrending) {
-    params.year = new Date().getFullYear();
-  }
 
   if (tvdbContentRatingId) {
     logger.debug(`Using TVDB content rating ID ${tvdbContentRatingId} for TVDB filter`);
@@ -320,11 +323,38 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     params.sortType = 'desc';
   }
 
+  if(tvdbType === 'movies'){
+    params.status = 5;
+  }
+  
   logger.debug(`TVDB filter params:`, JSON.stringify(params));
 
   // Use cacheWrapTvdbApi to cache the raw API response
   const results = await cacheWrapTvdbApi(cacheKey, async () => {
-    return await tvdb.filter(tvdbType, params, config);
+    if (isTrending) {
+      const currentYear = new Date().getFullYear();
+      const lastYear = currentYear - 1;
+      
+      // Fetch both years in parallel
+      const [currentYearResults, lastYearResults] = await Promise.all([
+        tvdb.filter(tvdbType, { ...params, year: currentYear }, config),
+        tvdb.filter(tvdbType, { ...params, year: lastYear }, config)
+      ]);
+
+      // Combine results
+      const combined = [...(currentYearResults || []), ...(lastYearResults || [])];
+      
+      // Simple deduplication just in case
+      const seen = new Set();
+      return combined.filter(item => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+    } else {
+      // Standard behavior for genres/search
+      return await tvdb.filter(tvdbType, params, config);
+    }
   });
 
   logger.info(`TVDB filter results: ${results ? results.length : 0} items returned`);
@@ -334,9 +364,28 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     return [];
   }
 
+  let filteredResults = results;
+
+  if (isTrending && type === 'series') {
+    const now = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(now.getDate() + 7);
+
+    filteredResults = results.filter((item: any) => {
+      if (!item.firstAired) return false;
+      
+      const firstAired = new Date(item.firstAired);
+      return firstAired <= nextWeek;
+    });
+    
+    logger.debug(`[TVDB Trending] Filtered ${results.length} -> ${filteredResults.length} series based on air date`);
+  }
+
   // Sort results by score (highest first)
   const sortedResults = results.sort((a: any, b: any) => b.score - a.score);
 
+  const sortedResults = filteredResults.sort((a: any, b: any) => b.score - a.score);
+  
   // Apply client-side pagination
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   const startIndex = (page - 1) * pageSize;
@@ -751,6 +800,23 @@ async function buildParameters(type: string, language: string, page: number, id:
     }
     parameters.with_watch_monetization_types = "flatrate|free|ads";
     delete parameters['vote_count.gte'];
+    const catalogConfig = config._currentCatalogConfig;
+    if (catalogConfig?.sort) {
+      const direction = catalogConfig.sortDirection || 'desc';
+      let sortField = catalogConfig.sort;
+      
+      if (sortField === 'release_date') {
+        sortField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+      }
+      
+      parameters.sort_by = `${sortField}.${direction}`;
+      
+      if (sortField === 'vote_average') {
+        parameters['vote_count.gte'] = 50; 
+      }
+    } else {
+       parameters.sort_by = 'popularity.desc';
+    }
   } else {
     switch (id) {
       case "tmdb.top":

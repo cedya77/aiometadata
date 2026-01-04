@@ -107,6 +107,21 @@ function buildPosterProxyUrl(host, type, proxyId, fallback, language, config) {
   if (!apiKey || !isPosterRatingEnabled(config)) {
     return fallback;
   }
+  
+
+  if (!config.usePosterProxy) {
+    const [idSource, idValue] = proxyId.startsWith('tt') ? ['imdb', proxyId] : proxyId.split(':');
+    
+    // Construct IDs object for direct calling
+    const ids = {
+      tmdbId: idSource === 'tmdb' ? idValue : null,
+      tvdbId: idSource === 'tvdb' ? idValue : null,
+      imdbId: idSource === 'imdb' ? idValue : null,
+    };
+
+    const directUrl = getRatingPosterUrl(type, ids, language, config, fallback);
+    return directUrl || fallback;
+  }
 
   // Top Poster API returns proper HTTP codes and supports fallback_url parameter
   // When any error occurs (429, 404, 401, etc.), it will use the fallback_url
@@ -1340,19 +1355,32 @@ function getTopPosterThumbnail(config, ids, season, episode, topPosterKey, resol
 async function checkIfExists(url) {
   try {
     const response = await axios.head(url, {
-      maxRedirects: 0,
-      validateStatus: () => true,
+      maxRedirects: 5, 
+      validateStatus: (status) => status >= 200 && status < 300, 
+      timeout: 3000, 
       headers: { 'User-Agent': 'AIOMetadataAddon/1.0' }
     });
-    if (response.status === 404) {
-      return false;
+    
+    // Additional robustness checks
+    const contentType = response.headers['content-type'];
+    const contentLength = response.headers['content-length'];
+    
+    // Must be an image
+    if (contentType && !contentType.startsWith('image/')) {
+        return false;
     }
-    return response.status === 200;
+    
+    if (contentLength && parseInt(contentLength) < 100) {
+        return false;
+    }
+
+    return true;
   } catch (error) {
-    if (error.message.includes('Invalid URL')) {
-      return false;
+    if (error.response?.status === 404) {
+        return false;
     }
-    logger.error(`Network error in checkIfExists for URL ${url}:`, error.message);
+    if (error.code && error.code !== 'ERR_BAD_REQUEST') {
+    }
     return false;
   }
 }

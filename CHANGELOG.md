@@ -2,6 +2,64 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.19.1](https://github.com/cedya77/aiometadata/compare/v1.19.0...v1.19.1) (2025-12-31)
+
+
+### Bug Fixes
+
+* **user management:** resolve issue with password reset ([4be921a](https://github.com/cedya77/aiometadata/commit/4be921abc54654e83766a90f10ad7d68e8cb3bec))
+
+
+### Reverts
+
+* temporarily revert to fribbs previous list update containing imdb ids ([a980fe1](https://github.com/cedya77/aiometadata/commit/a980fe16d770286b0a25af1d58bb73050ce7c2e8))
+
+## [1.19.0](https://github.com/cedya77/aiometadata/compare/v1.18.2...v1.19.0) (2025-12-31)
+
+
+### Features
+
+* add HIDIVE as streaming provider ([8e17731](https://github.com/cedya77/aiometadata/commit/8e17731bebeaeb42b47e9c359fc577dbc8dff905))
+* add sort options to streaming catalogs ([ed4cdb3](https://github.com/cedya77/aiometadata/commit/ed4cdb39b6574f6e5d4a074138d4b9faa86d7350))
+
+
+### Bug Fixes
+
+* **manifest:** make id generation more unique to fix edge cases with display types ([aee5a5b](https://github.com/cedya77/aiometadata/commit/aee5a5b5537d81f2f13a8ba53454f41c57a9ce8d))
+* **mdblist:** fix list type assignement when adding lists via username ([136a477](https://github.com/cedya77/aiometadata/commit/136a4779bb86326d8339294fb2b0bc1131d4ecb1))
+
+## [1.18.2](https://github.com/cedya77/aiometadata/compare/v1.18.1...v1.18.2) (2025-12-29)
+
+
+### Bug Fixes
+
+* **letterboxd:** fix error when letterboxd would return type show for series ([f1ce58c](https://github.com/cedya77/aiometadata/commit/f1ce58c726376d1358410c7e869b97d250f6faab))
+* **mdblist:** implement a per key rate limiter to avoid global cooldown ([f1ce58c](https://github.com/cedya77/aiometadata/commit/f1ce58c726376d1358410c7e869b97d250f6faab))
+
+## [1.18.1](https://github.com/cedya77/aiometadata/compare/v1.18.0...v1.18.1) (2025-12-29)
+
+
+### Bug Fixes
+
+* trakt refresh token logic ([0f37952](https://github.com/cedya77/aiometadata/commit/0f379521397570c9b7b195945f4dfce97008e5a9))
+* trakt refresh token logic ([e79b3a6](https://github.com/cedya77/aiometadata/commit/e79b3a62e02cf38106f98ce637feaf3d49f4b22e))
+
+## [1.18.0](https://github.com/cedya77/aiometadata/compare/v1.17.0...v1.18.0) (2025-12-28)
+
+
+### Features
+
+* **letterboxd:** Add letterboxd integration with list/watchlist url import support ([47d0464](https://github.com/cedya77/aiometadata/commit/47d0464d55dd58a8dd7a7b0be4ded5bba269e43a))
+* **rate me:** only add stream resource when rate me is activated ([38a2824](https://github.com/cedya77/aiometadata/commit/38a282444e205fd3ad1d098018ee193d547e6cf8))
+
+
+### Bug Fixes
+
+* **imdb meta:** show age rating for imdb meta ([3ce2ba7](https://github.com/cedya77/aiometadata/commit/3ce2ba77c44e1f7d44a0c4c64a173692f13fae5e))
+* **search:** fix digital release filter not being correctly disabled for search only ([fa17c2f](https://github.com/cedya77/aiometadata/commit/fa17c2fee361021d00e4e102c53819dde7006a88))
+* **trakt genres:** show name instead of slug in stremio ([1f0cf69](https://github.com/cedya77/aiometadata/commit/1f0cf697b632e87135f736525793c10113028994))
+* **up next:** prevent rpdb from applying to thumbnails ([fa17c2f](https://github.com/cedya77/aiometadata/commit/fa17c2fee361021d00e4e102c53819dde7006a88))
+
 ## [1.17.0](https://github.com/cedya77/aiometadata/compare/v1.16.0...v1.17.0) (2025-12-26)
 
 
