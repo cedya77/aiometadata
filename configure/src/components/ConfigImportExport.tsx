@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useConfig } from "@/contexts/ConfigContext";
+import { useConfig, hydrateConfig } from "@/contexts/ConfigContext";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -142,8 +142,8 @@ export function ConfigImportExport() {
           })()
         };
 
-        // Update the configuration
-        setConfig(mergedConfig);
+        // Update the configuration with hydration to ensure defaults are applied
+        setConfig(hydrateConfig(mergedConfig));
 
         toast.success("Configuration imported successfully!", {
           description: `Imported ${importData.metadata?.enabledCatalogs || 0} enabled catalogs`

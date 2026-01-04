@@ -1470,21 +1470,28 @@ function CatalogsSettingsContent({
                 source: def.source,
                 enabled: true,
                 showInHome: true,
+                sort: 'popularity',
+                sortDirection: 'desc',
               });
             }
           });
         } else {
-          // Enable existing catalogs
+          // Move existing catalogs to the end and enable them
           ['movie', 'series'].forEach(type => {
             const catalogId = `streaming.${serviceId}`;
             const existingCatalogIndex = newCatalogs.findIndex(c => c.id === catalogId && c.type === type);
             if (existingCatalogIndex !== -1) {
-              console.log('🔗 [Streaming] Enabling existing catalog:', catalogId);
-              newCatalogs[existingCatalogIndex] = {
-                ...newCatalogs[existingCatalogIndex],
+              console.log('🔗 [Streaming] Moving and enabling existing catalog:', catalogId);
+              // Remove from current position
+              const [catalog] = newCatalogs.splice(existingCatalogIndex, 1);
+              // Add to end with enabled state and defaults if missing
+              newCatalogs.push({
+                ...catalog,
                 enabled: true,
                 showInHome: true,
-              };
+                sort: catalog.sort || 'popularity',
+                sortDirection: catalog.sortDirection || 'desc',
+              });
             }
           });
         }

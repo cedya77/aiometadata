@@ -1,5 +1,5 @@
 import { ThemeToggle } from '../ThemeToggle';
-import { useConfig } from '../../contexts/ConfigContext';
+import { useConfig, hydrateConfig } from '../../contexts/ConfigContext';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { InstallDialog } from '../InstallDialog';
@@ -202,7 +202,7 @@ export function Header() {
       if (!result?.success || !result?.config) {
         throw new Error('Invalid response from server');
       }
-      setConfig(result.config);
+      setConfig(hydrateConfig(result.config));
       setAuth({ authenticated: true, userUUID: uuidInput, password: passwordInput });
       toast.success('Configuration loaded');
       setIsLoginOpen(false);
