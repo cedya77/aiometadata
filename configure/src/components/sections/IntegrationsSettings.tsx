@@ -520,7 +520,7 @@ export function IntegrationsSettings() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
-              <SelectItem value="top">Top Poster API</SelectItem>
+              <SelectItem value="top">TOP Posters API</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -536,8 +536,8 @@ export function IntegrationsSettings() {
         ) : (
           <ApiKeyInput 
             id="topPoster" 
-            label="Top Poster API Key" 
-            linkHref="https://api.top-streaming.stream/user/register" 
+            label="TOP Posters API Key" 
+            linkHref="https://api.top-streaming.stream/user/dashboard" 
             validationStatus={validationStatus.topPoster || 'idle'} 
             onKeyChange={handleKeyChange}
           />
