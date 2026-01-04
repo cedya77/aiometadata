@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Eye, EyeOff, CheckCircle, XCircle, Loader2, LogIn, LogOut, AlertCircle } from 'lucide-react';
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
@@ -90,6 +91,10 @@ export function IntegrationsSettings() {
   
   // Track if we've already processed a request token to prevent infinite loops
   const processedTokenRef = useRef<string | null>(null);
+
+  const handlePosterProxyChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, usePosterProxy: checked }));
+  };
   
   // Handle TMDB authentication callback - create session using user's API key
   const handleRequestToken = useCallback(async (requestToken: string) => {
@@ -523,6 +528,21 @@ export function IntegrationsSettings() {
               <SelectItem value="top">Top Poster API</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {/* ADD: Proxy Toggle */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div className="flex-1">
+            <Label htmlFor="usePosterProxy" className="text-lg font-medium">Proxy Rating Posters</Label>
+            <p className="text-sm text-muted-foreground mt-1">
+              Route rating poster requests through this addon. This allows fallback posters to be used if the RPDB/Top Poster API is down or does not have a poster for that item. It can however cause a minimal slowdown due to having to contact AIOMetadata first.
+            </p>
+          </div>
+          <Switch
+            id="usePosterProxy"
+            checked={!!config.usePosterProxy} // CHANGED: Default false, so check truthiness
+            onCheckedChange={handlePosterProxyChange}
+          />
         </div>
         
         {config.posterRatingProvider !== 'top' ? (

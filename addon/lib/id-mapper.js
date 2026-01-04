@@ -10,7 +10,7 @@ const consola = require('consola');
 const logger = consola.withTag('ID-Mapper');
 
 // from  https://github.com/Fribb/anime-lists
-const REMOTE_MAPPING_URL ='https://raw.githubusercontent.com/Fribb/anime-lists/6fcf06d8588befdc0232b823fa1e3940874c387b/anime-list-full.json'  //'https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
+const REMOTE_MAPPING_URL ='https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
 const REMOTE_KITSU_TO_IMDB_MAPPING_URL = 'https://raw.githubusercontent.com/TheBeastLT/stremio-kitsu-anime/bbf149474f610885629b95b1b9ce4408c3c1353d/static/data/imdb_mapping.json';
 const REMOTE_TRAKT_ANIME_MOVIES_URL = 'https://raw.githubusercontent.com/rensetsu/db.trakt.extended-anitrakt/refs/heads/main/movies_ex.json';
 const LOCAL_CACHE_PATH = path.join(process.cwd(), 'addon', 'data', 'anime-list-full.json.cache');
@@ -68,6 +68,7 @@ let isTraktAnimeMoviesInitialized = false;
 let malIdToTraktMovieMap = new Map();
 let tmdbIdToTraktMovieMap = new Map();
 let imdbIdToTraktMovieMap = new Map();
+
 
 function processAndIndexData(data) {
   let animeList;
@@ -2012,5 +2013,6 @@ module.exports = {
   getCinemetaVideosForImdbIoSeries,
   getTraktAnimeMovieByMalId,
   getTraktAnimeMovieByTmdbId,
-  getTraktAnimeMovieByImdbId
+  getTraktAnimeMovieByImdbId,
+  isInitialized: () => isInitialized
 };
