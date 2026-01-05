@@ -1534,6 +1534,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   config.userUUID = userUUID;
 
+  let suffixType = null;
+  const suffixMatch = id.match(/_(movie|series|anime)$/);
+  if (suffixMatch) {
+    suffixType = suffixMatch[1];
+  }
+
   // 1. Try to find the catalog config using the exact ID from the URL
   // This handles standard cases like "mal.top_series" correctly
   let catalogConfig = config.catalogs?.find(c =>
@@ -1545,19 +1551,28 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   // 2. If NOT found, check if it's a suffixed ID (created by getManifest for display overrides)
   // e.g. "streaming.nfx_series" -> "streaming.nfx"
   if (!catalogConfig) {
+    consola.debug(`[CATALOG ROUTE] No catalog config found for id: ${id}, type: ${type}`);
     const strippedId = id.replace(/_(movie|series|anime)$/, '');
     
     // Only proceed if a replacement actually happened
     if (strippedId !== id) {
-      const strippedConfig = config.catalogs?.find(c =>
-        c.id === strippedId && (c.type === type || c.displayType === type)
-      );
-      
-      // If we found a config using the stripped ID, that's our real ID
-      if (strippedConfig) {
-        cleanId = strippedId;
-        catalogConfig = strippedConfig;
-      }
+
+      if (suffixType) {
+        catalogConfig = config.catalogs?.find(c =>
+         c.id === strippedId && c.type === suffixType 
+       );
+     } 
+     
+     // Fallback (or if no suffix matched logic)
+     if (!catalogConfig) {
+       catalogConfig = config.catalogs?.find(c =>
+         c.id === strippedId && (c.type === type || c.displayType === type)
+       );
+     }
+
+     if (catalogConfig) {
+       cleanId = strippedId;
+     }
     }
   }
   const actualType = catalogConfig ? catalogConfig.type : type;
