@@ -284,7 +284,9 @@ export function IntegrationsSettings() {
   
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
+    // Conditionally include rpdb or topPoster based on selected provider
+    const posterKeyToTest = config.posterRatingProvider === 'top' ? 'topPoster' : 'rpdb';
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', posterKeyToTest, 'mdblist'];
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -387,7 +389,9 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
+    // Conditionally include rpdb or topPoster based on selected provider
+    const posterKeyToTest = config.posterRatingProvider === 'top' ? 'topPoster' : 'rpdb';
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', posterKeyToTest, 'mdblist'];
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {

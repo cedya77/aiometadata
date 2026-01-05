@@ -804,7 +804,7 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
       ? posterUrl : fallbackImage;
     
-    const posterProxyUrl = `${host}/poster/${type}/tmdb:${tmdbId}?fallback=${encodeURIComponent(validPosterUrl)}&lang=${language}&key=${config.apiKeys?.rpdb}`;
+    const posterProxyUrl = Utils.buildPosterProxyUrl(host, type, `tmdb:${tmdbId}`, validPosterUrl, language, config);
     
     // Get IMDB rating
     const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, type) : null;
