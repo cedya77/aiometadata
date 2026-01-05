@@ -67,7 +67,7 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
         return translatedCatalogs[option] || option;
       });
       // Add "None" option for airing_today when showInHome is false to work around Stremio's genre requirement
-      const finalOptions = (id === 'tmdb.airing_today' && !showInHome) ? ['None', ...formattedOptions] : formattedOptions;
+      const finalOptions = (id.startsWith('tmdb.airing_today') && !showInHome) ? ['None', ...formattedOptions] : formattedOptions;
       const genreExtra = {
         name: "genre",
         options: finalOptions,
@@ -790,7 +790,7 @@ async function getManifest(config) {
       }
       else {
         catalogOptions = getOptionsForCatalog(catalogDef, userCatalog.type, userCatalog.showInHome, options);
-        if ((userCatalog.id.startsWith('streaming.') || userCatalog.id === 'tmdb.top') && userCatalog.showInHome === false) {
+        if ((userCatalog.id.startsWith('streaming.') || userCatalog.id.startsWith('tmdb.top') || userCatalog.id.startsWith('tmdb.top_rated') || userCatalog.id.startsWith('tmdb.airing_today')) && userCatalog.showInHome === false) {
           catalogOptions = ['None', ...catalogOptions];
         }
       }

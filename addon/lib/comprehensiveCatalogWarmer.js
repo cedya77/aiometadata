@@ -405,6 +405,7 @@ class ComprehensiveCatalogWarmer {
         catalogId === 'tmdb.top' ||
         catalogId === 'tvmaze.schedule' ||
         catalogId === 'tmdb.airing_today' ||
+        catalogId === 'tmdb.top_rated' ||
         (catalogId.startsWith('mal.') && !catalogId.includes(['mal.genres', 'mal.studios', 'mal.schedule', 'mal.seasons']))
       )
     );

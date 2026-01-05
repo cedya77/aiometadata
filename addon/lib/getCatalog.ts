@@ -753,7 +753,7 @@ async function buildParameters(type: string, language: string, page: number, id:
       case "tmdb.top_rated":
         // Sort by vote average (highest rated first) with minimum vote count
         parameters.sort_by = type === "movie" ? 'vote_average.desc' : 'vote_average.desc';
-        parameters['vote_count.gte'] = 200; // Require at least 200 votes for top rated
+        parameters['vote_count.gte'] = 500; // Require at least 500 votes for top rated
         // Exclude Documentary (99) and News (10755) genres
         parameters.without_genres = '99,10755';
         if(genre && genre.toLowerCase() !== 'none') {
