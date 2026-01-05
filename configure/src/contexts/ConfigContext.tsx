@@ -222,7 +222,20 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           hydratedCatalogs = mergedCatalogs.map(defaultCatalog => {
               const key = `${defaultCatalog.id}-${defaultCatalog.type}`;
               if (userCatalogSettings.has(key)) {
-                  return { ...defaultCatalog, ...userCatalogSettings.get(key) } as CatalogConfig;
+                  const catalog = { ...defaultCatalog, ...userCatalogSettings.get(key) } as CatalogConfig;
+                  
+                  // MIGRATION: Fix invalid sort values for streaming catalogs
+                  if (catalog.source === 'streaming') {
+                    const validStreamingSorts = ['popularity', 'release_date', 'vote_average', 'revenue'];
+                    if (!catalog.sort || !validStreamingSorts.includes(catalog.sort as string)) {
+                      catalog.sort = 'popularity';
+                    }
+                    if (!catalog.sortDirection) {
+                      catalog.sortDirection = 'desc';
+                    }
+                  }
+                  
+                  return catalog;
               }
               return defaultCatalog as CatalogConfig;
           });

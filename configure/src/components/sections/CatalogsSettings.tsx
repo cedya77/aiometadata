@@ -650,7 +650,13 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 
 const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL } = useConfig();
-  const [sort, setSort] = useState<StreamingSortOption>((catalog.sort as StreamingSortOption) || 'popularity');
+  
+  const validStreamingSorts: StreamingSortOption[] = ['popularity', 'release_date', 'vote_average', 'revenue'];
+  const initialSort = validStreamingSorts.includes(catalog.sort as StreamingSortOption) 
+    ? (catalog.sort as StreamingSortOption) 
+    : 'popularity';
+  
+  const [sort, setSort] = useState<StreamingSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
 
   const handleSave = () => {
@@ -1426,7 +1432,6 @@ function CatalogsSettingsContent({
   };
 
   const handleCloseStreamingDialog = () => {
-    console.log('🔗 [Streaming] Saving with selectedServices:', tempSelectedProviders);
     setConfig(prev => {
       const selectedServices = tempSelectedProviders;
 
@@ -1470,6 +1475,8 @@ function CatalogsSettingsContent({
                 source: def.source,
                 enabled: true,
                 showInHome: true,
+                sort: 'popularity',
+                sortDirection: 'desc',
               });
             }
           });
@@ -1480,11 +1487,14 @@ function CatalogsSettingsContent({
             const existingCatalogIndex = newCatalogs.findIndex(c => c.id === catalogId && c.type === type);
             if (existingCatalogIndex !== -1) {
               console.log('🔗 [Streaming] Enabling existing catalog:', catalogId);
-              newCatalogs[existingCatalogIndex] = {
-                ...newCatalogs[existingCatalogIndex],
+              const [catalog] = newCatalogs.splice(existingCatalogIndex, 1);
+              newCatalogs.push({
+                ...catalog,
                 enabled: true,
                 showInHome: true,
-              };
+                sort: catalog.sort || 'popularity',
+                sortDirection: catalog.sortDirection || 'desc',
+              });
             }
           });
         }
