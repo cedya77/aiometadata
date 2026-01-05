@@ -550,7 +550,7 @@ export function SearchSettings() {
                                 <div>
                                     <Switch
                                         id="ai-search-enabled"
-                                        checked={config.search.ai_enabled}
+                                        checked={config.search.ai_enabled && !!config.apiKeys?.gemini?.trim()}
                                         onCheckedChange={handleAiToggle}
                                         disabled={!config.apiKeys?.gemini?.trim()}
                                         aria-label="Enable AI-powered search"

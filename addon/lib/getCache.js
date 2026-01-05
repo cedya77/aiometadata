@@ -1191,6 +1191,7 @@ const metaConfigString = stableStringify(metaConfig);
   const componentCacheKeys = {
      basic: `meta-basic:${metaConfigString}:${metaId}`,
      poster: `meta-poster:${metaConfigString}:${metaId}`,
+     rawPoster: `meta-raw-poster:${metaConfigString}:${metaId}`,
      background: `meta-background:${metaConfigString}:${metaId}`,
      logo: `meta-logo:${metaConfigString}:${metaId}`,
      videos: `meta-videos:${metaConfigString}:${metaId}`,
@@ -1253,23 +1254,31 @@ const metaConfigString = stableStringify(metaConfig);
    
    // Poster
    if (meta.poster) {
-     // Extract raw poster URL if this is an RPDB proxy URL
-     let rawPoster = meta.poster;
-     if (meta.poster && meta.poster.includes('/poster/') && meta.poster.includes('fallback=')) {
-       try {
-         const url = new URL(meta.poster);
-         const fallback = url.searchParams.get('fallback');
-         if (fallback) {
-           rawPoster = decodeURIComponent(fallback);
-         }
-       } catch (e) {
-         // Keep original if URL parsing fails
-       }
-     }
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.poster, { poster: rawPoster }, ttl)
-     );
-   }
+    let rawPoster = meta.poster;
+    
+    try {
+        const urlObj = new URL(rawPoster);
+        
+        if (rawPoster.includes('/poster/') && urlObj.searchParams.has('fallback')) {
+           rawPoster = decodeURIComponent(urlObj.searchParams.get('fallback'));
+        }
+        else if (urlObj.hostname.includes('top-streaming.stream') && urlObj.searchParams.has('fallback_url')) {
+           rawPoster = decodeURIComponent(urlObj.searchParams.get('fallback_url'));
+        }
+
+    } catch (e) {}
+    
+    if (meta._rawPosterUrl) {
+        rawPoster = meta._rawPosterUrl;
+    }
+
+    componentPromises.push(
+      cacheComponent(componentCacheKeys.poster, { poster: rawPoster }, ttl)
+    );
+    componentPromises.push(
+      cacheComponent(componentCacheKeys.rawPoster, { _rawPosterUrl: meta._rawPosterUrl }, ttl)
+    );
+  }
    
    // Background
    if (meta.background) {
@@ -1450,6 +1459,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   const componentCacheKeys = {
     basic: `meta-basic:${metaConfigString}:${metaId}`,
      poster: `meta-poster:${metaConfigString}:${metaId}`,
+     rawPoster: `meta-raw-poster:${metaConfigString}:${metaId}`,
      background: `meta-background:${metaConfigString}:${metaId}`,
      logo: `meta-logo:${metaConfigString}:${metaId}`,
      videos: `meta-videos:${metaConfigString}:${metaId}`,
@@ -1542,6 +1552,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        } else {
          reconstructedMeta.poster = data.poster;
        }
+     } else if (componentName === 'rawPoster') {
+       reconstructedMeta._rawPosterUrl = data._rawPosterUrl;
      } else if (componentName === 'background') {
        reconstructedMeta.background = data.background;
      } else if (componentName === 'logo') {

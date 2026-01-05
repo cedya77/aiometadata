@@ -2056,24 +2056,53 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     // Extract actual poster URL from RPDB proxy URL for meta route
     // Only remove RPDB proxy if enableRatingPostersForLibrary is disabled
     // Meta routes (continue watching/library) should keep RPDB if the option is enabled
-    if (result.meta.poster && result.meta.poster.includes('/poster/') && result.meta.poster.includes('fallback=')) {
-      // Check if RPDB should be kept for library items (continue watching/library)
-      const keepRPDBForLibrary = config.enableRatingPostersForLibrary !== false; // Default to true
-      
-      if (!keepRPDBForLibrary) {
-        // User has disabled RPDB for library items, extract fallback URL
-        try {
-          const url = new URL(result.meta.poster);
-          const fallback = url.searchParams.get('fallback');
+    if (config.enableRatingPostersForLibrary === false && result.meta.poster) {
+      consola.debug('[Meta Route] original poster URL:', result.meta.poster);
+      const posterUrl = result.meta.poster;
+      let cleanPoster = posterUrl;
+      let isRatingPoster = false;
+
+      try {
+        const urlObj = new URL(posterUrl);
+
+        // Case 1: Proxy (e.g. /poster/movie/...)
+        if (posterUrl.includes('/poster/') && urlObj.searchParams.has('fallback')) {
+          const fallback = urlObj.searchParams.get('fallback');
           if (fallback) {
-            result.meta.poster = decodeURIComponent(fallback);
+            cleanPoster = decodeURIComponent(fallback);
+            isRatingPoster = true;
           }
-        } catch (e) {
-          // Keep original if URL parsing fails
-          consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
         }
+        
+        // Case 2: TopPoster Direct API
+        else if (urlObj.hostname.includes('top-streaming.stream') && urlObj.searchParams.has('fallback_url')) {
+          consola.debug('[Meta Route] Extracting actual poster URL from TopPoster direct API:', urlObj.searchParams.get('fallback_url'));
+          const fallback = urlObj.searchParams.get('fallback_url');
+          if (fallback) {
+            cleanPoster = decodeURIComponent(fallback);
+            isRatingPoster = true;
+          }
+        }
+        
+        // Case 3: RPDB Direct API
+        else if (urlObj.hostname.includes('ratingposterdb.com')) {
+          isRatingPoster = true; 
+        }
+
+        // Apply fallback if detected
+        if (isRatingPoster) {
+          consola.debug('[Meta Route] Applying actual poster URL:', cleanPoster);
+             if (result.meta._rawPosterUrl) {
+                 result.meta.poster = result.meta._rawPosterUrl;
+                 consola.debug('[Meta Route] Using stashed raw poster URL:', result.meta._rawPosterUrl);
+             } 
+             else if (cleanPoster !== posterUrl) {
+                 result.meta.poster = cleanPoster;
+             }
+        }
+
+      } catch (e) {
       }
-      // If keepRPDBForLibrary is true (default), keep the RPDB proxy URL as-is
     }
     
     // Note: Popular content warming is now handled globally by warmPopularContent()

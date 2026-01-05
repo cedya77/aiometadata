@@ -840,6 +840,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   const fallbackPosterUrl = poster || `${host}/missing_poster.png`;
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', `imdb:${imdbId}`, fallbackPosterUrl, config.language, config);
 
+  const _rawPosterUrl = fallbackPosterUrl;
   // Process credits in place
   processCreditsPhotos(imdbData.credits_cast);
   processCreditsPhotos(imdbData.credits_crew);
@@ -847,7 +848,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   imdbData.poster = posterProxyUrl || `${host}/missing_poster.png`;
   imdbData.background = background;
   imdbData.logo = logoUrl;
-
+  imdbData._rawPosterUrl = _rawPosterUrl;
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
@@ -946,6 +947,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     ]);
   }
 
+  const _rawPosterUrl = poster || `${host}/missing_poster.png`;
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'movie', `imdb:${imdbId}`, poster, config.language, config);
 
   processCreditsPhotos(imdbData.credits_cast);
@@ -954,7 +956,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   imdbData.poster = posterProxyUrl || `${host}/missing_poster.png`;
   imdbData.background = background;
   imdbData.logo = logoUrl;
-
+  imdbData._rawPosterUrl = _rawPosterUrl;
   if (imdbData.description) {
     imdbData.description = Utils.addMetaProviderAttribution(imdbData.description, 'IMDB', config);
   }
@@ -1076,7 +1078,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'movie', `tmdb:${movieData.id}`, poster, language, config);
   const kitsuId = allIds?.kitsuId;
   const idProvider = config.providers?.movie || 'imdb';
-
+  const _rawPosterUrl = poster || `${host}/missing_poster.png`;
   const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     category: 'Directors',
@@ -1152,6 +1154,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     country: Utils.parseCoutry(movieData.production_countries),
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
+    _rawPosterUrl: _rawPosterUrl,
     background: background,
     logo: processLogo(logoUrl),
     trailers: finalTrailers,
@@ -1211,6 +1214,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', `tmdb:${tmdbId}`, poster, language, config);
   const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
   const castCount = config.castCount === 0 ? undefined : config.castCount;
+  const _rawPosterUrl = poster || `${host}/missing_poster.png`;
 
   const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
@@ -1616,6 +1620,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     status: seriesData.status,
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
+    _rawPosterUrl: _rawPosterUrl,
     background: background,
     logo: logoUrl,
     trailers: finalTrailers,
@@ -1680,6 +1685,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const imdbRating = imdbRatingValue || "N/A";
   
   const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
+  const _rawPosterUrl = fallbackPosterUrl;
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'movie', imdbId, fallbackPosterUrl, language, config);
   const movieCredits = {
     cast: (characters || [])
@@ -1767,6 +1773,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     country: movieData.originalCountry,
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
+    _rawPosterUrl: _rawPosterUrl,
     background: background,
     logo: processLogo(logoUrl),
     trailers: trailers,
@@ -1907,6 +1914,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
   const imdbRating = imdbRatingValue || "N/A";
   const fallbackPosterUrl = poster || tvdbPosterUrl || `${host}/missing_poster.png`;
+  const _rawPosterUrl = fallbackPosterUrl;
   // Top Poster API only supports IMDb and TMDB IDs, not TVDB
   // Use IMDb or TMDB ID if available when Top Poster API is selected
   let posterProxyId = `tvdb:${tvdbShow.id}`;
@@ -2193,6 +2201,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     country: tvdbShow.originalCountry,
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
+    _rawPosterUrl: _rawPosterUrl,
     background: background, 
     logo: logoUrl,
     videos: videos,
@@ -2313,7 +2322,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     posterProxyId = imdbId || `tmdb:${tmdbId}`;
   }
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', posterProxyId, poster || '', language, config);
-
+  const _rawPosterUrl = poster || `${host}/missing_poster.png`;
   let specialVideos = [];
   let videos = [];
 
@@ -2488,6 +2497,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     country: tvmazeShow.network?.country?.name || null,
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster, 
+    _rawPosterUrl: _rawPosterUrl,
     background: background,
     logo: processLogo(logoUrl), 
     videos,
@@ -2519,7 +2529,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
 
     // Use AniList poster if available and configured
     let finalPosterUrl = enrichmentData.bestPosterUrl || posterUrl; 
-
+    const _rawPosterUrl = finalPosterUrl;
     // Check if poster rating is enabled (RPDB or Top Poster API)
     if (Utils.isPosterRatingEnabled(config) && mapping && stremioType !== 'movie') {
       const tvdbId = mapping.tvdbId;
@@ -2867,6 +2877,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       status: malData.status,
       imdbRating,
       poster: finalPosterUrl,
+      _rawPosterUrl: _rawPosterUrl,
       background: bestBackgroundUrl,
       logo: enrichmentData.bestLogoUrl,
       links: links.filter(Boolean),
@@ -2910,6 +2921,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
     const malId = mapping?.malId
     const seriesId = `kitsu:${kitsuData.id}`
     const idProvider = config.providers?.anime_id_provider || 'kitsu'
+    const _rawPosterUrl = bestPosterUrl || `${config.host}/missing_poster.png`;
 
     let kitsuReleaseInfo = kitsuData.attributes.startDate ? kitsuData.attributes.startDate.substring(0, 4) : null;
     if (stremioType === 'series' && kitsuData.attributes.startDate) {
@@ -2980,6 +2992,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         bestPosterUrl ||
         kitsuData.attributes.posterImage?.original ||
         `${config.host}/missing_poster.png`,
+      _rawPosterUrl: _rawPosterUrl,
       background:
         bestBackgroundUrl ||
         kitsuData.attributes.coverImage?.original,
