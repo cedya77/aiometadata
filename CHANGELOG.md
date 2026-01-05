@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.20.0](https://github.com/cedya77/aiometadata/compare/v1.19.1...v1.20.0) (2026-01-05)
+
+
+### Features
+
+* add option to choose between proxying or not ratings posters via aiometadata ([eefd151](https://github.com/cedya77/aiometadata/commit/eefd1519148c613842d16b07b569a5e661fb0ceb))
+* add quick add functionality ([7ced45c](https://github.com/cedya77/aiometadata/commit/7ced45cb06159bd742f5c050bbf60726d89c661b))
+
+
+### Bug Fixes
+
+* correct type issue when setting specific display types like streaming provider name ([bb0b265](https://github.com/cedya77/aiometadata/commit/bb0b265ed77ea08aab13868435b015cf513983cf))
+* **tmdb top rated:** increase vote count to filter trash out ([a4b84c9](https://github.com/cedya77/aiometadata/commit/a4b84c928e335140de9219dce69ba3a0df77d856))
+* **TOP Posters:** fix top rating posters still showing in library when Keep Rating Posters for Library Items was false ([4834d73](https://github.com/cedya77/aiometadata/commit/4834d73161b11fbc0647def35b3abeb1d35d2c38))
+* **TOP:** fix AI search not using TOP Posters API ([47a253e](https://github.com/cedya77/aiometadata/commit/47a253e4d049612435c4d99c9dbd868aed17100f))
+* **tvdb trending:** improve tvdb trending fetching logic ([f574204](https://github.com/cedya77/aiometadata/commit/f5742045d3bd02e16d19eee300aa048d446823ab))
+* **tvdb:** convert years to season numbers for shows that use season years as season numbers ([9bf0803](https://github.com/cedya77/aiometadata/commit/9bf0803db3e9368f76f770e5d805daf991da3a1f))
+* **UI:** make sure Enable Gemini search is disabled AND toggled off when no api key is entered ([4834d73](https://github.com/cedya77/aiometadata/commit/4834d73161b11fbc0647def35b3abeb1d35d2c38))
+
 ## [1.19.1](https://github.com/cedya77/aiometadata/compare/v1.19.0...v1.19.1) (2025-12-31)
 
 
