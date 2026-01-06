@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.20.1](https://github.com/cedya77/aiometadata/compare/v1.20.0...v1.20.1) (2026-01-06)
+
+
+### Bug Fixes
+
+* id mapper parsing ([5f3f590](https://github.com/cedya77/aiometadata/commit/5f3f5909d7dfaf402670212f9f352013691b7bd3))
+* id mapper parsing ([edd5973](https://github.com/cedya77/aiometadata/commit/edd59730e0d3ab87ba389ae21c81f14be605e6ad))
+* tvdb episode fetching error ([2a52d5f](https://github.com/cedya77/aiometadata/commit/2a52d5fa62667ee9820058bd3c8a9d1621f37be4))
+
 ## [1.20.0](https://github.com/cedya77/aiometadata/compare/v1.19.1...v1.20.0) (2026-01-05)
 
 
