@@ -240,7 +240,9 @@ async function downloadAndProcessTraktAnimeMovies() {
         try {
           logger.debug('[ID Mapper] [Trakt-Anime-Movies] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
-          traktAnimeMovies = JSON.parse(fileContent);
+          let parsed = JSON.parse(fileContent);
+          // Handle double-encoded JSON (backwards compatibility with existing cache files)
+          traktAnimeMovies = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
           processAndIndexTraktAnimeMovies(traktAnimeMovies);
           isTraktAnimeMoviesInitialized = true;
           logger.debug(`[ID Mapper] [Trakt-Anime-Movies] Successfully loaded ${traktAnimeMovies.length} mappings from local cache.`);
@@ -255,7 +257,8 @@ async function downloadAndProcessTraktAnimeMovies() {
 
     logger.debug('[ID Mapper] [Trakt-Anime-Movies] Downloading Trakt anime movies mapping...');
     const response = await httpGet(REMOTE_TRAKT_ANIME_MOVIES_URL);
-    traktAnimeMovies = response.data;
+    // GitHub raw returns text/plain, so response.data may be a string; parse if needed
+    traktAnimeMovies = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
     const jsonData = JSON.stringify(traktAnimeMovies);
 
     await fs.mkdir(path.dirname(LOCAL_TRAKT_ANIME_MOVIES_PATH), { recursive: true });
@@ -275,7 +278,9 @@ async function downloadAndProcessTraktAnimeMovies() {
     
     try {
       const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
-      traktAnimeMovies = JSON.parse(fileContent);
+      let parsed = JSON.parse(fileContent);
+      // Handle double-encoded JSON (backwards compatibility with existing cache files)
+      traktAnimeMovies = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
       processAndIndexTraktAnimeMovies(traktAnimeMovies);
       isTraktAnimeMoviesInitialized = true;
       logger.debug('[ID Mapper] [Trakt-Anime-Movies] Successfully loaded data from local cache on fallback.');
