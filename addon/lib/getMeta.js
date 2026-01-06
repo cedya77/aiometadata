@@ -1973,7 +1973,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     .filter(s => s.type?.type === 'official')
     .sort((a, b) => a.number - b.number);
     
-  let episodeList = tvdbEpisodes.episodes || [];
+  let episodeList = tvdbEpisodes?.episodes || [];
 
   const normalizedData = normalizeTvdbSeasons(officialSeasons, episodeList);
   officialSeasons = normalizedData.seasons;
