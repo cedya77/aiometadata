@@ -704,6 +704,7 @@ function DashboardAnalytics({ data, loading }) {
 
 // Performance Metrics Component
 function DashboardPerformance({ data, loading }) {
+  const { adminKey, isAdmin, isGuest } = useAdmin();
   const [timingMetrics, setTimingMetrics] = useState({});
   const [selectedMetric, setSelectedMetric] = useState("id_resolution_total");
   const [timeRange, setTimeRange] = useState("24h");
@@ -731,10 +732,23 @@ function DashboardPerformance({ data, loading }) {
   }, [data]);
 
   useEffect(() => {
+    // Only fetch if authenticated (either admin or guest)
+    if (!isAdmin && !isGuest) {
+      return;
+    }
+
     // Fetch ID resolver performance data
     const fetchIdResolverPerformance = async () => {
       try {
-        const response = await fetch("/api/dashboard/analytics");
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        // Only include admin key for admin users
+        if (isAdmin && adminKey) {
+          headers['x-admin-key'] = adminKey;
+        }
+
+        const response = await fetch("/api/dashboard/analytics", { headers });
         if (response.ok) {
           const analyticsData = await response.json();
           if (analyticsData.idResolverPerformance) {
@@ -747,7 +761,7 @@ function DashboardPerformance({ data, loading }) {
     };
 
     fetchIdResolverPerformance();
-  }, []);
+  }, [isAdmin, isGuest, adminKey]);
 
   const formatDuration = (ms) => {
     if (ms < 1000) return `${ms}ms`;
@@ -1614,6 +1628,7 @@ function DashboardPerformance({ data, loading }) {
 
 // Content Intelligence Component
 function DashboardContent({ data, loading }) {
+  const { adminKey, isAdmin, isGuest } = useAdmin();
   const [popularContent, setPopularContent] = useState([]);
   const [searchPatterns, setSearchPatterns] = useState([]);
   const [searchLimit, setSearchLimit] = useState(10);
@@ -1625,11 +1640,25 @@ function DashboardContent({ data, loading }) {
   });
 
   useEffect(() => {
+    // Only fetch if authenticated (either admin or guest)
+    if (!isAdmin && !isGuest) {
+      return;
+    }
+
     // Fetch real content data
     const fetchContentData = async () => {
       try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        // Only include admin key for admin users
+        if (isAdmin && adminKey) {
+          headers['x-admin-key'] = adminKey;
+        }
+
         const response = await fetch(
           `/api/dashboard/content?limit=${searchLimit}`,
+          { headers }
         );
         if (response.ok) {
           const data = await response.json();
@@ -1652,7 +1681,7 @@ function DashboardContent({ data, loading }) {
     };
 
     fetchContentData();
-  }, [searchLimit]);
+  }, [searchLimit, isAdmin, isGuest, adminKey]);
 
   return (
     <div className="space-y-6">
@@ -1779,7 +1808,7 @@ function DashboardContent({ data, loading }) {
         </CardContent>
       </Card>
 
-      {/* Content Quality Metrics */}
+      {/* Content Quality Metrics - Placeholder, hidden for now
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -1835,8 +1864,9 @@ function DashboardContent({ data, loading }) {
           </CardContent>
         </Card>
       </div>
+      */}
 
-      {/* Content Trends Placeholder */}
+      {/* Content Trends Placeholder - Hidden for now
       <Card>
         <CardHeader>
           <CardTitle>Content Trends</CardTitle>
@@ -1854,6 +1884,7 @@ function DashboardContent({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+      */}
     </div>
   );
 }
@@ -3062,7 +3093,7 @@ function DashboardUsers({ data, loading }) {
         </CardContent>
       </Card>
 
-      {/* Access Control */}
+      {/* Access Control - Placeholder, hidden for now
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -3100,6 +3131,7 @@ function DashboardUsers({ data, loading }) {
             </div>
           </CardContent>
         </Card>
+        */}
 
         <Card>
           <CardHeader>
@@ -3118,6 +3150,7 @@ function DashboardUsers({ data, loading }) {
                 <Users className="h-4 w-4 mr-2" />
                 Manage Users
               </Button>
+              {/* Placeholder buttons - hidden for now
               <Button variant="outline" className="w-full">
                 <Shield className="h-4 w-4 mr-2" />
                 Access Control
@@ -3130,6 +3163,7 @@ function DashboardUsers({ data, loading }) {
                 <Settings className="h-4 w-4 mr-2" />
                 User Settings
               </Button>
+              */}
               <Button 
                 variant="destructive" 
                 className="w-full"
@@ -3149,9 +3183,11 @@ function DashboardUsers({ data, loading }) {
             </div>
           </CardContent>
         </Card>
+      {/* Closing div for Access Control grid - commented out
       </div>
+      */}
 
-      {/* User Analytics Placeholder */}
+      {/* User Analytics Placeholder - Hidden for now
       <Card>
         <CardHeader>
           <CardTitle>User Analytics</CardTitle>
@@ -3167,6 +3203,7 @@ function DashboardUsers({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+      */}
 
       {/* User Activity Details Dialog */}
       <Dialog open={showUserDetails} onOpenChange={setShowUserDetails}>
@@ -3264,40 +3301,28 @@ function DashboardUsers({ data, loading }) {
   );
 }
 
-// Admin Login Component
-function AdminLogin() {
-  const {
-    isAdmin,
-    adminKey: contextAdminKey,
-    login,
-    logout,
-    isLoading,
-  } = useAdmin();
+// Blocking Admin Login Modal Component
+interface AdminLoginModalProps {
+  isOpen: boolean;
+  onSuccess: () => void;
+  onGuestSuccess: () => void;
+  onCancel: () => void;
+  adminKeyNotConfigured?: boolean;
+  guestModeEnabled?: boolean;
+}
+
+function AdminLoginModal({ 
+  isOpen, 
+  onSuccess, 
+  onGuestSuccess,
+  onCancel, 
+  adminKeyNotConfigured,
+  guestModeEnabled 
+}: AdminLoginModalProps) {
+  const { login, loginAsGuest, isLoading } = useAdmin();
   const [inputAdminKey, setInputAdminKey] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState("");
-  const [adminFeaturesAvailable, setAdminFeaturesAvailable] = useState(true);
-
-  // Check if admin features are available on mount
-  useEffect(() => {
-    const checkAdminFeatures = async () => {
-      try {
-        const response = await fetch("/api/dashboard/users", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        // If it returns 401, admin features are available but require authentication
-        // If it returns 200, admin features are disabled (no ADMIN_KEY set)
-        setAdminFeaturesAvailable(response.status === 401);
-      } catch (error) {
-        setAdminFeaturesAvailable(false);
-      }
-    };
-
-    checkAdminFeatures();
-  }, []);
+  const [showAdminInput, setShowAdminInput] = useState(false);
 
   const handleLogin = async () => {
     if (!inputAdminKey.trim()) {
@@ -3305,81 +3330,190 @@ function AdminLogin() {
       return;
     }
 
+    setError("");
     const success = await login(inputAdminKey);
     if (success) {
       setInputAdminKey("");
       setError("");
-      setIsOpen(false);
+      setShowAdminInput(false);
+      onSuccess();
     } else {
-      setError("Invalid admin key");
+      setError("Invalid admin key. Please try again.");
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    setIsOpen(false);
+  const handleGuestLogin = () => {
+    loginAsGuest();
+    onGuestSuccess();
   };
 
-  if (isAdmin) {
+  const handleGoBack = () => {
+    // Navigate away from dashboard 
+    const stored = sessionStorage.getItem('lastConfigureUrl');
+    window.location.href = stored || '/configure';
+  };
+
+  const handleBackToOptions = () => {
+    setShowAdminInput(false);
+    setInputAdminKey("");
+    setError("");
+  };
+
+  // Show specific message when ADMIN_KEY is not configured AND guest mode is disabled
+  if (adminKeyNotConfigured && !guestModeEnabled) {
     return (
-      <div className="flex items-center gap-2">
-        <Badge variant="default" className="bg-green-600">
-          <Shield className="h-3 w-3 mr-1" />
-          Admin
-        </Badge>
-        {contextAdminKey && (
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-1" />
-            Logout
-          </Button>
-        )}
-      </div>
+      <Dialog open={isOpen} onOpenChange={() => {}}>
+        <DialogContent 
+          className="sm:max-w-md mx-4" 
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              Dashboard Access Unavailable
+            </DialogTitle>
+            <DialogDescription>
+              Dashboard access requires the ADMIN_KEY environment variable to be configured on the server.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md text-sm text-amber-700 dark:text-amber-300">
+              <p className="font-medium mb-1">Configuration Required</p>
+              <p>Please set the ADMIN_KEY environment variable on your server to enable dashboard access.</p>
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={handleGoBack}>
+                Go Back
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     );
   }
 
-  // If admin features are not available, don't show anything
-  if (!adminFeaturesAvailable) {
-    return null;
+  // Show admin login input when "Admin Login" is clicked
+  if (showAdminInput) {
+    return (
+      <Dialog open={isOpen} onOpenChange={() => {}}>
+        <DialogContent 
+          className="sm:max-w-md mx-4"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Admin Authentication
+            </DialogTitle>
+            <DialogDescription>
+              Enter your admin key to access all dashboard features.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {error && (
+              <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md text-sm text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
+            {/* Show warning if ADMIN_KEY is not configured but guest mode is enabled */}
+            {adminKeyNotConfigured && guestModeEnabled && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md text-sm text-amber-700 dark:text-amber-300">
+                <p className="font-medium mb-1">Admin Access Unavailable</p>
+                <p>ADMIN_KEY is not configured on the server. You can continue as a guest to view public metrics.</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="admin-key-modal">Admin Key</Label>
+              <Input
+                id="admin-key-modal"
+                type="password"
+                value={inputAdminKey}
+                onChange={(e) => setInputAdminKey(e.target.value)}
+                placeholder="Enter admin key"
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                autoFocus
+                disabled={adminKeyNotConfigured}
+              />
+            </div>
+            <div className="flex justify-between gap-2">
+              <Button variant="outline" onClick={handleBackToOptions}>
+                Back
+              </Button>
+              <Button onClick={handleLogin} disabled={isLoading || adminKeyNotConfigured}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Authenticating...
+                  </>
+                ) : (
+                  "Login"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   }
 
+  // Show login options: Admin Login and Guest (if enabled)
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Key className="h-4 w-4 mr-1" />
-          Admin Login
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md mx-4">
+    <Dialog open={isOpen} onOpenChange={() => {}}>
+      <DialogContent 
+        className="sm:max-w-md mx-4"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
-          <DialogTitle>Admin Authentication</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Dashboard Access
+          </DialogTitle>
           <DialogDescription>
-            Enter your admin key to access administrative features.
+            {guestModeEnabled 
+              ? "Choose how you'd like to access the dashboard."
+              : "Enter your admin key to access the dashboard."
+            }
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-              {error}
+          {/* Admin Login Option */}
+          <Button 
+            className="w-full justify-start h-auto py-4" 
+            variant="outline"
+            onClick={() => setShowAdminInput(true)}
+          >
+            <div className="flex items-center gap-3">
+              <Key className="h-5 w-5 text-primary" />
+              <div className="text-left">
+                <p className="font-medium">Admin Login</p>
+                <p className="text-xs text-muted-foreground">Full access to all dashboard features</p>
+              </div>
             </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="admin-key">Admin Key</Label>
-            <Input
-              id="admin-key"
-              type="password"
-              value={inputAdminKey}
-              onChange={(e) => setInputAdminKey(e.target.value)}
-              placeholder="Enter admin key"
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsOpen(false)}>
-              Cancel
+          </Button>
+
+          {/* Guest Option - Only shown when guest mode is enabled */}
+          {guestModeEnabled && (
+            <Button 
+              className="w-full justify-start h-auto py-4" 
+              variant="outline"
+              onClick={handleGuestLogin}
+            >
+              <div className="flex items-center gap-3">
+                <Users className="h-5 w-5 text-muted-foreground" />
+                <div className="text-left">
+                  <p className="font-medium">Continue as Guest</p>
+                  <p className="text-xs text-muted-foreground">View public metrics without authentication</p>
+                </div>
+              </div>
             </Button>
-            <Button onClick={handleLogin} disabled={isLoading}>
-              {isLoading ? "Authenticating..." : "Login"}
+          )}
+
+          <div className="flex justify-start pt-2">
+            <Button variant="ghost" size="sm" onClick={handleGoBack}>
+              Go Back
             </Button>
           </div>
         </div>
@@ -3388,10 +3522,56 @@ function AdminLogin() {
   );
 }
 
+// Access level type for tracking current user access
+type AccessLevel = 'none' | 'guest' | 'admin';
+
+// Admin Status Badge Component - Shows admin/guest status and logout button when authenticated
+function AdminStatusBadge() {
+  const { isAdmin, isGuest, adminKey, logout } = useAdmin();
+
+  // Determine current access level based on AdminContext state
+  const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
+
+  const handleLogout = () => {
+    logout();
+  };
+
+  // Don't show badge if not authenticated
+  if (accessLevel === 'none') {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {accessLevel === 'admin' ? (
+        <Badge variant="default" className="bg-green-600">
+          <Shield className="h-3 w-3 mr-1" />
+          Admin
+        </Badge>
+      ) : (
+        <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+          <Users className="h-3 w-3 mr-1" />
+          Guest
+        </Badge>
+      )}
+      {(adminKey || isGuest) && (
+        <Button variant="outline" size="sm" onClick={handleLogout}>
+          <LogOut className="h-4 w-4 mr-1" />
+          Logout
+        </Button>
+      )}
+    </div>
+  );
+}
+
 // Main Dashboard Component
 export function Dashboard() {
-  const { isAdmin, adminKey } = useAdmin();
+  const { isAdmin, isGuest, adminKey, isLoading, adminKeyConfigured, guestModeEnabled } = useAdmin();
   const { isMobile } = useBreakpoint();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Access level state management - tracks current access level based on AdminContext state
+  const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
 
   // Unified dashboard data state
   const [dashboardData, setDashboardData] = useState({
@@ -3408,75 +3588,103 @@ export function Dashboard() {
 
   // Unified data fetching - fetch all dashboard data once
   useEffect(() => {
+    // Don't fetch data if not authenticated (neither admin nor guest)
+    if (!isAdmin && !isGuest) {
+      setDashboardData((prev) => ({ ...prev, loading: false }));
+      return;
+    }
+
     const fetchAllDashboardData = async () => {
       try {
         setDashboardData((prev) => ({ ...prev, loading: true, error: null }));
 
-        // Fetch all dashboard data in parallel
-        const [
-          overviewResponse,
-          analyticsResponse,
-          contentResponse,
-          performanceResponse,
-          systemResponse,
-        ] = await Promise.all([
-          fetch("/api/dashboard/overview"),
-          fetch("/api/dashboard/analytics"),
-          fetch("/api/dashboard/content"),
-          fetch("/api/dashboard/timing"),
-          fetch("/api/dashboard/system"),
-        ]);
-
-        const data = {
-          overview: overviewResponse.ok ? await overviewResponse.json() : null,
-          analytics: analyticsResponse.ok
-            ? await analyticsResponse.json()
-            : null,
-          content: contentResponse.ok ? await contentResponse.json() : null,
-          performance: performanceResponse.ok
-            ? await performanceResponse.json()
-            : null,
-          system: systemResponse.ok ? await systemResponse.json() : null,
-          operations: null,
-          users: null,
-        };
-
-        // Fetch admin-only data if admin is logged in
+        const headers: Record<string, string> = {};
+        
+        // Only add admin key header for admin users
         if (isAdmin && adminKey) {
-          console.log(
-            "[Dashboard] Fetching admin data with key:",
-            adminKey ? "present" : "missing",
-          );
-          const headers = { "x-admin-key": adminKey };
-          const [operationsResponse, usersResponse] = await Promise.all([
+          headers["x-admin-key"] = adminKey;
+        }
+
+        // For guest users, only fetch public endpoints
+        // For admin users, fetch all endpoints
+        if (isGuest) {
+          // Guest mode: fetch only public endpoints without auth
+          const [
+            overviewResponse,
+            analyticsResponse,
+            contentResponse,
+            performanceResponse,
+            systemResponse,
+          ] = await Promise.all([
+            fetch("/api/dashboard/overview"),
+            fetch("/api/dashboard/analytics"),
+            fetch("/api/dashboard/content"),
+            fetch("/api/dashboard/timing"),
+            fetch("/api/dashboard/system"),
+          ]);
+
+          const data = {
+            overview: overviewResponse.ok ? await overviewResponse.json() : null,
+            analytics: analyticsResponse.ok ? await analyticsResponse.json() : null,
+            content: contentResponse.ok ? await contentResponse.json() : null,
+            performance: performanceResponse.ok ? await performanceResponse.json() : null,
+            system: systemResponse.ok ? await systemResponse.json() : null,
+            operations: null, // Not available for guests
+            users: null, // Not available for guests
+          };
+
+          setDashboardData({
+            ...data,
+            loading: false,
+            error: null,
+          });
+        } else {
+          // Admin mode: fetch all endpoints with authentication
+          const [
+            overviewResponse,
+            analyticsResponse,
+            contentResponse,
+            performanceResponse,
+            systemResponse,
+            operationsResponse,
+            usersResponse,
+          ] = await Promise.all([
+            fetch("/api/dashboard/overview", { headers }),
+            fetch("/api/dashboard/analytics", { headers }),
+            fetch("/api/dashboard/content", { headers }),
+            fetch("/api/dashboard/timing", { headers }),
+            fetch("/api/dashboard/system", { headers }),
             fetch("/api/dashboard/operations", { headers }),
             fetch("/api/dashboard/users", { headers }),
           ]);
 
-          console.log(
-            "[Dashboard] Operations response:",
-            operationsResponse.status,
-          );
-          console.log("[Dashboard] Users response:", usersResponse.status);
+          // Check for 401 responses - trigger re-authentication if needed
+          const responses = [overviewResponse, analyticsResponse, contentResponse, performanceResponse, systemResponse];
+          const hasUnauthorized = responses.some(r => r.status === 401);
+          
+          if (hasUnauthorized) {
+            // Session may have expired, show login modal
+            setShowLoginModal(true);
+            setDashboardData((prev) => ({ ...prev, loading: false }));
+            return;
+          }
 
-          data.operations = operationsResponse.ok
-            ? await operationsResponse.json()
-            : null;
-          data.users = usersResponse.ok ? await usersResponse.json() : null;
-        } else {
-          console.log(
-            "[Dashboard] Not fetching admin data - isAdmin:",
-            isAdmin,
-            "adminKey:",
-            adminKey ? "present" : "missing",
-          );
+          const data = {
+            overview: overviewResponse.ok ? await overviewResponse.json() : null,
+            analytics: analyticsResponse.ok ? await analyticsResponse.json() : null,
+            content: contentResponse.ok ? await contentResponse.json() : null,
+            performance: performanceResponse.ok ? await performanceResponse.json() : null,
+            system: systemResponse.ok ? await systemResponse.json() : null,
+            operations: operationsResponse.ok ? await operationsResponse.json() : null,
+            users: usersResponse.ok ? await usersResponse.json() : null,
+          };
+
+          setDashboardData({
+            ...data,
+            loading: false,
+            error: null,
+          });
         }
-
-        setDashboardData({
-          ...data,
-          loading: false,
-          error: null,
-        });
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
         setDashboardData((prev) => ({
@@ -3488,12 +3696,65 @@ export function Dashboard() {
     };
 
     fetchAllDashboardData();
-  }, [isAdmin, adminKey]); // Re-fetch when admin status changes
+  }, [isAdmin, isGuest, adminKey]); // Re-fetch when admin/guest status changes
+
+  // Show login modal when not authenticated (neither admin nor guest)
+  useEffect(() => {
+    if (!isLoading && !isAdmin && !isGuest) {
+      setShowLoginModal(true);
+    } else if (isAdmin || isGuest) {
+      setShowLoginModal(false);
+    }
+  }, [isLoading, isAdmin, isGuest]);
+
+  // Handle successful admin login
+  const handleLoginSuccess = () => {
+    setShowLoginModal(false);
+  };
+
+  // Handle successful guest login
+  const handleGuestSuccess = () => {
+    setShowLoginModal(false);
+  };
+
+  // Handle login cancel (go back)
+  const handleLoginCancel = () => {
+    const stored = sessionStorage.getItem('lastConfigureUrl');
+    window.location.href = stored || '/configure';
+  };
+
+  // Show loading state while checking authentication (only on initial load)
+  // Don't show loading spinner during login attempts - keep the modal visible
+  if (isLoading && !showLoginModal) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login modal if not authenticated (neither admin nor guest)
+  // Don't render any dashboard content behind the modal
+  if (!isAdmin && !isGuest) {
+    return (
+      <AdminLoginModal
+        isOpen={showLoginModal}
+        onSuccess={handleLoginSuccess}
+        onGuestSuccess={handleGuestSuccess}
+        onCancel={handleLoginCancel}
+        adminKeyNotConfigured={!adminKeyConfigured}
+        guestModeEnabled={guestModeEnabled}
+      />
+    );
+  }
 
   // Calculate grid columns based on admin status
   const gridCols = isAdmin ? "grid-cols-6" : "grid-cols-4";
 
-  // Dashboard pages configuration
+  // Dashboard pages configuration - base pages available to all authenticated users
   const dashboardPages = [
     {
       value: "overview",
@@ -3548,8 +3809,7 @@ export function Dashboard() {
     },
   ];
 
-  // Add admin-only pages
-  if (isAdmin) {
+  if (accessLevel === 'admin') {
     dashboardPages.push(
       {
         value: "operations",
@@ -3585,7 +3845,7 @@ export function Dashboard() {
               Monitor your addon's performance, health, and usage statistics
             </p>
           </div>
-          <AdminLogin />
+          <AdminStatusBadge />
         </div>
 
 
@@ -3623,7 +3883,7 @@ export function Dashboard() {
             Monitor your addon's performance, health, and usage statistics
           </p>
         </div>
-        <AdminLogin />
+        <AdminStatusBadge />
       </div>
 
       {/* Metrics Disabled Banner */}
@@ -3668,21 +3928,22 @@ export function Dashboard() {
           >
             System
           </TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger
-              value="operations"
-              className="text-xs sm:text-sm whitespace-nowrap"
-            >
-              Ops
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger
-              value="users"
-              className="text-xs sm:text-sm whitespace-nowrap"
-            >
-              Users
-            </TabsTrigger>
+          {/* Ops and Users tabs only visible for admin users */}
+          {accessLevel === 'admin' && (
+            <>
+              <TabsTrigger
+                value="operations"
+                className="text-xs sm:text-sm whitespace-nowrap"
+              >
+                Ops
+              </TabsTrigger>
+              <TabsTrigger
+                value="users"
+                className="text-xs sm:text-sm whitespace-nowrap"
+              >
+                Users
+              </TabsTrigger>
+            </>
           )}
         </TabsList>
 
@@ -3722,22 +3983,23 @@ export function Dashboard() {
           />
         </TabsContent>
 
-        {isAdmin && (
-          <TabsContent value="operations" className="mt-6">
-            <DashboardOperations
-              data={dashboardData.operations}
-              loading={dashboardData.loading}
-            />
-          </TabsContent>
-        )}
+        {/* Ops and Users tab content only rendered for admin users */}
+        {accessLevel === 'admin' && (
+          <>
+            <TabsContent value="operations" className="mt-6">
+              <DashboardOperations
+                data={dashboardData.operations}
+                loading={dashboardData.loading}
+              />
+            </TabsContent>
 
-        {isAdmin && (
-          <TabsContent value="users" className="mt-6">
-            <DashboardUsers
-              data={dashboardData.users}
-              loading={dashboardData.loading}
-            />
-          </TabsContent>
+            <TabsContent value="users" className="mt-6">
+              <DashboardUsers
+                data={dashboardData.users}
+                loading={dashboardData.loading}
+              />
+            </TabsContent>
+          </>
         )}
       </Tabs>
     </div>

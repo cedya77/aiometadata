@@ -3426,12 +3426,64 @@ const noCache = (req, res, next) => {
   next();
 };
 
+// Middleware to require admin authentication for dashboard routes
+function requireDashboardAdmin(req, res, next) {
+  const adminKey = process.env.ADMIN_KEY;
+  
+  // If ADMIN_KEY is not configured, deny access with specific message
+  if (!adminKey) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'ADMIN_KEY environment variable must be configured to access the dashboard'
+    });
+  }
+  
+  // Validate the provided admin key
+  if (req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // Valid key - proceed to route handler
+  next();
+}
+
+// Middleware for conditionally-protected endpoints (public when guest mode enabled)
+function requireAuthUnlessGuestMode(req, res, next) {
+  const disableGuestMode = process.env.DISABLE_GUEST_MODE === 'true' || 
+                           process.env.DISABLE_GUEST_MODE === '1';
+  
+  // If guest mode is enabled (env var not set/falsy), allow access without auth
+  if (!disableGuestMode) {
+    return next();
+  }
+  
+  // Guest mode disabled - require admin auth
+  return requireDashboardAdmin(req, res, next);
+}
+
 // Apply the no-cache middleware to all dashboard and dashboard API routes
 addon.use('/dashboard', noCache);
 addon.use('/api/dashboard', noCache);
 
+// Public config endpoint - must be defined BEFORE admin auth middleware
+// This endpoint is always accessible regardless of guest mode setting
+addon.get("/api/dashboard/config", (req, res) => {
+  try {
+    const dashboardApi = getDashboardAPI();
+    const config = dashboardApi.getConfig();
+    res.json(config);
+  } catch (error) {
+    consola.error('[Dashboard API] Error getting config:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard config' });
+  }
+});
 
-addon.get("/api/dashboard/overview", (req, res) => {
+// Note: Admin authentication is now applied per-route instead of globally
+// Public endpoints use requireAuthUnlessGuestMode (accessible without auth when guest mode enabled)
+// Protected endpoints use requireDashboardAdmin (always require admin auth)
+
+
+addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, (req, res) => {
   try {
     const dashboardApi = getDashboardAPI();
     
@@ -3477,7 +3529,7 @@ addon.get("/api/dashboard/overview", (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/stats", (req, res) => {
+addon.get("/api/dashboard/stats", requireAuthUnlessGuestMode, (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
     return res.json({ 
@@ -3486,10 +3538,7 @@ addon.get("/api/dashboard/stats", (req, res) => {
     });
   }
   
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -3509,7 +3558,7 @@ addon.get("/api/dashboard/stats", (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/system", (req, res) => {
+addon.get("/api/dashboard/system", requireAuthUnlessGuestMode, (req, res) => {
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -3546,11 +3595,8 @@ addon.get("/api/dashboard/system", (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/operations", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
+  
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -3571,7 +3617,7 @@ addon.get("/api/dashboard/operations", (req, res) => {
 });
 
 // Enhanced timing metrics API endpoint
-addon.get("/api/dashboard/timing", async (req, res) => {
+addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
     return res.json({ 
@@ -3621,11 +3667,8 @@ addon.get("/api/dashboard/timing", async (req, res) => {
   }
 });
 
-addon.post("/api/dashboard/cache/clear", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.post("/api/dashboard/cache/clear", requireDashboardAdmin, (req, res) => {
+  
   
   try {
     const { type } = req.body;
@@ -3646,11 +3689,8 @@ addon.post("/api/dashboard/cache/clear", (req, res) => {
   }
 });
 
-addon.post("/api/dashboard/users/clear", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.post("/api/dashboard/users/clear", requireDashboardAdmin, (req, res) => {
+  
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -3672,7 +3712,7 @@ addon.post("/api/dashboard/users/clear", (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/analytics", async (req, res) => {
+addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
     return res.json({ 
@@ -3705,11 +3745,8 @@ addon.get("/api/dashboard/analytics", async (req, res) => {
   }
 });
 
-addon.post("/api/dashboard/uptime/reset", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.post("/api/dashboard/uptime/reset", requireDashboardAdmin, (req, res) => {
+  
   
   try {
     // Reset the persistent uptime counter
@@ -3730,11 +3767,8 @@ addon.post("/api/dashboard/uptime/reset", (req, res) => {
 });
 
 // Test endpoint to generate sample error logs
-addon.post("/api/dashboard/test-errors", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.post("/api/dashboard/test-errors", requireDashboardAdmin, (req, res) => {
+  
   
   try {
     // Generate some test error logs
@@ -3764,7 +3798,7 @@ addon.post("/api/dashboard/test-errors", (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/content", (req, res) => {
+addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
     return res.json({ 
@@ -3800,14 +3834,10 @@ addon.get("/api/dashboard/content", (req, res) => {
   }
 });
 
-addon.get("/api/dashboard/users", (req, res) => {
+addon.get("/api/dashboard/users", requireDashboardAdmin, (req, res) => {
   // Users endpoint is NOT disabled when metrics are disabled
   // It provides user management which is essential for admin UI
   
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   
   try {
     const dashboardApi = getDashboardAPI();
@@ -3824,7 +3854,7 @@ addon.get("/api/dashboard/users", (req, res) => {
 });
 
 // MAL Catalog Warmup Stats endpoint
-addon.get("/api/dashboard/mal-warmup", (req, res) => {
+addon.get("/api/dashboard/mal-warmup", requireAuthUnlessGuestMode, (req, res) => {
   try {
     const { getWarmupStats } = require('./lib/malCatalogWarmer');
     const stats = getWarmupStats();
@@ -3836,7 +3866,7 @@ addon.get("/api/dashboard/mal-warmup", (req, res) => {
 });
 
 // Comprehensive Catalog Warmup Stats endpoint
-addon.get("/api/dashboard/catalog-warmup", (req, res) => {
+addon.get("/api/dashboard/catalog-warmup", requireAuthUnlessGuestMode, (req, res) => {
   try {
     const { getWarmupStats } = require('./lib/comprehensiveCatalogWarmer');
     const stats = getWarmupStats();
@@ -3848,7 +3878,7 @@ addon.get("/api/dashboard/catalog-warmup", (req, res) => {
 });
 
 // Comprehensive Warming Dashboard - combines all warming systems
-addon.get("/api/dashboard/warming", (req, res) => {
+addon.get("/api/dashboard/warming", requireAuthUnlessGuestMode, (req, res) => {
   try {
     // Get stats from all warming systems
     const { getWarmupStats: getMALStats } = require('./lib/malCatalogWarmer');
@@ -3893,11 +3923,8 @@ addon.get("/api/dashboard/warming", (req, res) => {
 });
 
 // Warming Control Endpoints
-addon.post("/api/dashboard/warming/control", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.post("/api/dashboard/warming/control", requireDashboardAdmin, (req, res) => {
+  
   
   try {
     const { action, system } = req.body;
@@ -3953,11 +3980,8 @@ addon.post("/api/dashboard/warming/control", (req, res) => {
 });
 
 // Maintenance Task Execution endpoint
-addon.post("/api/dashboard/maintenance/execute", async (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (req, res) => {
+  
   
   try {
     const { taskId, action } = req.body;

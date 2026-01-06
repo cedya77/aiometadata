@@ -1922,6 +1922,16 @@ class DashboardAPI {
     if (diffMins < 60) return "idle";
     return "offline";
   }
+
+  // Get dashboard configuration for guest mode and admin key status
+  getConfig() {
+    const disableGuestMode = process.env.DISABLE_GUEST_MODE === 'true' || 
+                             process.env.DISABLE_GUEST_MODE === '1';
+    return {
+      guestModeEnabled: !disableGuestMode,
+      adminKeyConfigured: !!process.env.ADMIN_KEY
+    };
+  }
 }
 
 module.exports = DashboardAPI;

@@ -470,7 +470,7 @@ class RequestTracker {
                 title: metadata.title,
                 rating: metadata.rating,
                 year: metadata.year,
-                poster: metadata.poster,
+                // poster: metadata.poster, // Not used in dashboard UI
                 imdb_id: metadata.imdb_id,
               };
             }

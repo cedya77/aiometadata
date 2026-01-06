@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 
 const API_BASE = process.env.NODE_ENV === 'development' 
   ? 'http://localhost:7000' 
   : window.location.origin;
 
+
+// Hook for fetching main dashboard data
 export function useDashboardData() {
-  const { adminKey, isAdmin } = useAdmin();
+  const { adminKey, isAdmin, isGuest, logout } = useAdmin();
   const [data, setData] = useState({
     systemOverview: null,
     quickStats: null,
@@ -21,29 +23,43 @@ export function useDashboardData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Only fetch if user is admin
-      if (!isAdmin) {
+      // Only fetch if user is admin or guest
+      if (!isAdmin && !isGuest) {
         setLoading(false);
         return;
       }
 
-      // Fetch all dashboard data
+      // Build headers - only include admin key for admin users
       const headers = {
         'Content-Type': 'application/json'
       };
       
-      if (adminKey) {
+      // Only add admin key header for admin users
+      if (isAdmin && adminKey) {
         headers['x-admin-key'] = adminKey;
       }
 
+      // Fetch public endpoint (overview) - accessible by both guest and admin
       const response = await fetch(`${API_BASE}/api/dashboard/overview`, {
         headers
       });
+
+      // Handle 401 responses - for admin users, trigger re-authentication
+      // For guest users, this shouldn't happen if guest mode is enabled
+      if (response.status === 401) {
+        if (isAdmin) {
+          logout();
+          setError('Session expired. Please log in again.');
+        } else {
+          setError('Access denied. Guest mode may be disabled.');
+        }
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -57,10 +73,15 @@ export function useDashboardData() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin, isGuest, adminKey, logout]);
 
-  const clearCache = async (type) => {
+  const clearCache = useCallback(async (type) => {
     try {
+      // Only allow cache clear if user is admin (protected endpoint)
+      if (!isAdmin) {
+        throw new Error('Not authenticated - admin access required');
+      }
+
       const headers = {
         'Content-Type': 'application/json'
       };
@@ -74,6 +95,12 @@ export function useDashboardData() {
         headers,
         body: JSON.stringify({ type })
       });
+
+      // Handle 401 responses by triggering re-authentication
+      if (response.status === 401) {
+        logout();
+        throw new Error('Session expired. Please log in again.');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -91,11 +118,11 @@ export function useDashboardData() {
       console.error('Error clearing cache:', err);
       throw err;
     }
-  };
+  }, [isAdmin, adminKey, logout, fetchData]);
 
   useEffect(() => {
     fetchData();
-  }, [isAdmin, adminKey]);
+  }, [fetchData]);
 
   return {
     data,
@@ -106,8 +133,11 @@ export function useDashboardData() {
   };
 }
 
+
+// Hook for fetching dashboard statistics
+
 export function useDashboardStats() {
-  const { adminKey, isAdmin } = useAdmin();
+  const { adminKey, isAdmin, isGuest, logout } = useAdmin();
   const [stats, setStats] = useState({
     quickStats: null,
     cachePerformance: null,
@@ -117,28 +147,41 @@ export function useDashboardStats() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Only fetch if user is admin
-      if (!isAdmin) {
+      // Allow fetching for both admin and guest users
+      if (!isAdmin && !isGuest) {
         setLoading(false);
         return;
       }
 
+      // Build headers - only include admin key for admin users
       const headers = {
         'Content-Type': 'application/json'
       };
       
-      if (adminKey) {
+      // Only add admin key header for admin users
+      if (isAdmin && adminKey) {
         headers['x-admin-key'] = adminKey;
       }
 
       const response = await fetch(`${API_BASE}/api/dashboard/stats`, {
         headers
       });
+
+      // Handle 401 responses
+      if (response.status === 401) {
+        if (isAdmin) {
+          logout();
+          setError('Session expired. Please log in again.');
+        } else {
+          setError('Access denied. Guest mode may be disabled.');
+        }
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -152,16 +195,19 @@ export function useDashboardStats() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin, isGuest, adminKey, logout]);
 
   useEffect(() => {
     fetchStats();
     
     // Auto-refresh every 30 seconds to get updated provider performance data
+    // Only set up interval if user is admin or guest
+    if (!isAdmin && !isGuest) return;
+    
     const interval = setInterval(fetchStats, 30000);
     
     return () => clearInterval(interval);
-  }, [isAdmin, adminKey]);
+  }, [fetchStats, isAdmin, isGuest]);
 
   return {
     stats,
@@ -171,8 +217,10 @@ export function useDashboardStats() {
   };
 }
 
+
+// Hook for fetching system data
 export function useDashboardSystem() {
-  const { adminKey, isAdmin } = useAdmin();
+  const { adminKey, isAdmin, isGuest, logout } = useAdmin();
   const [systemData, setSystemData] = useState({
     systemConfig: null,
     resourceUsage: null
@@ -181,28 +229,41 @@ export function useDashboardSystem() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchSystemData = async () => {
+  const fetchSystemData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Only fetch if user is admin
-      if (!isAdmin) {
+      // Allow fetching for both admin and guest users
+      if (!isAdmin && !isGuest) {
         setLoading(false);
         return;
       }
 
+      // Build headers - only include admin key for admin users
       const headers = {
         'Content-Type': 'application/json'
       };
       
-      if (adminKey) {
+      // Only add admin key header for admin users
+      if (isAdmin && adminKey) {
         headers['x-admin-key'] = adminKey;
       }
 
       const response = await fetch(`${API_BASE}/api/dashboard/system`, {
         headers
       });
+
+      // Handle 401 responses
+      if (response.status === 401) {
+        if (isAdmin) {
+          logout();
+          setError('Session expired. Please log in again.');
+        } else {
+          setError('Access denied. Guest mode may be disabled.');
+        }
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -216,16 +277,19 @@ export function useDashboardSystem() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin, isGuest, adminKey, logout]);
 
   useEffect(() => {
     fetchSystemData();
     
     // Auto-refresh every 60 seconds for system data
+    // Only set up interval if user is admin or guest
+    if (!isAdmin && !isGuest) return;
+    
     const interval = setInterval(fetchSystemData, 60000);
     
     return () => clearInterval(interval);
-  }, [isAdmin, adminKey]);
+  }, [fetchSystemData, isAdmin, isGuest]);
 
   return {
     systemData,
@@ -235,8 +299,10 @@ export function useDashboardSystem() {
   };
 }
 
+
+// Hook for fetching operations data (admin-only)
 export function useDashboardOperations() {
-  const { adminKey, isAdmin } = useAdmin();
+  const { adminKey, isAdmin, logout } = useAdmin();
   const [operationsData, setOperationsData] = useState({
     errorLogs: null,
     maintenanceTasks: null
@@ -245,13 +311,19 @@ export function useDashboardOperations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchOperationsData = async () => {
+  const fetchOperationsData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Only fetch if user is admin
+      // Only fetch if user is admin - this is a protected endpoint
+      // Guest users should not have access to operations data
       if (!isAdmin) {
+        // Return empty data for non-admin users (including guests)
+        setOperationsData({
+          errorLogs: null,
+          maintenanceTasks: null
+        });
         setLoading(false);
         return;
       }
@@ -260,6 +332,7 @@ export function useDashboardOperations() {
         'Content-Type': 'application/json'
       };
       
+      // Always include admin key for this protected endpoint
       if (adminKey) {
         headers['x-admin-key'] = adminKey;
       }
@@ -267,6 +340,13 @@ export function useDashboardOperations() {
       const response = await fetch(`${API_BASE}/api/dashboard/operations`, {
         headers
       });
+
+      // Handle 401 responses by triggering re-authentication
+      if (response.status === 401) {
+        logout();
+        setError('Session expired. Please log in again.');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -280,11 +360,11 @@ export function useDashboardOperations() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin, adminKey, logout]);
 
   useEffect(() => {
     fetchOperationsData();
-  }, [isAdmin, adminKey]);
+  }, [fetchOperationsData]);
 
   return {
     operationsData,
