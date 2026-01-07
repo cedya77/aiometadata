@@ -2057,7 +2057,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     // Only remove RPDB proxy if enableRatingPostersForLibrary is disabled
     // Meta routes (continue watching/library) should keep RPDB if the option is enabled
     if (config.enableRatingPostersForLibrary === false && result.meta.poster) {
-      consola.debug('[Meta Route] original poster URL:', result.meta.poster);
+      //consola.debug('[Meta Route] original poster URL:', result.meta.poster);
       const posterUrl = result.meta.poster;
       let cleanPoster = posterUrl;
       let isRatingPoster = false;
@@ -2076,7 +2076,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         
         // Case 2: TopPoster Direct API
         else if (urlObj.hostname.includes('top-streaming.stream') && urlObj.searchParams.has('fallback_url')) {
-          consola.debug('[Meta Route] Extracting actual poster URL from TopPoster direct API:', urlObj.searchParams.get('fallback_url'));
+          //consola.debug('[Meta Route] Extracting actual poster URL from TopPoster direct API:', urlObj.searchParams.get('fallback_url'));
           const fallback = urlObj.searchParams.get('fallback_url');
           if (fallback) {
             cleanPoster = decodeURIComponent(fallback);
@@ -2091,10 +2091,10 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 
         // Apply fallback if detected
         if (isRatingPoster) {
-          consola.debug('[Meta Route] Applying actual poster URL:', cleanPoster);
+          //consola.debug('[Meta Route] Applying actual poster URL:', cleanPoster);
              if (result.meta._rawPosterUrl) {
                  result.meta.poster = result.meta._rawPosterUrl;
-                 consola.debug('[Meta Route] Using stashed raw poster URL:', result.meta._rawPosterUrl);
+                 //consola.debug('[Meta Route] Using stashed raw poster URL:', result.meta._rawPosterUrl);
              } 
              else if (cleanPoster !== posterUrl) {
                  result.meta.poster = cleanPoster;
