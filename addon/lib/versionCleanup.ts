@@ -73,9 +73,11 @@ async function cleanOldKeys(lastVersion: string | null): Promise<void> {
       if (keysToDelete.length > 0) {
         await redis.del(keysToDelete);
         deletedCount += keysToDelete.length;
+        logger.info(`Deleted ${keysToDelete.length} old keys.`);
       }
     }
     scannedCount += keys.length;
+    logger.info(`Scanned ${scannedCount} keys.`);
     
     // Sleep briefly every 10k keys to prevent blocking Redis
     if (scannedCount % 10000 === 0) {
