@@ -9,6 +9,7 @@ import { initializeMappings } from './lib/wiki-mapper.js';
 import { initializeRatings } from './lib/imdbRatings.js';
 import { runCacheCleanup } from './cache-cleanup.js';
 import { runCachePathMigration } from './lib/cache-path-migration.js';
+import { performVersionCleanup } from './lib/versionCleanup.js';
 import database from './lib/database.js';
 import consola from 'consola';
 
@@ -43,6 +44,10 @@ async function startServer(): Promise<void> {
   consola.success('Cache path migration complete.');
   
   consola.info('Initializing Mappers, Ratings, and Cache Cleanup...');
+
+  consola.info('Performing version cleanup...');
+  await performVersionCleanup();
+  consola.success('Version cleanup complete.');
   
   const initializationTasks = [
     {

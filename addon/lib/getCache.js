@@ -5,6 +5,13 @@ const redis = require('./redisClient');
 const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
 const idMapper = require('./id-mapper');
+const crypto = require('crypto');
+
+// Helper to hash config
+function hashConfig(configObj) {
+  const str = typeof configObj === 'string' ? configObj : stableStringify(configObj);
+  return crypto.createHash('md5').update(str).digest('hex').substring(0, 10);
+}
 
 // Create tagged loggers
 const cacheLogger = consola.withTag('Cache');
@@ -839,6 +846,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   }
   
   const catalogConfigString = JSON.stringify(catalogConfig);
+  const configHash = hashConfig(catalogConfigString);
   
   let cacheTTL = CATALOG_TTL;
   
@@ -905,7 +913,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   let key;
   if (isAuthCatalog) {
     const sessionId = config.sessionId || '';
-    key = `catalog:${sessionId}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
+    key = `catalog:${sessionId}:${configHash}:${cacheTTL}:${catalogKey}`;
   } else if (isAiringTodayCatalog) {
     // Use local timezone to get today's date for cache key
     const now = new Date();
@@ -913,15 +921,15 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
-    key = `catalog:${today}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
+    key = `catalog:${today}:${configHash}:${cacheTTL}:${catalogKey}`;
   } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
-    key = `catalog:${userUUID}:${catalogConfigString}:${cacheTTL}:${catalogKey}`;
+    key = `catalog:${userUUID}:${configHash}:${cacheTTL}:${catalogKey}`;
   } else {
-    key = `catalog:${catalogConfigString}:${catalogKey}`;
+    key = `catalog:${configHash}:${catalogKey}`;
   }
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
-  const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${catalogConfigString}|ttl:${cacheTTL}`);
+  const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s`);
   
   // Set module-level context for this catalog request
@@ -990,8 +998,9 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
   };
   
   const searchConfigString = JSON.stringify(searchConfig);
-  const key = `search:${searchConfigString}:${searchKey}`;
-  const searchSig = shortSignature(`${searchConfigString}`);
+  const configHash = hashConfig(searchConfigString);
+  const key = `search:${configHash}:${searchKey}`;
+  const searchSig = shortSignature(`${configHash}`);
   cacheLogger.debug(`[Search] Key detail [sig:${searchSig}]`);
   
   // Shorter TTL for search results since they're more dynamic
@@ -1082,8 +1091,9 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    
   // Create cache key from context-aware meta config (no UUID for shared caching)
   const metaConfigString = stableStringify(metaConfig);
-   const key = `meta:${metaConfigString}:${metaId}`;
-   const metaSig = shortSignature(`${metaConfigString}`);
+  const configHash = hashConfig(metaConfigString);
+   const key = `meta:${configHash}:${metaId}`;
+   const metaSig = shortSignature(`${configHash}`);
   cacheLogger.debug(`[Meta] Key detail (${prefix}/${metaType}) [sig:${metaSig}]`);
    
    return cacheWrap(key, method, ttl, options);
@@ -1186,21 +1196,22 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     }
  
 const metaConfigString = stableStringify(metaConfig);
+const configHash = hashConfig(metaConfigString);
  
  // Define component cache keys
   const componentCacheKeys = {
-     basic: `meta-basic:${metaConfigString}:${metaId}`,
-     poster: `meta-poster:${metaConfigString}:${metaId}`,
-     rawPoster: `meta-raw-poster:${metaConfigString}:${metaId}`,
-     background: `meta-background:${metaConfigString}:${metaId}`,
-     logo: `meta-logo:${metaConfigString}:${metaId}`,
-     videos: `meta-videos:${metaConfigString}:${metaId}`,
-     cast: `meta-cast:${metaConfigString}:${metaId}`,
-     director: `meta-director:${metaConfigString}:${metaId}`,
-     writer: `meta-writer:${metaConfigString}:${metaId}`,
-     links: `meta-links:${metaConfigString}:${metaId}`,
-     trailers: `meta-trailers:${metaConfigString}:${metaId}`,
-     extras: `meta-extras:${metaConfigString}:${metaId}`
+     basic: `meta-basic:${configHash}:${metaId}`,
+     poster: `meta-poster:${configHash}:${metaId}`,
+     rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
+     background: `meta-background:${configHash}:${metaId}`,
+     logo: `meta-logo:${configHash}:${metaId}`,
+     videos: `meta-videos:${configHash}:${metaId}`,
+     cast: `meta-cast:${configHash}:${metaId}`,
+     director: `meta-director:${configHash}:${metaId}`,
+     writer: `meta-writer:${configHash}:${metaId}`,
+     links: `meta-links:${configHash}:${metaId}`,
+     trailers: `meta-trailers:${configHash}:${metaId}`,
+     extras: `meta-extras:${configHash}:${metaId}`
    };
    
    // Debug: Log cache keys for different content types
@@ -1453,22 +1464,23 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  }
  
  const metaConfigString = stableStringify(metaConfig);
-  const debugSig = shortSignature(`${userUUID}|${metaConfigString}`);
+ const configHash = hashConfig(metaConfigString);
+  const debugSig = shortSignature(`${userUUID}|${configHash}`);
   
   // Define component cache keys
   const componentCacheKeys = {
-    basic: `meta-basic:${metaConfigString}:${metaId}`,
-     poster: `meta-poster:${metaConfigString}:${metaId}`,
-     rawPoster: `meta-raw-poster:${metaConfigString}:${metaId}`,
-     background: `meta-background:${metaConfigString}:${metaId}`,
-     logo: `meta-logo:${metaConfigString}:${metaId}`,
-     videos: `meta-videos:${metaConfigString}:${metaId}`,
-     cast: `meta-cast:${metaConfigString}:${metaId}`,
-     director: `meta-director:${metaConfigString}:${metaId}`,
-     writer: `meta-writer:${metaConfigString}:${metaId}`,
-     links: `meta-links:${metaConfigString}:${metaId}`,
-     trailers: `meta-trailers:${metaConfigString}:${metaId}`,
-     extras: `meta-extras:${metaConfigString}:${metaId}`
+    basic: `meta-basic:${configHash}:${metaId}`,
+     poster: `meta-poster:${configHash}:${metaId}`,
+     rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
+     background: `meta-background:${configHash}:${metaId}`,
+     logo: `meta-logo:${configHash}:${metaId}`,
+     videos: `meta-videos:${configHash}:${metaId}`,
+     cast: `meta-cast:${configHash}:${metaId}`,
+     director: `meta-director:${configHash}:${metaId}`,
+     writer: `meta-writer:${configHash}:${metaId}`,
+     links: `meta-links:${configHash}:${metaId}`,
+     trailers: `meta-trailers:${configHash}:${metaId}`,
+     extras: `meta-extras:${configHash}:${metaId}`
    };
    
    // Try to fetch all components from cache using MGET (optimized single round trip)
