@@ -65,9 +65,29 @@ async function makeRateLimitedRequest<T>(
       const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('letterboxd', responseTime, false);
 
+      // Log error to dashboard on final attempt
       if (isLastAttempt) {
+        const status = error.response?.status;
+        const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
+        requestTracker.logProviderError('letterboxd', errorType, error.message, {
+          context,
+          responseTime,
+          status,
+          attempts: attempt
+        });
+        
         logger.error(`Request failed after ${retries} attempts: ${error.message} - ${context}`);
         throw error;
+      }
+
+      // Log rate limits even on non-final attempts
+      if (error.response?.status === 429) {
+        requestTracker.logProviderError('letterboxd', 'rate_limit', 'Rate limit hit (429)', {
+          context,
+          responseTime,
+          attempt,
+          retriesRemaining: retries - attempt
+        });
       }
 
       const delay = Math.min(

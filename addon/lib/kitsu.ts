@@ -217,6 +217,15 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
 
     return results;
   } catch (error: any) {
+    // Log error to dashboard
+    const requestTracker = require('./requestTracker');
+    const status = error.response?.status;
+    const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
+    requestTracker.logProviderError('kitsu', errorType, `Search failed: ${error.message}`, {
+      query,
+      status
+    });
+    
     console.error(`[Kitsu Client] Error searching for "${query}":`, error.message);
     return results;
   }
