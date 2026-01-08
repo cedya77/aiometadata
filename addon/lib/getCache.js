@@ -1555,8 +1555,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
          const Utils = require("../utils/parseProps");
-         // Strip known prefixes used for special metas (upnext_, unwatched_, tun_)
-         let canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_)/, '');
+         // Strip known prefixes used for special metas (upnext_, unwatched_, tun_, mdblist_upnext_)
+         let canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_|mdblist_upnext_)/, '');
          // Also strip any trailing episode identifier we append to upnext cache keys
          // Examples: 'tmdb:123_trakt456' or 'tvdb:789_S1E02' -> keep only the canonical media id
          canonicalProxyId = canonicalProxyId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');

@@ -1,7 +1,7 @@
 require("dotenv").config();
 import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
-import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo } from "../utils/mdbList.js";
+import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
@@ -473,6 +473,58 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   if (id.startsWith("mdblist.")) {
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const catalogConfig = config.catalogs?.find(c => c.id === id);
+    
+    // Handle MDBList Up Next catalog
+    if (id === 'mdblist.upnext') {
+      // MDBList Up Next catalog - only supports series type
+      if (type !== 'series') {
+        logger.info(`MDBList Up Next: Type ${type} requested, returning empty (only series supported)`);
+        return [];
+      }
+      
+      const upNextStart = Date.now();
+      logger.info(`[MDBList Up Next] Starting catalog fetch (page: ${page})`);
+      
+      const apiKey = config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '';
+      if (!apiKey) {
+        logger.warn('[MDBList Up Next] Missing API key');
+        return [];
+      }
+      
+      const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+      // Ensure page is a number
+      const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+      const response = await fetchMDBListUpNext(apiKey, pageNum, pageSize);
+      
+      // Early exit for empty pages beyond list end
+      if (!response.hasMore && (!response.items || response.items.length === 0)) {
+        logger.info(`[MDBList Up Next] No more items at page ${pageNum}`);
+        return [];
+      }
+      
+      if (!response.items || response.items.length === 0) {
+        logger.info(`[MDBList Up Next] No items found for page ${pageNum}`);
+        return [];
+      }
+      
+      const totalTime = Date.now() - upNextStart;
+      logger.info(`[MDBList Up Next] Fetched ${response.items.length} items in ${totalTime}ms`);
+      
+      // Get useShowPoster setting from catalog config
+      const useShowPoster = catalogConfig?.metadata?.useShowPosterForUpNext || false;
+      logger.debug(`[MDBList Up Next] useShowPosterForUpNext = ${useShowPoster}`);
+      
+      const parseStart = Date.now();
+      let metas = await parseMDBListUpNextItems(response.items, language, config, includeVideos, useShowPoster);
+      const parseTime = Date.now() - parseStart;
+      logger.info(`[MDBList Up Next] parseMDBListUpNextItems took ${parseTime}ms for ${response.items.length} items`);
+      
+      // Apply age rating filter
+      metas = applyAgeRatingFilter(metas, type, config);
+      
+      logger.success(`[MDBList Up Next] Processed ${metas.length} items`);
+      return metas;
+    }
     
     // Handle external lists via sourceUrl
     if (catalogConfig?.sourceUrl && catalogConfig.sourceUrl.includes('/external/lists/')) {

@@ -1158,5 +1158,193 @@ async function makeRateLimitedMDBListRequest(url: string, apiKey: string, contex
   );
 }
 
-export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched, makeRateLimitedMDBListRequest };
+/**
+ * Fetch MDBList Up Next shows for a user
+ * @param apiKey - User's MDBList API key
+ * @param page - Page number (default: 1)
+ * @param limit - Number of items per page (default: 20, max: 100)
+ * @returns Object with items array and pagination info
+ */
+async function fetchMDBListUpNext(
+  apiKey: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<{ items: any[], hasMore: boolean, limit: number }> {
+  if (!apiKey) {
+    logger.warn('[MDBList Up Next] Missing API key');
+    return { items: [], hasMore: false, limit };
+  }
+
+  try {
+    // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
+    // Use provided limit if valid, otherwise use env var or default
+    const pageSize = limit > 0 ? limit : (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20);
+    // Ensure page is a number and calculate offset
+    const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+    const offset = (pageNum * pageSize) - pageSize;
+    const url = `https://api.mdblist.com/upnext?apikey=${apiKey}&limit=${pageSize}&offset=${offset}`;
+    
+    logger.debug(`[MDBList Up Next] Fetching page ${pageNum} (limit: ${pageSize}, offset: ${offset})`);
+    
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, { dispatcher: mdblistDispatcher }),
+      apiKey,
+      `MDBList fetchMDBListUpNext (page: ${pageNum}, limit: ${pageSize})`
+    );
+
+    const items = response.data?.items || [];
+    const hasMore = response.data?.has_more || false;
+    
+    logger.info(`[MDBList Up Next] Fetched ${items.length} items (hasMore: ${hasMore})`);
+    
+    return {
+      items,
+      hasMore,
+      limit: response.data?.limit || pageSize
+    };
+  } catch (error: any) {
+    logger.error(`[MDBList Up Next] Error fetching up next shows: ${error.message}`);
+    return { items: [], hasMore: false, limit };
+  }
+}
+
+/**
+ * Parse MDBList Up Next items into Stremio meta format
+ * @param items - Array of MDBList up next items
+ * @param language - Language code
+ * @param config - User config
+ * @param includeVideos - Whether to include videos
+ * @param useShowPoster - Whether to use show poster instead of episode thumbnail
+ * @returns Array of parsed meta objects
+ */
+async function parseMDBListUpNextItems(
+  items: any[],
+  language: string,
+  config: UserConfig,
+  includeVideos: boolean = false,
+  useShowPoster: boolean = false
+): Promise<any[]> {
+  const parseStart = Date.now();
+  
+  logger.info(`[MDBList Up Next] Parsing ${items.length} items`);
+  
+  const getMetaTimings: number[] = [];
+  
+  const metas = await Promise.all(
+    items.map(async (item: any, index: number) => {
+      const itemStart = Date.now();
+      try {
+        const show = item.show;
+        const nextEpisode = item.next_episode;
+        
+        if (!show || !nextEpisode) {
+          logger.warn(`[MDBList Up Next] Item missing show or next_episode:`, item);
+          return null;
+        }
+        
+        // Get stremioId from available IDs (prefer tmdb)
+        let stremioId: string;
+        if (show.ids?.tmdb) {
+          stremioId = `tmdb:${show.ids.tmdb}`;
+        } else if (show.ids?.imdb) {
+          stremioId = show.ids.imdb;
+        } else {
+          logger.warn(`[MDBList Up Next] Show has no usable ID:`, show.ids);
+          return null;
+        }
+        
+        // Create unique cache key that includes the next-episode identifier
+        const epIdPart = `S${nextEpisode.season}E${nextEpisode.episode}`;
+        const cacheId = `mdblist_upnext_${stremioId}_${epIdPart}`;
+        
+        const getMetaStart = Date.now();
+        const result = await cacheWrapMetaSmart(
+          config.userUUID,
+          cacheId,
+          async () => {
+            const metaResult = await getMeta('series', language, stremioId, config, config.userUUID, true);
+            
+            if (metaResult?.meta?.videos && Array.isArray(metaResult.meta.videos)) {
+              const upNextVideo = metaResult.meta.videos.find((v: any) =>
+                v.season === nextEpisode.season &&
+                v.episode === nextEpisode.episode
+              );
+              
+              if (upNextVideo) {
+                metaResult.meta.videos = [upNextVideo];
+                metaResult.meta.behaviorHints = metaResult.meta.behaviorHints || {};
+                metaResult.meta.behaviorHints.defaultVideoId = upNextVideo.id;
+                
+                // Check if user wants to use show poster or episode thumbnail
+                if (!useShowPoster) {
+                  // Prefer episode still from API, fallback to video thumbnail
+                  if (nextEpisode.still) {
+                    metaResult.meta.poster = nextEpisode.still.startsWith('http') 
+                      ? nextEpisode.still 
+                      : `https://image.tmdb.org/t/p/w500${nextEpisode.still}`;
+                  } else if (upNextVideo.thumbnail) {
+                    metaResult.meta.poster = upNextVideo.thumbnail;
+                  }
+                  
+                  if (metaResult.meta.poster) {
+                    metaResult.meta.posterShape = 'landscape';
+                    // Handle fallback URL extraction (similar to Trakt)
+                    if (metaResult.meta.poster.includes('/poster/') && metaResult.meta.poster.includes('fallback=')) {
+                      try {
+                        const url = new URL(metaResult.meta.poster);
+                        const fallback = url.searchParams.get('fallback');
+                        if (fallback) {
+                          metaResult.meta.poster = decodeURIComponent(fallback);
+                        }
+                      } catch (e) {
+                        // Keep original if URL parsing fails
+                        logger.warn(`[MDBList Up Next] Failed to extract fallback poster URL: ${e.message}`);
+                      }
+                    }
+                  }
+                }
+                // If useShowPoster is true, keep the original show poster
+                
+                metaResult.meta.name = `${metaResult.meta.name} - S${nextEpisode.season}E${nextEpisode.episode}`;
+                metaResult.meta.id = cacheId;
+              } else {
+                logger.warn(`[MDBList Up Next] Episode S${nextEpisode.season}E${nextEpisode.episode} not found in videos for ${metaResult.meta.name}`);
+              }
+            }
+            
+            return metaResult;
+          },
+          undefined,
+          { enableErrorCaching: true, maxRetries: 2 },
+          'series' as any,
+          true,
+          useShowPoster
+        );
+        
+        const getMetaTime = Date.now() - getMetaStart;
+        getMetaTimings.push(getMetaTime);
+        
+        if (result && result.meta) {
+          return result.meta;
+        }
+        return null;
+      } catch (error: any) {
+        logger.error(`[MDBList Up Next] Error getting meta for item:`, error.message);
+        return null;
+      }
+    })
+  );
+  
+  const validMetas = metas.filter(Boolean);
+  const totalParseTime = Date.now() - parseStart;
+  const avgGetMetaTime = getMetaTimings.length > 0 ? Math.round(getMetaTimings.reduce((a, b) => a + b, 0) / getMetaTimings.length) : 0;
+  
+  logger.info(`[MDBList Up Next] Successfully parsed ${validMetas.length} items into metas`);
+  logger.info(`[MDBList Up Next] getMeta timings - avg: ${avgGetMetaTime}ms`);
+  logger.info(`[MDBList Up Next] Total parsing time: ${totalParseTime}ms`);
+  
+  return validMetas;
+}
+
+export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched, makeRateLimitedMDBListRequest, fetchMDBListUpNext, parseMDBListUpNextItems };
 

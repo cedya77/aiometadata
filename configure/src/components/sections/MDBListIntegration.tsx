@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
 import { getMdbListType, createMDBListCatalog } from '@/utils/catalogUtils';
@@ -47,6 +47,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
+  
+  // Helper function to get display type override
+  const getDisplayTypeOverride = (
+    type: 'movie' | 'series',
+    displayTypeOverrides?: Record<string, string>
+  ): string | undefined => {
+    if (!displayTypeOverrides) return undefined;
+    return displayTypeOverrides[type];
+  };
+  
   // Function to import selected top lists
   const importSelectedTopLists = useCallback(async () => {
     if (selectedTopLists.size === 0) {
@@ -831,6 +841,43 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       toast.error("Error Adding Watchlist", { description: message });
     }
   };
+
+  const handleAddUpNext = () => {
+    if (!isValid) {
+      toast.error("Please enter and validate your MDBList API key first");
+      return;
+    }
+
+    setConfig(prev => {
+      const displayType = getDisplayTypeOverride('series', prev.displayTypeOverrides);
+
+      const newCatalog: CatalogConfig = {
+        id: "mdblist.upnext",
+        type: "series",
+        name: "MDBList Up Next",
+        enabled: true,
+        showInHome: true,
+        source: "mdblist",
+        cacheTTL: 300, // 5 minutes
+        ...(displayType && { displayType }),
+      };
+
+      return {
+        ...prev,
+        catalogs: [...prev.catalogs, newCatalog],
+      };
+    });
+
+    toast.success("Up Next catalog added");
+  };
+
+  const handleRemoveUpNext = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.filter(c => c.id !== "mdblist.upnext"),
+    }));
+    toast.success("Up Next catalog removed");
+  };
   
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -968,6 +1015,65 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 <div className="text-xs text-muted-foreground mt-2">
                   Note: Sort and cache settings will apply to newly added lists. Changes take effect after saving your configuration.
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Up Next Catalog Section */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Up Next</CardTitle>
+                <CardDescription>Shows the next episode to watch for each show in your MDBList watched list</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleAddUpNext}
+                    variant="outline"
+                    className="flex-1"
+                    disabled={!!config.catalogs.find(c => c.id === 'mdblist.upnext')}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Up Next
+                  </Button>
+                </div>
+                {config.catalogs.find(c => c.id === 'mdblist.upnext') && (
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                      <span className="font-medium">MDBList Up Next</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRemoveUpNext}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="space-y-0.5">
+                        <label className="text-sm font-medium">Use Show Poster</label>
+                        <p className="text-xs text-muted-foreground">Display show poster instead of episode thumbnail</p>
+                      </div>
+                      <Switch
+                        checked={config.catalogs.find(c => c.id === 'mdblist.upnext')?.metadata?.useShowPosterForUpNext || false}
+                        onCheckedChange={(checked) => {
+                          setConfig(prev => ({
+                            ...prev,
+                            catalogs: prev.catalogs.map(c =>
+                              c.id === 'mdblist.upnext'
+                                ? { ...c, metadata: { ...c.metadata, useShowPosterForUpNext: checked } }
+                                : c
+                            )
+                          }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  This catalog will show the next episode to watch for each show in your MDBList watched list.
+                </p>
               </CardContent>
             </Card>
           )}
