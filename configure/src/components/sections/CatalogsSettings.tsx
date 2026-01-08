@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
+import { TMDBIntegration } from './TMDBIntegration';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
@@ -1342,6 +1343,7 @@ function CatalogsSettingsContent({
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isTraktOpen, setIsTraktOpen] = useState(false);
+  const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
@@ -1961,6 +1963,21 @@ function CatalogsSettingsContent({
                     <Button 
                       variant="ghost" 
                       size="icon" 
+                      onClick={() => setIsTmdbListOpen(true)} 
+                      aria-label="TMDB Lists"
+                      className="h-9 w-9"
+                    >
+                      <img src="/tmdb_icon.png" alt="TMDB" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>TMDB Lists</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
                       onClick={() => setIsLetterboxdOpen(true)} 
                       aria-label="Letterboxd Integration"
                       className="h-9 w-9"
@@ -2124,6 +2141,10 @@ function CatalogsSettingsContent({
       <TraktIntegration
         isOpen={isTraktOpen}
         onClose={() => setIsTraktOpen(false)}
+      />
+      <TMDBIntegration
+        isOpen={isTmdbListOpen}
+        onClose={() => setIsTmdbListOpen(false)}
       />
       <LetterboxdIntegration
         isOpen={isLetterboxdOpen}

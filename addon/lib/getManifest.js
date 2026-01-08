@@ -285,6 +285,50 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
   }
 }
 
+async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = []) {
+  try {
+    console.log(`[Manifest] Creating TMDB List catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    
+    let genres = [];
+    if (userCatalog.type === 'movie' && movieGenres.length > 0) {
+      genres = movieGenres;
+      console.log(`[Manifest] TMDB List using ${genres.length} movie genres`);
+    } else if (userCatalog.type === 'series' && seriesGenres.length > 0) {
+      genres = seriesGenres;
+      console.log(`[Manifest] TMDB List using ${genres.length} series genres`);
+    } else if (userCatalog.type === 'all') {
+      const combined = [...movieGenres, ...seriesGenres];
+      const uniqueGenres = [...new Set(combined)].sort();
+      genres = uniqueGenres;
+      console.log(`[Manifest] TMDB List using ${genres.length} combined genres`);
+    }
+    
+    const genreOptions = genres.length > 0 
+      ? (userCatalog.showInHome ? genres : ['None', ...genres])
+      : ['None'];
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+    console.log(`[Manifest] TMDB List catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    console.error(`[Manifest] Error creating TMDB List catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createLetterboxdCatalog(userCatalog) {
   try {
     console.log(`[Manifest] Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -646,6 +690,9 @@ async function getManifest(config) {
         //console.log(`[Manifest] Trakt catalog ${userCatalog.id} passed filter`);
         return true;
       }
+      if (userCatalog.id.startsWith('tmdb.list.')) {
+        return true;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
         //console.log(`[Manifest] StremThru catalog ${userCatalog.id} passed filter`);
         return true;
@@ -681,6 +728,12 @@ async function getManifest(config) {
           console.log(`[Manifest] Processing Trakt catalog: ${userCatalog.id}`);
           const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
           console.log(`[Manifest] Trakt catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('tmdb.list.')) {
+          console.log(`[Manifest] Processing TMDB List catalog: ${userCatalog.id}`);
+          const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names);
+          console.log(`[Manifest] TMDB List catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {

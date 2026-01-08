@@ -720,6 +720,32 @@ addon.get("/api/mdblist/lists/:listId", async (req, res) => {
   }
 });
 
+// --- TMDB Proxy Endpoints ---
+const moviedb = require('./lib/getTmdb.js');
+
+// Proxy: Get TMDB list details
+addon.get("/api/tmdb/list/:listId", async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    consola.debug(`[TMDB Proxy] Fetching list ${listId}`);
+    
+    const config = { apiKeys: { tmdb: apikey } };
+    const data = await moviedb.getTmdbListDetails({ list_id: listId }, config);
+    
+    res.json(data);
+  } catch (error) {
+    consola.error("[TMDB Proxy] Error fetching list details:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch TMDB list details" });
+  }
+});
+
 // Proxy: Get external lists for current user
 addon.get("/api/mdblist/external/lists/user", async (req, res) => {
   try {

@@ -28,7 +28,7 @@ export interface CatalogConfig {
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
-  // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings, Letterboxd-specific fields)
+  // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings, Letterboxd-specific fields, TMDB-specific fields)
   metadata?: {
     itemCount?: number;
     privacy?: string;
@@ -44,6 +44,9 @@ export interface CatalogConfig {
     isWatchlist?: boolean;
     identifier?: string;
     url?: string;
+    // TMDB-specific metadata
+    listId?: string;
+    listDescription?: string;
   };
 }
 
