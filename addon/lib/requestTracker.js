@@ -103,9 +103,6 @@ class RequestTracker {
         redis.incr(`requests:total`).catch(() => {});
         redis.incr(`requests:${today}`).catch(() => {});
         redis.incr(`requests:${hour}`).catch(() => {});
-        redis
-          .incr(`requests:endpoint:${this.normalizeEndpoint(req.path)}`)
-          .catch(() => {});
       }
 
       // Track active users only for user-facing requests (fire-and-forget)
@@ -152,10 +149,6 @@ class RequestTracker {
       const statusCode = res.statusCode;
       const shouldTrack = this.shouldTrackRequest(req);
 
-      // Track response times by endpoint (don't await to avoid blocking)
-      redis.lpush(`response_times:${endpoint}`, responseTime).catch(() => {});
-      redis.ltrim(`response_times:${endpoint}`, 0, 99).catch(() => {}); // Keep last 100
-
       // Track response times by hour for charts
       const hour = new Date().toISOString().substring(0, 13);
       redis.lpush(`response_times:${hour}`, responseTime).catch(() => {});
@@ -164,22 +157,16 @@ class RequestTracker {
 
       // Only track status codes and success/errors for user-facing requests
       if (shouldTrack) {
-        // Track status codes
-        redis.incr(`status:${statusCode}:${today}`).catch(() => {});
 
         // Track errors
         if (statusCode >= 400) {
           redis.incr(`errors:total`).catch(() => {});
           redis.incr(`errors:${today}`).catch(() => {});
-          redis.incr(`errors:${statusCode}:${today}`).catch(() => {});
         } else {
           redis.incr(`success:${today}`).catch(() => {});
         }
       }
 
-      // Set expiration (don't await)
-      redis.expire(`status:${statusCode}:${today}`, 86400 * 30).catch(() => {});
-      redis.expire(`errors:${statusCode}:${today}`, 86400 * 30).catch(() => {});
       redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
 
       // Track catalog/search success
@@ -227,12 +214,6 @@ class RequestTracker {
               .zincrby(`search_success:${today}`, 1, queryNorm)
               .catch(() => {});
             redis.expire(`search_success:${today}`, 86400 * 30).catch(() => {});
-            redis
-              .zincrby(`search_success:${today}:${catalogType}`, 1, queryNorm)
-              .catch(() => {});
-            redis
-              .expire(`search_success:${today}:${catalogType}`, 86400 * 30)
-              .catch(() => {});
           }
         }
       }
@@ -345,12 +326,10 @@ class RequestTracker {
           redis.set(dedupeKey, "1", "NX", "EX", 3)
             .then(setResult => {
               if (setResult) {
-                // Increment both global and per-type aggregates in parallel
+                // Increment global aggregate
                 Promise.all([
                   redis.zincrby(`search_patterns:${today}`, 1, searchQuery),
                   redis.expire(`search_patterns:${today}`, 86400 * 30),
-                  redis.zincrby(`search_patterns:${today}:${catalogType}`, 1, searchQuery),
-                  redis.expire(`search_patterns:${today}:${catalogType}`, 86400 * 30)
                 ]).catch(() => {});
               }
             })
@@ -361,18 +340,6 @@ class RequestTracker {
                 redis.expire(`search_patterns:${today}`, 86400 * 30)
               ]).catch(() => {});
             });
-        }
-      }
-
-      // Track catalog requests by type
-      if (path.includes("/catalog/")) {
-        const catalogMatch = path.match(/\/catalog\/([^\/]+)/);
-        if (catalogMatch) {
-          const [, catalogType] = catalogMatch;
-          redis
-            .zincrby(`catalog_requests:${today}`, 1, catalogType)
-            .catch(() => {});
-          redis.expire(`catalog_requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
         }
       }
     } catch (error) {
@@ -1344,51 +1311,12 @@ class RequestTracker {
     }
   }
 
-  // Get top endpoints
+  
+  // Stub to maintain API compatibility until frontend/callers are updated
   async getTopEndpoints(limit = 10) {
-    try {
-      const endpoints = [];
-      // Use redisUtils.scanKeys to avoid loading all keys at once
-      const { scanKeys } = require('./redisUtils');
-      await scanKeys('requests:endpoint:*', async (key) => {
-        const count = await redis.get(key);
-        const endpoint = key.replace('requests:endpoint:', '');
-        endpoints.push({ endpoint, requests: parseInt(count) || 0 });
-      });
-
-      return endpoints.sort((a, b) => b.requests - a.requests).slice(0, limit);
-    } catch (error) {
-      logger.error("[Request Tracker] Failed to get top endpoints:", error);
-      return [];
-    }
+    return [];
   }
 
-  // Get active users (based on anonymous User-Agent hashes - no IP tracking)
-  async getActiveUsers() {
-    try {
-      const currentHour = new Date().toISOString().substring(0, 13);
-      const previousHour = new Date(Date.now() - 3600000)
-        .toISOString()
-        .substring(0, 13);
-
-      // Get unique anonymous users from current and previous hour
-      const [currentUsers, previousUsers] = await Promise.all([
-        redis.scard(`active_users:${currentHour}`),
-        redis.scard(`active_users:${previousHour}`),
-      ]);
-
-      // Return the maximum of current and previous hour (more stable number)
-      const activeUsers = Math.max(
-        parseInt(currentUsers) || 0,
-        parseInt(previousUsers) || 0,
-      );
-
-      return activeUsers;
-    } catch (error) {
-      logger.error("[Request Tracker] Failed to get active users:", error);
-      return 0;
-    }
-  }
 
   // Log detailed error for dashboard
   async logError(level, message, details = {}) {
@@ -1548,8 +1476,6 @@ class RequestTracker {
       // Track in multiple time windows for better accuracy
       const timeWindows = [
         { key: `active_users:15min`, ttl: 900 }, // 15 minutes
-        { key: `active_users:1hour`, ttl: 3600 }, // 1 hour
-        { key: `active_users:24hour`, ttl: 86400 }, // 24 hours
       ];
 
       // Store detailed user activity for analytics
@@ -1573,9 +1499,6 @@ class RequestTracker {
         redis.lpush("user_activities", JSON.stringify(userActivity)),
         redis.ltrim("user_activities", 0, 999),
         redis.expire("user_activities", 86400 * 7),
-        // Daily unique users
-        redis.sadd(`unique_users:${today}`, userIdentifier),
-        redis.expire(`unique_users:${today}`, 86400 * 30)
       ]);
     } catch (error) {
       logger.warn(
@@ -1622,55 +1545,6 @@ class RequestTracker {
     } catch (error) {
       logger.error("[Request Tracker] Failed to clear active user data:", error);
       return { success: false, message: error.message };
-    }
-  }
-
-  // Get unique users for a specific day
-  async getUniqueUsersForDay(date = null) {
-    try {
-      const targetDate = date || new Date().toISOString().split("T")[0];
-      const key = `unique_users:${targetDate}`;
-      const count = await redis.scard(key);
-      return count || 0;
-    } catch (error) {
-      logger.warn(
-        "[Request Tracker] Failed to get unique users for day:",
-        error.message,
-      );
-      return 0;
-    }
-  }
-
-  // Get total unique users across all tracked days
-  async getTotalUniqueUsers() {
-    try {
-      const today = new Date();
-      const uniqueUsers = new Set();
-
-      // Check last 30 days
-      for (let i = 0; i < 30; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split("T")[0];
-        const key = `unique_users:${dateStr}`;
-
-        try {
-          const users = await redis.smembers(key);
-          if (users) {
-            users.forEach((user) => uniqueUsers.add(user));
-          }
-        } catch (error) {
-          // Key might not exist, continue
-        }
-      }
-
-      return uniqueUsers.size;
-    } catch (error) {
-      logger.warn(
-        "[Request Tracker] Failed to get total unique users:",
-        error.message,
-      );
-      return 0;
     }
   }
 
