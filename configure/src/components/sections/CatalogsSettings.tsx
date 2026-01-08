@@ -1139,7 +1139,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist' || catalog.source === 'letterboxd') && (
+          {((catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist' || catalog.source === 'letterboxd') || 
+            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.')))) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">

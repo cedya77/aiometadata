@@ -48,13 +48,10 @@ export const animeCatalogs: CatalogDefinition[] = [
   { id: 'mal.top_anime', name: 'MAL Top Anime', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
 ]
 
-// --- Catalogs requiring TMDB Authentication ---
-export const authCatalogs: CatalogDefinition[] = [
-    { id: 'tmdb.favorites', name: 'TMDB Favorites (Movies)', type: 'movie', source: 'tmdb', isEnabledByDefault: false, showOnHomeByDefault: false },
-    { id: 'tmdb.favorites', name: 'TMDB Favorites (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: false, showOnHomeByDefault: false },
-    { id: 'tmdb.watchlist', name: 'TMDB Watchlist (Movies)', type: 'movie', source: 'tmdb', isEnabledByDefault: false, showOnHomeByDefault: false },
-    { id: 'tmdb.watchlist', name: 'TMDB Watchlist (Series)', type: 'series', source: 'tmdb', isEnabledByDefault: false, showOnHomeByDefault: false },
-];
+// --- Catalogs requiring Authentication ---
+// Note: TMDB watchlist and favorites are now managed through the TMDB Integration dialog
+// (similar to how Trakt watchlist and favorites are managed)
+export const authCatalogs: CatalogDefinition[] = [];
 
 import { streamingServices, regions } from "./streamings";
 

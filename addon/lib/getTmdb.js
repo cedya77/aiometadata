@@ -873,6 +873,7 @@ module.exports = {
   genreTvList: (params, config) => makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config),
   requestToken,
   sessionId,
+  getAccountDetails,
   accountFavoriteMovies,
   accountFavoriteTv,
   accountMovieWatchlist,
