@@ -258,6 +258,28 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       const responseTime = Date.now() - startTime;
       requestTracker.trackProviderCall('tmdb', responseTime, false);
       
+      // Log significant errors to dashboard
+      if (error.isRetryable) {
+        requestTracker.logProviderError('tmdb', 'rate_limit', 'Rate limit hit (429)', {
+          endpoint,
+          responseTime,
+          retryDelay: error.retryDelay
+        });
+      } else if (typeof error.code === 'string' && error.code.startsWith('UND_ERR_')) {
+        requestTracker.logProviderError('tmdb', 'timeout', `Request timeout: ${error.code}`, {
+          endpoint,
+          responseTime,
+          errorCode: error.code
+        });
+      } else if (attempt >= maxRetries) {
+        // Only log final failures after all retries exhausted
+        requestTracker.logProviderError('tmdb', 'api_error', error.message, {
+          endpoint,
+          responseTime,
+          attempts: attempt
+        });
+      }
+      
       // Check for custom retry delay from our 429 logic
       const delay = error.retryDelay || (1000 * Math.pow(2, attempt - 1));
 

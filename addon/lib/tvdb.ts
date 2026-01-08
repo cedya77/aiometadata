@@ -8,6 +8,7 @@ import { UserConfig } from '../types/index.js';
 // TVDB-specific HTTP client with 429 rate limit handling
 async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: number = 3): Promise<any> {
   let lastError;
+  const startTime = Date.now();
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -18,9 +19,19 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
       }
     } catch (error: any) {
       lastError = error;
+      const responseTime = Date.now() - startTime;
       
       // Check if it's a 429 rate limit error
       if (error.response?.status === 429) {
+        // Log rate limit to dashboard
+        const requestTracker = require('./requestTracker');
+        requestTracker.logProviderError('tvdb', 'rate_limit', 'Rate limit exceeded (429)', {
+          url: url.replace(/token=[^&]+/, 'token=***'), // Redact token
+          responseTime,
+          attempt: attempt + 1,
+          maxRetries: maxRetries + 1
+        });
+        
         if (attempt < maxRetries) {
           // Calculate exponential backoff delay: 1s, 2s, 4s, 8s...
           const delay = Math.min(1000 * Math.pow(2, attempt), 30000); // Cap at 30 seconds
@@ -32,6 +43,17 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
           throw error;
         }
       } else {
+        // Log other errors on final attempt
+        if (attempt >= maxRetries) {
+          const requestTracker = require('./requestTracker');
+          const status = error.response?.status;
+          const errorType = status >= 500 ? 'server_error' : status === 401 || status === 403 ? 'auth_error' : 'api_error';
+          requestTracker.logProviderError('tvdb', errorType, error.message || `Request failed with status ${status}`, {
+            url: url.replace(/token=[^&]+/, 'token=***'),
+            responseTime,
+            status
+          });
+        }
         // Not a 429 error, throw immediately
         throw error;
       }

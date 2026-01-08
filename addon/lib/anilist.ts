@@ -94,6 +94,14 @@ class AniListAPI {
         const retryAfter = error.response.headers['retry-after'];
         const resetTime = error.response.headers['x-ratelimit-reset'];
         
+        // Log rate limit to dashboard
+        requestTracker.logProviderError('anilist', 'rate_limit', 'Rate limit exceeded (429)', {
+          responseTime,
+          retryAfter,
+          resetTime,
+          retriesRemaining: retries
+        });
+        
         if (retryAfter) {
           const waitTime = parseInt(retryAfter) * 1000;
           console.log(`[AniList] Rate limit exceeded, waiting ${waitTime}ms (Retry-After)`);
@@ -112,6 +120,16 @@ class AniListAPI {
         if (retries > 0) {
           return this.makeRateLimitedRequest(requestFn, retries - 1);
         }
+      }
+      
+      // Log other errors only on final failure (no retries left)
+      if (retries === 0 && error.response?.status !== 429) {
+        const status = error.response?.status;
+        const errorType = status >= 500 ? 'server_error' : 'api_error';
+        requestTracker.logProviderError('anilist', errorType, error.message || `Request failed with status ${status}`, {
+          responseTime,
+          status
+        });
       }
       
       throw error;
