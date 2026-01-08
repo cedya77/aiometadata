@@ -593,11 +593,11 @@ class RequestTracker {
     try {
       if (!meta || !meta.name) return;
 
-      // Extract metaId from cache key format: meta:config:metaId
-      const keyMatch = cacheKey.match(/^meta:.*:(.+)$/);
+      // Extract metaId from cache key format: meta:configHash:metaId
+      const keyMatch = cacheKey.match(/^meta:([a-f0-9]{10}):(.+)$/);
       if (!keyMatch) return;
-
-      const metaId = keyMatch[1];
+      
+      const metaId = keyMatch[2];
       logger.info(
         `[Request Tracker] Capturing metadata from cache key for ${metaId}: "${meta.name}"`,
       );
@@ -730,8 +730,8 @@ class RequestTracker {
       const meta = result?.meta || result;
       if (!meta || !meta.name) return;
 
-      // Extract content info from cache key format: meta:config:id
-      const keyMatch = cacheKey.match(/^meta:.*:(.+)$/);
+      // Extract content info from cache key format: meta:configHash:id
+      const keyMatch = cacheKey.match(/^meta:([a-f0-9]{10}):(.+)$/);
       if (!keyMatch) {
         logger.info(
           `[Request Tracker] Cache key doesn't match expected format: ${cacheKey}`,
@@ -739,7 +739,7 @@ class RequestTracker {
         return;
       }
 
-      const [, id] = keyMatch;
+      const id = keyMatch[2];
 
       // Try to extract type from meta object or guess from ID
       let type = meta.type;
