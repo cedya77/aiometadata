@@ -3798,6 +3798,22 @@ addon.post("/api/dashboard/test-errors", requireDashboardAdmin, (req, res) => {
   }
 });
 
+// Clear all error logs endpoint
+addon.post("/api/dashboard/errors/clear", requireDashboardAdmin, async (req, res) => {
+  try {
+    const result = await requestTracker.clearErrorLogs();
+    
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json({ error: result.message });
+    }
+  } catch (error) {
+    consola.error('[Dashboard API] Error clearing error logs:', error);
+    res.status(500).json({ error: 'Failed to clear error logs' });
+  }
+});
+
 addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {

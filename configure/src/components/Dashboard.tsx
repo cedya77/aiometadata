@@ -2517,9 +2517,58 @@ function DashboardOperations({ data, loading }) {
     }
   };
 
-  const handleRetryError = (errorId) => {
-    // TODO: Implement error retry logic
-    console.log(`Retrying error ${errorId}...`);
+  const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const [clearingErrors, setClearingErrors] = useState(false);
+
+  const toggleErrorDetails = (errorId: string) => {
+    setExpandedErrors(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(errorId)) {
+        newSet.delete(errorId);
+      } else {
+        newSet.add(errorId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleClearAllErrors = async () => {
+    setClearingErrors(true);
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (adminKey) {
+        headers["x-admin-key"] = adminKey;
+      }
+
+      const response = await fetch("/api/dashboard/errors/clear", {
+        method: "POST",
+        headers,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setErrorLogs([]);
+        setExpandedErrors(new Set());
+        toast.success("Errors Cleared", {
+          description: result.message,
+        });
+      } else {
+        const error = await response.json();
+        toast.error("Failed to Clear Errors", {
+          description: error.error,
+        });
+      }
+    } catch (error) {
+      console.error("Error clearing error logs:", error);
+      toast.error("Clear Errors Failed", {
+        description: error.message,
+      });
+    } finally {
+      setClearingErrors(false);
+    }
   };
 
   return (
@@ -2648,55 +2697,105 @@ function DashboardOperations({ data, loading }) {
 
       {/* Error Management */}
       <Card>
-        <CardHeader>
-          <CardTitle>Error Management</CardTitle>
-          <CardDescription>Recent errors and retry options</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div>
+            <CardTitle>Error Management</CardTitle>
+            <CardDescription>Recent errors and warnings from the system</CardDescription>
+          </div>
+          {errorLogs.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearAllErrors}
+              disabled={clearingErrors}
+            >
+              {clearingErrors ? (
+                <>
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                "Clear All"
+              )}
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {errorLogs.map((error) => (
-              <div
-                key={error.id}
-                className="flex items-center justify-between p-3 border rounded-lg"
-              >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      error.level === "error"
-                        ? "bg-red-500"
-                        : error.level === "warning"
-                          ? "bg-yellow-500"
-                          : "bg-blue-500"
-                    }`}
-                  ></div>
-                  <div>
-                    <p className="font-medium">{error.message}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {error.timestamp} • Occurred {error.count} time
-                      {error.count > 1 ? "s" : ""}
-                    </p>
-                  </div>
+            {errorLogs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-3">
+                  <Shield className="w-6 h-6 text-green-600" />
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Badge
-                    variant={
-                      error.level === "error" ? "destructive" : "secondary"
-                    }
+                <p className="text-sm font-medium text-muted-foreground">No errors recorded</p>
+                <p className="text-xs text-muted-foreground mt-1">System is running smoothly</p>
+              </div>
+            ) : (
+              errorLogs.map((error) => (
+                <div
+                  key={error.id}
+                  className="border rounded-lg overflow-hidden"
+                >
+                  <div
+                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => toggleErrorDetails(error.id)}
                   >
-                    {error.level}
-                  </Badge>
-                  {error.level === "error" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRetryError(error.id)}
-                    >
-                      Retry
-                    </Button>
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div
+                        className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                          error.level === "error"
+                            ? "bg-red-500"
+                            : error.level === "warning"
+                              ? "bg-yellow-500"
+                              : "bg-blue-500"
+                        }`}
+                      ></div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{error.message}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {error.timeAgo || error.timestamp} • Occurred {error.count} time
+                          {error.count > 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      <Badge
+                        variant={
+                          error.level === "error" ? "destructive" : "secondary"
+                        }
+                      >
+                        {error.level}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {expandedErrors.has(error.id) ? "▲" : "▼"}
+                      </span>
+                    </div>
+                  </div>
+                  {expandedErrors.has(error.id) && error.details && Object.keys(error.details).length > 0 && (
+                    <div className="px-3 pb-3 pt-0 border-t bg-muted/30">
+                      <div className="pt-3 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Details</p>
+                        <div className="grid gap-1.5">
+                          {Object.entries(error.details).map(([key, value]) => (
+                            <div key={key} className="flex justify-between text-sm">
+                              <span className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                              <span className="font-mono text-xs">{String(value)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {expandedErrors.has(error.id) && (!error.details || Object.keys(error.details).length === 0) && (
+                    <div className="px-3 pb-3 pt-0 border-t bg-muted/30">
+                      <div className="pt-3">
+                        <p className="text-xs text-muted-foreground">No additional details available</p>
+                      </div>
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

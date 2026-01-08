@@ -913,6 +913,38 @@ class RequestTracker {
     }
   }
 
+  /**
+   * Log a provider error to the dashboard error management system.
+   * Use this for significant errors that admins should be aware of.
+   * 
+   * @param {string} provider - Provider name (e.g., 'tmdb', 'tvdb', 'anilist', 'mal', 'kitsu')
+   * @param {string} errorType - Type of error: 'rate_limit', 'timeout', 'server_error', 'auth_error', 'api_error'
+   * @param {string} message - Human-readable error message
+   * @param {Object} details - Additional context (endpoint, status, responseTime, etc.)
+   */
+  logProviderError(provider, errorType, message, details = {}) {
+    // Skip if metrics collection is disabled
+    if (isMetricsDisabled()) {
+      return;
+    }
+
+    // Determine log level based on error type
+    let level = 'error';
+    if (errorType === 'rate_limit' || errorType === 'timeout') {
+      level = 'warning';
+    }
+
+    // Add provider to details for filtering
+    const enrichedDetails = {
+      provider,
+      errorType,
+      ...details,
+    };
+
+    // Log to dashboard error system
+    this.logError(level, `[${provider.toUpperCase()}] ${message}`, enrichedDetails);
+  }
+
   // Get provider performance statistics
   async getProviderPerformance() {
     try {
@@ -1391,6 +1423,48 @@ class RequestTracker {
     } catch (error) {
       logger.error("[Request Tracker] Failed to get error logs:", error);
       return [];
+    }
+  }
+
+  // Clear all error logs
+  async clearErrorLogs() {
+    try {
+      // Get all error IDs from sorted set
+      const errorIds = await redis.zrange("error_logs", 0, -1);
+      
+      // Also scan for any orphaned error_log:* keys not in the sorted set
+      const orphanedKeys = [];
+      let cursor = '0';
+      do {
+        const [newCursor, keys] = await redis.scan(cursor, 'MATCH', 'error_log:*', 'COUNT', 100);
+        cursor = newCursor;
+        orphanedKeys.push(...keys);
+      } while (cursor !== '0');
+
+      // Combine both sets of keys to delete
+      const keysToDelete = new Set([
+        ...errorIds.map(id => `error_log:${id}`),
+        ...orphanedKeys
+      ]);
+
+      if (keysToDelete.size === 0 && errorIds.length === 0) {
+        return { success: true, message: "No error logs to clear", clearedCount: 0 };
+      }
+
+      // Delete all error log entries and the sorted set
+      const pipeline = redis.pipeline();
+      for (const key of keysToDelete) {
+        pipeline.del(key);
+      }
+      pipeline.del("error_logs");
+      await pipeline.exec();
+
+      const clearedCount = keysToDelete.size;
+      logger.info(`[Request Tracker] Cleared ${clearedCount} error logs`);
+      return { success: true, message: `Cleared ${clearedCount} error logs`, clearedCount };
+    } catch (error) {
+      logger.error("[Request Tracker] Failed to clear error logs:", error);
+      return { success: false, message: error.message, clearedCount: 0 };
     }
   }
 
