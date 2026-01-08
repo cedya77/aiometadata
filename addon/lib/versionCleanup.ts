@@ -2,13 +2,22 @@ import redis from './redisClient';
 import packageJson from '../../package.json';
 import consola from 'consola';
 
+const { deleteKeysByPattern } = require('./redisUtils');
+
 const logger = consola.withTag('Version-Cleanup');
 
 const CURRENT_VERSION = packageJson.version;
 const VERSION_KEY = 'system:app_version';
 
+// Regex to extract version from key patterns
+const VERSIONED_KEY_REGEX = /^v(\d+\.\d+\.\d+):/;
+const GLOBAL_KEY_REGEX = /^global:(\d+\.\d+\.\d+):/;
+
 export async function performVersionCleanup(): Promise<void> {
-  if (!redis) return;
+  if (!redis) {
+    logger.warn('Redis not available, skipping version cleanup');
+    return;
+  }
 
   try {
     const lastVersion = await redis.get(VERSION_KEY);
@@ -23,7 +32,8 @@ export async function performVersionCleanup(): Promise<void> {
 
     await redis.set(VERSION_KEY, CURRENT_VERSION);
 
-    cleanOldKeys(lastVersion).catch(err => {
+    // Run cleanup in background to not block startup
+    cleanOldVersionedKeys().catch(err => {
       logger.error('Background cleanup failed:', err);
     });
 
@@ -32,60 +42,36 @@ export async function performVersionCleanup(): Promise<void> {
   }
 }
 
-async function cleanOldKeys(lastVersion: string | null): Promise<void> {
+async function cleanOldVersionedKeys(): Promise<void> {
   if (!redis) return;
-  const startTime = Date.now();
-  let deletedCount = 0;
-  let scannedCount = 0;
   
-  const currentPrefix = `v${CURRENT_VERSION}:`;
-  const globalPrefix = `global:${CURRENT_VERSION}:`;
-  const versionRegex = /^v\d+\.\d+\.\d+:/; 
+  const startTime = Date.now();
+  let totalDeleted = 0;
 
-  let cursor = '0';
-  do {
-    const result = await redis.scan(cursor, 'MATCH', '*', 'COUNT', 1000);
-    cursor = result[0];
-    const keys = result[1];
-
-    if (keys.length > 0) {
-      const keysToDelete: string[] = [];
-      
-      for (const key of keys) {
-        // 1. Check for Standard Cache Keys (vX.X.X:...)
-        if (key.startsWith('v')) {
-           // If it looks like a versioned key (v1.2.3:...) AND doesn't match current prefix
-           if (versionRegex.test(key) && !key.startsWith(currentPrefix)) {
-               keysToDelete.push(key);
-           }
-        }
-        // 2. Check for Global Cache Keys (global:X.X.X:...)
-        else if (key.startsWith('global:')) {
-           if (!key.startsWith(globalPrefix)) {
-               const parts = key.split(':');
-               if (parts.length > 1 && /^\d+\.\d+\.\d+$/.test(parts[1])) {
-                   keysToDelete.push(key);
-               }
-           }
-        }
-      }
-
-      if (keysToDelete.length > 0) {
-        await redis.del(keysToDelete);
-        deletedCount += keysToDelete.length;
-        logger.info(`Deleted ${keysToDelete.length} old keys.`);
-      }
+  // Clean old versioned keys (v1.2.3:*) - uses targeted SCAN pattern
+  const versionedDeleted = await deleteKeysByPattern('v*', {
+    scanCount: 1000,
+    batchSize: 500,
+    filter: (key: string) => {
+      const match = VERSIONED_KEY_REGEX.exec(key);
+      // Only delete if it's a versioned key AND not the current version
+      return match !== null && match[1] !== CURRENT_VERSION;
     }
-    scannedCount += keys.length;
-    logger.info(`Scanned ${scannedCount} keys.`);
-    
-    // Sleep briefly every 10k keys to prevent blocking Redis
-    if (scannedCount % 10000 === 0) {
-       await new Promise(resolve => setTimeout(resolve, 10));
-    }
+  });
+  totalDeleted += versionedDeleted;
 
-  } while (cursor !== '0');
+  // Clean old global versioned keys (global:1.2.3:*)
+  const globalDeleted = await deleteKeysByPattern('global:*', {
+    scanCount: 1000,
+    batchSize: 500,
+    filter: (key: string) => {
+      const match = GLOBAL_KEY_REGEX.exec(key);
+      // Only delete if it's a versioned global key AND not the current version
+      return match !== null && match[1] !== CURRENT_VERSION;
+    }
+  });
+  totalDeleted += globalDeleted;
 
   const duration = (Date.now() - startTime) / 1000;
-  logger.success(`Cleanup complete in ${duration}s. Deleted ${deletedCount} old keys from ${lastVersion || 'unknown'}.`);
+  logger.success(`Cleanup complete in ${duration.toFixed(2)}s. Deleted ${totalDeleted} old versioned keys.`);
 }
