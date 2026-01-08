@@ -141,8 +141,7 @@ INVALID OUTPUTS (DO NOT DO THIS):
 TODAY: ${currentDate}
 
 === RESULT COUNT ===
-- IDENTIFICATION QUERY ("looking for that movie where...", "what's the show filmed in...", "series with X actor"): Return 1-5 best matches
-- DISCOVERY QUERY ("best horror", "movies like X", "trending"): Return exactly ${numResults} results
+- you must return exactly ${numResults} results without any padding and when possible.
 - Never pad with unrelated results
 
 === USER QUERY ===
