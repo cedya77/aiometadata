@@ -120,9 +120,15 @@ async function processQueue() {
 async function processRequest(requestTask) {
   activeRequests++;
   let nextDelay = 0; 
+  const startTime = Date.now();
 
   try {
     const result = await requestTask.task();
+    
+    // Track final success (after all retries if any)
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('mal', responseTime, true);
     
     requestTask.resolve(result);
     
@@ -163,7 +169,7 @@ async function processRequest(requestTask) {
           `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
         );
         
-        // Log rate limit warning for dashboard
+        // Log rate limit warning for dashboard (but don't count as failure yet)
         const requestTracker = require('./requestTracker');
         requestTracker.logError('warning', `MAL API rate limit hit`, {
           retries: requestTask.retries,
@@ -191,7 +197,7 @@ async function processRequest(requestTask) {
           `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
         );
         
-        // Log timeout warning for dashboard
+        // Log timeout warning for dashboard (but don't count as failure yet)
         const requestTracker = require('./requestTracker');
         requestTracker.logError('warning', `MAL API timeout`, {
           retries: requestTask.retries,
@@ -211,8 +217,18 @@ async function processRequest(requestTask) {
       }
       
     } else {
+      // Track final failure (after all retries exhausted or non-retryable error)
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('mal', responseTime, false);
+      
       if (requestTask.retries >= MAX_RETRIES) {
         logger.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries. Giving up.`);
+        requestTracker.logError('error', `MAL API request failed after ${MAX_RETRIES} retries`, {
+          url: requestTask.url,
+          responseTime: responseTime,
+          status: error.response?.status
+        });
       }
       if (error.code) {
         logger.debug(`Jikan request for "${requestTask.url}" failed with network error code: ${error.code}`);
@@ -268,10 +284,7 @@ async function _makeJikanRequest(url) {
       });
     }
     
-    // Track successful request
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('mal', responseTime, true);
-    
+    // Note: Success/failure tracking is done in processRequest() to track final outcome only
     //logger.debug(`Request completed in ${responseTime}ms (undici)`);
     return response;
   } catch (error) {
@@ -282,22 +295,12 @@ async function _makeJikanRequest(url) {
       const cached = etagCache.get(url);
       if (cached && cached.data) {
         //logger.debug(`Cache hit (304) for: ${url} in ${responseTime}ms`);
-        const requestTracker = require('./requestTracker');
-        requestTracker.trackProviderCall('mal', responseTime, true);
         return cached.data;
       }
     }
     
-    // Track failed request
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('mal', responseTime, false);
-    
-    // Log error for dashboard
-    requestTracker.logError('error', `MAL API request failed: ${error.message}`, {
-      url: url,
-      responseTime: responseTime,
-      status: error.response?.status
-    });
+    // Note: Success/failure tracking is done in processRequest() to track final outcome only
+    // Re-throw to let processRequest handle retries
     
     throw error;
   }

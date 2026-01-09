@@ -40,7 +40,7 @@ class AniListAPI {
   /**
    * Rate limiting and retry logic
    */
-  async makeRateLimitedRequest(requestFn: () => Promise<any>, retries = 3): Promise<any> {
+  async makeRateLimitedRequest(requestFn: () => Promise<any>, retries = 3, isRetry = false): Promise<any> {
     const now = Date.now();
     
     // Check if we need to wait for rate limit reset
@@ -64,9 +64,11 @@ class AniListAPI {
       const response = await requestFn();
       const responseTime = Date.now() - startTime;
       
-      // Track successful request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('anilist', responseTime, true);
+      // Track successful request (only once per logical request, not per retry)
+      if (!isRetry) {
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('anilist', responseTime, true);
+      }
       
       // Update rate limit info from headers
       if (response.headers) {
@@ -85,16 +87,13 @@ class AniListAPI {
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
       
-      // Track failed request
-      const requestTracker = require('./requestTracker');
-      requestTracker.trackProviderCall('anilist', responseTime, false);
-      
       if (error.response?.status === 429) {
-        // Rate limit exceeded
+        // Rate limit exceeded - log warning but don't count as failure yet
         const retryAfter = error.response.headers['retry-after'];
         const resetTime = error.response.headers['x-ratelimit-reset'];
         
-        // Log rate limit to dashboard
+        // Log rate limit warning to dashboard
+        const requestTracker = require('./requestTracker');
         requestTracker.logProviderError('anilist', 'rate_limit', 'Rate limit exceeded (429)', {
           responseTime,
           retryAfter,
@@ -116,21 +115,24 @@ class AniListAPI {
         this.rateLimit.remaining = 0;
         this.rateLimit.resetTime = resetTime ? parseInt(resetTime) * 1000 : Date.now() + 60000;
         
-        // Retry the request
+        // Retry the request (mark as retry so we don't double-count)
         if (retries > 0) {
-          return this.makeRateLimitedRequest(requestFn, retries - 1);
+          return this.makeRateLimitedRequest(requestFn, retries - 1, true);
         }
       }
       
-      // Log other errors only on final failure (no retries left)
-      if (retries === 0 && error.response?.status !== 429) {
-        const status = error.response?.status;
-        const errorType = status >= 500 ? 'server_error' : 'api_error';
-        requestTracker.logProviderError('anilist', errorType, error.message || `Request failed with status ${status}`, {
-          responseTime,
-          status
-        });
-      }
+      // Track final failure (only when all retries exhausted or non-retryable error)
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('anilist', responseTime, false);
+      
+      // Log error details
+      const status = error.response?.status;
+      const errorType = status >= 500 ? 'server_error' : status === 429 ? 'rate_limit' : 'api_error';
+      requestTracker.logProviderError('anilist', errorType, error.message || `Request failed with status ${status}`, {
+        responseTime,
+        status,
+        retriesExhausted: retries === 0
+      });
       
       throw error;
     }

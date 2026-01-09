@@ -21,6 +21,12 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
       lastError = error;
       const responseTime = Date.now() - startTime;
       
+      // 404 is not a failure - the API worked, the content just doesn't exist
+      // Return empty response instead of throwing
+      if (error.response?.status === 404) {
+        return { data: { data: null } };
+      }
+      
       // Check if it's a 429 rate limit error
       if (error.response?.status === 429) {
         // Log rate limit to dashboard

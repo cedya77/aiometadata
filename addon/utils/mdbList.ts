@@ -156,6 +156,7 @@ function isRateLimitError(error: any): boolean {
 
 /**
  * Rate limiting and retry logic for MDBList API calls
+ * Tracks provider calls only for final outcomes (not each retry attempt)
  */
 async function makeRateLimitedRequest<T>(
   requestFn: () => Promise<T>, 
@@ -165,6 +166,7 @@ async function makeRateLimitedRequest<T>(
 ): Promise<T> {
   let attempt = 0;
   const state = getRateLimitState(apiKey);
+  const overallStartTime = Date.now(); // Track total time including retries
   
   while (attempt < retries) {
     attempt++;
@@ -189,6 +191,8 @@ async function makeRateLimitedRequest<T>(
     try {
       const response = await requestFn();
       const responseTime = Date.now() - startTime;
+      
+      // Track success only once on first successful attempt
       const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('mdblist', responseTime, true);
 
@@ -207,11 +211,11 @@ async function makeRateLimitedRequest<T>(
       state.recentRateLimitHits = 0;
       return response;
     } catch (error: any) {
-      const responseTime = Date.now() - startTime;
-      const requestTracker = require('../lib/requestTracker.js');
-      requestTracker.trackProviderCall('mdblist', responseTime, false);
-
       if (isPermanentError(error)) {
+        // Track failure for permanent errors (no retry)
+        const responseTime = Date.now() - overallStartTime;
+        const requestTracker = require('../lib/requestTracker.js');
+        requestTracker.trackProviderCall('mdblist', responseTime, false);
         logger.error(`Request failed with permanent error, no retry: ${error.message} - ${context}`);
         requestTracker.logError('error', `MDBList API permanent error`, { /* ... */ });
         throw error;
@@ -232,6 +236,10 @@ async function makeRateLimitedRequest<T>(
         state.lastReset = reset ? parseInt(reset) : undefined;
 
         if (isLastAttempt) {
+          // Track failure only when all retries exhausted
+          const responseTime = Date.now() - overallStartTime;
+          const requestTracker = require('../lib/requestTracker.js');
+          requestTracker.trackProviderCall('mdblist', responseTime, false);
           logger.error(`Rate limit exceeded after ${retries} attempts: ${error.message} - ${context}`);
           throw error;
         }
@@ -257,6 +265,13 @@ async function makeRateLimitedRequest<T>(
 
         await sleep(backoffTime);
         continue;
+      }
+      
+      // For other temporary errors, only track failure on last attempt
+      if (isLastAttempt) {
+        const responseTime = Date.now() - overallStartTime;
+        const requestTracker = require('../lib/requestTracker.js');
+        requestTracker.trackProviderCall('mdblist', responseTime, false);
       }
       
       if (isLastAttempt) {

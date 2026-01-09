@@ -499,136 +499,127 @@ class DashboardAPI {
     return date.toLocaleDateString();
   }
 
-  // Get provider API key status and rate limits
+  // Get provider status based on actual success/error tracking
   async getProviderStatus() {
     try {
       const providers = [
         {
           name: "TMDB",
-          apiKey: !!process.env.TMDB_API,
-          envVar: "TMDB_API",
+          // Check for user key or built-in key
+          keyStatus: (process.env.TMDB_API || process.env.BUILT_IN_TMDB_API) 
+            ? "Built-in key set" 
+            : "No API key",
+          requiresKey: true,
         },
         {
           name: "TVDB",
-          apiKey: !!process.env.TVDB_API_KEY,
-          envVar: "TVDB_API_KEY",
+          // Check for user key or built-in key - show nothing if not set
+          keyStatus: (process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY) 
+            ? "Built-in key set" 
+            : null,
+          requiresKey: false,
         },
         {
           name: "AniList",
-          apiKey: true, // AniList doesn't require API key
-          envVar: null,
+          // Check if OAuth integration is configured - show "Disabled" if not
+          keyStatus: (process.env.ANILIST_CLIENT_ID && process.env.ANILIST_CLIENT_SECRET) 
+            ? "Integration set-up" 
+            : "Disabled",
+          requiresKey: false,
         },
         {
           name: "MAL",
-          apiKey: true, // MAL via Jikan doesn't require API key (3 req/sec, 60 req/min)
-          envVar: null,
+          keyStatus: null, // Doesn't require API key
+          requiresKey: false,
         },
         {
           name: "Kitsu",
-          apiKey: true, // Kitsu doesn't require API key
-          envVar: null,
+          keyStatus: null, // Doesn't require API key
+          requiresKey: false,
+        },
+        {
+          name: "Trakt",
+          // Check if OAuth integration is configured - show "Disabled" if not
+          keyStatus: (process.env.TRAKT_CLIENT_ID && process.env.TRAKT_CLIENT_SECRET) 
+            ? "Integration set-up" 
+            : "Disabled",
+          requiresKey: false,
+        },
+        {
+          name: "MDBList",
+          // Show nothing if not set
+          keyStatus: process.env.MDBLIST_API_KEY 
+            ? "Built-in key set" 
+            : null,
+          requiresKey: false,
+        },
+        {
+          name: "Letterboxd",
+          keyStatus: null, // Doesn't require API key (uses StremThru)
+          requiresKey: false,
+        },
+        {
+          name: "Gemini",
+          // Show nothing if not set
+          keyStatus: process.env.GEMINI_API_KEY 
+            ? "Built-in key set" 
+            : null,
+          requiresKey: false,
+        },
+        {
+          name: "TVMaze",
+          keyStatus: null, // Doesn't require API key
+          requiresKey: false,
         },
       ];
 
+      const today = new Date().toISOString().split("T")[0];
       const providerStatus = await Promise.all(
         providers.map(async (provider) => {
           try {
             const providerKey = provider.name.toLowerCase();
 
-            // Try to get real rate limit data first
-            const rateLimitKey = `provider_rate_limit:${providerKey}`;
-            const rateLimitData = await this.cache.get(rateLimitKey);
+            // Get today's success/error counts
+            const successCount = parseInt(await this.cache.get(`provider_success:${providerKey}:${today}`)) || 0;
+            const errorCount = parseInt(await this.cache.get(`provider_errors:${providerKey}:${today}`)) || 0;
+            const totalCalls = successCount + errorCount;
 
-            let rateLimit = "0/1000"; // default fallback
+            // Calculate success rate
+            const successRate = totalCalls > 0 
+              ? Math.round((successCount / totalCalls) * 1000) / 10 
+              : null;
+
+            // Get average response time from recent data
+            const currentHour = new Date().toISOString().substring(0, 13);
+            const responseTimes = await this.cache.lrange(`provider_response_times:${providerKey}:${currentHour}`, 0, 99);
+            const avgResponseTime = responseTimes && responseTimes.length > 0
+              ? Math.round(responseTimes.reduce((sum, t) => sum + parseInt(t), 0) / responseTimes.length)
+              : null;
+
+            // Determine health status based purely on success/failure metrics
             let status = "healthy";
-
-            if (rateLimitData) {
-              try {
-                const parsed = JSON.parse(rateLimitData);
-                const now = Date.now();
-
-                // Check if rate limit data is still valid (within 1 hour)
-                if (now - parsed.timestamp < 3600000) {
-                  // Use real rate limit data
-                  rateLimit = `${parsed.remaining}/${parsed.limit}`;
-
-                  // Calculate percentage used
-                  const percentageUsed =
-                    ((parsed.limit - parsed.remaining) / parsed.limit) * 100;
-
-                  if (percentageUsed > 90) {
-                    status = "error";
-                  } else if (percentageUsed > 75) {
-                    status = "warning";
-                  } else {
-                    status = "healthy";
-                  }
-
-                  // Check if rate limit is resetting soon
-                  if (parsed.reset && parsed.reset * 1000 < now + 300000) {
-                    // 5 minutes
-                    status = "warning"; // Reset soon
-                  }
-                }
-              } catch (parseError) {
-                logger.warn(
-                  `[Dashboard API] Failed to parse rate limit data for ${provider.name}:`,
-                  parseError.message,
-                );
+            
+            if (totalCalls === 0) {
+              // No calls today - can't determine status
+              status = "unknown";
+            } else if (successRate !== null) {
+              if (successRate < 50) {
+                status = "down";
+              } else if (successRate < 90) {
+                status = "degraded";
               }
-            }
-
-            // Fallback to hourly call tracking if no real rate limit data
-            if (rateLimit === "0/1000") {
-              const currentHour = new Date().toISOString().substring(0, 13);
-              const hourlyCallsKey = `provider_calls:${providerKey}:${currentHour}`;
-              const currentCalls = (await this.cache.get(hourlyCallsKey)) || 0;
-
-              // Use conservative hourly limits as fallback
-              switch (provider.name) {
-                case "TMDB":
-                  rateLimit = `${currentCalls}/1000`;
-                  if (currentCalls > 800) status = "warning";
-                  if (currentCalls > 1000) status = "error";
-                  break;
-                case "TVDB":
-                  rateLimit = `${currentCalls}/100`;
-                  if (currentCalls > 80) status = "warning";
-                  if (currentCalls > 100) status = "error";
-                  break;
-                case "AniList":
-                  // AniList: 90 requests per minute (currently degraded to 30)
-                  // Use 30 as the current limit due to degraded state
-                  rateLimit = `${currentCalls}/30`;
-                  if (currentCalls > 22) status = "warning"; // 75% of 30
-                  if (currentCalls > 30) status = "error"; // Over limit
-                  break;
-                case "MAL":
-                  // Jikan: 3 requests per second = 180 per minute = 10,800 per hour
-                  // But be conservative and use 60 per minute as the practical limit
-                  rateLimit = `${currentCalls}/60`;
-                  if (currentCalls > 45) status = "warning"; // 75% of 60
-                  if (currentCalls > 60) status = "error"; // Over limit
-                  break;
-                case "Kitsu":
-                  rateLimit = `${currentCalls}/500`;
-                  if (currentCalls > 400) status = "warning";
-                  if (currentCalls > 500) status = "error";
-                  break;
-              }
-            }
-
-            // Override status if API key is missing for required providers
-            if (!provider.apiKey && provider.envVar) {
-              status = "warning";
             }
 
             return {
               name: provider.name,
-              apiKey: provider.apiKey,
-              rateLimit: rateLimit,
-              status: status,
-              envVar: provider.envVar,
+              status,
+              keyStatus: provider.keyStatus,
+              requiresKey: provider.requiresKey,
+              stats: {
+                callsToday: totalCalls,
+                successRate,
+                avgResponseTime,
+              },
             };
           } catch (providerError) {
             logger.warn(
@@ -637,10 +628,10 @@ class DashboardAPI {
             );
             return {
               name: provider.name,
-              apiKey: provider.apiKey,
-              rateLimit: "0/1000",
-              status: "error",
-              envVar: provider.envVar,
+              status: "unknown",
+              keyStatus: provider.keyStatus,
+              requiresKey: provider.requiresKey,
+              stats: null,
             };
           }
         }),
@@ -1036,62 +1027,6 @@ class DashboardAPI {
     }
   }
 
-  // Get network I/O rate in MB/s (RX + TX combined)
-  // Docker only for now
-  async getNetworkIO() {
-    const fs = require("fs").promises;
-    const fsSync = require("fs");
-    const netDevPath = "/proc/net/dev";
-
-    try {
-      if (!fsSync.existsSync(netDevPath)) {
-        return 0; // Not available on this system (Windows/macOS)
-      }
-
-      const netData = await fs.readFile(netDevPath, "utf8");
-      const lines = netData.split("\n");
-      let totalBytes = 0;
-
-      for (const line of lines) {
-        if (line.includes(":") && !line.includes("lo:")) {
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 10) {
-            const rxBytes = parseInt(parts[1]) || 0;
-            const txBytes = parseInt(parts[9]) || 0;
-            totalBytes += rxBytes + txBytes;
-          }
-        }
-      }
-
-      // Calculate rate
-      const now = Date.now();
-      if (!this.lastNetworkMeasurement) {
-        this.lastNetworkMeasurement = { bytes: totalBytes, time: now };
-        return 0;
-      }
-
-      const timeDiff = (now - this.lastNetworkMeasurement.time) / 1000;
-      const bytesDiff = totalBytes - this.lastNetworkMeasurement.bytes;
-
-      // Handle counter reset (container restart, interface reset, counter overflow)
-      if (bytesDiff < 0) {
-        this.lastNetworkMeasurement = { bytes: totalBytes, time: now };
-        return 0;
-      }
-
-      let networkIO = 0;
-      if (timeDiff > 0) {
-        networkIO = parseFloat((bytesDiff / timeDiff / 1024 / 1024).toFixed(1));
-      }
-
-      this.lastNetworkMeasurement = { bytes: totalBytes, time: now };
-      return networkIO;
-    } catch (error) {
-      logger.warn("Failed to get network I/O:", error.message);
-      return 0;
-    }
-  }
-
   // Get effective CPU count (container-aware)
   // Returns the number of CPUs available to this process, respecting container limits
   getEffectiveCpuCount() {
@@ -1179,7 +1114,7 @@ class DashboardAPI {
         memoryUsage: await this.getUniversalMemoryUsage(),
         cpuUsage: this.getProcessCpuUsage(),
         diskUsage: await this.getDiskUsage(),
-        networkIO: await this.getNetworkIO(),
+        requestsPerMin: await this.getRequestsPerMinute(),
       };
     } catch (error) {
       logger.error("Error getting resource usage:", error);
@@ -1187,8 +1122,42 @@ class DashboardAPI {
         memoryUsage: 0,
         cpuUsage: 0,
         diskUsage: 0,
-        networkIO: 0,
+        requestsPerMin: 0,
       };
+    }
+  }
+
+  // Get current requests per minute (rolling average over last 5 minutes)
+  async getRequestsPerMinute() {
+    try {
+      if (!this.requestTracker) {
+        return 0;
+      }
+
+      // Get the last hour's data to calculate recent rate
+      const hourlyStats = await this.requestTracker.getHourlyStats(1);
+      if (!hourlyStats || hourlyStats.length === 0) {
+        return 0;
+      }
+
+      const currentHourData = hourlyStats[0];
+      const currentHourRequests = currentHourData.requests || 0;
+
+      // Calculate minutes elapsed in current hour
+      const now = new Date();
+      const minutesIntoHour = now.getMinutes() + (now.getSeconds() / 60);
+
+      // Avoid division by zero at the start of an hour
+      if (minutesIntoHour < 1) {
+        return currentHourRequests; // Just return raw count for first minute
+      }
+
+      // Calculate requests per minute for current hour
+      const requestsPerMin = Math.round(currentHourRequests / minutesIntoHour);
+      return requestsPerMin;
+    } catch (error) {
+      logger.warn("Failed to get requests per minute:", error.message);
+      return 0;
     }
   }
 

@@ -300,15 +300,25 @@ function handleHttpError(error: any, context: string): ApiError {
 
 /**
  * Retry wrapper for API calls
+ * Tracks provider calls only for final outcomes (not each retry attempt)
  */
 async function retryApiCall<T>(
   apiCall: () => Promise<T>, 
   context: string, 
   retries: number = MAX_RETRIES
 ): Promise<T | null> {
+  const overallStartTime = Date.now();
+  
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      return await apiCall();
+      const result = await apiCall();
+      
+      // Track success only once on first successful attempt
+      const responseTime = Date.now() - overallStartTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvmaze', responseTime, true);
+      
+      return result;
     } catch (error) {
       const isLastAttempt = attempt === retries;
       const isRetryableError = (error as any).code === 'ECONNABORTED' || 
@@ -319,7 +329,21 @@ async function retryApiCall<T>(
       // Don't retry redirect errors (3xx) - they should be handled by the HTTP client
       const isRedirectError = (error as any).response && (error as any).response.status >= 300 && (error as any).response.status < 400;
       
+      // 404 is not a failure - the API worked, the content just doesn't exist
+      const is404 = (error as any).response && (error as any).response.status === 404;
+      if (is404) {
+        const responseTime = Date.now() - overallStartTime;
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvmaze', responseTime, true);
+        return null;
+      }
+      
       if (isLastAttempt || !isRetryableError || isRedirectError) {
+        // Track failure only when all retries exhausted
+        const responseTime = Date.now() - overallStartTime;
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvmaze', responseTime, false);
+        
         const { notFound } = handleHttpError(error, context);
         return notFound ? null : null;
       }

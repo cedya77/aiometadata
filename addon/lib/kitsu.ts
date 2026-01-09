@@ -172,6 +172,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
   if (!query.trim()) return [];
 
   const results: KitsuAnime[] = [];
+  const startTime = Date.now();
 
   try {
     // Loop over all provided subtypes
@@ -215,10 +216,19 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
       }
     }
 
+    // Track successful request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('kitsu', responseTime, true);
+
     return results;
   } catch (error: any) {
-    // Log error to dashboard
+    // Track failed request
+    const responseTime = Date.now() - startTime;
     const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('kitsu', responseTime, false);
+    
+    // Log error to dashboard
     const status = error.response?.status;
     const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
     requestTracker.logProviderError('kitsu', errorType, `Search failed: ${error.message}`, {
@@ -242,6 +252,8 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
   if (!ids || ids.length === 0) {
     return null;
   }
+  
+  const startTime = Date.now();
   
   try {
     console.log(`[Kitsu Client] Fetching details for ${ids.length} IDs: ${ids.join(',')}`);
@@ -287,13 +299,30 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
     const receivedIds = allData.map(item => item.id);
     console.log(`[Kitsu Client] Received IDs: ${receivedIds.join(',')}`);
     
+    // Track successful request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('kitsu', responseTime, true);
+    
     return {
       data: allData,
       included: allIncluded,
       meta: { count: allData.length }
     };
     
-  } catch (error) {
+  } catch (error: any) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('kitsu', responseTime, false);
+    
+    const status = error.response?.status;
+    const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
+    requestTracker.logProviderError('kitsu', errorType, `getMultipleAnimeDetails failed: ${error.message}`, {
+      ids: ids.slice(0, 5).join(','),
+      status
+    });
+    
     console.error(`[Kitsu Client] Error fetching details for IDs ${ids.join(',')}:`, (error as Error).message);
     return null;
   }
@@ -312,6 +341,7 @@ async function getAnimeEpisodes(kitsuId: string | number): Promise<KitsuEpisode[
   
   return cacheWrapGlobal(cacheKey, async () => {
     console.log(`[Kitsu Client] Fetching episodes for ID ${kitsuId}`);
+    const startTime = Date.now();
     
     try {
       const params = {
@@ -320,8 +350,26 @@ async function getAnimeEpisodes(kitsuId: string | number): Promise<KitsuEpisode[
       
       const allEpisodes = await _fetchEpisodesRecursively(`anime/${kitsuId}/episodes`, params);
       console.log(`[Kitsu Client] Total episodes fetched: ${allEpisodes.length}`);
+      
+      // Track successful request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('kitsu', responseTime, true);
+      
       return allEpisodes;
-    } catch (error) {
+    } catch (error: any) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('kitsu', responseTime, false);
+      
+      const status = error.response?.status;
+      const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
+      requestTracker.logProviderError('kitsu', errorType, `getAnimeEpisodes failed: ${error.message}`, {
+        kitsuId,
+        status
+      });
+      
       console.error(`[Kitsu Client] Error fetching episodes for ID ${kitsuId}:`, (error as Error).message);
       return [];
     }
@@ -370,6 +418,8 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
  */
  async function getAnimeDetails(kitsuId: string | number) {
   if (!kitsuId) return null
+  
+  const startTime = Date.now();
 
   try {
     const response = await kitsu.get(`anime/${kitsuId}`, {
@@ -391,8 +441,25 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
     if (!characters.length)
       characters = await fetchRelationshipList(anime.relationships?.characters?.links?.related)
 
+    // Track successful request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('kitsu', responseTime, true);
+
     return { data: anime, included, genres, characters }
-  } catch (error) {
+  } catch (error: any) {
+    // Track failed request
+    const responseTime = Date.now() - startTime;
+    const requestTracker = require('./requestTracker');
+    requestTracker.trackProviderCall('kitsu', responseTime, false);
+    
+    const status = error.response?.status;
+    const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
+    requestTracker.logProviderError('kitsu', errorType, `getAnimeDetails failed: ${error.message}`, {
+      kitsuId,
+      status
+    });
+    
     console.error(`[Kitsu Client] Error fetching anime details for ID ${kitsuId}:`, (error as Error).message)
     return null
   }

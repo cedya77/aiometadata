@@ -29,6 +29,7 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Rate limited request wrapper
+ * Tracks provider calls only for final outcomes (not each retry attempt)
  */
 async function makeRateLimitedRequest<T>(
   requestFn: () => Promise<T>,
@@ -36,6 +37,7 @@ async function makeRateLimitedRequest<T>(
   retries: number = RATE_LIMIT_CONFIG.maxRetries
 ): Promise<T> {
   let attempt = 0;
+  const overallStartTime = Date.now(); // Track total time including retries
 
   while (attempt < retries) {
     attempt++;
@@ -56,17 +58,18 @@ async function makeRateLimitedRequest<T>(
       const response = await requestFn();
       const responseTime = Date.now() - startTime;
 
+      // Track success only once on first successful attempt
       const requestTracker = require('../lib/requestTracker.js');
       requestTracker.trackProviderCall('letterboxd', responseTime, true);
 
       return response;
     } catch (error: any) {
-      const responseTime = Date.now() - startTime;
-      const requestTracker = require('../lib/requestTracker.js');
-      requestTracker.trackProviderCall('letterboxd', responseTime, false);
-
-      // Log error to dashboard on final attempt
+      // Only track failure on final attempt
       if (isLastAttempt) {
+        const responseTime = Date.now() - overallStartTime;
+        const requestTracker = require('../lib/requestTracker.js');
+        requestTracker.trackProviderCall('letterboxd', responseTime, false);
+
         const status = error.response?.status;
         const errorType = status === 429 ? 'rate_limit' : status >= 500 ? 'server_error' : 'api_error';
         requestTracker.logProviderError('letterboxd', errorType, error.message, {
@@ -80,11 +83,12 @@ async function makeRateLimitedRequest<T>(
         throw error;
       }
 
-      // Log rate limits even on non-final attempts
+      // Log rate limits even on non-final attempts (but don't track as failure)
       if (error.response?.status === 429) {
+        const requestTracker = require('../lib/requestTracker.js');
         requestTracker.logProviderError('letterboxd', 'rate_limit', 'Rate limit hit (429)', {
           context,
-          responseTime,
+          responseTime: Date.now() - startTime,
           attempt,
           retriesRemaining: retries - attempt
         });

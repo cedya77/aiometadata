@@ -59,6 +59,7 @@ const geminiDispatcher = createGeminiDispatcher();
  */
 async function generateContent({ apiKey, model, prompt, useGrounding = false, timeout = 30000 }) {
   const url = `${GEMINI_BASE_URL}/models/${model}:generateContent`;
+  const startTime = Date.now();
   
   const body = {
     contents: [
@@ -72,41 +73,62 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
     body.tools = [{ google_search: {} }];
   }
 
-  const { statusCode, body: responseBody } = await request(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify(body),
-    dispatcher: geminiDispatcher,
-    headersTimeout: timeout,
-    bodyTimeout: timeout,
-  });
+  try {
+    const { statusCode, body: responseBody } = await request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+      dispatcher: geminiDispatcher,
+      headersTimeout: timeout,
+      bodyTimeout: timeout,
+    });
 
-  const data = await responseBody.json();
+    const data = await responseBody.json();
+    const responseTime = Date.now() - startTime;
 
-  if (statusCode !== 200) {
-    const errorMessage = data?.error?.message || `HTTP ${statusCode}`;
-    const error = new Error(`Gemini API error: ${errorMessage}`);
-    error.statusCode = statusCode;
-    error.response = data;
+    if (statusCode !== 200) {
+      // Track failure
+      const requestTracker = require('../lib/requestTracker');
+      requestTracker.trackProviderCall('gemini', responseTime, false);
+      
+      const errorMessage = data?.error?.message || `HTTP ${statusCode}`;
+      const error = new Error(`Gemini API error: ${errorMessage}`);
+      error.statusCode = statusCode;
+      error.response = data;
+      throw error;
+    }
+
+    // Track success
+    const requestTracker = require('../lib/requestTracker');
+    requestTracker.trackProviderCall('gemini', responseTime, true);
+
+    // Extract response data
+    const candidate = data?.candidates?.[0];
+    const text = candidate?.content?.parts?.[0]?.text || null;
+    const groundingMetadata = candidate?.groundingMetadata || null;
+
+    return {
+      text,
+      candidates: data?.candidates || [],
+      groundingMetadata,
+      promptFeedback: data?.promptFeedback || null,
+      finishReason: candidate?.finishReason || null,
+      safetyRatings: candidate?.safetyRatings || null,
+    };
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+    
+    // Track failure if not already tracked (network errors, timeouts, etc.)
+    if (!error.statusCode) {
+      const requestTracker = require('../lib/requestTracker');
+      requestTracker.trackProviderCall('gemini', responseTime, false);
+    }
+    
     throw error;
   }
-
-  // Extract response data
-  const candidate = data?.candidates?.[0];
-  const text = candidate?.content?.parts?.[0]?.text || null;
-  const groundingMetadata = candidate?.groundingMetadata || null;
-
-  return {
-    text,
-    candidates: data?.candidates || [],
-    groundingMetadata,
-    promptFeedback: data?.promptFeedback || null,
-    finishReason: candidate?.finishReason || null,
-    safetyRatings: candidate?.safetyRatings || null,
-  };
 }
 
 /**

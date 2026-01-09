@@ -149,14 +149,13 @@ class RequestTracker {
       const statusCode = res.statusCode;
       const shouldTrack = this.shouldTrackRequest(req);
 
-      // Track response times by hour for charts
-      const hour = new Date().toISOString().substring(0, 13);
-      redis.lpush(`response_times:${hour}`, responseTime).catch(() => {});
-      redis.ltrim(`response_times:${hour}`, 0, 999).catch(() => {}); // Keep last 1000 for hourly averages
-      redis.expire(`response_times:${hour}`, 86400 * 7).catch(() => {}); // 7 days expiration
-
-      // Only track status codes and success/errors for user-facing requests
+      // Only track metrics for user-facing requests
       if (shouldTrack) {
+        // Track response times by hour for charts
+        const hour = new Date().toISOString().substring(0, 13);
+        redis.lpush(`response_times:${hour}`, responseTime).catch(() => {});
+        redis.ltrim(`response_times:${hour}`, 0, 999).catch(() => {}); // Keep last 1000 for hourly averages
+        redis.expire(`response_times:${hour}`, 86400 * 7).catch(() => {}); // 7 days expiration
 
         // Track errors
         if (statusCode >= 400) {
@@ -866,8 +865,8 @@ class RequestTracker {
         .ltrim(`provider_response_times:${provider}:${hour}`, 0, 999)
         .catch(() => {});
       redis
-        .expire(`provider_response_times:${provider}:${hour}`, 86400 * 7)
-        .catch(() => {}); // 7 days
+        .expire(`provider_response_times:${provider}:${hour}`, 3600 * 48)
+        .catch(() => {}); // 48 hours
 
       // Track success/error rates
       if (success) {
@@ -876,11 +875,11 @@ class RequestTracker {
         redis.incr(`provider_errors:${provider}:${today}`).catch(() => {});
       }
       redis
-        .expire(`provider_success:${provider}:${today}`, 86400 * 7)
-        .catch(() => {});
+        .expire(`provider_success:${provider}:${today}`, 86400 * 2)
+        .catch(() => {}); // 2 days
       redis
-        .expire(`provider_errors:${provider}:${today}`, 86400 * 7)
-        .catch(() => {});
+        .expire(`provider_errors:${provider}:${today}`, 86400 * 2)
+        .catch(() => {}); // 2 days
 
       // Track hourly calls for rate limiting awareness
       redis.incr(`provider_calls:${provider}:${hour}`).catch(() => {});
@@ -1302,6 +1301,9 @@ class RequestTracker {
         "kitsu",
         "fanart",
         "tvmaze",
+        "trakt",
+        "mdblist",
+        "letterboxd",
       ];
       const hourlyData = [];
       const now = new Date();

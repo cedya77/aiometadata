@@ -54,6 +54,8 @@ import {
   LogOut,
   AlertCircle,
   Trash2,
+  Square,
+  Play,
 } from "lucide-react";
 import {
   LineChart as RechartsLineChart,
@@ -1918,7 +1920,7 @@ function DashboardSystem({ data, loading }) {
     memoryUsage: 0,
     cpuUsage: 0,
     diskUsage: 0,
-    networkIO: 0,
+    requestsPerMin: 0,
   });
 
   const [providerStatus, setProviderStatus] = useState([]);
@@ -1944,167 +1946,134 @@ function DashboardSystem({ data, loading }) {
 
   return (
     <div className="space-y-6">
-      {/* User Configuration Statistics */}
+      {/* User Configuration Statistics - Header Card */}
       <Card>
         <CardHeader>
-          <CardTitle>User Configuration Statistics</CardTitle>
-          <CardDescription>
-            How {systemConfig.totalUsers || 0} users configure their addon
-            {systemConfig.sampleSize &&
-              systemConfig.sampleSize < systemConfig.totalUsers &&
-              ` (based on ${systemConfig.sampleSize} sampled configurations)`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            {/* Provider Preferences */}
-            <div>
-              <h4 className="font-medium mb-3">Meta Provider Preferences</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Movies</p>
-                  {systemConfig.aggregatedStats?.metaProviders?.movie
-                    ?.slice(0, 3)
-                    .map((provider, index) => (
-                      <div
-                        key={index}
-                        className="flex justify-between items-center py-1"
-                      >
-                        <span className="text-sm">
-                          {provider.name.toUpperCase()}
-                        </span>
-                        <Badge variant="outline">{provider.percentage}%</Badge>
-                      </div>
-                    ))}
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Series</p>
-                  {systemConfig.aggregatedStats?.metaProviders?.series
-                    ?.slice(0, 3)
-                    .map((provider, index) => (
-                      <div
-                        key={index}
-                        className="flex justify-between items-center py-1"
-                      >
-                        <span className="text-sm">
-                          {provider.name.toUpperCase()}
-                        </span>
-                        <Badge variant="outline">{provider.percentage}%</Badge>
-                      </div>
-                    ))}
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Anime</p>
-                  {systemConfig.aggregatedStats?.metaProviders?.anime
-                    ?.slice(0, 3)
-                    .map((provider, index) => (
-                      <div
-                        key={index}
-                        className="flex justify-between items-center py-1"
-                      >
-                        <span className="text-sm">
-                          {provider.name.toUpperCase()}
-                        </span>
-                        <Badge variant="outline">{provider.percentage}%</Badge>
-                      </div>
-                    ))}
-                </div>
-              </div>
+          <div className="flex items-center justify-center gap-3">
+            <div className="p-2 rounded-lg bg-muted">
+              <Users className="h-5 w-5 text-muted-foreground" />
             </div>
-
-            {/* Language Distribution */}
             <div>
-              <h4 className="font-medium mb-3">Language Distribution</h4>
-              <div className="space-y-2">
-                {systemConfig.aggregatedStats?.languages
-                  ?.slice(0, 5)
-                  .map((lang, index) => (
-                    <div
-                      key={index}
-                      className="flex justify-between items-center"
-                    >
-                      <span className="text-sm">{lang.name}</span>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-20 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full"
-                            style={{ width: `${lang.percentage}%` }}
-                          ></div>
-                        </div>
-                        <Badge variant="outline">{lang.percentage}%</Badge>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* Feature Usage */}
-            <div>
-              <h4 className="font-medium mb-3">Feature Usage</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-green-600">
-                    {systemConfig.aggregatedStats?.features?.cacheEnabled ||
-                      100}
-                    %
-                  </p>
-                  <p className="text-sm text-muted-foreground">Cache Enabled</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-blue-600">
-                    {systemConfig.aggregatedStats?.features?.blurThumbs || 0}%
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Blur Thumbnails
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-purple-600">
-                    {systemConfig.aggregatedStats?.features?.skipFiller || 0}%
-                  </p>
-                  <p className="text-sm text-muted-foreground">Skip Filler</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-orange-600">
-                    {systemConfig.aggregatedStats?.features?.skipRecap || 0}%
-                  </p>
-                  <p className="text-sm text-muted-foreground">Skip Recap</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-green-600">
-                    {systemConfig.aggregatedStats?.features
-                      ?.allowEpisodeMarking || 0}
-                    %
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Episode Marking
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* System Status */}
-            <div className="pt-4 border-t">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Redis Connection</span>
-                <Badge
-                  variant={
-                    systemConfig.redisConnected ? "default" : "destructive"
-                  }
-                >
-                  {systemConfig.redisConnected ? "Connected" : "Disconnected"}
-                </Badge>
-              </div>
-              {systemConfig.lastUpdated && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Last updated:{" "}
-                  {new Date(systemConfig.lastUpdated).toLocaleString()}
-                </p>
-              )}
+              <CardTitle className="text-lg">User Configuration Statistics</CardTitle>
+              <CardDescription>
+                How {systemConfig.totalUsers || 0} users configure their addon
+                {systemConfig.sampleSize &&
+                  systemConfig.sampleSize < systemConfig.totalUsers &&
+                  ` (${systemConfig.sampleSize} sampled)`}
+              </CardDescription>
             </div>
           </div>
-        </CardContent>
+        </CardHeader>
       </Card>
+
+      {/* Provider Preferences Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { title: "Movies", icon: Monitor, data: systemConfig.aggregatedStats?.metaProviders?.movie, color: "blue" },
+          { title: "Series", icon: TrendingUp, data: systemConfig.aggregatedStats?.metaProviders?.series, color: "emerald" },
+          { title: "Anime", icon: Zap, data: systemConfig.aggregatedStats?.metaProviders?.anime, color: "pink" },
+        ].map((category) => (
+          <Card key={category.title} className="overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{category.title} Providers</CardTitle>
+              <category.icon className={`h-4 w-4 text-${category.color}-500`} />
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-3">
+                {category.data?.slice(0, 3).map((provider, index) => (
+                  <div key={index} className="space-y-1">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="font-medium">{provider.name.toUpperCase()}</span>
+                      <span className="text-muted-foreground">{provider.percentage}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          index === 0 ? `bg-${category.color}-500` :
+                          index === 1 ? `bg-${category.color}-400` : `bg-${category.color}-300`
+                        }`}
+                        style={{ width: `${provider.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                )) || (
+                  <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Language Distribution & Feature Usage Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Language Distribution */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Language Distribution</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {systemConfig.aggregatedStats?.languages?.slice(0, 5).map((lang, index) => {
+                const colors = ["bg-violet-500", "bg-blue-500", "bg-cyan-500", "bg-teal-500", "bg-emerald-500"];
+                return (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full ${colors[index]}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm font-medium truncate">{lang.name}</span>
+                        <span className="text-sm text-muted-foreground ml-2">{lang.percentage}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${colors[index]} transition-all duration-500`}
+                          style={{ width: `${lang.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }) || (
+                <p className="text-sm text-muted-foreground text-center py-4">No language data available</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Feature Usage */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Feature Adoption</CardTitle>
+            <Settings className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Blur Thumbs", value: systemConfig.aggregatedStats?.features?.blurThumbs || 0, icon: Shield, color: "blue" },
+                { label: "Skip Filler", value: systemConfig.aggregatedStats?.features?.skipFiller || 0, icon: Zap, color: "violet" },
+                { label: "Skip Recap", value: systemConfig.aggregatedStats?.features?.skipRecap || 0, icon: RefreshCw, color: "orange" },
+                { label: "Episode Mark", value: systemConfig.aggregatedStats?.features?.allowEpisodeMarking || 0, icon: Activity, color: "pink" },
+              ].map((feature) => (
+                <div
+                  key={feature.label}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                >
+                  <div className={`p-2 rounded-md bg-${feature.color}-500/10`}>
+                    <feature.icon className={`h-4 w-4 text-${feature.color}-500`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">{feature.label}</p>
+                    <p className={`text-lg font-semibold text-${feature.color}-600 dark:text-${feature.color}-400`}>
+                      {feature.value}%
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Resource Monitoring */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2223,17 +2192,17 @@ function DashboardSystem({ data, loading }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Network I/O</CardTitle>
-            <CardDescription>Network activity and bandwidth</CardDescription>
+            <CardTitle>Request Rate</CardTitle>
+            <CardDescription>Current request throughput</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-center py-8">
               <div className="text-3xl font-bold text-blue-600 mb-2">
-                {resourceUsage.networkIO}
+                {resourceUsage.requestsPerMin}
               </div>
-              <p className="text-sm text-muted-foreground">MB/s</p>
+              <p className="text-sm text-muted-foreground">req/min</p>
               <p className="text-xs text-muted-foreground mt-2">
-                Current bandwidth
+                Rolling average this hour
               </p>
             </div>
           </CardContent>
@@ -2245,12 +2214,14 @@ function DashboardSystem({ data, loading }) {
         <CardHeader>
           <CardTitle>Provider Status</CardTitle>
           <CardDescription>
-            API keys and rate limit status for metadata providers
+            Health and performance of metadata providers
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {providerStatus.map((provider, index) => (
+          <div className="space-y-3">
+            {[...providerStatus]
+              .sort((a, b) => (b.stats?.callsToday || 0) - (a.stats?.callsToday || 0))
+              .map((provider, index) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-3 border rounded-lg"
@@ -2260,26 +2231,68 @@ function DashboardSystem({ data, loading }) {
                     className={`w-3 h-3 rounded-full ${
                       provider.status === "healthy"
                         ? "bg-green-500"
-                        : provider.status === "warning"
+                        : provider.status === "degraded"
                           ? "bg-yellow-500"
-                          : "bg-red-500"
+                          : provider.status === "down"
+                            ? "bg-red-500"
+                            : "bg-gray-400"
                     }`}
                   ></div>
-                  <span className="font-medium">{provider.name}</span>
+                  <div>
+                    <span className="font-medium">{provider.name}</span>
+                    {provider.keyStatus && (
+                      <span className={`ml-2 text-xs ${
+                        provider.keyStatus === "Disabled"
+                          ? "text-muted-foreground"
+                          : "text-green-600 dark:text-green-400"
+                      }`}>
+                        ({provider.keyStatus})
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center space-x-4">
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">API Key</p>
-                    <Badge variant={provider.apiKey ? "default" : "secondary"}>
-                      {provider.apiKey ? "Set" : "Missing"}
-                    </Badge>
-                  </div>
+                  {provider.stats ? (
+                    <>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">
+                          {provider.stats.callsToday.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">calls today</p>
+                      </div>
+                      <div className="text-right min-w-[60px]">
+                        <p className={`text-sm font-medium ${
+                          provider.stats.successRate === null
+                            ? "text-muted-foreground"
+                            : provider.stats.successRate >= 95
+                              ? "text-green-600"
+                              : provider.stats.successRate >= 80
+                                ? "text-yellow-600"
+                                : "text-red-600"
+                        }`}>
+                          {provider.stats.successRate !== null 
+                            ? `${provider.stats.successRate}%` 
+                            : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">success</p>
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No tracking data</span>
+                  )}
                   <Badge
                     variant={
-                      provider.status === "healthy" ? "default" : "secondary"
+                      provider.status === "healthy"
+                        ? "default"
+                        : provider.status === "degraded"
+                          ? "secondary"
+                          : provider.status === "down"
+                            ? "destructive"
+                            : "outline"
                     }
+                    className="min-w-[70px] justify-center"
                   >
-                    {provider.status}
+                    {provider.status === "unknown" ? "No data" : provider.status}
                   </Badge>
                 </div>
               </div>
@@ -2297,27 +2310,100 @@ function DashboardSystem({ data, loading }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span className="text-sm font-medium text-green-800">
-                  All systems operational
-                </span>
+          {(() => {
+            // Calculate overall health status
+            const issues: { message: string; severity: "warning" | "critical" }[] = [];
+            
+            // Check Redis
+            if (!systemConfig.redisConnected) {
+              issues.push({ message: "Redis disconnected", severity: "critical" });
+            }
+            
+            // Check memory usage
+            if (resourceUsage.memoryUsage > 90) {
+              issues.push({ message: `Memory usage critical (${resourceUsage.memoryUsage}%)`, severity: "critical" });
+            } else if (resourceUsage.memoryUsage > 75) {
+              issues.push({ message: `Memory usage elevated (${resourceUsage.memoryUsage}%)`, severity: "warning" });
+            }
+            
+            // Check CPU usage
+            if (resourceUsage.cpuUsage > 90) {
+              issues.push({ message: `CPU usage critical (${resourceUsage.cpuUsage}%)`, severity: "critical" });
+            } else if (resourceUsage.cpuUsage > 75) {
+              issues.push({ message: `CPU usage elevated (${resourceUsage.cpuUsage}%)`, severity: "warning" });
+            }
+            
+            const hasCritical = issues.some(i => i.severity === "critical");
+            const hasWarning = issues.some(i => i.severity === "warning");
+            const overallStatus = hasCritical ? "critical" : hasWarning ? "warning" : "healthy";
+            
+            const statusConfig = {
+              healthy: {
+                bg: "bg-green-50 dark:bg-green-950/30",
+                border: "border-green-200 dark:border-green-800",
+                dot: "bg-green-500",
+                text: "text-green-800 dark:text-green-200",
+                badge: "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200",
+                label: "Healthy",
+                message: "All systems operational"
+              },
+              warning: {
+                bg: "bg-amber-50 dark:bg-amber-950/30",
+                border: "border-amber-200 dark:border-amber-800",
+                dot: "bg-amber-500",
+                text: "text-amber-800 dark:text-amber-200",
+                badge: "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200",
+                label: "Warning",
+                message: "Some issues detected"
+              },
+              critical: {
+                bg: "bg-red-50 dark:bg-red-950/30",
+                border: "border-red-200 dark:border-red-800",
+                dot: "bg-red-500",
+                text: "text-red-800 dark:text-red-200",
+                badge: "",
+                label: "Critical",
+                message: "Immediate attention required"
+              }
+            };
+            
+            const config = statusConfig[overallStatus];
+            
+            return (
+              <div className="space-y-4">
+                <div className={`flex items-center justify-between p-3 ${config.bg} ${config.border} border rounded-lg`}>
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-3 h-3 ${config.dot} rounded-full ${overallStatus === "healthy" ? "animate-pulse" : ""}`}></div>
+                    <span className={`text-sm font-medium ${config.text}`}>
+                      {config.message}
+                    </span>
+                  </div>
+                  <Badge variant={overallStatus === "critical" ? "destructive" : "default"} className={config.badge}>
+                    {config.label}
+                  </Badge>
+                </div>
+                {issues.length > 0 && (
+                  <div className="text-sm space-y-1">
+                    {issues.map((issue, idx) => (
+                      <p key={idx} className={issue.severity === "critical" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}>
+                        • {issue.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <Badge variant="default" className="bg-green-100 text-green-800">
-                Healthy
-              </Badge>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              <p>• Redis connection is stable</p>
-              <p>• All critical services are running</p>
-              <p>• Resource usage is within normal limits</p>
-              <p>• No critical errors detected</p>
-            </div>
-          </div>
+            );
+          })()}
         </CardContent>
       </Card>
+
+      {/* Footer Status */}
+      {systemConfig.lastUpdated && (
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
+          <Clock className="h-3 w-3" />
+          <span>Last updated: {new Date(systemConfig.lastUpdated).toLocaleString()}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -2340,6 +2426,7 @@ function DashboardOperations({ data, loading }) {
   const [errorLogs, setErrorLogs] = useState([]);
   const [maintenanceTasks, setMaintenanceTasks] = useState([]);
   const [cacheClearing, setCacheClearing] = useState(false);
+  const [executingTasks, setExecutingTasks] = useState<Set<number>>(new Set());
 
   // Update state when data prop changes
   useEffect(() => {
@@ -2364,6 +2451,71 @@ function DashboardOperations({ data, loading }) {
       }
     }
   }, [data]);
+
+  // Conditional polling: refresh maintenance tasks every 5 seconds while any warming task is running
+  // Only warming tasks (7, 8, 9) are fire-and-forget; other tasks complete synchronously
+  useEffect(() => {
+    const warmingTaskIds = [7, 8, 9]; // Essential, MAL, Comprehensive warming
+    const hasRunningWarmingTask = maintenanceTasks.some(
+      (task: any) => warmingTaskIds.includes(task.id) && task.status === "running"
+    );
+
+    if (!hasRunningWarmingTask) {
+      return; // No polling needed when no warming tasks are running
+    }
+
+    let isActive = true; // Flag to prevent state updates after cleanup
+    
+    const poll = async () => {
+      if (!isActive) return;
+      
+      try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (adminKey) {
+          headers["x-admin-key"] = adminKey;
+        }
+
+        const response = await fetch("/api/dashboard/operations", { headers });
+        if (response.ok && isActive) {
+          const newData = await response.json();
+          setMaintenanceTasks(newData.maintenanceTasks || []);
+          // Also update cache stats since warming tasks affect cache
+          if (newData.cacheStats) {
+            setCacheStats({
+              totalKeys: newData.cacheStats.totalKeys || 0,
+              memoryUsage: newData.cacheStats.memoryUsage
+                ? `${newData.cacheStats.memoryUsage}%`
+                : "0%",
+              hitRate: newData.cacheStats.hitRate || 0,
+              evictionRate: newData.cacheStats.evictionRate || 0,
+              hits: newData.cacheStats.hits || 0,
+              misses: newData.cacheStats.misses || 0,
+              cachedErrors: newData.cacheStats.cachedErrors || 0,
+              byType: newData.cacheStats.byType || {},
+            });
+          }
+        }
+      } catch (error) {
+        if (isActive) {
+          console.error("[Dashboard] Error polling maintenance tasks:", error);
+        }
+      }
+    };
+
+    const pollInterval = setInterval(poll, 5000); // Poll every 5 seconds
+
+    return () => {
+      isActive = false;
+      clearInterval(pollInterval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    // Only re-create interval when running status actually changes, not on every maintenanceTasks update
+    maintenanceTasks.some((task: any) => [7, 8, 9].includes(task.id) && task.status === "running"),
+    adminKey
+  ]);
 
   const handleClearCache = async (type) => {
     setCacheClearing(true);
@@ -2446,6 +2598,14 @@ function DashboardOperations({ data, loading }) {
   };
 
   const handleMaintenanceTask = async (taskId, action) => {
+    const warmingTaskIds = [7, 8, 9]; // Essential, MAL, Comprehensive warming
+    const isWarmingTask = warmingTaskIds.includes(taskId);
+    
+    // For non-warming tasks, show spinner while executing
+    if (!isWarmingTask) {
+      setExecutingTasks(prev => new Set(prev).add(taskId));
+    }
+    
     try {
       console.log(`Executing maintenance task ${taskId} with action ${action}...`);
 
@@ -2514,6 +2674,15 @@ function DashboardOperations({ data, loading }) {
     } catch (error) {
       console.error("Error executing maintenance task:", error);
       toast.error(`Failed to execute task: ${error.message}`);
+    } finally {
+      // Remove task from executing set
+      if (!isWarmingTask) {
+        setExecutingTasks(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(taskId);
+          return newSet;
+        });
+      }
     }
   };
 
@@ -2830,9 +2999,6 @@ function DashboardOperations({ data, loading }) {
                   <div className="flex-1">
                     <div className="flex items-center space-x-2">
                       <p className="font-medium">{task.name}</p>
-                      {task.category === "warming" && (
-                        <Badge variant="secondary" className="text-xs">🔥 Warming</Badge>
-                      )}
                     </div>
                     <p className="text-sm text-muted-foreground mb-1">
                       {task.description}
@@ -2850,7 +3016,7 @@ function DashboardOperations({ data, loading }) {
                         ? "default"
                         : task.status === "running"
                           ? "secondary"
-                          : task.status === "disabled"
+                          : task.status === "disabled" || task.status === "pending"
                             ? "outline"
                             : "destructive"
                     }
@@ -2865,11 +3031,25 @@ function DashboardOperations({ data, loading }) {
                         task.action === "enable" ? "default" : "outline"
                       }
                       onClick={() => handleMaintenanceTask(task.id, task.action)}
-                      disabled={task.status === "error"}
+                      disabled={task.status === "error" || executingTasks.has(task.id)}
                     >
-                      {task.action === "stop" ? "Stop" :
-                       task.action === "enable" ? "Enable" :
-                       task.action === "restart" ? "Restart" : "Run Now"}
+                      {executingTasks.has(task.id) ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          Running...
+                        </>
+                      ) : task.action === "stop" ? (
+                        "Stop"
+                      ) : task.action === "enable" ? (
+                        "Enable"
+                      ) : task.action === "restart" ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Force
+                        </>
+                      ) : (
+                        "Run Now"
+                      )}
                     </Button>
                   )}
                 </div>
@@ -2916,25 +3096,27 @@ function DashboardOperations({ data, loading }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Button 
                 variant="destructive" 
-                className="h-16 flex-col"
+                className="h-16 flex-col gap-1"
                 onClick={() => {
                   handleMaintenanceTask(7, 'stop');
                   handleMaintenanceTask(8, 'stop');
                   handleMaintenanceTask(9, 'stop');
                 }}
               >
-                <span className="text-sm font-medium">🛑 Stop All Warming</span>
+                <Square className="h-4 w-4" />
+                <span className="text-sm font-medium">Stop All Warming</span>
               </Button>
               <Button 
                 variant="default" 
-                className="h-16 flex-col"
+                className="h-16 flex-col gap-1"
                 onClick={() => {
                   handleMaintenanceTask(7, 'restart');
                   handleMaintenanceTask(8, 'restart');
                   handleMaintenanceTask(9, 'restart');
                 }}
               >
-                <span className="text-sm font-medium">🔥 Start All Warming</span>
+                <Play className="h-4 w-4" />
+                <span className="text-sm font-medium">Start All Warming</span>
               </Button>
             </div>
           </div>
