@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TMDB Authentication</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .success {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            margin: 0 0 0.5rem;
+            font-size: 1.5rem;
+        }
+        p {
+            margin: 0;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="container">
+        <div class="spinner"></div>
+        <h1>Completing Authentication...</h1>
+        <p>Please wait while we finalize your TMDB connection.</p>
+    </div>
+
+    <script>
+        // Extract request_token from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const requestToken = urlParams.get('request_token');
+        const approved = urlParams.get('approved');
+
+        // Log what we received for debugging
+        console.log('TMDB Callback - Request Token:', requestToken);
+        console.log('TMDB Callback - Approved:', approved);
+        console.log('TMDB Callback - Full URL:', window.location.href);
+
+        if (requestToken) {
+            // Check if user approved - TMDB should send approved=true
+            // If approved parameter is missing, we still try (user might have approved)
+            if (approved !== 'false') {
+                // Send token back to parent window
+                if (window.opener) {
+                    window.opener.postMessage(
+                        { 
+                            type: 'tmdb_auth_success', 
+                            requestToken: requestToken,
+                            approved: approved
+                        },
+                        window.location.origin
+                    );
+
+                    // Show success message
+                    document.getElementById('container').innerHTML = `
+                        <div class="success">✓</div>
+                        <h1>Authentication Successful!</h1>
+                        <p>This window will close automatically...</p>
+                    `;
+
+                    // Close window after a short delay
+                    setTimeout(() => {
+                        window.close();
+                    }, 2000);
+                } else {
+                    document.getElementById('container').innerHTML = `
+                        <h1>Authentication Successful!</h1>
+                        <p>You can close this window and return to the configuration page.</p>
+                    `;
+                }
+            } else {
+                // User explicitly denied authorization
+                document.getElementById('container').innerHTML = `
+                    <h1>Authorization Denied</h1>
+                    <p>You declined the authorization request. You can close this window and try again.</p>
+                `;
+                
+                if (window.opener) {
+                    window.opener.postMessage(
+                        { 
+                            type: 'tmdb_auth_error', 
+                            error: 'User denied authorization' 
+                        },
+                        window.location.origin
+                    );
+                }
+            }
+        } else {
+            document.getElementById('container').innerHTML = `
+                <h1>Error</h1>
+                <p>No authentication token received. Please try again.</p>
+            `;
+        }
+    </script>
+</body>
+</html>
+

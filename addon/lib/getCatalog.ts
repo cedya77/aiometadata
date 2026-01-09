@@ -649,6 +649,128 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     return metas;
   }
 
+  // Handle TMDB List catalogs (tmdb.list.{listId} or tmdb.list.{listId}.movies/series)
+  if (id.startsWith('tmdb.list.')) {
+    logger.info(`Fetching TMDB list catalog: ${id}, Type: ${type}, Page: ${page}, Genre: ${genre}`);
+    
+    const catalogConfig = config.catalogs?.find(c => c.id === id);
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || '';
+    
+    if (!tmdbApiKey) {
+      logger.warn('[TMDB List] Missing API key');
+      return [];
+    }
+    
+    // Formats: tmdb.list.{listId} or tmdb.list.{listId}.movies or tmdb.list.{listId}.series
+    const parts = id.split('.');
+    const listId = parts[2]; // The list ID is always at index 2
+    const isUnified = parts.length === 3; // tmdb.list.{listId} = unified
+    const isSplit = parts.length === 4; // tmdb.list.{listId}.movies or tmdb.list.{listId}.series
+    
+    if (!listId) {
+      logger.error(`[TMDB List] Invalid list ID format: ${id}`);
+      return [];
+    }
+    
+    try {
+      const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+      const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+      
+      logger.debug(`[TMDB List] Fetching list ${listId}, page ${pageNum}, pageSize ${pageSize}`);
+      
+      const result = await moviedb.getTmdbListItems({ list_id: listId, page: pageNum }, config);
+      
+      if (!result || !result.items || result.items.length === 0) {
+        logger.info(`[TMDB List] No items found for list ${listId} at page ${pageNum}`);
+        return [];
+      }
+      
+      logger.info(`[TMDB List] Fetched ${result.items.length} items from list ${listId}`);
+      
+      let items = result.items;
+      if (isSplit) {
+        const mediaType = parts[3];
+        const tmdbMediaType = mediaType === 'movies' ? 'movie' : 'tv';
+        items = items.filter((item: any) => item.media_type === tmdbMediaType);
+        logger.debug(`[TMDB List] Filtered to ${items.length} ${mediaType} items`);
+      }
+      
+      if (genre && genre.toLowerCase() !== 'none') {
+        let genreList: Array<{ id: number; name: string }> = [];
+        if (type === 'all') {
+          const [movieGenres, seriesGenres] = await Promise.all([
+            getGenreList('tmdb', language, "movie", config),
+            getGenreList('tmdb', language, "series", config)
+          ]);
+          const genreMap = new Map();
+          [...movieGenres, ...seriesGenres].forEach(g => genreMap.set(g.id, g));
+          genreList = Array.from(genreMap.values());
+          logger.debug(`[TMDB List] Combined genre list for 'all' type: ${genreList.length} genres`);
+        } else {
+          genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
+        }
+        
+        const genreObj = genreList.find(g => g.name === genre);
+
+        logger.debug(`[TMDB List] Genre object: ${JSON.stringify(genreObj)}`);
+        if (genreObj) {
+          const beforeCount = items.length;
+          items = items.filter((item: any) => {
+            return item.genre_ids && Array.isArray(item.genre_ids) && item.genre_ids.includes(genreObj.id);
+          });
+          logger.debug(`[TMDB List] Genre filter (${genre}): ${beforeCount} -> ${items.length} items`);
+        } else {
+          logger.warn(`[TMDB List] Genre "${genre}" not found in genre list`);
+        }
+      }
+      
+      const metas = await Promise.all(items.map(async (item: any) => {
+        const itemType = item.media_type === 'movie' ? 'movie' : 'series';
+
+        if (isUnified && type === 'all') {
+        } else if (isUnified && itemType !== type) {
+          return null;
+        }
+        
+        const stremioId = `tmdb:${item.id}`;
+        
+        try {
+          const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+            return await getMeta(itemType, language, stremioId, config, userUUID, includeVideos);
+          }, undefined, {enableErrorCaching: true, maxRetries: 2}, itemType as any, includeVideos);
+          
+          if (result && result.meta) {
+            return result.meta;
+          }
+        } catch (error: any) {
+          logger.warn(`[TMDB List] Failed to get meta for ${stremioId}: ${error.message}`);
+        }
+        
+        return null;
+      }));
+      
+      let validMetas = metas.filter(meta => meta !== null);
+      
+      if (type === 'movie' && config.hideUnreleasedDigital) {
+        const beforeCount = validMetas.length;
+        validMetas = validMetas.filter(meta => isReleasedDigitally(meta));
+        const afterCount = validMetas.length;
+        if (beforeCount !== afterCount) {
+          logger.info(`[TMDB List] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+        }
+      }
+      
+      validMetas = applyAgeRatingFilter(validMetas, type, config);
+      
+      logger.success(`[TMDB List] Processed ${validMetas.length} items for list ${listId}`);
+      return validMetas;
+      
+    } catch (error: any) {
+      logger.error(`[TMDB List] Error fetching list ${listId}: ${error.message}`);
+      return [];
+    }
+  }
+
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
   const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
 

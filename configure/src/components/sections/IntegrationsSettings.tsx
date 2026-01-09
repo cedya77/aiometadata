@@ -435,69 +435,13 @@ export function IntegrationsSettings() {
           validationStatus={validationStatus.gemini || 'idle'} 
           onKeyChange={handleKeyChange}
         />
-        <div className="space-y-3">
-          <ApiKeyInput 
-            id="tmdb" 
-            label="TMDB API Key" 
-            linkHref="https://www.themoviedb.org/settings/api" 
-            validationStatus={validationStatus.tmdb || 'idle'} 
-            onKeyChange={handleKeyChange}
-          />
-          {/* TMDB Authentication */}
-          <div className="ml-4 p-4 rounded-lg border border-border bg-muted/30">
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-sm font-medium">TMDB Authentication</Label>
-              <span className="text-xs text-muted-foreground">Required for watchlist & favorites</span>
-            </div>
-            {tmdbAuthError && !sessionId && (
-              <div className="mb-3 p-2 rounded-md bg-destructive/10 border border-destructive/20 flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-                <span className="text-sm text-destructive">{tmdbAuthError}</span>
-              </div>
-            )}
-            {sessionId ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-muted-foreground">Authenticated</span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTmdbLogout}
-                  disabled={tmdbAuthLoading}
-                >
-                  <LogOut className="h-3 w-3 mr-1" />
-                  Logout
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTmdbLogin}
-                disabled={tmdbAuthLoading || !config.apiKeys?.tmdb}
-              >
-                {tmdbAuthLoading ? (
-                  <>
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="h-3 w-3 mr-1" />
-                    Login with TMDB
-                  </>
-                )}
-              </Button>
-            )}
-            {!config.apiKeys?.tmdb && (
-              <p className="text-xs text-muted-foreground mt-2">
-                Enter a TMDB API key above to enable authentication
-              </p>
-            )}
-          </div>
-        </div>
+        <ApiKeyInput 
+          id="tmdb" 
+          label="TMDB API Key" 
+          linkHref="https://www.themoviedb.org/settings/api" 
+          validationStatus={validationStatus.tmdb || 'idle'} 
+          onKeyChange={handleKeyChange}
+        />
         <ApiKeyInput 
           id="tvdb" 
           label="TheTVDB API Key" 

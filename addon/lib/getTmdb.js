@@ -413,6 +413,30 @@ async function accountTvWatchlist(params, config) {
   return makeTmdbRequest(`/account/${account.id}/watchlist/tv`, apiKey, params, 'GET', null, config);
 }
 
+async function getTmdbListDetails(params, config) {
+  const apiKey = getApiKey(config);
+  const listId = params.list_id;
+  consola.info(`[TMDB] Fetching list details for list ID: ${listId}`);
+  return makeTmdbRequest(`/list/${listId}`, apiKey, params, 'GET', null, config);
+}
+
+async function getTmdbListItems(params, config) {
+  const apiKey = getApiKey(config);
+  const listId = params.list_id;
+  consola.info(`[TMDB] Fetching list items for list ID: ${listId}, page: ${params.page || 1}`);
+  
+  const result = await makeTmdbRequest(`/list/${listId}`, apiKey, params, 'GET', null, config);
+  
+  return {
+    items: result.items || [],
+    page: result.page || 1,
+    total_pages: result.total_pages || 1,
+    total_results: result.total_results || 0,
+    list_name: result.name || '',
+    list_description: result.description || ''
+  };
+}
+
 async function getMovieCertifications(params, config) {
   const apiKey = getApiKey(config);
   return makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params, 'GET', null, config);
@@ -849,10 +873,13 @@ module.exports = {
   genreTvList: (params, config) => makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config),
   requestToken,
   sessionId,
+  getAccountDetails,
   accountFavoriteMovies,
   accountFavoriteTv,
   accountMovieWatchlist,
   accountTvWatchlist,
+  getTmdbListDetails,
+  getTmdbListItems,
   getMovieCertifications,
   getTvCertifications,
   getTmdbMoviePoster,

@@ -720,6 +720,106 @@ addon.get("/api/mdblist/lists/:listId", async (req, res) => {
   }
 });
 
+// --- TMDB Proxy Endpoints ---
+const moviedb = require('./lib/getTmdb.js');
+
+// Proxy: Get TMDB list details
+addon.get("/api/tmdb/list/:listId", async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const { apikey } = req.query;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    consola.debug(`[TMDB Proxy] Fetching list ${listId}`);
+    
+    const config = { apiKeys: { tmdb: apikey } };
+    const data = await moviedb.getTmdbListDetails({ list_id: listId }, config);
+    
+    res.json(data);
+  } catch (error) {
+    consola.error("[TMDB Proxy] Error fetching list details:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch TMDB list details" });
+  }
+});
+
+// Proxy: Get TMDB request token
+addon.post("/api/tmdb/auth/request_token", async (req, res) => {
+  try {
+    const { apikey } = req.body;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    consola.debug(`[TMDB Proxy] Getting request token`);
+    
+    const config = { apiKeys: { tmdb: apikey } };
+    const data = await moviedb.requestToken(config);
+    
+    res.json(data);
+  } catch (error) {
+    consola.error("[TMDB Proxy] Error getting request token:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to get TMDB request token" });
+  }
+});
+
+// Proxy: Create TMDB session from request token
+addon.post("/api/tmdb/auth/session", async (req, res) => {
+  try {
+    const { apikey, requestToken } = req.body;
+    
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    
+    if (!requestToken) {
+      return res.status(400).json({ error: "requestToken is required" });
+    }
+    
+    consola.debug(`[TMDB Proxy] Creating session from request token: ${requestToken.substring(0, 10)}...`);
+    
+    const config = { apiKeys: { tmdb: apikey } };
+    const data = await moviedb.sessionId({ request_token: requestToken }, config);
+    
+    consola.debug(`[TMDB Proxy] Session creation response:`, data);
+    
+    if (!data.success) {
+      consola.warn(`[TMDB Proxy] Session creation failed:`, data);
+      return res.json(data);
+    }
+    
+    // Validate the session by trying to get account details
+    if (data.session_id) {
+      try {
+        const accountDetails = await moviedb.getAccountDetails(data.session_id, apikey);
+        consola.debug(`[TMDB Proxy] Session validated successfully for account:`, accountDetails?.username || accountDetails?.id);
+      } catch (validationError) {
+        consola.error(`[TMDB Proxy] Session validation failed:`, validationError.message);
+        return res.status(400).json({
+          success: false,
+          error: "Session created but validation failed. Please make sure you approved the authorization on TMDB.",
+          details: validationError.message
+        });
+      }
+    }
+    
+    res.json(data);
+  } catch (error) {
+    consola.error("[TMDB Proxy] Error creating session:", error.message);
+    consola.error("[TMDB Proxy] Full error:", error);
+    const status = error.response?.status || 500;
+    res.status(status).json({ 
+      error: error.message || "Failed to create TMDB session",
+      details: error.response?.data || null
+    });
+  }
+});
+
 // Proxy: Get external lists for current user
 addon.get("/api/mdblist/external/lists/user", async (req, res) => {
   try {
@@ -1594,6 +1694,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
+  
+  // Debug logging for TMDB personal lists
+  if (cleanId === 'tmdb.favorites' || cleanId === 'tmdb.watchlist') {
+    consola.debug(`[CATALOG ROUTE] TMDB personal list - sessionId: ${sessionId ? sessionId.substring(0, 10) + '...' : 'MISSING'}`);
+  }
 
   // Pass config to req for ETag generation
   req.userConfig = config;

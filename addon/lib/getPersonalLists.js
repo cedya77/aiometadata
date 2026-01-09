@@ -129,7 +129,7 @@ function shuffleArray(array) {
  */
 async function getPersonalList(type, language, page, genre, sessionId, listType, config, userUUID, includeVideos = false) {
   if (!sessionId) {
-    console.warn(`Attempted to fetch personal ${listType} without a session ID. User needs to authenticate with TMDB.`);
+    console.warn(`[TMDB Personal List] Attempted to fetch personal ${listType} without a session ID. User needs to authenticate with TMDB.`);
     return { metas: [] };
   }
 
@@ -171,7 +171,11 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
     return { metas: validMetas };
 
   } catch (error) {
-    console.error(`Error fetching personal ${listType} for ${type}:`, error.message);
+    console.error(`[TMDB Personal List] Error fetching personal ${listType} for ${type}:`, error.message);
+    if (error.response) {
+      console.error(`[TMDB Personal List] Error response:`, error.response.data);
+      console.error(`[TMDB Personal List] Error status:`, error.response.status);
+    }
     return { metas: [] };
   }
 }
