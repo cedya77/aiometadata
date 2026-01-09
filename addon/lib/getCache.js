@@ -1147,8 +1147,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    };
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
-   const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
+   //const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
+   //const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
 
    
    if (isAnime) {
@@ -1191,9 +1191,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
      metaConfig.useShowPosterForUpNext = useShowPoster;
     }
-    if (isAnimeWithImdbId) {
+    /*if (isAnimeWithImdbId) {
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-    }
+    }*/
+    metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
  
 const metaConfigString = stableStringify(metaConfig);
 const configHash = hashConfig(metaConfigString);
@@ -1418,8 +1419,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
-   const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
+   //const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
+   //const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = {
@@ -1459,9 +1460,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
    metaConfig.useShowPosterForUpNext = useShowPoster;
  }
- if (isAnimeWithImdbId) {
-  metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
- }
+ metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
  
  const metaConfigString = stableStringify(metaConfig);
  const configHash = hashConfig(metaConfigString);

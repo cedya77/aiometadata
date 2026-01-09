@@ -400,5 +400,6 @@ module.exports = {
   scheduleEssentialWarming,
   isInitialWarmingComplete,
   getWarmupStats,
+  ensureSystemConfig,
   WARMING_STRATEGIES
 };

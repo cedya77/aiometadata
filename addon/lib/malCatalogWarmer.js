@@ -271,9 +271,17 @@ class MALCatalogWarmer {
     
     // Import required functions
     const { loadConfigFromDatabase } = require('./configApi.js');
+    const { ensureSystemConfig } = require('./cacheWarmer.js');
     
     // Use configured UUID for warming
     const systemUUID = WARMUP_CONFIG.uuid;
+    
+    try {
+      await ensureSystemConfig();
+    } catch (error) {
+      this.log('warn', `Failed to ensure system config exists: ${error.message}`);
+    }
+    
     let warmingConfig;
     
     try {
@@ -366,8 +374,16 @@ class MALCatalogWarmer {
     const language = 'en-US';
     
     const { loadConfigFromDatabase } = require('./configApi.js');
+    const { ensureSystemConfig } = require('./cacheWarmer.js');
     
     const systemUUID = WARMUP_CONFIG.uuid;
+    
+    try {
+      await ensureSystemConfig();
+    } catch (error) {
+      this.log('warn', `Failed to ensure system config exists: ${error.message}`);
+    }
+    
     let warmingConfig;
     
     try {
@@ -425,8 +441,16 @@ class MALCatalogWarmer {
     const language = 'en-US';
     
     const { loadConfigFromDatabase } = require('./configApi.js');
+    const { ensureSystemConfig } = require('./cacheWarmer.js');
     
     const systemUUID = WARMUP_CONFIG.uuid;
+    
+    try {
+      await ensureSystemConfig();
+    } catch (error) {
+      this.log('warn', `Failed to ensure system config exists: ${error.message}`);
+    }
+    
     let warmingConfig;
     
     try {
