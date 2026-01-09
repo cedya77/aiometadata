@@ -97,12 +97,13 @@ function processAndIndexXmlData(xmlData) {
  * Downloads and processes the anime-list XML file.
  * It uses Redis and ETags to check if the remote file has changed,
  * avoiding a full download if the local cache is up-to-date.
+ * @param {boolean} force - If true, bypass ETag check and force re-download
  */
-async function downloadAndProcessAnimeList() {
+async function downloadAndProcessAnimeList(force = false) {
   const useRedisCache = redis && redis.status === 'ready';
 
   try {
-    if (useRedisCache) {
+    if (useRedisCache && !force) {
       try {
         const savedEtag = await redis.get(REDIS_ETAG_KEY);
         const headers = (await axios.head(REMOTE_ANIME_LIST_URL, { timeout: 10000 })).headers;
@@ -124,7 +125,7 @@ async function downloadAndProcessAnimeList() {
               logger.warn('Failed to track maintenance task:', trackingError.message);
             }
             
-            return;
+            return { success: true, message: 'Loaded from cache (no changes)', count: animeListMap.size };
           } catch (e) {
             logger.warn('ETag matched, but local cache was unreadable. Forcing re-download.');
           }
@@ -132,6 +133,8 @@ async function downloadAndProcessAnimeList() {
       } catch (redisError) {
         logger.warn('Redis error, proceeding without cache:', redisError.message);
       }
+    } else if (force) {
+      logger.info('Force update requested. Bypassing ETag check.');
     } else {
       logger.debug('Redis cache is disabled or unavailable. Proceeding to download.');
     }
@@ -175,6 +178,8 @@ async function downloadAndProcessAnimeList() {
         logger.warn('Failed to track maintenance task:', trackingError.message);
       }
     }
+    
+    return { success: true, message: 'Downloaded and updated', count: animeListMap.size };
 
   } catch (error) {
     logger.error(`An error occurred during remote download: ${error.message}`);
@@ -194,8 +199,11 @@ async function downloadAndProcessAnimeList() {
           logger.warn('Failed to track maintenance task:', trackingError.message);
         }
       }
+      
+      return { success: true, message: 'Loaded from local cache (fallback)', count: animeListMap.size };
     } catch (fallbackError) {
       logger.error('CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
+      return { success: false, message: `Failed to update: ${error.message}`, count: 0 };
     }
   }
 }
@@ -810,8 +818,40 @@ module.exports = {
   getSeasonMappings,
   resolveAnidbEpisodeFromTvdbEpisode,
   resolveTvdbEpisodeFromAnidbEpisode,
+  forceUpdateAnimeListXml,
+  getAnimeListXmlStats,
   isInitialized: () => isInitialized,
   // Debug exports
   tvdbToAnimeMap: () => tvdbToAnimeMap,
   animeListMap: () => animeListMap
 };
+
+/**
+ * Force update the anime-list XML mapping
+ * @returns {Promise<Object>} Result object with success, message, and count
+ */
+async function forceUpdateAnimeListXml() {
+  logger.info('Force update requested for anime-list XML...');
+  try {
+    const result = await downloadAndProcessAnimeList(true);
+    return result;
+  } catch (error) {
+    logger.error('Force update failed:', error.message);
+    return { success: false, message: `Force update failed: ${error.message}`, count: animeListMap.size };
+  }
+}
+
+/**
+ * Get stats for the anime-list XML mapper (for dashboard display)
+ * @returns {Object} Stats object with counts, updateInterval, and initialized status
+ */
+function getAnimeListXmlStats() {
+  return {
+    count: animeListMap.size,
+    tvdbMappings: tvdbToAnimeMap.size,
+    tmdbMappings: tmdbToAnimeMap.size,
+    imdbMappings: imdbToAnimeMap.size,
+    updateIntervalHours: UPDATE_INTERVAL_HOURS,
+    initialized: isInitialized
+  };
+}

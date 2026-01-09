@@ -150,12 +150,13 @@ function processAndIndexData(data) {
  * Downloads and processes the anime mapping file.
  * It uses Redis and ETags to check if the remote file has changed,
  * avoiding a full download if the local cache is up-to-date.
+ * @param {boolean} force - If true, bypass ETag check and force re-download
  */
-async function downloadAndProcessAnimeList() {
+async function downloadAndProcessAnimeList(force = false) {
   const useRedisCache = redis; 
 
   try {
-    if (useRedisCache) {
+    if (useRedisCache && !force) {
       const savedEtag = await redis.get(REDIS_ETAG_KEY);
       const headers = (await httpHead(REMOTE_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
@@ -167,11 +168,17 @@ async function downloadAndProcessAnimeList() {
           logger.debug('[ID Mapper] [Fribb\'s Anime-List] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
           processAndIndexData(fileContent);
-          return;
+          // Update last check timestamp even when using cache
+          if (useRedisCache) {
+            await redis.set('maintenance:last_id_mapper_update', Date.now().toString());
+          }
+          return { success: true, message: 'Loaded from cache (no changes)', count: animeIdMap.size };
         } catch (e) {
           logger.warn('[ID Mapper] [Fribb\'s Anime-List] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
       }
+    } else if (force) {
+      logger.debug('[ID Mapper] [Fribb\'s Anime-List] Force update requested. Bypassing ETag check.');
     } else {
       logger.debug('[ID Mapper] [Fribb\'s Anime-List] Redis cache is disabled. Proceeding to download.');
     }
@@ -202,9 +209,12 @@ async function downloadAndProcessAnimeList() {
     
     if (useRedisCache) {
       await redis.set(REDIS_ETAG_KEY, response.headers.etag);
+      // Write maintenance timestamp
+      await redis.set('maintenance:last_id_mapper_update', Date.now().toString());
     }
     
     processAndIndexData(dataForProcessing);
+    return { success: true, message: 'Downloaded and updated', count: animeIdMap.size };
 
   } catch (error) {
     logger.error(`[ID Mapper] [Fribb\'s Anime-List] An error occurred during remote download: ${error.message}`);
@@ -213,9 +223,11 @@ async function downloadAndProcessAnimeList() {
     try {
       const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
       logger.debug('[ID Mapper] [Fribb\'s Anime-List] Successfully loaded data from local cache on fallback.');
-      processAndIndexData(fileContent); 
+      processAndIndexData(fileContent);
+      return { success: true, message: 'Loaded from local cache (fallback)', count: animeIdMap.size };
     } catch (fallbackError) {
       logger.error('[ID Mapper] [Fribb\'s Anime-List] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
+      return { success: false, message: `Failed to update: ${error.message}`, count: 0 };
     }
   }
 }
@@ -319,12 +331,13 @@ function processAndIndexTraktAnimeMovies(moviesArray) {
  * Downloads and processes the Kitsu to IMDB mapping file.
  * It uses Redis and ETags to check if the remote file has changed,
  * avoiding a full download if the local cache is up-to-date.
+ * @param {boolean} force - If true, bypass ETag check and force re-download
  */
-async function downloadAndProcessKitsuToImdbMapping() {
+async function downloadAndProcessKitsuToImdbMapping(force = false) {
   const useRedisCache = redis; 
 
   try {
-    if (useRedisCache) {
+    if (useRedisCache && !force) {
       const savedEtag = await redis.get(REDIS_KITSU_TO_IMDB_ETAG_KEY);
       const headers = (await httpHead(REMOTE_KITSU_TO_IMDB_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
@@ -337,12 +350,18 @@ async function downloadAndProcessKitsuToImdbMapping() {
           const fileContent = await fs.readFile(LOCAL_KITSU_TO_IMDB_MAPPING_PATH, 'utf-8');
           kitsuToImdbMapping = JSON.parse(fileContent);
           isKitsuToImdbInitialized = true;
+          // Update last check timestamp even when using cache
+          if (useRedisCache) {
+            await redis.set('maintenance:last_kitsu_imdb_update', Date.now().toString());
+          }
           logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings from local cache.`);
-          return;
+          return { success: true, message: 'Loaded from cache (no changes)', count: Object.keys(kitsuToImdbMapping).length };
         } catch (e) {
           logger.warn('[ID Mapper] [Kitsu-IMDB] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
       }
+    } else if (force) {
+      logger.debug('[ID Mapper] [Kitsu-IMDB] Force update requested. Bypassing ETag check.');
     } else {
       logger.debug('[ID Mapper] [Kitsu-IMDB] Redis cache is disabled. Proceeding to download.');
     }
@@ -357,10 +376,13 @@ async function downloadAndProcessKitsuToImdbMapping() {
     
     if (useRedisCache) {
       await redis.set(REDIS_KITSU_TO_IMDB_ETAG_KEY, response.headers.etag);
+      // Write maintenance timestamp
+      await redis.set('maintenance:last_kitsu_imdb_update', Date.now().toString());
     }
     
     isKitsuToImdbInitialized = true;
     logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings.`);
+    return { success: true, message: 'Downloaded and updated', count: Object.keys(kitsuToImdbMapping).length };
 
   } catch (error) {
     logger.error(`[ID Mapper] [Kitsu-IMDB] An error occurred during remote download: ${error.message}`);
@@ -371,10 +393,12 @@ async function downloadAndProcessKitsuToImdbMapping() {
       kitsuToImdbMapping = JSON.parse(fileContent);
       isKitsuToImdbInitialized = true;
       logger.debug('[ID Mapper] [Kitsu-IMDB] Successfully loaded data from local cache on fallback.');
+      return { success: true, message: 'Loaded from local cache (fallback)', count: Object.keys(kitsuToImdbMapping).length };
     } catch (fallbackError) {
       logger.error('[ID Mapper] [Kitsu-IMDB] CRITICAL: Fallback to local cache also failed. Kitsu-IMDB mapping will be empty.');
       kitsuToImdbMapping = {};
       isKitsuToImdbInitialized = true;
+      return { success: false, message: `Failed to update: ${error.message}`, count: 0 };
     }
   }
 }
@@ -1983,6 +2007,60 @@ function getTraktAnimeMovieByImdbId(imdbId) {
   return imdbIdToTraktMovieMap.get(imdbId) || null;
 }
 
+/**
+ * Force update the ID Mapper (Fribb's Anime-List)
+ * @returns {Promise<Object>} Result object with success, message, and count
+ */
+async function forceUpdateIdMapper() {
+  logger.info('[ID Mapper] Force update requested for ID Mapper...');
+  try {
+    const result = await downloadAndProcessAnimeList(true);
+    return result;
+  } catch (error) {
+    logger.error('[ID Mapper] Force update failed:', error.message);
+    return { success: false, message: `Force update failed: ${error.message}`, count: animeIdMap.size };
+  }
+}
+
+/**
+ * Force update the Kitsu-IMDB Mapping
+ * @returns {Promise<Object>} Result object with success, message, and count
+ */
+async function forceUpdateKitsuImdbMapping() {
+  logger.info('[ID Mapper] Force update requested for Kitsu-IMDB Mapping...');
+  try {
+    const result = await downloadAndProcessKitsuToImdbMapping(true);
+    return result;
+  } catch (error) {
+    logger.error('[ID Mapper] Force update failed:', error.message);
+    return { success: false, message: `Force update failed: ${error.message}`, count: kitsuToImdbMapping ? Object.keys(kitsuToImdbMapping).length : 0 };
+  }
+}
+
+/**
+ * Get stats for the ID Mapper (for dashboard display)
+ * @returns {Object} Stats object with count, updateInterval, and initialized status
+ */
+function getIdMapperStats() {
+  return {
+    count: animeIdMap.size,
+    updateIntervalHours: UPDATE_INTERVAL_HOURS,
+    initialized: isInitialized
+  };
+}
+
+/**
+ * Get stats for the Kitsu-IMDB Mapping (for dashboard display)
+ * @returns {Object} Stats object with count, updateInterval, and initialized status
+ */
+function getKitsuImdbStats() {
+  return {
+    count: kitsuToImdbMapping ? Object.keys(kitsuToImdbMapping).length : 0,
+    updateIntervalHours: UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS,
+    initialized: isKitsuToImdbInitialized
+  };
+}
+
 module.exports = {
   initializeMapper,
   getMappingByMalId,
@@ -2019,5 +2097,9 @@ module.exports = {
   getTraktAnimeMovieByMalId,
   getTraktAnimeMovieByTmdbId,
   getTraktAnimeMovieByImdbId,
+  forceUpdateIdMapper,
+  forceUpdateKitsuImdbMapping,
+  getIdMapperStats,
+  getKitsuImdbStats,
   isInitialized: () => isInitialized
 };

@@ -74,6 +74,26 @@ class ComprehensiveCatalogWarmer {
       errors: []
     };
     this.isRunning = false;
+    this.shouldStop = false; // Flag for graceful stop
+  }
+
+  /**
+   * Request to stop warming operations gracefully
+   */
+  stopWarming() {
+    if (this.isRunning) {
+      this.shouldStop = true;
+      this.log('info', 'Stop requested - will stop after current catalog');
+      return { success: true, message: 'Comprehensive warming will stop after current catalog' };
+    }
+    return { success: true, message: 'Comprehensive warming is not currently running' };
+  }
+
+  /**
+   * Check if warming should continue
+   */
+  shouldContinueWarming() {
+    return !this.shouldStop;
   }
 
   log(level, message) {
@@ -607,6 +627,8 @@ class ComprehensiveCatalogWarmer {
       return false;
     }
 
+    // Reset stop flag at start
+    this.shouldStop = false;
     this.isRunning = true;
     this.stats.isRunning = true;
     const startTime = Date.now();
@@ -623,6 +645,12 @@ class ComprehensiveCatalogWarmer {
 
       // Process each UUID sequentially
       for (const uuid of this.config.uuids) {
+        // Check stop flag before processing each UUID
+        if (!this.shouldContinueWarming()) {
+          this.log('info', 'Stop requested - stopping warmup');
+          break;
+        }
+        
         try {
           this.log('info', `Processing UUID: ${uuid}`);
           const uuidStartTime = Date.now();
@@ -652,6 +680,12 @@ class ComprehensiveCatalogWarmer {
 
           // Warm each catalog for this UUID
           for (const catalog of enabledCatalogs) {
+            // Check stop flag before each catalog
+            if (!this.shouldContinueWarming()) {
+              this.log('info', 'Stop requested - stopping catalog warming');
+              break;
+            }
+            
             try {
               this.log('info', `Warming catalog: ${catalog.id} (${catalog.name}) for UUID ${uuid}`);
               const result = await this.warmCatalog(catalog, config, uuid);
@@ -691,7 +725,8 @@ class ComprehensiveCatalogWarmer {
       this.stats.duration = `${Math.floor(overallDuration / 60000)}m ${Math.floor((overallDuration % 60000) / 1000)}s`;
       this.stats.lastRun = new Date(startTime).toISOString();
 
-      this.log('success', `Warmup complete! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
+      const stoppedEarly = this.shouldStop;
+      this.log('success', `Warmup ${stoppedEarly ? 'stopped' : 'complete'}! Processed ${this.config.uuids.length} UUID(s), warmed ${this.stats.catalogsWarmed}/${this.stats.totalCatalogs} catalogs, ${this.stats.totalPages} pages, ${this.stats.totalItems} items in ${this.stats.duration}`);
       
       // Update nextRun time after successful warmup (for both scheduled and forced runs)
       const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
@@ -707,6 +742,7 @@ class ComprehensiveCatalogWarmer {
     } finally {
       this.isRunning = false;
       this.stats.isRunning = false;
+      this.shouldStop = false; // Reset stop flag
     }
   }
 
@@ -925,9 +961,14 @@ function forceRestartWarmup() {
   return warmer.runWarmup(true);
 }
 
+function stopComprehensiveWarming() {
+  return warmer.stopWarming();
+}
+
 module.exports = {
   startComprehensiveCatalogWarming,
   getWarmupStats,
-  forceRestartWarmup
+  forceRestartWarmup,
+  stopComprehensiveWarming
 };
 

@@ -13,6 +13,10 @@ class DashboardAPI {
     this.startTime = Date.now();
     this.uptimeInitialized = false;
 
+    // CPU usage tracking state
+    this.lastCpuUsage = process.cpuUsage();
+    this.lastCpuTime = Date.now();
+
     // Initialize persistent uptime tracking (async, don't await in constructor)
     this.initializePersistentUptime()
       .then(() => {
@@ -1032,17 +1036,19 @@ class DashboardAPI {
     }
   }
 
-  // Get network I/O
+  // Get network I/O rate in MB/s (RX + TX combined)
+  // Docker only for now
   async getNetworkIO() {
-    const fs = require("fs");
+    const fs = require("fs").promises;
+    const fsSync = require("fs");
     const netDevPath = "/proc/net/dev";
 
     try {
-      if (!fs.existsSync(netDevPath)) {
-        return 0; // Not available on this system
+      if (!fsSync.existsSync(netDevPath)) {
+        return 0; // Not available on this system (Windows/macOS)
       }
 
-      const netData = fs.readFileSync(netDevPath, "utf8");
+      const netData = await fs.readFile(netDevPath, "utf8");
       const lines = netData.split("\n");
       let totalBytes = 0;
 
@@ -1067,15 +1073,101 @@ class DashboardAPI {
       const timeDiff = (now - this.lastNetworkMeasurement.time) / 1000;
       const bytesDiff = totalBytes - this.lastNetworkMeasurement.bytes;
 
+      // Handle counter reset (container restart, interface reset, counter overflow)
+      if (bytesDiff < 0) {
+        this.lastNetworkMeasurement = { bytes: totalBytes, time: now };
+        return 0;
+      }
+
       let networkIO = 0;
       if (timeDiff > 0) {
         networkIO = parseFloat((bytesDiff / timeDiff / 1024 / 1024).toFixed(1));
       }
 
       this.lastNetworkMeasurement = { bytes: totalBytes, time: now };
-      return Math.max(0, networkIO);
+      return networkIO;
     } catch (error) {
       logger.warn("Failed to get network I/O:", error.message);
+      return 0;
+    }
+  }
+
+  // Get effective CPU count (container-aware)
+  // Returns the number of CPUs available to this process, respecting container limits
+  getEffectiveCpuCount() {
+    try {
+      const fs = require("fs");
+      
+      // Try cgroup v2 first (modern Docker/k8s)
+      const cgroupV2Path = "/sys/fs/cgroup/cpu.max";
+      if (fs.existsSync(cgroupV2Path)) {
+        const content = fs.readFileSync(cgroupV2Path, "utf8").trim();
+        const [quota, period] = content.split(" ");
+        if (quota !== "max") {
+          const effectiveCpus = parseInt(quota) / parseInt(period);
+          if (effectiveCpus > 0) {
+            return effectiveCpus;
+          }
+        }
+      }
+      
+      // Try cgroup v1 (legacy Docker)
+      const cgroupV1QuotaPath = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us";
+      const cgroupV1PeriodPath = "/sys/fs/cgroup/cpu/cpu.cfs_period_us";
+      if (fs.existsSync(cgroupV1QuotaPath) && fs.existsSync(cgroupV1PeriodPath)) {
+        const quota = parseInt(fs.readFileSync(cgroupV1QuotaPath, "utf8").trim());
+        const period = parseInt(fs.readFileSync(cgroupV1PeriodPath, "utf8").trim());
+        // quota of -1 means unlimited
+        if (quota > 0 && period > 0) {
+          const effectiveCpus = quota / period;
+          if (effectiveCpus > 0) {
+            return effectiveCpus;
+          }
+        }
+      }
+      
+      // Fallback to host CPU count (bare metal or unlimited container)
+      return os.cpus().length;
+    } catch (error) {
+      logger.warn("Failed to get effective CPU count:", error.message);
+      return os.cpus().length;
+    }
+  }
+
+  // Get process-level CPU usage as a percentage of available CPU
+  // In containers: percentage of container CPU limit
+  // On bare metal: percentage of total system CPU
+  getProcessCpuUsage() {
+    try {
+      const now = Date.now();
+      const elapsed = now - this.lastCpuTime;
+      
+      // Need at least 100ms between measurements for accuracy
+      if (elapsed < 100) {
+        return this._lastCpuPercent || 0;
+      }
+
+      const cpuUsage = process.cpuUsage(this.lastCpuUsage);
+      
+      // cpuUsage returns microseconds, elapsed is milliseconds
+      // Total CPU time = user + system time
+      const totalCpuMicros = cpuUsage.user + cpuUsage.system;
+      const elapsedMicros = elapsed * 1000;
+      
+      // Get container-aware CPU count
+      const effectiveCpus = this.getEffectiveCpuCount();
+      
+      // Calculate percentage of available CPU (can exceed 100% in edge cases)
+      const cpuPercent = Math.round((totalCpuMicros / elapsedMicros / effectiveCpus) * 100);
+      
+      // Update tracking state for next measurement
+      this.lastCpuUsage = process.cpuUsage();
+      this.lastCpuTime = now;
+      this._lastCpuPercent = cpuPercent;
+      
+      return this._lastCpuPercent;
+    } catch (error) {
+      logger.warn("Failed to get process CPU usage:", error.message);
       return 0;
     }
   }
@@ -1085,7 +1177,7 @@ class DashboardAPI {
     try {
       return {
         memoryUsage: await this.getUniversalMemoryUsage(),
-        cpuUsage: Math.round((os.loadavg()[0] / os.cpus().length) * 100),
+        cpuUsage: this.getProcessCpuUsage(),
         diskUsage: await this.getDiskUsage(),
         networkIO: await this.getNetworkIO(),
       };
@@ -1122,70 +1214,7 @@ class DashboardAPI {
       const now = Date.now();
       const tasks = [];
 
-      // 1. Cache cleanup task - check if Redis has cleanup data
-      try {
-        if (this.cache) {
-          const lastCleanup = await this.cache.get(
-            "maintenance:last_cache_cleanup",
-          );
-          const cacheCleanupStatus = lastCleanup ? "completed" : "scheduled";
-          const cacheCleanupTime = lastCleanup
-            ? this.getTimeAgo(new Date(parseInt(lastCleanup)))
-            : "Never";
-
-          // Calculate next run time (6 hours after last cleanup)
-          let nextRunTime = "Now";
-          let isScheduled = false;
-          
-          // Check if automatic scheduling is enabled
-          const schedulerEnabled = process.env.CACHE_CLEANUP_AUTO_ENABLED !== 'false'; // Default to enabled
-          
-          if (lastCleanup) {
-            const lastCleanupTime = parseInt(lastCleanup);
-            const nextRunTimestamp = lastCleanupTime + (6 * 60 * 60 * 1000); // 6 hours in milliseconds
-            const now = Date.now();
-            
-            if (nextRunTimestamp > now) {
-              const timeUntilNext = nextRunTimestamp - now;
-              const hours = Math.floor(timeUntilNext / (60 * 60 * 1000));
-              const minutes = Math.floor((timeUntilNext % (60 * 60 * 1000)) / (60 * 1000));
-              nextRunTime = hours > 0 ? `In ${hours}h ${minutes}m` : `In ${minutes}m`;
-              isScheduled = schedulerEnabled;
-            } else {
-              nextRunTime = schedulerEnabled ? "Scheduled" : "Now";
-              isScheduled = schedulerEnabled;
-            }
-          } else {
-            nextRunTime = schedulerEnabled ? "Scheduled" : "Now";
-            isScheduled = schedulerEnabled;
-          }
-
-          tasks.push({
-            id: 1,
-            name: "Clear expired cache entries",
-            status: cacheCleanupStatus,
-            lastRun: cacheCleanupTime,
-            description: `Removes expired keys from Redis cache${isScheduled ? ' (auto-scheduled every 6h)' : ''}`,
-            nextRun: nextRunTime,
-            category: "cleanup"
-          });
-        }
-      } catch (error) {
-        logger.warn(
-          "Failed to get cache cleanup status:",
-          error.message,
-        );
-        tasks.push({
-          id: 1,
-          name: "Clear expired cache entries",
-          status: "error",
-          lastRun: "Unknown",
-          description: "Removes expired keys from Redis cache",
-          nextRun: "Now",
-        });
-      }
-
-      // 2. Cache cleanup scheduler status
+      // 1. Cache cleanup scheduler status
       try {
         const { getCacheCleanupScheduler } = require('./cacheCleanupScheduler');
         const scheduler = getCacheCleanupScheduler();
@@ -1195,21 +1224,33 @@ class DashboardAPI {
           const schedulerEnabled = process.env.CACHE_CLEANUP_AUTO_ENABLED !== 'false';
           
           tasks.push({
-            id: 10,
-            name: "Cache Cleanup Scheduler",
-            status: schedulerEnabled ? "running" : "disabled",
-            lastRun: schedulerStatus.lastRun || "Never",
-            description: "Automatic scheduling of expired cache cleanup (every 6 hours)",
-            nextRun: schedulerStatus.nextRun ? new Date(schedulerStatus.nextRun).toLocaleString() : "Not scheduled",
-            category: "scheduler"
+            id: 1,
+            name: "Cache Cleanup",
+            status: schedulerEnabled ? (schedulerStatus.isRunning ? "running" : "completed") : "disabled",
+            lastRun: schedulerStatus.lastRun ? this.getTimeAgo(new Date(schedulerStatus.lastRun)) : "Never",
+            description: "Removes expired keys from Redis cache (auto-scheduled every 6 hours)",
+            nextRun: schedulerEnabled ? (schedulerStatus.nextRun ? this.getTimeUntil(new Date(schedulerStatus.nextRun)) : "Scheduled") : "Disabled",
+            category: "cleanup"
           });
         }
       } catch (error) {
         logger.warn("Failed to get cache cleanup scheduler status:", error.message);
+        tasks.push({
+          id: 1,
+          name: "Cache Cleanup",
+          status: "error",
+          lastRun: "Unknown",
+          description: "Removes expired keys from Redis cache",
+          nextRun: "Unknown",
+          category: "cleanup"
+        });
       }
 
-      // 3. Anime-list update task - check actual update timestamps
+      // 2. Anime-list XML update task - check actual update timestamps
       try {
+        const { getAnimeListXmlStats } = require('./anime-list-mapper');
+        const animeListStats = getAnimeListXmlStats();
+        
         if (this.cache) {
           const animeListLastUpdate = await this.cache.get(
             "anime_list:last_update",
@@ -1221,13 +1262,30 @@ class DashboardAPI {
             ? this.getTimeAgo(new Date(parseInt(animeListLastUpdate)))
             : "Never";
 
+          // Calculate actual next run time based on last update and interval
+          let nextRunDisplay = "Now";
+          if (animeListLastUpdate) {
+            const lastUpdateTime = parseInt(animeListLastUpdate);
+            const intervalMs = animeListStats.updateIntervalHours * 60 * 60 * 1000;
+            const nextRunTime = lastUpdateTime + intervalMs;
+            const now = Date.now();
+            
+            if (nextRunTime > now) {
+              nextRunDisplay = this.getTimeUntil(new Date(nextRunTime));
+            } else {
+              nextRunDisplay = "Soon";
+            }
+          }
+
           tasks.push({
             id: 2,
             name: "Update anime-list XML",
             status: animeListStatus,
             lastRun: animeListTime,
-            description: "Updates anime mappings from remote sources",
-            nextRun: animeListStatus === "completed" ? "In 24 hours" : "Now",
+            description: `Updates AniDB/TVDB/TMDB episode mappings (${animeListStats.count.toLocaleString()} entries)`,
+            nextRun: nextRunDisplay,
+            action: "restart",
+            category: "mapping"
           });
         }
       } catch (error) {
@@ -1240,13 +1298,18 @@ class DashboardAPI {
           name: "Update anime-list XML",
           status: "error",
           lastRun: "Unknown",
-          description: "Updates anime mappings from remote sources",
+          description: "Updates AniDB/TVDB/TMDB episode mappings",
           nextRun: "Now",
+          action: "restart",
+          category: "mapping"
         });
       }
 
       // 3. ID Mapper update task - check actual update timestamps
       try {
+        const { getIdMapperStats } = require('./id-mapper');
+        const idMapperStats = getIdMapperStats();
+        
         if (this.cache) {
           const idMapperLastUpdate = await this.cache.get(
             "maintenance:last_id_mapper_update",
@@ -1256,13 +1319,30 @@ class DashboardAPI {
             ? this.getTimeAgo(new Date(parseInt(idMapperLastUpdate)))
             : "Never";
 
+          // Calculate actual next run time based on last update and interval
+          let nextRunDisplay = "Now";
+          if (idMapperLastUpdate) {
+            const lastUpdateTime = parseInt(idMapperLastUpdate);
+            const intervalMs = idMapperStats.updateIntervalHours * 60 * 60 * 1000;
+            const nextRunTime = lastUpdateTime + intervalMs;
+            const now = Date.now();
+            
+            if (nextRunTime > now) {
+              nextRunDisplay = this.getTimeUntil(new Date(nextRunTime));
+            } else {
+              nextRunDisplay = "Soon";
+            }
+          }
+
           tasks.push({
             id: 3,
             name: "Update ID Mapper",
             status: idMapperStatus,
             lastRun: idMapperTime,
-            description: "Updates TMDB/TVDB/IMDB/MAL/Kitsu ID mappings",
-            nextRun: idMapperStatus === "completed" ? "In 24 hours" : "Now",
+            description: `Updates TMDB/TVDB/IMDB/MAL/Kitsu ID mappings (${idMapperStats.count.toLocaleString()} entries)`,
+            nextRun: nextRunDisplay,
+            action: "restart",
+            category: "mapping"
           });
         }
       } catch (error) {
@@ -1277,11 +1357,16 @@ class DashboardAPI {
           lastRun: "Unknown",
           description: "Updates TMDB/TVDB/IMDB/MAL/Kitsu ID mappings",
           nextRun: "Now",
+          action: "restart",
+          category: "mapping"
         });
       }
 
       // 4. Kitsu-IMDB mapping update task
       try {
+        const { getKitsuImdbStats } = require('./id-mapper');
+        const kitsuImdbStats = getKitsuImdbStats();
+        
         if (this.cache) {
           const kitsuImdbLastUpdate = await this.cache.get(
             "maintenance:last_kitsu_imdb_update",
@@ -1293,13 +1378,30 @@ class DashboardAPI {
             ? this.getTimeAgo(new Date(parseInt(kitsuImdbLastUpdate)))
             : "Never";
 
+          // Calculate actual next run time based on last update and interval
+          let nextRunDisplay = "Now";
+          if (kitsuImdbLastUpdate) {
+            const lastUpdateTime = parseInt(kitsuImdbLastUpdate);
+            const intervalMs = kitsuImdbStats.updateIntervalHours * 60 * 60 * 1000;
+            const nextRunTime = lastUpdateTime + intervalMs;
+            const now = Date.now();
+            
+            if (nextRunTime > now) {
+              nextRunDisplay = this.getTimeUntil(new Date(nextRunTime));
+            } else {
+              nextRunDisplay = "Soon";
+            }
+          }
+
           tasks.push({
             id: 4,
             name: "Update Kitsu-IMDB Mapping",
             status: kitsuImdbStatus,
             lastRun: kitsuImdbTime,
-            description: "Updates Kitsu to IMDB ID mappings",
-            nextRun: kitsuImdbStatus === "completed" ? "In 24 hours" : "Now",
+            description: `Updates Kitsu to IMDB ID mappings (${kitsuImdbStats.count.toLocaleString()} entries)`,
+            nextRun: nextRunDisplay,
+            action: "restart",
+            category: "mapping"
           });
         }
       } catch (error) {
@@ -1314,111 +1416,96 @@ class DashboardAPI {
           lastRun: "Unknown",
           description: "Updates Kitsu to IMDB ID mappings",
           nextRun: "Now",
+          action: "restart",
+          category: "mapping"
         });
       }
 
-      // 5. Database optimization task
+      // 5. Wikidata Mappings update task (manual only - no automatic scheduling)
       try {
+        const { getWikiMapperStats } = require('./wiki-mapper');
+        const wikiMapperStats = getWikiMapperStats();
+        
         if (this.cache) {
-          const lastDbOptimization = await this.cache.get(
-            "maintenance:last_db_optimization",
+          const wikiMapperLastUpdate = await this.cache.get(
+            "maintenance:last_wiki_mapper_update",
           );
-          const dbStatus = lastDbOptimization ? "completed" : "scheduled";
-          const dbTime = lastDbOptimization
-            ? this.getTimeAgo(new Date(parseInt(lastDbOptimization)))
+          const wikiMapperStatus = wikiMapperLastUpdate
+            ? "completed"
+            : "pending";
+          const wikiMapperTime = wikiMapperLastUpdate
+            ? this.getTimeAgo(new Date(parseInt(wikiMapperLastUpdate)))
             : "Never";
 
           tasks.push({
             id: 5,
-            name: "Database optimization",
-            status: dbStatus,
-            lastRun: dbTime,
-            description: "Optimizes SQLite database performance",
-            nextRun: dbStatus === "completed" ? "In 7 days" : "Now",
+            name: "Update Wikidata Mappings",
+            status: wikiMapperStatus,
+            lastRun: wikiMapperTime,
+            description: `Updates ID mappings from Wikidata (${wikiMapperStats.totalCount.toLocaleString()} entries)`,
+            nextRun: "On startup",
+            action: "restart",
+            category: "mapping"
           });
         }
       } catch (error) {
         logger.warn(
-          "Failed to get database status:",
+          "Failed to get Wikidata Mapper status:",
           error.message,
         );
         tasks.push({
           id: 5,
-          name: "Database optimization",
+          name: "Update Wikidata Mappings",
           status: "error",
           lastRun: "Unknown",
-          description: "Optimizes SQLite database performance",
-          nextRun: "Now",
+          description: "Updates ID mappings from Wikidata",
+          nextRun: "On startup",
+          action: "restart",
+          category: "mapping"
         });
       }
 
-      // 6. System health check task
+      // 11. IMDb Ratings update task (manual only - no automatic scheduling)
       try {
+        const { getImdbRatingsStatsForDashboard } = require('./imdbRatings');
+        const imdbRatingsStats = getImdbRatingsStatsForDashboard();
+        
         if (this.cache) {
-          const lastHealthCheck = await this.cache.get(
-            "maintenance:last_health_check",
+          const imdbRatingsLastUpdate = await this.cache.get(
+            "maintenance:last_imdb_ratings_update",
           );
-          const healthStatus = lastHealthCheck ? "completed" : "running";
-          const healthTime = lastHealthCheck
-            ? this.getTimeAgo(new Date(parseInt(lastHealthCheck)))
-            : "Just now";
-
-          tasks.push({
-            id: 6,
-            name: "System health check",
-            status: healthStatus,
-            lastRun: healthTime,
-            description: "Monitors system resources and services",
-            nextRun: healthStatus === "completed" ? "In 1 hour" : "Running",
-          });
-        }
-      } catch (error) {
-        logger.warn(
-          "Failed to get health check status:",
-          error.message,
-        );
-        tasks.push({
-          id: 6,
-          name: "System health check",
-          status: "error",
-          lastRun: "Unknown",
-          description: "Monitors system resources and services",
-          nextRun: "Now",
-        });
-      }
-
-      // 7. Cache warming task
-      try {
-        if (this.cache) {
-          const lastCacheWarming = await this.cache.get(
-            "maintenance:last_cache_warming",
-          );
-          const warmingStatus = lastCacheWarming ? "completed" : "scheduled";
-          const warmingTime = lastCacheWarming
-            ? this.getTimeAgo(new Date(parseInt(lastCacheWarming)))
+          const imdbRatingsStatus = imdbRatingsLastUpdate
+            ? "completed"
+            : "pending";
+          const imdbRatingsTime = imdbRatingsLastUpdate
+            ? this.getTimeAgo(new Date(parseInt(imdbRatingsLastUpdate)))
             : "Never";
 
           tasks.push({
-            id: 7,
-            name: "Cache warming",
-            status: warmingStatus,
-            lastRun: warmingTime,
-            description: "Preloads essential content into cache",
-            nextRun: warmingStatus === "completed" ? "In 30 minutes" : "Now",
+            id: 11,
+            name: "Update IMDb Ratings",
+            status: imdbRatingsStatus,
+            lastRun: imdbRatingsTime,
+            description: `Updates IMDb ratings from official dataset (${imdbRatingsStats.count.toLocaleString()} ratings)`,
+            nextRun: "On startup",
+            action: "restart",
+            category: "mapping"
           });
         }
       } catch (error) {
         logger.warn(
-          "Failed to get cache warming status:",
+          "Failed to get IMDb Ratings status:",
           error.message,
         );
         tasks.push({
-          id: 7,
-          name: "Cache warming",
+          id: 11,
+          name: "Update IMDb Ratings",
           status: "error",
           lastRun: "Unknown",
-          description: "Preloads essential content into cache",
-          nextRun: "Now",
+          description: "Updates IMDb ratings from official dataset",
+          nextRun: "On startup",
+          action: "restart",
+          category: "mapping"
         });
       }
 
@@ -1427,14 +1514,27 @@ class DashboardAPI {
         const { getWarmupStats: getEssentialStats } = require('./cacheWarmer');
         const essentialStats = getEssentialStats();
         
+        // Calculate next run display
+        let nextRunDisplay = "Disabled";
+        if (essentialStats.enabled) {
+          if (essentialStats.isWarming) {
+            nextRunDisplay = "Running";
+          } else if (essentialStats.nextRun) {
+            nextRunDisplay = this.getTimeUntil(new Date(essentialStats.nextRun));
+          } else {
+            // Fallback: calculate based on interval
+            nextRunDisplay = `Every ${essentialStats.intervalMinutes || 30}m`;
+          }
+        }
+        
         tasks.push({
           id: 7,
           name: "Essential Cache Warming",
-          status: essentialStats.enabled ? "completed" : "disabled",
+          status: essentialStats.enabled ? (essentialStats.isWarming ? "running" : "completed") : "disabled",
           lastRun: essentialStats.lastRun ? this.getTimeAgo(new Date(essentialStats.lastRun)) : "Never",
-          description: "Warms essential content (genres, studios, TMDB popular)",
-          nextRun: essentialStats.enabled ? "Continuous" : "Disabled",
-          action: essentialStats.enabled ? "restart" : "enable",
+          description: `Warms essential content (genres, studios, TMDB popular)${essentialStats.totalItems > 0 ? ` - ${essentialStats.totalItems} items` : ''}`,
+          nextRun: nextRunDisplay,
+          action: essentialStats.enabled ? (essentialStats.isWarming ? "stop" : "restart") : "enable",
           category: "warming"
         });
       } catch (error) {
@@ -1456,12 +1556,18 @@ class DashboardAPI {
         const { getWarmupStats: getMALStats } = require('./malCatalogWarmer');
         const malStats = getMALStats();
         
+        // Build description - only show items count if there are items warmed
+        let malDescription = "Warms MAL anime catalogs";
+        if (malStats.itemsWarmed > 0) {
+          malDescription += ` (${malStats.itemsWarmed} items warmed)`;
+        }
+        
         tasks.push({
           id: 8,
           name: "MAL Catalog Warming",
           status: malStats.enabled ? (malStats.isWarming ? "running" : "completed") : "disabled",
           lastRun: malStats.lastRun ? this.getTimeAgo(new Date(malStats.lastRun)) : "Never",
-          description: `Warms MAL anime catalogs (${malStats.totalItems || 0} items warmed)`,
+          description: malDescription,
           nextRun: malStats.enabled ? (malStats.nextRun ? this.getTimeUntil(new Date(malStats.nextRun)) : "Scheduled") : "Disabled",
           action: malStats.enabled ? (malStats.isWarming ? "stop" : "restart") : "enable",
           category: "warming"
@@ -1643,20 +1749,49 @@ class DashboardAPI {
         throw new Error("Cache not available");
       }
 
+      // Keys to preserve during "all" cache clear (maintenance tracking, system state)
+      const preservePatterns = [
+        'maintenance:*',           // Maintenance task timestamps
+        'cache-warming:*',         // Cache warming timestamps
+        'catalog-warmup:*',        // Comprehensive warming state
+        'anime_list:last_update',  // Anime-list XML update timestamp
+        'addon:start_time',        // Uptime tracking
+        'system:app_version',      // Version tracking
+      ];
+
       switch (type) {
         case "all":
-          // Use FLUSHALL for complete Redis cache clear (faster than keys + del)
-          await this.cache.flushall();
+          // Get all keys first
+          const allKeys = await this.cache.keys("*");
+          
+          // Filter out keys that should be preserved
+          const keysToDelete = allKeys.filter(key => {
+            return !preservePatterns.some(pattern => {
+              if (pattern.endsWith('*')) {
+                return key.startsWith(pattern.slice(0, -1));
+              }
+              return key === pattern;
+            });
+          });
+          
+          // Delete in batches
+          if (keysToDelete.length > 0) {
+            const batchSize = 100;
+            for (let i = 0; i < keysToDelete.length; i += batchSize) {
+              const batch = keysToDelete.slice(i, i + batchSize);
+              await this.cache.del(...batch);
+            }
+          }
 
-          // Wait longer for cache warming to complete
+          // Wait for cache warming to complete
           await new Promise((resolve) => setTimeout(resolve, 3000));
           break;
         case "expired":
           // Clear keys that are close to expiration (TTL < 1 hour)
-          const allKeys = await this.cache.keys("*");
+          const expiredCheckKeys = await this.cache.keys("*");
           const expiredKeys = [];
 
-          for (const key of allKeys) {
+          for (const key of expiredCheckKeys) {
             const ttl = await this.cache.ttl(key);
             if (ttl > 0 && ttl < 3600) {
               // Less than 1 hour remaining
@@ -1682,15 +1817,9 @@ class DashboardAPI {
       // Get final key count after clearing
       const finalKeyCount = await this.cache.dbsize();
 
-      // Debug: List the actual keys for troubleshooting
-      if (type === "all" && finalKeyCount > 0) {
-        const keys = await this.cache.keys("*");
-        //logger.debug(`[Cache Clear] Remaining keys after clear:`, keys);
-      }
-
       let message = `Cache ${type} cleared successfully`;
-      if (type === "all" && finalKeyCount > 0) {
-        message += `. ${finalKeyCount} essential keys remain (maintenance tracking, genres, etc.)`;
+      if (type === "all") {
+        message += `. ${finalKeyCount} essential keys preserved (maintenance tracking, system state)`;
       }
 
       return { success: true, message, keyCount: finalKeyCount };

@@ -46,6 +46,7 @@ const WARMUP_CONFIG = {
 class MALCatalogWarmer {
   constructor() {
     this.isWarming = false;
+    this.shouldStop = false; // Flag for graceful stop
     this.warmupStats = {
       lastRun: null,
       itemsWarmed: 0,
@@ -61,6 +62,30 @@ class MALCatalogWarmer {
       quietHours: WARMUP_CONFIG.quietHoursEnabled ? WARMUP_CONFIG.quietHoursRange : 'disabled',
       priorityPages: WARMUP_CONFIG.priorityPages
     });
+  }
+
+  /**
+   * Request to stop warming operations gracefully
+   */
+  stopWarming() {
+    if (this.intervalHandle) {
+      clearInterval(this.intervalHandle);
+      this.intervalHandle = null;
+    }
+    
+    if (this.isWarming) {
+      this.shouldStop = true;
+      this.log('info', 'Stop requested - will stop after current operation');
+      return { success: true, message: 'MAL warming will stop after current operation' };
+    }
+    return { success: true, message: 'MAL warming stopped' };
+  }
+
+  /**
+   * Check if warming should continue
+   */
+  shouldContinueWarming() {
+    return !this.shouldStop;
   }
 
   log(level, message, data = null) {
@@ -176,6 +201,8 @@ class MALCatalogWarmer {
       }
     }
 
+    // Reset stop flag at start
+    this.shouldStop = false;
     this.isWarming = true;
     const startTime = Date.now();
     let itemsWarmed = 0;
@@ -188,7 +215,7 @@ class MALCatalogWarmer {
       // (skipping to avoid duplication)
       
       // Phase 2: Warm up high-priority catalogs
-      if (WARMUP_CONFIG.warmPriority) {
+      if (WARMUP_CONFIG.warmPriority && this.shouldContinueWarming()) {
         this.warmupStats.phase = 'priority';
         this.log('info', '⭐ Phase 2: Warming high-priority catalogs...');
         const count = await this.warmPriorityCatalogs();
@@ -199,7 +226,7 @@ class MALCatalogWarmer {
       }
       
       // Phase 3: Warm up schedule catalogs
-      if (WARMUP_CONFIG.warmSchedule) {
+      if (WARMUP_CONFIG.warmSchedule && this.shouldContinueWarming()) {
         this.warmupStats.phase = 'schedule';
         this.log('info', '📅 Phase 3: Warming schedule catalogs...');
         const count = await this.warmScheduleCatalogs();
@@ -210,7 +237,7 @@ class MALCatalogWarmer {
       }
 
       // Phase 4: Warm up decade catalogs (optional, off by default)
-      if (WARMUP_CONFIG.warmDecades) {
+      if (WARMUP_CONFIG.warmDecades && this.shouldContinueWarming()) {
         this.warmupStats.phase = 'decades';
         this.log('info', '📆 Phase 4: Warming decade catalogs...');
         const count = await this.warmDecadeCatalogs();
@@ -224,6 +251,9 @@ class MALCatalogWarmer {
     } finally {
       this.isWarming = false;
       const duration = Date.now() - startTime;
+      const stoppedEarly = this.shouldStop;
+      this.shouldStop = false; // Reset stop flag
+      
       const nextRun = new Date(Date.now() + WARMUP_CONFIG.intervalHours * 60 * 60 * 1000);
       
       this.warmupStats = {
@@ -238,7 +268,7 @@ class MALCatalogWarmer {
       // Mark this warmup as complete in Redis
       await this.markWarmed();
       
-      this.log('info', `✅ Warmup complete: ${itemsWarmed} items, ${errors} errors, ${this.warmupStats.duration}s. Next run: ${nextRun.toISOString()}`);
+      this.log('info', `${stoppedEarly ? '🛑 Warmup stopped' : '✅ Warmup complete'}: ${itemsWarmed} items, ${errors} errors, ${this.warmupStats.duration}s. Next run: ${nextRun.toISOString()}`);
     }
   }
 
@@ -271,9 +301,17 @@ class MALCatalogWarmer {
     
     // Import required functions
     const { loadConfigFromDatabase } = require('./configApi.js');
+    const { ensureSystemConfig } = require('./cacheWarmer.js'); 
     
     // Use configured UUID for warming
     const systemUUID = WARMUP_CONFIG.uuid;
+
+    try {
+      await ensureSystemConfig();
+    } catch (error) {
+      this.log('warn', `Failed to ensure system config exists: ${error.message}`);
+    }
+
     let warmingConfig;
     
     try {
@@ -309,7 +347,18 @@ class MALCatalogWarmer {
     ];
     
     for (const catalog of catalogFunctions) {
+      // Check stop flag before each catalog
+      if (!this.shouldContinueWarming()) {
+        this.log('info', 'Stop requested - stopping priority catalog warming');
+        break;
+      }
+      
       for (let page = 1; page <= pages; page++) {
+        // Check stop flag before each page
+        if (!this.shouldContinueWarming()) {
+          break;
+        }
+        
         try {
           this.log('debug', `Warming ${catalog.name} page ${page}...`);
           
@@ -366,8 +415,16 @@ class MALCatalogWarmer {
     const language = 'en-US';
     
     const { loadConfigFromDatabase } = require('./configApi.js');
-    
+    const { ensureSystemConfig } = require('./cacheWarmer.js'); 
+
     const systemUUID = WARMUP_CONFIG.uuid;
+
+    try {
+      await ensureSystemConfig();
+    } catch (error) {
+      this.log('warn', `Failed to ensure system config exists: ${error.message}`);
+    }
+
     let warmingConfig;
     
     try {
@@ -387,6 +444,12 @@ class MALCatalogWarmer {
     const nextDay = days[(today + 7) % 7];
     
     for (const day of [currentDay, nextDay]) {
+      // Check stop flag before each day
+      if (!this.shouldContinueWarming()) {
+        this.log('info', 'Stop requested - stopping schedule catalog warming');
+        break;
+      }
+      
       try {
         this.log('debug', `Warming schedule: ${day}...`);
         
@@ -425,8 +488,16 @@ class MALCatalogWarmer {
     const language = 'en-US';
     
     const { loadConfigFromDatabase } = require('./configApi.js');
+    const { ensureSystemConfig } = require('./cacheWarmer.js'); 
     
     const systemUUID = WARMUP_CONFIG.uuid;
+
+    try {
+      await ensureSystemConfig();
+    } catch (error) {
+      this.log('warn', `Failed to ensure system config exists: ${error.message}`);
+    }
+
     let warmingConfig;
     
     try {
@@ -446,6 +517,12 @@ class MALCatalogWarmer {
     
     try {
       for (const decade of decades) {
+        // Check stop flag before each decade
+        if (!this.shouldContinueWarming()) {
+          this.log('info', 'Stop requested - stopping decade catalog warming');
+          break;
+        }
+        
         try {
           this.log('debug', `Warming decade: ${decade.id}...`);
           
@@ -489,6 +566,7 @@ class MALCatalogWarmer {
     return {
       ...this.warmupStats,
       isWarming: this.isWarming,
+      enabled: WARMUP_CONFIG.enabled,
       config: {
         enabled: WARMUP_CONFIG.enabled,
         intervalHours: WARMUP_CONFIG.intervalHours,
@@ -505,12 +583,36 @@ class MALCatalogWarmer {
     };
   }
 
-  stop() {
-    if (this.intervalHandle) {
-      clearInterval(this.intervalHandle);
-      this.intervalHandle = null;
-      this.log('info', 'Background warming stopped');
+  /**
+   * Force run warmup immediately, bypassing interval check
+   * Returns a result object for API feedback
+   */
+  forceRunWarmup() {
+    if (this.isWarming) {
+      return { success: false, message: 'MAL warming is already running' };
     }
+
+    if (!WARMUP_CONFIG.enabled) {
+      const mode = process.env.CACHE_WARMUP_MODE || 'essential';
+      return { 
+        success: false, 
+        message: `MAL warming is disabled (CACHE_WARMUP_MODE=${mode}). Set to 'essential' or 'both' to enable.`
+      };
+    }
+
+    this.log('info', 'Force run requested - bypassing interval check');
+    
+    // Run warmup in background (fire-and-forget)
+    this.runWarmup();
+    
+    return { 
+      success: true, 
+      message: 'MAL catalog warming started'
+    };
+  }
+
+  stop() {
+    return this.stopWarming();
   }
 }
 
@@ -519,7 +621,8 @@ const warmer = new MALCatalogWarmer();
 
 module.exports = {
   startMALWarmup: () => warmer.startBackgroundWarming(),
-  stopMALWarmup: () => warmer.stop(),
+  stopMALWarmup: () => warmer.stopWarming(),
+  forceRunMALWarmup: () => warmer.forceRunWarmup(),
   getWarmupStats: () => warmer.getStats(),
   warmer // Export instance for testing
 };

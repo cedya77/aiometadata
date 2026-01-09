@@ -4008,7 +4008,7 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
     
     let result = { success: false, message: '' };
     
-    // Handle warming tasks
+    // Handle maintenance tasks
     if (taskId === 1) { // Clear expired cache entries
       if (action === 'restart' || action === 'enable') {
         try {
@@ -4021,21 +4021,87 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
       } else if (action === 'stop') {
         result = { success: true, message: 'Cache cleanup task completed' };
       }
+    } else if (taskId === 2) { // Update anime-list XML
+      if (action === 'restart' || action === 'enable') {
+        try {
+          const { forceUpdateAnimeListXml } = require('./lib/anime-list-mapper');
+          result = await forceUpdateAnimeListXml();
+          if (result.success) {
+            result.message = `Anime-list XML updated successfully (${result.count.toLocaleString()} entries)`;
+          }
+        } catch (error) {
+          consola.error('[Maintenance Task] Error updating anime-list XML:', error);
+          result = { success: false, message: `Failed to update anime-list XML: ${error.message}` };
+        }
+      }
+    } else if (taskId === 3) { // Update ID Mapper
+      if (action === 'restart' || action === 'enable') {
+        try {
+          const { forceUpdateIdMapper } = require('./lib/id-mapper');
+          result = await forceUpdateIdMapper();
+          if (result.success) {
+            result.message = `ID Mapper updated successfully (${result.count.toLocaleString()} entries)`;
+          }
+        } catch (error) {
+          consola.error('[Maintenance Task] Error updating ID Mapper:', error);
+          result = { success: false, message: `Failed to update ID Mapper: ${error.message}` };
+        }
+      }
+    } else if (taskId === 4) { // Update Kitsu-IMDB Mapping
+      if (action === 'restart' || action === 'enable') {
+        try {
+          const { forceUpdateKitsuImdbMapping } = require('./lib/id-mapper');
+          result = await forceUpdateKitsuImdbMapping();
+          if (result.success) {
+            result.message = `Kitsu-IMDB Mapping updated successfully (${result.count.toLocaleString()} entries)`;
+          }
+        } catch (error) {
+          consola.error('[Maintenance Task] Error updating Kitsu-IMDB Mapping:', error);
+          result = { success: false, message: `Failed to update Kitsu-IMDB Mapping: ${error.message}` };
+        }
+      }
+    } else if (taskId === 5) { // Update Wikidata Mappings
+      if (action === 'restart' || action === 'enable') {
+        try {
+          const { forceUpdateWikiMappings } = require('./lib/wiki-mapper');
+          result = await forceUpdateWikiMappings();
+          if (result.success) {
+            result.message = `Wikidata Mappings updated successfully (${result.seriesCount.toLocaleString()} series, ${result.moviesCount.toLocaleString()} movies)`;
+          }
+        } catch (error) {
+          consola.error('[Maintenance Task] Error updating Wikidata Mappings:', error);
+          result = { success: false, message: `Failed to update Wikidata Mappings: ${error.message}` };
+        }
+      }
+    } else if (taskId === 11) { // Update IMDb Ratings
+      if (action === 'restart' || action === 'enable') {
+        try {
+          const { forceUpdateImdbRatings } = require('./lib/imdbRatings');
+          result = await forceUpdateImdbRatings();
+          if (result.success) {
+            result.message = `IMDb Ratings updated successfully (${result.count.toLocaleString()} ratings)`;
+          }
+        } catch (error) {
+          consola.error('[Maintenance Task] Error updating IMDb Ratings:', error);
+          result = { success: false, message: `Failed to update IMDb Ratings: ${error.message}` };
+        }
+      }
     } else if (taskId === 7) { // Essential Cache Warming
       if (action === 'restart' || action === 'enable') {
         const { warmEssentialContent } = require('./lib/cacheWarmer');
         warmEssentialContent();
         result = { success: true, message: 'Essential cache warming started' };
       } else if (action === 'stop') {
-        result = { success: true, message: 'Essential warming will stop after current task' };
+        const { stopWarming } = require('./lib/cacheWarmer');
+        result = stopWarming();
       }
     } else if (taskId === 8) { // MAL Catalog Warming
       if (action === 'restart' || action === 'enable') {
-        const { startMALWarmup } = require('./lib/malCatalogWarmer');
-        startMALWarmup();
-        result = { success: true, message: 'MAL catalog warming started' };
+        const { forceRunMALWarmup } = require('./lib/malCatalogWarmer');
+        result = forceRunMALWarmup();
       } else if (action === 'stop') {
-        result = { success: true, message: 'MAL warming will stop after current task' };
+        const { stopMALWarmup } = require('./lib/malCatalogWarmer');
+        result = stopMALWarmup();
       }
     } else if (taskId === 9) { // Comprehensive Catalog Warming
       if (action === 'restart' || action === 'enable') {
@@ -4043,7 +4109,8 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
         forceRestartWarmup();
         result = { success: true, message: 'Comprehensive catalog warming started (force restart)' };
       } else if (action === 'stop') {
-        result = { success: true, message: 'Comprehensive warming will stop after current task' };
+        const { stopComprehensiveWarming } = require('./lib/comprehensiveCatalogWarmer');
+        result = stopComprehensiveWarming();
       }
     } else if (taskId === 10) { // Cache Cleanup Scheduler Control
       const { getCacheCleanupScheduler } = require('./lib/cacheCleanupScheduler');

@@ -8,6 +8,7 @@ const REMOTE_SERIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidat
 const REMOTE_MOVIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidata-Fetcher/refs/heads/main/data/movie_mappings.csv';
 const SERIES_CACHE = path.join(process.cwd(), 'addon', 'data', 'tv_mappings.csv.cache');
 const MOVIES_CACHE = path.join(process.cwd(), 'addon', 'data', 'movie_mappings.csv.cache');
+const UPDATE_INTERVAL_HOURS = parseInt(process.env.WIKI_MAPPER_UPDATE_INTERVAL_HOURS || '24'); // Update every 24 hours (configurable)
 
 interface IdMap {
   imdbId: string;
@@ -240,8 +241,13 @@ async function initialize() {
     loadMappings(seriesCsv, { imdb: seriesImdbToAll, tvdb: seriesTvdbToAll, tmdb: seriesTmdbToAll, tvmaze: seriesTvmazeToAll });
     loadMappings(moviesCsv, { imdb: moviesImdbToAll, tvdb: moviesTvdbToAll, tmdb: moviesTmdbToAll });
 
-
     isInitialized = true;
+    
+    // Write maintenance timestamp
+    if (redis && redis.status === 'ready') {
+      await redis.set('maintenance:last_wiki_mapper_update', Date.now().toString());
+    }
+    
     console.log('[Wiki Mapper] Initialization complete');
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
@@ -355,6 +361,76 @@ export const mappings = {
   getStats: getMappingStats
 };
 
+/**
+ * Force update the Wikidata mappings (bypasses ETag check)
+ * @returns {Promise<Object>} Result object with success, message, and counts
+ */
+export async function forceUpdateWikiMappings(): Promise<{ success: boolean; message: string; seriesCount: number; moviesCount: number }> {
+  console.log('[Wiki Mapper] Force update requested...');
+  
+  // Reset initialization flag to force re-download
+  isInitialized = false;
+  
+  // Clear existing ETags to force fresh download
+  if (redis && redis.status === 'ready') {
+    try {
+      await redis.del('tv_mappings_etag');
+      await redis.del('movie_mappings_etag');
+    } catch (error: any) {
+      console.warn(`[Wiki Mapper] Failed to clear ETags: ${error.message}`);
+    }
+  }
+  
+  try {
+    const [seriesCsv, moviesCsv] = await Promise.all([
+      downloadCsv(REMOTE_SERIES_URL, SERIES_CACHE, 'tv_mappings_etag'),
+      downloadCsv(REMOTE_MOVIES_URL, MOVIES_CACHE, 'movie_mappings_etag')
+    ]);
+
+    loadMappings(seriesCsv, { imdb: seriesImdbToAll, tvdb: seriesTvdbToAll, tmdb: seriesTmdbToAll, tvmaze: seriesTvmazeToAll });
+    loadMappings(moviesCsv, { imdb: moviesImdbToAll, tvdb: moviesTvdbToAll, tmdb: moviesTmdbToAll });
+
+    isInitialized = true;
+    
+    // Write maintenance timestamp
+    if (redis && redis.status === 'ready') {
+      await redis.set('maintenance:last_wiki_mapper_update', Date.now().toString());
+    }
+    
+    const seriesCount = seriesImdbToAll.size;
+    const moviesCount = moviesImdbToAll.size;
+    
+    console.log(`[Wiki Mapper] Force update completed: ${seriesCount} series, ${moviesCount} movies`);
+    return { 
+      success: true, 
+      message: `Updated successfully (${seriesCount.toLocaleString()} series, ${moviesCount.toLocaleString()} movies)`,
+      seriesCount,
+      moviesCount
+    };
+  } catch (error: any) {
+    console.error(`[Wiki Mapper] Force update failed: ${error.message}`);
+    return { 
+      success: false, 
+      message: `Force update failed: ${error.message}`,
+      seriesCount: seriesImdbToAll.size,
+      moviesCount: moviesImdbToAll.size
+    };
+  }
+}
+
+/**
+ * Get stats for the Wiki Mapper (for dashboard display)
+ * @returns {Object} Stats object with counts and initialized status
+ */
+export function getWikiMapperStats(): { seriesCount: number; moviesCount: number; totalCount: number; initialized: boolean } {
+  return {
+    seriesCount: seriesImdbToAll.size,
+    moviesCount: moviesImdbToAll.size,
+    totalCount: seriesImdbToAll.size + moviesImdbToAll.size,
+    initialized: isInitialized
+  };
+}
+
 // CommonJS exports
 module.exports = {
   mappings,
@@ -369,6 +445,8 @@ module.exports = {
   getByTvdbId,
   getByTmdbId,
   getByImdbId,
-  getMappingStats
+  getMappingStats,
+  forceUpdateWikiMappings,
+  getWikiMapperStats
 };
 

@@ -117,6 +117,11 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
     if (useRedisCache && useRedisCache.status === 'ready' && response.headers.etag) {
       await useRedisCache.set(REDIS_RATINGS_ETAG_KEY, response.headers.etag as string);
     }
+    
+    // Write maintenance timestamp
+    if (useRedisCache && useRedisCache.status === 'ready') {
+      await useRedisCache.set('maintenance:last_imdb_ratings_update', Date.now().toString());
+    }
 
     ratingsLoaded = true;
     ratingsCount = count;
@@ -257,6 +262,65 @@ export function getRatingsStats() {
     datasetAvgTime: parseFloat(datasetAvgTime as string), // Average time in ms
     cinemetaAvgTime: parseFloat(cinemetaAvgTime as string), // Average time in ms
     ratingsLoaded: ratingsMap.size
+  };
+}
+
+/**
+ * Force update IMDb ratings (bypasses ETag check)
+ * @returns Result object with success, message, and count
+ */
+export async function forceUpdateImdbRatings(): Promise<{ success: boolean; message: string; count: number }> {
+  console.log('[IMDb Ratings] Force update requested...');
+  
+  // Clear existing ETag to force fresh download
+  if (redis && redis.status === 'ready') {
+    try {
+      await redis.del(REDIS_RATINGS_ETAG_KEY);
+    } catch (error: any) {
+      console.warn(`[IMDb Ratings] Failed to clear ETag: ${error.message}`);
+    }
+  }
+  
+  try {
+    const success = await downloadAndCacheIMDbRatings();
+    
+    // Write maintenance timestamp
+    if (redis && redis.status === 'ready') {
+      await redis.set('maintenance:last_imdb_ratings_update', Date.now().toString());
+    }
+    
+    if (success) {
+      console.log(`[IMDb Ratings] Force update completed: ${ratingsMap.size} ratings`);
+      return { 
+        success: true, 
+        message: `Updated successfully (${ratingsMap.size.toLocaleString()} ratings)`,
+        count: ratingsMap.size
+      };
+    } else {
+      return { 
+        success: false, 
+        message: 'Force update failed',
+        count: ratingsMap.size
+      };
+    }
+  } catch (error: any) {
+    console.error(`[IMDb Ratings] Force update failed: ${error.message}`);
+    return { 
+      success: false, 
+      message: `Force update failed: ${error.message}`,
+      count: ratingsMap.size
+    };
+  }
+}
+
+/**
+ * Get stats for IMDb Ratings (for dashboard display)
+ * @returns Stats object with count and initialized status
+ */
+export function getImdbRatingsStatsForDashboard(): { count: number; initialized: boolean } {
+  return {
+    count: ratingsMap.size,
+    initialized: ratingsLoaded
   };
 }
 

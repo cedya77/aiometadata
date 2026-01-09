@@ -14,42 +14,90 @@ const WARMING_STRATEGIES = {
   USER_ACTIVITY: 'user_activity'
 };
 
+// Stop flag for graceful shutdown
+let shouldStopWarming = false;
+let isCurrentlyWarming = false;
+let lastWarmingRun = null;
+let nextWarmingRun = null;
+let warmingItemsCount = 0;
+let warmingIntervalMinutes = 30; // Default interval
+
+/**
+ * Request to stop warming operations
+ */
+function stopWarming() {
+  if (isCurrentlyWarming) {
+    shouldStopWarming = true;
+    logger.info('[Cache Warming] Stop requested - will stop after current operation');
+    return { success: true, message: 'Essential warming will stop after current operation' };
+  }
+  return { success: true, message: 'Essential warming is not currently running' };
+}
+
+/**
+ * Check if warming should continue
+ */
+function shouldContinueWarming() {
+  return !shouldStopWarming;
+}
+
 /**
  * Warm essential content that users commonly access
  */
 async function warmEssentialContent() {
+  // Reset stop flag at start
+  shouldStopWarming = false;
+  isCurrentlyWarming = true;
+  
   try {
     logger.info('[Cache Warming] Warming essential content...');
     
     // Record start time for maintenance tracking
     const startTime = Date.now();
+    lastWarmingRun = startTime;
+    warmingItemsCount = 0;
     
     // Warm TMDB genres
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await getGenreList('tmdb', 'en-US', 'movie', {});
+    warmingItemsCount++;
+    
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await getGenreList('tmdb', 'en-US', 'series', {});
+    warmingItemsCount++;
     
     // Warm TVDB genres
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await getGenreList('tvdb', 'en-US', 'series', {});
+    warmingItemsCount++;
     
     // Warm MAL genres
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('anime-genres', async () => {
       return await mal.getAnimeGenres();
     });
+    warmingItemsCount++;
     
     // Warm MAL studios
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('mal-studios', async () => {
       return await mal.getStudios(100);
     }, 30 * 24 * 60 * 1000); // Cache for 30 days
+    warmingItemsCount++;
     
     // Warm MAL available seasons
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('mal-available-seasons', async () => {
       return await mal.getAvailableSeasons();
     }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
+    warmingItemsCount++;
     
     // Warm TVDB collections (first page)
+    if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapTvdbApi('collections-list:0', async () => {
       return await tvdb.getCollectionsList({}, 0);
     });
+    warmingItemsCount++;
     
     // Record completion for maintenance tracking
     const endTime = Date.now();
@@ -70,6 +118,9 @@ async function warmEssentialContent() {
     if (error && error.stack) {
       logger.error('[Cache Warming] Stack:', error.stack);
     }
+  } finally {
+    isCurrentlyWarming = false;
+    shouldStopWarming = false;
   }
 }
 
@@ -347,7 +398,11 @@ async function warmFromUserActivity() {
  * Schedule essential warming at regular intervals
  */
 function scheduleEssentialWarming(intervalMinutes = 30) {
+  warmingIntervalMinutes = intervalMinutes;
   logger.info(`[Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
+  
+  // Calculate initial next run time
+  nextWarmingRun = Date.now() + (intervalMinutes * 60 * 1000);
   
   // Schedule recurring warming (initial warming is done separately)
   const intervalMs = intervalMinutes * 60 * 1000;
@@ -364,6 +419,9 @@ function scheduleEssentialWarming(intervalMinutes = 30) {
     }
     
     await warmEssentialContent();
+    
+    // Update next run time after warming completes
+    nextWarmingRun = Date.now() + intervalMs;
   }, intervalMs);
 }
 
@@ -384,10 +442,12 @@ function isInitialWarmingComplete() {
  */
 function getWarmupStats() {
   return {
-    enabled: process.env.MAL_WARMUP_ENABLED !== 'false',
-    isWarming: false, // Essential warming is typically quick and not tracked
-    lastRun: null, // Could be enhanced to track this
-    totalItems: 0, // Could be enhanced to track this
+    enabled: process.env.ENABLE_CACHE_WARMING !== 'false',
+    isWarming: isCurrentlyWarming,
+    lastRun: lastWarmingRun,
+    nextRun: nextWarmingRun,
+    intervalMinutes: warmingIntervalMinutes,
+    totalItems: warmingItemsCount,
     mode: process.env.CACHE_WARMUP_MODE || 'essential',
     tmdbPopularEnabled: process.env.TMDB_POPULAR_WARMING_ENABLED !== 'false'
   };
@@ -400,5 +460,7 @@ module.exports = {
   scheduleEssentialWarming,
   isInitialWarmingComplete,
   getWarmupStats,
-  WARMING_STRATEGIES
+  stopWarming,
+  WARMING_STRATEGIES,
+  ensureSystemConfig
 };
