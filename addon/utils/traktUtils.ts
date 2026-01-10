@@ -84,15 +84,20 @@ async function fetchTraktUpNextEpisodes(
           );
           const progress = response.data;
           if (!progress?.next_episode) return null;
-          const nextEp = progress.next_episode;          
+          const nextEp = progress.next_episode;
+          
+          // Skip episodes without air date (indicates unscheduled/cancelled episodes)
+          if (!nextEp.first_aired) {
+            logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - no air date`);
+            return null;
+          }
+          
           // Skip episodes that haven't aired yet
-          if (nextEp.first_aired) {
-            const airedDate = new Date(nextEp.first_aired);
-            const now = new Date();
-            if (airedDate > now) {
-              logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - airs on ${airedDate.toISOString()}`);
-              return null;
-            }
+          const airedDate = new Date(nextEp.first_aired);
+          const now = new Date();
+          if (airedDate > now) {
+            logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - airs on ${airedDate.toISOString()}`);
+            return null;
           }
           
           return {
