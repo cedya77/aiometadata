@@ -176,31 +176,6 @@ export function ProvidersSettings() {
         </Card>
       </div>
 
-      {/* Force Anime Meta for IMDb-detected Anime */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Anime Detection Override</CardTitle>
-          <CardDescription>
-            When enabled, any catalog item that maps to an anime (via MAL/Kitsu/AniList/AniDB... detection) will use the Anime meta provider, even if the original catalog was non-anime.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="force-anime-for-imdb" className="text-lg font-medium">Use Anime Meta for Detected Anime (IMDb)</Label>
-              <p className="text-sm text-muted-foreground">Helps ensure correct metadata for anime that appear in non-anime catalogs after IMDb mapping.</p>
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                ⚠️ Note: Detected anime with IMDb IDs will use Movie/Series art providers instead of Anime art providers.
-              </p>
-            </div>
-            <Switch
-              id="force-anime-for-imdb"
-              checked={config.providers.forceAnimeForDetectedImdb || false}
-              onCheckedChange={handleForceAnimeToggle}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
 
       {/* TVDB Specific Settings */}
@@ -261,20 +236,36 @@ export function ProvidersSettings() {
         </CardContent>
       </Card>
 
-      {/* MyAnimeList Specific Settings */}
+      {/* Anime Settings */}
       <Card>
         <CardHeader>
-          <CardTitle>MyAnimeList (MAL) Settings</CardTitle>
+          <CardTitle>Anime Settings</CardTitle>
           <CardDescription>
-            Customize how data is handled when MyAnimeList is the source.
+            Configure how anime content is detected and handled across catalogs.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Anime Detection Override */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="force-anime-for-imdb" className="text-lg font-medium">Anime Detection Override</Label>
+              <p className="text-sm text-muted-foreground">When enabled, any catalog item that maps to an anime (via MAL/Kitsu/AniList/AniDB... detection) will use the Anime meta provider, even if the original catalog was non-anime.</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                ⚠️ Note: Detected anime with IMDb IDs will use Movie/Series art providers instead of Anime art providers.
+              </p>
+            </div>
+            <Switch
+              id="force-anime-for-imdb"
+              checked={config.providers.forceAnimeForDetectedImdb || false}
+              onCheckedChange={handleForceAnimeToggle}
+            />
+          </div>
+
           {/* Use IMDb ID for Catalog/Search */}
           <div className="flex items-center justify-between">
             <div>
               <Label htmlFor="mal-use-imdb" className="text-lg font-medium">Use IMDb ID for Catalog/Search for Series</Label>
-              <p className="text-sm text-muted-foreground">Prefer IMDb IDs for anime items in catalogs and search (when available).</p>
+              <p className="text-sm text-muted-foreground">Prefer IMDb IDs for anime items in Anime catalogs and search (when available).</p>
               <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                 ⚠️ Note: Anime in catalogs/search will use Movie/Series art providers instead of Anime art providers when this is enabled.
               </p>
@@ -285,6 +276,41 @@ export function ProvidersSettings() {
               onCheckedChange={handleMalUseImdbToggle}
             />
           </div>
+
+          {/* Anime Stream Compatibility ID */}
+          <div className="pt-6 border-t border-border">
+            <Label className="text-lg font-medium">Anime Stream Compatibility ID</Label>
+            <p className="text-sm text-muted-foreground mt-1 mb-2">
+              Choose which ID format to use for anime. This affects which streaming addons will find results.
+            </p>
+            <Select 
+              value={config.providers.anime_id_provider}
+              onValueChange={handleAnimeIdProviderChange as (value: string) => void}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {animeIdProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-2">
+              "IMDb" can improve compatibility as it is supported by most streaming addons. Kitsu is recommended when using MAL as meta provider.
+            </p>
+            <p className="text-xs text-amber-600 mt-1">
+              ⚠️ Using TVDB/IMDb as anime meta provider with Kitsu/MAL anime compatibility ID is considered experimental as they rely on community mappings and could contain inaccurate information.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* MyAnimeList Specific Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>MyAnimeList (MAL) Settings</CardTitle>
+          <CardDescription>
+            Customize how data is handled when MyAnimeList is the source.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
           {/* Skip Filler Toggle */}
           <div className="flex items-center justify-between">
             <div>
@@ -320,28 +346,6 @@ export function ProvidersSettings() {
               checked={config.mal.allowEpisodeMarking}
               onCheckedChange={(val) => handleMalToggle('allowEpisodeMarking', val)}
             />
-          </div>
-          {/* Stream Compatibility ID Dropdown */}
-          <div className="pt-6 border-t border-border">
-            <Label className="text-lg font-medium">Anime Stream Compatibility ID</Label>
-            <p className="text-sm text-muted-foreground mt-1 mb-2">
-              Choose which ID format to use for anime. This affects which streaming addons will find results.
-            </p>
-            <Select 
-              value={config.providers.anime_id_provider}
-              onValueChange={handleAnimeIdProviderChange as (value: string) => void}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {animeIdProviders.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-2">
-              "IMDb" can improve compatibility as it is supported by most streaming addons. Kitsu is recommended when using MAL as meta provider.
-            </p>
-            <p className="text-xs text-amber-600 mt-1">
-              ⚠️ Using TVDB/IMDb as anime meta provider with Kitsu/MAL anime compatibility ID is considered experimental as they rely on community mappings and could contain inaccurate information.
-            </p>
           </div>
         </CardContent>
       </Card>
