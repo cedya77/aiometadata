@@ -1236,7 +1236,7 @@ async function parseTraktItems(
                   const originalShowPoster = metaResult.meta.poster;
                   const originalThumbnail = upNextVideo.thumbnail;
                   
-                  logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} for ${metaResult.meta.name}: thumbnail="${originalThumbnail}", showPoster="${originalShowPoster}"`);
+                  logger.debug(`Up Next: S${upNextEpisode.season}E${upNextEpisode.episode} for ${metaResult.meta.name}: thumbnail="${originalThumbnail}", showPoster="${originalShowPoster}"`);
                   
                   if (upNextVideo.thumbnail && 
                       upNextVideo.thumbnail !== metaResult.meta.poster &&
@@ -1250,7 +1250,7 @@ async function parseTraktItems(
                         const fallback = url.searchParams.get('fallback');
                         if (fallback) {
                           const extractedFallback = decodeURIComponent(fallback);
-                          logger.debug(`[Up Next] Extracted fallback URL from proxy: ${extractedFallback}`);
+                          logger.debug(`Up Next: Extracted fallback URL from proxy: ${extractedFallback}`);
                           thumbnailUrl = extractedFallback;
                         }
                       } catch (e) {
@@ -1261,19 +1261,19 @@ async function parseTraktItems(
                     if (thumbnailUrl && 
                         thumbnailUrl !== originalShowPoster &&
                         !thumbnailUrl.includes('/missing_thumbnail.png')) {
-                      logger.info(`[Up Next] Using episode thumbnail for S${upNextEpisode.season}E${upNextEpisode.episode}: ${thumbnailUrl}`);
+                      logger.info(`Up Next: Using episode thumbnail for S${upNextEpisode.season}E${upNextEpisode.episode}: ${thumbnailUrl}`);
                       metaResult.meta.poster = thumbnailUrl;
                       metaResult.meta.posterShape = 'landscape';
                     } else {
-                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${thumbnailUrl || 'null'}) is same as show poster (${originalShowPoster}) or missing, keeping show poster for ${metaResult.meta.name}`);
+                      logger.debug(`Up Next: S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${thumbnailUrl || 'null'}) is same as show poster (${originalShowPoster}) or missing, keeping show poster for ${metaResult.meta.name}`);
                     }
                   } else {
                     if (!upNextVideo.thumbnail) {
-                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} has no thumbnail, keeping show poster (${originalShowPoster}) for ${metaResult.meta.name}`);
+                      logger.debug(`Up Next: S${upNextEpisode.season}E${upNextEpisode.episode} has no thumbnail, keeping show poster (${originalShowPoster}) for ${metaResult.meta.name}`);
                     } else if (upNextVideo.thumbnail === metaResult.meta.poster) {
-                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${originalThumbnail}) matches show poster (${originalShowPoster}), keeping show poster for ${metaResult.meta.name}`);
+                      logger.debug(`Up Next: S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${originalThumbnail}) matches show poster (${originalShowPoster}), keeping show poster for ${metaResult.meta.name}`);
                     } else if (upNextVideo.thumbnail.includes('/missing_thumbnail.png')) {
-                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} has missing_thumbnail placeholder (${originalThumbnail}), keeping show poster (${originalShowPoster}) for ${metaResult.meta.name}`);
+                      logger.debug(`Up Next: S${upNextEpisode.season}E${upNextEpisode.episode} has missing_thumbnail placeholder (${originalThumbnail}), keeping show poster (${originalShowPoster}) for ${metaResult.meta.name}`);
                     }
                   }
                 }
