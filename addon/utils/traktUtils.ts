@@ -1233,19 +1233,38 @@ async function parseTraktItems(
                 
                 // Check if user wants to use show poster or episode thumbnail
                 if (!useShowPoster) {
-                  metaResult.meta.poster = upNextVideo.thumbnail;
-                  metaResult.meta.posterShape = 'landscape';
-                  if (metaResult.meta.poster && metaResult.meta.poster.includes('/poster/') && metaResult.meta.poster.includes('fallback=')) {
+                  if (upNextVideo.thumbnail && 
+                      upNextVideo.thumbnail !== metaResult.meta.poster &&
+                      !upNextVideo.thumbnail.includes('/missing_thumbnail.png')) {
+                    let thumbnailUrl = upNextVideo.thumbnail;
+                    const originalShowPoster = metaResult.meta.poster;
                     
-                    try {
-                      const url = new URL(metaResult.meta.poster);
-                      const fallback = url.searchParams.get('fallback');
-                      if (fallback) {
-                        metaResult.meta.poster = decodeURIComponent(fallback);
+                    // Extract fallback URL if it's a proxy URL
+                    if (thumbnailUrl && thumbnailUrl.includes('/poster/') && thumbnailUrl.includes('fallback=')) {
+                      try {
+                        const url = new URL(thumbnailUrl);
+                        const fallback = url.searchParams.get('fallback');
+                        if (fallback) {
+                          thumbnailUrl = decodeURIComponent(fallback);
+                        }
+                      } catch (e) {
+                        consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
                       }
-                    } catch (e) {
-                      // Keep original if URL parsing fails
-                      consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
+                    }
+                    
+                    if (thumbnailUrl && 
+                        thumbnailUrl !== originalShowPoster &&
+                        !thumbnailUrl.includes('/missing_thumbnail.png')) {
+                      metaResult.meta.poster = thumbnailUrl;
+                      metaResult.meta.posterShape = 'landscape';
+                    } else {
+                      logger.debug(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail is same as show poster or missing, keeping show poster for ${metaResult.meta.name}`);
+                    }
+                  } else {
+                    if (!upNextVideo.thumbnail) {
+                      logger.debug(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} has no thumbnail, keeping show poster for ${metaResult.meta.name}`);
+                    } else if (upNextVideo.thumbnail.includes('/missing_thumbnail.png')) {
+                      logger.debug(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} has missing_thumbnail placeholder, keeping show poster for ${metaResult.meta.name}`);
                     }
                   }
                 }
