@@ -1233,11 +1233,15 @@ async function parseTraktItems(
                 
                 // Check if user wants to use show poster or episode thumbnail
                 if (!useShowPoster) {
+                  const originalShowPoster = metaResult.meta.poster;
+                  const originalThumbnail = upNextVideo.thumbnail;
+                  
+                  logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} for ${metaResult.meta.name}: thumbnail="${originalThumbnail}", showPoster="${originalShowPoster}"`);
+                  
                   if (upNextVideo.thumbnail && 
                       upNextVideo.thumbnail !== metaResult.meta.poster &&
                       !upNextVideo.thumbnail.includes('/missing_thumbnail.png')) {
                     let thumbnailUrl = upNextVideo.thumbnail;
-                    const originalShowPoster = metaResult.meta.poster;
                     
                     // Extract fallback URL if it's a proxy URL
                     if (thumbnailUrl && thumbnailUrl.includes('/poster/') && thumbnailUrl.includes('fallback=')) {
@@ -1245,7 +1249,9 @@ async function parseTraktItems(
                         const url = new URL(thumbnailUrl);
                         const fallback = url.searchParams.get('fallback');
                         if (fallback) {
-                          thumbnailUrl = decodeURIComponent(fallback);
+                          const extractedFallback = decodeURIComponent(fallback);
+                          logger.debug(`[Up Next] Extracted fallback URL from proxy: ${extractedFallback}`);
+                          thumbnailUrl = extractedFallback;
                         }
                       } catch (e) {
                         consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
@@ -1255,16 +1261,19 @@ async function parseTraktItems(
                     if (thumbnailUrl && 
                         thumbnailUrl !== originalShowPoster &&
                         !thumbnailUrl.includes('/missing_thumbnail.png')) {
+                      logger.info(`[Up Next] Using episode thumbnail for S${upNextEpisode.season}E${upNextEpisode.episode}: ${thumbnailUrl}`);
                       metaResult.meta.poster = thumbnailUrl;
                       metaResult.meta.posterShape = 'landscape';
                     } else {
-                      logger.debug(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail is same as show poster or missing, keeping show poster for ${metaResult.meta.name}`);
+                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${thumbnailUrl || 'null'}) is same as show poster (${originalShowPoster}) or missing, keeping show poster for ${metaResult.meta.name}`);
                     }
                   } else {
                     if (!upNextVideo.thumbnail) {
-                      logger.debug(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} has no thumbnail, keeping show poster for ${metaResult.meta.name}`);
+                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} has no thumbnail, keeping show poster (${originalShowPoster}) for ${metaResult.meta.name}`);
+                    } else if (upNextVideo.thumbnail === metaResult.meta.poster) {
+                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${originalThumbnail}) matches show poster (${originalShowPoster}), keeping show poster for ${metaResult.meta.name}`);
                     } else if (upNextVideo.thumbnail.includes('/missing_thumbnail.png')) {
-                      logger.debug(`Up Next episode S${upNextEpisode.season}E${upNextEpisode.episode} has missing_thumbnail placeholder, keeping show poster for ${metaResult.meta.name}`);
+                      logger.debug(`[Up Next] S${upNextEpisode.season}E${upNextEpisode.episode} has missing_thumbnail placeholder (${originalThumbnail}), keeping show poster (${originalShowPoster}) for ${metaResult.meta.name}`);
                     }
                   }
                 }
