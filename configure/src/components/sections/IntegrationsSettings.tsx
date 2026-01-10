@@ -488,7 +488,7 @@ export function IntegrationsSettings() {
           </div>
           <Switch
             id="usePosterProxy"
-            checked={!!config.usePosterProxy} // CHANGED: Default false, so check truthiness
+            checked={!!config.usePosterProxy}
             onCheckedChange={handlePosterProxyChange}
           />
         </div>
