@@ -1273,7 +1273,7 @@ async function parseTraktItems(
           }, 
           undefined, 
           { enableErrorCaching: true, maxRetries: 2 }, 
-          type as any, 
+          metaType as any, 
           shouldIncludeVideos,
           useShowPoster
         );
