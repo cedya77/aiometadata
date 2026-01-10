@@ -1316,6 +1316,7 @@ async function parseMDBListUpNextItems(
                         logger.warn(`[MDBList Up Next] Failed to extract fallback poster URL: ${e.message}`);
                       }
                     }
+                    metaResult.meta._rawPosterUrl = null;
                   }
                 }
                 // If useShowPoster is true, keep the original show poster

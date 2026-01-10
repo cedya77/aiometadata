@@ -1263,6 +1263,7 @@ async function parseTraktItems(
                         !thumbnailUrl.includes('/missing_thumbnail.png')) {
                       logger.info(`Up Next: Using episode thumbnail for S${upNextEpisode.season}E${upNextEpisode.episode}: ${thumbnailUrl}`);
                       metaResult.meta.poster = thumbnailUrl;
+                      metaResult.meta._rawPosterUrl = null;
                       metaResult.meta.posterShape = 'landscape';
                     } else {
                       logger.debug(`Up Next: S${upNextEpisode.season}E${upNextEpisode.episode} thumbnail (${thumbnailUrl || 'null'}) is same as show poster (${originalShowPoster}) or missing, keeping show poster for ${metaResult.meta.name}`);
