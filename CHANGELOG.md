@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.21.0](https://github.com/cedya77/aiometadata/compare/v1.20.1...v1.21.0) (2026-01-11)
+
+
+### Features
+
+* Add MDBList Up Next catalog integration ([3d86bbf](https://github.com/cedya77/aiometadata/commit/3d86bbf845c90897aa48d85a332915aa57362da4))
+* add polling to dashboard for admin users ([8bd38ff](https://github.com/cedya77/aiometadata/commit/8bd38fff3436265032bcdbe7785bb0149901f5a8))
+* add polling to dashboard for admin users ([f199521](https://github.com/cedya77/aiometadata/commit/f19952163b0b5b2ede8c551eba29e5d9b085b255))
+* Add TMDB Lists integration ([510c17b](https://github.com/cedya77/aiometadata/commit/510c17bfaedc75faa2c5db77bed5e9705b7780aa))
+* add TMDB rate limit tracking with x-ratelimit-remaining support ([ed40415](https://github.com/cedya77/aiometadata/commit/ed40415e7d1a3e9181b7bb21f6e2846701f9e275))
+* **dashboard:** add ability to lock dashboard from public completely ([b73933c](https://github.com/cedya77/aiometadata/commit/b73933c21b4155d7b765ddeadec5341c6c4dfd8f))
+* revamp dash ([f552aab](https://github.com/cedya77/aiometadata/commit/f552aabf7676a2d2b417ef8888239b1c463c4dce))
+* revamp Error Management in dashboard ([4821f94](https://github.com/cedya77/aiometadata/commit/4821f94ec909ba7106312c2e74cce9820c12dc52))
+* revamp Error Management in dashboard ([a730932](https://github.com/cedya77/aiometadata/commit/a730932befcc0c97350acba390c4c10720ae1884))
+* revamp Maintenance Tasks, Provider Status & System Health, in dashboard ([4bf6c92](https://github.com/cedya77/aiometadata/commit/4bf6c92723c364a34cec2db4ae5756bc5abdd38d))
+
+
+### Bug Fixes
+
+* **cache:** add auto cleanup of old meta cache keys on version change ([a2ae76b](https://github.com/cedya77/aiometadata/commit/a2ae76b8012eb942ba0a096fe5b01cc913216c35))
+* **cache:** hash config in cache keys to avoid generating big string ([a2ae76b](https://github.com/cedya77/aiometadata/commit/a2ae76b8012eb942ba0a096fe5b01cc913216c35))
+* resolve cache poisoning and improve anime detection ([fdde48e](https://github.com/cedya77/aiometadata/commit/fdde48e7e5c7ded538eb9641e2910bb68905ce94))
+* **up next:** Exclude episodes without air date from Trakt Up Next and exclude MDBList Up Next from catalog warmer ([1915305](https://github.com/cedya77/aiometadata/commit/191530582b4fb06f491a24d08faa27634615661a))
+* use mdblistType instead of type ([63ce8fc](https://github.com/cedya77/aiometadata/commit/63ce8fca67ea4575870aff5e8ec941997f927725))
+* use mdblistType instead of type ([85295b0](https://github.com/cedya77/aiometadata/commit/85295b0282293f8a6d532f77d6b3b71318981759))
+* **warming:** resolve issue with kitsu ids reverting to imdb id ([9fe3ddf](https://github.com/cedya77/aiometadata/commit/9fe3ddf7f45b96b75b43d3e6eee1f8cf35e9ac76))
+
 ## [1.20.1](https://github.com/cedya77/aiometadata/compare/v1.20.0...v1.20.1) (2026-01-06)
 
 
