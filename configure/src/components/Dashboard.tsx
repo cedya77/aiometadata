@@ -2599,7 +2599,7 @@ function DashboardOperations({ data, loading }) {
     if (data?.cacheStats) {
       return {
         totalKeys: data.cacheStats.totalKeys || 0,
-        memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : "0%",
+        memoryUsage: data.cacheStats.memoryUsage || "0 MB",
         hitRate: data.cacheStats.hitRate || 0,
         evictionRate: data.cacheStats.evictionRate || 0,
         hits: data.cacheStats.hits || 0,
@@ -2634,9 +2634,7 @@ function DashboardOperations({ data, loading }) {
       if (data.cacheStats) {
         setCacheStats({
           totalKeys: data.cacheStats.totalKeys || 0,
-          memoryUsage: data.cacheStats.memoryUsage
-            ? `${data.cacheStats.memoryUsage}%`
-            : "0%",
+          memoryUsage: data.cacheStats.memoryUsage || "0 MB",
           hitRate: data.cacheStats.hitRate || 0,
           evictionRate: data.cacheStats.evictionRate || 0,
           hits: data.cacheStats.hits || 0,
@@ -2745,7 +2743,7 @@ function DashboardOperations({ data, loading }) {
               <p className="text-lg font-semibold"><AnimatedNumber value={cacheStats.totalKeys} /></p>
             </div>
             <div>
-              <span className="text-muted-foreground">Memory</span>
+              <span className="text-muted-foreground">Redis Memory</span>
               <p className="text-lg font-semibold">{cacheStats.memoryUsage}</p>
             </div>
             <div>
