@@ -62,6 +62,7 @@ const kitsuToImdbCache = new Map();
 let imdbIdToAnimeListMap = new Map();
 let updateInterval = null;
 let kitsuToImdbMapping = null;
+let kitsuToImdbMappingCount = 0; // Pre-computed count for O(1) stats access
 let isKitsuToImdbInitialized = false;
 let traktAnimeMovies = null;
 let isTraktAnimeMoviesInitialized = false;
@@ -349,13 +350,14 @@ async function downloadAndProcessKitsuToImdbMapping(force = false) {
           logger.debug('[ID Mapper] [Kitsu-IMDB] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_KITSU_TO_IMDB_MAPPING_PATH, 'utf-8');
           kitsuToImdbMapping = JSON.parse(fileContent);
+          kitsuToImdbMappingCount = Object.keys(kitsuToImdbMapping).length;
           isKitsuToImdbInitialized = true;
           // Update last check timestamp even when using cache
           if (useRedisCache) {
             await redis.set('maintenance:last_kitsu_imdb_update', Date.now().toString());
           }
-          logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings from local cache.`);
-          return { success: true, message: 'Loaded from cache (no changes)', count: Object.keys(kitsuToImdbMapping).length };
+          logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${kitsuToImdbMappingCount} mappings from local cache.`);
+          return { success: true, message: 'Loaded from cache (no changes)', count: kitsuToImdbMappingCount };
         } catch (e) {
           logger.warn('[ID Mapper] [Kitsu-IMDB] ETag matched, but local cache was unreadable. Forcing re-download.');
         }
@@ -369,6 +371,7 @@ async function downloadAndProcessKitsuToImdbMapping(force = false) {
     logger.debug('[ID Mapper] [Kitsu-IMDB] Downloading Kitsu to IMDB mapping...');
     const response = await httpGet(REMOTE_KITSU_TO_IMDB_MAPPING_URL);
     kitsuToImdbMapping = response.data;
+    kitsuToImdbMappingCount = Object.keys(kitsuToImdbMapping).length;
     const jsonData = JSON.stringify(kitsuToImdbMapping);
 
     await fs.mkdir(path.dirname(LOCAL_KITSU_TO_IMDB_MAPPING_PATH), { recursive: true });
@@ -381,8 +384,8 @@ async function downloadAndProcessKitsuToImdbMapping(force = false) {
     }
     
     isKitsuToImdbInitialized = true;
-    logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${Object.keys(kitsuToImdbMapping).length} mappings.`);
-    return { success: true, message: 'Downloaded and updated', count: Object.keys(kitsuToImdbMapping).length };
+    logger.debug(`[ID Mapper] [Kitsu-IMDB] Successfully loaded ${kitsuToImdbMappingCount} mappings.`);
+    return { success: true, message: 'Downloaded and updated', count: kitsuToImdbMappingCount };
 
   } catch (error) {
     logger.error(`[ID Mapper] [Kitsu-IMDB] An error occurred during remote download: ${error.message}`);
@@ -391,12 +394,14 @@ async function downloadAndProcessKitsuToImdbMapping(force = false) {
     try {
       const fileContent = await fs.readFile(LOCAL_KITSU_TO_IMDB_MAPPING_PATH, 'utf-8');
       kitsuToImdbMapping = JSON.parse(fileContent);
+      kitsuToImdbMappingCount = Object.keys(kitsuToImdbMapping).length;
       isKitsuToImdbInitialized = true;
       logger.debug('[ID Mapper] [Kitsu-IMDB] Successfully loaded data from local cache on fallback.');
-      return { success: true, message: 'Loaded from local cache (fallback)', count: Object.keys(kitsuToImdbMapping).length };
+      return { success: true, message: 'Loaded from local cache (fallback)', count: kitsuToImdbMappingCount };
     } catch (fallbackError) {
       logger.error('[ID Mapper] [Kitsu-IMDB] CRITICAL: Fallback to local cache also failed. Kitsu-IMDB mapping will be empty.');
       kitsuToImdbMapping = {};
+      kitsuToImdbMappingCount = 0;
       isKitsuToImdbInitialized = true;
       return { success: false, message: `Failed to update: ${error.message}`, count: 0 };
     }
@@ -2055,7 +2060,7 @@ function getIdMapperStats() {
  */
 function getKitsuImdbStats() {
   return {
-    count: kitsuToImdbMapping ? Object.keys(kitsuToImdbMapping).length : 0,
+    count: kitsuToImdbMappingCount, // O(1) - uses pre-computed count
     updateIntervalHours: UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS,
     initialized: isKitsuToImdbInitialized
   };

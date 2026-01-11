@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -18,6 +18,20 @@ import {
 } from "@/components/ui/accordion";
 import { useAdmin } from "@/contexts/AdminContext";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { 
+  useDashboardOverview,
+  useDashboardAnalytics,
+  useDashboardContent,
+  useDashboardPerformance,
+  useDashboardSystem,
+  useDashboardOperations,
+  useDashboardUsers,
+  useClearCache,
+  useExecuteMaintenanceTask,
+  useClearErrorLogs,
+  useClearUserData,
+  type DashboardTab,
+} from "@/hooks/useDashboardQueries";
 import { UserManagementModal } from "./UserManagementModal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +49,7 @@ import {
   BarChart3,
   Clock,
   Database,
+  Eye,
   Globe,
   HardDrive,
   Loader2,
@@ -43,6 +58,7 @@ import {
   Server,
   Settings,
   Shield,
+  Star,
   TrendingUp,
   Users,
   Wrench,
@@ -69,6 +85,7 @@ import {
   Bar,
   Legend,
 } from "recharts";
+import { AnimatedNumber, FadeValue } from "./AnimatedNumber";
 
 const formatBytes = (bytes: number): string => {
   if (!bytes || bytes === 0) return "0 MB";
@@ -120,21 +137,21 @@ const detectEnvironment = (systemData: any): string => {
 
 // Dashboard Overview Component
 function DashboardOverview({ data, systemData, loading }) {
-  const [systemStatus, setSystemStatus] = useState({
-    status: "healthy",
-    uptime: "0h 0m",
-    version: "1.0.0-beta.22.1.0",
-    lastUpdate: new Date().toLocaleString(),
-  });
+  const [systemStatus, setSystemStatus] = useState(() => ({
+    status: data?.systemOverview?.status || "healthy",
+    uptime: data?.systemOverview?.uptime || "0h 0m",
+    version: data?.systemOverview?.version || "N/A",
+    lastUpdate: data?.systemOverview?.lastUpdate || new Date().toLocaleString(),
+  }));
 
-  const [quickStats, setQuickStats] = useState({
-    totalRequests: 0,
-    cacheHitRate: 0,
-    activeUsers: 0,
-    errorRate: 0,
-  });
+  const [quickStats, setQuickStats] = useState(() => ({
+    totalRequests: data?.quickStats?.totalRequests || 0,
+    cacheHitRate: data?.quickStats?.cacheHitRate || 0,
+    activeUsers: data?.quickStats?.activeUsers || 0,
+    errorRate: data?.quickStats?.errorRate || 0,
+  }));
 
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [recentActivity, setRecentActivity] = useState(systemData?.recentActivity || []);
 
   // Update state when data prop changes
   useEffect(() => {
@@ -201,7 +218,7 @@ function DashboardOverview({ data, systemData, loading }) {
                       : "destructive"
                 }
               >
-                {systemStatus.status}
+                <FadeValue value={systemStatus.status} />
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -257,7 +274,7 @@ function DashboardOverview({ data, systemData, loading }) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {quickStats.totalRequests.toLocaleString()}
+              <AnimatedNumber value={quickStats.totalRequests} />
             </div>
             <p className="text-xs text-muted-foreground">Today</p>
           </CardContent>
@@ -271,7 +288,9 @@ function DashboardOverview({ data, systemData, loading }) {
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{quickStats.cacheHitRate}%</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={quickStats.cacheHitRate} suffix="%" />
+            </div>
             <Progress value={quickStats.cacheHitRate} className="mt-2" />
           </CardContent>
         </Card>
@@ -282,7 +301,9 @@ function DashboardOverview({ data, systemData, loading }) {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{quickStats.activeUsers}</div>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={quickStats.activeUsers} />
+            </div>
             <p className="text-xs text-muted-foreground">Currently online</p>
           </CardContent>
         </Card>
@@ -310,32 +331,62 @@ function DashboardOverview({ data, systemData, loading }) {
               recentActivity.map((activity, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 border rounded-lg"
+                  className="p-3 border rounded-lg"
                 >
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        activity.type === "metadata_request"
-                          ? "bg-blue-500"
-                          : activity.type === "catalog_request"
-                            ? "bg-green-500"
-                            : "bg-gray-500"
-                      }`}
-                    ></div>
-                    <div>
-                      <p className="font-medium">
-                        {activity.type === "metadata_request"
-                          ? "Metadata Request"
-                          : activity.type === "catalog_request"
-                            ? "Catalog Request"
-                            : "API Request"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {activity.details.endpoint} • {activity.timeAgo}
-                      </p>
+                  {/* Desktop layout */}
+                  <div className="hidden sm:flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          activity.type === "metadata_request"
+                            ? "bg-blue-500"
+                            : activity.type === "catalog_request"
+                              ? "bg-green-500"
+                              : "bg-gray-500"
+                        }`}
+                      ></div>
+                      <div>
+                        <p className="font-medium">
+                          {activity.type === "metadata_request"
+                            ? "Metadata Request"
+                            : activity.type === "catalog_request"
+                              ? "Catalog Request"
+                              : "API Request"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {activity.details.endpoint} • {activity.timeAgo}
+                        </p>
+                      </div>
                     </div>
+                    <Badge variant="outline">{activity.details.method}</Badge>
                   </div>
-                  <Badge variant="outline">{activity.details.method}</Badge>
+                  {/* Mobile layout */}
+                  <div className="sm:hidden">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            activity.type === "metadata_request"
+                              ? "bg-blue-500"
+                              : activity.type === "catalog_request"
+                                ? "bg-green-500"
+                                : "bg-gray-500"
+                          }`}
+                        ></div>
+                        <p className="font-medium text-sm">
+                          {activity.type === "metadata_request"
+                            ? "Metadata Request"
+                            : activity.type === "catalog_request"
+                              ? "Catalog Request"
+                              : "API Request"}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-xs">{activity.details.method}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {activity.details.endpoint} • {activity.timeAgo}
+                    </p>
+                  </div>
                 </div>
               ))
             )}
@@ -343,7 +394,7 @@ function DashboardOverview({ data, systemData, loading }) {
         </CardContent>
       </Card>
 
-      {/* Critical Alerts */}
+      {/* System Alerts */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
@@ -352,11 +403,25 @@ function DashboardOverview({ data, systemData, loading }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-4 text-muted-foreground">
-            <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>All systems operational</p>
-            <p className="text-sm">No critical alerts at this time</p>
-          </div>
+          {data?.systemOverview?.issues && data.systemOverview.issues.length > 0 ? (
+            <div className="space-y-2">
+              {data.systemOverview.issues.map((issue, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 text-destructive"
+                >
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span className="text-sm">{issue}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">
+              <Shield className="h-12 w-12 mx-auto mb-4 opacity-50 text-green-500" />
+              <p>All systems operational</p>
+              <p className="text-sm">No critical alerts at this time</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -365,23 +430,23 @@ function DashboardOverview({ data, systemData, loading }) {
 
 // Analytics & Performance Component
 function DashboardAnalytics({ data, loading }) {
-  const [requestMetrics, setRequestMetrics] = useState({
-    requestsPerHour: [],
-    responseTimes: [],
-    successRate: 0,
-    failureRate: 0,
-  });
+  const [requestMetrics, setRequestMetrics] = useState(() => ({
+    requestsPerHour: data?.hourlyData || [],
+    responseTimes: data?.hourlyData || [],
+    successRate: data?.requestStats?.successRate || (data?.requestStats ? 100 - data.requestStats.errorRate : 0),
+    failureRate: data?.requestStats?.errorRate || 0,
+  }));
 
-  const [cachePerformance, setCachePerformance] = useState({
-    hitRate: 0,
-    missRate: 0,
-    memoryUsage: 0,
-    evictionRate: 0,
-  });
+  const [cachePerformance, setCachePerformance] = useState(() => ({
+    hitRate: data?.cachePerformance?.hitRate || 0,
+    missRate: data?.cachePerformance?.missRate || 0,
+    memoryUsage: data?.cachePerformance?.memoryUsage || 0,
+    evictionRate: data?.cachePerformance?.evictionRate || 0,
+  }));
 
-  const [providerPerformance, setProviderPerformance] = useState([]);
-  const [providerHourlyData, setProviderHourlyData] = useState([]);
-  const [idResolverPerformance, setIdResolverPerformance] = useState({
+  const [providerPerformance, setProviderPerformance] = useState(() => data?.providerPerformance || []);
+  const [providerHourlyData, setProviderHourlyData] = useState(() => data?.providerHourlyData || []);
+  const [idResolverPerformance, setIdResolverPerformance] = useState(() => data?.idResolverPerformance || {
     totalResolutions: 0,
     wikiMappingEarlyReturns: { count: 0, percentage: 0 },
     cacheEarlyReturns: { count: 0, percentage: 0 },
@@ -447,7 +512,7 @@ function DashboardAnalytics({ data, loading }) {
                   Success (HTTP 2xx-3xx)
                 </span>
                 <span className="text-2xl font-bold text-green-600">
-                  {Number(requestMetrics.successRate).toFixed(1)}%
+                  <AnimatedNumber value={Number(requestMetrics.successRate)} decimals={1} suffix="%" />
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -455,23 +520,15 @@ function DashboardAnalytics({ data, loading }) {
                   Failure (HTTP 4xx-5xx)
                 </span>
                 <span className="text-2xl font-bold text-red-600">
-                  {Number(requestMetrics.failureRate).toFixed(1)}%
+                  <AnimatedNumber value={Number(requestMetrics.failureRate)} decimals={1} suffix="%" />
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div
-                  className="bg-green-600 h-2 rounded-full"
+                  className="bg-green-600 h-2 rounded-full transition-all duration-500"
                   style={{ width: `${Number(requestMetrics.successRate)}%` }}
                 ></div>
               </div>
-              {data?.quickStats?.trackingCoverage !== undefined &&
-                data.quickStats.trackingCoverage < 95 && (
-                  <div className="pt-2 border-t text-xs text-amber-600 dark:text-amber-400">
-                    ⚠️ Tracking coverage: {data.quickStats.trackingCoverage}% (
-                    {data.quickStats.trackedResponses}/
-                    {data.quickStats.todayRequests} requests tracked)
-                  </div>
-                )}
             </div>
           </CardContent>
         </Card>
@@ -486,13 +543,13 @@ function DashboardAnalytics({ data, loading }) {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Hit Rate</span>
                 <span className="text-2xl font-bold text-blue-600">
-                  {Number(cachePerformance.hitRate)}%
+                  <AnimatedNumber value={Number(cachePerformance.hitRate)} suffix="%" />
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Memory Usage</span>
                 <span className="text-2xl font-bold text-orange-600">
-                  {Number(cachePerformance.memoryUsage)}%
+                  <AnimatedNumber value={Number(cachePerformance.memoryUsage)} suffix="%" />
                 </span>
               </div>
               <Progress
@@ -517,40 +574,75 @@ function DashboardAnalytics({ data, loading }) {
             {providerPerformance.map((provider, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 border rounded-lg"
+                className="p-3 border rounded-lg"
               >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      provider.status === "healthy"
-                        ? "bg-green-500"
-                        : provider.status === "warning"
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                    }`}
-                  ></div>
-                  <span className="font-medium">{provider.name}</span>
+                {/* Desktop layout */}
+                <div className="hidden sm:flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        provider.status === "healthy"
+                          ? "bg-green-500"
+                          : provider.status === "warning"
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                      }`}
+                    ></div>
+                    <span className="font-medium">{provider.name}</span>
+                  </div>
+                  <div className="flex items-center space-x-6">
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">
+                        Response Time
+                      </p>
+                      <p className="font-medium">
+                        {Number(provider.responseTime)}ms
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Error Rate</p>
+                      <p className="font-medium">{Number(provider.errorRate)}%</p>
+                    </div>
+                    <Badge
+                      variant={
+                        provider.status === "healthy" ? "default" : "secondary"
+                      }
+                    >
+                      {provider.status}
+                    </Badge>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-6">
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">
-                      Response Time
-                    </p>
-                    <p className="font-medium">
-                      {Number(provider.responseTime)}ms
-                    </p>
+                {/* Mobile layout */}
+                <div className="sm:hidden">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          provider.status === "healthy"
+                            ? "bg-green-500"
+                            : provider.status === "warning"
+                              ? "bg-yellow-500"
+                              : "bg-red-500"
+                        }`}
+                      ></div>
+                      <span className="font-medium">{provider.name}</span>
+                    </div>
+                    <Badge
+                      variant={
+                        provider.status === "healthy" ? "default" : "secondary"
+                      }
+                    >
+                      {provider.status}
+                    </Badge>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Error Rate</p>
-                    <p className="font-medium">{Number(provider.errorRate)}%</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Response Time</span>
+                    <span className="font-medium">{Number(provider.responseTime)}ms</span>
                   </div>
-                  <Badge
-                    variant={
-                      provider.status === "healthy" ? "default" : "secondary"
-                    }
-                  >
-                    {provider.status}
-                  </Badge>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Error Rate</span>
+                    <span className="font-medium">{Number(provider.errorRate)}%</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -705,19 +797,32 @@ function DashboardAnalytics({ data, loading }) {
 }
 
 // Performance Metrics Component
+// Data is now fetched via TanStack Query at the Dashboard level
+// All performance data including idResolverPerformance comes from the timing endpoint
 function DashboardPerformance({ data, loading }) {
-  const { adminKey, isAdmin, isGuest } = useAdmin();
-  const [timingMetrics, setTimingMetrics] = useState({});
+  const [timingMetrics, setTimingMetrics] = useState(() => {
+    if (data) {
+      return {
+        ...data.dashboard,
+        providerBreakdown: data.providerBreakdown,
+        resolutionBreakdown: data.resolutionBreakdown,
+        timingTrends: data.timingTrends,
+      };
+    }
+    return {};
+  });
   const [selectedMetric, setSelectedMetric] = useState("id_resolution_total");
   const [timeRange, setTimeRange] = useState("24h");
-  const [idResolverPerformance, setIdResolverPerformance] = useState({
+  
+  // Extract idResolverPerformance from timing data (now included in timing endpoint)
+  const idResolverPerformance = data?.idResolverPerformance || {
     totalResolutions: 0,
     wikiMappingEarlyReturns: { count: 0, percentage: 0 },
     cacheEarlyReturns: { count: 0, percentage: 0 },
     apiCallsRequired: { count: 0, percentage: 0 },
     animeResolutions: { count: 0, percentage: 0 },
     earlyReturnRate: 0,
-  });
+  };
 
   useEffect(() => {
     if (data) {
@@ -732,38 +837,6 @@ function DashboardPerformance({ data, loading }) {
       setTimingMetrics(processedData);
     }
   }, [data]);
-
-  useEffect(() => {
-    // Only fetch if authenticated (either admin or guest)
-    if (!isAdmin && !isGuest) {
-      return;
-    }
-
-    // Fetch ID resolver performance data
-    const fetchIdResolverPerformance = async () => {
-      try {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-        // Only include admin key for admin users
-        if (isAdmin && adminKey) {
-          headers['x-admin-key'] = adminKey;
-        }
-
-        const response = await fetch("/api/dashboard/analytics", { headers });
-        if (response.ok) {
-          const analyticsData = await response.json();
-          if (analyticsData.idResolverPerformance) {
-            setIdResolverPerformance(analyticsData.idResolverPerformance);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to fetch ID resolver performance:", error);
-      }
-    };
-
-    fetchIdResolverPerformance();
-  }, [isAdmin, isGuest, adminKey]);
 
   const formatDuration = (ms) => {
     if (ms < 1000) return `${ms}ms`;
@@ -1181,7 +1254,7 @@ function DashboardPerformance({ data, loading }) {
                   return (
                     <div
                       key={key}
-                      className="p-4 rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950"
+                      className="p-4 rounded-lg border"
                     >
                       <div className="flex items-center justify-between mb-3">
                         <div>
@@ -1430,13 +1503,13 @@ function DashboardPerformance({ data, loading }) {
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-4 bg-blue-50 rounded-lg">
                   <div className="text-2xl font-bold text-blue-600">
-                    {idResolverPerformance.totalResolutions.toLocaleString()}
+                    <AnimatedNumber value={idResolverPerformance.totalResolutions} />
                   </div>
                   <div className="text-sm text-blue-600">Total Resolutions</div>
                 </div>
                 <div className="text-center p-4 bg-green-50 rounded-lg">
                   <div className="text-2xl font-bold text-green-600">
-                    {idResolverPerformance.earlyReturnRate}%
+                    <AnimatedNumber value={idResolverPerformance.earlyReturnRate} suffix="%" />
                   </div>
                   <div className="text-sm text-green-600">
                     Early Return Rate
@@ -1450,11 +1523,10 @@ function DashboardPerformance({ data, loading }) {
                   <span className="text-sm text-gray-900">Wiki Mappings</span>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-900">
-                      {idResolverPerformance.wikiMappingEarlyReturns.count.toLocaleString()}
+                      <AnimatedNumber value={idResolverPerformance.wikiMappingEarlyReturns.count} />
                     </div>
                     <div className="text-xs text-green-700">
-                      {idResolverPerformance.wikiMappingEarlyReturns.percentage}
-                      %
+                      <AnimatedNumber value={idResolverPerformance.wikiMappingEarlyReturns.percentage} suffix="%" />
                     </div>
                   </div>
                 </div>
@@ -1462,10 +1534,10 @@ function DashboardPerformance({ data, loading }) {
                   <span className="text-sm text-gray-900">Cache Hits</span>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-900">
-                      {idResolverPerformance.cacheEarlyReturns.count.toLocaleString()}
+                      <AnimatedNumber value={idResolverPerformance.cacheEarlyReturns.count} />
                     </div>
                     <div className="text-xs text-blue-700">
-                      {idResolverPerformance.cacheEarlyReturns.percentage}%
+                      <AnimatedNumber value={idResolverPerformance.cacheEarlyReturns.percentage} suffix="%" />
                     </div>
                   </div>
                 </div>
@@ -1475,10 +1547,10 @@ function DashboardPerformance({ data, loading }) {
                   </span>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-900">
-                      {idResolverPerformance.animeResolutions.count.toLocaleString()}
+                      <AnimatedNumber value={idResolverPerformance.animeResolutions.count} />
                     </div>
                     <div className="text-xs text-purple-700">
-                      {idResolverPerformance.animeResolutions.percentage}%
+                      <AnimatedNumber value={idResolverPerformance.animeResolutions.percentage} suffix="%" />
                     </div>
                   </div>
                 </div>
@@ -1488,10 +1560,10 @@ function DashboardPerformance({ data, loading }) {
                   </span>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-900">
-                      {idResolverPerformance.apiCallsRequired.count.toLocaleString()}
+                      <AnimatedNumber value={idResolverPerformance.apiCallsRequired.count} />
                     </div>
                     <div className="text-xs text-red-700">
-                      {idResolverPerformance.apiCallsRequired.percentage}%
+                      <AnimatedNumber value={idResolverPerformance.apiCallsRequired.percentage} suffix="%" />
                     </div>
                   </div>
                 </div>
@@ -1568,11 +1640,11 @@ function DashboardPerformance({ data, loading }) {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-green-600">
-                    {data.imdbRatingsStats.datasetHits.toLocaleString()}
+                    <AnimatedNumber value={data.imdbRatingsStats.datasetHits} />
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {data.imdbRatingsStats.datasetPercentage}% • Avg:{" "}
-                    {data.imdbRatingsStats.datasetAvgTime.toFixed(2)}ms
+                    <AnimatedNumber value={data.imdbRatingsStats.datasetPercentage} suffix="%" /> • Avg:{" "}
+                    <AnimatedNumber value={data.imdbRatingsStats.datasetAvgTime} decimals={2} suffix="ms" />
                   </div>
                 </div>
               </div>
@@ -1586,11 +1658,11 @@ function DashboardPerformance({ data, loading }) {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-orange-600">
-                    {data.imdbRatingsStats.cinemetaFallbackHits.toLocaleString()}
+                    <AnimatedNumber value={data.imdbRatingsStats.cinemetaFallbackHits} />
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {data.imdbRatingsStats.cinemetaPercentage}% • Avg:{" "}
-                    {data.imdbRatingsStats.cinemetaAvgTime.toFixed(2)}ms
+                    <AnimatedNumber value={data.imdbRatingsStats.cinemetaPercentage} suffix="%" /> • Avg:{" "}
+                    <AnimatedNumber value={data.imdbRatingsStats.cinemetaAvgTime} decimals={2} suffix="ms" />
                   </div>
                 </div>
               </div>
@@ -1599,13 +1671,13 @@ function DashboardPerformance({ data, loading }) {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total Requests:</span>
                   <span className="font-medium">
-                    {data.imdbRatingsStats.totalRequests.toLocaleString()}
+                    <AnimatedNumber value={data.imdbRatingsStats.totalRequests} />
                   </span>
                 </div>
                 <div className="flex justify-between text-sm mt-1">
                   <span className="text-muted-foreground">Ratings Loaded:</span>
                   <span className="font-medium">
-                    {data.imdbRatingsStats.ratingsLoaded.toLocaleString()}
+                    <AnimatedNumber value={data.imdbRatingsStats.ratingsLoaded} />
                   </span>
                 </div>
                 <div className="flex justify-between text-sm mt-1">
@@ -1613,10 +1685,20 @@ function DashboardPerformance({ data, loading }) {
                     Speed Difference:
                   </span>
                   <span className="font-medium text-green-600">
-                    {data.imdbRatingsStats.cinemetaAvgTime > 0 &&
-                    data.imdbRatingsStats.datasetAvgTime > 0
-                      ? `${(data.imdbRatingsStats.cinemetaAvgTime / data.imdbRatingsStats.datasetAvgTime).toFixed(0)}x faster with dataset`
-                      : "N/A"}
+                    {(() => {
+                      const cinemetaTime = data.imdbRatingsStats.cinemetaAvgTime;
+                      const datasetTime = data.imdbRatingsStats.datasetAvgTime;
+                      if (cinemetaTime > 0 && datasetTime > 0) {
+                        const ratio = cinemetaTime / datasetTime;
+                        if (!isFinite(ratio) || ratio > 9999) {
+                          return "∞ faster with dataset";
+                        }
+                        return `${ratio.toFixed(0)}x faster with dataset`;
+                      } else if (cinemetaTime > 0 && datasetTime === 0) {
+                        return "∞ faster with dataset";
+                      }
+                      return "N/A";
+                    })()}
                   </span>
                 </div>
               </div>
@@ -1629,61 +1711,22 @@ function DashboardPerformance({ data, loading }) {
 }
 
 // Content Intelligence Component
+// Data is now fetched via TanStack Query at the Dashboard level
 function DashboardContent({ data, loading }) {
-  const { adminKey, isAdmin, isGuest } = useAdmin();
-  const [popularContent, setPopularContent] = useState([]);
-  const [searchPatterns, setSearchPatterns] = useState([]);
   const [searchLimit, setSearchLimit] = useState(10);
-  const [contentQuality, setContentQuality] = useState({
+
+  // Extract data from props (fetched by TanStack Query)
+  const popularContent = data?.popularContent || [];
+  const searchPatterns = data?.searchPatterns || [];
+  const contentQuality = data?.contentQuality || {
     missingMetadata: 0,
     failedMappings: 0,
     correctionRequests: 0,
     successRate: 0,
-  });
+  };
 
-  useEffect(() => {
-    // Only fetch if authenticated (either admin or guest)
-    if (!isAdmin && !isGuest) {
-      return;
-    }
-
-    // Fetch real content data
-    const fetchContentData = async () => {
-      try {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-        // Only include admin key for admin users
-        if (isAdmin && adminKey) {
-          headers['x-admin-key'] = adminKey;
-        }
-
-        const response = await fetch(
-          `/api/dashboard/content?limit=${searchLimit}`,
-          { headers }
-        );
-        if (response.ok) {
-          const data = await response.json();
-
-          setPopularContent(data.popularContent || []);
-          setSearchPatterns(data.searchPatterns || []);
-          setContentQuality(
-            data.contentQuality || {
-              missingMetadata: 0,
-              failedMappings: 0,
-              correctionRequests: 0,
-              successRate: 0,
-            },
-          );
-        }
-      } catch (error) {
-        console.error("Failed to fetch content data:", error);
-        // Keep default empty values
-      }
-    };
-
-    fetchContentData();
-  }, [searchLimit, isAdmin, isGuest, adminKey]);
+  // fetches all data
+  const filteredSearchPatterns = searchPatterns.slice(0, searchLimit);
 
   return (
     <div className="space-y-6">
@@ -1709,37 +1752,74 @@ function DashboardContent({ data, loading }) {
               popularContent.map((content, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 border rounded-lg"
+                  className="p-3 border rounded-lg"
                 >
-                  <div className="flex items-center space-x-3">
-                    <Badge
-                      variant={
-                        content.type === "movie" || content.type === "series"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {content.type}
-                    </Badge>
-                    <span className="font-medium">{content.title}</span>
+                  {/* Desktop layout */}
+                  <div className="hidden sm:flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Badge
+                        variant={
+                          content.type === "movie" || content.type === "series"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {content.type}
+                      </Badge>
+                      <span className="font-medium">{content.title}</span>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Requests</p>
+                        <p className="font-medium">{content.requests}</p>
+                      </div>
+                      {content.rating && (
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Rating</p>
+                          <p className="font-medium">
+                            ⭐ {String(content.rating)}
+                          </p>
+                        </div>
+                      )}
+                      {content.year && (
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">Year</p>
+                          <p className="font-medium">{String(content.year)}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Requests</p>
-                      <p className="font-medium">{content.requests}</p>
+                  {/* Mobile layout */}
+                  <div className="sm:hidden">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <Badge
+                          variant={
+                            content.type === "movie" || content.type === "series"
+                              ? "default"
+                              : "secondary"
+                          }
+                          className="flex-shrink-0"
+                        >
+                          {content.type}
+                        </Badge>
+                        <span className="font-medium truncate">{content.title}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Requests</span>
+                      <span className="font-medium">{content.requests}</span>
                     </div>
                     {content.rating && (
-                      <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Rating</p>
-                        <p className="font-medium">
-                          ⭐ {String(content.rating)}
-                        </p>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Rating</span>
+                        <span className="font-medium">⭐ {String(content.rating)}</span>
                       </div>
                     )}
                     {content.year && (
-                      <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Year</p>
-                        <p className="font-medium">{String(content.year)}</p>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Year</span>
+                        <span className="font-medium">{String(content.year)}</span>
                       </div>
                     )}
                   </div>
@@ -1771,7 +1851,7 @@ function DashboardContent({ data, loading }) {
               <option value={50}>Top 50</option>
             </select>
           </div>
-          {searchPatterns.length === 0 ? (
+          {filteredSearchPatterns.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No search patterns yet</p>
@@ -1782,7 +1862,7 @@ function DashboardContent({ data, loading }) {
           ) : (
             <div className="flex flex-wrap gap-x-4 gap-y-3">
               {(() => {
-                const counts = searchPatterns.map((p: any) => p.count);
+                const counts = filteredSearchPatterns.map((p: any) => p.count);
                 const min = Math.min(...counts);
                 const max = Math.max(...counts);
                 const scale = (count: number) => {
@@ -1790,7 +1870,7 @@ function DashboardContent({ data, loading }) {
                   const t = (count - min) / (max - min);
                   return Math.round(14 + t * 22); // 14px -> 36px
                 };
-                return searchPatterns.map((p: any, idx: number) => (
+                return filteredSearchPatterns.map((p: any, idx: number) => (
                   <span
                     key={idx}
                     title={`"${p.query}" • Count: ${p.count}`}
@@ -1893,7 +1973,7 @@ function DashboardContent({ data, loading }) {
 
 // System Management Component
 function DashboardSystem({ data, loading }) {
-  const [systemConfig, setSystemConfig] = useState({
+  const [systemConfig, setSystemConfig] = useState(() => data?.systemConfig || {
     language: "en-US",
     metaProvider: "tvdb",
     artProvider: "tvdb",
@@ -1916,15 +1996,15 @@ function DashboardSystem({ data, loading }) {
     },
   });
 
-  const [resourceUsage, setResourceUsage] = useState({
+  const [resourceUsage, setResourceUsage] = useState(() => data?.resourceUsage || {
     memoryUsage: 0,
     cpuUsage: 0,
     diskUsage: 0,
     requestsPerMin: 0,
   });
 
-  const [providerStatus, setProviderStatus] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [providerStatus, setProviderStatus] = useState(() => data?.providerStatus || []);
+  const [recentActivity, setRecentActivity] = useState(() => data?.recentActivity || []);
 
   useEffect(() => {
     if (data) {
@@ -2049,27 +2129,71 @@ function DashboardSystem({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: "Blur Thumbs", value: systemConfig.aggregatedStats?.features?.blurThumbs || 0, icon: Shield, color: "blue" },
-                { label: "Skip Filler", value: systemConfig.aggregatedStats?.features?.skipFiller || 0, icon: Zap, color: "violet" },
-                { label: "Skip Recap", value: systemConfig.aggregatedStats?.features?.skipRecap || 0, icon: RefreshCw, color: "orange" },
-                { label: "Episode Mark", value: systemConfig.aggregatedStats?.features?.allowEpisodeMarking || 0, icon: Activity, color: "pink" },
-              ].map((feature) => (
-                <div
-                  key={feature.label}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                >
-                  <div className={`p-2 rounded-md bg-${feature.color}-500/10`}>
-                    <feature.icon className={`h-4 w-4 text-${feature.color}-500`} />
+              {/* Watch Tracking */}
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Eye className="h-4 w-4 text-green-500" />
+                  <p className="text-xs font-medium">Watch Tracking</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">MDBList</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.mdblistWatchTracking || 0}%</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-muted-foreground truncate">{feature.label}</p>
-                    <p className={`text-lg font-semibold text-${feature.color}-600 dark:text-${feature.color}-400`}>
-                      {feature.value}%
-                    </p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">AniList</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0}%</span>
                   </div>
                 </div>
-              ))}
+              </div>
+
+              {/* Rating Posters */}
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Star className="h-4 w-4 text-yellow-500" />
+                  <p className="text-xs font-medium">Rating Posters</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">RPDB</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.ratingPostersRpdb || 0}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">TOP</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.ratingPostersTop || 0}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* AI Search */}
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Search className="h-4 w-4 text-blue-500" />
+                  <p className="text-xs font-medium">AI Search</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-sm">Enabled</span>
+                  <span className="text-lg font-semibold">{systemConfig.aggregatedStats?.features?.aiSearchEnabled || 0}%</span>
+                </div>
+              </div>
+
+              {/* MAL Features */}
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="h-4 w-4 text-violet-500" />
+                  <p className="text-xs font-medium">MAL Features</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Skip Filler</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.skipFiller || 0}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Skip Recap</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.skipRecap || 0}%</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -2091,104 +2215,104 @@ function DashboardSystem({ data, loading }) {
                     <span
                       className={`font-medium ${
                         resourceUsage.memoryUsage > 90
-                          ? "text-red-600"
-                          : resourceUsage.memoryUsage > 75
-                            ? "text-orange-600"
-                            : "text-green-600"
-                      }`}
-                    >
-                      {resourceUsage.memoryUsage}%
-                    </span>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {resourceUsage.memoryUsage > 70
-                        ? data?.systemConfig?.redisConnected
-                          ? "of container limit"
-                          : "of heap allocated"
-                        : getMemoryContext(resourceUsage.memoryUsage, data)}
-                    </p>
-                  </div>
+                        ? "text-red-600"
+                        : resourceUsage.memoryUsage > 75
+                          ? "text-orange-600"
+                          : "text-green-600"
+                    }`}
+                  >
+                    <AnimatedNumber value={resourceUsage.memoryUsage} suffix="%" />
+                  </span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {resourceUsage.memoryUsage > 70
+                      ? data?.systemConfig?.redisConnected
+                        ? "of container limit"
+                        : "of heap allocated"
+                      : getMemoryContext(resourceUsage.memoryUsage, data)}
+                  </p>
                 </div>
-                <Progress
-                  value={resourceUsage.memoryUsage}
-                  className={`h-2 ${
-                    resourceUsage.memoryUsage > 90
-                      ? "[&>div]:bg-red-600"
-                      : resourceUsage.memoryUsage > 75
-                        ? "[&>div]:bg-orange-600"
-                        : ""
-                  }`}
-                />
-                {resourceUsage.memoryUsage > 90 && (
-                  <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+              </div>
+              <Progress
+                value={resourceUsage.memoryUsage}
+                className={`h-2 ${
+                  resourceUsage.memoryUsage > 90
+                    ? "[&>div]:bg-red-600"
+                    : resourceUsage.memoryUsage > 75
+                      ? "[&>div]:bg-orange-600"
+                      : ""
+                }`}
+              />
+              {resourceUsage.memoryUsage > 90 && (
+                <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  High memory usage - consider restarting or clearing cache
+                </p>
+              )}
+              {resourceUsage.memoryUsage > 75 &&
+                resourceUsage.memoryUsage <= 90 && (
+                  <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" />
-                    High memory usage - consider restarting or clearing cache
+                    Memory usage elevated - monitor closely
                   </p>
                 )}
-                {resourceUsage.memoryUsage > 75 &&
-                  resourceUsage.memoryUsage <= 90 && (
-                    <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      Memory usage elevated - monitor closely
-                    </p>
-                  )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>CPU Usage</span>
-                  <span
-                    className={`font-medium ${
-                      resourceUsage.cpuUsage > 80
-                        ? "text-red-600"
-                        : resourceUsage.cpuUsage > 60
-                          ? "text-orange-600"
-                          : "text-green-600"
-                    }`}
-                  >
-                    {resourceUsage.cpuUsage}%
-                  </span>
-                </div>
-                <Progress
-                  value={resourceUsage.cpuUsage}
-                  className={`h-2 ${
-                    resourceUsage.cpuUsage > 80
-                      ? "[&>div]:bg-red-600"
-                      : resourceUsage.cpuUsage > 60
-                        ? "[&>div]:bg-orange-600"
-                        : ""
-                  }`}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Disk Usage</span>
-                  <span
-                    className={`font-medium ${
-                      resourceUsage.diskUsage > 90
-                        ? "text-red-600"
-                        : resourceUsage.diskUsage > 75
-                          ? "text-orange-600"
-                          : "text-green-600"
-                    }`}
-                  >
-                    {resourceUsage.diskUsage}%
-                  </span>
-                </div>
-                <Progress
-                  value={resourceUsage.diskUsage}
-                  className={`h-2 ${
-                    resourceUsage.diskUsage > 90
-                      ? "[&>div]:bg-red-600"
-                      : resourceUsage.diskUsage > 75
-                        ? "[&>div]:bg-orange-600"
-                        : ""
-                  }`}
-                />
-              </div>
             </div>
-          </CardContent>
-        </Card>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>CPU Usage</span>
+                <span
+                  className={`font-medium ${
+                    resourceUsage.cpuUsage > 80
+                      ? "text-red-600"
+                      : resourceUsage.cpuUsage > 60
+                        ? "text-orange-600"
+                        : "text-green-600"
+                  }`}
+                >
+                  <AnimatedNumber value={resourceUsage.cpuUsage} suffix="%" />
+                </span>
+              </div>
+              <Progress
+                value={resourceUsage.cpuUsage}
+                className={`h-2 ${
+                  resourceUsage.cpuUsage > 80
+                    ? "[&>div]:bg-red-600"
+                    : resourceUsage.cpuUsage > 60
+                      ? "[&>div]:bg-orange-600"
+                      : ""
+                }`}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Disk Usage</span>
+                <span
+                  className={`font-medium ${
+                    resourceUsage.diskUsage > 90
+                      ? "text-red-600"
+                      : resourceUsage.diskUsage > 75
+                        ? "text-orange-600"
+                        : "text-green-600"
+                  }`}
+                >
+                  <AnimatedNumber value={resourceUsage.diskUsage} suffix="%" />
+                </span>
+              </div>
+              <Progress
+                value={resourceUsage.diskUsage}
+                className={`h-2 ${
+                  resourceUsage.diskUsage > 90
+                    ? "[&>div]:bg-red-600"
+                    : resourceUsage.diskUsage > 75
+                      ? "[&>div]:bg-orange-600"
+                      : ""
+                }`}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
         <Card>
           <CardHeader>
@@ -2198,15 +2322,15 @@ function DashboardSystem({ data, loading }) {
           <CardContent>
             <div className="text-center py-8">
               <div className="text-3xl font-bold text-blue-600 mb-2">
-                {resourceUsage.requestsPerMin}
+                <AnimatedNumber value={resourceUsage.requestsPerMin} />
               </div>
               <p className="text-sm text-muted-foreground">req/min</p>
               <p className="text-xs text-muted-foreground mt-2">
                 Rolling average this hour
               </p>
             </div>
-          </CardContent>
-        </Card>
+        </CardContent>
+      </Card>
       </div>
 
       {/* Provider Status */}
@@ -2224,44 +2348,121 @@ function DashboardSystem({ data, loading }) {
               .map((provider, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 border rounded-lg"
+                className="p-3 border rounded-lg"
               >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      provider.status === "healthy"
-                        ? "bg-green-500"
-                        : provider.status === "degraded"
-                          ? "bg-yellow-500"
-                          : provider.status === "down"
-                            ? "bg-red-500"
-                            : "bg-gray-400"
-                    }`}
-                  ></div>
-                  <div>
-                    <span className="font-medium">{provider.name}</span>
-                    {provider.keyStatus && (
-                      <span className={`ml-2 text-xs ${
-                        provider.keyStatus === "Disabled"
-                          ? "text-muted-foreground"
-                          : "text-green-600 dark:text-green-400"
-                      }`}>
-                        ({provider.keyStatus})
-                      </span>
+                {/* Desktop layout */}
+                <div className="hidden sm:flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        provider.status === "healthy"
+                          ? "bg-green-500"
+                          : provider.status === "degraded"
+                            ? "bg-yellow-500"
+                            : provider.status === "down"
+                              ? "bg-red-500"
+                              : "bg-gray-400"
+                      }`}
+                    ></div>
+                    <div>
+                      <span className="font-medium">{provider.name}</span>
+                      {provider.keyStatus && (
+                        <span className={`ml-2 text-xs ${
+                          provider.keyStatus === "Disabled"
+                            ? "text-muted-foreground"
+                            : "text-green-600 dark:text-green-400"
+                        }`}>
+                          ({provider.keyStatus})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    {provider.stats ? (
+                      <>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">
+                            <AnimatedNumber value={provider.stats.callsToday} />
+                          </p>
+                          <p className="text-xs text-muted-foreground">calls today</p>
+                        </div>
+                        <div className="text-right min-w-[60px]">
+                          <p className={`text-sm font-medium ${
+                            provider.stats.successRate === null
+                              ? "text-muted-foreground"
+                              : provider.stats.successRate >= 95
+                                ? "text-green-600"
+                                : provider.stats.successRate >= 80
+                                  ? "text-yellow-600"
+                                  : "text-red-600"
+                          }`}>
+                            {provider.stats.successRate !== null 
+                              ? <AnimatedNumber value={provider.stats.successRate} suffix="%" />
+                              : "—"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">success</p>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">No tracking data</span>
                     )}
+                    <Badge
+                      variant={
+                        provider.status === "healthy"
+                          ? "default"
+                          : provider.status === "degraded"
+                            ? "secondary"
+                            : provider.status === "down"
+                              ? "destructive"
+                              : "outline"
+                      }
+                      className="min-w-[70px] justify-center"
+                    >
+                      {provider.status === "unknown" ? "No data" : provider.status}
+                    </Badge>
                   </div>
                 </div>
-                <div className="flex items-center space-x-4">
+
+                {/* Mobile layout */}
+                <div className="sm:hidden">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                          provider.status === "healthy"
+                            ? "bg-green-500"
+                            : provider.status === "degraded"
+                              ? "bg-yellow-500"
+                              : provider.status === "down"
+                                ? "bg-red-500"
+                                : "bg-gray-400"
+                        }`}
+                      ></div>
+                      <span className="font-medium truncate">{provider.name}</span>
+                    </div>
+                    <Badge
+                      variant={
+                        provider.status === "healthy"
+                          ? "default"
+                          : provider.status === "degraded"
+                            ? "secondary"
+                            : provider.status === "down"
+                              ? "destructive"
+                              : "outline"
+                      }
+                      className="flex-shrink-0"
+                    >
+                      {provider.status === "unknown" ? "No data" : provider.status}
+                    </Badge>
+                  </div>
                   {provider.stats ? (
-                    <>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">
-                          {provider.stats.callsToday.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">calls today</p>
+                    <div className="flex items-center justify-between mt-2 text-sm">
+                      <div>
+                        <span className="font-medium"><AnimatedNumber value={provider.stats.callsToday} /></span>
+                        <span className="text-muted-foreground ml-1">calls</span>
                       </div>
-                      <div className="text-right min-w-[60px]">
-                        <p className={`text-sm font-medium ${
+                      <div>
+                        <span className={`font-medium ${
                           provider.stats.successRate === null
                             ? "text-muted-foreground"
                             : provider.stats.successRate >= 95
@@ -2271,29 +2472,15 @@ function DashboardSystem({ data, loading }) {
                                 : "text-red-600"
                         }`}>
                           {provider.stats.successRate !== null 
-                            ? `${provider.stats.successRate}%` 
+                            ? <AnimatedNumber value={provider.stats.successRate} suffix="%" />
                             : "—"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">success</p>
+                        </span>
+                        <span className="text-muted-foreground ml-1">success</span>
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    <span className="text-sm text-muted-foreground">No tracking data</span>
+                    <p className="text-sm text-muted-foreground mt-2">No tracking data</p>
                   )}
-                  <Badge
-                    variant={
-                      provider.status === "healthy"
-                        ? "default"
-                        : provider.status === "degraded"
-                          ? "secondary"
-                          : provider.status === "down"
-                            ? "destructive"
-                            : "outline"
-                    }
-                    className="min-w-[70px] justify-center"
-                  >
-                    {provider.status === "unknown" ? "No data" : provider.status}
-                  </Badge>
                 </div>
               </div>
             ))}
@@ -2396,36 +2583,45 @@ function DashboardSystem({ data, loading }) {
           })()}
         </CardContent>
       </Card>
-
-      {/* Footer Status */}
-      {systemConfig.lastUpdated && (
-        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
-          <Clock className="h-3 w-3" />
-          <span>Last updated: {new Date(systemConfig.lastUpdated).toLocaleString()}</span>
-        </div>
-      )}
     </div>
   );
 }
 
 // Operational Tools Component
+// Data is now fetched via TanStack Query at the Dashboard level (5s polling when tab is active)
 function DashboardOperations({ data, loading }) {
-  const { adminKey } = useAdmin();
+  // TanStack Query mutations for actions (auth handled internally by mutation hooks)
+  const clearCacheMutation = useClearCache();
+  const executeTaskMutation = useExecuteMaintenanceTask();
+  const clearErrorsMutation = useClearErrorLogs();
 
-  const [cacheStats, setCacheStats] = useState({
-    totalKeys: 0,
-    memoryUsage: "0 MB",
-    hitRate: 0,
-    evictionRate: 0,
-    hits: 0,
-    misses: 0,
-    cachedErrors: 0,
-    byType: {},
+  const [cacheStats, setCacheStats] = useState(() => {
+    if (data?.cacheStats) {
+      return {
+        totalKeys: data.cacheStats.totalKeys || 0,
+        memoryUsage: data.cacheStats.memoryUsage ? `${data.cacheStats.memoryUsage}%` : "0%",
+        hitRate: data.cacheStats.hitRate || 0,
+        evictionRate: data.cacheStats.evictionRate || 0,
+        hits: data.cacheStats.hits || 0,
+        misses: data.cacheStats.misses || 0,
+        cachedErrors: data.cacheStats.cachedErrors || 0,
+        byType: data.cacheStats.byType || {},
+      };
+    }
+    return {
+      totalKeys: 0,
+      memoryUsage: "0 MB",
+      hitRate: 0,
+      evictionRate: 0,
+      hits: 0,
+      misses: 0,
+      cachedErrors: 0,
+      byType: {},
+    };
   });
 
-  const [errorLogs, setErrorLogs] = useState([]);
-  const [maintenanceTasks, setMaintenanceTasks] = useState([]);
-  const [cacheClearing, setCacheClearing] = useState(false);
+  const [errorLogs, setErrorLogs] = useState(() => data?.errorLogs || []);
+  const [maintenanceTasks, setMaintenanceTasks] = useState(() => data?.maintenanceTasks || []);
   const [executingTasks, setExecutingTasks] = useState<Set<number>>(new Set());
 
   // Update state when data prop changes
@@ -2452,242 +2648,55 @@ function DashboardOperations({ data, loading }) {
     }
   }, [data]);
 
-  // Conditional polling: refresh maintenance tasks every 5 seconds while any warming task is running
-  // Only warming tasks (7, 8, 9) are fire-and-forget; other tasks complete synchronously
-  useEffect(() => {
-    const warmingTaskIds = [7, 8, 9]; // Essential, MAL, Comprehensive warming
-    const hasRunningWarmingTask = maintenanceTasks.some(
-      (task: any) => warmingTaskIds.includes(task.id) && task.status === "running"
-    );
 
-    if (!hasRunningWarmingTask) {
-      return; // No polling needed when no warming tasks are running
-    }
-
-    let isActive = true; // Flag to prevent state updates after cleanup
-    
-    const poll = async () => {
-      if (!isActive) return;
-      
-      try {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-        };
-        if (adminKey) {
-          headers["x-admin-key"] = adminKey;
-        }
-
-        const response = await fetch("/api/dashboard/operations", { headers });
-        if (response.ok && isActive) {
-          const newData = await response.json();
-          setMaintenanceTasks(newData.maintenanceTasks || []);
-          // Also update cache stats since warming tasks affect cache
-          if (newData.cacheStats) {
-            setCacheStats({
-              totalKeys: newData.cacheStats.totalKeys || 0,
-              memoryUsage: newData.cacheStats.memoryUsage
-                ? `${newData.cacheStats.memoryUsage}%`
-                : "0%",
-              hitRate: newData.cacheStats.hitRate || 0,
-              evictionRate: newData.cacheStats.evictionRate || 0,
-              hits: newData.cacheStats.hits || 0,
-              misses: newData.cacheStats.misses || 0,
-              cachedErrors: newData.cacheStats.cachedErrors || 0,
-              byType: newData.cacheStats.byType || {},
-            });
-          }
-        }
-      } catch (error) {
-        if (isActive) {
-          console.error("[Dashboard] Error polling maintenance tasks:", error);
-        }
-      }
-    };
-
-    const pollInterval = setInterval(poll, 5000); // Poll every 5 seconds
-
-    return () => {
-      isActive = false;
-      clearInterval(pollInterval);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    // Only re-create interval when running status actually changes, not on every maintenanceTasks update
-    maintenanceTasks.some((task: any) => [7, 8, 9].includes(task.id) && task.status === "running"),
-    adminKey
-  ]);
-
-  const handleClearCache = async (type) => {
-    setCacheClearing(true);
-    try {
-      console.log(`Clearing ${type} cache...`);
-
-      const headers = {
-        "Content-Type": "application/json",
-      };
-
-      // Add admin key if available
-      if (adminKey) {
-        headers["x-admin-key"] = adminKey;
-      }
-
-      const response = await fetch("/api/dashboard/cache/clear", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ type }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log("Cache cleared successfully:", result.message);
-
-        // Update cache stats with the key count from the clear response
-        if (result.keyCount !== undefined) {
-          setCacheStats((prev) => ({
-            ...prev,
-            totalKeys: result.keyCount,
-          }));
-        } else {
-          // Fallback: refresh the cache stats after clearing
-          const operationsResponse = await fetch("/api/dashboard/operations", {
-            headers,
-          });
-          if (operationsResponse.ok) {
-            const data = await operationsResponse.json();
-            if (data.cacheStats) {
-              setCacheStats({
-                totalKeys: data.cacheStats.totalKeys || 0,
-                memoryUsage: data.cacheStats.memoryUsage
-                  ? `${data.cacheStats.memoryUsage}%`
-                  : "0%",
-                hitRate: data.cacheStats.hitRate || 0,
-                evictionRate: data.cacheStats.evictionRate || 0,
-                hits: data.cacheStats.hits || 0,
-                misses: data.cacheStats.misses || 0,
-                cachedErrors: data.cacheStats.cachedErrors || 0,
-                byType: data.cacheStats.byType || {},
-              });
-            }
-          }
-        }
-
-        // Show success toast with key count if available
-        const message =
-          result.keyCount !== undefined
-            ? `Cache ${type} cleared successfully! ${result.keyCount} essential keys remain.`
-            : `Cache ${type} cleared successfully!`;
-
-        toast.success("Cache Cleared", {
-          description: message,
-        });
-      } else {
-        const error = await response.json();
-        console.error("Failed to clear cache:", error.error);
-        toast.error("Cache Clear Failed", {
-          description: error.error,
-        });
-      }
-    } catch (error) {
-      console.error("Error clearing cache:", error);
-      toast.error("Cache Clear Error", {
-        description: error.message,
-      });
-    } finally {
-      setCacheClearing(false);
-    }
+  // Use mutation for cache clearing
+  const handleClearCache = async (type: 'all' | 'expired' | 'metadata') => {
+    clearCacheMutation.mutate(type, {
+      onSuccess: (result) => {
+        const message = result.keyCount !== undefined
+          ? `Cache ${type} cleared successfully! ${result.keyCount} essential keys remain.`
+          : `Cache ${type} cleared successfully!`;
+        toast.success("Cache Cleared", { description: message });
+      },
+      onError: (error) => {
+        toast.error("Cache Clear Failed", { description: error.message });
+      },
+    });
   };
 
-  const handleMaintenanceTask = async (taskId, action) => {
-    const warmingTaskIds = [7, 8, 9]; // Essential, MAL, Comprehensive warming
+  // Use mutation for maintenance tasks
+  const handleMaintenanceTask = async (taskId: number, action: string) => {
+    const warmingTaskIds = [7, 8, 9];
     const isWarmingTask = warmingTaskIds.includes(taskId);
     
-    // For non-warming tasks, show spinner while executing
     if (!isWarmingTask) {
       setExecutingTasks(prev => new Set(prev).add(taskId));
     }
     
-    try {
-      console.log(`Executing maintenance task ${taskId} with action ${action}...`);
-
-      const headers = {
-        "Content-Type": "application/json",
-      };
-
-      // Add admin key if available
-      if (adminKey) {
-        headers["x-admin-key"] = adminKey;
-      }
-
-      const response = await fetch("/api/dashboard/maintenance/execute", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ taskId, action }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log("Maintenance task result:", result);
-      
-      if (result.success) {
-        toast.success(result.message);
-        // Refresh the maintenance tasks data by refetching operations data
-        try {
-          const headers = {
-            "Content-Type": "application/json",
-          };
-          if (adminKey) {
-            headers["x-admin-key"] = adminKey;
-          }
-          
-          const operationsResponse = await fetch("/api/dashboard/operations", {
-            headers,
-          });
-          
-          if (operationsResponse.ok) {
-            const newData = await operationsResponse.json();
-            setMaintenanceTasks(newData.maintenanceTasks || []);
-            setErrorLogs(newData.errorLogs || []);
-            if (newData.cacheStats) {
-              setCacheStats({
-                totalKeys: newData.cacheStats.totalKeys || 0,
-                memoryUsage: newData.cacheStats.memoryUsage
-                  ? `${newData.cacheStats.memoryUsage}%`
-                  : "0%",
-                hitRate: newData.cacheStats.hitRate || 0,
-                evictionRate: newData.cacheStats.evictionRate || 0,
-                hits: newData.cacheStats.hits || 0,
-                misses: newData.cacheStats.misses || 0,
-                cachedErrors: newData.cacheStats.cachedErrors || 0,
-                byType: newData.cacheStats.byType || {},
-              });
-            }
-          }
-        } catch (refreshError) {
-          console.error("Error refreshing data:", refreshError);
+    executeTaskMutation.mutate({ taskId, action }, {
+      onSuccess: (result) => {
+        if (result.success) {
+          toast.success(result.message);
+        } else {
+          toast.error(result.message || 'Failed to execute task');
         }
-      } else {
-        toast.error(result.message || 'Failed to execute task');
-      }
-    } catch (error) {
-      console.error("Error executing maintenance task:", error);
-      toast.error(`Failed to execute task: ${error.message}`);
-    } finally {
-      // Remove task from executing set
-      if (!isWarmingTask) {
-        setExecutingTasks(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(taskId);
-          return newSet;
-        });
-      }
-    }
+      },
+      onError: (error) => {
+        toast.error(`Failed to execute task: ${error.message}`);
+      },
+      onSettled: () => {
+        if (!isWarmingTask) {
+          setExecutingTasks(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(taskId);
+            return newSet;
+          });
+        }
+      },
+    });
   };
 
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
-  const [clearingErrors, setClearingErrors] = useState(false);
 
   const toggleErrorDetails = (errorId: string) => {
     setExpandedErrors(prev => {
@@ -2701,162 +2710,103 @@ function DashboardOperations({ data, loading }) {
     });
   };
 
+  // Use mutation for clearing errors
   const handleClearAllErrors = async () => {
-    setClearingErrors(true);
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-
-      if (adminKey) {
-        headers["x-admin-key"] = adminKey;
-      }
-
-      const response = await fetch("/api/dashboard/errors/clear", {
-        method: "POST",
-        headers,
-      });
-
-      if (response.ok) {
-        const result = await response.json();
+    clearErrorsMutation.mutate(undefined, {
+      onSuccess: (result) => {
         setErrorLogs([]);
         setExpandedErrors(new Set());
-        toast.success("Errors Cleared", {
-          description: result.message,
-        });
-      } else {
-        const error = await response.json();
-        toast.error("Failed to Clear Errors", {
-          description: error.error,
-        });
-      }
-    } catch (error) {
-      console.error("Error clearing error logs:", error);
-      toast.error("Clear Errors Failed", {
-        description: error.message,
-      });
-    } finally {
-      setClearingErrors(false);
-    }
+        toast.success("Errors Cleared", { description: result.message });
+      },
+      onError: (error) => {
+        toast.error("Clear Errors Failed", { description: error.message });
+      },
+    });
   };
+
+  // Derive loading states from mutations
+  const cacheClearing = clearCacheMutation.isPending;
+  const clearingErrors = clearErrorsMutation.isPending;
 
   return (
     <div className="space-y-6">
       {/* Cache Management */}
       <Card>
-        <CardHeader>
-          <CardTitle>Cache Management</CardTitle>
-          <CardDescription>
-            Redis cache statistics and management tools.
-            <br />
-            <span className="text-xs text-muted-foreground">
-              Note: "Clear All Cache" will show ~13 essential keys remaining
-              (maintenance tracking, genres, etc.)
-            </span>
-          </CardDescription>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            <CardTitle>Cache Management</CardTitle>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="flex justify-between">
-                <span className="text-sm font-medium">Total Keys</span>
-                <span className="font-medium">
-                  {cacheStats.totalKeys.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm font-medium">Memory Usage</span>
-                <span className="font-medium">{cacheStats.memoryUsage}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm font-medium">Hit Rate (Successful Only)</span>
-                <span className="font-medium">{cacheStats.hitRate}%</span>
-              </div>
-              <Progress value={cacheStats.hitRate} className="mt-2" />
-              <div className="pt-2 border-t space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Cache Hits</span>
-                  <span className="font-medium text-green-600">{cacheStats.hits.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Cache Misses</span>
-                  <span className="font-medium text-amber-600">{cacheStats.misses.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Cached Errors</span>
-                  <span className="font-medium text-red-600">{cacheStats.cachedErrors.toLocaleString()}</span>
-                </div>
-              </div>
-              {/* Per-type hit rates */}
-              {cacheStats.byType && Object.keys(cacheStats.byType).length > 0 && (
-                <div className="pt-2 border-t space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground mb-1">By Type:</div>
-                  {Object.entries(cacheStats.byType).map(([type, stats]: [string, any]) => {
-                    const typeTotal = stats.totalRequests || 0;
-                    if (typeTotal === 0) return null;
-                    return (
-                      <div key={type} className="flex justify-between items-center">
-                        <span className="text-xs capitalize">{type}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium">{stats.hitRate}%</span>
-                          <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-primary"
-                              style={{ width: `${stats.hitRate}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">({stats.hits}/{typeTotal})</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground">Keys</span>
+              <p className="text-lg font-semibold"><AnimatedNumber value={cacheStats.totalKeys} /></p>
             </div>
-            <div className="space-y-3">
-              <Button
-                onClick={() => handleClearCache("all")}
-                variant="outline"
-                className="w-full"
-                disabled={cacheClearing}
-              >
-                {cacheClearing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Clearing Cache...
-                  </>
-                ) : (
-                  "Clear All Cache"
-                )}
-              </Button>
+            <div>
+              <span className="text-muted-foreground">Memory</span>
+              <p className="text-lg font-semibold">{cacheStats.memoryUsage}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Hit Rate</span>
+              <p className="text-lg font-semibold"><AnimatedNumber value={cacheStats.hitRate} suffix="%" /></p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Hits / Misses</span>
+              <p className="text-lg font-semibold">
+                <AnimatedNumber value={cacheStats.hits} />
+                <span className="text-muted-foreground font-normal"> / </span>
+                <AnimatedNumber value={cacheStats.misses} />
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-center mt-3 pt-3 border-t">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <Button
                 onClick={() => handleClearCache("expired")}
                 variant="outline"
-                className="w-full"
+                size="sm"
                 disabled={cacheClearing}
               >
                 {cacheClearing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Clearing...
-                  </>
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  "Clear Expired"
+                  <>
+                    <Clock className="h-4 w-4 mr-1.5" />
+                    Clear Expired
+                  </>
                 )}
               </Button>
               <Button
                 onClick={() => handleClearCache("metadata")}
                 variant="outline"
-                className="w-full"
+                size="sm"
                 disabled={cacheClearing}
               >
                 {cacheClearing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Clearing...
-                  </>
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  "Clear Metadata Cache"
+                  <>
+                    <Database className="h-4 w-4 mr-1.5" />
+                    Clear Metadata
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => handleClearCache("all")}
+                variant="outline"
+                size="sm"
+                disabled={cacheClearing}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+              >
+                {cacheClearing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-1.5" />
+                    Clear All
+                  </>
                 )}
               </Button>
             </div>
@@ -2982,76 +2932,145 @@ function DashboardOperations({ data, loading }) {
             {maintenanceTasks.map((task) => (
               <div
                 key={task.id}
-                className="flex items-center justify-between p-4 border rounded-lg"
+                className="p-4 border rounded-lg"
               >
-                <div className="flex items-center space-x-3 flex-1">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      task.status === "completed"
-                        ? "bg-green-500"
-                        : task.status === "running"
-                          ? "bg-blue-500"
-                          : task.status === "disabled"
-                            ? "bg-gray-400"
-                            : "bg-yellow-500"
-                    }`}
-                  ></div>
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2">
-                      <p className="font-medium">{task.name}</p>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">
-                      {task.description}
-                    </p>
-                    <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                      <span>Last run: {task.lastRun}</span>
-                      <span>Next: {task.nextRun}</span>
+                {/* Desktop layout */}
+                <div className="hidden sm:flex items-center justify-between">
+                  <div className="flex items-center space-x-3 flex-1">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        task.status === "completed"
+                          ? "bg-green-500"
+                          : task.status === "running"
+                            ? "bg-blue-500"
+                            : task.status === "disabled"
+                              ? "bg-gray-400"
+                              : "bg-yellow-500"
+                      }`}
+                    ></div>
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <p className="font-medium">{task.name}</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-1">
+                        {task.description}
+                      </p>
+                      <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                        <span>Last run: {task.lastRun}</span>
+                        <span>Next: {task.nextRun}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Badge
-                    variant={
-                      task.status === "completed"
-                        ? "default"
-                        : task.status === "running"
-                          ? "secondary"
-                          : task.status === "disabled" || task.status === "pending"
-                            ? "outline"
-                            : "destructive"
-                    }
-                  >
-                    {task.status}
-                  </Badge>
-                  {task.action && (
-                    <Button 
-                      size="sm" 
+                  <div className="flex items-center space-x-2">
+                    <Badge
                       variant={
-                        task.action === "stop" ? "destructive" : 
-                        task.action === "enable" ? "default" : "outline"
+                        task.status === "completed"
+                          ? "default"
+                          : task.status === "running"
+                            ? "secondary"
+                            : task.status === "disabled" || task.status === "pending"
+                              ? "outline"
+                              : "destructive"
                       }
-                      onClick={() => handleMaintenanceTask(task.id, task.action)}
-                      disabled={task.status === "error" || executingTasks.has(task.id)}
                     >
-                      {executingTasks.has(task.id) ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                          Running...
-                        </>
-                      ) : task.action === "stop" ? (
-                        "Stop"
-                      ) : task.action === "enable" ? (
-                        "Enable"
-                      ) : task.action === "restart" ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-1" />
-                          Force
-                        </>
-                      ) : (
-                        "Run Now"
-                      )}
-                    </Button>
-                  )}
+                      {task.status}
+                    </Badge>
+                    {task.action && (
+                      <Button 
+                        size="sm" 
+                        variant={
+                          task.action === "stop" ? "destructive" : 
+                          task.action === "enable" ? "default" : "outline"
+                        }
+                        onClick={() => handleMaintenanceTask(task.id, task.action)}
+                        disabled={task.status === "error" || executingTasks.has(task.id)}
+                      >
+                        {executingTasks.has(task.id) ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            Running...
+                          </>
+                        ) : task.action === "stop" ? (
+                          "Stop"
+                        ) : task.action === "enable" ? (
+                          "Enable"
+                        ) : task.action === "restart" ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Force
+                          </>
+                        ) : (
+                          "Run Now"
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mobile layout */}
+                <div className="sm:hidden">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                      <div
+                        className={`w-3 h-3 rounded-full flex-shrink-0 mt-1 ${
+                          task.status === "completed"
+                            ? "bg-green-500"
+                            : task.status === "running"
+                              ? "bg-blue-500"
+                              : task.status === "disabled"
+                                ? "bg-gray-400"
+                                : "bg-yellow-500"
+                        }`}
+                      ></div>
+                      <div className="min-w-0">
+                        <p className="font-medium">{task.name}</p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={
+                        task.status === "completed"
+                          ? "default"
+                          : task.status === "running"
+                            ? "secondary"
+                            : task.status === "disabled" || task.status === "pending"
+                              ? "outline"
+                              : "destructive"
+                      }
+                      className="flex-shrink-0"
+                    >
+                      {task.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3">
+                      <span>Last: {task.lastRun}</span>
+                      <span>Next: {task.nextRun}</span>
+                    </div>
+                    {task.action && (
+                      <Button 
+                        size="sm" 
+                        variant={
+                          task.action === "stop" ? "destructive" : 
+                          task.action === "enable" ? "default" : "outline"
+                        }
+                        onClick={() => handleMaintenanceTask(task.id, task.action)}
+                        disabled={task.status === "error" || executingTasks.has(task.id)}
+                        className="h-7 text-xs"
+                      >
+                        {executingTasks.has(task.id) ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : task.action === "stop" ? (
+                          "Stop"
+                        ) : task.action === "enable" ? (
+                          "Enable"
+                        ) : task.action === "restart" ? (
+                          "Force"
+                        ) : (
+                          "Run"
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -3129,16 +3148,19 @@ function DashboardOperations({ data, loading }) {
 // User Management Component
 function DashboardUsers({ data, loading }) {
   const { adminKey } = useAdmin();
+  
+  // TanStack Query mutation for clearing user data
+  const clearUserDataMutation = useClearUserData();
 
-  const [userStats, setUserStats] = useState({
-    totalUsers: 0,
-    activeUsers: 0,
-    newUsersToday: 0,
-    totalRequests: 0,
-  });
+  const [userStats, setUserStats] = useState(() => ({
+    totalUsers: data?.totalUsers || 0,
+    activeUsers: data?.activeUsers || 0,
+    newUsersToday: data?.newUsersToday || 0,
+    totalRequests: data?.totalRequests || 0,
+  }));
 
-  const [userActivity, setUserActivity] = useState([]);
-  const [accessControl, setAccessControl] = useState({
+  const [userActivity, setUserActivity] = useState(() => data?.userActivity || []);
+  const [accessControl, setAccessControl] = useState(() => data?.accessControl || {
     adminUsers: 0,
     apiKeyUsers: 0,
     rateLimitedUsers: 0,
@@ -3146,13 +3168,12 @@ function DashboardUsers({ data, loading }) {
   });
 
   const [error, setError] = useState(null);
-  const [clearingUserData, setClearingUserData] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showUserDetails, setShowUserDetails] = useState(false);
 
-  // Clear inflated user data
-  const handleClearUserData = async () => {
+  // Clear inflated user data using mutation
+  const handleClearUserData = () => {
     if (!adminKey) {
       toast.error("Admin key required", {
         description: "You need admin access to clear user data",
@@ -3160,44 +3181,28 @@ function DashboardUsers({ data, loading }) {
       return;
     }
 
-    setClearingUserData(true);
-    try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'x-admin-key': adminKey
-      };
-
-      const response = await fetch('/api/dashboard/users/clear', {
-        method: 'POST',
-        headers,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.success) {
-        toast.success("User Data Cleared", {
-          description: "Inflated user data has been cleared. New tracking will be more accurate.",
+    clearUserDataMutation.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.success) {
+          toast.success("User Data Cleared", {
+            description: "Inflated user data has been cleared. New tracking will be more accurate.",
+          });
+        } else {
+          toast.error("Clear Failed", {
+            description: result.message || "Failed to clear user data",
+          });
+        }
+      },
+      onError: (error) => {
+        toast.error("Clear Error", {
+          description: error.message,
         });
-        // Refresh the page to show updated data
-        window.location.reload();
-      } else {
-        toast.error("Clear Failed", {
-          description: result.message || "Failed to clear user data",
-        });
-      }
-    } catch (error) {
-      console.error('Error clearing user data:', error);
-      toast.error("Clear Error", {
-        description: error.message,
-      });
-    } finally {
-      setClearingUserData(false);
-    }
+      },
+    });
   };
+
+  // Derive loading state from mutation
+  const clearingUserData = clearUserDataMutation.isPending;
 
   // Update state when data prop changes
   useEffect(() => {
@@ -3261,7 +3266,7 @@ function DashboardUsers({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {userStats.totalUsers.toLocaleString()}
+              <AnimatedNumber value={userStats.totalUsers} />
             </div>
             <p className="text-xs text-muted-foreground">Registered users</p>
           </CardContent>
@@ -3273,7 +3278,7 @@ function DashboardUsers({ data, loading }) {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{userStats.activeUsers}</div>
+            <div className="text-2xl font-bold"><AnimatedNumber value={userStats.activeUsers} /></div>
             <p className="text-xs text-muted-foreground">Currently online</p>
           </CardContent>
         </Card>
@@ -3284,7 +3289,7 @@ function DashboardUsers({ data, loading }) {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{userStats.newUsersToday}</div>
+            <div className="text-2xl font-bold"><AnimatedNumber value={userStats.newUsersToday} /></div>
             <p className="text-xs text-muted-foreground">Today</p>
           </CardContent>
         </Card>
@@ -3298,7 +3303,7 @@ function DashboardUsers({ data, loading }) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {userStats.totalRequests?.toLocaleString() || "0"}
+              <AnimatedNumber value={userStats.totalRequests || 0} />
             </div>
             <p className="text-xs text-muted-foreground">All time requests</p>
           </CardContent>
@@ -3317,40 +3322,86 @@ function DashboardUsers({ data, loading }) {
               {userActivity.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
+                  className="p-3 border rounded-lg"
                 >
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        user.status === "active"
-                          ? "bg-green-500"
-                          : user.status === "idle"
-                            ? "bg-yellow-500"
-                            : "bg-blue-500"
-                      }`}
-                    ></div>
-                    <div>
-                      <p className="font-medium">{user.username}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Last seen: {user.lastSeen} • {user.requests} requests
-                      </p>
+                  {/* Desktop layout */}
+                  <div className="hidden sm:flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          user.status === "active"
+                            ? "bg-green-500"
+                            : user.status === "idle"
+                              ? "bg-yellow-500"
+                              : "bg-blue-500"
+                        }`}
+                      ></div>
+                      <div>
+                        <p className="font-medium">{user.username}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Last seen: {user.lastSeen} • {user.requests} requests
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Badge
+                        variant={
+                          user.status === "active"
+                            ? "default"
+                            : user.status === "idle"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {user.status}
+                      </Badge>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setShowUserDetails(true);
+                        }}
+                      >
+                        View Details
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Badge
-                      variant={
-                        user.status === "active"
-                          ? "default"
-                          : user.status === "idle"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
-                      {user.status}
-                    </Badge>
+                  {/* Mobile layout */}
+                  <div className="sm:hidden">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            user.status === "active"
+                              ? "bg-green-500"
+                              : user.status === "idle"
+                                ? "bg-yellow-500"
+                                : "bg-blue-500"
+                          }`}
+                        ></div>
+                        <p className="font-medium">{user.username}</p>
+                      </div>
+                      <Badge
+                        variant={
+                          user.status === "active"
+                            ? "default"
+                            : user.status === "idle"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {user.status}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-muted-foreground">Last seen: {user.lastSeen}</span>
+                      <span className="text-muted-foreground">{user.requests} requests</span>
+                    </div>
                     <Button 
                       size="sm" 
                       variant="outline"
+                      className="w-full"
                       onClick={() => {
                         setSelectedUser(user);
                         setShowUserDetails(true);
@@ -3806,8 +3857,10 @@ function AdminLoginModal({
 // Access level type for tracking current user access
 type AccessLevel = 'none' | 'guest' | 'admin';
 
-// Admin Status Badge Component - Shows admin/guest status and logout button when authenticated
-function AdminStatusBadge() {
+// Admin Status Badge Component - Shows admin/guest status and logout button
+interface AdminStatusBadgeProps {}
+
+function AdminStatusBadge({}: AdminStatusBadgeProps) {
   const { isAdmin, isGuest, adminKey, logout } = useAdmin();
 
   // Determine current access level based on AdminContext state
@@ -3850,134 +3903,78 @@ export function Dashboard() {
   const { isAdmin, isGuest, adminKey, isLoading, adminKeyConfigured, guestModeEnabled } = useAdmin();
   const { isMobile } = useBreakpoint();
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
 
   // Access level state management - tracks current access level based on AdminContext state
   const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
 
-  // Unified dashboard data state
-  const [dashboardData, setDashboardData] = useState({
-    overview: null,
-    analytics: null,
-    content: null,
-    performance: null,
-    system: null,
-    operations: null,
-    users: null,
-    loading: true,
-    error: null,
-  });
+  // TanStack Query hooks with tab-aware polling
+  const queryOptions = { activeTab, enabled: isAdmin || isGuest };
+  
+  const overviewQuery = useDashboardOverview(queryOptions);
+  const analyticsQuery = useDashboardAnalytics(queryOptions);
+  const contentQuery = useDashboardContent(queryOptions);
+  const performanceQuery = useDashboardPerformance(queryOptions);
+  const systemQuery = useDashboardSystem(queryOptions);
+  const operationsQuery = useDashboardOperations(queryOptions);
+  const usersQuery = useDashboardUsers(queryOptions);
 
-  // Unified data fetching - fetch all dashboard data once
+  // Refetch data when tab changes (only if not already fetching)
+  const prevTabRef = useRef<DashboardTab | null>(null);
   useEffect(() => {
-    // Don't fetch data if not authenticated (neither admin nor guest)
-    if (!isAdmin && !isGuest) {
-      setDashboardData((prev) => ({ ...prev, loading: false }));
+    // Skip initial mount
+    if (prevTabRef.current === null) {
+      prevTabRef.current = activeTab;
       return;
     }
-
-    const fetchAllDashboardData = async () => {
-      try {
-        setDashboardData((prev) => ({ ...prev, loading: true, error: null }));
-
-        const headers: Record<string, string> = {};
-        
-        // Only add admin key header for admin users
-        if (isAdmin && adminKey) {
-          headers["x-admin-key"] = adminKey;
-        }
-
-        // For guest users, only fetch public endpoints
-        // For admin users, fetch all endpoints
-        if (isGuest) {
-          // Guest mode: fetch only public endpoints without auth
-          const [
-            overviewResponse,
-            analyticsResponse,
-            contentResponse,
-            performanceResponse,
-            systemResponse,
-          ] = await Promise.all([
-            fetch("/api/dashboard/overview"),
-            fetch("/api/dashboard/analytics"),
-            fetch("/api/dashboard/content"),
-            fetch("/api/dashboard/timing"),
-            fetch("/api/dashboard/system"),
-          ]);
-
-          const data = {
-            overview: overviewResponse.ok ? await overviewResponse.json() : null,
-            analytics: analyticsResponse.ok ? await analyticsResponse.json() : null,
-            content: contentResponse.ok ? await contentResponse.json() : null,
-            performance: performanceResponse.ok ? await performanceResponse.json() : null,
-            system: systemResponse.ok ? await systemResponse.json() : null,
-            operations: null, // Not available for guests
-            users: null, // Not available for guests
-          };
-
-          setDashboardData({
-            ...data,
-            loading: false,
-            error: null,
-          });
-        } else {
-          // Admin mode: fetch all endpoints with authentication
-          const [
-            overviewResponse,
-            analyticsResponse,
-            contentResponse,
-            performanceResponse,
-            systemResponse,
-            operationsResponse,
-            usersResponse,
-          ] = await Promise.all([
-            fetch("/api/dashboard/overview", { headers }),
-            fetch("/api/dashboard/analytics", { headers }),
-            fetch("/api/dashboard/content", { headers }),
-            fetch("/api/dashboard/timing", { headers }),
-            fetch("/api/dashboard/system", { headers }),
-            fetch("/api/dashboard/operations", { headers }),
-            fetch("/api/dashboard/users", { headers }),
-          ]);
-
-          // Check for 401 responses - trigger re-authentication if needed
-          const responses = [overviewResponse, analyticsResponse, contentResponse, performanceResponse, systemResponse];
-          const hasUnauthorized = responses.some(r => r.status === 401);
-          
-          if (hasUnauthorized) {
-            // Session may have expired, show login modal
-            setShowLoginModal(true);
-            setDashboardData((prev) => ({ ...prev, loading: false }));
-            return;
-          }
-
-          const data = {
-            overview: overviewResponse.ok ? await overviewResponse.json() : null,
-            analytics: analyticsResponse.ok ? await analyticsResponse.json() : null,
-            content: contentResponse.ok ? await contentResponse.json() : null,
-            performance: performanceResponse.ok ? await performanceResponse.json() : null,
-            system: systemResponse.ok ? await systemResponse.json() : null,
-            operations: operationsResponse.ok ? await operationsResponse.json() : null,
-            users: usersResponse.ok ? await usersResponse.json() : null,
-          };
-
-          setDashboardData({
-            ...data,
-            loading: false,
-            error: null,
-          });
-        }
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-        setDashboardData((prev) => ({
-          ...prev,
-          loading: false,
-          error: error.message,
-        }));
+    
+    // Only refetch if tab actually changed
+    if (prevTabRef.current !== activeTab) {
+      prevTabRef.current = activeTab;
+      
+      // Only trigger refetch if not already fetching to prevent request piling
+      switch (activeTab) {
+        case 'overview':
+          if (!overviewQuery.isFetching) overviewQuery.refetch();
+          if (!systemQuery.isFetching) systemQuery.refetch();
+          break;
+        case 'analytics':
+          if (!analyticsQuery.isFetching) analyticsQuery.refetch();
+          break;
+        case 'content':
+          if (!contentQuery.isFetching) contentQuery.refetch();
+          break;
+        case 'performance':
+          if (!performanceQuery.isFetching) performanceQuery.refetch();
+          break;
+        case 'system':
+          if (!systemQuery.isFetching) systemQuery.refetch();
+          break;
+        case 'operations':
+          if (isAdmin && !operationsQuery.isFetching) operationsQuery.refetch();
+          break;
+        case 'users':
+          if (isAdmin && !usersQuery.isFetching) usersQuery.refetch();
+          break;
       }
-    };
+    }
+  }, [activeTab]);
 
-    fetchAllDashboardData();
-  }, [isAdmin, isGuest, adminKey]); // Re-fetch when admin/guest status changes
+  // Compute loading state - only show loading on initial load
+  const isInitialLoading = overviewQuery.isLoading && !overviewQuery.data;
+
+  // Build dashboard data object for child components (maintains backward compatibility)
+  const dashboardData = {
+    overview: overviewQuery.data,
+    analytics: analyticsQuery.data,
+    content: contentQuery.data,
+    performance: performanceQuery.data,
+    system: systemQuery.data,
+    operations: operationsQuery.data,
+    users: usersQuery.data,
+    loading: isInitialLoading,
+    error: overviewQuery.error?.message || null,
+  };
 
   // Show login modal when not authenticated (neither admin nor guest)
   useEffect(() => {
@@ -4130,7 +4127,12 @@ export function Dashboard() {
         </div>
 
 
-        <Accordion type="single" collapsible className="w-full">
+        <Accordion 
+          type="single" 
+          collapsible 
+          className="w-full"
+          onValueChange={(value) => value && setActiveTab(value as DashboardTab)}
+        >
           {dashboardPages.map((page, index) => (
             <AccordionItem
               value={page.value}
@@ -4168,7 +4170,7 @@ export function Dashboard() {
       </div>
 
       {/* Metrics Disabled Banner */}
-      {dashboardData.overview?.metricsDisabled && (
+      {(dashboardData.overview as any)?.metricsDisabled && (
         <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
@@ -4177,7 +4179,7 @@ export function Dashboard() {
         </div>
       )}
 
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs defaultValue="overview" className="w-full" onValueChange={(value) => setActiveTab(value as DashboardTab)}>
         <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-1 bg-muted overflow-x-auto">
           <TabsTrigger
             value="overview"

@@ -319,30 +319,30 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
 
           <div className="space-y-4">
             {/* Search and Actions */}
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search users by UUID or creation date..."
+                  placeholder="Search users by UUID..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={fetchUsers} disabled={loading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={fetchUsers} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 sm:mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
                 </Button>
-                <Button variant="outline" onClick={exportUserData}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export All
+                <Button variant="outline" size="sm" onClick={exportUserData}>
+                  <Download className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Export All</span>
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                      <MoreHorizontal className="h-4 w-4 mr-2" />
-                      Bulk Actions
+                    <Button variant="outline" size="sm">
+                      <MoreHorizontal className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Bulk Actions</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
@@ -355,8 +355,8 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
               </div>
             </div>
 
-            {/* Users Table */}
-            <div className="border rounded-lg overflow-hidden">
+            {/* Desktop: Users Table */}
+            <div className="hidden sm:block border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -448,6 +448,75 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
               </Table>
             </div>
 
+            {/* Mobile: Users Cards */}
+            <div className="sm:hidden space-y-3 max-h-[50vh] overflow-y-auto">
+              {loading ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+                  Loading users...
+                </div>
+              ) : filteredUsers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No users found
+                </div>
+              ) : (
+                filteredUsers.map((user) => (
+                  <div key={user.uuid} className="p-3 border rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-sm">{user.uuid.substring(0, 8)}...</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => fetchUserDetails(user.uuid)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => resetUserPassword(user.uuid)}>
+                            <Key className="h-4 w-4 mr-2" />
+                            Reset Password
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => {
+                              setUserToDelete(user);
+                              setShowDeleteDialog(true);
+                            }}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete User
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-muted-foreground">Created</span>
+                      <span>{formatDate(user.created_at)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-muted-foreground">Last Updated</span>
+                      <span>{formatRelativeTime(user.last_updated)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-muted-foreground">Requests</span>
+                      <span>{user.total_requests.toLocaleString()}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Badge variant={user.is_active ? "default" : "secondary"}>
+                        {user.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                      <Badge variant={user.has_api_keys ? "default" : "destructive"}>
+                        {user.has_api_keys ? "Configured" : "Missing"}
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
             <div className="text-sm text-muted-foreground">
               Showing {filteredUsers.length} of {users.length} users
             </div>
@@ -470,10 +539,10 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
 
           {selectedUser && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">UUID</label>
-                  <p className="text-sm text-muted-foreground font-mono">{selectedUser.uuid}</p>
+                  <p className="text-sm text-muted-foreground font-mono break-all">{selectedUser.uuid}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Created</label>
@@ -491,7 +560,7 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
 
               <div>
                 <label className="text-sm font-medium">API Keys</label>
-                <div className="flex gap-2 mt-1">
+                <div className="flex flex-wrap gap-2 mt-1">
                   <Badge variant={selectedUser.api_keys.tmdb ? "default" : "secondary"}>TMDB</Badge>
                   <Badge variant={selectedUser.api_keys.tvdb ? "default" : "secondary"}>TVDB</Badge>
                   <Badge variant={selectedUser.api_keys.imdb ? "default" : "secondary"}>IMDB</Badge>
@@ -499,7 +568,7 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Language</label>
                   <p className="text-sm text-muted-foreground">{selectedUser.language}</p>

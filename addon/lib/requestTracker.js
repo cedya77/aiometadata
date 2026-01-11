@@ -70,6 +70,7 @@ class RequestTracker {
     // --- Existing filter for API and page routes ---
     const internalPaths = [
       "/api/dashboard",
+      "/api/admin",
       "/dashboard",
       "/api/config",
       "/api/test-keys",

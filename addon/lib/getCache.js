@@ -63,13 +63,6 @@ const cacheHealth = {
   lastHealthCheck: Date.now(),
   errorCounts: {},
   keyAccessCounts: new Map(),
-  // Per-cache-type stats for detailed insights
-  byType: {
-    catalog: { hits: 0, misses: 0, cachedErrors: 0 },
-    meta: { hits: 0, misses: 0, cachedErrors: 0 },
-    search: { hits: 0, misses: 0, cachedErrors: 0 },
-    other: { hits: 0, misses: 0, cachedErrors: 0 }
-  }
 };
 
 // Self-healing configuration
@@ -259,32 +252,14 @@ function safeParseConfigString(configString) {
 }
 
 /**
- * Detect cache type from key
- */
-function getCacheType(key) {
-  // Remove version prefix if present (e.g., "v1:catalog:..." or "v1:meta:...")
-  const cleanKey = key.includes(':') && key.startsWith('v') ? key.split(':').slice(1).join(':') : key;
-  
-  if (cleanKey.startsWith('catalog:')) return 'catalog';
-  if (cleanKey.startsWith('meta:')) return 'meta';
-  if (cleanKey.startsWith('search:')) return 'search';
-  if (cleanKey.startsWith('meta-')) return 'meta'; // meta-basic, meta-poster, etc.
-  return 'other';
-}
-
-/**
  * Self-healing cache health monitoring
  */
 function updateCacheHealth(key, type, success = true) {
   cacheHealth.keyAccessCounts.set(key, (cacheHealth.keyAccessCounts.get(key) || 0) + 1);
   
-  // Determine cache type for per-type stats
-  const cacheType = getCacheType(key);
-  
   if (success) {
     if (type === 'hit') {
       cacheHealth.hits++;
-      cacheHealth.byType[cacheType].hits++;
       // Also track in requestTracker for dashboard metrics
       try {
         const requestTracker = require('./requestTracker');
@@ -294,7 +269,6 @@ function updateCacheHealth(key, type, success = true) {
       }
     } else if (type === 'miss') {
       cacheHealth.misses++;
-      cacheHealth.byType[cacheType].misses++;
       // Also track in requestTracker for dashboard metrics
       try {
         const requestTracker = require('./requestTracker');
@@ -305,7 +279,6 @@ function updateCacheHealth(key, type, success = true) {
     } else if (type === 'cached-error') {
       // Track cached errors separately - these are NOT counted as hits
       cacheHealth.cachedErrors++;
-      cacheHealth.byType[cacheType].cachedErrors++;
       // Track as cache miss for hit rate calculation since these are essentially failed responses
       try {
         const requestTracker = require('./requestTracker');
@@ -342,19 +315,6 @@ function logCacheHealth() {
   
   cacheHealthLogger.info(`Hit Rate: ${hitRate}%, Error Rate: ${errorRate}%, Total: ${total}`);
   cacheHealthLogger.info(`Hits: ${cacheHealth.hits}, Misses: ${cacheHealth.misses}, Errors: ${cacheHealth.errors}, Cached Errors: ${cacheHealth.cachedErrors}`);
-  
-  // Log per-type hit rates
-  const typeStats = [];
-  for (const [type, stats] of Object.entries(cacheHealth.byType)) {
-    const typeTotal = stats.hits + stats.misses;
-    if (typeTotal > 0) {
-      const typeHitRate = ((stats.hits / typeTotal) * 100).toFixed(1);
-      typeStats.push(`${type}:${typeHitRate}% (${stats.hits}/${typeTotal})`);
-    }
-  }
-  if (typeStats.length > 0) {
-    cacheHealthLogger.info(`By Type: ${typeStats.join(', ')}`);
-  }
   
   // Log most accessed keys
   const topKeys = Array.from(cacheHealth.keyAccessCounts.entries())
@@ -2025,19 +1985,6 @@ function cacheWrapTvmazeApi(key, method) {
 function getCacheHealth() {
   const total = cacheHealth.hits + cacheHealth.misses;
   
-  // Calculate per-type hit rates
-  const byTypeStats = {};
-  for (const [type, stats] of Object.entries(cacheHealth.byType)) {
-    const typeTotal = stats.hits + stats.misses;
-    byTypeStats[type] = {
-      hits: stats.hits,
-      misses: stats.misses,
-      cachedErrors: stats.cachedErrors,
-      hitRate: typeTotal > 0 ? ((stats.hits / typeTotal) * 100).toFixed(2) : '0.00',
-      totalRequests: typeTotal
-    };
-  }
-  
   return {
     hits: cacheHealth.hits,
     misses: cacheHealth.misses,
@@ -2047,7 +1994,6 @@ function getCacheHealth() {
     hitRate: total > 0 ? ((cacheHealth.hits / total) * 100).toFixed(2) : '0.00',
     errorRate: total > 0 ? ((cacheHealth.errors / total) * 100).toFixed(2) : '0.00',
     totalRequests: total,
-    byType: byTypeStats,
     mostAccessedKeys: Array.from(cacheHealth.keyAccessCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
@@ -2066,13 +2012,6 @@ function clearCacheHealth() {
   cacheHealth.corruptedEntries = 0;
   cacheHealth.errorCounts = {};
   cacheHealth.keyAccessCounts.clear();
-  // Reset per-type stats
-  cacheHealth.byType = {
-    catalog: { hits: 0, misses: 0, cachedErrors: 0 },
-    meta: { hits: 0, misses: 0, cachedErrors: 0 },
-    search: { hits: 0, misses: 0, cachedErrors: 0 },
-    other: { hits: 0, misses: 0, cachedErrors: 0 }
-  };
   cacheHealthLogger.info('Statistics cleared');
 }
 
