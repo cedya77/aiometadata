@@ -656,12 +656,12 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
     .map(async (item: any) => {
       try {
         let stremioId = `tmdb:${item.id}`;
+        const mdblistType = item.mediatype === 'movie' ? 'movie' : 'series';
         
         // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-          const mdblistType = item.mediatype === 'movie' ? 'movie' : 'series';
           return await getMeta(mdblistType, language, stremioId, config, config.userUUID, includeVideos);
-        }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
+        }, undefined, {enableErrorCaching: true, maxRetries: 2}, mdblistType as any, includeVideos);
         
         if (result && result.meta) {
           return result.meta;
@@ -1316,6 +1316,7 @@ async function parseMDBListUpNextItems(
                         logger.warn(`[MDBList Up Next] Failed to extract fallback poster URL: ${e.message}`);
                       }
                     }
+                    metaResult.meta._rawPosterUrl = null;
                   }
                 }
                 // If useShowPoster is true, keep the original show poster

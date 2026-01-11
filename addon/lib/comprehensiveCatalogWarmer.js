@@ -663,8 +663,8 @@ class ComprehensiveCatalogWarmer {
             continue;
           }
 
-          // Get enabled catalogs from user config, excluding Up Next (dynamic catalog)
-          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext');
+          // Get enabled catalogs from user config, excluding Up Next (dynamic catalogs)
+          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext' && c.id !== 'mdblist.upnext');
           
           // Initialize stats for this UUID
           this.stats.uuidStats[uuid] = {
@@ -790,14 +790,13 @@ class ComprehensiveCatalogWarmer {
     }
 
     if (!this.config.enabled) {
-      const mode = process.env.CACHE_WARMUP_MODE || 'essential';
-      this.log('info', `Comprehensive catalog warming disabled (CACHE_WARMUP_MODE=${mode})`);
-      this.log('info', 'Set CACHE_WARMUP_MODE=comprehensive or CACHE_WARMUP_MODE=both to enable');
+      this.log('info', 'Comprehensive catalog warming disabled (CACHE_WARMUP_MODE is not set to "comprehensive")');
+      this.log('info', 'Set CACHE_WARMUP_MODE=comprehensive to enable');
       return;
     }
 
     this.log('success', `Comprehensive catalog warming enabled for ${this.config.uuids.length} UUID(s): ${this.config.uuids.join(', ')}`);
-    this.log('info', `Mode: ${WARMUP_MODE}, Interval: ${this.config.intervalHours}h, Initial delay: ${this.config.initialDelaySeconds}s`);
+    this.log('info', `Interval: ${this.config.intervalHours}h, Initial delay: ${this.config.initialDelaySeconds}s`);
     
     if (this.config.autoOnVersionChange) {
       this.log('info', 'Auto-warmup on version change: enabled');

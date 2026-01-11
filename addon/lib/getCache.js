@@ -1510,7 +1510,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
        
-        if (posterRatingEnabled && reconstructedMeta.id) {
+       const isUpNextWithEpisodeThumbnail = (metaId.startsWith('upnext_') || metaId.startsWith('mdblist_upnext_')) && !useShowPoster;
+       const hasEpisodeThumbnailShape = reconstructedMeta.posterShape === 'landscape';
+       
+       if (posterRatingEnabled && reconstructedMeta.id && !isUpNextWithEpisodeThumbnail && !hasEpisodeThumbnailShape) {
          // Apply poster rating proxy/direct URL to cached poster
          const language = config.language || 'en-US';
          const Utils = require("../utils/parseProps");
@@ -1519,8 +1522,12 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          // Also strip any trailing episode identifier we append to upnext cache keys
          // Examples: 'tmdb:123_trakt456' or 'tvdb:789_S1E02' -> keep only the canonical media id
          canonicalProxyId = canonicalProxyId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');
+         cacheLogger.debug(`[Reconstruct] Rebuilding poster proxy URL for ${reconstructedMeta.id} (canonical: ${canonicalProxyId}), cached poster: ${data.poster?.substring(0, 100)}...`);
          reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
        } else {
+         if (isUpNextWithEpisodeThumbnail || hasEpisodeThumbnailShape) {
+           cacheLogger.debug(`[Reconstruct] Preserving cached episode thumbnail for ${metaId} (useShowPoster=${useShowPoster}, posterShape=${reconstructedMeta.posterShape}), poster: ${data.poster?.substring(0, 100)}...`);
+         }
          reconstructedMeta.poster = data.poster;
        }
      } else if (componentName === 'rawPoster') {
@@ -1550,6 +1557,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      }
    });
    
+  if (!reconstructedMeta.poster && reconstructedMeta._rawPosterUrl) {
+    cacheLogger.debug(`[Reconstruct] Missing poster component for ${metaId}, using _rawPosterUrl as fallback: ${reconstructedMeta._rawPosterUrl?.substring(0, 100)}...`);
+    reconstructedMeta.poster = reconstructedMeta._rawPosterUrl;
+  }
+  
   // Validate the reconstructed meta
   if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
     cacheLogger.warn(`Reconstructed meta missing required fields for ${metaId}`);

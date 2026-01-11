@@ -79,6 +79,93 @@ if (!dispatcher) {
 // It prevents calling the scraper multiple times for the same TMDB ID within the same session.
 const scrapedImdbIdCache = new Map();
 
+// Rate limit state tracking per API key
+const rateLimitStates = new Map();
+
+/**
+ * Get or create rate limit state for an API key
+ * @param {string} apiKey - The TMDB API key
+ * @returns {Object} Rate limit state object
+ */
+function getRateLimitState(apiKey) {
+  if (!rateLimitStates.has(apiKey)) {
+    rateLimitStates.set(apiKey, {
+      remaining: null,        
+      limit: null,            
+      reset: null,            
+      resetTime: null,       
+      lastRequestTime: null 
+    });
+  }
+  return rateLimitStates.get(apiKey);
+}
+
+/**
+ * Update rate limit state from response headers
+ * @param {string} apiKey - The TMDB API key
+ * @param {Headers} headers - Response headers
+ */
+function updateRateLimitState(apiKey, headers) {
+  const state = getRateLimitState(apiKey);
+  
+  const remaining = headers.get('x-ratelimit-remaining');
+  const limit = headers.get('x-ratelimit-limit');
+  const reset = headers.get('x-ratelimit-reset');
+  
+  if (remaining !== null) {
+    state.remaining = parseInt(remaining, 10);
+  }
+  if (limit !== null) {
+    state.limit = parseInt(limit, 10);
+  }
+  if (reset !== null) {
+    const resetTimestamp = parseInt(reset, 10);
+    state.reset = resetTimestamp;
+    state.resetTime = new Date(resetTimestamp * 1000);
+  }
+  
+  state.lastRequestTime = Date.now();
+}
+
+/**
+ * Wait if rate limit remaining is too low
+ * @param {string} apiKey - The TMDB API key
+ * @returns {Promise<void>}
+ */
+async function waitIfRateLimitLow(apiKey) {
+  const state = getRateLimitState(apiKey);
+  
+  if (state.remaining === null || state.resetTime === null) {
+    return;
+  }
+  
+  const now = Date.now();
+  const resetTimeMs = state.resetTime.getTime();
+  if (resetTimeMs <= now) {
+    state.remaining = null;
+    state.reset = null;
+    state.resetTime = null;
+    return;
+  }
+  
+  const SAFE_THRESHOLD = 5;
+  
+  if (state.remaining <= SAFE_THRESHOLD) {
+    const waitTime = resetTimeMs - now;
+    const waitSeconds = Math.ceil(waitTime / 1000);
+    consola.warn(`[TMDB] Rate limit remaining is low (${state.remaining}/${state.limit || 'unknown'}) for API key. Waiting ${waitSeconds}s until reset at ${state.resetTime.toISOString()}`);
+    await new Promise(resolve => setTimeout(resolve, waitTime + 100)); // Add 100ms buffer
+    
+    state.remaining = null;
+    state.reset = null;
+    state.resetTime = null;
+  } else {
+    if (state.remaining <= 20) {
+      consola.debug(`[TMDB] Rate limit status: ${state.remaining}/${state.limit || 'unknown'} remaining, resets at ${state.resetTime.toISOString()}`);
+    }
+  }
+}
+
 async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null, config = {}) {
   if (!apiKey) throw new Error("TMDB API key is required.");
   
@@ -95,6 +182,8 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
     attempt++;
     const startTime = Date.now();
     
+    await waitIfRateLimitLow(apiKey);
+    
     // *** FIX 1: The 'try' block now wraps the entire attempt. ***
     try {
       const response = await fetch(url, {
@@ -106,6 +195,8 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       });
 
       const responseTime = Date.now() - startTime;
+
+      updateRateLimitState(apiKey, response.headers);
 
       if (response.status === 429) {
           const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);

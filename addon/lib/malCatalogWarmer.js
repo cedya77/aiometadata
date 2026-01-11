@@ -109,7 +109,7 @@ class MALCatalogWarmer {
     if (!WARMUP_CONFIG.enabled) {
       const mode = process.env.CACHE_WARMUP_MODE || 'essential';
       this.log('info', `MAL catalog warming disabled (CACHE_WARMUP_MODE=${mode})`);
-      this.log('info', 'MAL warming runs in essential mode only. Set CACHE_WARMUP_MODE=essential or CACHE_WARMUP_MODE=both to enable');
+      this.log('info', 'MAL warming runs in essential mode only. Set CACHE_WARMUP_MODE=essential to enable');
       return;
     }
 

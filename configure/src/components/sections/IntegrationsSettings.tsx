@@ -461,7 +461,7 @@ export function IntegrationsSettings() {
           <div className="flex-1">
             <Label htmlFor="posterRatingProvider" className="text-lg font-medium">Poster Rating Provider</Label>
             <p className="text-sm text-muted-foreground mt-1">
-              Choose which service to use for rating overlays on posters
+              Choose which service to use for rating posters
             </p>
           </div>
           <Select 
@@ -488,7 +488,7 @@ export function IntegrationsSettings() {
           </div>
           <Switch
             id="usePosterProxy"
-            checked={!!config.usePosterProxy} // CHANGED: Default false, so check truthiness
+            checked={!!config.usePosterProxy}
             onCheckedChange={handlePosterProxyChange}
           />
         </div>
