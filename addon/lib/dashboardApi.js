@@ -3,6 +3,16 @@ const process = require("process");
 const consola = require('consola');
 const logger = consola.withTag('DashboardAPI');
 
+const { getCacheHealth } = require('./getCache');
+const { getCacheCleanupScheduler } = require('./cacheCleanupScheduler');
+const { getAnimeListXmlStats } = require('./anime-list-mapper');
+const { getIdMapperStats, getKitsuImdbStats } = require('./id-mapper');
+const { getWikiMapperStats } = require('./wiki-mapper');
+const { getImdbRatingsStatsForDashboard, getRatingsStats } = require('./imdbRatings');
+const { getWarmupStats: getEssentialWarmupStats } = require('./cacheWarmer');
+const { getWarmupStats: getMALWarmupStats } = require('./malCatalogWarmer');
+const { getWarmupStats: getCatalogWarmupStats } = require('./comprehensiveCatalogWarmer');
+
 class DashboardAPI {
   constructor(cache, idMapper, config, database, requestTracker) {
     this.cache = cache || null;
@@ -16,6 +26,10 @@ class DashboardAPI {
     // CPU usage tracking state
     this.lastCpuUsage = process.cpuUsage();
     this.lastCpuTime = Date.now();
+
+    // Maintenance tasks cache (invalidated when tasks are executed)
+    this._maintenanceTasksCache = null;
+    this._maintenanceTasksCacheTime = null;
 
     // Initialize persistent uptime tracking (async, don't await in constructor)
     this.initializePersistentUptime()
@@ -268,7 +282,6 @@ class DashboardAPI {
         : 0;
 
       // Get cache hit rate from cacheHealth (same source as ops tab for consistency)
-      const { getCacheHealth } = require('./getCache');
       const cacheHealth = getCacheHealth();
       const cacheHitRate = parseFloat(cacheHealth.hitRate) || 0;
 
@@ -307,7 +320,6 @@ class DashboardAPI {
           const totalKeys = await this.cache.dbsize();
           
           // Get cache health stats (hits, misses, cachedErrors) - this gives us the accurate current session stats
-          const { getCacheHealth } = require('./getCache');
           const cacheHealth = getCacheHealth();
           
           // Use the hit rate from cacheHealth instead of requestTracker for consistency with byType breakdown
@@ -644,9 +656,15 @@ class DashboardAPI {
     }
   }
 
-  // Get aggregated system configuration stats
+  // Get aggregated system configuration stats (cached for 60 seconds)
   async getSystemConfig() {
     try {
+      // Check if we have a recent cached result (within 60 seconds)
+      const now = Date.now();
+      if (this._systemConfigCache && this._systemConfigCacheTime && (now - this._systemConfigCacheTime) < 60000) {
+        return this._systemConfigCache;
+      }
+
       // Load all user configurations to aggregate statistics
       let userConfigs = [];
       let totalUsers = 0;
@@ -680,13 +698,19 @@ class DashboardAPI {
       // Calculate aggregated statistics
       const stats = this.calculateConfigStats(userConfigs);
 
-      return {
+      const result = {
         totalUsers: totalUsers,
         sampleSize: userConfigs.length,
         aggregatedStats: stats,
         redisConnected: this.cache ? true : false,
         lastUpdated: new Date().toISOString(),
       };
+
+      // Cache the result
+      this._systemConfigCache = result;
+      this._systemConfigCacheTime = now;
+
+      return result;
     } catch (error) {
       logger.error("Error getting system config:", error);
       return {
@@ -712,11 +736,13 @@ class DashboardAPI {
       artProviders: { movie: {}, series: {}, anime: {} },
       animeIdProviders: {},
       features: {
-        cacheEnabled: 0,
-        blurThumbs: 0,
         skipFiller: 0,
         skipRecap: 0,
-        allowEpisodeMarking: 0,
+        mdblistWatchTracking: 0,
+        anilistWatchTracking: 0,
+        ratingPostersRpdb: 0,
+        ratingPostersTop: 0,
+        aiSearchEnabled: 0,
       },
     };
 
@@ -838,11 +864,13 @@ class DashboardAPI {
       }
 
       // Feature usage
-      if (config.cacheEnabled !== false) stats.features.cacheEnabled++;
-      if (config.blurThumbs) stats.features.blurThumbs++;
       if (config.mal?.skipFiller) stats.features.skipFiller++;
       if (config.mal?.skipRecap) stats.features.skipRecap++;
-      if (config.mal?.allowEpisodeMarking) stats.features.allowEpisodeMarking++;
+      if (config.mdblistWatchTracking) stats.features.mdblistWatchTracking++;
+      if (config.anilistWatchTracking) stats.features.anilistWatchTracking++;
+      if (config.posterRatingProvider === 'rpdb') stats.features.ratingPostersRpdb++;
+      if (config.posterRatingProvider === 'top') stats.features.ratingPostersTop++;
+      if (config.search?.ai_enabled) stats.features.aiSearchEnabled++;
     });
 
     // Convert to percentages and format for display
@@ -875,13 +903,13 @@ class DashboardAPI {
       },
       animeIdProviders: formatDistribution(stats.animeIdProviders),
       features: {
-        cacheEnabled: Math.round((stats.features.cacheEnabled / total) * 100),
-        blurThumbs: Math.round((stats.features.blurThumbs / total) * 100),
         skipFiller: Math.round((stats.features.skipFiller / total) * 100),
         skipRecap: Math.round((stats.features.skipRecap / total) * 100),
-        allowEpisodeMarking: Math.round(
-          (stats.features.allowEpisodeMarking / total) * 100,
-        ),
+        mdblistWatchTracking: Math.round((stats.features.mdblistWatchTracking / total) * 100),
+        anilistWatchTracking: Math.round((stats.features.anilistWatchTracking / total) * 100),
+        ratingPostersRpdb: Math.round((stats.features.ratingPostersRpdb / total) * 100),
+        ratingPostersTop: Math.round((stats.features.ratingPostersTop / total) * 100),
+        aiSearchEnabled: Math.round((stats.features.aiSearchEnabled / total) * 100),
       },
     };
   }
@@ -902,11 +930,13 @@ class DashboardAPI {
       },
       animeIdProviders: [{ name: "imdb", count: 0, percentage: 100 }],
       features: {
-        cacheEnabled: 100,
-        blurThumbs: 0,
         skipFiller: 0,
         skipRecap: 0,
-        allowEpisodeMarking: 0,
+        mdblistWatchTracking: 0,
+        anilistWatchTracking: 0,
+        ratingPostersRpdb: 0,
+        ratingPostersTop: 0,
+        aiSearchEnabled: 0,
       },
     };
   }
@@ -1180,12 +1210,10 @@ class DashboardAPI {
   // Get maintenance tasks
   async getMaintenanceTasks() {
     try {
-      const now = Date.now();
       const tasks = [];
 
       // 1. Cache cleanup scheduler status
       try {
-        const { getCacheCleanupScheduler } = require('./cacheCleanupScheduler');
         const scheduler = getCacheCleanupScheduler();
         
         if (scheduler) {
@@ -1217,7 +1245,6 @@ class DashboardAPI {
 
       // 2. Anime-list XML update task - check actual update timestamps
       try {
-        const { getAnimeListXmlStats } = require('./anime-list-mapper');
         const animeListStats = getAnimeListXmlStats();
         
         if (this.cache) {
@@ -1276,7 +1303,6 @@ class DashboardAPI {
 
       // 3. ID Mapper update task - check actual update timestamps
       try {
-        const { getIdMapperStats } = require('./id-mapper');
         const idMapperStats = getIdMapperStats();
         
         if (this.cache) {
@@ -1333,7 +1359,6 @@ class DashboardAPI {
 
       // 4. Kitsu-IMDB mapping update task
       try {
-        const { getKitsuImdbStats } = require('./id-mapper');
         const kitsuImdbStats = getKitsuImdbStats();
         
         if (this.cache) {
@@ -1392,7 +1417,6 @@ class DashboardAPI {
 
       // 5. Wikidata Mappings update task (manual only - no automatic scheduling)
       try {
-        const { getWikiMapperStats } = require('./wiki-mapper');
         const wikiMapperStats = getWikiMapperStats();
         
         if (this.cache) {
@@ -1436,7 +1460,6 @@ class DashboardAPI {
 
       // 11. IMDb Ratings update task (manual only - no automatic scheduling)
       try {
-        const { getImdbRatingsStatsForDashboard } = require('./imdbRatings');
         const imdbRatingsStats = getImdbRatingsStatsForDashboard();
         
         if (this.cache) {
@@ -1480,8 +1503,7 @@ class DashboardAPI {
 
       // 7. Essential Cache Warming task
       try {
-        const { getWarmupStats: getEssentialStats } = require('./cacheWarmer');
-        const essentialStats = getEssentialStats();
+        const essentialStats = getEssentialWarmupStats();
         
         // Calculate next run display
         let nextRunDisplay = "Disabled";
@@ -1496,6 +1518,10 @@ class DashboardAPI {
           }
         }
         
+        // When disabled, show "restart" (Force) button since this is a lightweight operation
+        // that's safe to run manually even when auto-scheduling is disabled
+        const essentialAction = essentialStats.isWarming ? "stop" : "restart";
+        
         tasks.push({
           id: 7,
           name: "Essential Cache Warming",
@@ -1503,7 +1529,7 @@ class DashboardAPI {
           lastRun: essentialStats.lastRun ? this.getTimeAgo(new Date(essentialStats.lastRun)) : "Never",
           description: `Warms essential content (genres, studios, TMDB popular)${essentialStats.totalItems > 0 ? ` - ${essentialStats.totalItems} items` : ''}`,
           nextRun: nextRunDisplay,
-          action: essentialStats.enabled ? (essentialStats.isWarming ? "stop" : "restart") : "enable",
+          action: essentialAction,
           category: "warming"
         });
       } catch (error) {
@@ -1522,14 +1548,17 @@ class DashboardAPI {
 
       // 8. MAL Catalog Warming task
       try {
-        const { getWarmupStats: getMALStats } = require('./malCatalogWarmer');
-        const malStats = getMALStats();
+        const malStats = getMALWarmupStats();
         
         // Build description - only show items count if there are items warmed
         let malDescription = "Warms MAL anime catalogs";
         if (malStats.itemsWarmed > 0) {
           malDescription += ` (${malStats.itemsWarmed} items warmed)`;
         }
+        
+        // When disabled, show "restart" (Force) button since this is a lightweight operation
+        // that's safe to run manually even when auto-scheduling is disabled
+        const malAction = malStats.isWarming ? "stop" : "restart";
         
         tasks.push({
           id: 8,
@@ -1538,7 +1567,7 @@ class DashboardAPI {
           lastRun: malStats.lastRun ? this.getTimeAgo(new Date(malStats.lastRun)) : "Never",
           description: malDescription,
           nextRun: malStats.enabled ? (malStats.nextRun ? this.getTimeUntil(new Date(malStats.nextRun)) : "Scheduled") : "Disabled",
-          action: malStats.enabled ? (malStats.isWarming ? "stop" : "restart") : "enable",
+          action: malAction,
           category: "warming"
         });
       } catch (error) {
@@ -1557,8 +1586,7 @@ class DashboardAPI {
 
       // 9. Comprehensive Catalog Warming task
       try {
-        const { getWarmupStats: getCatalogStats } = require('./comprehensiveCatalogWarmer');
-        const catalogStats = await getCatalogStats();
+        const catalogStats = await getCatalogWarmupStats();
         
         // Build description with more context
         let description = `Warms all user catalogs`;
@@ -1571,6 +1599,12 @@ class DashboardAPI {
           description += ` - Last run: ${catalogStats.totalItems} items warmed`;
         }
         
+        // Only show action button if comprehensive warming is enabled
+        // When disabled via CACHE_WARMUP_MODE, there's no way to enable it from dashboard
+        const taskAction = catalogStats.enabled 
+          ? (catalogStats.isRunning ? "stop" : "restart") 
+          : null;
+        
         tasks.push({
           id: 9,
           name: "Comprehensive Catalog Warming",
@@ -1578,7 +1612,7 @@ class DashboardAPI {
           lastRun: catalogStats.lastRun ? this.getTimeAgo(new Date(catalogStats.lastRun)) : "Never",
           description: description,
           nextRun: catalogStats.enabled ? (catalogStats.nextRun ? this.getTimeUntil(new Date(catalogStats.nextRun)) : "Scheduled") : "Disabled",
-          action: catalogStats.enabled ? (catalogStats.isRunning ? "stop" : "restart") : "enable",
+          action: taskAction,
           category: "warming"
         });
       } catch (error) {
@@ -1728,6 +1762,8 @@ class DashboardAPI {
         'system:app_version',      // Version tracking
       ];
 
+      let deletedCount = 0;
+      
       switch (type) {
         case "all":
           // Get all keys first
@@ -1750,6 +1786,7 @@ class DashboardAPI {
               const batch = keysToDelete.slice(i, i + batchSize);
               await this.cache.del(...batch);
             }
+            deletedCount = keysToDelete.length;
           }
 
           // Wait for cache warming to complete
@@ -1769,14 +1806,26 @@ class DashboardAPI {
           }
 
           if (expiredKeys.length > 0) {
-            await this.cache.del(...expiredKeys);
+            // Delete in batches to avoid overwhelming Redis
+            const batchSize = 100;
+            for (let i = 0; i < expiredKeys.length; i += batchSize) {
+              const batch = expiredKeys.slice(i, i + batchSize);
+              await this.cache.del(...batch);
+            }
+            deletedCount = expiredKeys.length;
           }
           break;
         case "metadata":
           // Clear metadata-related keys
           const metadataKeys = await this.cache.keys("*meta*");
           if (metadataKeys.length > 0) {
-            await this.cache.del(...metadataKeys);
+            // Delete in batches to avoid overwhelming Redis
+            const batchSize = 100;
+            for (let i = 0; i < metadataKeys.length; i += batchSize) {
+              const batch = metadataKeys.slice(i, i + batchSize);
+              await this.cache.del(...batch);
+            }
+            deletedCount = metadataKeys.length;
           }
           break;
         default:
@@ -1786,12 +1835,16 @@ class DashboardAPI {
       // Get final key count after clearing
       const finalKeyCount = await this.cache.dbsize();
 
-      let message = `Cache ${type} cleared successfully`;
-      if (type === "all") {
-        message += `. ${finalKeyCount} essential keys preserved (maintenance tracking, system state)`;
+      let message;
+      if (deletedCount === 0) {
+        message = `No ${type} cache entries found to clear`;
+      } else if (type === "all") {
+        message = `Cleared ${deletedCount.toLocaleString()} keys. ${finalKeyCount.toLocaleString()} essential keys preserved`;
+      } else {
+        message = `Cleared ${deletedCount.toLocaleString()} ${type} cache entries`;
       }
 
-      return { success: true, message, keyCount: finalKeyCount };
+      return { success: true, message, keyCount: finalKeyCount, deletedCount };
     } catch (error) {
       logger.error("Error clearing cache:", error);
       return { success: false, message: error.message };
@@ -1801,7 +1854,6 @@ class DashboardAPI {
   // Get IMDb ratings statistics
   async getImdbRatingsStats() {
     try {
-      const { getRatingsStats } = require("./imdbRatings.js");
       return getRatingsStats();
     } catch (error) {
       logger.error("Error getting IMDb ratings stats:", error);

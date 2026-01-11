@@ -584,7 +584,7 @@ class MALCatalogWarmer {
   }
 
   /**
-   * Force run warmup immediately, bypassing interval check
+   * Force run warmup immediately, bypassing interval check and enabled check
    * Returns a result object for API feedback
    */
   forceRunWarmup() {
@@ -592,22 +592,19 @@ class MALCatalogWarmer {
       return { success: false, message: 'MAL warming is already running' };
     }
 
-    if (!WARMUP_CONFIG.enabled) {
-      const mode = process.env.CACHE_WARMUP_MODE || 'essential';
-      return { 
-        success: false, 
-        message: `MAL warming is disabled (CACHE_WARMUP_MODE=${mode}). Set to 'essential' to enable.`
-      };
+    const wasDisabled = !WARMUP_CONFIG.enabled;
+    if (wasDisabled) {
+      this.log('info', 'Force run requested - warming is disabled but running anyway');
+    } else {
+      this.log('info', 'Force run requested - bypassing interval check');
     }
-
-    this.log('info', 'Force run requested - bypassing interval check');
     
     // Run warmup in background (fire-and-forget)
     this.runWarmup();
     
     return { 
       success: true, 
-      message: 'MAL catalog warming started'
+      message: wasDisabled ? 'MAL catalog warming started (forced while disabled)' : 'MAL catalog warming started'
     };
   }
 

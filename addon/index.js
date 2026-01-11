@@ -3598,12 +3598,18 @@ addon.get("/api/dashboard/config", (req, res) => {
   }
 });
 
+// Lightweight auth check endpoint - verifies admin key without loading heavy data
+addon.get("/api/dashboard/auth/check", requireDashboardAdmin, (req, res) => {
+  // If we get here, the admin key is valid (requireDashboardAdmin passed)
+  res.json({ authenticated: true });
+});
+
 // Note: Admin authentication is now applied per-route instead of globally
 // Public endpoints use requireAuthUnlessGuestMode (accessible without auth when guest mode enabled)
 // Protected endpoints use requireDashboardAdmin (always require admin auth)
 
 
-addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, (req, res) => {
+addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, async (req, res) => {
   try {
     const dashboardApi = getDashboardAPI();
     
@@ -3611,23 +3617,12 @@ addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, (req, res) => {
     if (isMetricsDisabled()) {
       Promise.all([
         dashboardApi.getSystemOverview(),
-        dashboardApi.getSystemConfig(),
-        dashboardApi.getResourceUsage(),
-        dashboardApi.getMaintenanceTasks(),
-      ]).then(([systemOverview, systemConfig, resourceUsage, maintenanceTasks]) => {
+      ]).then(([systemOverview]) => {
         res.json({
           metricsDisabled: true,
           message: "Metrics have been disabled on this instance",
           systemOverview,
-          systemConfig,
-          resourceUsage,
-          maintenanceTasks,
-          // Empty metrics data
           quickStats: null,
-          cachePerformance: null,
-          providerPerformance: null,
-          errorLogs: [],
-          imdbRatingsStats: null,
           timestamp: new Date().toISOString(),
         });
       }).catch(error => {
@@ -3637,12 +3632,20 @@ addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, (req, res) => {
       return;
     }
     
-    dashboardApi.getAllDashboardData()
-      .then(data => res.json(data))
-      .catch(error => {
-        consola.error('[Dashboard API] Error:', error);
-        res.status(500).json({ error: 'Failed to fetch dashboard data' });
-      });
+    // Overview tab only needs: systemOverview, quickStats
+    // Other data is fetched by their respective tab endpoints
+    const [systemOverview, quickStats] = await Promise.all([
+      dashboardApi.getSystemOverview(),
+      dashboardApi.getQuickStats(),
+    ]);
+
+    const data = {
+      systemOverview,
+      quickStats,
+      timestamp: new Date().toISOString(),
+    };
+    
+    res.json(data);
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard data' });
@@ -3748,12 +3751,14 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
   
   try {
     const timingMetrics = require('./lib/timing-metrics');
+    const { getPerformanceStats } = require('./lib/id-resolver.js');
     
     // Get comprehensive timing data
-    const [dashboardData, providerBreakdown, resolutionBreakdown] = await Promise.all([
+    const [dashboardData, providerBreakdown, resolutionBreakdown, idResolverStats] = await Promise.all([
       timingMetrics.getDashboardData(),
       timingMetrics.getProviderTimingBreakdown(),
-      timingMetrics.getResolutionTimingBreakdown()
+      timingMetrics.getResolutionTimingBreakdown(),
+      Promise.resolve(getPerformanceStats())
     ]);
     
     // Get timing trends for key metrics
@@ -3779,6 +3784,7 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
       resolutionBreakdown,
       timingTrends,
       imdbRatingsStats,
+      idResolverPerformance: idResolverStats,
       lastUpdated: new Date().toISOString()
     });
   } catch (error) {
@@ -3843,13 +3849,16 @@ addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, re
   
   try {
     const { getPerformanceStats } = require('./lib/id-resolver.js');
+    const dashboardApi = getDashboardAPI();
     
-    const [stats, hourlyStats, topEndpoints, providerHourlyData, idResolverStats] = await Promise.all([
+    const [stats, hourlyStats, topEndpoints, providerHourlyData, idResolverStats, cachePerformance, providerPerformance] = await Promise.all([
       requestTracker.getStats(),
       requestTracker.getHourlyStats(24),
       requestTracker.getTopEndpoints(10),
       requestTracker.getHourlyProviderStats(24),
-      Promise.resolve(getPerformanceStats())
+      Promise.resolve(getPerformanceStats()),
+      dashboardApi.getCachePerformance(),
+      dashboardApi.getProviderPerformance()
     ]);
 
     res.json({ 
@@ -3857,7 +3866,9 @@ addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, re
       hourlyData: hourlyStats,
       topEndpoints: topEndpoints,
       providerHourlyData: providerHourlyData,
-      idResolverPerformance: idResolverStats
+      idResolverPerformance: idResolverStats,
+      cachePerformance,
+      providerPerformance
     });
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
