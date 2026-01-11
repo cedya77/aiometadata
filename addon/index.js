@@ -16,6 +16,7 @@ const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
+const { resolveAllIds } = require('./lib/id-resolver');
 
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
 
@@ -1952,6 +1953,20 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               if (!show?.id) return null;
 
               const stremioId = `tvmaze:${show.id}`;
+              try {
+                const allIds = await resolveAllIds(stremioId, 'series', config);
+                if (allIds) {
+                    if (allIds.imdbId) {
+                        stremioId = allIds.imdbId;
+                    } else if (allIds.tvdbId) {
+                        stremioId = `tvdb:${allIds.tvdbId}`;
+                    } else if (allIds.tmdbId) {
+                        stremioId = `tmdb:${allIds.tmdbId}`;
+                    }
+                }
+              } catch (e) {
+                  // Fallback to original tvmaze ID if resolution fails
+              }
               let meta;
 
               try {

@@ -84,7 +84,7 @@ async function fetchTraktUpNextEpisodes(
           );
           const progress = response.data;
           if (!progress?.next_episode) return null;
-          const nextEp = progress.next_episode;
+          const nextEp = progress.next_episode;          
           
           // Skip episodes without air date (indicates unscheduled/cancelled episodes)
           if (!nextEp.first_aired) {
@@ -93,11 +93,11 @@ async function fetchTraktUpNextEpisodes(
           }
           
           // Skip episodes that haven't aired yet
-          const airedDate = new Date(nextEp.first_aired);
-          const now = new Date();
-          if (airedDate > now) {
-            logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - airs on ${airedDate.toISOString()}`);
-            return null;
+            const airedDate = new Date(nextEp.first_aired);
+            const now = new Date();
+            if (airedDate > now) {
+              logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - airs on ${airedDate.toISOString()}`);
+              return null;
           }
           
           return {
@@ -1250,16 +1250,16 @@ async function parseTraktItems(
                     
                     // Extract fallback URL if it's a proxy URL
                     if (thumbnailUrl && thumbnailUrl.includes('/poster/') && thumbnailUrl.includes('fallback=')) {
-                      try {
+                    try {
                         const url = new URL(thumbnailUrl);
-                        const fallback = url.searchParams.get('fallback');
-                        if (fallback) {
+                      const fallback = url.searchParams.get('fallback');
+                      if (fallback) {
                           const extractedFallback = decodeURIComponent(fallback);
                           logger.debug(`Up Next: Extracted fallback URL from proxy: ${extractedFallback}`);
                           thumbnailUrl = extractedFallback;
-                        }
-                      } catch (e) {
-                        consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
+                      }
+                    } catch (e) {
+                      consola.warn(`[Meta Route] Failed to extract fallback poster URL: ${e.message}`);
                       }
                     }
                     

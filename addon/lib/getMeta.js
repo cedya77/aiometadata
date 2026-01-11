@@ -103,12 +103,48 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
     }
     let meta;
     logger.debug(`[Meta] Processing ${stremioId} (type: ${type})`);
-    const isImdbIdAnime = stremioId.startsWith('tt') && !!idMapper.getMappingByImdbId(stremioId);
-    const isAnime = stremioId.startsWith('mal:') || 
-                    stremioId.startsWith('kitsu:') || 
-                    stremioId.startsWith('anidb:') || 
-                    stremioId.startsWith('anilist:') || 
-                    (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
+
+    let isImdbIdAnime = false;
+    if (stremioId.startsWith('tt')) {
+        const fribbMapping = idMapper.getMappingByImdbId(stremioId);
+        const traktMapping = type === 'movie' ? idMapper.getTraktAnimeMovieByImdbId(stremioId) : null;
+        isImdbIdAnime = !!fribbMapping || !!traktMapping;
+    }
+    
+    let isTmdbIdAnime = false;
+    if (stremioId.startsWith('tmdb:')) {
+        const tmdbId = stremioId.replace('tmdb:', '');
+        const fribbMapping = idMapper.getMappingByTmdbId(tmdbId, type);
+        const traktMapping = type === 'movie' ? idMapper.getTraktAnimeMovieByTmdbId(tmdbId) : null;
+        isTmdbIdAnime = !!fribbMapping || !!traktMapping;
+    }
+    
+    let isTvdbIdAnime = false;
+    if (stremioId.startsWith('tvdb:')) {
+        const tvdbId = stremioId.replace('tvdb:', '');
+        if (type !== 'movie') {
+             const fribbMapping = idMapper.getMappingByTvdbId(tvdbId);
+             if (fribbMapping) isTvdbIdAnime = true;
+        } 
+        else {
+            const wikiMap = wikiMappings.getByTvdbId(tvdbId);
+            if (wikiMap && wikiMap.imdbId) {
+                const traktMapping = idMapper.getTraktAnimeMovieByImdbId(wikiMap.imdbId);
+                if (traktMapping) {
+                    isTvdbIdAnime = true;
+                }
+            }
+        }
+    }
+
+    // Combined Check
+    const isAnime = stremioId.startsWith('mal:') ||
+                    stremioId.startsWith('kitsu:') ||
+                    stremioId.startsWith('anidb:') ||
+                    stremioId.startsWith('anilist:') ||
+                    (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb) ||
+                    (isTmdbIdAnime && config.providers?.forceAnimeForDetectedImdb) ||
+                    (isTvdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
     const finalType = isAnime ? 'anime' : type;
     let preferredProvider;
     if (finalType === 'movie') {
