@@ -556,9 +556,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
 
       // Apply digital release filter if enabled (movies only)
-      if (type === 'movie' && config.hideUnreleasedDigital) {
+      if ((type === 'movie' || type === 'all') && config.hideUnreleasedDigital) {
         const beforeCount = metas.length;
-        metas = metas.filter(meta => isReleasedDigitally(meta));
+        metas = metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
         const afterCount = metas.length;
         if (beforeCount !== afterCount) {
           logger.info(`Digital release filter (MDBList External): filtered out ${beforeCount - afterCount} unreleased movies`);
@@ -636,9 +636,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
     
     // Apply digital release filter if enabled (movies only)
-    if (type === 'movie' && config.hideUnreleasedDigital) {
+    if ((type === 'movie' || type === 'all') && config.hideUnreleasedDigital) {
       const beforeCount = metas.length;
-      metas = metas.filter(meta => isReleasedDigitally(meta));
+      metas = metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
       const afterCount = metas.length;
       if (beforeCount !== afterCount) {
         logger.info(`Digital release filter (MDBList): filtered out ${beforeCount - afterCount} unreleased movies`);
@@ -1376,9 +1376,9 @@ async function getTraktCatalog(
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
     // Apply digital release filter if enabled (movies only)
-    if (type === 'movie' && config.hideUnreleasedDigital) {
+    if ((type === 'movie' || type === 'all') && config.hideUnreleasedDigital) {
       const beforeCount = metas.length;
-      metas = metas.filter(meta => isReleasedDigitally(meta));
+      metas = metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
       const afterCount = metas.length;
       if (beforeCount !== afterCount) {
         logger.info(`Digital release filter (Trakt): filtered out ${beforeCount - afterCount} unreleased movies`);
