@@ -327,7 +327,7 @@ class DashboardAPI {
           const missRate = hitRate > 0 ? 100 - hitRate : 0;
 
           // Get real Redis memory usage
-          let memoryUsage = 0;
+          let memoryUsed = "0 MB";
           try {
             const info = await this.cache.info("memory");
             const lines = info.split("\r\n");
@@ -342,28 +342,37 @@ class DashboardAPI {
               }
             }
 
-            if (maxMemory > 0) {
-              memoryUsage = Math.round((usedMemory / maxMemory) * 100);
+            // Format bytes to human readable
+            let formattedUsed;
+            if (usedMemory >= 1024 * 1024 * 1024) {
+              formattedUsed = (usedMemory / (1024 * 1024 * 1024)).toFixed(1) + " GB";
+            } else if (usedMemory >= 1024 * 1024) {
+              formattedUsed = (usedMemory / (1024 * 1024)).toFixed(1) + " MB";
+            } else if (usedMemory >= 1024) {
+              formattedUsed = (usedMemory / 1024).toFixed(1) + " KB";
             } else {
-              // If no max memory is set, use used memory as a percentage of 1GB as reference
-              const referenceMemory = 1024 * 1024 * 1024; // 1GB
-              memoryUsage = Math.min(
-                Math.round((usedMemory / referenceMemory) * 100),
-                100,
-              );
+              formattedUsed = usedMemory + " B";
+            }
+
+            // If maxmemory is set, add percentage
+            if (maxMemory > 0) {
+              const percentage = Math.round((usedMemory / maxMemory) * 100);
+              memoryUsed = `${formattedUsed} (${percentage}% of limit)`;
+            } else {
+              memoryUsed = formattedUsed;
             }
           } catch (memError) {
             logger.warn(
               "[Dashboard API] Failed to get Redis memory info:",
               memError.message,
             );
-            memoryUsage = 0;
+            memoryUsed = "N/A";
           }
 
           return {
             hitRate: hitRate,
             missRate: missRate,
-            memoryUsage: memoryUsage,
+            memoryUsage: memoryUsed,
             evictionRate: 2.1, // TODO: Calculate real eviction rate from Redis stats
             totalKeys: totalKeys,
             hits: cacheHealth.hits || 0,
@@ -379,7 +388,7 @@ class DashboardAPI {
           return {
             hitRate: 0,
             missRate: 0,
-            memoryUsage: 0,
+            memoryUsage: "N/A",
             evictionRate: 0,
             totalKeys: 0,
             hits: 0,
@@ -392,7 +401,7 @@ class DashboardAPI {
       return {
         hitRate: 0,
         missRate: 0,
-        memoryUsage: 0,
+        memoryUsage: "N/A",
         evictionRate: 0,
         totalKeys: 0,
         hits: 0,
@@ -405,7 +414,7 @@ class DashboardAPI {
       return {
         hitRate: 0,
         missRate: 0,
-        memoryUsage: 0,
+        memoryUsage: "N/A",
         evictionRate: 0,
         totalKeys: 0,
         hits: 0,
