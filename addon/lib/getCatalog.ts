@@ -1511,9 +1511,15 @@ async function resolveAniListItemsToMetas(
       .trim();
   };
 
+  const getStremioTypeFromFormat = (format: string | null | undefined): string => {
+    return format?.toLowerCase() === 'movie' ? 'movie' : 'series';
+  };
+
   // create new items with property mal_id and type, plus additional AniList fields
   const newItems = items.map(item => {
     const media = item.media;
+    const itemType = getStremioTypeFromFormat(media.format) || type;
+    
     // Format dates from AniList structure
     const airedFrom = media.startDate?.year 
       ? `${media.startDate.year}-${String(media.startDate.month || 1).padStart(2, '0')}-${String(media.startDate.day || 1).padStart(2, '0')}`
@@ -1524,7 +1530,7 @@ async function resolveAniListItemsToMetas(
     
     return {
       mal_id: media.idMal,
-      type: type,
+      type: itemType,
       title: media.title?.romaji,
       title_english: media.title?.english,
       year: media.seasonYear || media.startDate?.year,

@@ -1141,7 +1141,9 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
           {((catalog.source === 'mdblist' && ((catalog as any).metadata?.url || ((catalog as any).metadata?.author && catalog.name))) ||
             (catalog.source === 'letterboxd' && (catalog as any).metadata?.url) ||
-            (catalog.source === 'trakt' && ((catalog as any).metadata?.url || catalog.id.startsWith('trakt.list.') || (catalog.id.startsWith('trakt.') && (catalog as any).metadata?.author)))) && (
+            (catalog.source === 'trakt' && ((catalog as any).metadata?.url || catalog.id.startsWith('trakt.list.') || (catalog.id.startsWith('trakt.') && (catalog as any).metadata?.author))) ||
+            (catalog.source === 'tmdb' && catalog.id.startsWith('tmdb.list.') && ((catalog as any).metadata?.url || (catalog as any).metadata?.listId)) ||
+            (catalog.source === 'anilist' && catalog.id.startsWith('anilist.') && ((catalog as any).metadata?.url || ((catalog as any).metadata?.username && (catalog as any).metadata?.listName)))) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1179,18 +1181,55 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
                           listUrl = `https://trakt.tv/users/${username}/lists/${listSlug}`;
                         }
                       }
+                    } else if (catalog.source === 'tmdb' && catalog.id.startsWith('tmdb.list.')) {
+                      listUrl = (catalog as any).metadata?.url || null;
+                      
+                      if (!listUrl && (catalog as any).metadata?.listId) {
+                        const listId = (catalog as any).metadata.listId;
+                        listUrl = `https://www.themoviedb.org/list/${listId}`;
+                      } else if (!listUrl) {
+                        const catalogId = catalog.id;
+                        const match = catalogId.match(/^tmdb\.list\.([^.]+)/);
+                        if (match) {
+                          const listId = match[1];
+                          listUrl = `https://www.themoviedb.org/list/${listId}`;
+                        }
+                      }
+                    } else if (catalog.source === 'anilist' && catalog.id.startsWith('anilist.')) {
+                      listUrl = (catalog as any).metadata?.url || null;
+                      
+                      if (!listUrl && (catalog as any).metadata?.username && (catalog as any).metadata?.listName) {
+                        const username = (catalog as any).metadata.username;
+                        const listName = (catalog as any).metadata.listName;
+                        listUrl = `https://anilist.co/user/${username}/animelist/${encodeURIComponent(listName)}`;
+                      } else if (!listUrl) {
+                        const catalogId = catalog.id;
+                        const parts = catalogId.split('.');
+                        if (parts.length === 2) {
+                          if ((catalog as any).metadata?.username) {
+                            const username = (catalog as any).metadata.username;
+                            const listName = parts[1];
+                            listUrl = `https://anilist.co/user/${username}/animelist/${encodeURIComponent(listName)}`;
+                          }
+                        } else if (parts.length >= 3) {
+                          // anilist.{username}.{listName}
+                          const username = parts[1];
+                          const listName = parts.slice(2).join('.');
+                          listUrl = `https://anilist.co/user/${username}/animelist/${encodeURIComponent(listName)}`;
+                        }
+                      }
                     }
                     
                     if (listUrl) {
                       window.open(listUrl, '_blank', 'noopener,noreferrer');
                     }
                   }}
-                  aria-label={`View on ${catalog.source === 'mdblist' ? 'MDBList' : catalog.source === 'letterboxd' ? 'Letterboxd' : 'Trakt'}`}
+                  aria-label={`View on ${catalog.source === 'mdblist' ? 'MDBList' : catalog.source === 'letterboxd' ? 'Letterboxd' : catalog.source === 'trakt' ? 'Trakt' : catalog.source === 'tmdb' ? 'TMDB' : 'AniList'}`}
                 >
                   <ExternalLink className="h-5 w-5 text-blue-500" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>View on {catalog.source === 'mdblist' ? 'MDBList' : catalog.source === 'letterboxd' ? 'Letterboxd' : 'Trakt'}</TooltipContent>
+              <TooltipContent>View on {catalog.source === 'mdblist' ? 'MDBList' : catalog.source === 'letterboxd' ? 'Letterboxd' : catalog.source === 'trakt' ? 'Trakt' : catalog.source === 'tmdb' ? 'TMDB' : 'AniList'}</TooltipContent>
             </Tooltip>
           )}
 

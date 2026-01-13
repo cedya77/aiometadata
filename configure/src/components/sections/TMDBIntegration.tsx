@@ -323,7 +323,8 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
         metadata: {
           listId: listId,
           listName: listPreview.name,
-          listDescription: listPreview.description
+          listDescription: listPreview.description,
+          url: `https://www.themoviedb.org/list/${listId}`
         }
       };
 
@@ -352,7 +353,8 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
         metadata: {
           listId: listId,
           listName: listPreview.name,
-          listDescription: listPreview.description
+          listDescription: listPreview.description,
+          url: `https://www.themoviedb.org/list/${listId}`
         }
       };
 
@@ -368,7 +370,8 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
         metadata: {
           listId: listId,
           listName: listPreview.name,
-          listDescription: listPreview.description
+          listDescription: listPreview.description,
+          url: `https://www.themoviedb.org/list/${listId}`
         }
       };
 

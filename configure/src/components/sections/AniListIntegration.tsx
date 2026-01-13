@@ -248,6 +248,9 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
           }
 
           // Create CatalogConfig for each selected list
+          const listUsername = username || undefined;
+          const listUrl = listUsername ? `https://anilist.co/user/${listUsername}/animelist/${encodeURIComponent(listName)}` : undefined;
+          
           const newCatalog: CatalogConfig = {
             id: catalogId,
             name: listName,
@@ -257,12 +260,13 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             source: 'anilist',
             sort,
             sortDirection,
-            // Include metadata (username, itemCount, isCustomList)
+            // Include metadata (username, itemCount, isCustomList, url)
             metadata: {
-              username: username || undefined,
+              username: listUsername,
               listName,
               itemCount: list.entryCount,
               isCustomList: list.isCustomList,
+              ...(listUrl && { url: listUrl }),
             },
           };
 
@@ -331,6 +335,8 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
           }
 
           // Create CatalogConfig for each selected list
+          const listUrl = `https://anilist.co/user/${trimmedUsername}/animelist/${encodeURIComponent(listName)}`;
+          
           const newCatalog: CatalogConfig = {
             id: catalogId,
             name: `${listName} (@${trimmedUsername})`,
@@ -340,12 +346,13 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             source: 'anilist',
             sort,
             sortDirection,
-            // Include metadata (username, itemCount, isCustomList)
+            // Include metadata (username, itemCount, isCustomList, url)
             metadata: {
               username: trimmedUsername,
               listName,
               itemCount: list.entryCount,
               isCustomList: list.isCustomList,
+              url: listUrl,
             },
           };
 
