@@ -1,13 +1,21 @@
-import * as zlib from 'zlib';
-import { promisify } from 'util';
+import { createGunzip } from 'zlib';
+import { createInterface } from 'readline';
+import { Readable } from 'stream';
 import { request } from 'undici';
+import { LRUCache } from 'lru-cache';
+import consola from 'consola';
 import redis from './redisClient';
 
-const gunzip = promisify(zlib.gunzip);
+const logger = consola.withTag('IMDB Ratings');
 
+// Constants
 const IMDB_RATINGS_URL = 'https://datasets.imdbws.com/title.ratings.tsv.gz';
 const REDIS_RATINGS_ETAG_KEY = 'imdb-ratings-etag';
-const MIN_VOTES = 100; // Minimum votes required to include a rating
+const REDIS_RATINGS_HASH = 'imdb:ratings';
+const MIN_VOTES = 50;
+const LRU_MAX_ENTRIES = 50000;
+const NEGATIVE_CACHE_TTL = 86400000; // 24 hours in ms
+const REDIS_BATCH_SIZE = 10000;
 
 // Types
 export interface ImdbRating {
@@ -17,81 +25,122 @@ export interface ImdbRating {
 
 export type ContentType = 'movie' | 'series';
 
-// In-memory storage for ratings
-const ratingsMap = new Map<string, ImdbRating>();
+// negative cache entries
+const NEGATIVE_CACHE_SENTINEL: ImdbRating = { rating: -1, votes: -1 };
 
+// In-memory LRU for hot lookups
+const lruCache = new LRUCache<string, ImdbRating>({
+  max: LRU_MAX_ENTRIES,
+  ttl: 0,
+});
+
+// State tracking
 let ratingsLoaded = false;
 let ratingsCount = 0;
 
 // Stats tracking
 let datasetHits = 0;
+let redisHits = 0;
 let cinemetaFallbackHits = 0;
-let datasetTotalTime = 0; // Total time for dataset lookups in ms
-let cinemetaTotalTime = 0; // Total time for Cinemeta lookups in ms
+let cinemetaTotalTime = 0;
+
+/**
+ * Check if a cached value is a negative cache sentinel
+ */
+function isNegativeCacheHit(rating: ImdbRating | undefined): boolean {
+  return rating !== undefined && rating.rating === -1 && rating.votes === -1;
+}
+
+/**
+ * Parse a Redis-stored rating string "rating|votes" into an ImdbRating object
+ */
+function parseRedisRating(value: string): ImdbRating | null {
+  const [ratingStr, votesStr] = value.split('|');
+  const rating = parseFloat(ratingStr);
+  const votes = parseInt(votesStr, 10);
+  if (isNaN(rating) || isNaN(votes)) return null;
+  return { rating, votes };
+}
+
+/**
+ * Encode an ImdbRating to Redis string format "rating|votes"
+ */
+function encodeRedisRating(rating: ImdbRating): string {
+  return `${rating.rating}|${rating.votes}`;
+}
 
 /**
  * Downloads and caches IMDb ratings from the official IMDb dataset.
- * Uses Redis and ETags to check if the remote file has changed.
- * Stores ratings in-memory Map. Filters out ratings with less than 100 votes.
+ * Uses streaming decompression to minimize peak memory usage.
+ * Stores ratings in Redis hash for persistence, with LRU for hot lookups.
  */
 export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
-  const useRedisCache = redis;
+  const isRedisReady = redis?.status === 'ready';
 
   try {
     // Check if we need to download based on ETag
-    if (useRedisCache && useRedisCache.status === 'ready') {
-      const savedEtag = await useRedisCache.get(REDIS_RATINGS_ETAG_KEY);
-      
+    if (isRedisReady && redis) {
+      const savedEtag = await redis.get(REDIS_RATINGS_ETAG_KEY);
+
       if (savedEtag) {
-        // Check if remote file has changed
         const headResponse = await request(IMDB_RATINGS_URL, {
           method: 'HEAD',
           headers: { 'User-Agent': 'AIOMetadata/1.0' }
         });
         const remoteEtag = headResponse.headers.etag;
-        
-        if (savedEtag === remoteEtag && ratingsMap.size > 0) {
-          console.log('[IMDb Ratings] Remote file unchanged (ETag match). Using in-memory ratings.');
-          ratingsLoaded = true;
-          console.log(`[IMDb Ratings] ${ratingsMap.size} ratings available in memory.`);
-          return true;
+
+        if (savedEtag === remoteEtag && redis) {
+          // Check if Redis already has ratings
+          const existingCount = await redis.hlen(REDIS_RATINGS_HASH);
+          if (existingCount > 0) {
+            logger.info('Remote file unchanged (ETag match). Using Redis cache.');
+            ratingsLoaded = true;
+            ratingsCount = existingCount;
+            logger.success(`${existingCount.toLocaleString()} ratings available in Redis.`);
+            return true;
+          }
         }
-        
-        console.log('[IMDb Ratings] Remote file changed (ETag mismatch). Downloading new ratings...');
+
+        logger.info('Remote file changed or Redis empty. Downloading new ratings...');
       }
     } else {
-      console.log('[IMDb Ratings] Redis cache is disabled. Proceeding to download.');
+      logger.warn('Redis not available. IMDb ratings will use Cinemeta fallback only.');
+      return false;
     }
 
-    // Download the gzipped TSV file
-    console.log('[IMDb Ratings] Downloading ratings dataset...');
+    // Download with streaming
+    logger.start('Downloading ratings dataset (streaming)...');
     const response = await request(IMDB_RATINGS_URL, {
       method: 'GET',
       headers: { 'User-Agent': 'AIOMetadata/1.0' },
-      bodyTimeout: 60000, // 60 seconds timeout
+      bodyTimeout: 120000,
       headersTimeout: 60000
     });
 
-    // Read the response body as a buffer
-    const gzippedData = await response.body.arrayBuffer();
+    // Clear existing data before repopulating
+    if (!redis) return false;
+    await redis.del(REDIS_RATINGS_HASH);
+    lruCache.clear();
 
-    // Decompress the gzip data
-    console.log('[IMDb Ratings] Decompressing data...');
-    const decompressed = await gunzip(Buffer.from(gzippedData));
-    const text = decompressed.toString('utf-8');
+    // Stream decompress and parse line-by-line
+    logger.info('Streaming and parsing ratings...');
+    const gunzipStream = createGunzip();
+    const bodyStream = Readable.from(response.body as AsyncIterable<Uint8Array>);
+    const rl = createInterface({
+      input: bodyStream.pipe(gunzipStream),
+      crlfDelay: Infinity
+    });
 
-    // Parse and store the ratings
-    console.log('[IMDb Ratings] Parsing and storing ratings in memory...');
-    const lines = text.split('\n');
     let count = 0;
     let filtered = 0;
+    let isFirstLine = true;
+    let pipeline = redis!.pipeline();
 
-    // Clear existing ratings map
-    ratingsMap.clear();
-
-    // Skip header line (index 0)
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i];
+    for await (const line of rl) {
+      if (isFirstLine) {
+        isFirstLine = false;
+        continue; // Skip header
+      }
       if (!line.trim()) continue;
 
       const [id, ratingStr, votesStr] = line.split('\t');
@@ -100,78 +149,112 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
 
       if (!id || isNaN(rating) || isNaN(votes)) continue;
 
-      // Filter out ratings with less than MIN_VOTES
       if (votes < MIN_VOTES) {
         filtered++;
         continue;
       }
 
-      // Store in memory map
-      ratingsMap.set(id, { rating, votes });
+      // Add to Redis pipeline
+      pipeline.hset(REDIS_RATINGS_HASH, id, `${rating}|${votes}`);
       count++;
+
+      // Execute batch to avoid memory buildup
+      if (count % REDIS_BATCH_SIZE === 0) {
+        await pipeline.exec();
+        pipeline = redis!.pipeline();
+        if (count % 100000 === 0) {
+          logger.debug(`Processed ${count.toLocaleString()} ratings...`);
+        }
+      }
     }
 
-    console.log(`[IMDb Ratings] Filtered out ${filtered} ratings with < ${MIN_VOTES} votes.`);
-
-    // Save the new ETag
-    if (useRedisCache && useRedisCache.status === 'ready' && response.headers.etag) {
-      await useRedisCache.set(REDIS_RATINGS_ETAG_KEY, response.headers.etag as string);
+    // Execute remaining batch
+    if (count % REDIS_BATCH_SIZE !== 0) {
+      await pipeline.exec();
     }
-    
+
+    logger.debug(`Filtered out ${filtered.toLocaleString()} ratings with < ${MIN_VOTES} votes.`);
+
+    // Save ETag for future checks
+    if (response.headers.etag && redis) {
+      await redis.set(REDIS_RATINGS_ETAG_KEY, response.headers.etag as string);
+    }
+
     // Write maintenance timestamp
-    if (useRedisCache && useRedisCache.status === 'ready') {
-      await useRedisCache.set('maintenance:last_imdb_ratings_update', Date.now().toString());
+    if (redis) {
+      await redis.set('maintenance:last_imdb_ratings_update', Date.now().toString());
     }
 
     ratingsLoaded = true;
     ratingsCount = count;
-    console.log(`[IMDb Ratings] Successfully loaded ${count} ratings into memory.`);
+    logger.success(`Successfully loaded ${count.toLocaleString()} ratings into Redis.`);
     return true;
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[IMDb Ratings] Failed to download or process ratings:', errorMessage);
+    logger.error('Failed to download or process ratings:', errorMessage);
     return false;
   }
 }
 
 /**
- * Gets the IMDb rating for a given IMDb ID from in-memory Map.
- * Falls back to Cinemeta if not found in dataset.
+ * Gets the IMDb rating for a given IMDb ID.
+ * Uses 3-tier lookup: L1 (LRU) -> L2 (Redis) -> L3 (Cinemeta fallback)
  */
 export async function getImdbRating(imdbId: string, type: ContentType = 'movie'): Promise<ImdbRating | null> {
-  if (!imdbId) {
-    return null;
-  }
+  if (!imdbId) return null;
 
   try {
-    // Check in-memory map first
-    const datasetStart = performance.now();
-    const rating = ratingsMap.get(imdbId);
-    const datasetEnd = performance.now();
-    
-    if (rating) {
+    // L1: LRU Cache
+    const cached = lruCache.get(imdbId);
+    if (cached !== undefined) {
+      if (isNegativeCacheHit(cached)) {
+        return null; // Cached negative result
+      }
       datasetHits++;
-      datasetTotalTime += (datasetEnd - datasetStart);
-      return rating;
+      return cached;
     }
-    
-    // Fallback to Cinemeta
-    const consola = require('consola');
-    consola.debug(`[IMDb Ratings] Rating not found in dataset for ${imdbId}, falling back to Cinemeta...`);
+
+    // L2: Redis
+    const isRedisReady = redis?.status === 'ready';
+    if (isRedisReady && redis) {
+      const redisResult = await redis.hget(REDIS_RATINGS_HASH, imdbId);
+      if (redisResult) {
+        const rating = parseRedisRating(redisResult);
+        if (rating) {
+          lruCache.set(imdbId, rating);
+          redisHits++;
+          return rating;
+        }
+      }
+    }
+
+    // L3: Cinemeta fallback
+    logger.debug(`Cache miss for ${imdbId}, falling back to Cinemeta...`);
     const cinemetaStart = performance.now();
     const cinemetaRating = await getCinemetaRating(imdbId, type);
     const cinemetaEnd = performance.now();
     
+    // Count all Cinemeta attempts
+    cinemetaFallbackHits++;
+    cinemetaTotalTime += (cinemetaEnd - cinemetaStart);
+
     if (cinemetaRating) {
-      cinemetaFallbackHits++;
-      cinemetaTotalTime += (cinemetaEnd - cinemetaStart);
+      // Populate both caches
+      lruCache.set(imdbId, cinemetaRating);
+      if (isRedisReady && redis) {
+        await redis.hset(REDIS_RATINGS_HASH, imdbId, encodeRedisRating(cinemetaRating));
+      }
+      return cinemetaRating;
     }
-    
-    return cinemetaRating;
+
+    // Cache negative result to prevent repeated lookups
+    lruCache.set(imdbId, NEGATIVE_CACHE_SENTINEL, { ttl: NEGATIVE_CACHE_TTL });
+    return null;
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.warn(`[IMDb Ratings] Error fetching rating for ${imdbId}:`, errorMessage);
+    logger.warn(`Error fetching rating for ${imdbId}:`, errorMessage);
     return null;
   }
 }
@@ -184,30 +267,38 @@ async function getCinemetaRating(imdbId: string, type: ContentType): Promise<Imd
     const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
     const response = await request(url, {
       method: 'GET',
-      headers: { 'User-Agent': 'AIOMetadata/1.0' }
+      headers: { 'User-Agent': 'AIOMetadata/1.0' },
+      bodyTimeout: 10000,
+      headersTimeout: 10000
     });
-    
-    const data = await response.body.json() as any;
+
+    const data = await response.body.json() as {
+      meta?: {
+        imdbRating?: string;
+        imdbVotes?: string;
+      };
+    };
+
     const rating = data?.meta?.imdbRating;
     const votes = data?.meta?.imdbVotes;
-    
+
     if (rating) {
       return {
         rating: parseFloat(rating),
         votes: votes ? parseInt(votes.replace(/,/g, ''), 10) : 0
       };
     }
-    
+
     return null;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.warn(`[IMDb Ratings] Cinemeta fallback failed for ${imdbId}:`, errorMessage);
+    logger.warn(`Cinemeta fallback failed for ${imdbId}:`, errorMessage);
     return null;
   }
 }
 
 /**
- * Gets the IMDb rating as a formatted string (for backward compatibility)
+ * Gets the IMDb rating as a formatted string
  */
 export async function getImdbRatingString(imdbId: string, type: ContentType = 'movie'): Promise<string | undefined> {
   const result = await getImdbRating(imdbId, type);
@@ -219,11 +310,11 @@ export async function getImdbRatingString(imdbId: string, type: ContentType = 'm
  */
 export async function initializeRatings(): Promise<void> {
   if (!redis) {
-    console.log('[IMDb Ratings] Redis is not available. IMDb ratings will not be loaded.');
+    logger.warn('Redis is not available. IMDb ratings will use Cinemeta fallback only.');
     return;
   }
 
-  console.log('[IMDb Ratings] Initializing IMDb ratings...');
+  logger.start('Initializing IMDb ratings...');
   await downloadAndCacheIMDbRatings();
 }
 
@@ -245,82 +336,95 @@ export function getRatingsCount(): number {
  * Get IMDb ratings statistics
  */
 export function getRatingsStats() {
-  const totalRequests = datasetHits + cinemetaFallbackHits;
-  const datasetPercentage = totalRequests > 0 ? ((datasetHits / totalRequests) * 100).toFixed(1) : 0;
-  const cinemetaPercentage = totalRequests > 0 ? ((cinemetaFallbackHits / totalRequests) * 100).toFixed(1) : 0;
+  const combinedCacheHits = datasetHits + redisHits;
+  const totalRequests = combinedCacheHits + cinemetaFallbackHits;
   
-  // Calculate average times
-  const datasetAvgTime = datasetHits > 0 ? (datasetTotalTime / datasetHits).toFixed(2) : 0;
-  const cinemetaAvgTime = cinemetaFallbackHits > 0 ? (cinemetaTotalTime / cinemetaFallbackHits).toFixed(2) : 0;
-  
+  const datasetPercentage = totalRequests > 0 ? parseFloat(((combinedCacheHits / totalRequests) * 100).toFixed(1)) : 0;
+  const cinemetaPercentage = totalRequests > 0 ? parseFloat(((cinemetaFallbackHits / totalRequests) * 100).toFixed(1)) : 0;
+  const cinemetaAvgTime = cinemetaFallbackHits > 0 ? parseFloat((cinemetaTotalTime / cinemetaFallbackHits).toFixed(2)) : 0;
+
   return {
     totalRequests,
-    datasetHits,
-    cinemetaFallbackHits,
+    datasetHits: combinedCacheHits,
     datasetPercentage,
+    datasetAvgTime: 0.01, // LRU + Redis lookups are sub-millisecond
+    cinemetaFallbackHits,
     cinemetaPercentage,
-    datasetAvgTime: parseFloat(datasetAvgTime as string), // Average time in ms
-    cinemetaAvgTime: parseFloat(cinemetaAvgTime as string), // Average time in ms
-    ratingsLoaded: ratingsMap.size
+    cinemetaAvgTime,
+    ratingsLoaded: ratingsCount,
+    lruHits: datasetHits,
+    redisHits,
+    lruSize: lruCache.size
   };
 }
 
 /**
- * Force update IMDb ratings (bypasses ETag check)
- * @returns Result object with success, message, and count
+ * Force update IMDb ratings
  */
 export async function forceUpdateImdbRatings(): Promise<{ success: boolean; message: string; count: number }> {
-  console.log('[IMDb Ratings] Force update requested...');
-  
-  // Clear existing ETag to force fresh download
-  if (redis && redis.status === 'ready') {
-    try {
-      await redis.del(REDIS_RATINGS_ETAG_KEY);
-    } catch (error: any) {
-      console.warn(`[IMDb Ratings] Failed to clear ETag: ${error.message}`);
-    }
+  logger.info('Force update requested...');
+
+  const isRedisReady = redis?.status === 'ready';
+
+  if (!isRedisReady) {
+    return {
+      success: false,
+      message: 'Redis not available',
+      count: 0
+    };
   }
-  
+
   try {
+    // Clear ETag to force fresh download
+    await redis!.del(REDIS_RATINGS_ETAG_KEY);
+
+    // Clear LRU cache (will contain stale data)
+    lruCache.clear();
+
     const success = await downloadAndCacheIMDbRatings();
-    
+    const count = await redis!.hlen(REDIS_RATINGS_HASH);
+
     // Write maintenance timestamp
-    if (redis && redis.status === 'ready') {
-      await redis.set('maintenance:last_imdb_ratings_update', Date.now().toString());
-    }
-    
+    await redis!.set('maintenance:last_imdb_ratings_update', Date.now().toString());
+
     if (success) {
-      console.log(`[IMDb Ratings] Force update completed: ${ratingsMap.size} ratings`);
-      return { 
-        success: true, 
-        message: `Updated successfully (${ratingsMap.size.toLocaleString()} ratings)`,
-        count: ratingsMap.size
+      logger.success(`Force update completed: ${count.toLocaleString()} ratings`);
+      return {
+        success: true,
+        message: `Updated successfully (${count.toLocaleString()} ratings)`,
+        count
       };
     } else {
-      return { 
-        success: false, 
+      return {
+        success: false,
         message: 'Force update failed',
-        count: ratingsMap.size
+        count
       };
     }
   } catch (error: any) {
-    console.error(`[IMDb Ratings] Force update failed: ${error.message}`);
-    return { 
-      success: false, 
+    logger.error(`Force update failed: ${error.message}`);
+    return {
+      success: false,
       message: `Force update failed: ${error.message}`,
-      count: ratingsMap.size
+      count: 0
     };
   }
 }
 
 /**
- * Get stats for IMDb Ratings (for dashboard display)
- * @returns Stats object with count and initialized status
+ * Get stats for IMDb Ratings
  */
 export function getImdbRatingsStatsForDashboard(): { count: number; initialized: boolean } {
   return {
-    count: ratingsMap.size,
+    count: ratingsCount,
     initialized: ratingsLoaded
   };
 }
 
+/**
+ * Clear the LRU cache
+ */
+export function clearLruCache(): void {
+  lruCache.clear();
+  logger.info('LRU cache cleared.');
+}

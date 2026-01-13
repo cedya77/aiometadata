@@ -1769,6 +1769,8 @@ class DashboardAPI {
         'anime_list:last_update',  // Anime-list XML update timestamp
         'addon:start_time',        // Uptime tracking
         'system:app_version',      // Version tracking
+        'imdb:ratings',            // IMDb ratings hash (essential, large dataset)
+        'imdb-ratings-etag',       // IMDb ratings ETag for update checking
       ];
 
       let deletedCount = 0;
