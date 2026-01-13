@@ -875,33 +875,54 @@ async function getManifest(config) {
   const isSearchEnabled = config.search?.enabled ?? true;
   const engineEnabled = config.search?.engineEnabled || {};
   const searchProviders = config.search?.providers || {};
-  const providerNames = config.search?.providerNames || {};
+  const searchNames = config.search?.searchNames || {};
+  // Backward compatibility: support old providerNames format
+  const legacyProviderNames = config.search?.providerNames || {};
   const searchOrder = config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'];
   
-  // Helper function to get display name for search provider
-  const getSearchProviderDisplayName = (providerId) => {
-    const customName = providerNames[providerId];
-    if (customName) return customName;
-    
-    // Fallback to provider ID formatted nicely
-    return providerId.split('.')[0].toUpperCase();
+  // Helper function to get default search name
+  const getDefaultSearchName = (searchId) => {
+    const searchNameMap = {
+      'movie': 'Movies Search',
+      'series': 'Series Search',
+      'anime_series': 'Anime Series Search',
+      'anime_movie': 'Anime Movies Search',
+      'tvdb.collections.search': 'TVDB Collections',
+      'gemini.search': 'AI Search',
+    };
+    return searchNameMap[searchId] || searchId;
   };
 
   // Helper function to get search catalog name (handles custom names vs default names)
-  const getSearchCatalogName = (providerId, prefix = '', suffix = 'Search') => {
-    const customName = providerNames[providerId];
+  const getSearchCatalogName = (searchId, prefix = '', suffix = 'Search') => {
+    const customName = searchNames[searchId];
     if (customName) {
       // If custom name is provided, use it as-is (no suffix)
       return `${prefix}${customName}`;
     }
     
-    // Fallback to provider ID formatted nicely with suffix
-    const providerName = providerId.split('.')[0].toUpperCase();
-    return `${prefix}${providerName} ${suffix}`;
+    let legacyName = null;
+    if (searchId === 'movie' && legacyProviderNames[searchProviders.movie]) {
+      legacyName = legacyProviderNames[searchProviders.movie];
+    } else if (searchId === 'series' && legacyProviderNames[searchProviders.series]) {
+      legacyName = legacyProviderNames[searchProviders.series];
+    } else if (searchId === 'anime_series' && legacyProviderNames[searchProviders.anime_series]) {
+      legacyName = legacyProviderNames[searchProviders.anime_series];
+    } else if (searchId === 'anime_movie' && legacyProviderNames[searchProviders.anime_movie]) {
+      legacyName = legacyProviderNames[searchProviders.anime_movie];
+    } else if (searchId === 'tvdb.collections.search' && legacyProviderNames['tvdb.collections.search']) {
+      legacyName = legacyProviderNames['tvdb.collections.search'];
+    } else if (searchId === 'gemini.search' && legacyProviderNames['gemini.search']) {
+      legacyName = legacyProviderNames['gemini.search'];
+    }
+    
+    if (legacyName) {
+      return `${prefix}${legacyName}`;
+    }
+    
+    // Fallback to default search name
+    return `${prefix}${getDefaultSearchName(searchId)}`;
   };
-
-  const movieSearchProviderName = getSearchProviderDisplayName(searchProviders.movie);
-  const seriesSearchProviderName = getSearchProviderDisplayName(searchProviders.series);
 
   if (isSearchEnabled) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
@@ -967,7 +988,7 @@ async function getManifest(config) {
         catalogs.push({
           id: config.provider === 'gemini.search' ? 'gemini.search' : "search",
           type: config.type,
-          name: getSearchCatalogName(config.provider, prefix, config.suffix),
+          name: getSearchCatalogName(config.id, prefix, config.suffix),
           extra: [{ name: 'search', isRequired: true }]
         });
       });

@@ -154,9 +154,9 @@ export interface AppConfig {
     engineRatingPosters?: {
       [engine: string]: boolean;
     };
-    // Custom names for search providers
-    providerNames?: {
-      [providerId: string]: string;
+    // Custom names for search types (movie, series, anime_series, anime_movie, etc.)
+    searchNames?: {
+      [searchType: string]: string;
     };
     // Order of search catalogs
     searchOrder?: string[];

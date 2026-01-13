@@ -931,6 +931,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
   const searchConfig = {
     language: config.language || 'en-US',
     searchProviders: config.search?.providers || {},
+    searchNames: config.search?.searchNames || {},
     providerNames: config.search?.providerNames || {},
     searchOrder: config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'],
     engineEnabled: config.search?.engineEnabled || {},

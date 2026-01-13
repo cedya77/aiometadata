@@ -16,14 +16,14 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 // Sortable Search Provider Item Component
-function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnabledChange, onengineRatingPostersChange, getProviderDisplayName, getProviderBaseLabel, getProviderCustomName, hasRPDBKey, engineRatingPostersEnabled }: {
+function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnabledChange, onengineRatingPostersChange, getSearchDisplayName, getProviderBaseLabel, getSearchCustomName, hasRPDBKey, engineRatingPostersEnabled }: {
   provider: { id: string; type: string; provider: string };
-  onEditProviderName: (providerId: string) => void;
+  onEditSearchName: (searchId: string) => void;
   onEngineEnabledChange: (engine: string, checked: boolean) => void;
   onengineRatingPostersChange: (engine: string, checked: boolean) => void;
-  getProviderDisplayName: (providerId: string) => string;
+  getSearchDisplayName: (searchId: string, providerId: string) => string;
   getProviderBaseLabel: (providerId: string) => string;
-  getProviderCustomName: (providerId: string) => string;
+  getSearchCustomName: (searchId: string) => string;
   hasRPDBKey: boolean;
   engineRatingPostersEnabled: boolean;
 }) {
@@ -34,6 +34,9 @@ function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnab
     transition,
     zIndex: isDragging ? 10 : 'auto',
   };
+
+  const searchName = getSearchDisplayName(provider.id, provider.provider);
+  const providerLabel = getProviderBaseLabel(provider.provider);
 
   return (
     <div
@@ -52,18 +55,16 @@ function SortableSearchProviderItem({ provider, onEditProviderName, onEngineEnab
       </div>
       <div className="flex-1 text-sm">
         <div className="font-medium">
-          {getProviderCustomName(provider.provider) || getProviderBaseLabel(provider.provider)}
+          {searchName}
         </div>
-        {getProviderCustomName(provider.provider) && (
-          <div className="text-xs text-muted-foreground">
-            {getProviderBaseLabel(provider.provider)}
-          </div>
-        )}
+        <div className="text-xs text-muted-foreground">
+          {providerLabel}
+        </div>
       </div>
       <Button
         variant="outline"
         size="sm"
-        onClick={() => onEditProviderName(provider.provider)}
+        onClick={() => onEditSearchName(provider.id)}
         className="px-2"
       >
         <Edit2 className="h-4 w-4" />
@@ -178,33 +179,43 @@ export function SearchSettings() {
     return provider?.label || providerId;
   };
 
-  const getProviderCustomName = (providerId: string) =>
-    config.search.providerNames?.[providerId]?.trim() || '';
+  // Helper function to get default search name
+  const getDefaultSearchName = (searchId: string) => {
+    const searchNameMap: { [key: string]: string } = {
+      'movie': 'Movies Search',
+      'series': 'Series Search',
+      'anime_series': 'Anime Series Search',
+      'anime_movie': 'Anime Movies Search',
+      'tvdb.collections.search': 'TVDB Collections',
+      'gemini.search': 'AI Search',
+    };
+    return searchNameMap[searchId] || searchId;
+  };
 
-  const getProviderDisplayName = (providerId: string) => {
-    const baseLabel = getProviderBaseLabel(providerId);
-    const customName = getProviderCustomName(providerId);
+  const getSearchCustomName = (searchId: string) =>
+    config.search.searchNames?.[searchId]?.trim() || '';
 
-    if (customName && customName !== baseLabel) {
-      return `${customName} • ${baseLabel}`;
+  const getSearchDisplayName = (searchId: string, providerId: string) => {
+    const customName = getSearchCustomName(searchId);
+    if (customName) {
+      return customName;
     }
-
-    return baseLabel;
+    return getDefaultSearchName(searchId);
   };
 
-  const handleEditProviderName = (providerId: string) => {
-    setEditingProvider(providerId);
-    setEditName(getProviderCustomName(providerId) || getProviderBaseLabel(providerId));
+  const handleEditSearchName = (searchId: string) => {
+    setEditingProvider(searchId);
+    setEditName(getSearchCustomName(searchId) || getDefaultSearchName(searchId));
   };
 
-  const handleSaveProviderName = () => {
+  const handleSaveSearchName = () => {
     if (editingProvider && editName.trim()) {
       setConfig(prev => ({
         ...prev,
         search: {
           ...prev.search,
-          providerNames: {
-            ...prev.search.providerNames,
+          searchNames: {
+            ...prev.search.searchNames,
             [editingProvider]: editName.trim()
           }
         }
@@ -219,12 +230,28 @@ export function SearchSettings() {
     setEditName('');
   };
 
+  // Legacy function for backward compatibility with Primary Keyword Engines section
+  const getProviderDisplayName = (providerId: string) => {
+    const baseLabel = getProviderBaseLabel(providerId);
+    return baseLabel;
+  };
+
   const handleSearchEnabledChange = (checked: boolean) => {
     setConfig(prev => ({ ...prev, search: { ...prev.search, enabled: checked } }));
   };
 
   const handleAiToggle = (checked: boolean) => {
-    setConfig(prev => ({ ...prev, search: { ...prev.search, ai_enabled: checked } }));
+    setConfig(prev => ({
+      ...prev,
+      search: {
+        ...prev.search,
+        ai_enabled: checked,
+        engineEnabled: {
+          ...prev.search.engineEnabled,
+          'gemini.search': checked,
+        },
+      },
+    }));
   };
 
   const handleProviderChange = (
@@ -252,6 +279,7 @@ export function SearchSettings() {
           ...prev.search.engineEnabled,
           [engine]: checked,
         },
+        ...(engine === 'gemini.search' && { ai_enabled: checked }),
       },
     }));
   };
@@ -322,7 +350,12 @@ export function SearchSettings() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Movies Search Engine:</Label>
+                        <div>
+                            <Label className="text-lg font-medium">Movies Search Engine:</Label>
+                            <div className="text-sm text-muted-foreground mt-0.5">
+                                Search name: {getSearchDisplayName('movie', config.search.providers.movie)}
+                            </div>
+                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -341,7 +374,7 @@ export function SearchSettings() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleEditProviderName(config.search.providers.movie)}
+                                onClick={() => handleEditSearchName('movie')}
                                 className="px-2"
                             >
                                 <Edit2 className="h-4 w-4" />
@@ -365,7 +398,12 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Series Search Engine:</Label>
+                        <div>
+                            <Label className="text-lg font-medium">Series Search Engine:</Label>
+                            <div className="text-sm text-muted-foreground mt-0.5">
+                                Search name: {getSearchDisplayName('series', config.search.providers.series)}
+                            </div>
+                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -384,7 +422,7 @@ export function SearchSettings() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleEditProviderName(config.search.providers.series)}
+                                onClick={() => handleEditSearchName('series')}
                                 className="px-2"
                             >
                                 <Edit2 className="h-4 w-4" />
@@ -408,7 +446,12 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
+                        <div>
+                            <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
+                            <div className="text-sm text-muted-foreground mt-0.5">
+                                Search name: {getSearchDisplayName('anime_series', config.search.providers.anime_series)}
+                            </div>
+                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.anime_series} onValueChange={(val) => handleProviderChange('anime_series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -425,7 +468,7 @@ export function SearchSettings() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleEditProviderName(config.search.providers.anime_series)}
+                                onClick={() => handleEditSearchName('anime_series')}
                                 className="px-2"
                             >
                                 <Edit2 className="h-4 w-4" />
@@ -449,7 +492,12 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
+                        <div>
+                            <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
+                            <div className="text-sm text-muted-foreground mt-0.5">
+                                Search name: {getSearchDisplayName('anime_movie', config.search.providers.anime_movie)}
+                            </div>
+                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.anime_movie} onValueChange={(val) => handleProviderChange('anime_movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -466,7 +514,7 @@ export function SearchSettings() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleEditProviderName(config.search.providers.anime_movie)}
+                                onClick={() => handleEditSearchName('anime_movie')}
                                 className="px-2"
                             >
                                 <Edit2 className="h-4 w-4" />
@@ -501,15 +549,20 @@ export function SearchSettings() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                            <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
+                            <div>
+                                <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
+                                <div className="text-sm text-muted-foreground mt-0.5">
+                                    Search name: {getSearchDisplayName('tvdb.collections.search', 'tvdb.collections.search')}
+                                </div>
+                            </div>
                             <div className="flex items-center gap-3 w-full sm:w-[280px]">
                                 <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
-                                    {getProviderDisplayName('tvdb.collections.search')}
+                                    {getSearchDisplayName('tvdb.collections.search', 'tvdb.collections.search')}
                                 </div>
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => handleEditProviderName('tvdb.collections.search')}
+                                    onClick={() => handleEditSearchName('tvdb.collections.search')}
                                     className="px-2"
                                 >
                                     <Edit2 className="h-4 w-4" />
@@ -588,12 +641,12 @@ export function SearchSettings() {
                                     <SortableSearchProviderItem
                                         key={provider.id}
                                         provider={provider}
-                                        onEditProviderName={handleEditProviderName}
+                                        onEditSearchName={handleEditSearchName}
                                         onEngineEnabledChange={handleEngineEnabledChange}
                                         onengineRatingPostersChange={handleengineRatingPostersChange}
-                                        getProviderDisplayName={getProviderDisplayName}
+                                        getSearchDisplayName={getSearchDisplayName}
                                         getProviderBaseLabel={getProviderBaseLabel}
-                                        getProviderCustomName={getProviderCustomName}
+                                        getSearchCustomName={getSearchCustomName}
                                         hasRPDBKey={hasRPDBKey}
                                         engineRatingPostersEnabled={config.search.engineRatingPosters?.[provider.provider] ?? true}
                                     />
@@ -606,29 +659,29 @@ export function SearchSettings() {
         </div>
       )}
 
-      {/* Edit Provider Name Dialog */}
+      {/* Edit Search Name Dialog */}
       <Dialog open={!!editingProvider} onOpenChange={handleCancelEdit}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Search Provider Name</DialogTitle>
+            <DialogTitle>Edit Search Name</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-provider-name">Provider Name</Label>
+              <Label htmlFor="edit-search-name">Search Name</Label>
               <Input
-                id="edit-provider-name"
+                id="edit-search-name"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleSaveProviderName();
+                    handleSaveSearchName();
                   } else if (e.key === 'Escape') {
                     handleCancelEdit();
                   }
                 }}
                 autoFocus
-                placeholder="Enter custom name for this search provider"
+                placeholder="Enter custom name for this search"
               />
             </div>
           </div>
@@ -636,7 +689,7 @@ export function SearchSettings() {
             <Button variant="outline" onClick={handleCancelEdit}>
               Cancel
             </Button>
-            <Button onClick={handleSaveProviderName} disabled={!editName.trim()}>
+            <Button onClick={handleSaveSearchName} disabled={!editName.trim()}>
               Save
             </Button>
           </div>
