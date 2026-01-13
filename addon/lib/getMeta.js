@@ -1561,10 +1561,11 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           } else if (isUnaired) {
             // For unaired episodes: try season poster, then background, then null
             const season = seasonDetails.find(s => s.season_number === ep.season_number) || seasons?.find(s => s.season_number === ep.season_number);
-            if (season?.poster_path) {
-              thumbnailUrl = `https://image.tmdb.org/t/p/w500${season.poster_path}`;
-            } else if (background) {
+            if (background) {
               thumbnailUrl = background;
+            }
+            else if (season?.poster_path) {
+              thumbnailUrl = `https://image.tmdb.org/t/p/w500${season.poster_path}`;
             } else {
               thumbnailUrl = null;
             }
@@ -2090,10 +2091,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               thumbnailUrl = episode.image.startsWith('http') ? episode.image : `${TVDB_IMAGE_BASE}${episode.image}`;
             } else if (isUnaired) {
               const season = officialSeasons.find(s => s.number === episode.seasonNumber);
-              if (season?.image) {
-                thumbnailUrl = season.image.startsWith('http') ? season.image : `${TVDB_IMAGE_BASE}${season.image}`;
-              } else if (background) {
+              if (background) {
                 thumbnailUrl = background;
+              }
+              else if (season?.image) {
+                thumbnailUrl = season.image.startsWith('http') ? season.image : `${TVDB_IMAGE_BASE}${season.image}`;
               } else {
                 thumbnailUrl = null;
               }
@@ -2394,10 +2396,11 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           thumbnailUrl = episode.image.original;
         } else if (isUnaired) {
           // For unaired episodes: try show image (poster), then background, then null
-          if (tvmazeShow.image?.original) {
-            thumbnailUrl = tvmazeShow.image.original;
-          } else if (background) {
+          if (background) {
             thumbnailUrl = background;
+          }
+          else if (tvmazeShow.image?.original) {
+            thumbnailUrl = tvmazeShow.image.original;
           } else {
             thumbnailUrl = null;
           }
@@ -2729,18 +2732,17 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         if (!thumbnailUrl) {
           const isUnaired = !airDate || new Date(airDate + 'T12:00:00.000Z') > new Date();
           if (isUnaired) {
-            // Try season poster first if we have a TMDB mapping
-            if (tmdbEpisode && !tmdbEpisode.isFranchiseFallback && tmdbSeasonPosterMap.size > 0) {
+            if (bestBackgroundUrl) {
+              logger.debug(`[buildAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuId} Ep ${ep.mal_id}`);
+              thumbnailUrl = bestBackgroundUrl;
+            }
+            else if (tmdbEpisode && !tmdbEpisode.isFranchiseFallback && tmdbSeasonPosterMap.size > 0) {
               const seasonPoster = tmdbSeasonPosterMap.get(tmdbEpisode.seasonNumber);
               if (seasonPoster) {
                 thumbnailUrl = seasonPoster;
               }
             }
-            if (!thumbnailUrl && bestBackgroundUrl) {
-              logger.debug(`[buildAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuId} Ep ${ep.mal_id}`);
-              thumbnailUrl = bestBackgroundUrl;
-            }
-            if (!thumbnailUrl) {
+            else {
               thumbnailUrl = null;
             }
           } else {
@@ -3188,18 +3190,17 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         if (!thumbnailUrl) {
           const isUnaired = !airDate || new Date(airDate + 'T12:00:00.000Z') > new Date();
           if (isUnaired) {
-            // Try season poster first if we have a TMDB mapping
-            if (tmdbEpisode && !tmdbEpisode.isFranchiseFallback && tmdbSeasonPosterMap.size > 0) {
+            if (bestBackgroundUrl) {
+              logger.debug(`[buildKitsuAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuData.id} Ep ${ep.number}`);
+              thumbnailUrl = bestBackgroundUrl;
+            }
+            else if (tmdbEpisode && !tmdbEpisode.isFranchiseFallback && tmdbSeasonPosterMap.size > 0) {
               const seasonPoster = tmdbSeasonPosterMap.get(tmdbEpisode.seasonNumber);
               if (seasonPoster) {
                 thumbnailUrl = seasonPoster;
               }
             }
-            if (!thumbnailUrl && bestBackgroundUrl) {
-              logger.debug(`[buildKitsuAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuData.id} Ep ${ep.number}`);
-              thumbnailUrl = bestBackgroundUrl;
-            }
-            if (!thumbnailUrl) {
+            else {
               thumbnailUrl = null;
             }
           } else {
