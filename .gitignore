@@ -109,3 +109,4 @@ dist
 # Editor backup files
 *.save
 *.save.*
+temp/
