@@ -1139,6 +1139,61 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
+          {((catalog.source === 'mdblist' && ((catalog as any).metadata?.url || ((catalog as any).metadata?.author && catalog.name))) ||
+            (catalog.source === 'letterboxd' && (catalog as any).metadata?.url) ||
+            (catalog.source === 'trakt' && ((catalog as any).metadata?.url || catalog.id.startsWith('trakt.list.') || (catalog.id.startsWith('trakt.') && (catalog as any).metadata?.author)))) && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    let listUrl: string | null = null;
+                    
+                    if (catalog.source === 'letterboxd') {
+                      listUrl = (catalog as any).metadata?.url || null;
+                    } else if (catalog.source === 'mdblist') {
+                      listUrl = (catalog as any).metadata?.url || null;
+                      
+                      if (!listUrl && (catalog as any).metadata?.author && catalog.name) {
+                        // Construct URL from username and list name
+                        const username = (catalog as any).metadata.author.toLowerCase().replace(/\s+/g, '');
+                        const listSlug = catalog.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                        listUrl = `https://mdblist.com/lists/${username}/${listSlug}`;
+                      }
+                    } else if (catalog.source === 'trakt') {
+                      listUrl = (catalog as any).metadata?.url || null;
+                      
+                      if (!listUrl) {
+                        const catalogId = catalog.id;
+                        
+                        if (catalogId.startsWith('trakt.list.')) {
+                          // Numeric ID format: https://trakt.tv/lists/{id}
+                          const numericId = catalogId.replace('trakt.list.', '');
+                          listUrl = `https://trakt.tv/lists/${numericId}`;
+                        } else if (catalogId.startsWith('trakt.') && (catalog as any).metadata?.author) {
+                          // Username.slug format: https://trakt.tv/users/{username}/lists/{slug}
+                          const parts = catalogId.split('.');
+                          const username = (catalog as any).metadata.author;
+                          const listSlug = parts.length >= 3 ? parts.slice(2).join('.') : catalog.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                          listUrl = `https://trakt.tv/users/${username}/lists/${listSlug}`;
+                        }
+                      }
+                    }
+                    
+                    if (listUrl) {
+                      window.open(listUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                  aria-label={`View on ${catalog.source === 'mdblist' ? 'MDBList' : catalog.source === 'letterboxd' ? 'Letterboxd' : 'Trakt'}`}
+                >
+                  <ExternalLink className="h-5 w-5 text-blue-500" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>View on {catalog.source === 'mdblist' ? 'MDBList' : catalog.source === 'letterboxd' ? 'Letterboxd' : 'Trakt'}</TooltipContent>
+            </Tooltip>
+          )}
+
           {((catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist' || catalog.source === 'letterboxd') || 
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.')))) && (
             <Tooltip>

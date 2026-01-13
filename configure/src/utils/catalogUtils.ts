@@ -61,6 +61,7 @@ export interface MDBListCatalogOptions {
   genreSelection?: GenreSelection;
   displayTypeOverrides?: { movie?: string; series?: string };
   sourceUrl?: string;
+  listUrl?: string; // URL to the list on mdblist.com
 }
 
 /**
@@ -77,10 +78,20 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
     genreSelection = 'standard',
     displayTypeOverrides,
     sourceUrl,
+    listUrl,
   } = options;
 
   const type = getMdbListType(list);
   const displayType = getDisplayTypeOverride(type, displayTypeOverrides);
+
+  // Construct list URL if not provided but we have username/list info
+  let finalListUrl = listUrl;
+  if (!finalListUrl && list.user_name && list.name) {
+    // Construct URL from username and list name/slug
+    const username = list.user_name.toLowerCase().replace(/\s+/g, '');
+    const listSlug = list.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    finalListUrl = `https://mdblist.com/lists/${username}/${listSlug}`;
+  }
 
   return {
     id: `mdblist.${list.id}`,
@@ -99,6 +110,7 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
     metadata: {
       ...(list.items !== undefined && { itemCount: list.items }),
       ...(list.user_name ? { author: list.user_name } : {}),
+      ...(finalListUrl && { url: finalListUrl }),
     },
   };
 }
@@ -135,6 +147,20 @@ export function createTraktCatalog(options: TraktCatalogOptions): CatalogConfig 
   const numericListId = list?.ids?.trakt;
   const catalogId = numericListId ? `trakt.list.${numericListId}` : `trakt.${username}.${list.ids?.slug || list.slug}`;
 
+  // Construct Trakt list URL - prefer numeric ID format, fallback to username/slug
+  let listUrl: string | undefined;
+  if (numericListId) {
+    // Use numeric ID format: https://trakt.tv/lists/{id}
+    listUrl = `https://trakt.tv/lists/${numericListId}`;
+  } else {
+    // Fallback to username/slug format
+    const listUsername = list.user?.username || username;
+    const listSlug = list.ids?.slug || list.slug;
+    if (listUsername && listSlug) {
+      listUrl = `https://trakt.tv/users/${listUsername}/lists/${listSlug}`;
+    }
+  }
+
   return {
     id: catalogId,
     type: catalogType,
@@ -150,6 +176,7 @@ export function createTraktCatalog(options: TraktCatalogOptions): CatalogConfig 
       privacy: list.privacy || 'private',
       author: list.user?.username || username || '',
       description: list.description || '',
+      ...(listUrl && { url: listUrl }),
     },
   };
 }

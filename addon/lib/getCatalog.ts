@@ -595,7 +595,11 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     } else {
       // Regular MDBList catalog
       listId = id.split(".")[1];
-      unified = catalogConfig?.type === 'all' || false;
+      if (!catalogConfig?.sourceUrl) {
+        unified = true;
+      } else {
+        unified = catalogConfig?.type === 'all' || false;
+      }
     }
     
     const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug, unified, type);

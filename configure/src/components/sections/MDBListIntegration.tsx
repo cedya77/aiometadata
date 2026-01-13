@@ -701,6 +701,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           cacheTTL: defaultCacheTTL,
           genreSelection: defaultGenreSelection,
           displayTypeOverrides: prev.displayTypeOverrides,
+          listUrl: customListUrl,
         });
 
         // Prevent duplicates
