@@ -26,11 +26,17 @@ let performanceStats = {
  */
 function _parseStremioId(stremioId) {
   const ids = { tmdbId: null, tvdbId: null, imdbId: null, tvmazeId: null, malId: null, kitsuId: null, anidbId: null, anilistId: null };
-  if (stremioId.startsWith('tt')) {
-    ids.imdbId = stremioId;
+  
+  // Strip cache prefixes (upnext_, unwatched_, tun_, mdblist_upnext_)
+  let cleanId = stremioId.replace(/^(upnext_|unwatched_|tun_|mdblist_upnext_)/, '');
+  // Strip episode identifier suffixes (_trakt123, _S1E02)
+  cleanId = cleanId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');
+  
+  if (cleanId.startsWith('tt')) {
+    ids.imdbId = cleanId;
     return ids;
   }
-  const [prefix, sourceId] = stremioId.split(':');
+  const [prefix, sourceId] = cleanId.split(':');
   const key = `${prefix}Id`;
   if (key in ids) {
     ids[key] = sourceId;
