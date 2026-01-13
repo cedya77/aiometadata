@@ -1238,10 +1238,11 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     logoUrl = artwork.logo;
     imdbRatingValue = artwork.imdbRatingValue;
   } else {
-    [poster, background, logoUrl] = await Promise.all([
+    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
       Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config, isAnime),
       Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config, isAnime),
       Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config, isAnime),
+      getImdbRating(imdbId, 'series')
   ]);
   }
   // log arts 
