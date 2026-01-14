@@ -439,6 +439,8 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     
     logger.info(`Page ${page}: fetched ${collections.length} collections from TVDB API`);
     
+    const langCode3 = await to3LetterCode(langCode, config);
+    
     // Fetch extended details and translations for each collection in parallel
     const metas = await Promise.all(collections.map(async (col: any) => {
       const extended = await cacheWrapTvdbApi(`collection-extended:${col.id}`, () => tvdb.getCollectionDetails(col.id, config));
@@ -448,7 +450,6 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
       const hasMovies = extended.entities.some((e: any) => e.movieId);
       if (!hasMovies) return null;
       
-      const langCode3 = await to3LetterCode(langCode, config);
       let translation = await tvdb.getCollectionTranslations(col.id, langCode3, config);
 
       const name = translation && translation.name ? translation.name : extended.name;
