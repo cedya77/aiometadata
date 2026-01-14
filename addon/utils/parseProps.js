@@ -2134,11 +2134,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
     }
 
     const malPosterUrl = anime.images?.jpg?.large_image_url;
-    let finalPosterUrl = malPosterUrl || `${host}/missing_poster.png`;
     
-    // Use batch-fetched AniList artwork if available
-    finalPosterUrl = await getAnimePosterUrl(malId, mapping, stremioType, config, language, anilistArtworkMap, anime.images?.jpg?.large_image_url, kitsuArtworkMap);
-    const imdbRating = await getImdbRating(imdbId, stremioType);
+    // Phase 1: Parallel fetch for always-needed data (poster + rating)
+    const [finalPosterUrl, imdbRating] = await Promise.all([
+      getAnimePosterUrl(malId, mapping, stremioType, config, language, anilistArtworkMap, anime.images?.jpg?.large_image_url, kitsuArtworkMap),
+      getImdbRating(imdbId, stremioType)
+    ]);
+    
     const trailerStreams = [];
     if (anime.trailer?.youtube_id) {
       trailerStreams.push({
@@ -2177,8 +2179,11 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           }
         }
       }
-      let logo = await getAnimeLogo({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType}, config);
-      let background = await getAnimeBg({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType, malPosterUrl}, config);
+      // Phase 2: Parallel fetch for logo + background (only when not using early return)
+      const [logo, background] = await Promise.all([
+        getAnimeLogo({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType}, config),
+        getAnimeBg({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType, malPosterUrl}, config)
+      ]);
       return {
         id: `mal:${malId}`,
         type: stremioType,
