@@ -2282,7 +2282,8 @@ async function getTmdbMovieArtBatch(tmdbId, config) {
   
   // Include language in cache key since results vary by language
   const langCode = config.language?.split('-')[0] || 'en';
-  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}`;
+  const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
+  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}`;
   
   // Check if there's already an in-flight request for this movie
   if (tmdbMovieImagesInflight.has(cacheKey)) {
@@ -2614,7 +2615,8 @@ async function getTmdbSeriesArtBatch(tmdbId, config) {
   
   // Include language in cache key since results vary by language
   const langCode = config.language?.split('-')[0] || 'en';
-  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}`;
+  const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
+  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}`;
   
   // Check if there's already an in-flight request for this series
   if (tmdbTvImagesInflight.has(cacheKey)) {
