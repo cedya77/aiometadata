@@ -2267,6 +2267,73 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
   return { trailers, trailerStreams };
 }
 
+// In-flight request cache for TMDB movie images to deduplicate concurrent requests
+const tmdbMovieImagesInflight = new Map();
+
+/**
+ * Fetch all TMDB movie art (poster, background, logo) in a single API call.
+ * Uses request deduplication to prevent multiple concurrent calls for the same movie.
+ * @param {string} tmdbId - The TMDB movie ID
+ * @param {object} config - User configuration
+ * @returns {Promise<{poster: string|null, background: string|null, logo: string|null}>}
+ */
+async function getTmdbMovieArtBatch(tmdbId, config) {
+  if (!tmdbId) return { poster: null, background: null, logo: null };
+  
+  // Include language in cache key since results vary by language
+  const langCode = config.language?.split('-')[0] || 'en';
+  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}`;
+  
+  // Check if there's already an in-flight request for this movie
+  if (tmdbMovieImagesInflight.has(cacheKey)) {
+    return tmdbMovieImagesInflight.get(cacheKey);
+  }
+  
+  // Create the promise for this request
+  const fetchPromise = (async () => {
+    try {
+      // Single API call with proper language params to get user's language, English, and null images
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const res = await tmdb.movieImages({ id: tmdbId, include_image_language: imageLanguages }, config);
+      
+      if (!res) {
+        return { poster: null, background: null, logo: null };
+      }
+      
+      // Extract poster with language preference
+      const posterImg = selectTmdbImageByLang(res.posters, config);
+      const poster = posterImg?.file_path 
+        ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
+        : null;
+      
+      // Extract background (first backdrop, no language filtering needed)
+      const backgroundImg = res.backdrops?.[0];
+      const background = backgroundImg?.file_path
+        ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
+        : null;
+      
+      // Extract logo with language preference
+      const logoImg = selectTmdbImageByLang(res.logos, config);
+      const logo = logoImg?.file_path
+        ? `https://image.tmdb.org/t/p/original${logoImg.file_path}`
+        : null;
+      
+      return { poster, background, logo };
+    } catch (error) {
+      logger.warn(`[getTmdbMovieArtBatch] Failed to fetch TMDB images for movie ${tmdbId}:`, error.message);
+      return { poster: null, background: null, logo: null };
+    } finally {
+      // Clean up the in-flight cache after a short delay to handle near-simultaneous requests
+      setTimeout(() => tmdbMovieImagesInflight.delete(cacheKey), 100);
+    }
+  })();
+  
+  // Store the promise in the in-flight cache
+  tmdbMovieImagesInflight.set(cacheKey, fetchPromise);
+  
+  return fetchPromise;
+}
+
 /**
  * Get movie poster with art provider preference
  */
@@ -2324,33 +2391,23 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbPoster = await tmdb.movieImages({ id: tmdbId }, config).then(res => {
-          if (!res || !Array.isArray(res.posters)) return null;
-          const img = selectTmdbImageByLang(res.posters, config);
-          return img?.file_path;
-        });
-        if (tmdbPoster) {
-          // logger.debug(`[getMoviePoster] Found TMDB poster for movie (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config);
+        if (batchArt.poster) {
+          return batchArt.poster;
         }
       }
       else {
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const tmdbPoster = await tmdb.movieImages({ id: mappedIds.tmdbId }, config).then(res => {
-            if (!res || !Array.isArray(res.posters)) return null;
-            const img = selectTmdbImageByLang(res.posters, config);
-            return img?.file_path;
-          });
-          if (tmdbPoster) {
-            // logger.debug(`[getMoviePoster] Found TMDB poster via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-            return `https://image.tmdb.org/t/p/w500${tmdbPoster}`;
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config);
+          if (batchArt.poster) {
+            return batchArt.poster;
           }
         }
       }
     } catch (error) {
-      logger.warn(`[getMoviePoster] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMoviePoster] TMDB poster fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2425,27 +2482,23 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbBackground = await tmdb.movieImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-          const img = res.backdrops[0];
-          return img?.file_path;
-        });
-        // logger.debug(`[getMovieBackground] Found TMDB background for movie (TMDB ID: ${tmdbId})`);
-        return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config);
+        if (batchArt.background) {
+          return batchArt.background;
+        }
       }
       else {
         if(!tvdbId) return fallbackBackgroundUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const tmdbBackground = await tmdb.movieImages({ id: mappedIds.tmdbId, include_image_language: null }, config).then(res => {
-            const img = res.backdrops[0];
-            return img?.file_path;
-          });
-          // logger.debug(`[getMovieBackground] Found TMDB background via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-          return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config);
+          if (batchArt.background) {
+            return batchArt.background;
+          }
         }
       }
     } catch (error) {
-      logger.warn(`[getMovieBackground] TMDB ID mapping failed for movie (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getMovieBackground] TMDB background fetch failed for movie (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2513,26 +2566,18 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbLogo = await tmdb.movieImages({ id: tmdbId }, config).then(res => {
-          const img = selectTmdbImageByLang(res.logos, config);
-          return img?.file_path;
-        });
-        if (tmdbLogo) {
-          // logger.debug(`[getMovieLogo] Found TMDB logo for movie (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config);
+        if (batchArt.logo) {
+          return batchArt.logo;
         }
       }
       else {
         if(!tvdbId) return fallbackLogoUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const tmdbLogo = await tmdb.movieImages({ id: mappedIds.tmdbId }, config).then(res => {
-            const img = selectTmdbImageByLang(res.logos, config);
-            return img?.file_path;
-          });
-          if (tmdbLogo) {
-            // logger.debug(`[getMovieLogo] Found TMDB logo via ID mapping for movie (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-            return `https://image.tmdb.org/t/p/w500${tmdbLogo}`;
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config);
+          if (batchArt.logo) {
+            return batchArt.logo;
           }
         }
       }
@@ -2552,6 +2597,73 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
   }
   
   return fallbackLogoUrl;
+}
+
+// In-flight request cache for TMDB TV images to deduplicate concurrent requests
+const tmdbTvImagesInflight = new Map();
+
+/**
+ * Fetch all TMDB TV series art (poster, background, logo) in a single API call.
+ * Uses request deduplication to prevent multiple concurrent calls for the same series.
+ * @param {string} tmdbId - The TMDB TV series ID
+ * @param {object} config - User configuration
+ * @returns {Promise<{poster: string|null, background: string|null, logo: string|null}>}
+ */
+async function getTmdbSeriesArtBatch(tmdbId, config) {
+  if (!tmdbId) return { poster: null, background: null, logo: null };
+  
+  // Include language in cache key since results vary by language
+  const langCode = config.language?.split('-')[0] || 'en';
+  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}`;
+  
+  // Check if there's already an in-flight request for this series
+  if (tmdbTvImagesInflight.has(cacheKey)) {
+    return tmdbTvImagesInflight.get(cacheKey);
+  }
+  
+  // Create the promise for this request
+  const fetchPromise = (async () => {
+    try {
+      // Single API call with proper language params to get user's language, English, and null images
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const res = await tmdb.tvImages({ id: tmdbId, include_image_language: imageLanguages }, config);
+      
+      if (!res) {
+        return { poster: null, background: null, logo: null };
+      }
+      
+      // Extract poster with language preference
+      const posterImg = selectTmdbImageByLang(res.posters, config);
+      const poster = posterImg?.file_path 
+        ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
+        : null;
+      
+      // Extract background (first backdrop, no language filtering needed)
+      const backgroundImg = res.backdrops?.[0];
+      const background = backgroundImg?.file_path
+        ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
+        : null;
+      
+      // Extract logo with language preference
+      const logoImg = selectTmdbImageByLang(res.logos, config);
+      const logo = logoImg?.file_path
+        ? `https://image.tmdb.org/t/p/original${logoImg.file_path}`
+        : null;
+      
+      return { poster, background, logo };
+    } catch (error) {
+      logger.warn(`[getTmdbSeriesArtBatch] Failed to fetch TMDB images for series ${tmdbId}:`, error.message);
+      return { poster: null, background: null, logo: null };
+    } finally {
+      // Clean up the in-flight cache after a short delay to handle near-simultaneous requests
+      setTimeout(() => tmdbTvImagesInflight.delete(cacheKey), 100);
+    }
+  })();
+  
+  // Store the promise in the in-flight cache
+  tmdbTvImagesInflight.set(cacheKey, fetchPromise);
+  
+  return fetchPromise;
 }
 
 /**
@@ -2607,29 +2719,23 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbPoster = await tmdb.tvImages({ id: tmdbId }, config).then(res => {
-          const img = selectTmdbImageByLang(res.posters, config);
-          return img?.file_path;
-        });
-        if (tmdbPoster) {
-          return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config);
+        if (batchArt.poster) {
+          return batchArt.poster;
         }
       }
       else {
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
-          const tmdbPoster = await tmdb.tvImages({ id: mappedIds.tmdbId }, config).then(res => {
-            const img = selectTmdbImageByLang(res.posters, config);
-            return img?.file_path;
-          });
-          if (tmdbPoster) {
-            return `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tmdbPoster}`;
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config);
+          if (batchArt.poster) {
+            return batchArt.poster;
           }
         }
       }
     } catch (error) {
-      logger.warn(`[getSeriesPoster] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesPoster] TMDB poster fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2701,26 +2807,22 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const tmdbBackground = await tmdb.tvImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-          const img = res.backdrops[0];
-          return img?.file_path;
-        });
-        // logger.debug(`[getSeriesBackground] Found TMDB background for series (TMDB ID: ${tmdbId})`);
-        return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config);
+        if (batchArt.background) {
+          return batchArt.background;
+        }
       }
       else {
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
-          const tmdbBackground = await tmdb.tvImages({ id: mappedIds.tmdbId, include_image_language: null }, config).then(res => {
-            const img = res.backdrops[0];
-            return img?.file_path;
-          });
-          // logger.debug(`[getSeriesBackground] Found TMDB background via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-          return `https://image.tmdb.org/t/p/original${tmdbBackground}`;
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config);
+          if (batchArt.background) {
+            return batchArt.background;
+          }
         }
       }
     } catch (error) {
-      logger.warn(`[getSeriesBackground] TMDB ID mapping failed for series (TVDB ID: ${tvdbId}):`, error.message);
+      logger.warn(`[getSeriesBackground] TMDB background fetch failed for series (TMDB ID: ${tmdbId}):`, error.message);
     }
   }
   else if (artProvider === 'imdb' && metaProvider != 'imdb') {
@@ -2792,30 +2894,18 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const langCode = config.language.split('-')[0];
-        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-        const tmdbLogo = await tmdb.tvImages({ id: tmdbId, include_image_language: imageLanguages }, config).then(res => {
-          const img = selectTmdbImageByLang(res.logos, config);
-          return img?.file_path;
-        });
-        if (tmdbLogo) {
-          // logger.debug(`[getSeriesLogo] Found TMDB logo for series (TMDB ID: ${tmdbId})`);
-          return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config);
+        if (batchArt.logo) {
+          return batchArt.logo;
         }
       }
       else {
         if(!tvdbId) return fallbackLogoUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
         if(mappedIds.tmdbId) {
-          const langCode = config.language.split('-')[0];
-          const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-          const tmdbLogo = await tmdb.tvImages({ id: mappedIds.tmdbId, include_image_language: imageLanguages }, config).then(res => {
-            const img = selectTmdbImageByLang(res.logos, config);
-            return img?.file_path;
-          });
-          if (tmdbLogo) {
-            // logger.debug(`[getSeriesLogo] Found TMDB logo via ID mapping for series (TVDB ID: ${tvdbId} → TMDB ID: ${mappedIds.tmdbId})`);
-            return `https://image.tmdb.org/t/p/original${tmdbLogo}`;
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config);
+          if (batchArt.logo) {
+            return batchArt.logo;
           }
         }
       }
@@ -3113,9 +3203,11 @@ module.exports = {
   getMoviePoster,
   getMovieBackground,
   getMovieLogo,
+  getTmdbMovieArtBatch,
   getSeriesPoster,
   getSeriesBackground,
   getSeriesLogo,
+  getTmdbSeriesArtBatch,
   selectTmdbImageByLang,
   processBackgroundImage,
   convertAnilistBannerToBackground,
