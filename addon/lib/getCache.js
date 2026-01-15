@@ -473,7 +473,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
             updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
           } else {
-            cacheLogger.debug(`[Cache] HIT for ${versionedKey}`);
+            cacheLogger.debug(`⚡ [Cache] HIT for ${versionedKey}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -620,7 +620,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
             updateCacheHealth(versionedKey, 'cached-error', true);
             return parsed;
           } else {
-            globalCacheLogger.debug(`[Global-Cache] HIT for ${truncateCacheKey(versionedKey)}`);
+            globalCacheLogger.debug(`⚡ [Global-Cache] HIT for ${truncateCacheKey(versionedKey)}`);
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
