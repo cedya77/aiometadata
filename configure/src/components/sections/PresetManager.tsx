@@ -540,6 +540,11 @@ export function PresetManager() {
               }
             }
             
+            // Construct list URL from username and list name
+            const username = (list.user_name || list.user || '').toLowerCase().replace(/\s+/g, '');
+            const listSlug = list.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            const listUrl = username && listSlug ? `https://mdblist.com/lists/${username}/${listSlug}` : undefined;
+            
             const newCatalog = {
               id: catalogId,
               type: type as 'movie' | 'series' | 'anime',
@@ -553,6 +558,11 @@ export function PresetManager() {
               genreSelection: 'standard' as const, // Default to standard genres for preset imports
               enableRatingPosters: true,
               displayType,
+              metadata: {
+                ...(list.items !== undefined && { itemCount: list.items }),
+                ...(list.user_name || list.user ? { author: list.user_name || list.user } : {}),
+                ...(listUrl && { url: listUrl }),
+              },
             };
             newCatalogs.push(newCatalog);
             newListsAddedCount++;
