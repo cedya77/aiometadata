@@ -1626,7 +1626,7 @@ function DashboardPerformance({ data, loading }) {
               IMDb Ratings Performance
             </CardTitle>
             <CardDescription>
-              Dataset vs Cinemeta fallback statistics
+              Dataset hit/miss statistics
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1643,26 +1643,24 @@ function DashboardPerformance({ data, loading }) {
                     <AnimatedNumber value={data.imdbRatingsStats.datasetHits} />
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    <AnimatedNumber value={data.imdbRatingsStats.datasetPercentage} suffix="%" /> • Avg:{" "}
-                    <AnimatedNumber value={data.imdbRatingsStats.datasetAvgTime} decimals={2} suffix="ms" />
+                    <AnimatedNumber value={data.imdbRatingsStats.datasetPercentage} suffix="%" />
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-lg border">
                 <div>
-                  <h4 className="font-medium">Cinemeta Fallback</h4>
+                  <h4 className="font-medium">Dataset Misses</h4>
                   <p className="text-sm text-muted-foreground">
-                    From Cinemeta API
+                    Not found in dataset
                   </p>
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-orange-600">
-                    <AnimatedNumber value={data.imdbRatingsStats.cinemetaFallbackHits} />
+                    <AnimatedNumber value={data.imdbRatingsStats.datasetMisses} />
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    <AnimatedNumber value={data.imdbRatingsStats.cinemetaPercentage} suffix="%" /> • Avg:{" "}
-                    <AnimatedNumber value={data.imdbRatingsStats.cinemetaAvgTime} decimals={2} suffix="ms" />
+                    <AnimatedNumber value={data.imdbRatingsStats.missPercentage} suffix="%" />
                   </div>
                 </div>
               </div>
@@ -1678,27 +1676,6 @@ function DashboardPerformance({ data, loading }) {
                   <span className="text-muted-foreground">Ratings Loaded:</span>
                   <span className="font-medium">
                     <AnimatedNumber value={data.imdbRatingsStats.ratingsLoaded} />
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm mt-1">
-                  <span className="text-muted-foreground">
-                    Speed Difference:
-                  </span>
-                  <span className="font-medium text-green-600">
-                    {(() => {
-                      const cinemetaTime = data.imdbRatingsStats.cinemetaAvgTime;
-                      const datasetTime = data.imdbRatingsStats.datasetAvgTime;
-                      if (cinemetaTime > 0 && datasetTime > 0) {
-                        const ratio = cinemetaTime / datasetTime;
-                        if (!isFinite(ratio) || ratio > 9999) {
-                          return "∞ faster with dataset";
-                        }
-                        return `${ratio.toFixed(0)}x faster with dataset`;
-                      } else if (cinemetaTime > 0 && datasetTime === 0) {
-                        return "∞ faster with dataset";
-                      }
-                      return "N/A";
-                    })()}
                   </span>
                 </div>
               </div>
