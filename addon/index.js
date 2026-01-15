@@ -492,25 +492,23 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
       `);
     }
     
-    // Update all user configs that reference Trakt tokens to use the new token ID
-    // This handles both new connections and reconnections
+    // Update config
     try {
       const allUsers = await database.getAllUsers();
       for (const dbUser of allUsers) {
         const userConfig = JSON.parse(dbUser.config || '{}');
         let configUpdated = false;
         
-        // If this user has a Trakt token configured, check if we should update it
+        // Only update if user has an existing Trakt token configured
         if (userConfig.apiKeys?.traktTokenId) {
           const currentToken = await database.getOAuthToken(userConfig.apiKeys.traktTokenId);
           
-          // Update if:
-          // 1. Current token is for the same Trakt user (reconnection case), OR
-          // 2. Current token no longer exists in database (cleanup case)
-          if (!currentToken || currentToken.user_id === user.username) {
+          if (currentToken && currentToken.user_id.toLowerCase() === user.username.toLowerCase()) {
             userConfig.apiKeys.traktTokenId = tokenId;
             configUpdated = true;
             consola.info(`[Trakt OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
+          } else if (!currentToken) {
+            consola.warn(`[Trakt OAuth] User ${dbUser.id} has missing Trakt token ${userConfig.apiKeys.traktTokenId} - manual reconnection required`);
           }
         }
         
