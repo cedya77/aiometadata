@@ -117,8 +117,8 @@ CACHE_WARMUP_UUID=550e8400-e29b-41d4-a716-446655440000
 - Ensure warmed content matches what you'll actually see
 
 **How to find your UUID:**
-1. Check your addon URL: `http://localhost:1337/{uuid}/manifest.json`
-2. Or check the dashboard at `http://localhost:1337/api/dashboard`
+1. Check your addon URL: `http://localhost:3232/{uuid}/manifest.json`
+2. Or check the dashboard at `http://localhost:3232/api/dashboard`
 
 **Note:** The UUID must exist in the database (i.e., you must have configured it at least once via the addon interface).
 

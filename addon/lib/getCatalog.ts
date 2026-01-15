@@ -909,6 +909,22 @@ async function buildParameters(type: string, language: string, page: number, id:
        parameters.sort_by = 'popularity.desc';
     }
   } else {
+    const catalogConfig = config._currentCatalogConfig;
+    if (catalogConfig?.sort && (id === 'tmdb.year' || id === 'tmdb.language')) {
+      const direction = catalogConfig.sortDirection || 'desc';
+      let sortField = catalogConfig.sort;
+      
+      if (sortField === 'release_date') {
+        sortField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+      }
+      
+      parameters.sort_by = `${sortField}.${direction}`;
+      
+      if (sortField === 'vote_average') {
+        parameters['vote_count.gte'] = 50; 
+      }
+    }
+    
     switch (id) {
       case "tmdb.top":
         parameters.sort_by = 'primary_release_date.desc'
@@ -924,10 +940,18 @@ async function buildParameters(type: string, language: string, page: number, id:
       case "tmdb.year":
         const year = genre && genre.toLowerCase() !== 'none' ? genre : new Date().getFullYear();
         parameters[type === "movie" ? "primary_release_year" : "first_air_date_year"] = year;
+        // Only set default sort if no custom sort is configured
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = 'popularity.desc';
+        }
         break;
       case "tmdb.language":
         const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, languages) : language.split("-")[0];
         parameters.with_original_language = findGenre;
+        // Only set default sort if no custom sort is configured
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = 'popularity.desc';
+        }
         break;
       case "tmdb.top_rated":
         // Sort by vote average (highest rated first) with minimum vote count
@@ -1226,7 +1250,7 @@ async function getTraktCatalog(
         response = { items: allItems, hasMore: false };
       }
     } else if (catalogId === 'trakt.calendar') {
-      // Trakt Calendar - Shows airing this week
+      // Trakt Calendar - Shows airing soon
       // Only shows page 1, returns empty for page 2+
       if (page > 1) {
         logger.info(`Trakt Calendar: Page ${page} requested, returning empty (only page 1 exists)`);
@@ -1245,10 +1269,15 @@ async function getTraktCatalog(
         });
         const startDate = formatter.format(new Date()); // Returns YYYY-MM-DD
         
-        logger.info(`Trakt Calendar: Fetching today's shows (${startDate}, timezone: ${timezone})`);
+        // Get configured days (1-7), default to 1 if not set
+        const catalogConfig = config.catalogs?.find(c => c.id === 'trakt.calendar');
+        const days = catalogConfig?.metadata?.airingSoonDays || 1;
+        const clampedDays = Math.max(1, Math.min(7, days));
         
-        // Fetch 1 day (today only)
-        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, 1);
+        logger.info(`Trakt Calendar: Fetching shows airing in next ${clampedDays} day(s) (${startDate}, timezone: ${timezone})`);
+        
+        // Fetch shows for the configured number of days
+        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, clampedDays);
         
         response = {
           items: calendarResult.items,

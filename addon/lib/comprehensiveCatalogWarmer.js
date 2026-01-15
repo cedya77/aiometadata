@@ -517,7 +517,7 @@ class ComprehensiveCatalogWarmer {
         if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
         if (genreValue) extraArgs.genre = genreValue;
         const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
-        if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.') || catalogId.startsWith('streaming.')) {
+        if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.') || catalogId.startsWith('streaming.') || catalogId.startsWith('tmdb.year') || catalogId.startsWith('tmdb.language')) {
           if (catalogConfig) {
             if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
@@ -542,6 +542,18 @@ class ComprehensiveCatalogWarmer {
           extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
               ? catalogConfig.metadata.useShowPosterForUpNext
               : false;
+        }
+
+        if (catalogId === 'trakt.calendar') {
+          const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+          const getTodayInTimezone = (tz) => {
+            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+            return formatter.format(new Date());
+          };
+          extraArgs.date = getTodayInTimezone(getUserTimezone());
+          extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
+            ? catalogConfig.metadata.airingSoonDays 
+            : 1;
         }
         
           const derivedPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;

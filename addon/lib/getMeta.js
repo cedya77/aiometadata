@@ -1139,7 +1139,6 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     photo: w.profile_path || null
   })).filter(w => w.name);
 
-  const watchProviders = moviedb.getWatchProviders(movieData['watch/providers'], config);
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
   finalTitle = Utils.processTitleTranslations(
@@ -1197,7 +1196,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailerStreams: finalTrailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: movieData.release_dates, certification: certification }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, certification: certification }
   };
 }
 
@@ -1597,7 +1596,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     videos = (await Promise.all(videosPromises)).filter(Boolean);
   }
   const runtime = seriesData.episode_run_time?.[0] ?? seriesData.last_episode_to_air?.runtime ?? seriesData.next_episode_to_air?.runtime ?? null;
-  const watchProviders = moviedb.getWatchProviders(seriesData['watch/providers'], config);
   let overview = seriesData.overview;
   overview = Utils.processOverviewTranslations(seriesData.translations, language, overview);
   let finalName = seriesData.name;
@@ -1668,7 +1666,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, watchProviders: watchProviders, certification: certification }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, certification: certification }
   };
   if (runtime) {
     meta.runtime = Utils.parseRunTime(runtime);
@@ -1770,10 +1768,6 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   if(!logoUrl && imdbId){
     logoUrl =  imdb.getLogoFromImdb(imdbId);
   }
-  let watchProviders = null;
-  if(tmdbId){
-     watchProviders = await moviedb.getMovieWatchProviders({ id: tmdbId, language }, config);
-  }
 
 
   let release_dates = null;
@@ -1821,7 +1815,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: links,
-    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, watchProviders: watchProviders, releaseDates: release_dates, certification: certification }
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, releaseDates: release_dates, certification: certification }
   };
 }
 
@@ -2002,10 +1996,10 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
   const { trailers, trailerStreams } = Utils.parseTvdbTrailers(tvdbShow.trailers, translatedName);
 
-  let watchProviders = null;
-  if(tmdbId && includeVideos){
-    watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
-  }
+
+
+
+
   let videos = [];
   let officialSeasons = (tvdbShow.seasons || [])
     .filter(s => s.type?.type === 'official')
@@ -2248,7 +2242,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     trailerStreams: trailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, watchProviders: watchProviders, certification: certification }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, certification: certification }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -2497,10 +2491,6 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     });
   }
 
-  let watchProviders = null;
-  if(tmdbId && includeVideos){
-     watchProviders = await moviedb.getTvWatchProviders({ id: tmdbId }, config);
-  }
   let certification = null;
   if(tmdbId){
     const seriesData = await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "content_ratings" }, config);
@@ -2543,7 +2533,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     videos,
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails, watchProviders: watchProviders, certification: certification }
+    app_extras: { cast: Utils.parseCast(tvmazeCredits, castCount, 'tvmaze'), producers: producerDetails, writers: writerDetails, certification: certification }
   };
 
   return meta;

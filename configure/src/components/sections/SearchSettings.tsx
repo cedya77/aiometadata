@@ -57,9 +57,9 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
         <div className="font-medium">
           {searchName}
         </div>
-        <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
           {providerLabel}
-        </div>
+          </div>
       </div>
       <Button
         variant="outline"
@@ -351,7 +351,7 @@ export function SearchSettings() {
                 <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <div>
-                            <Label className="text-lg font-medium">Movies Search Engine:</Label>
+                        <Label className="text-lg font-medium">Movies Search Engine:</Label>
                             <div className="text-sm text-muted-foreground mt-0.5">
                                 Search name: {getSearchDisplayName('movie', config.search.providers.movie)}
                             </div>
@@ -399,7 +399,7 @@ export function SearchSettings() {
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <div>
-                            <Label className="text-lg font-medium">Series Search Engine:</Label>
+                        <Label className="text-lg font-medium">Series Search Engine:</Label>
                             <div className="text-sm text-muted-foreground mt-0.5">
                                 Search name: {getSearchDisplayName('series', config.search.providers.series)}
                             </div>
@@ -447,7 +447,7 @@ export function SearchSettings() {
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <div>
-                            <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
+                        <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
                             <div className="text-sm text-muted-foreground mt-0.5">
                                 Search name: {getSearchDisplayName('anime_series', config.search.providers.anime_series)}
                             </div>
@@ -493,7 +493,7 @@ export function SearchSettings() {
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <div>
-                            <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
+                        <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
                             <div className="text-sm text-muted-foreground mt-0.5">
                                 Search name: {getSearchDisplayName('anime_movie', config.search.providers.anime_movie)}
                             </div>
@@ -550,7 +550,7 @@ export function SearchSettings() {
                     <CardContent className="space-y-4">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                             <div>
-                                <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
+                            <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
                                 <div className="text-sm text-muted-foreground mt-0.5">
                                     Search name: {getSearchDisplayName('tvdb.collections.search', 'tvdb.collections.search')}
                                 </div>

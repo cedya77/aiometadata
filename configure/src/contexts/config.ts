@@ -40,6 +40,8 @@ export interface CatalogConfig {
     isCustomList?: boolean;
     // Trakt Up Next metadata
     useShowPosterForUpNext?: boolean;
+    // Trakt Calendar metadata
+    airingSoonDays?: number;
     // Letterboxd-specific metadata
     isWatchlist?: boolean;
     identifier?: string;

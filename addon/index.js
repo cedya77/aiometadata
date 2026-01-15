@@ -311,6 +311,67 @@ const respond = function (req, res, data, opts) {
     res.json(publicEnvConfig);
   });
 
+  addon.get("/health", async (req, res) => {
+    const health = {
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      version: ADDON_VERSION,
+      checks: {
+        server: true,
+        database: false,
+        redis: false
+      }
+    };
+
+    let criticalFailure = false;
+    let degraded = false;
+
+    try {
+      if (database && database.initialized) {
+        await database.runQuery('SELECT 1');
+        health.checks.database = true;
+      } else {
+        health.checks.database = false;
+        criticalFailure = true;
+      }
+    } catch (error) {
+      health.checks.database = false;
+      criticalFailure = true;
+      consola.warn('[Healthcheck] Database check failed:', error.message);
+    }
+
+    try {
+      if (redis && redis.status === 'ready') {
+        health.checks.redis = true;
+      } else if (redis) {
+        const result = await redis.ping();
+        health.checks.redis = result === 'PONG';
+        if (!health.checks.redis) degraded = true;
+      } else {
+        health.checks.redis = false;
+        if (process.env.NO_CACHE !== 'true') {
+             degraded = true;
+             consola.warn('[Healthcheck] Redis configured but not available');
+        }
+      }
+    } catch (error) {
+      health.checks.redis = false;
+      degraded = true;
+      consola.warn('[Healthcheck] Redis check failed:', error.message);
+    }
+
+    if (criticalFailure) {
+        health.status = "unhealthy";
+        res.status(503).json(health);
+    } else if (degraded) {
+        health.status = "degraded";
+        res.status(200).json(health); 
+    } else {
+        health.status = "healthy";
+        res.status(200).json(health);
+    }
+});
+
 // --- Configuration Database API Routes ---
 addon.post("/api/config/save", configApi.saveConfig.bind(configApi));
 addon.post("/api/config/load/:userUUID", configApi.loadConfig.bind(configApi));
@@ -1737,7 +1798,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     }
   }
   // Streaming uses: sort
-  else if (cleanId.startsWith('streaming.')) {
+  else if (cleanId.startsWith('streaming.') || cleanId.startsWith('tmdb.year') || cleanId.startsWith('tmdb.language')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
@@ -1753,7 +1814,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         ? catalogConfig.metadata.useShowPosterForUpNext
         : false;
   }
-  // Trakt calendar needs today's date in cache key
+  // Trakt calendar needs today's date and days in cache key
   if (cleanId === 'trakt.calendar') {
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
     const getTodayInTimezone = (tz) => {
@@ -1761,6 +1822,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       return formatter.format(new Date());
     };
     extraArgs.date = getTodayInTimezone(getUserTimezone());
+    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
+      ? catalogConfig.metadata.airingSoonDays 
+      : 1;
   }
   if (cleanId === 'tvmaze.schedule') {
     // Format date in user's configured timezone (or server timezone as fallback)

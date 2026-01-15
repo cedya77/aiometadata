@@ -41,7 +41,14 @@ import { toast } from 'sonner';
 
 type TraktSortOption = 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
 type StreamingSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
+type TMDBSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
 const STREAMING_SORT_OPTIONS: { value: StreamingSortOption; label: string }[] = [
+  { value: 'popularity', label: 'Popularity' },
+  { value: 'release_date', label: 'Release Date' },
+  { value: 'vote_average', label: 'Top Rated' },
+  { value: 'revenue', label: 'Revenue' },
+];
+const TMDB_SORT_OPTIONS: { value: TMDBSortOption; label: string }[] = [
   { value: 'popularity', label: 'Popularity' },
   { value: 'release_date', label: 'Release Date' },
   { value: 'vote_average', label: 'Top Rated' },
@@ -281,9 +288,17 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
+  const [airingSoonDays, setAiringSoonDays] = useState<number>(() => {
+    const days = catalog.metadata?.airingSoonDays;
+    if (typeof days === 'number' && days >= 1 && days <= 7) {
+      return days;
+    }
+    return 1;
+  });
   
   const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
   const isUpNext = catalog.id === 'trakt.upnext';
+  const isCalendar = catalog.id === 'trakt.calendar';
   const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.');
 
   const handleSave = () => {
@@ -295,7 +310,13 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               sort, 
               sortDirection, 
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
-              ...(isUpNext && { metadata: { ...c.metadata, useShowPosterForUpNext: useShowPoster } })
+              metadata: {
+                ...c.metadata,
+                ...(isUpNext && { useShowPosterForUpNext: useShowPoster }),
+                ...(isCalendar && { 
+                  airingSoonDays: Math.max(1, Math.min(7, airingSoonDays)) 
+                })
+              }
             }
           : c
       ) as CatalogConfig[];
@@ -390,6 +411,27 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               </div>
             </div>
           )}
+
+          {isCalendar && (
+            <div className="space-y-2">
+              <Label>Days Ahead</Label>
+              <Select value={airingSoonDays.toString()} onValueChange={(value) => setAiringSoonDays(Number(value))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6, 7].map(days => (
+                    <SelectItem key={days} value={days.toString()}>
+                      {days} {days === 1 ? 'day' : 'days'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Shows airing within the selected number of days
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -462,6 +504,75 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
         </div>
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  
+  const validTMDBSorts: TMDBSortOption[] = ['popularity', 'release_date', 'vote_average', 'revenue'];
+  const initialSort = validTMDBSorts.includes(catalog.sort as TMDBSortOption) 
+    ? (catalog.sort as TMDBSortOption) 
+    : 'popularity';
+  
+  const [sort, setSort] = useState<TMDBSortOption>(initialSort);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+
+  const handleSave = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, sort, sortDirection }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>TMDB Catalog Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sort} onValueChange={(value) => setSort(value as TMDBSortOption)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TMDB_SORT_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Sort Direction</Label>
+            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">Descending</SelectItem>
+                <SelectItem value="asc">Ascending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
           <Button onClick={handleSave}>Save</Button>
         </div>
       </DialogContent>
@@ -1050,7 +1161,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'letterboxd' || catalog.source === 'streaming') && (
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
+            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`}>
@@ -1273,6 +1385,12 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       <StreamingSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'streaming'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <TMDBSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')}
         onClose={() => setShowSettings(false)}
       />
 
