@@ -1737,7 +1737,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     }
   }
   // Streaming uses: sort
-  else if (cleanId.startsWith('streaming.')) {
+  else if (cleanId.startsWith('streaming.') || cleanId.startsWith('tmdb.year') || cleanId.startsWith('tmdb.language')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }

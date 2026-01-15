@@ -908,6 +908,22 @@ async function buildParameters(type: string, language: string, page: number, id:
        parameters.sort_by = 'popularity.desc';
     }
   } else {
+    const catalogConfig = config._currentCatalogConfig;
+    if (catalogConfig?.sort && (id === 'tmdb.year' || id === 'tmdb.language')) {
+      const direction = catalogConfig.sortDirection || 'desc';
+      let sortField = catalogConfig.sort;
+      
+      if (sortField === 'release_date') {
+        sortField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+      }
+      
+      parameters.sort_by = `${sortField}.${direction}`;
+      
+      if (sortField === 'vote_average') {
+        parameters['vote_count.gte'] = 50; 
+      }
+    }
+    
     switch (id) {
       case "tmdb.top":
         parameters.sort_by = 'primary_release_date.desc'
@@ -923,10 +939,18 @@ async function buildParameters(type: string, language: string, page: number, id:
       case "tmdb.year":
         const year = genre && genre.toLowerCase() !== 'none' ? genre : new Date().getFullYear();
         parameters[type === "movie" ? "primary_release_year" : "first_air_date_year"] = year;
+        // Only set default sort if no custom sort is configured
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = 'popularity.desc';
+        }
         break;
       case "tmdb.language":
         const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, languages) : language.split("-")[0];
         parameters.with_original_language = findGenre;
+        // Only set default sort if no custom sort is configured
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = 'popularity.desc';
+        }
         break;
       case "tmdb.top_rated":
         // Sort by vote average (highest rated first) with minimum vote count
