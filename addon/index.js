@@ -1753,7 +1753,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         ? catalogConfig.metadata.useShowPosterForUpNext
         : false;
   }
-  // Trakt calendar needs today's date in cache key
+  // Trakt calendar needs today's date and days in cache key
   if (cleanId === 'trakt.calendar') {
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
     const getTodayInTimezone = (tz) => {
@@ -1761,6 +1761,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       return formatter.format(new Date());
     };
     extraArgs.date = getTodayInTimezone(getUserTimezone());
+    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
+      ? catalogConfig.metadata.airingSoonDays 
+      : 1;
   }
   if (cleanId === 'tvmaze.schedule') {
     // Format date in user's configured timezone (or server timezone as fallback)

@@ -1249,7 +1249,7 @@ async function getTraktCatalog(
         response = { items: allItems, hasMore: false };
       }
     } else if (catalogId === 'trakt.calendar') {
-      // Trakt Calendar - Shows airing this week
+      // Trakt Calendar - Shows airing soon
       // Only shows page 1, returns empty for page 2+
       if (page > 1) {
         logger.info(`Trakt Calendar: Page ${page} requested, returning empty (only page 1 exists)`);
@@ -1268,10 +1268,15 @@ async function getTraktCatalog(
         });
         const startDate = formatter.format(new Date()); // Returns YYYY-MM-DD
         
-        logger.info(`Trakt Calendar: Fetching today's shows (${startDate}, timezone: ${timezone})`);
+        // Get configured days (1-7), default to 1 if not set
+        const catalogConfig = config.catalogs?.find(c => c.id === 'trakt.calendar');
+        const days = catalogConfig?.metadata?.airingSoonDays || 1;
+        const clampedDays = Math.max(1, Math.min(7, days));
         
-        // Fetch 1 day (today only)
-        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, 1);
+        logger.info(`Trakt Calendar: Fetching shows airing in next ${clampedDays} day(s) (${startDate}, timezone: ${timezone})`);
+        
+        // Fetch shows for the configured number of days
+        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, clampedDays);
         
         response = {
           items: calendarResult.items,

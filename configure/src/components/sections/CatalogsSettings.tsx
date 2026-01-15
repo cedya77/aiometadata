@@ -288,9 +288,17 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
+  const [airingSoonDays, setAiringSoonDays] = useState<number>(() => {
+    const days = catalog.metadata?.airingSoonDays;
+    if (typeof days === 'number' && days >= 1 && days <= 7) {
+      return days;
+    }
+    return 1;
+  });
   
   const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
   const isUpNext = catalog.id === 'trakt.upnext';
+  const isCalendar = catalog.id === 'trakt.calendar';
   const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.');
 
   const handleSave = () => {
@@ -302,7 +310,13 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               sort, 
               sortDirection, 
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
-              ...(isUpNext && { metadata: { ...c.metadata, useShowPosterForUpNext: useShowPoster } })
+              metadata: {
+                ...c.metadata,
+                ...(isUpNext && { useShowPosterForUpNext: useShowPoster }),
+                ...(isCalendar && { 
+                  airingSoonDays: Math.max(1, Math.min(7, airingSoonDays)) 
+                })
+              }
             }
           : c
       ) as CatalogConfig[];
@@ -395,6 +409,27 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
                   onCheckedChange={setUseShowPoster}
                 />
               </div>
+            </div>
+          )}
+
+          {isCalendar && (
+            <div className="space-y-2">
+              <Label>Days Ahead</Label>
+              <Select value={airingSoonDays.toString()} onValueChange={(value) => setAiringSoonDays(Number(value))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6, 7].map(days => (
+                    <SelectItem key={days} value={days.toString()}>
+                      {days} {days === 1 ? 'day' : 'days'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Shows airing within the selected number of days
+              </p>
             </div>
           )}
         </div>
