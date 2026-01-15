@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.22.0](https://github.com/cedya77/aiometadata/compare/v1.21.0...v1.22.0) (2026-01-15)
+
+
+### Features
+
+* Add configurable days ahead for Trakt airing soon catalog ([275e5c9](https://github.com/cedya77/aiometadata/commit/275e5c9812b9a7dc5b14495c14b04999da1081a7))
+* Add sort options for TMDB year and language catalogs ([ca0ac4c](https://github.com/cedya77/aiometadata/commit/ca0ac4c8be792e8d6b6c3aa49d97c712bab25b80))
+* merge tmdb art requests and deduplicate in-flight ([322f08d](https://github.com/cedya77/aiometadata/commit/322f08d68587b58f1721a5d0e0a58dde66f6c2c9))
+* remove cinemeta fallback from imdb ratings fetcher ([28bfbbc](https://github.com/cedya77/aiometadata/commit/28bfbbc42c3c2b74697e9380cab3b7da930a9991))
+* remove cinemeta fallback from imdb ratings fetcher ([c3fe45c](https://github.com/cedya77/aiometadata/commit/c3fe45c91f56e4eb98ccb7f21b4ce936a0f97d44))
+
+
+### Bug Fixes
+
+* add null checks for TMDB API responses to prevent fallback issues ([571448e](https://github.com/cedya77/aiometadata/commit/571448e270928a4b694ef5ef8a17f71e07e90eae))
+* apply digital release filter to Trakt/MDBList lists with type 'all' ([cd7d8c6](https://github.com/cedya77/aiometadata/commit/cd7d8c69117ba53260d9aca01483fb24a91a7b71))
+* Fixed issue with IMDb ratings not being correctly retrieved for tmdb series. ([1c85701](https://github.com/cedya77/aiometadata/commit/1c8570136be4226f53e54ad5886dd095e2d84d38))
+* multiple search and thumbnail improvements ([bd904ad](https://github.com/cedya77/aiometadata/commit/bd904ad7b208572779b359d460e024b9d26e6ddc))
+* prioritize background over season poster for unaired episode thumbnails ([04df2b0](https://github.com/cedya77/aiometadata/commit/04df2b06c6862eada3ac57cb1ab5483e5b67e33b))
+* rename searches instead of providers for independent naming ([bd904ad](https://github.com/cedya77/aiometadata/commit/bd904ad7b208572779b359d460e024b9d26e6ddc))
+* sync AI toggle when disabling AI search in sortable list ([bd904ad](https://github.com/cedya77/aiometadata/commit/bd904ad7b208572779b359d460e024b9d26e6ddc))
+* update redis memory calculation in cache management UI element ([537b918](https://github.com/cedya77/aiometadata/commit/537b91839d7aaf966ceaabe95f3ab62ff8b5aa56))
+* update redis memory calculation in cache management UI element ([59d964e](https://github.com/cedya77/aiometadata/commit/59d964e8fa652f76d4ac4187a69675426a524337))
+* use AniList format field to determine movie vs series ([ffb3051](https://github.com/cedya77/aiometadata/commit/ffb305184d4e90e7b949bc29e4d9b54a1b1afa2b))
+* use unified true for MDBList lists imported via username ([a5e10dd](https://github.com/cedya77/aiometadata/commit/a5e10dd92d9950cb979353b6a76299a67b0a0927))
+
+
+### Performance Improvements
+
+* parallelize calls in parseProps.js ([820e3c9](https://github.com/cedya77/aiometadata/commit/820e3c99c49f67710415e299315937673d58d39a))
+* pre-compute langCode3 once and re-use ([6d0e31d](https://github.com/cedya77/aiometadata/commit/6d0e31d6a3024d8cb858366fe253b56e2c1b8d0f))
+
 ## [1.21.0](https://github.com/cedya77/aiometadata/compare/v1.20.1...v1.21.0) (2026-01-11)
 
 
