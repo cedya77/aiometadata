@@ -1655,12 +1655,15 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
 async function cacheComponent(cacheKey, componentData, ttl) {
   if (!redis || !componentData) return;
   
+  const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
+  
   try {
-    await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
+    await redis.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
   } catch (error) {
-    cacheLogger.warn(`Failed to cache component for ${cacheKey}:`, error);
+    cacheLogger.warn(`Failed to cache component for ${versionedKey}:`, error);
   }
 }
+
 
 /**
  * Cache individual meta components during meta generation
