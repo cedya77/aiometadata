@@ -35,8 +35,8 @@ COPY --from=builder /app/dist ./dist
 
 COPY --from=builder /app/public ./public
 
-
-EXPOSE 3232
+ARG PORT=3232
+EXPOSE ${PORT}
 
 RUN apk add --no-cache wget
 
