@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.22.1](https://github.com/cedya77/aiometadata/compare/v1.22.0...v1.22.1) (2026-01-15)
+
+
+### Bug Fixes
+
+* add version prefix to component cache keys to prevent stale data ([ee11fe6](https://github.com/cedya77/aiometadata/commit/ee11fe693f3a0006988c412685cf001d32348851))
+* trakt token update logic ([4d0aea1](https://github.com/cedya77/aiometadata/commit/4d0aea154a79450430855734b3fbfbf003016980))
+* trakt token update logic ([8af1a4b](https://github.com/cedya77/aiometadata/commit/8af1a4b94924d5c225047a0a17e3624961b53cad))
+
 ## [1.22.0](https://github.com/cedya77/aiometadata/compare/v1.21.0...v1.22.0) (2026-01-15)
 
 
