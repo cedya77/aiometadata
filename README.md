@@ -54,6 +54,12 @@ services:
       aiometadata_redis:
         condition: service_healthy
     tty: true
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3232/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   aiometadata_redis:
     image: redis:latest
