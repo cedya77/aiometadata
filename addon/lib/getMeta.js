@@ -728,10 +728,14 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
         if (type === 'movie') {
           const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-          return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
+          if (movieData) {
+            return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
+          }
         } else {
           const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
-          return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
+          if (seriesData) {
+            return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
+          }
         }
       }
       if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
@@ -1000,32 +1004,34 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     const langCode = config.language.split('-')[0];
     const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
     const movieData = await moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates,videos", include_video_language: videoLanguages }, config);
-    imdbData.app_extras = imdbData.app_extras || {};
-    imdbData.released = movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null;
-    imdbData.app_extras.releaseDates = movieData.release_dates;
-    const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates); 
-    imdbData.app_extras.certification = certification;
-    if (certification && config.displayAgeRating) {
-      const certificationLink = {
-        name: certification,
-        category: 'Genres',
-        url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
-      };
-      imdbData.links.unshift(certificationLink);
-    }
-    if (movieData.videos) {
-      const allTrailers = Utils.parseTrailers(movieData.videos);
-      const allTrailerStreams = Utils.parseTrailerStream(movieData.videos);
-      const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
-      const filteredTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === langCode);
+    if (movieData) {
+      imdbData.app_extras = imdbData.app_extras || {};
+      imdbData.released = movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null;
+      imdbData.app_extras.releaseDates = movieData.release_dates;
+      const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates); 
+      imdbData.app_extras.certification = certification;
+      if (certification && config.displayAgeRating) {
+        const certificationLink = {
+          name: certification,
+          category: 'Genres',
+          url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
+        };
+        imdbData.links.unshift(certificationLink);
+      }
+      if (movieData.videos) {
+        const allTrailers = Utils.parseTrailers(movieData.videos);
+        const allTrailerStreams = Utils.parseTrailerStream(movieData.videos);
+        const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
+        const filteredTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === langCode);
 
-      const englishTrailers = allTrailers.filter(trailer => trailer.lang === 'en');
-      const englishTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === 'en');
-      const finalTrailers = filteredTrailers.length > 0 ? filteredTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
-      const finalTrailerStreams = filteredTrailerStreams.length > 0 ? filteredTrailerStreams : (englishTrailerStreams.length > 0 ? englishTrailerStreams : allTrailerStreams);
+        const englishTrailers = allTrailers.filter(trailer => trailer.lang === 'en');
+        const englishTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === 'en');
+        const finalTrailers = filteredTrailers.length > 0 ? filteredTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
+        const finalTrailerStreams = filteredTrailerStreams.length > 0 ? filteredTrailerStreams : (englishTrailerStreams.length > 0 ? englishTrailerStreams : allTrailerStreams);
 
-      imdbData.trailers = finalTrailers;
-      imdbData.trailerStreams = finalTrailerStreams;
+        imdbData.trailers = finalTrailers;
+        imdbData.trailerStreams = finalTrailerStreams;
+      }
     }
   }
 
@@ -1773,9 +1779,11 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let release_dates = null;
   let certification = null;
   if(tmdbId){
-    const movieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
-    release_dates = movieData?.release_dates || null;  
-    certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
+    const tmdbMovieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
+    if (tmdbMovieData) {
+      release_dates = tmdbMovieData.release_dates || null;  
+      certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
+    }
   }
   let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks];
   if(certification && config.displayAgeRating){
@@ -2494,7 +2502,9 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   let certification = null;
   if(tmdbId){
     const seriesData = await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "content_ratings" }, config);
-    certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+    if (seriesData) {
+      certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+    }
   }
   videos = [... specialVideos, ... videos];
   if(!logoUrl && imdbId){
