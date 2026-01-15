@@ -20,7 +20,7 @@ cp .env.example .env
 ## Server Configuration
 
 ### `PORT`
-- **Default**: `1337`
+- **Default**: `3232`
 - **Description**: Port number the server listens on
 - **Example**: `PORT=3000`
 
@@ -465,7 +465,7 @@ ADMIN_KEY=your_secure_random_key
 ### Production Setup (.env)
 ```bash
 # Server
-PORT=1337
+PORT=3232
 HOST_NAME=my-addon.com
 NODE_ENV=production
 LOG_LEVEL=info
@@ -509,7 +509,7 @@ CACHE_CLEANUP_QUIET_HOURS=02:00-06:00
 ### Shared Hosting Setup (.env)
 ```bash
 # Basic Config
-PORT=1337
+PORT=3232
 HOST_NAME=my-addon.com
 DATABASE_URL=sqlite:./data/aiometadata.db
 REDIS_URL=redis://localhost:6379

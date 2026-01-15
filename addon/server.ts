@@ -14,7 +14,7 @@ import database from './lib/database.js';
 import consola from 'consola';
 
 
-const PORT: number = parseInt(process.env.PORT || '1337', 10);
+const PORT: number = parseInt(process.env.PORT || '3232', 10);
  
 async function startServer(): Promise<void> {
   consola.info('--- Addon Starting Up ---');

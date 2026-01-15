@@ -6,7 +6,7 @@ This document describes the API endpoints available in the TMDB Addon.
 
 All URLs referenced in the documentation have the following base:
 ```
-http://your_domain:1337
+http://your_domain:3232
 ```
 
 ## Authentication

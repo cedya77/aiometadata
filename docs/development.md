@@ -45,8 +45,8 @@ MONGODB_URI=your_mongodb_uri
 FANART_API=your_fanart_key
 TMDB_API=your_tmdb_key
 RPDB_API_KEY=your_rpdb_key
-HOST_NAME=http://localhost:1337
-PORT=1337
+HOST_NAME=http://localhost:3232
+PORT=3232
 ```
 
 4. Start development server:

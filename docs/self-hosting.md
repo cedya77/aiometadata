@@ -24,12 +24,12 @@ The easiest way to run this addon is using Docker. The image is available on Doc
 ```bash
 docker run -d \
   --name tmdb-addon \
-  -p 1337:1337 \
+  -p 3232:3232 \
   -e MONGODB_URI=your_mongodb_uri \
   -e FANART_API=your_fanart_key \
   -e TMDB_API=your_tmdb_key \
   -e RPDB_API_KEY=your_rpdb_key \
-  -e HOST_NAME=http://your_domain:1337 \
+  -e HOST_NAME=http://your_domain:3232 \
   mrcanelas/tmdb-addon:latest
 ```
 
@@ -44,13 +44,13 @@ services:
     image: mrcanelas/tmdb-addon:latest
     container_name: tmdb-addon
     ports:
-      - "1337:1337"
+      - "3232:3232"
     environment:
       - MONGODB_URI=your_mongodb_uri
       - FANART_API=your_fanart_key
       - TMDB_API=your_tmdb_key
       - RPDB_API_KEY=your_rpdb_key
-      - HOST_NAME=http://your_domain:1337
+      - HOST_NAME=http://your_domain:3232
     restart: unless-stopped
 ```
 
@@ -94,8 +94,8 @@ node addon/server.js
 | `FANART_API` | Fanart.tv API key | Yes |
 | `TMDB_API` | TMDB API key | Yes |
 | `RPDB_API_KEY` | RPDB API key | No |
-| `HOST_NAME` | Public URL of your addon (e.g., http://your_domain:1337) | Yes |
-| `PORT` | Server port (default: 1337) | No |
+| `HOST_NAME` | Public URL of your addon (e.g., http://your_domain:3232) | Yes |
+| `PORT` | Server port (default: 3232) | No |
 
 ## Getting API Keys
 
@@ -124,11 +124,11 @@ node addon/server.js
 ## Verifying Installation
 
 After installation, verify that the addon is working by accessing:
-- `http://your_domain:1337/manifest.json`
-- `http://your_domain:1337/configure`
+- `http://your_domain:3232/manifest.json`
+- `http://your_domain:3232/configure`
 
 To add the addon to Stremio, use the URL:
-`stremio://your_domain:1337/manifest.json`
+`stremio://your_domain:3232/manifest.json`
 
 ## Troubleshooting
 
@@ -145,7 +145,7 @@ To add the addon to Stremio, use the URL:
    - Ensure you're using the correct API key type
 
 3. **Addon not accessible**
-   - Verify the port 1337 is open on your firewall
+   - Verify the port 3232 is open on your firewall
    - Check if the HOST_NAME variable matches your actual domain
    - Ensure your domain/IP is accessible from the internet
 
