@@ -1445,7 +1445,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    // Try to fetch all components from cache using MGET (optimized single round trip)
   const componentNames = Object.keys(componentCacheKeys);
-  const cacheKeys = Object.values(componentCacheKeys);
+  const cacheKeys = Object.values(componentCacheKeys).map(key => `v${ADDON_VERSION}:${key}`);
   
   let componentResults = [];
   
