@@ -1449,6 +1449,42 @@ async function getAniListCatalog(
   try {
     logger.info(`[AniList] Fetching catalog: ${catalogId}, Page: ${page}`);
     
+    // Handle trending catalog - doesn't require username
+    if (catalogId === 'anilist.trending') {
+      const pageSize = 50;
+      const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+      const customCacheTTL = catalogConfig?.cacheTTL || null;
+      const sfw = config.sfw || false;
+      
+      // Fetch trending anime with caching
+      // Include sfw in cache key to prevent mixing SFW and non-SFW results
+      const response = await cacheWrapAniListCatalog(
+        'trending',
+        `trending:sfw:${sfw}`,
+        page,
+        async () => anilist.fetchTrending(page, pageSize, sfw),
+        customCacheTTL,
+        { enableErrorCaching: true }
+      );
+      
+      // Handle cached error responses
+      if (response && (response as any).error) {
+        logger.warn(`[AniList] Cached error for trending: ${(response as any).message}`);
+        return [];
+      }
+      
+      logger.debug(`[AniList] Fetched ${response.items.length} trending items, hasMore: ${response.hasMore}`);
+      
+      if (response.items.length === 0) {
+        return [];
+      }
+      
+      // Resolve AniList media IDs to Stremio metas
+      const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+      logger.success(`[AniList] Processed ${metas.length} trending items (page ${page})`);
+      return metas;
+    }
+    
     // Get the catalog config to retrieve username, list name and custom TTL
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const username = catalogConfig?.metadata?.username;
@@ -1541,7 +1577,18 @@ async function resolveAniListItemsToMetas(
   };
 
   const getStremioTypeFromFormat = (format: string | null | undefined): string => {
-    return format?.toLowerCase() === 'movie' ? 'movie' : 'series';
+    if (!format) return 'series';
+    
+    const formatUpper = format.toUpperCase();
+    
+    // Movie formats: MOVIE, SPECIAL, ONE_SHOT
+    if (formatUpper === 'MOVIE' || formatUpper === 'SPECIAL' || formatUpper === 'ONE_SHOT') {
+      return 'movie';
+    }
+    
+    // Series formats: TV, TV_SHORT, OVA, ONA (and everything else defaults to series)
+    // TV, TV_SHORT, OVA, ONA are all series
+    return 'series';
   };
 
   // create new items with property mal_id and type, plus additional AniList fields

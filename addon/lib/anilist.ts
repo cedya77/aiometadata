@@ -537,7 +537,7 @@ class AniListAPI {
       );
 
       if (response.data?.data) {
-        const results = [];
+        const results: any[] = [];
         for (let i = 0; i < anilistIds.length; i++) {
           const anime = response.data.data[`anime${i}`];
           if (anime) {
@@ -605,7 +605,7 @@ class AniListAPI {
       );
 
       if (response.data?.data) {
-        const results = [];
+        const results: any[] = [];
         for (let i = 0; i < malIds.length; i++) {
           const anime = response.data.data[`anime${i}`];
           if (anime) {
@@ -707,7 +707,7 @@ class AniListAPI {
     if (!anilistIds || anilistIds.length === 0) return [];
     
     const batchSize = 50;
-    const allResults = [];
+    const allResults: any[] = [];
     
     // Process in batches
     for (let i = 0; i < anilistIds.length; i += batchSize) {
@@ -746,7 +746,7 @@ class AniListAPI {
     if (!malIds || malIds.length === 0) return [];
     
     let batchSize = 50; // Back to 50 with minimal fields
-    const allResults = [];
+    const allResults: any[] = [];
     
     // Process in batches
     for (let i = 0; i < malIds.length; i += batchSize) {
@@ -926,6 +926,98 @@ class AniListAPI {
       rateLimit: this.getRateLimitStatus()
     };
   }
+
+  /**
+   * Fetch trending anime from AniList
+   * @param {number} page - Page number (1-indexed)
+   * @param {number} pageSize - Number of items per page
+   * @param {boolean} sfw - If true, filter out adult content (isAdult: false)
+   * @returns {Promise<{items: Array, hasMore: boolean, total: number}>}
+   */
+  async fetchTrending(page = 1, pageSize = 50, sfw = false): Promise<any> {
+    const query = `
+      query($page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            hasNextPage
+            total
+          }
+          media(type: ANIME, sort: TRENDING_DESC, format_not_in: [MUSIC, NOVEL]${sfw ? ', isAdult: false' : ''}) {
+            id
+            idMal
+            title {
+              english
+              romaji
+              native
+            }
+            startDate {
+              year
+              month
+              day
+            }
+            endDate {
+              year
+              month
+              day
+            }
+            seasonYear
+            duration
+            episodes
+            format
+            description
+            coverImage {
+              large
+              medium
+              color
+            }
+            bannerImage
+            genres
+            averageScore
+            meanScore
+            popularity
+            trending
+            status
+            season
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await this.makeRateLimitedRequest(() => 
+        httpPost(this.baseURL, {
+          query,
+          variables: { page, perPage: pageSize }
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          timeout: 15000
+        })
+      );
+
+      if (response.data?.data?.Page) {
+        const pageData = response.data.data.Page;
+        const items = pageData.media.map((media: any) => ({
+          score: media.trending || 0,
+          media: media
+        }));
+
+        return {
+          items,
+          hasMore: pageData.pageInfo.hasNextPage || false,
+          total: pageData.pageInfo.total || items.length
+        };
+      }
+
+      return { items: [], hasMore: false, total: 0 };
+    } catch (error: any) {
+      console.error(`[AniList] Error fetching trending anime:`, error.message);
+      throw error;
+    }
+  }
 }
+
 const anilist = new AniListAPI();
 module.exports = anilist;

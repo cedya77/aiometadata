@@ -592,6 +592,63 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             </CardContent>
           </Card>
 
+          {/* Trending Anime Catalog */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <List className="h-5 w-5" />
+                Trending Anime
+              </CardTitle>
+              <CardDescription>
+                Add a catalog of currently trending anime from AniList (no account required).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {config.catalogs.some(c => c.id === 'anilist.trending') ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <span className="font-medium">Trending catalog is already added</span>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setConfig(prev => ({
+                        ...prev,
+                        catalogs: prev.catalogs.filter(c => c.id !== 'anilist.trending')
+                      }));
+                      toast.success("Trending catalog removed");
+                    }}
+                  >
+                    Remove Trending Catalog
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  onClick={() => {
+                    const newCatalog: CatalogConfig = {
+                      id: 'anilist.trending',
+                      name: 'AniList Trending',
+                      type: 'anime',
+                      enabled: true,
+                      showInHome: true,
+                      source: 'anilist',
+                    };
+                    setConfig(prev => ({
+                      ...prev,
+                      catalogs: [...prev.catalogs, newCatalog]
+                    }));
+                    toast.success("Trending catalog added");
+                  }}
+                  className="w-full sm:w-auto"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Add Trending Catalog
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Import Public User Lists Section */}
           <Card>
             <CardHeader className="pb-3">
