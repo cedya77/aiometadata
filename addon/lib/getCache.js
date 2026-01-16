@@ -964,8 +964,8 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
   const searchSig = shortSignature(`${configHash}`);
   cacheLogger.debug(`[Search] Key detail [sig:${searchSig}]`);
   
-  // Shorter TTL for search results since they're more dynamic
-  const SEARCH_TTL = 10 * 60; // 10 minutes (vs 1 hour for catalogs)
+  // TTL for search results
+  const SEARCH_TTL = 12 * 60 * 60; // 12 hours
   
   return cacheWrap(key, method, SEARCH_TTL, options);
 }
