@@ -804,6 +804,14 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   // Sort results by release date (newest first) for catalogs that explicitly sort by release date
   // Top rated, year, and language catalogs should keep TMDB's default sorting, so skip this
   if (res?.results) {
+    // Filter out spam entries for airing_today catalog
+    if (id === 'tmdb.airing_today') {
+      res.results = res.results.filter((item: any) => {
+        const isSpam = !item.poster_path && !item.backdrop_path && item.vote_count === 0 && (!item.genre_ids || item.genre_ids.length === 0);
+        return !isSpam;
+      });
+    }
+
     if (id === 'tmdb.top') {
       res.results.sort((a: any, b: any) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
     }
