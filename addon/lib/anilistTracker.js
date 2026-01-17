@@ -591,7 +591,7 @@ async function resolveAniListId(parsedId) {
           return null;
         }
         
-        const tvdbId = mapping.thetvdb_id;
+        const tvdbId = mapping.tvdb_id;
         if (!tvdbId) {
           logger.debug(`[AniList Tracker] No TVDB ID in mapping for IMDB ${id}`);
           return null;

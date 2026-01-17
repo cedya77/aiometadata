@@ -58,7 +58,7 @@ function _handleAnimeMapping(allIds) {
       if (mapping) {
         allIds.tmdbId = allIds.tmdbId || mapping.themoviedb_id;
         allIds.imdbId = allIds.imdbId || mapping.imdb_id;
-        allIds.tvdbId = allIds.tvdbId || mapping.thetvdb_id;
+        allIds.tvdbId = allIds.tvdbId || mapping.tvdb_id;
         allIds.tvmazeId = allIds.tvmazeId || mapping.tvmaze_id;
         allIds.malId = allIds.malId || mapping.mal_id;
         allIds.kitsuId = allIds.kitsuId || mapping.kitsu_id;
@@ -238,7 +238,7 @@ async function getExternalIdsFromImdb(imdbId, type) {
 
   try {
     const { data } = await httpGet(url);
-    const tvdbId = data?.meta?.tvdb_id || data?.meta?.thetvdb_id;
+    const tvdbId = data?.meta?.tvdb_id;
     const tmdbId = data?.meta?.moviedb_id || data?.meta?.themoviedb_id || data?.meta?.tmdb_id;
     return {
       tmdbId: (tmdbId && tmdbId.toString().trim() !== '') ? tmdbId : null,

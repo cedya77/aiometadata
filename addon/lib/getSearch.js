@@ -240,7 +240,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           const malId = mapping?.mal_id;
           let tmdbId = type === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
           let imdbId = type === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
-          let tvdbId = type === 'movie' ? (wikiMappings.getByImdbId(imdbId, type))?.tvdbId || null : mapping?.thetvdb_id;
+          let tvdbId = type === 'movie' ? (wikiMappings.getByImdbId(imdbId, type))?.tvdbId || null : mapping?.tvdb_id;
 
           const imdbRating = imdbId ? await getImdbRating(imdbId, type) : 'N/A';
           let id = imdbId || `kitsu:${kitsuId}`;

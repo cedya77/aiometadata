@@ -126,8 +126,8 @@ function processAndIndexData(data) {
     if (item.anilist_id) anilistIdMap.set(item.anilist_id, item);
     if (item.imdb_id) imdbIdMap.set(item.imdb_id, item);
     
-    if (item.thetvdb_id) {
-      const tvdbId = item.thetvdb_id;
+    if (item.tvdb_id) {
+      const tvdbId = item.tvdb_id;
       // If we haven't seen this TVDB ID before, create a new array for it
       if (!tvdbIdToAnimeListMap.has(tvdbId)) {
         tvdbIdToAnimeListMap.set(tvdbId, []);

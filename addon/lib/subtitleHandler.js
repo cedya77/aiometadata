@@ -314,7 +314,7 @@ async function resolveSeriesIds(parsedId) {
       }
       const ids = {};
       if (mapping.imdb_id) ids.imdb = mapping.imdb_id;
-      if (mapping.thetvdb_id) ids.tvdb = parseInt(mapping.thetvdb_id, 10);
+      if (mapping.tvdb_id) ids.tvdb = parseInt(mapping.tvdb_id, 10);
 
       if (Object.keys(ids).length === 0) {
         logger.debug(`[Watch Tracking] TMDB ${parsedId.id} mapping lacks IMDb/TVDB identifiers`);
