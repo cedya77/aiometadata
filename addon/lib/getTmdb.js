@@ -158,22 +158,79 @@ async function handleRateLimit(retryAfterSeconds) {
   const limiterState = tmdbLimiter.counts();
   consola.debug(`[TMDB] Limiter state before pause: ${JSON.stringify(limiterState)}`);
   
-  // Use reservoir to block new requests
-  await tmdbLimiter.updateSettings({
-    reservoir: 0,
-    reservoirRefreshAmount: 0
+  try {
+    // Use reservoir to block new requests
+    await tmdbLimiter.updateSettings({
+      reservoir: 0,
+      reservoirRefreshAmount: 0
+    });
+    
+    // Wait for backoff period
+    await new Promise(resolve => setTimeout(resolve, backoffMs));
+    
+    // Restore normal operation
+    await tmdbLimiter.updateSettings({
+      reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+      reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
+    });
+    
+    consola.info(`[TMDB] Rate limit backoff complete (waited ${actualBackoff}s), resuming requests`);
+  } catch (error) {
+    consola.error(`[TMDB] Error during rate limit backoff: ${error.message}`);
+    try {
+      await tmdbLimiter.updateSettings({
+        reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+        reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
+      });
+      consola.warn(`[TMDB] Limiter restored after error`);
+    } catch (restoreError) {
+      consola.error(`[TMDB] Failed to restore limiter after error: ${restoreError.message}`);
+    }
+  }
+}
+
+/**
+ * Ensure the limiter is not stuck in a blocked state
+ * This is a safety mechanism to prevent the limiter from blocking indefinitely
+ * Checks if the limiter has been stuck for too long and restores it
+ * Only checks periodically to avoid overhead (every 5 seconds max)
+ */
+let limiterStuckCheckTime = 0;
+let lastStuckCheck = 0;
+const STUCK_CHECK_INTERVAL = 5000; // Only check every 5 seconds
+
+function ensureLimiterNotStuck() {
+  const now = Date.now();
+  
+  if (now - lastStuckCheck < STUCK_CHECK_INTERVAL) {
+    return;
+  }
+  lastStuckCheck = now;
+  
+  setImmediate(async () => {
+    try {
+      const counts = tmdbLimiter.counts();
+      
+      if (counts.QUEUED > 0 && counts.RUNNING === 0) {
+        if (limiterStuckCheckTime === 0) {
+          limiterStuckCheckTime = now;
+        } else if (now - limiterStuckCheckTime > 10000) {
+          // If stuck for more than 10 seconds, force restore
+          consola.warn(`[TMDB] Limiter appears stuck (${counts.QUEUED} queued, 0 running for ${Math.round((now - limiterStuckCheckTime) / 1000)}s), restoring...`);
+          await tmdbLimiter.updateSettings({
+            reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+            reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
+          });
+          consola.info(`[TMDB] Limiter restored`);
+          limiterStuckCheckTime = 0;
+        }
+      } else {
+        limiterStuckCheckTime = 0;
+      }
+    } catch (error) {
+      consola.debug(`[TMDB] Limiter safety check error: ${error.message}`);
+    }
   });
-  
-  // Wait for backoff period
-  await new Promise(resolve => setTimeout(resolve, backoffMs));
-  
-  // Restore normal operation
-  await tmdbLimiter.updateSettings({
-    reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-    reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
-  });
-  
-  consola.info(`[TMDB] Rate limit backoff complete (waited ${actualBackoff}s), resuming requests`);
 }
 
 /**
@@ -217,6 +274,9 @@ function getRateLimiterMetrics() {
 
 async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null, config = {}) {
   if (!apiKey) throw new Error("TMDB API key is required.");
+  
+  // Safety check: ensure limiter is not stuck (non-blocking, checks periodically)
+  ensureLimiterNotStuck();
   
   const queryParams = new URLSearchParams(params);
   queryParams.append('api_key', apiKey);

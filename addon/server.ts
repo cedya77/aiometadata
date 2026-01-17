@@ -45,9 +45,9 @@ async function startServer(): Promise<void> {
   
   consola.info('Initializing Mappers, Ratings, and Cache Cleanup...');
 
-  consola.info('Performing version cleanup...');
-  await performVersionCleanup();
-  consola.success('Version cleanup complete.');
+  performVersionCleanup().catch((error: any) => {
+    consola.error('Background version cleanup failed:', error.message);
+  });
   
   const initializationTasks = [
     {
