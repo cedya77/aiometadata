@@ -2,22 +2,12 @@ import { httpGet } from '../utils/httpClient.js';
 import { cacheWrapTvmazeApi } from './getCache.js';
 const packageJson = require('../../package.json');
 import { Agent, ProxyAgent } from 'undici';
-const Bottleneck = require('bottleneck');
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second base delay for network errors
 const RATE_LIMIT_FALLBACK_DELAY = 10000; // 10 seconds fallback if Retry-After header is missing
 const RETRY_AFTER_BUFFER = 1000; // Add 1 second buffer to Retry-After value
-
-// TVmaze rate limiter
-const tvmazeLimiter = new Bottleneck({
-  reservoir: 20, // Allow 20 requests per 10 seconds
-  reservoirRefreshAmount: 20,
-  reservoirRefreshInterval: 10 * 1000, 
-  maxConcurrent: 2,
-  minTime: 0 
-});
 
 // TVmaze dispatcher configuration
 // Priority: HTTPS_PROXY/HTTP_PROXY > direct connection
@@ -322,9 +312,7 @@ async function retryApiCall<T>(
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const result = await tvmazeLimiter.schedule(async () => {
-        return await apiCall();
-      });
+      const result = await apiCall();
       
       // Track success only once on first successful attempt
       const responseTime = Date.now() - overallStartTime;
