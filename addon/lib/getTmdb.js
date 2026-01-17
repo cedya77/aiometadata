@@ -3,11 +3,13 @@ const { socksDispatcher } = require('fetch-socks');
 const { scrapeSingleImdbResultByTitle, getMetaFromImdbIo } = require('./imdb');
 const requestTracker = require('./requestTracker');
 const consola = require('consola');
+const Bottleneck = require('bottleneck');
 var nameToImdb = require("name-to-imdb");
 const timingMetrics = require('./timing-metrics');
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 
-
+// HTTP status codes that are safe to retry 
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504, 521, 522, 524]);
 
 /**
  * Selects the best TMDB image by language (user's, then English, then any)
@@ -79,91 +81,138 @@ if (!dispatcher) {
 // It prevents calling the scraper multiple times for the same TMDB ID within the same session.
 const scrapedImdbIdCache = new Map();
 
-// Rate limit state tracking per API key
-const rateLimitStates = new Map();
+// Rate limiter configuration
+
+const RATE_LIMIT_CONFIG = {
+  maxRequestsPerSecond: 100,
+  defaultBackoffSeconds: 1,
+  maxBackoffSeconds: 5,
+  backoffMultiplier: 2,
+  backoffResetMs: 30000,
+};
+
+// Track consecutive rate limits for exponential backoff
+let consecutiveRateLimits = 0;
+let lastRateLimitTime = 0;
+
+const tmdbLimiter = new Bottleneck({
+  reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+  reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+  reservoirRefreshInterval: 1000,
+  maxConcurrent: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+  minTime: 0
+});
+
+// Metrics tracking
+const rateLimiterMetrics = {
+  totalRequests: 0,
+  throttledRequests: 0,
+  rateLimitHits: 0,
+  lastMinuteRequests: [],
+};
+
+// Track when limiter throttles requests
+tmdbLimiter.on('depleted', () => {
+  rateLimiterMetrics.throttledRequests++;
+  consola.debug('[TMDB] Rate limiter depleted, requests will be queued');
+});
 
 /**
- * Get or create rate limit state for an API key
- * @param {string} apiKey - The TMDB API key
- * @returns {Object} Rate limit state object
+ * Record a request for metrics tracking
  */
-function getRateLimitState(apiKey) {
-  if (!rateLimitStates.has(apiKey)) {
-    rateLimitStates.set(apiKey, {
-      remaining: null,        
-      limit: null,            
-      reset: null,            
-      resetTime: null,       
-      lastRequestTime: null 
-    });
-  }
-  return rateLimitStates.get(apiKey);
-}
-
-/**
- * Update rate limit state from response headers
- * @param {string} apiKey - The TMDB API key
- * @param {Headers} headers - Response headers
- */
-function updateRateLimitState(apiKey, headers) {
-  const state = getRateLimitState(apiKey);
-  
-  const remaining = headers.get('x-ratelimit-remaining');
-  const limit = headers.get('x-ratelimit-limit');
-  const reset = headers.get('x-ratelimit-reset');
-  
-  if (remaining !== null) {
-    state.remaining = parseInt(remaining, 10);
-  }
-  if (limit !== null) {
-    state.limit = parseInt(limit, 10);
-  }
-  if (reset !== null) {
-    const resetTimestamp = parseInt(reset, 10);
-    state.reset = resetTimestamp;
-    state.resetTime = new Date(resetTimestamp * 1000);
-  }
-  
-  state.lastRequestTime = Date.now();
-}
-
-/**
- * Wait if rate limit remaining is too low
- * @param {string} apiKey - The TMDB API key
- * @returns {Promise<void>}
- */
-async function waitIfRateLimitLow(apiKey) {
-  const state = getRateLimitState(apiKey);
-  
-  if (state.remaining === null || state.resetTime === null) {
-    return;
-  }
-  
+function recordRequest() {
   const now = Date.now();
-  const resetTimeMs = state.resetTime.getTime();
-  if (resetTimeMs <= now) {
-    state.remaining = null;
-    state.reset = null;
-    state.resetTime = null;
-    return;
+  rateLimiterMetrics.totalRequests++;
+  rateLimiterMetrics.lastMinuteRequests.push(now);
+  
+  // Clean up old entries (older than 1 minute)
+  const oneMinuteAgo = now - 60000;
+  rateLimiterMetrics.lastMinuteRequests = rateLimiterMetrics.lastMinuteRequests.filter(t => t > oneMinuteAgo);
+}
+
+/**
+ * Handle 429 rate limit response
+ * @param {number} retryAfterSeconds - Retry-After header value (or default)
+ */
+async function handleRateLimit(retryAfterSeconds) {
+  const now = Date.now();
+  
+  // Reset consecutive count if enough time has passed since last rate limit
+  if (now - lastRateLimitTime > RATE_LIMIT_CONFIG.backoffResetMs) {
+    consecutiveRateLimits = 0;
   }
   
-  const SAFE_THRESHOLD = 5;
+  consecutiveRateLimits++;
+  lastRateLimitTime = now;
+  rateLimiterMetrics.rateLimitHits++;
   
-  if (state.remaining <= SAFE_THRESHOLD) {
-    const waitTime = resetTimeMs - now;
-    const waitSeconds = Math.ceil(waitTime / 1000);
-    consola.warn(`[TMDB] Rate limit remaining is low (${state.remaining}/${state.limit || 'unknown'}) for API key. Waiting ${waitSeconds}s until reset at ${state.resetTime.toISOString()}`);
-    await new Promise(resolve => setTimeout(resolve, waitTime + 100)); // Add 100ms buffer
-    
-    state.remaining = null;
-    state.reset = null;
-    state.resetTime = null;
-  } else {
-    if (state.remaining <= 20) {
-      consola.debug(`[TMDB] Rate limit status: ${state.remaining}/${state.limit || 'unknown'} remaining, resets at ${state.resetTime.toISOString()}`);
-    }
+  // Calculate exponential backoff
+  const baseBackoff = retryAfterSeconds || RATE_LIMIT_CONFIG.defaultBackoffSeconds;
+  const exponentialBackoff = baseBackoff * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, consecutiveRateLimits - 1);
+  const actualBackoff = Math.min(exponentialBackoff, RATE_LIMIT_CONFIG.maxBackoffSeconds);
+  const backoffMs = actualBackoff * 1000;
+  
+  consola.warn(`[TMDB] Rate limited (429)! Backoff: ${actualBackoff}s (attempt ${consecutiveRateLimits}, base: ${baseBackoff}s)`);
+  
+  // Stop accepting new jobs and pause current ones
+  const limiterState = tmdbLimiter.counts();
+  consola.debug(`[TMDB] Limiter state before pause: ${JSON.stringify(limiterState)}`);
+  
+  // Use reservoir to block new requests
+  await tmdbLimiter.updateSettings({
+    reservoir: 0,
+    reservoirRefreshAmount: 0
+  });
+  
+  // Wait for backoff period
+  await new Promise(resolve => setTimeout(resolve, backoffMs));
+  
+  // Restore normal operation
+  await tmdbLimiter.updateSettings({
+    reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+    reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
+  });
+  
+  consola.info(`[TMDB] Rate limit backoff complete (waited ${actualBackoff}s), resuming requests`);
+}
+
+/**
+ * Reset consecutive rate limit counter (call after successful request)
+ */
+function resetBackoffCounter() {
+  if (consecutiveRateLimits > 0) {
+    consecutiveRateLimits = 0;
   }
+}
+
+/**
+ * Get current rate limiter metrics
+ * @returns {Object} Metrics object
+ */
+function getRateLimiterMetrics() {
+  const now = Date.now();
+  const oneMinuteAgo = now - 60000;
+  const recentRequests = rateLimiterMetrics.lastMinuteRequests.filter(t => t > oneMinuteAgo);
+  const limiterCounts = tmdbLimiter.counts();
+  
+  return {
+    maxRequestsPerSecond: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
+    requestsPerSecond: recentRequests.length / 60,
+    requestsLastMinute: recentRequests.length,
+    totalRequests: rateLimiterMetrics.totalRequests,
+    throttledRequests: rateLimiterMetrics.throttledRequests,
+    rateLimitHits: rateLimiterMetrics.rateLimitHits,
+    consecutiveRateLimits: consecutiveRateLimits,
+    currentBackoffSeconds: consecutiveRateLimits > 0 
+      ? Math.min(
+          RATE_LIMIT_CONFIG.defaultBackoffSeconds * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, consecutiveRateLimits - 1),
+          RATE_LIMIT_CONFIG.maxBackoffSeconds
+        )
+      : 0,
+    queued: limiterCounts.QUEUED,
+    running: limiterCounts.RUNNING,
+    executing: limiterCounts.EXECUTING
+  };
 }
 
 async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null, config = {}) {
@@ -172,7 +221,6 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
   const queryParams = new URLSearchParams(params);
   queryParams.append('api_key', apiKey);
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
-  //console.log(`[TMDB] Making request to ${url}`);
 
   let attempt = 0;
   const maxRetries = 3;
@@ -182,54 +230,60 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
     attempt++;
     const startTime = Date.now();
     
-    await waitIfRateLimitLow(apiKey);
-    
-    // *** FIX 1: The 'try' block now wraps the entire attempt. ***
     try {
-      const response = await fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        dispatcher: dispatcher,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(15000)
+      const response = await tmdbLimiter.schedule(async () => {
+        recordRequest();
+        return fetch(url, {
+          method: method,
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          dispatcher: dispatcher,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(15000)
+        });
       });
 
       const responseTime = Date.now() - startTime;
 
-      updateRateLimitState(apiKey, response.headers);
+      // Handle 404 errors
+      if (response.status === 404) {
+        const errorBody = await response.json().catch(() => ({}));
+        const errorMessage = errorBody.status_message || 'Resource not found';
+        consola.warn(`[TMDB] Resource not found for ${endpoint}: ${errorMessage}`);
+        return null;
+      }
 
-      if (response.status === 429) {
-          const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);
-          const waitTime = retryAfter * 1000 + 50;
-          consola.warn(`[TMDB] Rate limit hit for ${endpoint}. Waiting ${waitTime}ms.`);
-          
-          // Throw a specific error to be caught by the catch block for retrying
-          const rateLimitError = new Error(`Rate limit hit (429)`);
-          rateLimitError.isRetryable = true;
-          rateLimitError.retryDelay = waitTime;
-          throw rateLimitError;
+      // Handle retryable errors
+      if (RETRYABLE_STATUS_CODES.has(response.status)) {
+        const errorBody = await response.json().catch(() => ({}));
+        const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
+        
+        // Special handling for 429: pause the global limiter
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('retry-after') || String(RATE_LIMIT_CONFIG.defaultBackoffSeconds), 10);
+          await handleRateLimit(retryAfter);
+          consola.warn(`[TMDB] Rate limit hit (429) for ${endpoint}. Retrying after ${retryAfter}s backoff.`);
+        } else {
+          consola.warn(`[TMDB] Server error (${response.status}) for ${endpoint}: ${errorMessage}`);
+        }
+        
+        const retryableError = new Error(`${response.status === 429 ? 'Rate limit' : 'Server error'} (${response.status}): ${errorMessage}`);
+        retryableError.isRetryable = true;
+        retryableError.statusCode = response.status;
+        retryableError.retryDelay = response.status === 429 ? 100 : undefined;
+        throw retryableError;
       }
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
         const errorMessage = errorBody.status_message || `Request failed with status ${response.status}`;
-        
-        // Handle 404 errors gracefully - resource not found
-        if (response.status === 404) {
-          consola.warn(`[TMDB] Resource not found for ${endpoint}: ${errorMessage}`);
-          return null; // Return null instead of throwing for 404s
-        }
-        
-        throw new Error(errorMessage); // This will be caught by the catch block below
+        throw new Error(errorMessage);
       }
 
-      // Track successful request with rate limit headers
-      const rateLimitHeaders = {
-        limit: response.headers.get('x-ratelimit-limit'),
-        remaining: response.headers.get('x-ratelimit-remaining'),
-        reset: response.headers.get('x-ratelimit-reset')
-      };
-      requestTracker.trackProviderCall('tmdb', responseTime, true, rateLimitHeaders);
+      // Track successful request
+      requestTracker.trackProviderCall('tmdb', responseTime, true);
+      
+      // Reset exponential backoff counter on success
+      resetBackoffCounter();
       
       const data = await response.json();
       const isMovieDetailEndpoint = endpoint.match(/^\/movie\/(\d+)$/);
@@ -351,10 +405,13 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
       
       // Log significant errors to dashboard
       if (error.isRetryable) {
-        requestTracker.logProviderError('tmdb', 'rate_limit', 'Rate limit hit (429)', {
+        const errorType = error.statusCode ? 'server_error' : 'rate_limit';
+        const errorMsg = error.statusCode ? `Server error (${error.statusCode})` : 'Rate limit hit (429)';
+        requestTracker.logProviderError('tmdb', errorType, errorMsg, {
           endpoint,
           responseTime,
-          retryDelay: error.retryDelay
+          retryDelay: error.retryDelay,
+          statusCode: error.statusCode
         });
       } else if (typeof error.code === 'string' && error.code.startsWith('UND_ERR_')) {
         requestTracker.logProviderError('tmdb', 'timeout', `Request timeout: ${error.code}`, {
@@ -371,7 +428,7 @@ async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', bo
         });
       }
       
-      // Check for custom retry delay from our 429 logic
+      // Use retry delay from 429 or exponential backoff
       const delay = error.retryDelay || (1000 * Math.pow(2, attempt - 1));
 
       // Decide if we should retry
@@ -920,6 +977,7 @@ async function getTmdbSeriesLogo(tmdbId, config) {
 
 module.exports = {
   makeTmdbRequest, 
+  getRateLimiterMetrics,
   movieInfo,
   tvInfo,
   searchMovie,

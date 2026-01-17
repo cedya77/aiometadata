@@ -215,6 +215,24 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
   const handleDisconnect = async () => {
     setDisconnecting(true);
     try {
+      // For guests just clear local state
+      if (!auth.userUUID) {
+        setConfig(prev => ({
+          ...prev,
+          apiKeys: {
+            ...prev.apiKeys,
+            traktTokenId: undefined,
+          },
+        }));
+        setTempTokenId("");
+        setIsConnected(false);
+        setUsername(null);
+        toast.success("Trakt account disconnected");
+        setDisconnecting(false);
+        return;
+      }
+
+      // For registered users, call the backend to clean up database
       const response = await fetch("/api/auth/trakt/disconnect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
