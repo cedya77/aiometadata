@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.23.0](https://github.com/cedya77/aiometadata/compare/v1.22.1...v1.23.0) (2026-01-17)
+
+
+### Features
+
+* **anilist:** Add AniList trending anime catalog ([a8df749](https://github.com/cedya77/aiometadata/commit/a8df749c6873d94639a6ae741fcc8c7c0c13f95f))
+
+
+### Bug Fixes
+
+* Add cache integrity checks and improve catalog warmer stats tracking ([a979caa](https://github.com/cedya77/aiometadata/commit/a979caa7f111fefeead0c28ff773a307a0ccd52c))
+* allow guests to disconnect from trakt ([97f76c1](https://github.com/cedya77/aiometadata/commit/97f76c176fa18ed92087fbe509d31e01982828b4))
+* allow guests to disconnect from trakt ([c26980a](https://github.com/cedya77/aiometadata/commit/c26980ae8675789f90527c7ad2324a5f54ae4b2f))
+* filter out spam entries from TMDB airing today catalog ([591d265](https://github.com/cedya77/aiometadata/commit/591d265460f4cbe74d5c0f5505da62b749227cf4))
+* **Trakt:** fix Trakt OAuth 301 redirect error ([afe6e26](https://github.com/cedya77/aiometadata/commit/afe6e269a6dd7827482612f38df4727dd2fdf545))
+
 ## [1.22.1](https://github.com/cedya77/aiometadata/compare/v1.22.0...v1.22.1) (2026-01-15)
 
 
