@@ -2,11 +2,21 @@ import { httpGet } from '../utils/httpClient.js';
 import { cacheWrapTvmazeApi } from './getCache.js';
 const packageJson = require('../../package.json');
 import { Agent, ProxyAgent } from 'undici';
+const Bottleneck = require('bottleneck');
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second base delay
 const RATE_LIMIT_DELAY = 2000; // 2 seconds for rate limit backoff (TVmaze recommends "a few seconds")
+
+// TVmaze rate limiter - TVmaze allows at least 20 calls per 10 seconds per IP
+const tvmazeLimiter = new Bottleneck({
+  reservoir: 18, // Allow 18 requests (below the 20 minimum)
+  reservoirRefreshAmount: 18,
+  reservoirRefreshInterval: 10 * 1000, 
+  maxConcurrent: 2,
+  minTime: 0 
+});
 
 // TVmaze dispatcher configuration
 // Priority: HTTPS_PROXY/HTTP_PROXY > direct connection
@@ -21,16 +31,16 @@ if (HTTP_PROXY_URL) {
   } catch (error: any) {
     console.error(`[TVmaze] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
     tvmazeAgent = new Agent({
-      connections: 10,
-      keepAliveTimeout: 30 * 1000,
+      connections: 2, // TVmaze: leaving more than 1 idle connection may result in IP blocking
+      keepAliveTimeout: 10 * 1000, // Shorter timeout to avoid idle connections
     });
   }
 } else {
   tvmazeAgent = new Agent({
-    connections: 10, // Limit to a maximum of 10 concurrent connections to api.tvmaze.com
-    keepAliveTimeout: 30 * 1000, // Keep sockets open for 30 seconds of inactivity
+    connections: 2, // TVmaze: leaving more than 1 idle connection may result in IP blocking
+    keepAliveTimeout: 10 * 1000, // Keep sockets open for 10 seconds (shorter to avoid idle connections)
   });
-  console.log('[TVmaze] undici agent is enabled for direct connections.');
+  console.log('[TVmaze] undici agent is enabled for direct connections (2 max connections to avoid IP blocking).');
 }
 
 // Default HTTP client config with User-Agent as recommended by TVmaze
@@ -311,7 +321,9 @@ async function retryApiCall<T>(
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const result = await apiCall();
+      const result = await tvmazeLimiter.schedule(async () => {
+        return await apiCall();
+      });
       
       // Track success only once on first successful attempt
       const responseTime = Date.now() - overallStartTime;

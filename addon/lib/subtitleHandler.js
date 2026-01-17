@@ -292,7 +292,7 @@ function normalizeIdsForMovie(parsedId) {
   }
 }
 
-async function resolveSeriesIds(parsedId) {
+async function resolveSeriesIds(parsedId, config = {}) {
   switch (parsedId.provider) {
     case 'imdb':
       return {
@@ -326,7 +326,8 @@ async function resolveSeriesIds(parsedId) {
     case 'kitsu': {
       const resolved = await resolveTmdbEpisodeFromKitsu(
         parseInt(parsedId.id, 10),
-        parseInt(parsedId.episode, 10)
+        parseInt(parsedId.episode, 10),
+        config
       );
 
       if (!resolved) {
@@ -370,7 +371,7 @@ async function trackWatchStatus(parsedId, config) {
     }
 
     if (parsedId.type === 'series') {
-      const resolution = await resolveSeriesIds(parsedId);
+      const resolution = await resolveSeriesIds(parsedId, config);
       if (!resolution) {
         logger.debug(`[Watch Tracking] Unable to resolve identifiers for series provider ${parsedId.provider}`);
         return;

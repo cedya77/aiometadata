@@ -2614,7 +2614,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           
           for (const ep of episodeData) {
             try {
-              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuId, ep.mal_id, franchiseInfo);
+              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuId, ep.mal_id, config);
               if (tmdbEpisode && tmdbEpisode.tmdbId) {
                 tmdbEpisodeMap.set(ep.mal_id, tmdbEpisode);
                 seasonSet.add(tmdbEpisode.seasonNumber);
@@ -3077,7 +3077,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           for (const item of episodeData) {
             const ep = item.attributes;
             try {
-              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuData.id, ep.number, franchiseInfo);
+              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuData.id, ep.number, config);
               if (tmdbEpisode && tmdbEpisode.tmdbId) {
                 tmdbEpisodeMap.set(ep.number, tmdbEpisode);
                 seasonSet.add(tmdbEpisode.seasonNumber);

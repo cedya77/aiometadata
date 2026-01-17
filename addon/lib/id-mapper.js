@@ -37,15 +37,14 @@ let anidbIdMap = new Map();
 let anilistIdMap = new Map();
 let imdbIdMap = new Map();
 
-async function getTmdbSeasonInfo(tmdbId) {
+async function getTmdbSeasonInfo(tmdbId, config = {}) {
   if (tmdbSeasonCache.has(tmdbId)) {
     return tmdbSeasonCache.get(tmdbId);
   }
   const { tvInfo } = require('./getTmdb.js');
 
-  // The second argument is config, but getApiKey in getTmdb falls back to env vars,
-  // so we can pass an empty object.
-  const showInfo = await tvInfo({ id: tmdbId }, {});
+  // Pass config to tvInfo so it can use the user's TMDB API key
+  const showInfo = await tvInfo({ id: tmdbId }, config);
   
   if (showInfo && showInfo.seasons) {
     // Sort seasons by season number to ensure correct order
@@ -1598,10 +1597,10 @@ async function resolveKitsuIdForEpisodeByTmdb(tmdbId, seasonNumber, episodeNumbe
  * 
  * @param {string|number} kitsuId
  * @param {number} kitsuEpisodeNumber
- * @param {object} franchiseInfo - Optional pre-fetched franchise info to avoid repeated API calls
+ * @param {object} config - Optional config object containing API keys (needed for TMDB API calls)
  * @returns {Promise<{tmdbId: number, seasonNumber: number, episodeNumber: number}|null>} - The TMDB ID, season, and episode number
  */
-async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
+async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber, config = {}) {
   if (!isInitialized) return null;
 
   const mapping = getMappingByKitsuId(kitsuId);
@@ -1629,7 +1628,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
       logger.warn(`[ID Mapper] Kitsu ID ${kitsuId} not found in franchise entries for TMDB ${tmdbId}`);
       // Fallback for cases where Kitsu entry is not in franchise (e.g. OVA)
       // We can assume it is the first entry and has no predecessors
-      const tmdbSeasonData = await getTmdbSeasonInfo(tmdbId);
+      const tmdbSeasonData = await getTmdbSeasonInfo(tmdbId, config);
       let cumulativeEpisodes = 0;
       for (const season of tmdbSeasonData) {
         if (season.season_number === 0) continue;
@@ -1649,7 +1648,7 @@ async function resolveTmdbEpisodeFromKitsu(kitsuId, kitsuEpisodeNumber) {
       absoluteEpisodeNumber += kitsuEntries[i].episodeCount || 0;
     }
 
-    const tmdbSeasons = await getTmdbSeasonInfo(tmdbId);
+    const tmdbSeasons = await getTmdbSeasonInfo(tmdbId, config);
     if (!tmdbSeasons || tmdbSeasons.length === 0) {
       logger.warn(`[ID Mapper] No TMDB season data found for ${tmdbId}`);
       // Fallback to old logic if TMDB seasons are not available
