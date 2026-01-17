@@ -77,7 +77,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   const oneHour = 60 * 60 * 1000;
   
   if (expiresAt && expiresAt < (now + oneHour)) {
-    logger.info(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
+    logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
     
     try {
       const { TraktClient } = require('./trakt');
@@ -101,7 +101,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
         return null;
       }
       
-      logger.info(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
+      logger.debug(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
       
       return newTokens.access_token;
     } catch (error: any) {
@@ -149,7 +149,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
     return metas;
   }
 
-  logger.info(`[StremThru] Applying age rating filter: ${config.ageRating} for type: ${type}`);
+  logger.debug(`[StremThru] Applying age rating filter: ${config.ageRating} for type: ${type}`);
   const beforeCount = metas.length;
   const filterStartTime = performance.now();
   
@@ -214,7 +214,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
-      logger.info(`Fetching TVDB collections catalog: ${id}`);
+      logger.debug(`Fetching TVDB collections catalog: ${id}`);
       const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
       const filteredMetas = filterMetasByRegex(metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
       return { metas: filteredMetas };
@@ -276,7 +276,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
 }
 
 async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig, isTrending: boolean, includeVideos: boolean = false): Promise<any[]> {
-  logger.info(`Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
+  logger.debug(`Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
   
   // Cache the raw TVDB API response using a cache key that doesn't include page
   const cacheKey = `tvdb-filter:${type}:${genreName}:${language}:${isTrending}`;
@@ -350,7 +350,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     }
   });
   
-  logger.info(`TVDB filter results: ${results ? results.length : 0} items returned`);
+  logger.debug(`TVDB filter results: ${results ? results.length : 0} items returned`);
   
   if (!results || results.length === 0) {
     logger.warn(`No results from TVDB filter, returning empty array`);
@@ -383,7 +383,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const endIndex = startIndex + pageSize;
   const paginatedResults = sortedResults.slice(startIndex, endIndex);
   
-  logger.info(`Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
+  logger.debug(`Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
   let preferredProvider: string;
   if (type === 'movie') {
@@ -1044,7 +1044,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
 
     // ✅ Debug helper
     const debugPagination = (skips: number[], start: number, end: number, total: number) => {
-      logger.info(
+      logger.debug(
         `[🧩 Pagination Debug] Page ${page}: fetching batches ${skips.join(", ")} ` +
         `(skip range = ${firstBatchSkip}–${firstBatchSkip + skips.length * stremThruBatchSize - 1}), ` +
         `slicing local ${start}–${end}, total fetched = ${total}`
@@ -1083,7 +1083,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     debugPagination(batchSkips, localStartIndex, localEndIndex, allItems.length);
     
     // Log caching benefits
-    logger.info(`[✨ StremThru] Batch caching: fetched ${batchesNeeded} batch(es) for page ${page}, total items: ${allItems.length}`);
+    logger.debug(`[✨ StremThru] Batch caching: fetched ${batchesNeeded} batch(es) for page ${page}, total items: ${allItems.length}`);
 
     // --- Parse and filter metas ---
     let metas = await parseStremThruItems(paginatedItems, type, genre, language, config, includeVideos);

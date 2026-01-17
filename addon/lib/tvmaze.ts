@@ -3,6 +3,10 @@ import { cacheWrapTvmazeApi } from './getCache.js';
 const packageJson = require('../../package.json');
 import { Agent, ProxyAgent } from 'undici';
 const Bottleneck = require('bottleneck');
+import consola from 'consola';
+
+const logger = consola.withTag('TVmaze');
+
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
@@ -27,9 +31,9 @@ let tvmazeAgent: Agent | ProxyAgent;
 if (HTTP_PROXY_URL) {
   try {
     tvmazeAgent = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
-    console.log('[TVmaze] Using global HTTP proxy.');
+    logger.info('Using global HTTP proxy.');
   } catch (error: any) {
-    console.error(`[TVmaze] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
+    logger.error(`Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
     tvmazeAgent = new Agent({
       connections: 2, // TVmaze: leaving more than 1 idle connection may result in IP blocking
       keepAliveTimeout: 10 * 1000, // Shorter timeout to avoid idle connections
@@ -40,7 +44,7 @@ if (HTTP_PROXY_URL) {
     connections: 2, // TVmaze: leaving more than 1 idle connection may result in IP blocking
     keepAliveTimeout: 10 * 1000, // Keep sockets open for 10 seconds (shorter to avoid idle connections)
   });
-  console.log('[TVmaze] undici agent is enabled for direct connections (2 max connections to avoid IP blocking).');
+  logger.debug('undici agent is enabled for direct connections (2 max connections to avoid IP blocking).');
 }
 
 // Default HTTP client config with User-Agent as recommended by TVmaze
@@ -288,21 +292,21 @@ function sleep(ms: number): Promise<void> {
  */
 function handleHttpError(error: any, context: string): ApiError {
   if (error.response && error.response.status === 404) {
-    console.log(`${context}: Resource not found (404).`);
+    logger.debug(`${context}: Resource not found (404).`);
     return { notFound: true };
   }
   
   // Handle redirect errors (301, 302, etc.)
   if (error.response && error.response.status >= 300 && error.response.status < 400) {
-    console.error(`${context}: HTTP ${error.response.status} redirect error - ${error.message || 'Redirect failed'}`);
+    logger.error(`${context}: HTTP ${error.response.status} redirect error - ${error.message || 'Redirect failed'}`);
     return { error: true };
   }
   
   // Log network errors more concisely
   if (error.code === 'ECONNABORTED' || error.code === 'ENETUNREACH' || error.code === 'ECONNREFUSED') {
-    console.error(`${context}: Network error (${error.code}) - ${error.message}`);
+    logger.error(`${context}: Network error (${error.code}) - ${error.message}`);
   } else {
-    console.error(`Error in ${context}:`, error.message || 'No error message available');
+    logger.error(`Error in ${context}:`, error.message || 'No error message available');
   }
   
   return { error: true };
@@ -363,7 +367,7 @@ async function retryApiCall<T>(
       // Exponential backoff: 1s, 2s, 4s (or fixed delay for rate limits as per TVmaze docs)
       const isRateLimit = (error as any).response && (error as any).response.status === 429;
       const delay = isRateLimit ? RATE_LIMIT_DELAY : RETRY_DELAY * Math.pow(2, attempt - 1);
-      console.log(`${context}: Attempt ${attempt} failed${isRateLimit ? ' (rate limited)' : ''}, retrying in ${delay}ms...`);
+      logger.warn(`${context}: Attempt ${attempt} failed${isRateLimit ? ' (rate limited)' : ''}, retrying in ${delay}ms...`);
       await sleep(delay);
     }
   }
