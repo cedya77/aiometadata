@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.23.2](https://github.com/cedya77/aiometadata/compare/v1.23.1...v1.23.2) (2026-01-17)
+
+
+### Bug Fixes
+
+* TVmaze rate limiting ([98471d7](https://github.com/cedya77/aiometadata/commit/98471d736508d670ee431c7d8d199c046bd8df44))
+* use retry-after header for tvmaze ([b474656](https://github.com/cedya77/aiometadata/commit/b4746567e27fbce9b42010b42e4c5fc2e7a81097))
+
 ## [1.23.1](https://github.com/cedya77/aiometadata/compare/v1.23.0...v1.23.1) (2026-01-17)
 
 
