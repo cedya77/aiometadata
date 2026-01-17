@@ -55,7 +55,7 @@ export class TraktClient {
    */
   async exchangeCodeForToken(code: string): Promise<TraktTokens> {
     try {
-      const response = await httpPost('https://trakt.tv/oauth/token', {
+      const response = await httpPost('https://api.trakt.tv/oauth/token', {
         code,
         client_id: this.clientId,
         client_secret: this.clientSecret,
@@ -86,7 +86,7 @@ export class TraktClient {
    */
   async refreshAccessToken(refreshToken: string): Promise<TraktTokens> {
     try {
-      const response = await httpPost('https://trakt.tv/oauth/token', {
+      const response = await httpPost('https://api.trakt.tv/oauth/token', {
         refresh_token: refreshToken,
         client_id: this.clientId,
         client_secret: this.clientSecret,
@@ -145,7 +145,7 @@ export class TraktClient {
    */
   async revokeToken(accessToken: string): Promise<void> {
     try {
-      await httpPost('https://trakt.tv/oauth/revoke', {
+      await httpPost('https://api.trakt.tv/oauth/revoke', {
         token: accessToken,
         client_id: this.clientId,
         client_secret: this.clientSecret,

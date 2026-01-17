@@ -145,7 +145,23 @@ async function httpGet(url, options = {}) {
  * Convenience method for POST requests
  */
 async function httpPost(url, data, options = {}) {
-  return httpRequest(url, { ...options, method: 'POST', data });
+  let currentUrl = url;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await httpRequest(currentUrl, { ...options, method: 'POST', data });
+    } catch (error) {
+      const status = error?.response?.status;
+      const locationHeader = error?.response?.headers?.location || error?.response?.headers?.Location;
+      const isRedirect = status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+      if (isRedirect && locationHeader) {
+        // Resolve relative Location headers against the current URL
+        currentUrl = new URL(locationHeader, currentUrl).toString();
+        continue;
+      }
+      throw error;
+    }
+  }
+  return httpRequest(currentUrl, { ...options, method: 'POST', data });
 }
 
 /**
