@@ -6,6 +6,9 @@ const idMapper = require("../lib/id-mapper");
 const imdb = require("../lib/imdb");
 const { getImdbRating } = require("../lib/getImdbRating");
 const { resolveAllIds } = require('../lib/id-resolver');
+const consola = require('consola');
+
+const logger = consola.withTag('StremThru');
 
 const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
@@ -24,9 +27,9 @@ async function _makeRequest(url) {
   } catch (err) {
     if (err.response) {
       const { status, data } = err.response;
-      console.error(`[StremThru] HTTP error from ${url} (status: ${status}): ${typeof data === 'string' ? data.slice(0,100) : ''}`);
+      logger.error(`HTTP error from ${url} (status: ${status}): ${typeof data === 'string' ? data.slice(0,100) : ''}`);
     } else {
-      console.error(`[StremThru] Request to ${url} failed:`, err.message);
+      logger.error(`Request to ${url} failed:`, err.message);
     }
     throw err;
   }
@@ -48,7 +51,7 @@ async function _processAnimeItem(item, provider, id, language, config, includeVi
   const mapping = getMapping ? getMapping(id) : null;
 
   if (!mapping) {
-    console.warn(`[StremThru] No mapping found for anime ${provider}:${id}`);
+    logger.info(`No mapping found for anime ${provider}:${id}`);
     return null; // Let the main loop handle the fallback
   }
 
@@ -75,7 +78,7 @@ async function _processAnimeItem(item, provider, id, language, config, includeVi
     }
     const details = await imdb.getMetaFromImdb(imdbId, item.type);
 
-    console.log(`[StremThru] StremThru item: ${JSON.stringify(item)}`);
+    logger.debug(`StremThru item: ${JSON.stringify(item)}`);
     return {
       id: item.id,
       type: item.type,
@@ -157,10 +160,10 @@ async function fetchStremThruCatalog(catalogUrl, skip = 0, genre) {
     
     const data = await _makeRequest(url);
     if (!data || !data.metas) {
-      console.warn(`[StremThru] Invalid response format from ${catalogUrl}`);
+      logger.warn(`Invalid response format from ${catalogUrl}`);
       return [];
     }
-    console.log(`[✨ StremThru] Successfully fetched ${data.metas.length} items from catalog (skip: ${skip}, genre: ${genre || 'all'})`);
+    logger.debug(`Successfully fetched ${data.metas.length} items from catalog (skip: ${skip}, genre: ${genre || 'all'})`);
     return data.metas;
   } catch (err) {
     return [];
@@ -171,10 +174,10 @@ async function fetchStremThruManifest(manifestUrl) {
   try {
     const data = await _makeRequest(manifestUrl);
     if (!data || !data.catalogs) {
-      console.warn(`[StremThru] Invalid manifest format from ${manifestUrl}`);
+      logger.warn(`Invalid manifest format from ${manifestUrl}`);
       return [];
     }
-    console.log(`[✨ StremThru] Successfully fetched ${data.catalogs.length} catalogs from manifest`);
+    logger.debug(`Successfully fetched ${data.catalogs.length} catalogs from manifest`);
     return data.catalogs;
   } catch (err) {
     return [];
@@ -192,10 +195,10 @@ async function getGenresFromStremThruCatalog(items) {
         ).filter(Boolean)
       )
     ].sort();
-    console.log(`[✨ StremThru] Extracted ${genres.length} unique genres from catalog`);
+    logger.debug(`Extracted ${genres.length} unique genres from catalog`);
     return genres;
   } catch (err) {
-    console.error("[StremThru] ERROR in getGenresFromStremThruCatalog:", err);
+    logger.error("ERROR in getGenresFromStremThruCatalog:", err);
     return [];
   }
 }
@@ -204,7 +207,7 @@ async function parseStremThruItems(items, type, genreFilter, language, config, i
   const animeProviders = new Set(['mal', 'kitsu', 'anidb', 'anilist']);
   
   
-  console.log(`[✨ StremThru] Processing ${items.length} items (type: ${type}, genre: ${genreFilter || 'all'})`);
+  logger.debug(`Processing ${items.length} items (type: ${type}, genre: ${genreFilter || 'all'})`);
 
   const metaPromises = items.map(async item => {
     try {
@@ -226,7 +229,7 @@ async function parseStremThruItems(items, type, genreFilter, language, config, i
       }
       
       if (!provider || !id) {
-        console.warn(`[StremThru] Invalid ID format: ${item.id}`);
+        logger.warn(`Invalid ID format: ${item.id}`);
         return _createFallbackMeta(item, language, config);
       }
 
@@ -241,7 +244,7 @@ async function parseStremThruItems(items, type, genreFilter, language, config, i
       return meta || _createFallbackMeta(item, language, config);
 
     } catch (error) {
-      console.error(`[StremThru] Error processing item ${item.id}:`, error.message);
+      logger.error(`Error processing item ${item.id}:`, error.message);
       return _createFallbackMeta(item, language, config);
     }
   });
@@ -249,7 +252,7 @@ async function parseStremThruItems(items, type, genreFilter, language, config, i
   const metas = await Promise.all(metaPromises);
   const validMetas = metas.filter(Boolean);
   
-  console.log(`[✨ StremThru] Successfully parsed ${validMetas.length}/${items.length} items`);
+  logger.debug(`Successfully parsed ${validMetas.length}/${items.length} items`);
   return validMetas;
 }
 

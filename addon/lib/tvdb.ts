@@ -4,6 +4,9 @@ import { cacheWrapTvdbApi } from './getCache.js';
 import { to3LetterCode } from './language-map.js';
 import { httpPost, httpGet } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
+import consola from 'consola';
+
+const logger = consola.withTag('TVDB');
 
 // TVDB-specific HTTP client with 429 rate limit handling
 async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: number = 3): Promise<any> {
@@ -41,11 +44,11 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
         if (attempt < maxRetries) {
           // Calculate exponential backoff delay: 1s, 2s, 4s, 8s...
           const delay = Math.min(1000 * Math.pow(2, attempt), 30000); // Cap at 30 seconds
-          console.log(`[TVDB] Rate limited (429), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+          logger.warn(`Rate limited (429), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         } else {
-          console.error(`[TVDB] Rate limited (429), max retries exceeded for ${url}`);
+          logger.error(`Rate limited (429), max retries exceeded for ${url}`);
           throw error;
         }
       } else {
@@ -432,7 +435,7 @@ const userTokenCaches = new Map<string, Map<string, TokenCache>>(); // Per-user 
 async function getAuthToken(apiKey: string | undefined, userUUID: string | null = null): Promise<string | null> {
   const key = apiKey || GLOBAL_TVDB_KEY;
   if (!key) {
-    console.error('TVDB API Key is not configured.');
+    logger.error('TVDB API Key is not configured.');
     return null;
   }
 
@@ -452,7 +455,7 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
       const response = await tvdbHttpRequest(`${TVDB_API_URL}/login`, { method: 'POST', data: { apikey: key } });
       const token = response.data.data?.token;
       if (!token) {
-        console.error(`[TVDB] No token in login response for user ${userUUID}`);
+        logger.error(`No token in login response for user ${userUUID}`);
         return null;
       }
       const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
@@ -460,7 +463,7 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
       userCache.set(key, { token, expiry });
       return token;
     } catch (error) {
-      console.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}:`, (error as Error).message);
+      logger.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}:`, (error as Error).message);
       return null;
     }
   }
@@ -475,7 +478,7 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
     const response = await tvdbHttpRequest(`${TVDB_API_URL}/login`, { method: 'POST', data: { apikey: key } });
     const token = response.data.data?.token;
     if (!token) {
-      console.error(`[TVDB] No token in global login response`);
+      logger.error(`No token in global login response`);
       return null;
     }
     const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
@@ -483,7 +486,7 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
     tokenCache.set(key, { token, expiry });
     return token;
   } catch (error) {
-    console.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}:`, (error as Error).message);
+    logger.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}:`, (error as Error).message);
     return null;
   }
 }
@@ -536,7 +539,7 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[searchSeries] Error searching TVDB for series "${query}":`, (error as Error).message);
+    logger.error(`[searchSeries] Error searching TVDB for series "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -566,7 +569,7 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[searchMovies] Error searching TVDB for movies "${query}":`, (error as Error).message);
+    logger.error(`[searchMovies] Error searching TVDB for movies "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -594,7 +597,7 @@ async function searchPeople(query: string, config: UserConfig): Promise<TvdbSear
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[searchPeople] Error searching TVDB for people "${query}":`, (error as Error).message);
+    logger.error(`[searchPeople] Error searching TVDB for people "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -622,7 +625,7 @@ async function searchCollections(query: string, config: UserConfig): Promise<Tvd
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[searchCollections] Error searching TVDB for collections "${query}":`, (error as Error).message);
+    logger.error(`[searchCollections] Error searching TVDB for collections "${query}":`, (error as Error).message);
     return [];
   }
 }
@@ -650,7 +653,7 @@ async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
-      console.error(`[getSeriesExtended] Error fetching extended series data for TVDB ID ${seriesId}:`, (error as Error).message);
+      logger.error(`[getSeriesExtended] Error fetching extended series data for TVDB ID ${seriesId}:`, (error as Error).message);
       return null; 
     }
   });
@@ -679,7 +682,7 @@ async function getMovieExtended(movieId: string, config: UserConfig): Promise<Tv
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
-      console.error(`[getMovieExtended] Error fetching extended movie data for TVDB ID ${movieId}:`, (error as Error).message);
+      logger.error(`[getMovieExtended] Error fetching extended movie data for TVDB ID ${movieId}:`, (error as Error).message);
       return null; 
     }
   });
@@ -703,7 +706,7 @@ async function getPersonExtended(personId: string, config: UserConfig): Promise<
     
     return (response.data as any)?.data;
   } catch (error) {
-    console.error(`[TVDB] Error getting person extended for ID ${personId}:`, (error as Error).message);
+    logger.error(`Error getting person extended for ID ${personId}:`, (error as Error).message);
     return null;
   }
 }
@@ -729,7 +732,7 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
       hasNextPage = data.links && data.links.next;
       page++;
     } catch(error) {
-      console.error(`[_fetchEpisodesBySeasonType] Error fetching page ${page} of ${seasonType} episodes for TVDB ID ${tvdbId}:`, (error as Error).message);
+      logger.error(`[_fetchEpisodesBySeasonType] Error fetching page ${page} of ${seasonType} episodes for TVDB ID ${tvdbId}:`, (error as Error).message);
       hasNextPage = false;
     }
   }
@@ -745,12 +748,12 @@ async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', sea
     let result = await _fetchEpisodesBySeasonType(tvdbId, seasonType, language, config);
  
     if ((!result || result.episodes.length === 0) && seasonType !== 'official') {
-      console.warn(`[TVDB] No episodes found for type '${seasonType}'. Falling back to 'official' order.`);
+      logger.debug(`No episodes found for type '${seasonType}'. Falling back to 'official' order.`);
       result = await _fetchEpisodesBySeasonType(tvdbId, 'official', language, config);
     }
 
     if ((!result || result.episodes.length === 0) && language !== 'en-US') {
-      console.warn(`[TVDB] No episodes found in '${language}'. Falling back to 'en-US'.`);
+      logger.debug(`No episodes found in '${language}'. Falling back to 'en-US'.`);
       return getSeriesEpisodes(tvdbId, 'en-US', seasonType, config, true); 
     }
     
@@ -784,7 +787,7 @@ async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSea
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[findByImdbId] Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
+    logger.error(`[findByImdbId] Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
     return [];
   }
 }
@@ -814,7 +817,7 @@ async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSea
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[findByTmdbId] Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
+    logger.error(`[findByTmdbId] Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
     return [];
   }
 }
@@ -844,7 +847,7 @@ async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[getAllGenres] Error getting TVDB genres:`, (error as Error).message);
+    logger.error(`[getAllGenres] Error getting TVDB genres:`, (error as Error).message);
     return [];
   }
 }
@@ -881,7 +884,7 @@ async function filter(type: 'movies' | 'series', params: any, config: UserConfig
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[filter] Error filtering TVDB ${type}:`, (error as Error).message);
+    logger.error(`[filter] Error filtering TVDB ${type}:`, (error as Error).message);
     return [];
   }
 }
@@ -912,7 +915,7 @@ async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, false);
       
-      console.error(`[getSeasonExtended] Error fetching extended season data for TVDB ID ${seasonId}:`, (error as Error).message);
+      logger.error(`[getSeasonExtended] Error fetching extended season data for TVDB ID ${seasonId}:`, (error as Error).message);
       return null; 
     }
   });
@@ -944,7 +947,7 @@ async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<st
     }
     return null;
   } catch (error) {
-    console.error(`[getSeriesPoster] Error getting poster for series ${seriesId}:`, (error as Error).message);
+    logger.error(`[getSeriesPoster] Error getting poster for series ${seriesId}:`, (error as Error).message);
     return null;
   }
 }
@@ -956,12 +959,12 @@ async function getSeriesBackground(seriesId: string, config: UserConfig): Promis
     if (seriesData && seriesData.artworks) {
       // Look for background artwork (type 3 is typically background)
       const backgroundArtwork = findArtwork(seriesData.artworks, 3, null, config);
-      console.log(`[getSeriesBackground] Found background artwork for series ${seriesId}: ${backgroundArtwork}`);
+      logger.debug(`Found background artwork for series ${seriesId}: ${backgroundArtwork}`);
       return backgroundArtwork;
     }
     return null;
   } catch (error) {
-    console.error(`[getSeriesBackground] Error getting background for series ${seriesId}:`, (error as Error).message);
+    logger.error(`[getSeriesBackground] Error getting background for series ${seriesId}:`, (error as Error).message);
     return null;
   }
 }
@@ -980,7 +983,7 @@ async function getMoviePoster(movieId: string, config: UserConfig): Promise<stri
     }
     return null;
   } catch (error) {
-    console.error(`[getMoviePoster] Error getting poster for movie ${movieId}:`, (error as Error).message);
+    logger.error(`[getMoviePoster] Error getting poster for movie ${movieId}:`, (error as Error).message);
     return null;
   }
 }
@@ -1003,7 +1006,7 @@ async function getMovieBackground(movieId: string, config: UserConfig): Promise<
     }
     return null;
   } catch (error) {
-    console.error(`[getMovieBackground] Error getting background for movie ${movieId}:`, (error as Error).message);
+    logger.error(`[getMovieBackground] Error getting background for movie ${movieId}:`, (error as Error).message);
     return null;
   }
 }
@@ -1025,7 +1028,7 @@ async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<stri
     }
     return null;
   } catch (error) {
-    console.error(`[getSeriesLogo] Error getting logo for series ${seriesId}:`, (error as Error).message);
+    logger.error(`[getSeriesLogo] Error getting logo for series ${seriesId}:`, (error as Error).message);
     return null;
   }
 }
@@ -1047,7 +1050,7 @@ async function getMovieLogo(movieId: string, config: UserConfig): Promise<string
     }
     return null;
   } catch (error) {
-    console.error(`[getMovieLogo] Error getting logo for movie ${movieId}:`, (error as Error).message);
+    logger.error(`[getMovieLogo] Error getting logo for movie ${movieId}:`, (error as Error).message);
     return null;
   }
 }
@@ -1055,7 +1058,7 @@ async function getMovieLogo(movieId: string, config: UserConfig): Promise<string
 async function getCollectionsList(config: UserConfig, page: number = 0): Promise<TvdbCollection[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  console.log(`[TVDB getCollectionsList] Getting collections list for page ${page}`);
+  logger.debug(`Getting collections list for page ${page}`);
   const startTime = Date.now();
   try {
     const response = await tvdbHttpRequest(`${TVDB_API_URL}/lists?page=${page}`, {
@@ -1065,7 +1068,7 @@ async function getCollectionsList(config: UserConfig, page: number = 0): Promise
     const responseTime = Date.now() - startTime;
     
     const results = (response.data as any)?.data || [];
-    console.log(`[TVDB getCollectionsList] Found ${results.length} collections for page ${page}`);
+    logger.debug(`Found ${results.length} collections for page ${page}`);
     // Track successful request
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, true);
@@ -1077,7 +1080,7 @@ async function getCollectionsList(config: UserConfig, page: number = 0): Promise
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('tvdb', responseTime, false);
     
-    console.error(`[getCollections] Error getting TVDB collections list:`, (error as Error).message);
+    logger.error(`[getCollections] Error getting TVDB collections list:`, (error as Error).message);
     return [];
   }
 }
@@ -1091,7 +1094,7 @@ async function getCollectionDetails(collectionId: string, config: UserConfig): P
       const response = await tvdbHttpRequest(url, { headers: { 'Authorization': `Bearer ${token}` } });
       return (response.data as any)?.data;
     } catch (error) {
-      console.error(`[TVDB] Error fetching collection details for ID ${collectionId}:`, (error as Error).message);
+      logger.error(`Error fetching collection details for ID ${collectionId}:`, (error as Error).message);
       return null;
     }
   });
@@ -1108,7 +1111,7 @@ async function getCollectionTranslations(collectionId: string, language: string,
       
       // If no data found and language is not English, fallback to English
       if ((!data || !data.name) && language !== 'eng') {
-        console.log(`[TVDB] No translations found for collection ${collectionId} in ${language}, falling back to English`);
+        logger.debug(`No translations found for collection ${collectionId} in ${language}, falling back to English`);
         const engUrl = `${TVDB_API_URL}/lists/${collectionId}/translations/eng`;
         const engResponse = await tvdbHttpRequest(engUrl, { headers: { 'Authorization': `Bearer ${token}` } });
         return (engResponse.data as any)?.data;
@@ -1116,7 +1119,7 @@ async function getCollectionTranslations(collectionId: string, language: string,
       
       return data;
     } catch (error) {
-      console.error(`[TVDB] Error fetching collection translations for ID ${collectionId}:`, (error as Error).message);
+      logger.error(`Error fetching collection translations for ID ${collectionId}:`, (error as Error).message);
       return null;
     }
   });
