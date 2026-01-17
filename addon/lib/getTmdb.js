@@ -76,9 +76,7 @@ if (!dispatcher) {
   }
 }
 
-// A simple in-memory cache
-// This cache will store { tmdbId: imdbId } pairs after a successful scrape.
-// It prevents calling the scraper multiple times for the same TMDB ID within the same session.
+// In-memory cache for storing { tmdbId: imdbId } pairs
 const scrapedImdbIdCache = new Map();
 
 // Rate limiter configuration
@@ -95,12 +93,12 @@ const RATE_LIMIT_CONFIG = {
 let consecutiveRateLimits = 0;
 let lastRateLimitTime = 0;
 
+// Mutex state for handleRateLimit to prevent race conditions
+let backoffPromise = null;
+
 const tmdbLimiter = new Bottleneck({
-  reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-  reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-  reservoirRefreshInterval: 1000,
-  maxConcurrent: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-  minTime: 0
+  maxConcurrent: 50,  // Limit concurrent in-flight requests
+  minTime: 10         // 10ms gap = max ~100 req/s
 });
 
 // Metrics tracking
@@ -130,11 +128,15 @@ function recordRequest() {
   rateLimiterMetrics.lastMinuteRequests = rateLimiterMetrics.lastMinuteRequests.filter(t => t > oneMinuteAgo);
 }
 
-/**
- * Handle 429 rate limit response
- * @param {number} retryAfterSeconds - Retry-After header value (or default)
- */
+
 async function handleRateLimit(retryAfterSeconds) {
+  // If a backoff is already in progress, wait for it to complete
+  if (backoffPromise) {
+    consola.debug('[TMDB] Backoff already in progress, waiting for existing backoff to complete');
+    await backoffPromise;
+    return;
+  }
+  
   const now = Date.now();
   
   // Reset consecutive count if enough time has passed since last rate limit
@@ -154,83 +156,27 @@ async function handleRateLimit(retryAfterSeconds) {
   
   consola.warn(`[TMDB] Rate limited (429)! Backoff: ${actualBackoff}s (attempt ${consecutiveRateLimits}, base: ${baseBackoff}s)`);
   
-  // Stop accepting new jobs and pause current ones
   const limiterState = tmdbLimiter.counts();
   consola.debug(`[TMDB] Limiter state before pause: ${JSON.stringify(limiterState)}`);
   
-  try {
-    // Use reservoir to block new requests
-    await tmdbLimiter.updateSettings({
-      reservoir: 0,
-      reservoirRefreshAmount: 0
-    });
-    
-    // Wait for backoff period
+  // Stop the limiter - queued jobs wait, no new jobs accepted
+  const stopPromise = tmdbLimiter.stop({ dropWaitingJobs: false });
+  
+  // Create the backoff promise that other callers can await
+  backoffPromise = (async () => {
+    await stopPromise;
     await new Promise(resolve => setTimeout(resolve, backoffMs));
     
-    // Restore normal operation
-    await tmdbLimiter.updateSettings({
-      reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-      reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
-    });
-    
+    // Resume the limiter
+    tmdbLimiter.start();
     consola.info(`[TMDB] Rate limit backoff complete (waited ${actualBackoff}s), resuming requests`);
-  } catch (error) {
-    consola.error(`[TMDB] Error during rate limit backoff: ${error.message}`);
-    try {
-      await tmdbLimiter.updateSettings({
-        reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-        reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
-      });
-      consola.warn(`[TMDB] Limiter restored after error`);
-    } catch (restoreError) {
-      consola.error(`[TMDB] Failed to restore limiter after error: ${restoreError.message}`);
-    }
-  }
-}
-
-/**
- * Ensure the limiter is not stuck in a blocked state
- * This is a safety mechanism to prevent the limiter from blocking indefinitely
- * Checks if the limiter has been stuck for too long and restores it
- * Only checks periodically to avoid overhead (every 5 seconds max)
- */
-let limiterStuckCheckTime = 0;
-let lastStuckCheck = 0;
-const STUCK_CHECK_INTERVAL = 5000; // Only check every 5 seconds
-
-function ensureLimiterNotStuck() {
-  const now = Date.now();
+  })();
   
-  if (now - lastStuckCheck < STUCK_CHECK_INTERVAL) {
-    return;
+  try {
+    await backoffPromise;
+  } finally {
+    backoffPromise = null;
   }
-  lastStuckCheck = now;
-  
-  setImmediate(async () => {
-    try {
-      const counts = tmdbLimiter.counts();
-      
-      if (counts.QUEUED > 0 && counts.RUNNING === 0) {
-        if (limiterStuckCheckTime === 0) {
-          limiterStuckCheckTime = now;
-        } else if (now - limiterStuckCheckTime > 10000) {
-          // If stuck for more than 10 seconds, force restore
-          consola.warn(`[TMDB] Limiter appears stuck (${counts.QUEUED} queued, 0 running for ${Math.round((now - limiterStuckCheckTime) / 1000)}s), restoring...`);
-          await tmdbLimiter.updateSettings({
-            reservoir: RATE_LIMIT_CONFIG.maxRequestsPerSecond,
-            reservoirRefreshAmount: RATE_LIMIT_CONFIG.maxRequestsPerSecond
-          });
-          consola.info(`[TMDB] Limiter restored`);
-          limiterStuckCheckTime = 0;
-        }
-      } else {
-        limiterStuckCheckTime = 0;
-      }
-    } catch (error) {
-      consola.debug(`[TMDB] Limiter safety check error: ${error.message}`);
-    }
-  });
 }
 
 /**
@@ -274,9 +220,6 @@ function getRateLimiterMetrics() {
 
 async function makeTmdbRequest(endpoint, apiKey, params = {}, method = 'GET', body = null, config = {}) {
   if (!apiKey) throw new Error("TMDB API key is required.");
-  
-  // Safety check: ensure limiter is not stuck (non-blocking, checks periodically)
-  ensureLimiterNotStuck();
   
   const queryParams = new URLSearchParams(params);
   queryParams.append('api_key', apiKey);
