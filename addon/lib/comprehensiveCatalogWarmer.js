@@ -649,7 +649,32 @@ class ComprehensiveCatalogWarmer {
       this.log('success', `Starting comprehensive catalog warmup for ${this.config.uuids.length} UUID(s)...`);
 
       // Reset overall stats for this run (don't accumulate from previous runs)
-      this.stats.totalCatalogs = 0;
+      const userConfigs = {};
+      let grandTotalCatalogs = 0;
+      for (const uuid of this.config.uuids) {
+        try {
+          const config = await database.getUserConfig(uuid);
+          if (config) {
+            const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext' && c.id !== 'mdblist.upnext');
+            userConfigs[uuid] = { config, enabledCatalogs };
+            grandTotalCatalogs += enabledCatalogs.length;
+            
+            // Initialize UUID stats container
+            this.stats.uuidStats[uuid] = {
+              totalCatalogs: enabledCatalogs.length,
+              catalogsWarmed: 0,
+              totalPages: 0,
+              totalItems: 0,
+              duration: null,
+              errors: []
+            };
+          }
+        } catch (error) {
+          this.log('error', `Failed to load config for pre-calc UUID ${uuid}: ${error.message}`);
+        }
+      }
+
+      this.stats.totalCatalogs = grandTotalCatalogs;
       this.stats.catalogsWarmed = 0;
       this.stats.totalPages = 0;
       this.stats.totalItems = 0;
@@ -657,53 +682,43 @@ class ComprehensiveCatalogWarmer {
 
       // Process each UUID sequentially
       for (const uuid of this.config.uuids) {
-        // Check stop flag before processing each UUID
         if (!this.shouldContinueWarming()) {
           this.log('info', 'Stop requested - stopping warmup');
           break;
         }
         
+        const userData = userConfigs[uuid];
+        if (!userData) {
+          this.stats.errors.push({ uuid, error: 'Config not found during processing' });
+          continue;
+        }
+
+        const { config, enabledCatalogs } = userData;
+
         try {
-          this.log('info', `Processing UUID: ${uuid}`);
+          this.log('info', `Processing UUID: ${uuid} (${enabledCatalogs.length} catalogs)`);
           const uuidStartTime = Date.now();
-
-          // Load user config for this UUID
-          const config = await database.getUserConfig(uuid);
-          if (!config) {
-            this.log('error', `Config not found for UUID: ${uuid}`);
-            this.stats.errors.push({ uuid, error: 'Config not found' });
-            continue;
-          }
-
-          // Get enabled catalogs from user config, excluding Up Next (dynamic catalogs)
-          const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext' && c.id !== 'mdblist.upnext');
           
-          // Initialize stats for this UUID
-          this.stats.uuidStats[uuid] = {
-            totalCatalogs: enabledCatalogs.length,
-            catalogsWarmed: 0,
-            totalPages: 0,
-            totalItems: 0,
-            duration: null,
-            errors: []
-          };
-
-          this.log('info', `Found ${enabledCatalogs.length} enabled catalogs for UUID ${uuid}`);
-
-          // Warm each catalog for this UUID
           for (const catalog of enabledCatalogs) {
-            // Check stop flag before each catalog
             if (!this.shouldContinueWarming()) {
               this.log('info', 'Stop requested - stopping catalog warming');
               break;
             }
-            
+
             try {
               this.log('info', `Warming catalog: ${catalog.id} (${catalog.name}) for UUID ${uuid}`);
               const result = await this.warmCatalog(catalog, config, uuid);
+              
+              // Update Instance Stats (UUID)
               this.stats.uuidStats[uuid].catalogsWarmed++;
               this.stats.uuidStats[uuid].totalPages += result.pages;
               this.stats.uuidStats[uuid].totalItems += result.items;
+
+              // Update Global Stats
+              this.stats.catalogsWarmed++;
+              this.stats.totalPages += result.pages;
+              this.stats.totalItems += result.items;
+
               this.log('success', `✓ ${catalog.id}: ${result.pages} pages, ${result.items} items`);
             } catch (error) {
               this.log('error', `✗ ${catalog.id}: ${error.message}`);
@@ -711,21 +726,12 @@ class ComprehensiveCatalogWarmer {
             }
           }
 
-          // Calculate duration for this UUID
           const uuidDuration = Date.now() - uuidStartTime;
           this.stats.uuidStats[uuid].duration = `${Math.floor(uuidDuration / 60000)}m ${Math.floor((uuidDuration % 60000) / 1000)}s`;
-
-          // Mark this UUID as complete
+          
           await this.markWarmed(uuid, uuidStartTime);
-
-          // Update overall stats
-          this.stats.totalCatalogs += this.stats.uuidStats[uuid].totalCatalogs;
-          this.stats.catalogsWarmed += this.stats.uuidStats[uuid].catalogsWarmed;
-          this.stats.totalPages += this.stats.uuidStats[uuid].totalPages;
-          this.stats.totalItems += this.stats.uuidStats[uuid].totalItems;
-
+          
           this.log('success', `UUID ${uuid} complete: ${this.stats.uuidStats[uuid].catalogsWarmed}/${this.stats.uuidStats[uuid].totalCatalogs} catalogs, ${this.stats.uuidStats[uuid].totalPages} pages, ${this.stats.uuidStats[uuid].totalItems} items in ${this.stats.uuidStats[uuid].duration}`);
-
         } catch (error) {
           this.log('error', `Failed to process UUID ${uuid}: ${error.message}`);
           this.stats.errors.push({ uuid, error: error.message });

@@ -1219,6 +1219,11 @@ const configHash = hashConfig(metaConfigString);
       imdbRating: meta.imdbRating,
       behaviorHints: meta.behaviorHints,
       posterShape: meta.posterShape || 'poster',
+      _hasPoster: !!meta.poster,
+      _hasBackground: !!meta.background,
+      _hasLogo: !!meta.logo,
+      _hasVideos: !!(meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0),
+      _hasLinks: !!(meta.links && Array.isArray(meta.links) && meta.links.length > 0)
    };
    
    componentPromises.push(
@@ -1497,8 +1502,47 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   if (basicComponent) {
     Object.assign(reconstructedMeta, basicComponent.data);
     reconstructedMeta.posterShape = basicComponent.data.posterShape;
+
+    const bd = basicComponent.data;
+
+    if (bd._hasPoster) {
+        const hasPoster = availableComponents.some(c => c.componentName === 'poster');
+        if (!hasPoster) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required poster.`);
+            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
+            return { errorReason: 'corrupted: missing poster' };
+        }
+    }
+
+    if (bd._hasBackground) {
+        const hasBg = availableComponents.some(c => c.componentName === 'background');
+        if (!hasBg) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required background.`);
+            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
+            return { errorReason: 'corrupted: missing background' };
+        }
+    }
+
+    if (bd._hasLogo) {
+        const hasLogo = availableComponents.some(c => c.componentName === 'logo');
+        if (!hasLogo) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required logo.`);
+            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
+            return { errorReason: 'corrupted: missing logo' };
+        }
+    }
+
+    if (includeVideos && bd._hasVideos) {
+        const hasVideos = availableComponents.some(c => c.componentName === 'videos');
+        if (!hasVideos) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required videos.`);
+            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
+            return { errorReason: 'corrupted: missing videos' };
+        }
+    }
   }
-   
+
+  
    // Add other components
    availableComponents.forEach(({ componentName, data }) => {
      if (componentName === 'basic') return; // Already handled
