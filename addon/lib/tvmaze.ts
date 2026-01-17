@@ -6,13 +6,14 @@ const Bottleneck = require('bottleneck');
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second base delay
-const RATE_LIMIT_DELAY = 2000; // 2 seconds for rate limit backoff (TVmaze recommends "a few seconds")
+const RETRY_DELAY = 1000; // 1 second base delay for network errors
+const RATE_LIMIT_FALLBACK_DELAY = 10000; // 10 seconds fallback if Retry-After header is missing
+const RETRY_AFTER_BUFFER = 1000; // Add 1 second buffer to Retry-After value
 
-// TVmaze rate limiter - TVmaze allows at least 20 calls per 10 seconds per IP
+// TVmaze rate limiter
 const tvmazeLimiter = new Bottleneck({
-  reservoir: 18, // Allow 18 requests (below the 20 minimum)
-  reservoirRefreshAmount: 18,
+  reservoir: 20, // Allow 20 requests per 10 seconds
+  reservoirRefreshAmount: 20,
   reservoirRefreshInterval: 10 * 1000, 
   maxConcurrent: 2,
   minTime: 0 
@@ -20,7 +21,6 @@ const tvmazeLimiter = new Bottleneck({
 
 // TVmaze dispatcher configuration
 // Priority: HTTPS_PROXY/HTTP_PROXY > direct connection
-// (TVmaze doesn't have a service-specific proxy option)
 const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
 let tvmazeAgent: Agent | ProxyAgent;
 
@@ -31,14 +31,14 @@ if (HTTP_PROXY_URL) {
   } catch (error: any) {
     console.error(`[TVmaze] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
     tvmazeAgent = new Agent({
-      connections: 2, // TVmaze: leaving more than 1 idle connection may result in IP blocking
-      keepAliveTimeout: 10 * 1000, // Shorter timeout to avoid idle connections
+      connections: 2,
+      keepAliveTimeout: 10 * 1000,
     });
   }
 } else {
   tvmazeAgent = new Agent({
-    connections: 2, // TVmaze: leaving more than 1 idle connection may result in IP blocking
-    keepAliveTimeout: 10 * 1000, // Keep sockets open for 10 seconds (shorter to avoid idle connections)
+    connections: 2,
+    keepAliveTimeout: 10 * 1000,
   });
   console.log('[TVmaze] undici agent is enabled for direct connections (2 max connections to avoid IP blocking).');
 }
@@ -311,6 +311,7 @@ function handleHttpError(error: any, context: string): ApiError {
 /**
  * Retry wrapper for API calls
  * Tracks provider calls only for final outcomes (not each retry attempt)
+ * Handles 429 rate limits separately from other errors using Retry-After header
  */
 async function retryApiCall<T>(
   apiCall: () => Promise<T>, 
@@ -333,24 +334,36 @@ async function retryApiCall<T>(
       return result;
     } catch (error) {
       const isLastAttempt = attempt === retries;
-      const isRetryableError = (error as any).code === 'ECONNABORTED' || 
-                              (error as any).code === 'ENETUNREACH' || 
-                              (error as any).code === 'ECONNREFUSED' ||
-                              ((error as any).response && ((error as any).response.status === 429 || (error as any).response.status >= 500));
-      
-      // Don't retry redirect errors (3xx) - they should be handled by the HTTP client
-      const isRedirectError = (error as any).response && (error as any).response.status >= 300 && (error as any).response.status < 400;
+      const statusCode = (error as any).response?.status;
       
       // 404 is not a failure - the API worked, the content just doesn't exist
-      const is404 = (error as any).response && (error as any).response.status === 404;
-      if (is404) {
+      if (statusCode === 404) {
         const responseTime = Date.now() - overallStartTime;
         const requestTracker = require('./requestTracker');
         requestTracker.trackProviderCall('tvmaze', responseTime, true);
         return null;
       }
       
-      if (isLastAttempt || !isRetryableError || isRedirectError) {
+      // Don't retry redirect errors (3xx) - they should be handled by the HTTP client
+      const isRedirectError = statusCode >= 300 && statusCode < 400;
+      if (isRedirectError) {
+        const responseTime = Date.now() - overallStartTime;
+        const requestTracker = require('./requestTracker');
+        requestTracker.trackProviderCall('tvmaze', responseTime, false);
+        handleHttpError(error, context);
+        return null;
+      }
+      
+      // Categorize error types
+      const isRateLimit = statusCode === 429;
+      const isServerError = statusCode >= 500;
+      const isNetworkError = (error as any).code === 'ECONNABORTED' || 
+                            (error as any).code === 'ENETUNREACH' || 
+                            (error as any).code === 'ECONNREFUSED';
+      
+      const isRetryableError = isRateLimit || isServerError || isNetworkError;
+      
+      if (isLastAttempt || !isRetryableError) {
         // Track failure only when all retries exhausted
         const responseTime = Date.now() - overallStartTime;
         const requestTracker = require('./requestTracker');
@@ -360,10 +373,40 @@ async function retryApiCall<T>(
         return notFound ? null : null;
       }
       
-      // Exponential backoff: 1s, 2s, 4s (or fixed delay for rate limits as per TVmaze docs)
-      const isRateLimit = (error as any).response && (error as any).response.status === 429;
-      const delay = isRateLimit ? RATE_LIMIT_DELAY : RETRY_DELAY * Math.pow(2, attempt - 1);
-      console.log(`${context}: Attempt ${attempt} failed${isRateLimit ? ' (rate limited)' : ''}, retrying in ${delay}ms...`);
+      // Calculate delay based on error type
+      let delay: number;
+      
+      if (isRateLimit) {
+        // Handle 429 rate limit: Use Retry-After header if available
+        const retryAfterHeader = (error as any).response?.headers?.['retry-after'];
+        
+        if (retryAfterHeader) {
+          const retryAfterSeconds = parseInt(retryAfterHeader, 10);
+          
+          if (!isNaN(retryAfterSeconds)) {
+            delay = (retryAfterSeconds * 1000) + RETRY_AFTER_BUFFER;
+            console.log(`${context}: Rate limited (429). Retry-After: ${retryAfterSeconds}s. Waiting ${delay}ms (attempt ${attempt}/${retries})...`);
+          } else {
+            // Fallback if header is not a number
+            delay = RATE_LIMIT_FALLBACK_DELAY;
+            console.log(`${context}: Rate limited (429). Invalid Retry-After header. Using fallback delay of ${delay}ms (attempt ${attempt}/${retries})...`);
+          }
+        } else {
+          // No Retry-After header provided
+          delay = RATE_LIMIT_FALLBACK_DELAY;
+          console.log(`${context}: Rate limited (429). No Retry-After header. Using fallback delay of ${delay}ms (attempt ${attempt}/${retries})...`);
+        }
+      } else if (isServerError) {
+        // Handle 5xx server errors
+        delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+        console.log(`${context}: Server error (${statusCode}). Using exponential backoff: ${delay}ms (attempt ${attempt}/${retries})...`);
+      } else {
+        // Handle network errors
+        delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+        const errorCode = (error as any).code || 'unknown';
+        console.log(`${context}: Network error (${errorCode}). Using exponential backoff: ${delay}ms (attempt ${attempt}/${retries})...`);
+      }
+      
       await sleep(delay);
     }
   }
