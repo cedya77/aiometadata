@@ -11,6 +11,8 @@ const CATALOG_TYPES = require("../static/catalog-types.json");
 const jikan = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 const { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } = require('./getCache');
+const consola = require('consola');
+const logger = consola.withTag('Manifest');
 
 
 const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
@@ -177,9 +179,9 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
 
 async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardGenres = [], prefetchedAnimeGenres = []) {
   try {
-    console.log(`[Manifest] Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
+    logger.info(`Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
     const listId = userCatalog.id.split(".")[1];
-    console.log(`[Manifest] MDBList list ID: ${listId}, API key present: ${!!mdblistKey}`);
+    logger.debug(`MDBList list ID: ${listId}, API key present: ${!!mdblistKey}`);
     
     // Use pre-fetched genres or fall back to static
     const genreSelection = userCatalog.genreSelection || 'standard';
@@ -188,17 +190,17 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
     // Use pre-fetched genres based on selection
     if (genreSelection === 'standard' && prefetchedStandardGenres.length > 0) {
       genres = prefetchedStandardGenres;
-      console.log(`[Manifest] MDBList using ${genres.length} pre-fetched standard genres`);
+      logger.debug(`MDBList using ${genres.length} pre-fetched standard genres`);
     } else if (genreSelection === 'anime' && prefetchedAnimeGenres.length > 0) {
       genres = prefetchedAnimeGenres;
-      console.log(`[Manifest] MDBList using ${genres.length} pre-fetched anime genres`);
+      logger.debug(`MDBList using ${genres.length} pre-fetched anime genres`);
     } else if (genreSelection === 'all' && (prefetchedStandardGenres.length > 0 || prefetchedAnimeGenres.length > 0)) {
       genres = [...prefetchedStandardGenres, ...prefetchedAnimeGenres];
-      console.log(`[Manifest] MDBList using ${genres.length} pre-fetched combined genres`);
+      logger.debug(`MDBList using ${genres.length} pre-fetched combined genres`);
     } else {
       // Fallback to static genres if pre-fetch failed
       genres = getGenresBySelection(genreSelection);
-      console.log(`[Manifest] MDBList using ${genres.length} static fallback genres for selection: ${genreSelection}`);
+      logger.info(`MDBList using ${genres.length} static fallback genres for selection: ${genreSelection}`);
     }
     
     // Add "None" option when showInHome is false to work around Stremio's genre requirement
@@ -219,35 +221,35 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
       showInHome: userCatalog.showInHome
     };
     
-    console.log(`[Manifest] MDBList catalog created successfully: ${catalog.id}`);
+    logger.success(`MDBList catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
-    console.error(`[Manifest] Error creating MDBList catalog ${userCatalog.id}:`, error.message);
+    logger.error(`Error creating MDBList catalog ${userCatalog.id}:`, error.message);
     return null; // Return null instead of throwing to prevent manifest failure
   }
 }
 
 async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = []) {
   try {
-    console.log(`[Manifest] Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
+    logger.info(`Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
     
     // Determine which genre list to use based on catalog type
     let genres = [];
     // Select the correct list of genre objects
     if (userCatalog.type === 'movie' && prefetchedMovieGenres.length > 0) {
       genres = prefetchedMovieGenres;
-      console.log(`[Manifest] Trakt using ${genres.length} pre-fetched movie genres`);
+      logger.debug(`Trakt using ${genres.length} pre-fetched movie genres`);
     } else if (userCatalog.type === 'series' && prefetchedShowGenres.length > 0) {
       genres = prefetchedShowGenres;
-      console.log(`[Manifest] Trakt using ${genres.length} pre-fetched show genres`);
+      logger.debug(`Trakt using ${genres.length} pre-fetched show genres`);
     } else if (userCatalog.type === 'all') {
       const combined = [...prefetchedMovieGenres, ...prefetchedShowGenres];
       const uniqueMap = new Map(combined.map(g => [g.slug, g]));
       genres = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
       
-      console.log(`[Manifest] Trakt using ${genres.length} combined genres`);
+      logger.debug(`Trakt using ${genres.length} combined genres`);
     } else {
-      console.log(`[Manifest] Trakt no pre-fetched genres available for type: ${userCatalog.type}`);
+      logger.warn(`Trakt no pre-fetched genres available for type: ${userCatalog.type}`);
     }
 
     const genreNames = genres.map(g => g.name);
@@ -277,32 +279,32 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
       });
     }
     
-    console.log(`[Manifest] Trakt catalog created successfully: ${catalog.id}`);
+    logger.success(`Trakt catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
-    console.error(`[Manifest] Error creating Trakt catalog ${userCatalog.id}:`, error.message);
+    logger.error(`Error creating Trakt catalog ${userCatalog.id}:`, error.message);
     return null; // Return null instead of throwing to prevent manifest failure
   }
 }
 
 async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = []) {
   try {
-    console.log(`[Manifest] Creating TMDB List catalog: ${userCatalog.id} (${userCatalog.type})`);
+    logger.info(`Creating TMDB List catalog: ${userCatalog.id} (${userCatalog.type})`);
     
     const catalogType = userCatalog.displayType || userCatalog.type;
     
     let genres = [];
     if (userCatalog.type === 'movie' && movieGenres.length > 0) {
       genres = movieGenres;
-      console.log(`[Manifest] TMDB List using ${genres.length} movie genres`);
+      logger.debug(`TMDB List using ${genres.length} movie genres`);
     } else if (userCatalog.type === 'series' && seriesGenres.length > 0) {
       genres = seriesGenres;
-      console.log(`[Manifest] TMDB List using ${genres.length} series genres`);
+      logger.debug(`TMDB List using ${genres.length} series genres`);
     } else if (userCatalog.type === 'all') {
       const combined = [...movieGenres, ...seriesGenres];
       const uniqueGenres = [...new Set(combined)].sort();
       genres = uniqueGenres;
-      console.log(`[Manifest] TMDB List using ${genres.length} combined genres`);
+      logger.debug(`TMDB List using ${genres.length} combined genres`);
     }
     
     const genreOptions = genres.length > 0 
@@ -321,17 +323,17 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
       showInHome: userCatalog.showInHome
     };
     
-    console.log(`[Manifest] TMDB List catalog created successfully: ${catalog.id}`);
+    logger.success(`TMDB List catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
-    console.error(`[Manifest] Error creating TMDB List catalog ${userCatalog.id}:`, error.message);
+    logger.error(`Error creating TMDB List catalog ${userCatalog.id}:`, error.message);
     return null;
   }
 }
 
 async function createLetterboxdCatalog(userCatalog) {
   try {
-    console.log(`[Manifest] Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
+    logger.info(`Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
     
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;
@@ -370,25 +372,25 @@ async function createLetterboxdCatalog(userCatalog) {
       showInHome: userCatalog.showInHome
     };
     
-    console.log(`[Manifest] Letterboxd catalog created successfully: ${catalog.id}`);
+    logger.success(`Letterboxd catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
-    console.error(`[Manifest] Error creating Letterboxd catalog ${userCatalog.id}:`, error.message);
+    logger.error(`Error creating Letterboxd catalog ${userCatalog.id}:`, error.message);
     return null; // Return null instead of throwing to prevent manifest failure
   }
 }
 
 async function createStremThruCatalog(userCatalog) {
   try {
-    //console.log(`[Manifest] Creating StremThru catalog: ${userCatalog.id} (${userCatalog.type})`);
-    
     // Extract catalog info from the StremThru catalog ID
     // Format: stremthru.{manifestId}.{catalogId}
     const parts = userCatalog.id.split(".");
     if (parts.length < 3) {
-      console.warn(`[Manifest] Invalid StremThru catalog ID format: ${userCatalog.id}`);
+      logger.warn(`Invalid StremThru catalog ID format: ${userCatalog.id}`);
       return null;
     }
+
+    logger.info(`Creating StremThru catalog: ${userCatalog.id}`);
     
     const manifestId = parts[1];
     const catalogId = parts[2];
@@ -396,7 +398,7 @@ async function createStremThruCatalog(userCatalog) {
     // Get the catalog URL from the user catalog (try sourceUrl first, fallback to source)
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
     if (!catalogUrl) {
-      console.warn(`[Manifest] No source URL found for catalog: ${userCatalog.id}`);
+      logger.warn(`No source URL found for catalog: ${userCatalog.id}`);
       return null;
     }
     
@@ -408,40 +410,38 @@ async function createStremThruCatalog(userCatalog) {
     
     if (userCatalog.genres && Array.isArray(userCatalog.genres) && userCatalog.genres.length > 0) {
       genres = userCatalog.genres;
-      //console.log(`[Manifest] Using genres from userCatalog.genres: ${genres.length} genres`);
     } else if (userCatalog.manifestData && userCatalog.manifestData.extra) {
       // Try to extract genres from the original manifest data
       const genreExtra = userCatalog.manifestData.extra.find(e => e.name === 'genre');
       if (genreExtra && genreExtra.options && Array.isArray(genreExtra.options) && genreExtra.options.length > 0) {
         genres = genreExtra.options;
-        //console.log(`[Manifest] Using genres from manifestData.extra: ${genres.length} genres`);
       }
     }
     
-    // If still no genres, try to fetch from catalog items (last resort)
+    // If still no genres, try to fetch from catalog items
     if (genres.length === 0) {
       try {
-        console.log(`[Manifest] Attempting to fetch genres from catalog items for ${userCatalog.id}`);
+        logger.debug(`Attempting to fetch genres from catalog items for ${userCatalog.id}`);
         // Wrap in cache to avoid repeated API calls on manifest generation
         genres = await cacheWrapStremThruGenres(catalogUrl, async () => {
-          console.log(`[Manifest] Fetching fresh genres from StremThru catalog: ${catalogUrl}`);
+          logger.debug(`Fetching fresh genres from StremThru catalog: ${catalogUrl}`);
           const items = await fetchStremThruCatalog(catalogUrl);
           if (items && items.length > 0) {
             const extractedGenres = await getGenresFromStremThruCatalog(items);
-            console.log(`[Manifest] Extracted and cached ${extractedGenres.length} genres from catalog items`);
+            logger.debug(`Extracted and cached ${extractedGenres.length} genres from catalog items`);
             return extractedGenres;
           }
           return [];
         });
-        console.log(`[Manifest] Using ${genres.length} genres for ${userCatalog.id}`);
+        logger.debug(`Using ${genres.length} genres for ${userCatalog.id}`);
       } catch (genreError) {
-        console.warn(`[Manifest] Failed to fetch genres from catalog items for ${userCatalog.id}:`, genreError.message);
+        logger.warn(`Failed to fetch genres from catalog items for ${userCatalog.id}:`, genreError.message);
       }
     }
     
     // Final fallback
     if (genres.length === 0) {
-      console.warn(`[Manifest] No genres found for ${userCatalog.id}, using fallback`);
+      logger.warn(`No genres found for ${userCatalog.id}, using fallback`);
       genres = ['None']; // Single option for catalogs without genre support
     }
     
@@ -463,10 +463,10 @@ async function createStremThruCatalog(userCatalog) {
       showInHome: userCatalog.showInHome
     };
     
-   // console.log(`[Manifest] StremThru catalog created successfully: ${catalog.id}`);
+    logger.success(`StremThru catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
-    console.error(`[Manifest] Error creating StremThru catalog ${userCatalog.id}:`, error.message);
+    logger.error(`Error creating StremThru catalog ${userCatalog.id}:`, error.message);
     return null; // Return null instead of throwing to prevent manifest failure
   }
 }
@@ -477,7 +477,7 @@ async function createStremThruCatalog(userCatalog) {
  */
 function createAniListCatalog(userCatalog) {
   try {
-    console.log(`[Manifest] Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
+    logger.info(`Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
     
     // Use displayType if defined, otherwise use original type (default to 'series' for anime)
     const catalogType = userCatalog.displayType || userCatalog.type || 'series';
@@ -494,17 +494,17 @@ function createAniListCatalog(userCatalog) {
       showInHome: userCatalog.showInHome
     };
     
-    console.log(`[Manifest] AniList catalog created successfully: ${catalog.id}`);
+    logger.success(`AniList catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
-    console.error(`[Manifest] Error creating AniList catalog ${userCatalog.id}:`, error.message);
+    logger.error(`Error creating AniList catalog ${userCatalog.id}:`, error.message);
     return null;
   }
 }
 
 async function getManifest(config) {
   const startTime = Date.now();
-  console.log('[Manifest] Starting manifest generation...');
+  logger.start('Starting manifest generation...');
   
   // Generate manifest directly without caching to avoid cache key issues
   // The manifest is fast to generate and caching causes more problems than it solves
@@ -517,10 +517,10 @@ async function getManifest(config) {
 
 
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
-  console.log(`[Manifest] Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
-  console.log(`[Manifest] MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
-  console.log(`[Manifest] Custom catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('custom.')).map(c => c.id));
-  //console.log(`[Manifest] StremThru catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('stremthru.')).map(c => c.id));
+  logger.info(`Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
+  logger.debug(`MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
+  logger.debug(`Custom catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('custom.')).map(c => c.id));
+  //logger.debug(`StremThru catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('stremthru.')).map(c => c.id));
   
   const years = generateArrayOfYears(new Date().getFullYear() - 1900);
   
@@ -551,7 +551,7 @@ async function getManifest(config) {
   
   const genreStart = Date.now();
   const results = await Promise.all(fetchPromises);
-  console.log(`[Manifest] Genre lists and languages fetched in ${Date.now() - genreStart}ms`);
+  logger.debug(`Genre lists and languages fetched in ${Date.now() - genreStart}ms`);
   
   // Extract results based on what was fetched
   let genres_movie = [], genres_series = [], genres_tvdb_all = [];
@@ -574,11 +574,11 @@ async function getManifest(config) {
   if (hasMalCatalogs) {
     const animeStart = Date.now();
     const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-      console.log('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
+      logger.info('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
       return await jikan.getAnimeGenres();
     });
     animeGenreNames = animeGenres.filter(Boolean).map(genre => genre.name).sort();
-    console.log(`[Manifest] Anime genres fetched in ${Date.now() - animeStart}ms`);
+    logger.debug(`Anime genres fetched in ${Date.now() - animeStart}ms`);
     
     // Only fetch studios if we have a studio catalog - but don't block manifest generation
     const hasStudioCatalog = enabledCatalogs.some(cat => cat.id === 'mal.studios');
@@ -586,7 +586,7 @@ async function getManifest(config) {
       try {
         // Try to get cached studios first, don't block if not available
         const studioPromise = cacheWrapJikanApi('mal-studios', async () => {
-          console.log('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
+          logger.debug('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
           return await jikan.getStudios();
         }, 30 * 24 * 60 * 60); // Cache for 30 days
         
@@ -601,9 +601,9 @@ async function getManifest(config) {
           const defaultTitle = studio.titles.find(t => t.type === 'Default');
           return defaultTitle ? defaultTitle.title : null;
         }).filter(Boolean);
-        console.log(`[Manifest] Studio list fetched successfully (${studioNames.length} studios)`);
+        logger.success(`Studio list fetched successfully (${studioNames.length} studios)`);
       } catch (error) {
-        console.warn('[Manifest] Studio list fetch failed, using empty list:', error.message);
+        logger.warn('Studio list fetch failed, using empty list:', error.message);
         studioNames = []; // Fallback to empty list
       }
     }
@@ -613,7 +613,7 @@ async function getManifest(config) {
     if (hasSeasonsCatalog) {
       try {
         const seasonsData = await cacheWrapJikanApi('mal-available-seasons', async () => {
-          console.log('[Cache Miss] Fetching available seasons from Jikan...');
+          logger.debug('[Cache Miss] Fetching available seasons from Jikan...');
           return await jikan.getAvailableSeasons();
         }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
         
@@ -631,9 +631,9 @@ async function getManifest(config) {
         
         // Store for later use
         global.availableSeasons = seasonOptions;
-        console.log(`[Manifest] Available seasons fetched successfully (${seasonOptions.length} seasons)`);
+        logger.debug(`Available seasons fetched successfully (${seasonOptions.length} seasons)`);
       } catch (error) {
-        console.warn('[Manifest] Available seasons fetch failed, will use fallback:', error.message);
+        logger.warn('Available seasons fetch failed, will use fallback:', error.message);
         global.availableSeasons = null;
       }
     }
@@ -651,15 +651,15 @@ async function getManifest(config) {
   let mdblistGenresStandard = [];
   let mdblistGenresAnime = [];
   if (enabledCatalogs.some(c => c.id.startsWith('mdblist.'))) {
-    console.log('[Manifest] Pre-fetching MDBList genres for all catalogs...');
+    logger.debug('Pre-fetching MDBList genres for all catalogs...');
     try {
       [mdblistGenresStandard, mdblistGenresAnime] = await Promise.all([
         fetchMDBListGenres(config.apiKeys?.mdblist, false),
         fetchMDBListGenres(config.apiKeys?.mdblist, true)
       ]);
-      console.log(`[Manifest] Pre-fetched ${mdblistGenresStandard.length} standard genres and ${mdblistGenresAnime.length} anime genres`);
+      logger.success(`Pre-fetched ${mdblistGenresStandard.length} standard genres and ${mdblistGenresAnime.length} anime genres`);
     } catch (error) {
-      console.warn('[Manifest] Failed to pre-fetch MDBList genres, will use fallback:', error.message);
+      logger.warn('Failed to pre-fetch MDBList genres, will use fallback:', error.message);
     }
   }
 
@@ -667,15 +667,15 @@ async function getManifest(config) {
   let traktGenresMovies = [];
   let traktGenresShows = [];
   if (enabledCatalogs.some(c => c.id.startsWith('trakt.'))) {
-    console.log('[Manifest] Pre-fetching Trakt genres for all catalogs...');
+    logger.debug('Pre-fetching Trakt genres for all catalogs...');
     try {
       [traktGenresMovies, traktGenresShows] = await Promise.all([
         fetchTraktGenres('movies'),
         fetchTraktGenres('shows')
       ]);
-      console.log(`[Manifest] Pre-fetched ${traktGenresMovies.length} movie genres and ${traktGenresShows.length} show genres from Trakt`);
+      logger.success(`Pre-fetched ${traktGenresMovies.length} movie genres and ${traktGenresShows.length} show genres from Trakt`);
     } catch (error) {
-      console.warn('[Manifest] Failed to pre-fetch Trakt genres, catalogs will have no genres:', error.message);
+      logger.warn('Failed to pre-fetch Trakt genres, catalogs will have no genres:', error.message);
     }
   }
 
@@ -683,34 +683,28 @@ async function getManifest(config) {
     .filter(userCatalog => {
       const catalogDef = getCatalogDefinition(userCatalog.id);
       if (isMDBList(userCatalog.id)) {
-        //console.log(`[Manifest] MDBList catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (isTrakt(userCatalog.id)) {
-        //console.log(`[Manifest] Trakt catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {
         return true;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
-        //console.log(`[Manifest] StremThru catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (userCatalog.id.startsWith('custom.')) {
-        //console.log(`[Manifest] Custom catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (userCatalog.id.startsWith('anilist.')) {
-        //console.log(`[Manifest] AniList catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
-        //console.log(`[Manifest] Letterboxd catalog ${userCatalog.id} passed filter`);
         return true;
       }
       if (!catalogDef) {
-        console.log(`[Manifest] Catalog ${userCatalog.id} failed filter: no catalog definition`);
+        logger.debug(`Catalog ${userCatalog.id} failed filter: no catalog definition`);
         return false;
       }
       // Don't filter out auth catalogs - show them in manifest even without session
@@ -719,45 +713,43 @@ async function getManifest(config) {
     })
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
-          console.log(`[Manifest] Processing MDBList catalog: ${userCatalog.id}`);
+          logger.debug(`Processing MDBList catalog: ${userCatalog.id}`);
           const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime);
-          console.log(`[Manifest] MDBList catalog result:`, result ? 'success' : 'failed');
+          logger.debug(`MDBList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (isTrakt(userCatalog.id)) {
-          console.log(`[Manifest] Processing Trakt catalog: ${userCatalog.id}`);
+          logger.debug(`Processing Trakt catalog: ${userCatalog.id}`);
           const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
-          console.log(`[Manifest] Trakt catalog result:`, result ? 'success' : 'failed');
+          logger.debug(`Trakt catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {
-          console.log(`[Manifest] Processing TMDB List catalog: ${userCatalog.id}`);
+          logger.debug(`Processing TMDB List catalog: ${userCatalog.id}`);
           const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names);
-          console.log(`[Manifest] TMDB List catalog result:`, result ? 'success' : 'failed');
+          logger.debug(`TMDB List catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
-          //console.log(`[Manifest] Processing StremThru catalog: ${userCatalog.id}`);
           const result = await createStremThruCatalog(userCatalog);
-          //console.log(`[Manifest] StremThru catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('custom.')) {
-          console.log(`[Manifest] Processing Custom catalog: ${userCatalog.id}`);
+          logger.debug(`Processing Custom catalog: ${userCatalog.id}`);
           const result = await createStremThruCatalog(userCatalog);
-          console.log(`[Manifest] Custom catalog result:`, result ? 'success' : 'failed');
+          logger.debug(`Custom catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('anilist.')) {
-          console.log(`[Manifest] Processing AniList catalog: ${userCatalog.id}`);
+          logger.debug(`Processing AniList catalog: ${userCatalog.id}`);
           const result = createAniListCatalog(userCatalog);
-          console.log(`[Manifest] AniList catalog result:`, result ? 'success' : 'failed');
+          logger.debug(`AniList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
-          console.log(`[Manifest] Processing Letterboxd catalog: ${userCatalog.id}`);
+          logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);
           const result = await createLetterboxdCatalog(userCatalog);
-          console.log(`[Manifest] Letterboxd catalog result:`, result ? 'success' : 'failed');
+          logger.debug(`Letterboxd catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
@@ -1067,7 +1059,7 @@ async function getManifest(config) {
   };
   
   const endTime = Date.now();
-  console.log(`[Manifest] Manifest generation completed in ${endTime - startTime}ms`);
+  logger.success(`Manifest generation completed in ${endTime - startTime}ms`);
   
   return manifest;
 }

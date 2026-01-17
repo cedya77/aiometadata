@@ -1,6 +1,9 @@
 import Kitsu from 'kitsu';
 import axios, { AxiosResponse } from 'axios';
 import { cacheWrapGlobal } from './getCache.js';
+import consola from 'consola';
+
+const logger = consola.withTag('Kitsu');
 
 // Initialize Kitsu client
 const kitsu = new Kitsu();
@@ -236,7 +239,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
       status
     });
     
-    console.error(`[Kitsu Client] Error searching for "${query}":`, error.message);
+    logger.error(`Error searching for "${query}":`, error.message);
     return results;
   }
 }
@@ -256,12 +259,12 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
   const startTime = Date.now();
   
   try {
-    console.log(`[Kitsu Client] Fetching details for ${ids.length} IDs: ${ids.join(',')}`);
+    logger.info(`Fetching details for ${ids.length} IDs: ${ids.join(',')}`);
     
     // Use direct API call to bypass Kitsu library filter issues
     const baseUrl = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}&include=${appends}&page[size]=20`;
     
-    console.log(`[Kitsu Client] Direct API URL: ${baseUrl}`);
+    logger.debug(`Direct API URL: ${baseUrl}`);
     
     const allData: KitsuAnime[] = [];
     const allIncluded: any[] = [];
@@ -271,7 +274,7 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
     // Paginate through all results
     while (nextUrl) {
       pageCount++;
-      console.log(`[Kitsu Client] Fetching page ${pageCount}...`);
+      logger.debug(`Fetching page ${pageCount}...`);
       
       const response: AxiosResponse<KitsuDirectApiResponse> = await axios.get(nextUrl, {
         headers: {
@@ -283,7 +286,7 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
       
       const pageData = response.data?.data || [];
       const pageIncluded = response.data?.included || [];
-      console.log(`[Kitsu Client] Page ${pageCount} received ${pageData.length} results, ${pageIncluded.length} included items`);
+      logger.debug(`Page ${pageCount} received ${pageData.length} results, ${pageIncluded.length} included items`);
       
       allData.push(...pageData);
       allIncluded.push(...pageIncluded);
@@ -291,13 +294,13 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
       // Check for next page
       nextUrl = response.data?.links?.next;
       if (nextUrl) {
-        console.log(`[Kitsu Client] Found next page, continuing pagination...`);
+        logger.debug(`Found next page, continuing pagination...`);
       }
     }
 
-    console.log(`[Kitsu Client] Total results after pagination: ${allData.length} data items, ${allIncluded.length} included items across ${pageCount} page(s)`);
+    logger.debug(`Total results after pagination: ${allData.length} data items, ${allIncluded.length} included items across ${pageCount} page(s)`);
     const receivedIds = allData.map(item => item.id);
-    console.log(`[Kitsu Client] Received IDs: ${receivedIds.join(',')}`);
+    logger.success(`Received IDs: ${receivedIds.join(',')}`);
     
     // Track successful request
     const responseTime = Date.now() - startTime;
@@ -323,7 +326,7 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
       status
     });
     
-    console.error(`[Kitsu Client] Error fetching details for IDs ${ids.join(',')}:`, (error as Error).message);
+    logger.error(`Error fetching details for IDs ${ids.join(',')}:`, (error as Error).message);
     return null;
   }
 }
@@ -340,7 +343,7 @@ async function getAnimeEpisodes(kitsuId: string | number): Promise<KitsuEpisode[
   const cacheTTL = 3600; // 1 hour cache for episode data
   
   return cacheWrapGlobal(cacheKey, async () => {
-    console.log(`[Kitsu Client] Fetching episodes for ID ${kitsuId}`);
+    logger.info(`Fetching episodes for ID ${kitsuId}`);
     const startTime = Date.now();
     
     try {
@@ -349,7 +352,7 @@ async function getAnimeEpisodes(kitsuId: string | number): Promise<KitsuEpisode[
       };
       
       const allEpisodes = await _fetchEpisodesRecursively(`anime/${kitsuId}/episodes`, params);
-      console.log(`[Kitsu Client] Total episodes fetched: ${allEpisodes.length}`);
+      logger.success(`Total episodes fetched: ${allEpisodes.length}`);
       
       // Track successful request
       const responseTime = Date.now() - startTime;
@@ -370,7 +373,7 @@ async function getAnimeEpisodes(kitsuId: string | number): Promise<KitsuEpisode[
         status
       });
       
-      console.error(`[Kitsu Client] Error fetching episodes for ID ${kitsuId}:`, (error as Error).message);
+      logger.error(`Error fetching episodes for ID ${kitsuId}:`, (error as Error).message);
       return [];
     }
   }, cacheTTL);
@@ -460,7 +463,7 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
       status
     });
     
-    console.error(`[Kitsu Client] Error fetching anime details for ID ${kitsuId}:`, (error as Error).message)
+    logger.error(`Error fetching anime details for ID ${kitsuId}:`, (error as Error).message)
     return null
   }
 }
