@@ -28,14 +28,12 @@ export async function performVersionCleanup(): Promise<void> {
     }
 
     logger.info(`Version change detected: ${lastVersion || 'none'} -> ${CURRENT_VERSION}`);
-    logger.info('Starting background cleanup of old cache keys...');
+    logger.info('Starting cleanup of old cache keys...');
 
     await redis.set(VERSION_KEY, CURRENT_VERSION);
 
-    // Run cleanup in background to not block startup
-    cleanOldVersionedKeys().catch(err => {
-      logger.error('Background cleanup failed:', err);
-    });
+    // Run cleanup and await completion
+    await cleanOldVersionedKeys();
 
   } catch (error: any) {
     logger.error('Failed to check version:', error.message);
