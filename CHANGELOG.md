@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.23.3](https://github.com/cedya77/aiometadata/compare/v1.23.2...v1.23.3) (2026-01-17)
+
+
+### Bug Fixes
+
+* clean logs ([0fa7c74](https://github.com/cedya77/aiometadata/commit/0fa7c74c94b53ef31cab4a612cfef5b073b43687))
+* clean logs ([0401077](https://github.com/cedya77/aiometadata/commit/04010770c13034fdb92eb668b4294576ad29db43))
+
 ## [1.23.2](https://github.com/cedya77/aiometadata/compare/v1.23.1...v1.23.2) (2026-01-17)
 
 
