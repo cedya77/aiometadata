@@ -3,6 +3,7 @@ const { httpGet } = require('../utils/httpClient');
 const { socksDispatcher } = require('fetch-socks');
 const { Agent, ProxyAgent } = require('undici');
 const consola = require('consola');
+const redis = require('./redisClient');
 const logger = consola.withTag('MAL');
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
@@ -72,60 +73,45 @@ if (!malDispatcher) {
   }
 }
 
-const BASE_REQUEST_DELAY = 400;  // 400ms = ~2.5 req/sec (safer margin under 3 req/sec limit)
+// Queue Configuration
+const MIN_REQUEST_INTERVAL = 340; 
 const MAX_RETRIES = 3;
-const RATE_LIMIT_DELAY = 1500;    // 1.5s for faster recovery    
-
+const RATE_LIMIT_DELAY = 2000;
 let requestQueue = [];
 let isProcessing = false;
-let activeRequests = 0;
-const MAX_CONCURRENT_REQUESTS = 1;
-let rateLimitHitTimestamps = []; // Track timestamps of rate limit hits
-logger.info(`Keep-Alive is enabled with optimized rate limiting.`);
+let lastRequestTime = 0;
+let rateLimitHitTimestamps = [];
 
 
 async function processQueue() {
   if (requestQueue.length === 0) {
     isProcessing = false;
-    return; 
-  }
-
-  isProcessing = true;
-  
-  // Process multiple requests concurrently if queue is small and we have capacity
-  const requestsToProcess = Math.min(
-    requestQueue.length,
-    MAX_CONCURRENT_REQUESTS - activeRequests
-  );
-  
-  if (requestsToProcess <= 0) {
-    // Wait a bit and try again
-    setTimeout(processQueue, 25);
     return;
   }
-  
-  const tasks = [];
-  for (let i = 0; i < requestsToProcess; i++) {
-    const requestTask = requestQueue.shift();
-    tasks.push(processRequest(requestTask));
+  isProcessing = true;
+
+  const now = Date.now();
+  const timeSinceLast = now - lastRequestTime;
+  const waitTime = Math.max(0, MIN_REQUEST_INTERVAL - timeSinceLast);
+
+  if (waitTime > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitTime));
   }
-  
-  // Wait for all requests to complete
-  await Promise.allSettled(tasks);
-  
-  // Always add a small delay between batches to be respectful to the API
-  setTimeout(processQueue, BASE_REQUEST_DELAY);
+
+  const task = requestQueue.shift();
+  lastRequestTime = Date.now();
+
+  processRequest(task).finally(() => {
+     processQueue();
+  });
 }
 
 async function processRequest(requestTask) {
-  activeRequests++;
-  let nextDelay = 0; 
   const startTime = Date.now();
 
   try {
     const result = await requestTask.task();
     
-    // Track final success (after all retries if any)
     const responseTime = Date.now() - startTime;
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('mal', responseTime, true);
@@ -133,33 +119,27 @@ async function processRequest(requestTask) {
     requestTask.resolve(result);
     
   } catch (error) {
-    // Check if this is a retryable error (rate limit or timeout)
-    const isRateLimit = error.response && error.response.status === 429;
-    const isTimeout = error.code && (error.code.includes('TIMEOUT') || error.code.includes('UND_ERR_HEADERS_TIMEOUT') || error.code.includes('UND_ERR_BODY_TIMEOUT'));
+    const isRateLimit = error.response?.status === 429;
+    const isTimeout = error.code && (
+        error.code.includes('TIMEOUT') || 
+        error.code.includes('UND_ERR_HEADERS_TIMEOUT') || 
+        error.code.includes('UND_ERR_BODY_TIMEOUT')
+    );
     const isRetryable = (isRateLimit || isTimeout) && requestTask.retries < MAX_RETRIES;
     
     if (isRetryable) {
       requestTask.retries++; 
       
       if (isRateLimit) {
-        // Track rate limit hits using a sliding window (last 60 seconds)
         const now = Date.now();
         rateLimitHitTimestamps.push(now);
-        
-        // Remove hits older than 60 seconds
-        rateLimitHitTimestamps = rateLimitHitTimestamps.filter(timestamp => now - timestamp < 60000);
+        rateLimitHitTimestamps = rateLimitHitTimestamps.filter(t => now - t < 60000);
         
         const recentHitCount = rateLimitHitTimestamps.length;
-
-        // Increase backoff time if we're hitting rate limits frequently
+        
         let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
-        if (recentHitCount > 10) {
-          baseBackoffTime *= 2.5; // 2.5x delay if hitting rate limits very frequently
-        } else if (recentHitCount > 5) {
-          baseBackoffTime *= 1.8; // 1.8x delay if hitting frequently
-        } else if (recentHitCount > 2) {
-          baseBackoffTime *= 1.3; // 1.3x delay if hitting moderately
-        }
+        if (recentHitCount > 10) baseBackoffTime *= 2.5;
+        else if (recentHitCount > 5) baseBackoffTime *= 1.8;
         
         const jitter = Math.random() * 300;
         const totalDelay = baseBackoffTime + jitter;
@@ -169,78 +149,46 @@ async function processRequest(requestTask) {
           `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
         );
         
-        // Log rate limit warning for dashboard (but don't count as failure yet)
         const requestTracker = require('./requestTracker');
         requestTracker.logError('warning', `MAL API rate limit hit`, {
           retries: requestTask.retries,
-          maxRetries: MAX_RETRIES,
           backoffTime: Math.round(totalDelay),
-          recentHits: recentHitCount,
           url: requestTask.url
         });
 
-        // Re-queue with delay
         setTimeout(() => {
-          requestQueue.unshift(requestTask);
-          if (!isProcessing) {
-            processQueue();
-          }
+          requestQueue.unshift(requestTask); // Put back at front of queue
+          if (!isProcessing) processQueue();
         }, totalDelay);
+
       } else if (isTimeout) {
-        // Retry timeout errors with exponential backoff
-        const timeoutDelay = Math.pow(2, requestTask.retries - 1) * 1000; // 1s, 2s, 4s
-        const jitter = Math.random() * 500;
-        const totalDelay = timeoutDelay + jitter;
+        const timeoutDelay = Math.pow(2, requestTask.retries - 1) * 1000;
+        const totalDelay = timeoutDelay + (Math.random() * 500);
         
         logger.warn(
-          `Jikan request timeout for "${requestTask.url}". Retrying in ${Math.round(totalDelay)}ms. ` +
-          `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
+          `Jikan request timeout for "${requestTask.url}". Retrying in ${Math.round(totalDelay)}ms.`
         );
         
-        // Log timeout warning for dashboard (but don't count as failure yet)
-        const requestTracker = require('./requestTracker');
-        requestTracker.logError('warning', `MAL API timeout`, {
-          retries: requestTask.retries,
-          maxRetries: MAX_RETRIES,
-          backoffTime: Math.round(totalDelay),
-          url: requestTask.url,
-          errorCode: error.code
-        });
-
-        // Re-queue with delay
         setTimeout(() => {
           requestQueue.unshift(requestTask);
-          if (!isProcessing) {
-            processQueue();
-          }
+          if (!isProcessing) processQueue();
         }, totalDelay);
       }
       
     } else {
-      // Track final failure (after all retries exhausted or non-retryable error)
       const responseTime = Date.now() - startTime;
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('mal', responseTime, false);
       
       if (requestTask.retries >= MAX_RETRIES) {
-        logger.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries. Giving up.`);
-        requestTracker.logError('error', `MAL API request failed after ${MAX_RETRIES} retries`, {
-          url: requestTask.url,
-          responseTime: responseTime,
-          status: error.response?.status
+        logger.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries.`);
+        requestTracker.logError('error', `MAL API request failed`, {
+           status: error.response?.status,
+           message: error.message
         });
       }
-      if (error.code) {
-        logger.debug(`Jikan request for "${requestTask.url}" failed with network error code: ${error.code}`);
-      }
-      if (error.cause) {
-        logger.debug(`Underlying cause:`, error.cause);
-      }
-
       requestTask.reject(error);
     }
-  } finally {
-    activeRequests--;
   }
 }
 
@@ -254,56 +202,44 @@ function enqueueRequest(task, url) {
 }
 
 async function _makeJikanRequest(url) {
-  const startTime = Date.now();
+  const etagKey = `mal_etag:${url}`;
   
-  try {
-    // Check if we have a cached ETag for this URL
-    const cached = etagCache.get(url);
-    const headers = {};
-    
-    if (cached && cached.etag) {
-      headers['If-None-Match'] = cached.etag;
-      //logger.debug(`Jikan request for: ${url} (with ETag validation)`);
-    } else {
-      //logger.debug(`Jikan request for: ${url}`);
-    }
-    
-    const response = await httpGet(url, { 
+  let etag = null;
+  if (redis) {
+      etag = await redis.get(etagKey);
+  }
+
+  const headers = {};
+  if (etag) {
+    headers['If-None-Match'] = etag;
+  }
+
+  const response = await httpGet(url, {
       dispatcher: malDispatcher,
       headers: headers,
-      timeout: 15000 // 15 second timeout for Jikan API (some endpoints can be slow)
-    });
-    const responseTime = Date.now() - startTime;
+      timeout: 15000,
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 304
+  });
     
-    // Store ETag if present
-    if (response.headers?.etag) {
-      etagCache.set(url, {
-        etag: response.headers.etag,
-        data: response,
-        timestamp: Date.now()
-      });
-    }
-    
-    // Note: Success/failure tracking is done in processRequest() to track final outcome only
-    //logger.debug(`Request completed in ${responseTime}ms (undici)`);
-    return response;
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    
-    // Handle 304 Not Modified - return cached data
-    if (error.response?.status === 304) {
-      const cached = etagCache.get(url);
-      if (cached && cached.data) {
-        //logger.debug(`Cache hit (304) for: ${url} in ${responseTime}ms`);
-        return cached.data;
-      }
-    }
-    
-    // Note: Success/failure tracking is done in processRequest() to track final outcome only
-    // Re-throw to let processRequest handle retries
-    
-    throw error;
+  if (response.status === 304) {
+       if (redis) {
+           const cachedBody = await redis.get(`mal_cache:${url}`);
+           if (cachedBody) {
+               logger.debug(`[304] Using Redis cached body for ${url}`);
+               return { data: JSON.parse(cachedBody) };
+           }
+       }
+       logger.warn(`[304] ETag match but body missing for ${url}. Re-fetching...`);
+       return httpGet(url, { dispatcher: malDispatcher, timeout: 15000 });
   }
+
+  if (response.headers?.etag && redis) {
+      const TTL = 25 * 60 * 60; 
+      await redis.set(etagKey, response.headers.etag, 'EX', TTL);
+      await redis.set(`mal_cache:${url}`, JSON.stringify(response.data), 'EX', TTL);
+  }
+  
+  return response;
 }
 
 async function searchAnime(type, query, limit = 25, config = {}, page = 1) {
