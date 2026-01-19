@@ -569,7 +569,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       if (!catalogConfig?.sourceUrl) {
         unified = true;
       } else {
-        unified = catalogConfig?.type === 'all' || false;
+      unified = catalogConfig?.type === 'all' || false;
       }
     }
     

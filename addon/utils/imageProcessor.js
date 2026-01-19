@@ -8,6 +8,7 @@ const ALLOWED_DOMAINS = [
   'artworks.thetvdb.com',
   'cdn.myanimelist.net',
   'media.kitsu.io',
+  'media.kitsu.app',
   'gogocdn.net',
   'artworks.thetvdb.com',
   'fanart.tv',
@@ -88,7 +89,7 @@ async function blurImage(imageUrl) {
     }
 
     const processedImageBuffer = await sharp(response.data)
-      .blur(20)
+      .blur(80)
       .toBuffer();
 
     return processedImageBuffer;
