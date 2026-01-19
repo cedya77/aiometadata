@@ -223,7 +223,7 @@ async function downloadAndProcessAnimeList(force = false) {
     try {
       const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
       logger.debug('[ID Mapper] [Fribb\'s Anime-List] Successfully loaded data from local cache on fallback.');
-      processAndIndexData(fileContent);
+      processAndIndexData(fileContent); 
       return { success: true, message: 'Loaded from local cache (fallback)', count: animeIdMap.size };
     } catch (fallbackError) {
       logger.error('[ID Mapper] [Fribb\'s Anime-List] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');

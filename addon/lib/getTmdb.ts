@@ -421,11 +421,19 @@ export async function discoverTv(params: any, config: UserConfig) {
 }
 
 export async function genreMovieList(params: any, config: UserConfig) {
-  return makeTmdbRequest('/genre/movie/list', getApiKey(config), params, 'GET', null, config);
+  const language = params.language || 'en';
+  return cacheWrapGlobal(`tmdb:genre:movie:${language}`, () =>
+    makeTmdbRequest('/genre/movie/list', getApiKey(config), params, 'GET', null, config),
+    30 * 24 * 60 * 60 
+  );
 }
 
 export async function genreTvList(params: any, config: UserConfig) {
-    return makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config);
+  const language = params.language || 'en';
+  return cacheWrapGlobal(`tmdb:genre:tv:${language}`, () =>
+    makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config),
+    30 * 24 * 60 * 60 
+  );
 }
 
 export async function requestToken(config: UserConfig) { 
@@ -486,16 +494,25 @@ export async function getTmdbListItems(params: any, config: UserConfig) {
 
 export async function getMovieCertifications(params: any, config: UserConfig) {
   const apiKey = getApiKey(config);
-  return makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params, 'GET', null, config);
+  return cacheWrapGlobal(`tmdb:movie:release_dates:${params.id}`, () =>
+    makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params, 'GET', null, config),
+    24 * 60 * 60 // 24 hours
+  );
 }
 
 export async function getTvCertifications(params: any, config: UserConfig) {
   const apiKey = getApiKey(config);
-  return makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params, 'GET', null, config);
+  return cacheWrapGlobal(`tmdb:tv:content_ratings:${params.id}`, () =>
+    makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params, 'GET', null, config),
+    24 * 60 * 60 
+  );
 }
 
 export async function getMovieWatchProviders(params: any, config: UserConfig) {
-  const data = await makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config);
+  const data = await cacheWrapGlobal(`tmdb:movie:watch_providers:${params.id}`, () =>
+    makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config),
+    24 * 60 * 60 
+  );
   if (data?.results) {
     const country = config.language?.split('-')[1] || 'US';
     const countryProviders = data.results[country];
@@ -554,8 +571,10 @@ export async function getTmdbImages(mediaType: string, tmdbId: string, config: U
   try {
     const endpoint = `/${mediaType}/${tmdbId}/images`;
     // This makes ONE network request.
-    const imagesData = await makeTmdbRequest(endpoint, getApiKey(config), {}, 'GET', null, config);
-    return imagesData || { posters: [], backdrops: [], logos: [] };
+    return cacheWrapGlobal(`tmdb:${mediaType}:images:${tmdbId}`, () =>
+      makeTmdbRequest(endpoint, getApiKey(config), {}, 'GET', null, config),
+      24 * 60 * 60 
+    ) || { posters: [], backdrops: [], logos: [] };
   } catch (error: any) {
     consola.warn(`[TMDB] Failed to get images for ${mediaType} ${tmdbId}:`, error.message);
     return { posters: [], backdrops: [], logos: [] };
@@ -563,7 +582,10 @@ export async function getTmdbImages(mediaType: string, tmdbId: string, config: U
 }
 
 export async function getTvWatchProviders(params: any, config: UserConfig) {
-  const data = await makeTmdbRequest(`/tv/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config);
+  const data = await cacheWrapGlobal(`tmdb:tv:watch_providers:${params.id}`, () =>
+    makeTmdbRequest(`/tv/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config),
+    24 * 60 * 60 
+  );
   if (data?.results) {
     const country = config.language?.split('-')[1] || 'US';
     const countryProviders = data.results[country];
@@ -733,7 +755,11 @@ export async function trending(params: any, config: UserConfig) {
 }
 
 export async function seasonInfo(params: any, config: UserConfig) {
-    return makeTmdbRequest(`/tv/${params.id}/season/${params.season_number}`, getApiKey(config), params, 'GET', null, config);
+  const { id, season_number, ...queryParams } = params;
+  return cacheWrapGlobal(`tmdb:tv:season:${id}:${season_number}`, () =>
+    makeTmdbRequest(`/tv/${id}/season/${season_number}`, getApiKey(config), queryParams, 'GET', null, config),
+    24 * 60 * 60
+  );
 }
 
 module.exports = {

@@ -127,8 +127,6 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
 }
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
-import { isReleasedDigitally } from "../utils/parseProps.js";
-import { filterMetasByRegex } from "../utils/regexFilter.js";
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
@@ -216,50 +214,42 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     if (id === 'tvdb.collections') {
       logger.debug(`Fetching TVDB collections catalog: ${id}`);
       const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
-      const filteredMetas = filterMetasByRegex(metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredMetas };
+      return { metas };
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
       logger.debug(`Routing to TVDB catalog handler for id: ${id}`);
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
-      const filteredResults = filterMetasByRegex(tvdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: tvdbResults };
     } 
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       logger.debug(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      const filteredResults = filterMetasByRegex(tmdbResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: tmdbResults };
     }
     else if (id.startsWith('stremthru.')) {
       logger.debug(`Routing to StremThru catalog handler for id: ${id}`);
       const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      const filteredResults = filterMetasByRegex(stremthruResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: stremthruResults };
     }
     else if (id.startsWith('custom.')) {
       logger.debug(`Routing to Custom Manifest catalog handler for id: ${id}`);
       const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      const filteredResults = filterMetasByRegex(customResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: customResults };
     }
     else if (id.startsWith('trakt.')) {
       logger.debug(`Routing to Trakt catalog handler for id: ${id}`);
       const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      const filteredResults = filterMetasByRegex(traktResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: traktResults };
     }
     else if (id.startsWith('anilist.')) {
       logger.debug(`Routing to AniList catalog handler for id: ${id}`);
       const anilistResults = await getAniListCatalog(type, id, page, language, config, userUUID, includeVideos);
-      const filteredResults = filterMetasByRegex(anilistResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: anilistResults };
     }
     else if (id.startsWith('letterboxd.')) {
       logger.debug(`Routing to Letterboxd catalog handler for id: ${id}`);
       const letterboxdResults = await getLetterboxdCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      const filteredResults = filterMetasByRegex(letterboxdResults, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      return { metas: filteredResults };
+      return { metas: letterboxdResults };
     }
 
     else {
@@ -417,16 +407,6 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   let validMetas = metas.filter(meta => meta !== null);
   validMetas.sort((a, b) => new Date(b.released).getTime() - new Date(a.released).getTime());
   
-  // Apply digital release filter if enabled (movies only)
-  if (type === 'movie' && config.hideUnreleasedDigital) {
-    const beforeCount = validMetas.length;
-    validMetas = validMetas.filter(meta =>  isReleasedDigitally(meta));
-    const afterCount = validMetas.length;
-    if (beforeCount !== afterCount) {
-      logger.info(`Digital release filter (TVDB): filtered out ${beforeCount - afterCount} unreleased movies`);
-    }
-  }
-  
   return validMetas;
 }
 
@@ -555,15 +535,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
 
-      // Apply digital release filter if enabled (movies only)
-      if ((type === 'movie' || type === 'all') && config.hideUnreleasedDigital) {
-        const beforeCount = metas.length;
-        metas = metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
-        const afterCount = metas.length;
-        if (beforeCount !== afterCount) {
-          logger.info(`Digital release filter (MDBList External): filtered out ${beforeCount - afterCount} unreleased movies`);
-        }
-      }
       metas = applyAgeRatingFilter(metas, type, config);
       
       return metas;
@@ -639,15 +610,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     
     let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
     
-    // Apply digital release filter if enabled (movies only)
-    if ((type === 'movie' || type === 'all') && config.hideUnreleasedDigital) {
-      const beforeCount = metas.length;
-      metas = metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
-      const afterCount = metas.length;
-      if (beforeCount !== afterCount) {
-        logger.info(`Digital release filter (MDBList): filtered out ${beforeCount - afterCount} unreleased movies`);
-      }
-    }
     metas = applyAgeRatingFilter(metas, type, config);
     
     return metas;
@@ -755,15 +717,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       
       let validMetas = metas.filter(meta => meta !== null);
       
-      if (type === 'movie' && config.hideUnreleasedDigital) {
-        const beforeCount = validMetas.length;
-        validMetas = validMetas.filter(meta => isReleasedDigitally(meta));
-        const afterCount = validMetas.length;
-        if (beforeCount !== afterCount) {
-          logger.info(`[TMDB List] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
-        }
-      }
-      
       validMetas = applyAgeRatingFilter(validMetas, type, config);
       
       logger.success(`[TMDB List] Processed ${validMetas.length} items for list ${listId}`);
@@ -828,16 +781,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }));
 
   let validMetas = metas.filter(meta => meta !== null);
-  
-  // Apply digital release filter if enabled (movies only)
-  if (type === 'movie' && config.hideUnreleasedDigital) {
-    const beforeCount = validMetas.length;
-    validMetas = validMetas.filter(meta => isReleasedDigitally(meta));
-    const afterCount = validMetas.length;
-    if (beforeCount !== afterCount) {
-      logger.info(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
-    }
-  }
   
   return validMetas;
   } else {
@@ -1089,15 +1032,6 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     let metas = await parseStremThruItems(paginatedItems, type, genre, language, config, includeVideos);
 
     // Filter unreleased content if configured
-    if (type === 'movie' && config.hideUnreleasedDigital) {
-      const before = metas.length;
-      metas = metas.filter(meta => isReleasedDigitally(meta));
-      const after = metas.length;
-      if (before !== after) {
-        logger.info(`Digital release filter (StremThru): filtered out ${before - after} unreleased movies`);
-      }
-    }
-
     // Filter by age rating if enabled
     metas = applyAgeRatingFilter(metas, type, config);
 
@@ -1416,16 +1350,6 @@ async function getTraktCatalog(
     const parseTime = Date.now() - parseStart;
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
-    // Apply digital release filter if enabled (movies only)
-    if ((type === 'movie' || type === 'all') && config.hideUnreleasedDigital) {
-      const beforeCount = metas.length;
-      metas = metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
-      const afterCount = metas.length;
-      if (beforeCount !== afterCount) {
-        logger.info(`Digital release filter (Trakt): filtered out ${beforeCount - afterCount} unreleased movies`);
-      }
-    }
-    
     // Apply age rating filter
     metas = applyAgeRatingFilter(metas, type, config);
     
@@ -1636,7 +1560,9 @@ async function resolveAniListItemsToMetas(
   const metas= await Utils.parseAnimeCatalogMetaBatch(newItems, config, language);
   
   // Filter out null results
-  return metas.filter(meta => meta !== null);
+  let validMetas = metas.filter(meta => meta !== null);
+  
+  return validMetas;
 }
 
 /**
@@ -1710,14 +1636,6 @@ async function getLetterboxdCatalog(
       includeVideos
     );
 
-    if (type === 'movie' && config.hideUnreleasedDigital) {
-      const before = metas.length;
-      metas = metas.filter(meta => isReleasedDigitally(meta));
-      const after = metas.length;
-      if (before !== after) {
-        logger.debug(`Digital release filter (Letterboxd): filtered out ${before - after} unreleased movies`);
-      }
-    }
     metas = applyAgeRatingFilter(metas, type, config);
 
     logger.debug(`Successfully processed ${metas.length} Letterboxd items`);

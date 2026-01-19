@@ -4,8 +4,6 @@ import * as Utils from '../utils/parseProps.js';
 import { getMeta } from './getMeta.js';
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
-import { isReleasedDigitally } from "../utils/parseProps.js";
-import { filterMetasByRegex } from "../utils/regexFilter.js";
 const consola = require('consola');
 
 const logger = consola.withTag('GetTrending'); 
@@ -111,26 +109,6 @@ async function getTrending(type: string, language: string, page: number, genre: 
       }
     } else {
       logger.debug(`[getTrending] No age rating filtering applied (ageRating: ${userRating})`);
-    }
-
-    // Apply digital release filter if enabled (movies only)
-    if (type === 'movie' && config.hideUnreleasedDigital) {
-      const beforeCount = filteredMetas.length;
-      filteredMetas = filteredMetas.filter(meta => isReleasedDigitally(meta));
-      const afterCount = filteredMetas.length;
-      if (beforeCount !== afterCount) {
-        logger.debug(`Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
-      }
-    }
-    
-    // Apply content exclusion filters if configured
-    if (config.exclusionKeywords || config.regexExclusionFilter) {
-      const beforeCount = filteredMetas.length;
-      filteredMetas = filterMetasByRegex(filteredMetas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-      const afterCount = filteredMetas.length;
-      if (beforeCount !== afterCount) {
-        logger.debug(`[getTrending] Content filter excluded ${beforeCount - afterCount} trending items`);
-      }
     }
     
     const totalTime = performance.now() - startTime;

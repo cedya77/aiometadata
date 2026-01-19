@@ -1082,7 +1082,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const { id: tmdbId, title, external_ids, poster_path, backdrop_path, images, } = movieData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  const castCount = config.castCount;
   const langCode = language.split('-')[0];
   let credits = await ensureLatinTmdbCredits('movie', tmdbId, movieData.credits, config);
   if (!credits) {
@@ -1157,6 +1157,9 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   );
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
+  if (castCount !== 0) {
+    links.push(...directorLinks, ...writerLinks);
+  }
   if (certification && config.displayAgeRating) {
     const certificationLink = {
       name: certification,
@@ -1186,8 +1189,8 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     imdb_id: imdbId,  
     slug: Utils.parseSlug('movie', finalTitle, null, stremioId),
     genres: Utils.parseGenres(movieData.genres),
-    director: Utils.parseDirector(credits).join(', '),
-    writer: Utils.parseWriter(credits).join(', '),
+    director: castCount !== 0 ? Utils.parseDirector(credits).join(', ') : '',
+    writer: castCount !== 0 ? Utils.parseWriter(credits).join(', ') : '',
     year: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
     released: movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null,
     releaseInfo: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
@@ -1202,7 +1205,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailerStreams: finalTrailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, certification: certification }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], releaseDates: movieData.release_dates, certification: certification }
   };
 }
 
@@ -1255,7 +1258,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', `tmdb:${tmdbId}`, poster, language, config);
   const imdbRating = imdbRatingValue || seriesData.vote_average?.toFixed(1) || "N/A";
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  const castCount = config.castCount;
   const _rawPosterUrl = poster || `${host}/missing_poster.png`;
 
   const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
@@ -1629,7 +1632,10 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   }
 
   const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
-  let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID), ...directorLinks, ...writerLinks];
+  let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID)];
+  if (castCount !== 0) {
+    links.push(...directorLinks, ...writerLinks);
+  }
   if (certification && config.displayAgeRating) {
     const certificationLink = {
       name: certification,
@@ -1672,7 +1678,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, certification: certification }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], seasonPosters: tmdbSeasonPosters, certification: certification }
   };
   if (runtime) {
     meta.runtime = Utils.parseRunTime(runtime);
@@ -1700,7 +1706,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   || movieData.overview;
   const idProvider = config.providers?.anime_id_provider || 'kitsu';
 
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  const castCount = config.castCount;
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = findArtwork(movieData.artworks, 14, langCode3, config) || `${host}/missing_poster.png`;
@@ -1785,7 +1791,10 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
     }
   }
-  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks];
+  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb')];
+  if (castCount !== 0) {
+    links.push(...directorLinks, ...writerLinks);
+  }
   if(certification && config.displayAgeRating){
     const certificationLink = {
       name: certification,
@@ -1804,8 +1813,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     slug: Utils.parseSlug('movie', translatedName, null, stremioId),
     genres: movieData.genres?.map(g => g.name) || [],
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
-    director: directors.join(', '),
-    writer: writers.join(', '),
+    director: castCount !== 0 ? directors.join(', ') : '',
+    writer: castCount !== 0 ? writers.join(', ') : '',
     year: year,
     releaseInfo: year,
     released: movieData.first_release.Date ? new Date(movieData.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
@@ -1823,7 +1832,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: links,
-    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, releaseDates: release_dates, certification: certification }
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], releaseDates: release_dates, certification: certification }
   };
 }
 
@@ -1926,7 +1935,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const tmdbId = allIds?.tmdbId;
   const tvdbId = tvdbShow.id;
   const malId = allIds?.malId;
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  const castCount = config.castCount;
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = findArtwork(tvdbShow.artworks, 2, langCode3, config) || `${host}/missing_poster.png`;
@@ -2211,7 +2220,10 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
 
   const certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
-  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb'), ...directorLinks, ...writerLinks];
+  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb')];
+  if (castCount !== 0) {
+    links.push(...directorLinks, ...writerLinks);
+  }
   if(certification && config.displayAgeRating){
     const certificationLink = {
       name: certification,
@@ -2228,12 +2240,11 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     type: 'series',
     name: translatedName,
     imdb_id: imdbId,
-    director: directors.join(', '),
-    writer: writers.join(', '),
+    director: castCount !== 0 ? directors.join(', ') : '',
+    writer: castCount !== 0 ? writers.join(', ') : '',
     slug: Utils.parseSlug('series', translatedName, imdbId, stremioId),
     genres: tvdbShow.genres?.map(g => g.name) || [],
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
-    writer: (tvdbShow.companies?.production || []).map(p => p.name).join(', '),
     year: year,
     releaseInfo: tvdbReleaseInfo,
     released: tvdbShow.firstAired ? new Date(tvdbShow.firstAired + 'T12:00:00.000Z') : null,
@@ -2250,7 +2261,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     trailerStreams: trailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, certification: certification }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], seasonPosters: seasonPosters, certification: certification }
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -2293,7 +2304,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   const imdbId = externals.imdb || allIds?.imdbId;
   const tmdbId = externals.themoviedb || allIds?.tmdbId;
   const tvdbId = externals.thetvdb || allIds?.tvdbId;
-  const castCount = config.castCount === 0 ? undefined : config.castCount;
+  const castCount = config.castCount;
 
   const tvmazePosterUrl = image?.original ? `${image.original}` : null;
   const tvmazeBackgroundUrl = image?.original ? `${image.original}` : null;
@@ -2511,7 +2522,10 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     logoUrl =  imdb.getLogoFromImdb(imdbId);
   }
 
-  let links = [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze'), ...producerLinks, ...writerLinks];
+  let links = [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze')];
+  if (castCount !== 0) {
+    links.push(...producerLinks, ...writerLinks);
+  }
   if(certification && config.displayAgeRating){
     const certificationLink = {
       name: certification,
@@ -2557,7 +2571,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     const imdbId = mapping?.imdbId;
     const kitsuId = mapping?.kitsuId;
     const imdbRating = typeof malData.score === 'number' ? malData.score.toFixed(1) : "N/A";
-    const castCount = config.castCount === 0 ? undefined : config.castCount;  
+    const castCount = config.castCount;  
     let videos = [];
     const seriesId = `mal:${malData.mal_id}`;
     const idProvider = config.providers?.anime_id_provider || 'kitsu';

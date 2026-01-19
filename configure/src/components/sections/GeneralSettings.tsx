@@ -208,10 +208,11 @@ const languageOptions = [
 ];
 
 const castCountOptions = [
+    { value: 0, label: '0 Members' },
     { value: 5, label: '5 Members' },
     { value: 10, label: '10 Members' },
     { value: 15, label: '15 Members' },
-    { value: 0, label: 'Unlimited' } 
+    { value: -1, label: 'Unlimited' } 
 ];
 
 // Common timezones for the selector
@@ -282,7 +283,7 @@ export function GeneralSettings() {
 
   const handleCastCountChange = (value: string) => {
     const count = parseInt(value, 10);
-    setConfig(prevConfig => ({ ...prevConfig, castCount: count }));
+    setConfig(prevConfig => ({ ...prevConfig, castCount: count === -1 ? undefined : count }));
   };
 
   const handleDisplayAgeRatingChange = (checked: boolean) => {
@@ -416,7 +417,7 @@ export function GeneralSettings() {
             <p className="text-sm text-muted-foreground">Number of cast members shown on a details page.</p>
           </div>
           <Select
-            value={String(config.castCount ?? 0)}
+            value={String(config.castCount ?? -1)}
             onValueChange={handleCastCountChange}
           >
             <SelectTrigger id="cast-count" className="w-[180px]">

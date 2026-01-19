@@ -587,6 +587,26 @@ class ComprehensiveCatalogWarmer {
           }
           }, undefined, { enableErrorCaching: false, maxRetries: 1 });
 
+          if (config.hideUnreleasedDigital && result?.metas && Array.isArray(result.metas)) {
+            const { isReleasedDigitally } = require('../utils/parseProps');
+            const beforeCount = result.metas.length;
+            result.metas = result.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
+            const afterCount = result.metas.length;
+            if (beforeCount !== afterCount) {
+              this.log('debug', `[Catalog Warmer] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies from ${catalogId}`);
+            }
+          }
+          
+          if ((config.exclusionKeywords || config.regexExclusionFilter) && result?.metas && Array.isArray(result.metas)) {
+            const { filterMetasByRegex } = require('../utils/regexFilter');
+            const beforeCount = result.metas.length;
+            result.metas = filterMetasByRegex(result.metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+            const afterCount = result.metas.length;
+            if (beforeCount !== afterCount) {
+              this.log('debug', `[Catalog Warmer] Content exclusion filter: filtered out ${beforeCount - afterCount} items from ${catalogId}`);
+            }
+          }
+
           if (!result?.metas || result.metas.length === 0) {
             this.log('debug', `Catalog ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} complete at page ${derivedPage}`);
             break;

@@ -941,6 +941,11 @@ function parseCreditsLink(credits, castCount, metaProvider = 'tmdb') {
   const Cast = castData.map((actor) => ({
     name: actor.name, category: "Cast", url: `stremio:///search?search=${encodeURIComponent(actor.name)}`
   }));
+  
+  if (castCount === 0) {
+    return [...Cast];
+  }
+  
   const Director = parseDirector(credits).map((director) => ({
     name: director, category: "Directors", url: `stremio:///search?search=${encodeURIComponent(director)}`,
   }));
@@ -1010,7 +1015,8 @@ function parseAnimeCreditsLink(characterData, userUUID, castCount) {
   const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
 
-  const voiceActorLinks = characterData.slice(0, castCount).map(charEntry => {
+  const charactersToProcess = castCount === undefined || castCount === null ? characterData : characterData.slice(0, castCount);
+  const voiceActorLinks = charactersToProcess.map(charEntry => {
     const voiceActor = charEntry.voice_actors.find(va => va.language === 'Japanese');
     if (!voiceActor) return null;
 
@@ -2037,7 +2043,16 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           }
         }
         let genres = item.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
-        return {
+        
+        let releaseDates = null;
+        if (config.hideUnreleasedDigital && stremioType === 'movie' && tmdbId) {
+          try {
+            releaseDates = await tmdb.getMovieCertifications({ id: tmdbId }, config);
+          } catch (error) {
+          }
+        }
+        
+        const meta = {
           id: `kitsu:${item.id}`,
           type: stremioType,
           name: getKitsuLocalizedTitle(item.attributes.titles, language) || item.attributes.canonicalTitle,
@@ -2057,6 +2072,12 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
             type: "Trailer"
           }] : [],
         };
+        
+        if (releaseDates) {
+          meta.app_extras = { releaseDates };
+        }
+        
+        return meta;
       }));
       // Filter out null metas before further processing
       metas = metas.filter(Boolean);
@@ -2179,12 +2200,23 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           }
         }
       }
-      // Phase 2: Parallel fetch for logo + background (only when not using early return)
-      const [logo, background] = await Promise.all([
+      // Only fetch TMDB release dates if digital release filter is enabled and it's a movie with TMDB ID
+      let releaseDates = null;
+      const shouldFetchReleaseDates = config.hideUnreleasedDigital && stremioType === 'movie' && tmdbId;
+      
+      const [logo, background, releaseDatesResult] = await Promise.all([
         getAnimeLogo({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType}, config),
-        getAnimeBg({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType, malPosterUrl}, config)
+        getAnimeBg({malId, imdbId, tvdbId, tmdbId, mediaType: stremioType, malPosterUrl}, config),
+        shouldFetchReleaseDates 
+          ? tmdb.getMovieCertifications({ id: tmdbId }, config).then(data => data || null).catch(() => null)
+          : Promise.resolve(null)
       ]);
-      return {
+      
+      if (releaseDatesResult) {
+        releaseDates = releaseDatesResult;
+      }
+      
+      const meta = {
         id: `mal:${malId}`,
         type: stremioType,
         logo: logo,
@@ -2199,7 +2231,13 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         imdbRating: imdbRating,
         trailers: trailers,
         trailerStreams: trailerStreams
-        };
+      };
+      
+      if (releaseDates) {
+        meta.app_extras = { releaseDates };
+      }
+      
+      return meta;
     }
   }));
   

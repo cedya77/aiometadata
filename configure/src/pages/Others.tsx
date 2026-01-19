@@ -74,7 +74,7 @@ const Others = () => {
           <div className="space-y-0.5">
             <h1 className="text-sm font-semibold mb-1">Cast count to show</h1>
             <p className="text-gray-500 text-sm">
-              Number of cast members to display (minimum 5, maximum 15, or Unlimited)
+              Number of cast members to display (0, 5, 10, 15, or Unlimited)
             </p>
           </div>
           <select
@@ -85,6 +85,7 @@ const Others = () => {
               setCastCount(value === "Unlimited" ? undefined : Number(value));
             }}
           >
+            <option value={0}>0</option>
             <option value={5}>5</option>
             <option value={10}>10</option>
             <option value={15}>15</option>

@@ -2134,6 +2134,26 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     }, undefined, cacheOptions);
     }
     
+    if (config.hideUnreleasedDigital && responseData?.metas && Array.isArray(responseData.metas)) {
+      const { isReleasedDigitally } = require("./utils/parseProps");
+      const beforeCount = responseData.metas.length;
+      responseData.metas = responseData.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
+      const afterCount = responseData.metas.length;
+      if (beforeCount !== afterCount) {
+        consola.debug(`[Catalog Route] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    if ((config.exclusionKeywords || config.regexExclusionFilter) && responseData?.metas && Array.isArray(responseData.metas)) {
+      const { filterMetasByRegex } = require("./utils/regexFilter");
+      const beforeCount = responseData.metas.length;
+      responseData.metas = filterMetasByRegex(responseData.metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      const afterCount = responseData.metas.length;
+      if (beforeCount !== afterCount) {
+        consola.debug(`[Catalog Route] Content exclusion filter: filtered out ${beforeCount - afterCount} items`);
+      }
+    }
+    
     if (catalogConfig?.randomizePerPage && Array.isArray(responseData?.metas) && responseData.metas.length > 1) {
       responseData = {
         ...responseData,
