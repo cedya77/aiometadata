@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 config();
-import moviedb from './getTmdb.js';
+import * as moviedb from './getTmdb.js';
 import getCountryISO3 from 'country-iso-2-to-3';
 import languages from '@cospired/i18n-iso-languages';
 import { UserConfig } from '../types/index.js';

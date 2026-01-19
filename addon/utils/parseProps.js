@@ -3145,10 +3145,10 @@ function getKitsuLocalizedTitle(titles, language = '') {
 
   // Priority lookup order — most specific to general
   const candidates = [
-    normalized,             // e.g. "fr_fr"
-    `${baseLang}_jp`,       // e.g. "en_jp"
+    normalized,             // e.g. "fr_fr" or "en_us"
+    baseLang,               // e.g. "fr" or "en" (prefer base language over _jp variants)
     `${baseLang}_us`,       // e.g. "en_us"
-    baseLang,               // e.g. "fr"
+    `${baseLang}_jp`,       // e.g. "en_jp"
     'en',
     'en_jp',                // common English-Japanese hybrid
   ];
