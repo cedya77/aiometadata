@@ -1526,13 +1526,13 @@ async function performTraktSearch(type, query, language, config) {
     const allResults = Array.from(rawResults.values());
     
     // Sort by votes (descending)
-    /*const sortedResults = [...allResults].sort((a, b) => {
+    const sortedResults = [...allResults].sort((a, b) => {
       const aVotes = (a.votes !== undefined && a.votes !== null) ? a.votes : 0;
       const bVotes = (b.votes !== undefined && b.votes !== null) ? b.votes : 0;
       return bVotes - aVotes;
-    });*/
+    });
 
-    const limitedResults = allResults.slice(0, 30);
+    const limitedResults = sortedResults.slice(0, 30);
 
     logger.debug(`Trakt limiting results to ${limitedResults.length}, sorted by votes`);
 
