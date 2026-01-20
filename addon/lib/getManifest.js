@@ -962,14 +962,14 @@ async function getManifest(config) {
         id: 'people_search_movie',
         type: 'movie',
         provider: config.search?.providers?.people_search_movie || 'tmdb.people.search',
-        enabled: engineEnabled[config.search?.providers?.people_search_movie || 'tmdb.people.search'] !== false,
+        enabled: engineEnabled['people_search_movie'] !== false,
         suffix: 'People Search'
       },
       {
         id: 'people_search_series',
         type: 'series',
         provider: config.search?.providers?.people_search_series || 'tmdb.people.search',
-        enabled: engineEnabled[config.search?.providers?.people_search_series || 'tmdb.people.search'] !== false,
+        enabled: engineEnabled['people_search_series'] !== false,
         suffix: 'People Search'
       },
       {

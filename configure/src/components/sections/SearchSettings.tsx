@@ -136,15 +136,13 @@ export function SearchSettings() {
       enabledProviders.push({ id: 'anime_movie', type: 'anime.movie', provider: config.search.providers.anime_movie });
     }
     
-    // Add people search movie if enabled
     const peopleSearchMovieProvider = config.search.providers.people_search_movie || 'tmdb.people.search';
-    if (config.search.engineEnabled?.[peopleSearchMovieProvider] !== false) {
+    if (config.search.engineEnabled?.['people_search_movie'] !== false) {
       enabledProviders.push({ id: 'people_search_movie', type: 'movie', provider: peopleSearchMovieProvider });
     }
     
-    // Add people search series if enabled
     const peopleSearchSeriesProvider = config.search.providers.people_search_series || 'tmdb.people.search';
-    if (config.search.engineEnabled?.[peopleSearchSeriesProvider] !== false) {
+    if (config.search.engineEnabled?.['people_search_series'] !== false) {
       enabledProviders.push({ id: 'people_search_series', type: 'series', provider: peopleSearchSeriesProvider });
     }
     
@@ -617,8 +615,8 @@ export function SearchSettings() {
                                 </Button>
                             )}
                             <Switch
-                                checked={config.search.engineEnabled?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true}
-                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.people_search_movie || 'tmdb.people.search', checked)}
+                                checked={config.search.engineEnabled?.['people_search_movie'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange('people_search_movie', checked)}
                                 aria-label="Enable people search for movies"
                             />
                         </div>
@@ -671,8 +669,8 @@ export function SearchSettings() {
                                 </Button>
                             )}
                             <Switch
-                                checked={config.search.engineEnabled?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true}
-                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.people_search_series || 'tmdb.people.search', checked)}
+                                checked={config.search.engineEnabled?.['people_search_series'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange('people_search_series', checked)}
                                 aria-label="Enable people search for series"
                             />
                         </div>
