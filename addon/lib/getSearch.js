@@ -1343,6 +1343,289 @@ async function parseTvmazeResult(show, config) {
   };
 }
 
+
+/**
+ * Perform Trakt search for movies or series
+ * Note: Trakt search doesn't support pagination (page parameter is ignored),
+ * so we return a flat 30 results from a single API call.
+ */
+async function performTraktSearch(type, query, language, config) {
+  const startTime = Date.now();
+  logger.info(`Starting Trakt search for type "${type}" with query: "${query}"`);
+
+  try {
+    const { fetchTraktSearchItems, fetchTraktPersonSearch, fetchTraktPersonCredits } = require('../utils/traktUtils.js');
+    const searchType = type === 'movie' ? 'movie' : 'show';
+    const rawResults = new Map();
+    
+    const addRawResult = (media, matchType = 'title') => {
+      if (media && media.ids) {
+        const existing = rawResults.get(media.ids.trakt);
+        if (!existing) {
+          // New result, add it
+          media.media_type = searchType;
+          media.matchType = matchType;
+          rawResults.set(media.ids.trakt, media);
+        } else {
+          // Duplicate - prefer the one with more votes, or keep existing if votes are equal
+          const existingVotes = existing.votes || 0;
+          const newVotes = media.votes || 0;
+          if (newVotes > existingVotes) {
+            // Replace with the one that has more votes
+            media.media_type = searchType;
+            media.matchType = matchType;
+            rawResults.set(media.ids.trakt, media);
+          }
+        }
+      }
+    };
+
+    // Determine if we should search for persons
+    const shouldSearchPersons = (() => {
+      // Skip if contains invalid symbols or standalone numbers/years
+      const invalidNamePattern = /[:()[\]?!$#@&]|\b\d+\b/;
+      if (invalidNamePattern.test(query)) {
+        logger.debug(`Skipping person search due to invalid characters or numbers: "${query}"`);
+        return false;
+      }
+      return true;
+    })();
+
+    // Run title search and person search concurrently
+    // Trakt search returns up to 30 items in a single call (no pagination support)
+    const [titleResults, personResults] = await Promise.all([
+      fetchTraktSearchItems(searchType, query, config),
+      shouldSearchPersons ? fetchTraktPersonSearch(query) : Promise.resolve([])
+    ]);
+    
+    if (titleResults && titleResults.length > 0) {
+      titleResults.forEach(item => {
+        const media = item[searchType];
+        if (media) {
+          addRawResult(media, 'title');
+        }
+      });
+    }
+
+    if (personResults && personResults.length > 0) {
+      const topPerson = personResults[0]?.person;
+      if (topPerson && topPerson.ids?.trakt) {
+        try {
+          logger.debug(`Person found: ${topPerson.name} (Trakt ID: ${topPerson.ids.trakt})`);
+          
+          // Get person's credits (limit to 20 to avoid hitting rate limits)
+          // We'll combine with title results and limit total to 30 later
+          const credits = await fetchTraktPersonCredits(topPerson.ids.trakt, searchType, 20);
+          
+          if (credits && credits.length > 0) {
+            credits.forEach(media => {
+              addRawResult(media, 'person');
+            });
+            logger.debug(`Trakt gathered ${credits.length} unique potential results from person search`);
+          }
+        } catch (error) {
+          logger.warn(`Could not fetch person credits for ${topPerson.name}:`, error.message);
+        }
+      }
+    }
+
+    logger.debug(`Trakt gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+
+    if (rawResults.size === 0) {
+      logger.info(`No Trakt results found for query: "${query}"`);
+      return [];
+    }
+
+    const allResults = Array.from(rawResults.values());
+    
+    const sortedResults = [...allResults].sort((a, b) => {
+      const aVotes = (a.votes !== undefined && a.votes !== null) ? a.votes : 0;
+      const bVotes = (b.votes !== undefined && b.votes !== null) ? b.votes : 0;
+      return bVotes - aVotes;
+    });
+
+    const limitedResults = sortedResults.slice(0, 30);
+
+    const titleCount = limitedResults.filter(r => r.matchType === 'title').length;
+    const personCount = limitedResults.filter(r => r.matchType === 'person').length;
+    logger.debug(`Trakt limiting results to ${limitedResults.length} (${titleCount} title, ${personCount} person), sorted by votes`);
+
+    const metas = await Promise.all(
+      limitedResults.map(async (media) => {
+        try {
+          const ids = media.ids || {};
+          const imdbId = ids.imdb;
+          const tmdbId = ids.tmdb;
+          const tvdbId = ids.tvdb;
+          const traktId = ids.trakt;
+
+          // Resolve all IDs
+          let allIds = {
+            tmdbId: tmdbId,
+            imdbId: imdbId,
+            tvdbId: tvdbId
+          };
+          if(!imdbId && tmdbId && !tvdbId) {
+            allIds = await resolveAllIds(
+              `tmdb:${tmdbId}`,
+              type,
+              config,
+              allIds,
+              ['imdb']
+            );
+          }
+          else if(!imdbId && tvdbId && !tmdbId) {
+            allIds = await resolveAllIds(
+              `tvdb:${tvdbId}`,
+              type,
+              config,
+              allIds,
+              ['imdb']
+            );
+          }
+
+          let stremioId = imdbId || (type === 'movie' ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`);
+          if (!stremioId && traktId) {
+            stremioId = `trakt:${traktId}`;
+          }
+
+          const fallbackImage = `${host}/missing_poster.png`;
+          const posterArray = media.images?.poster || [];
+          const fanartArray = media.images?.fanart || [];
+          const logoArray = media.images?.logo || [];
+          
+          const normalizeImageUrl = (url) => {
+            if (!url) return null;
+            if (url.startsWith('http://') || url.startsWith('https://')) return url;
+            return `https://${url}`;
+          };
+          
+          let posterUrl = posterArray.length > 0 ? normalizeImageUrl(posterArray[0]) : fallbackImage;
+          let backgroundUrl = fanartArray.length > 0 ? normalizeImageUrl(fanartArray[0]) : null;
+          let logoUrl = logoArray.length > 0 ? normalizeImageUrl(logoArray[0]) : null;
+          
+          if (!logoUrl) {
+            if (imdbId) {
+              logoUrl = imdb.getLogoFromImdb(imdbId);
+            }
+          }
+
+          // Build poster proxy URL - use same ID pattern as stremioId (matches TMDB search pattern)
+          const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
+            ? posterUrl 
+            : fallbackImage;
+          
+          let posterProxyId = imdbId || (type === 'movie' ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`);
+          if (config.posterRatingProvider === 'top' && !imdbId && !tmdbId) {
+            posterProxyId = null; // Top Poster API doesn't support TVDB
+          }
+          const posterProxyUrl = posterProxyId 
+            ? Utils.buildPosterProxyUrl(host, type, posterProxyId, validPosterUrl, language, config)
+            : validPosterUrl;
+
+          const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, type) : 'N/A';
+
+          let releaseDates = null;
+          if (type === 'movie' && tmdbId && config.hideUnreleasedDigitalSearch) {
+            try {
+              const movieDetails = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
+              releaseDates = movieDetails.release_dates;
+            } catch (error) {
+              logger.debug(`Failed to get TMDB release dates for movie ${tmdbId}: ${error.message}`);
+            }
+          }
+
+          const certification = media.certification || null;
+
+          const meta = {
+            id: stremioId,
+            type: type,
+            name: media.title || media.name,
+            poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : posterUrl,
+            background: backgroundUrl,
+            description: Utils.addMetaProviderAttribution(media.overview || '', 'Trakt', config),
+            certification: certification,
+            logo: logoUrl,
+            genres: media.genres || [],
+            year: media.year || null,
+            imdbRating: imdbRating,
+            runtime: type === 'movie' ? Utils.parseRunTime(media.runtime) : null,
+            status: type === 'series' ? (media.status || null) : null,
+            _matchType: media.matchType 
+          };
+
+          if (releaseDates) {
+            meta.app_extras = { releaseDates: releaseDates };
+          }
+
+          return meta;
+        } catch (error) {
+          logger.error(`Error parsing Trakt result:`, error.message);
+          return null;
+        }
+      })
+    );
+
+    const validMetas = metas.filter(Boolean);
+    
+    let finalMetas = validMetas.map(({ _matchType, ...meta }) => meta);
+    
+    if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+      const beforeCount = finalMetas.length;
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+      const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
+      finalMetas = finalMetas.filter(result => {
+        const cert = result.certification;
+        
+        const isTvRating = type === 'series';
+        const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+        const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                       (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                       (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+        
+        if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+          return !isUserRatingRestrictive; 
+        }
+        
+        const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+        const userRatingIndex = ratingHierarchy.indexOf(userRating);
+        const resultRatingIndex = ratingHierarchy.indexOf(cert);
+        
+        if (userRatingIndex === -1) return true; 
+        if (resultRatingIndex === -1) return true; 
+        
+        return resultRatingIndex <= userRatingIndex;
+      });
+      
+      const afterCount = finalMetas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Age rating filter (Trakt): filtered out ${beforeCount - afterCount} results`);
+      }
+    }
+    
+    // Apply digital release filter for movies only
+    if (type === 'movie' && config.hideUnreleasedDigitalSearch) {
+      const beforeCount = finalMetas.length;
+      finalMetas = finalMetas.filter(meta => Utils.isReleasedDigitally(meta));
+      const afterCount = finalMetas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter (Trakt): filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    logger.success(`Completed Trakt search for "${query}" in ${Date.now() - startTime}ms. Returning ${finalMetas.length} results.`);
+    return finalMetas;
+
+  } catch (error) {
+    logger.error(`Trakt search failed for "${query}":`, error.message);
+    return [];
+  }
+}
+
 // Helper function to determine provider from search ID
 function getProviderFromSearchId(searchId) {
   if (searchId.includes('mal.')) {
@@ -1353,8 +1636,10 @@ function getProviderFromSearchId(searchId) {
     return 'tmdb';
   } else if (searchId.includes('tvdb.')) {
     return 'tvdb';
-  } else if (searchId.includes('tvmaze.')) {
+  } else   if (searchId.includes('tvmaze.')) {
     return 'tvmaze';
+  } else if (searchId.includes('trakt.')) {
+    return 'trakt';
   } else if (searchId === 'search') {
     // For generic 'search' case, we need to look at the actual provider used
     // This will be determined by the config.search.providers setting
@@ -1477,6 +1762,10 @@ async function getSearch(id, type, language, extra, config) {
               case 'tvmaze.search':
                 metas = await performTvmazeSearch(query, language, config);
                 break;
+              case 'trakt.search':
+                // Trakt search doesn't support pagination, returns flat 30 results
+                metas = await performTraktSearch(type, query, language, config);
+                break;
           }
         }
         break;
@@ -1512,6 +1801,7 @@ async function getSearch(id, type, language, extra, config) {
         else if (providerId.includes('tmdb.')) actualProvider = 'tmdb';
         else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
+        else if (providerId.includes('trakt.')) actualProvider = 'trakt';
       }
     }
     
@@ -1569,6 +1859,7 @@ async function getSearch(id, type, language, extra, config) {
         else if (providerId.includes('tmdb.')) actualProvider = 'tmdb';
         else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
+        else if (providerId.includes('trakt.')) actualProvider = 'trakt';
       }
     }
     

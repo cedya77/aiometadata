@@ -366,7 +366,8 @@ export function SearchSettings() {
                                         value={p.value}
                                         disabled={p.value === 'tvdb.search' && !hasTvdbKey}
                                       >
-                                        {getProviderDisplayName(p.value)}{p.value === 'tvdb.search' && !hasTvdbKey && ' (API key required)'}
+                                        {getProviderDisplayName(p.value)}
+                                        {p.value === 'tvdb.search' && !hasTvdbKey && ' (API key required)'}
                                       </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -414,7 +415,8 @@ export function SearchSettings() {
                                         value={p.value}
                                         disabled={p.value === 'tvdb.search' && !hasTvdbKey}
                                       >
-                                        {getProviderDisplayName(p.value)}{p.value === 'tvdb.search' && !hasTvdbKey && ' (API key required)'}
+                                        {getProviderDisplayName(p.value)}
+                                        {p.value === 'tvdb.search' && !hasTvdbKey && ' (API key required)'}
                                       </SelectItem>
                                     ))}
                                 </SelectContent>

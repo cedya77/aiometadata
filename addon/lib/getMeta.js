@@ -1789,7 +1789,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     if (tmdbMovieData) {
       release_dates = tmdbMovieData.release_dates || null;  
     certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
-    }
+  }
   }
   let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb')];
   if (castCount !== 0) {

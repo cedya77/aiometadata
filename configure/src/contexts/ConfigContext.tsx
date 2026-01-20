@@ -157,6 +157,7 @@ const initialConfig: AppConfig = {
       'tvdb.search': true,
       'tvdb.collections.search': false,
       'tvmaze.search': true,
+      'trakt.search': true,
       'mal.search.movie': true,
       'mal.search.series': true,
     },

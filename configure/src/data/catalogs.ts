@@ -100,6 +100,7 @@ export const allSearchProviders: SearchProviderDefinition[] = [
   { value: 'tmdb.search', label: 'TMDB Search', mediaType: ['movie', 'series'] },
   { value: 'tvdb.search', label: 'TheTVDB Search', mediaType: ['movie', 'series'] },
   { value: 'tvmaze.search', label: 'TVmaze Search', mediaType: ['series'] },
+  { value: 'trakt.search', label: 'Trakt Search', mediaType: ['movie', 'series'] },
 
   // Anime-Specific Providers
   { value: 'mal.search.movie', label: 'MAL (Movies)', mediaType: ['movie', 'anime_movie'] },

@@ -3,7 +3,7 @@ import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows } from "../utils/traktUtils.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
@@ -20,111 +20,6 @@ const consola = require('consola');
 const database = require('./database.js');
 
 const logger = consola.withTag('Catalog');
-
-/**
- * Helper to get Trakt access token from database
- */
-async function getTraktAccessToken(config: any): Promise<string | null> {
-  if (!config.apiKeys?.traktTokenId) {
-    logger.debug(`No Trakt token ID configured for user`);
-    return null;
-  }
-  
-  const tokenId = config.apiKeys.traktTokenId;
-  logger.debug(`Attempting to retrieve Trakt token: ${tokenId}`);
-  
-  let tokenData;
-  try {
-    tokenData = await database.getOAuthToken(tokenId);
-  } catch (error: any) {
-    logger.error(`Database error while retrieving Trakt token ${tokenId}: ${error.message}`);
-    return null;
-  }
-  
-  if (!tokenData) {
-    logger.warn(`Trakt token not found in database: ${tokenId}`);
-    logger.warn(`This could indicate:`);
-    logger.warn(`1. Token was deleted/disconnected`);
-    logger.warn(`2. Database connection issue`);
-    logger.warn(`3. Configuration mismatch`);
-    logger.warn(`Please check your Trakt connection in settings`);
-    return null;
-  }
-  
-  logger.debug(`Found Trakt token for user: ${tokenData.user_id}, provider: ${tokenData.provider}`);
-  
-  const expiresAt = typeof tokenData.expires_at === 'string' ? parseInt(tokenData.expires_at, 10) : tokenData.expires_at;
-  
-  // Validate token data structure
-  if (!tokenData.access_token || typeof tokenData.access_token !== 'string' || tokenData.access_token.startsWith('[object')) {
-    logger.error(`Trakt token is corrupted (access_token: ${typeof tokenData.access_token}, value preview: ${String(tokenData.access_token).substring(0, 30)})`);
-    logger.error(`Please disconnect and reconnect your Trakt account in settings`);
-    return null;
-  }
-  
-  if (!tokenData.refresh_token || typeof tokenData.refresh_token !== 'string') {
-    logger.error(`Trakt token is missing refresh_token. Please disconnect and reconnect your Trakt account`);
-    return null;
-  }
-  
-  if (!expiresAt || typeof expiresAt !== 'number' || isNaN(expiresAt) || expiresAt === 0) {
-    logger.error(`Trakt token has invalid expires_at (${expiresAt}). Please disconnect and reconnect your Trakt account`);
-    return null;
-  }
-  
-  // Check if token is expired or will expire soon (within 1 hour)
-  const now = Date.now();
-  const oneHour = 60 * 60 * 1000;
-  
-  if (expiresAt && expiresAt < (now + oneHour)) {
-    logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
-    
-    try {
-      const { TraktClient } = require('./trakt');
-      const traktClient = new TraktClient(
-        process.env.TRAKT_CLIENT_ID!,
-        process.env.TRAKT_CLIENT_SECRET!,
-        process.env.TRAKT_REDIRECT_URI!
-      );
-      
-      const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
-      
-      const updateSuccess = await database.updateOAuthToken(
-        tokenId,
-        newTokens.access_token,
-        newTokens.refresh_token,
-        newTokens.expires_at
-      );
-      
-      if (!updateSuccess) {
-        logger.error(`Failed to update Trakt token in database after refresh`);
-        return null;
-      }
-      
-      logger.debug(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
-      
-      return newTokens.access_token;
-    } catch (error: any) {
-      logger.error(`Failed to refresh Trakt token: ${error.message}`);
-      logger.error(`Stack trace:`, error.stack);
-      
-      // If refresh fails, check if the token still exists in database
-      try {
-        const stillExists = await database.getOAuthToken(tokenId);
-        if (!stillExists) {
-          logger.error(`Trakt token was deleted during refresh attempt`);
-        }
-      } catch (dbError: any) {
-        logger.error(`Database error during token existence check: ${dbError.message}`);
-      }
-      
-      return null;
-    }
-  }
-  
-  logger.debug(`Using valid Trakt token (expires: ${new Date(expiresAt).toISOString()})`);
-  return tokenData.access_token;
-}
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
 

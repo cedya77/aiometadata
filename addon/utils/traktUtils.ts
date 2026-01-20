@@ -446,6 +446,7 @@ import { UserConfig } from "../types/index.js";
 import { meta } from "@eslint/js";
 const consola = require('consola');
 const { Agent } = require('undici');
+const database = require('../lib/database.js');
 
 const logger = consola.withTag('Trakt');
 
@@ -1497,7 +1498,8 @@ export {
   fetchTraktCalendarShows,
   fetchTraktUnwatchedEpisodes,
   makeRateLimitedTraktRequest,
-  makeAuthenticatedRateLimitedTraktRequest
+  makeAuthenticatedRateLimitedTraktRequest,
+  getTraktAccessToken
 };
 
 /**
@@ -1707,8 +1709,293 @@ async function fetchTraktPopularItems(
   }
 }
 
+/**
+ * Get Trakt access token from database with automatic refresh
+ * @param config - User configuration object
+ * @returns Access token string or null if not available
+ */
+async function getTraktAccessToken(config: any): Promise<string | null> {
+  if (!config.apiKeys?.traktTokenId) {
+    logger.debug(`No Trakt token ID configured for user`);
+    return null;
+  }
+  
+  const tokenId = config.apiKeys.traktTokenId;
+  logger.debug(`Attempting to retrieve Trakt token: ${tokenId}`);
+  
+  let tokenData;
+  try {
+    tokenData = await database.getOAuthToken(tokenId);
+  } catch (error: any) {
+    logger.error(`Database error while retrieving Trakt token ${tokenId}: ${error.message}`);
+    return null;
+  }
+  
+  if (!tokenData) {
+    logger.warn(`Trakt token not found in database: ${tokenId}`);
+    logger.warn(`This could indicate:`);
+    logger.warn(`1. Token was deleted/disconnected`);
+    logger.warn(`2. Database connection issue`);
+    logger.warn(`3. Configuration mismatch`);
+    logger.warn(`Please check your Trakt connection in settings`);
+    return null;
+  }
+  
+  logger.debug(`Found Trakt token for user: ${tokenData.user_id}, provider: ${tokenData.provider}`);
+  
+  const expiresAt = typeof tokenData.expires_at === 'string' ? parseInt(tokenData.expires_at, 10) : tokenData.expires_at;
+  
+  // Validate token data structure
+  if (!tokenData.access_token || typeof tokenData.access_token !== 'string' || tokenData.access_token.startsWith('[object')) {
+    logger.error(`Trakt token is corrupted (access_token: ${typeof tokenData.access_token}, value preview: ${String(tokenData.access_token).substring(0, 30)})`);
+    logger.error(`Please disconnect and reconnect your Trakt account in settings`);
+    return null;
+  }
+  
+  if (!tokenData.refresh_token || typeof tokenData.refresh_token !== 'string') {
+    logger.error(`Trakt token is missing refresh_token. Please disconnect and reconnect your Trakt account`);
+    return null;
+  }
+  
+  if (!expiresAt || typeof expiresAt !== 'number' || isNaN(expiresAt) || expiresAt === 0) {
+    logger.error(`Trakt token has invalid expires_at (${expiresAt}). Please disconnect and reconnect your Trakt account`);
+    return null;
+  }
+  
+  // Check if token is expired or will expire soon (within 1 hour)
+  const now = Date.now();
+  const oneHour = 60 * 60 * 1000;
+  
+  if (expiresAt && expiresAt < (now + oneHour)) {
+    logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
+    
+    try {
+      const { TraktClient } = require('../lib/trakt');
+      const traktClient = new TraktClient(
+        process.env.TRAKT_CLIENT_ID!,
+        process.env.TRAKT_CLIENT_SECRET!,
+        process.env.TRAKT_REDIRECT_URI!
+      );
+      
+      const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
+      
+      const updateSuccess = await database.updateOAuthToken(
+        tokenId,
+        newTokens.access_token,
+        newTokens.refresh_token,
+        newTokens.expires_at
+      );
+      
+      if (!updateSuccess) {
+        logger.error(`Failed to update Trakt token in database after refresh`);
+        return null;
+      }
+      
+      logger.debug(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
+      
+      return newTokens.access_token;
+    } catch (error: any) {
+      logger.error(`Failed to refresh Trakt token: ${error.message}`);
+      logger.error(`Stack trace:`, error.stack);
+      
+      // If refresh fails, check if the token still exists in database
+      try {
+        const stillExists = await database.getOAuthToken(tokenId);
+        if (!stillExists) {
+          logger.error(`Trakt token was deleted during refresh attempt`);
+        }
+      } catch (dbError: any) {
+        logger.error(`Database error during token existence check: ${dbError.message}`);
+      }
+      
+      return null;
+    }
+  }
+  
+  logger.debug(`Using valid Trakt token (expires: ${new Date(expiresAt).toISOString()})`);
+  return tokenData.access_token;
+}
+
+/**
+ * Escape special characters in Trakt search query
+ * Trakt treats these as special: + - && || ! ( ) { } [ ] ^ " ~ * ? : /
+ * @param query - Search query string
+ * @returns Escaped query string
+ */
+function escapeTraktQuery(query: string): string {
+  // Escape special characters that Trakt treats as operators
+  const specialChars = /[+\-&|!(){}[\]^"~*?:/\\]/g;
+  return query.replace(specialChars, (match) => `\\${match}`);
+}
+
+/**
+ * Fetch search results from Trakt 
+ * Note: Trakt search API doesn't respect the page parameter, only limit.
+ * We request 30 items in a single call to avoid wasting API calls.
+ * @param type - Content type ('movie' or 'show')
+ * @param query - Search query string
+ * @param config - Optional user configuration (for age rating filtering)
+ * @returns Array of search results (up to 30 items)
+ */
+async function fetchTraktSearchItems(
+  type: 'movie' | 'show',
+  query: string,
+  config?: any
+): Promise<any[]> {
+  try {
+    const searchType = type === 'movie' ? 'movie' : 'show';
+    const escapedQuery = escapeTraktQuery(query);
+    // Search in title, translations, and overview fields
+    const fields = 'title,translations,overview';
+    // Trakt search doesn't respect page parameter, only limit. Request 30 items in one call. We will keep the set limit until they hopefully fix it.
+    const limit = 30;
+    
+    const url = `${TRAKT_BASE_URL}/search/${searchType}?query=${encodeURIComponent(escapedQuery)}&fields=${fields}&extended=full,images&limit=${limit}`;
+    
+    logger.debug(`Trakt search: type=${searchType}, query="${query}" (escaped: "${escapedQuery}"), fields=${fields}, limit=${limit}`);
+    
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      `Trakt fetchSearchItems (${searchType}, query: "${query}")`
+    );
+
+    if (!response.data || !Array.isArray(response.data)) {
+      logger.info(`No Trakt search results found for query: "${query}"`);
+      return [];
+    }
+
+    logger.debug(`Found ${response.data.length} Trakt search results for query: "${query}"`);
+    return response.data;
+  } catch (err: any) {
+    logger.error(`Error fetching Trakt search results for ${type} "${query}":`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Fetch person search results from Trakt
+ * @param query - Search query string
+ * @returns Array of person search results
+ */
+async function fetchTraktPersonSearch(query: string): Promise<any[]> {
+  try {
+    // Escape special characters in query
+    const escapedQuery = escapeTraktQuery(query);
+    // Person search doesn't need extended info, we only need IDs to fetch credits
+    const url = `${TRAKT_BASE_URL}/search/person?query=${encodeURIComponent(escapedQuery)}`;
+    
+    logger.debug(`Trakt person search: query="${query}" (escaped: "${escapedQuery}")`);
+    
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      `Trakt fetchPersonSearch (query: "${query}")`
+    );
+
+    if (!response.data || !Array.isArray(response.data)) {
+      logger.info(`No Trakt person results found for query: "${query}"`);
+      return [];
+    }
+
+    logger.debug(`Found ${response.data.length} Trakt person results for query: "${query}"`);
+    return response.data;
+  } catch (err: any) {
+    logger.error(`Error fetching Trakt person search results for "${query}":`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Fetch movies or shows for a person from Trakt
+ * @param personId - Trakt person ID
+ * @param type - Content type ('movie' or 'show')
+ * @returns Array of movies or shows
+ */
+async function fetchTraktPersonCredits(
+  personId: number,
+  type: 'movie' | 'show',
+  limit?: number
+): Promise<any[]> {
+  try {
+    const url = `${TRAKT_BASE_URL}/people/${personId}/${type === 'movie' ? 'movies' : 'shows'}?extended=full,images`;
+    
+    logger.debug(`Trakt person credits: personId=${personId}, type=${type}`);
+    
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      `Trakt fetchPersonCredits (personId: ${personId}, type: ${type})`
+    );
+
+    if (!response.data || typeof response.data !== 'object') {
+      logger.info(`No Trakt credits found for person ${personId}`);
+      return [];
+    }
+
+    const cast = Array.isArray(response.data.cast) ? response.data.cast : [];
+    
+    const crewObj = response.data.crew || {};
+    const relevantCrewCategories = ['directing', 'writing'];
+    const relevantCrewArrays = relevantCrewCategories
+      .map(category => crewObj[category])
+      .filter(Array.isArray);
+    const allCrew = relevantCrewArrays.flat();
+    
+    const allCredits = [...cast, ...allCrew];
+    
+    if (allCredits.length === 0) {
+      logger.info(`No Trakt credits (cast or crew) found for person ${personId}`);
+      return [];
+    }
+
+    // Sort by votes (descending) so most popular credits are returned first
+    const sortedCredits = allCredits.sort((a, b) => {
+      const mediaKey = type === 'movie' ? 'movie' : 'show';
+      const aVotes = a[mediaKey]?.votes || 0;
+      const bVotes = b[mediaKey]?.votes || 0;
+      return bVotes - aVotes; 
+    });
+
+    // Extract the movie/show objects from the credit wrappers
+    let mediaItems = sortedCredits.map(credit => credit[type === 'movie' ? 'movie' : 'show']).filter(Boolean);
+
+    // Limit results if specified (credits are already sorted by votes, so we take the top N)
+    if (limit && limit > 0) {
+      mediaItems = mediaItems.slice(0, limit);
+    }
+
+    logger.debug(`Found ${mediaItems.length} Trakt credits (${cast.length} cast, ${allCrew.length} crew) for person ${personId}, sorted by votes${limit ? `, limited to ${limit}` : ''}`);
+    return mediaItems;
+  } catch (err: any) {
+    logger.error(`Error fetching Trakt person credits for person ${personId}:`, err.message);
+    return [];
+  }
+}
+
 export {
   fetchTraktMostFavoritedItems,
   fetchTraktTrendingItems,
-  fetchTraktPopularItems
+  fetchTraktPopularItems,
+  fetchTraktSearchItems,
+  fetchTraktPersonSearch,
+  fetchTraktPersonCredits
 };
