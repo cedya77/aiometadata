@@ -408,6 +408,32 @@ export async function personInfo(params: any, config: UserConfig) {
   return result;
 }
 
+export async function personMovieCredits(params: any, config: UserConfig) {
+  const startTime = Date.now();
+  const personId = params.id || 'unknown';
+  consola.info(`[TMDB] Fetching person movie credits for ID: ${personId}`);
+  
+  const result = await makeTmdbRequest(`/person/${personId}/movie_credits`, getApiKey(config), params, 'GET', null, config);
+  
+  const fetchTime = Date.now() - startTime;
+  consola.info(`[TMDB] Person movie credits fetched in ${fetchTime}ms`);
+  
+  return result;
+}
+
+export async function personTvCredits(params: any, config: UserConfig) {
+  const startTime = Date.now();
+  const personId = params.id || 'unknown';
+  consola.info(`[TMDB] Fetching person TV credits for ID: ${personId}`);
+  
+  const result = await makeTmdbRequest(`/person/${personId}/tv_credits`, getApiKey(config), params, 'GET', null, config);
+  
+  const fetchTime = Date.now() - startTime;
+  consola.info(`[TMDB] Person TV credits fetched in ${fetchTime}ms`);
+  
+  return result;
+}
+
 export async function find(params: any, config: UserConfig) {
   return makeTmdbRequest(`/find/${params.id}`, getApiKey(config), { external_source: params.external_source }, 'GET', null, config);
 }
@@ -770,6 +796,8 @@ module.exports = {
   searchTv,
   searchPerson,
   personInfo,
+  personMovieCredits,
+  personTvCredits,
   find,
   languages,
   primaryTranslations,

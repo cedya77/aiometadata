@@ -1847,11 +1847,17 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   try {
     let responseData;
       
-      if (cleanId === 'search' || cleanId === 'gemini.search') {
+      if (cleanId === 'search' || cleanId === 'gemini.search' || cleanId === 'people_search') {
       // Determine which search engine is being used based on type
       let searchEngine = null;
       if (cleanId === 'gemini.search') {
         searchEngine = 'gemini.search';
+      } else if (cleanId === 'people_search') {
+        if (actualType === 'movie') {
+          searchEngine = config.search?.providers?.people_search_movie || 'tmdb.people.search';
+        } else if (actualType === 'series') {
+          searchEngine = config.search?.providers?.people_search_series || 'tmdb.people.search';
+        }
       } else if (actualType === 'movie') {
         searchEngine = config.search?.providers?.movie;
       } else if (actualType === 'series') {

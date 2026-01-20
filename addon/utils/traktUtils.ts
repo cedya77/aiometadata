@@ -1850,7 +1850,7 @@ async function fetchTraktSearchItems(
     // Trakt search doesn't respect page parameter, only limit. Request 30 items in one call. We will keep the set limit until they hopefully fix it.
     const limit = 30;
     
-    const url = `${TRAKT_BASE_URL}/search/${searchType}?query=${encodeURIComponent(escapedQuery)}&fields=${fields}&extended=full,images&limit=${limit}`;
+    const url = `${TRAKT_BASE_URL}/search/${searchType}?query=${encodeURIComponent(escapedQuery)}&fields=${fields}&extended=images&limit=${limit}`;
     
     logger.debug(`Trakt search: type=${searchType}, query="${query}" (escaped: "${escapedQuery}"), fields=${fields}, limit=${limit}`);
     

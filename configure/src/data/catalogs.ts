@@ -102,6 +102,11 @@ export const allSearchProviders: SearchProviderDefinition[] = [
   { value: 'tvmaze.search', label: 'TVmaze Search', mediaType: ['series'] },
   { value: 'trakt.search', label: 'Trakt Search', mediaType: ['movie', 'series'] },
 
+  // People Search Providers
+  { value: 'tmdb.people.search', label: 'TMDB People Search', mediaType: ['movie', 'series'] },
+  { value: 'tvdb.people.search', label: 'TheTVDB People Search', mediaType: ['movie', 'series'] },
+  { value: 'trakt.people.search', label: 'Trakt People Search', mediaType: ['movie', 'series'] },
+
   // Anime-Specific Providers
   { value: 'mal.search.movie', label: 'MAL (Movies)', mediaType: ['movie', 'anime_movie'] },
   { value: 'mal.search.series', label: 'MAL (Series)', mediaType: ['series', 'anime_series'] },

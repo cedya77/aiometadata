@@ -147,6 +147,8 @@ export interface AppConfig {
         series: 'tmdb.search' | 'tvdb.search' | 'tvmaze.search' | 'trakt.search' | 'mal.search.series';
         anime_movie: 'mal.search.movie' | 'kitsu.search.movie';
         anime_series: 'mal.search.series' | 'kitsu.search.series';
+        people_search_movie?: 'tmdb.people.search' | 'tvdb.people.search' | 'trakt.people.search';
+        people_search_series?: 'tmdb.people.search' | 'tvdb.people.search' | 'trakt.people.search';
     };
     // New: per-engine enable/disable
     engineEnabled?: {

@@ -881,6 +881,8 @@ async function getManifest(config) {
       'anime_movie': 'Anime Movies Search',
       'tvdb.collections.search': 'TVDB Collections',
       'gemini.search': 'AI Search',
+      'people_search_movie': 'People Search',
+      'people_search_series': 'People Search',
     };
     return searchNameMap[searchId] || searchId;
   };
@@ -955,8 +957,21 @@ async function getManifest(config) {
         provider: searchProviders.anime_movie,
         enabled: engineEnabled[searchProviders.anime_movie] !== false,
         suffix: 'Anime Search'
-      }
-      ,
+      },
+      {
+        id: 'people_search_movie',
+        type: 'movie',
+        provider: config.search?.providers?.people_search_movie || 'tmdb.people.search',
+        enabled: engineEnabled[config.search?.providers?.people_search_movie || 'tmdb.people.search'] !== false,
+        suffix: 'People Search'
+      },
+      {
+        id: 'people_search_series',
+        type: 'series',
+        provider: config.search?.providers?.people_search_series || 'tmdb.people.search',
+        enabled: engineEnabled[config.search?.providers?.people_search_series || 'tmdb.people.search'] !== false,
+        suffix: 'People Search'
+      },
       {
         id: 'gemini.search',
         type: 'other',
@@ -976,9 +991,13 @@ async function getManifest(config) {
       .filter(config => config.enabled)
       .forEach(config => {
         // Use provider id as the catalog id (e.g., 'tmdb.search' or 'gemini.search')
-        // This ensures unique catalog entries for reordering and per-provider settings
+        const catalogId = config.provider === 'gemini.search' 
+          ? 'gemini.search' 
+          : (config.id === 'people_search_movie' || config.id === 'people_search_series')
+            ? 'people_search'
+            : "search";
         catalogs.push({
-          id: config.provider === 'gemini.search' ? 'gemini.search' : "search",
+          id: catalogId,
           type: config.type,
           name: getSearchCatalogName(config.id, prefix, config.suffix),
           extra: [{ name: 'search', isRequired: true }]

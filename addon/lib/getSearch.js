@@ -157,6 +157,7 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
     logo: validLogoUrl,
+    runtime: type === 'movie' ? Utils.parseRunTime(extendedRecord.runtime) : Utils.parseRunTime(extendedRecord.averageRuntime),
     genres: extendedRecord.genres?.map(g => g.name) || [],
     imdbRating: imdbId ? await getImdbRating(imdbId, type) : 'N/A',
     status: extendedRecord.status?.name || extendedRecord.status,
@@ -325,7 +326,7 @@ function normalizeForComparison(str) {
     .trim();
 }
 
-async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1) {
+async function performTmdbSearch(type, query, language, config, searchPersons = true, page = 1, peopleOnly = false) {
   const startTime = Date.now();
   const rawResults = new Map();
   logger.info(`Starting TMDB search for type "${type}" with query: "${query}"`);
@@ -376,10 +377,13 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   })();
 
   // Run the initial title search and person search concurrently
+  // Skip title search if peopleOnly is true
   const [titleRes, personCredits] = await Promise.all([
-      type === 'movie'
-          ? moviedb.searchMovie({ query, language, include_adult: config.includeAdult, page }, config)
-          : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config),
+      peopleOnly 
+          ? Promise.resolve({ results: [] })
+          : (type === 'movie'
+              ? moviedb.searchMovie({ query, language, include_adult: config.includeAdult, page }, config)
+              : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config)),
       
       shouldSearchPersons
           ? moviedb.searchPerson({ query, language: 'en-US' }, config).then(async personRes => {
@@ -1079,31 +1083,16 @@ async function performTvdbSearch(type, query, language, config) {
 
   const idMap = new Map(); 
 
-  // STEP 1: GATHER IDs FROM TITLE AND PEOPLE SEARCHES IN PARALLEL
+  // STEP 1: GATHER IDs FROM TITLE SEARCH
   const searchStartTime = Date.now();
-  logger.info(`Starting TVDB parallel search for: "${sanitizedQuery}"`);
+  logger.info(`Starting TVDB title search for: "${sanitizedQuery}"`);
 
-  const shouldSearchPersons = (() => {
-    
-    // Check for symbols that are unlikely in a 'person''s name
-    const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
-    if (nameInvalidatingSymbols.test(query)) {
-      logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
-      return false;
-    }
-    
-    // If checks pass, it's plausible the user is searching for a person.
-    return true;
-  })();
+  // Title search only - no person search
+  const titleResults = await (type === 'movie' 
+    ? tvdb.searchMovies(sanitizedQuery, config) 
+    : tvdb.searchSeries(sanitizedQuery, config));
 
-  const [titleResults, peopleResults] = await Promise.all([
-    type === 'movie' 
-      ? tvdb.searchMovies(sanitizedQuery, config) 
-      : tvdb.searchSeries(sanitizedQuery, config),
-    shouldSearchPersons ? tvdb.searchPeople(sanitizedQuery, config) : Promise.resolve([])
-  ]);
-
-  logger.debug(`TVDB initial searches completed in ${Date.now() - searchStartTime}ms.`);
+  logger.debug(`TVDB initial search completed in ${Date.now() - searchStartTime}ms.`);
 
   (titleResults || []).forEach(result => {
     const resultId = result.tvdb_id || result.id;
@@ -1111,28 +1100,6 @@ async function performTvdbSearch(type, query, language, config) {
       idMap.set(String(resultId), type);
     }
   });
-  
-  // Process people results to find related movies/series
-  if (peopleResults && peopleResults.length > 0) {
-    const topPerson = peopleResults[0];
-    try {
-      const personDetails = await tvdb.getPersonExtended(topPerson.tvdb_id, config);
-      if (personDetails && personDetails.characters) {
-        personDetails.characters
-          .filter(credit => credit.type === 3) // Filter for 'Actor' role type
-          .forEach(credit => {
-            const creditType = credit.seriesId ? 'series' : 'movie';
-            const creditId = credit.seriesId || credit.movieId;
-            // Only add if it matches the type we are searching for
-            if (creditId && creditType === type) { 
-              idMap.set(String(creditId), creditType);
-            }
-        });
-      }
-    } catch (e) {
-      logger.warn(`Could not fetch person details for ${topPerson.name}:`, e.message);
-    }
-  }
   
   const uniqueIds = Array.from(idMap.keys());
   if (uniqueIds.length === 0) {
@@ -1202,6 +1169,177 @@ async function performTvdbSearch(type, query, language, config) {
     logger.debug(`TVDB filtered ${finalResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
   }
   logger.info(`TVDB search results completed in ${Date.now() - searchStartTime}ms`);
+
+  return ageFilteredResults;
+}
+
+/**
+ * Perform TVDB people-only search for movies or series
+ */
+async function performTvdbPeopleSearch(type, query, language, config) {
+  const searchStartTime = Date.now();
+  logger.info(`Starting TVDB people-only search for type "${type}" with query: "${query}"`);
+
+  const sanitizedQuery = sanitizeQuery(query);
+  if (!sanitizedQuery) return [];
+
+  const idMap = new Map();
+
+  // Determine if we should search for persons
+  const shouldSearchPersons = (() => {
+    // Check for symbols that are unlikely in a person's name
+    const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
+    if (nameInvalidatingSymbols.test(query)) {
+      logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
+      return false;
+    }
+    return true;
+  })();
+
+  if (!shouldSearchPersons) {
+    logger.info(`No TVDB people search results found for query: "${query}"`);
+    return [];
+  }
+
+  // People search only - no title search
+  const peopleResults = await tvdb.searchPeople(sanitizedQuery, config);
+
+  logger.debug(`TVDB people search completed in ${Date.now() - searchStartTime}ms.`);
+
+  // Process people results to find related movies/series
+  if (peopleResults && peopleResults.length > 0) {
+    const topPerson = peopleResults[0];
+    try {
+      const personDetails = await tvdb.getPersonExtended(topPerson.tvdb_id, config);
+      if (personDetails && personDetails.characters) {
+        personDetails.characters
+          .filter(credit => credit.type === 3 || credit.type === 1 || credit.type === 2) // Filter for 'Actor' 'Director' 'Writer' role type
+          .forEach(credit => {
+            const creditType = credit.seriesId ? 'series' : 'movie';
+            const creditId = credit.seriesId || credit.movieId;
+            // Only add if it matches the type we are searching for
+            if (creditId && creditType === type) { 
+              idMap.set(String(creditId), creditType);
+            }
+        });
+      }
+    } catch (e) {
+      logger.warn(`Could not fetch person details for ${topPerson.name}:`, e.message);
+    }
+  }
+
+  const uniqueIds = Array.from(idMap.keys());
+  if (uniqueIds.length === 0) {
+    logger.info('No unique TVDB IDs found after people search.');
+    return [];
+  }
+  logger.debug(`Found ${uniqueIds.length} unique TVDB IDs to fetch details for.`);
+
+  // STEP 2: FETCH EXTENDED DETAILS FOR ALL UNIQUE IDs IN PARALLEL
+  const detailPromises = uniqueIds.map(id => {
+    return type === 'movie' 
+      ? tvdb.getMovieExtended(id, config) 
+      : tvdb.getSeriesExtended(id, config);
+  });
+  
+  const detailedResults = (await Promise.allSettled(detailPromises))
+    .filter(res => res.status === 'fulfilled' && res.value)
+    .map(res => res.value); // Extract successful results
+    
+  logger.debug(`Successfully fetched extended details for ${detailedResults.length} items.`);
+
+  // STEP 3: PARSE ALL DETAILED RESULTS INTO STREMIO METAS IN PARALLEL
+  const parsePromises = detailedResults.map(record =>
+    parseTvdbSearchResult(type, record, language, config)
+  );
+    
+  const finalResults = (await Promise.all(parsePromises)).filter(Boolean);
+  logger.info(`Successfully parsed ${finalResults.length} items into Stremio metas.`);
+
+
+  const processedResults = finalResults.map((item) => {
+    const year = item.status === 'Upcoming' ? 9999 : (parseInt(item.year, 10) || 0);
+    const hasRealPoster = !!item._rawPosterUrl;
+    const hasOverview = !!(item.description && item.description.trim() !== '');
+    
+    return {
+      originalItem: item,
+      year,
+      hasPoster: hasRealPoster,
+      hasOverview: hasOverview,
+      isContinuing: item.status === "Continuing",
+      isUpcoming: item.status === "Upcoming",
+    };
+  });
+  
+  let filteredResults = processedResults.filter(item => {
+    // Filter out items without a year (unless upcoming)
+    if (!item.year && !item.isUpcoming) {
+      return false;
+    }
+    // Only remove if it's missing BOTH a poster AND an overview
+    const isLowQuality = !item.hasPoster && !item.hasOverview;
+    if (isLowQuality) {
+      return false;
+    }
+    return true;
+  });
+  
+  // Safety net: If filtering removed everything, fall back to original results
+  if (filteredResults.length === 0 && processedResults.length > 0) {
+    logger.warn("⚠️ People search filtering removed all results. Falling back to original order.");
+    filteredResults = processedResults;
+  }
+  
+  // 3. SORT: prioritize items with posters, de-prioritize upcoming, then sort by year (newest first)
+  filteredResults.sort((a, b) => {
+    // Primary: Items WITH a poster over those without
+    if (a.hasPoster !== b.hasPoster) {
+      return a.hasPoster ? -1 : 1;
+    }
+    // Secondary: De-prioritize "Upcoming" items
+    if (a.isUpcoming !== b.isUpcoming) {
+      return a.isUpcoming ? 1 : -1;
+    }
+    return 0;
+  });
+  
+  const sortedResults = filteredResults.map(p => p.originalItem);
+  // STEP 4: APPLY AGE RATING FILTERING
+  let ageFilteredResults = sortedResults;
+  if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+    const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+    const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+    const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
+    ageFilteredResults = sortedResults.filter(result => {
+      const cert = result.certification;
+      
+      const isTvRating = type === 'series';
+      const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+      const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                     (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                      movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                     (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                      tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+      
+      if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+        return !isUserRatingRestrictive;
+      }
+      
+      const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+      const userRatingIndex = ratingHierarchy.indexOf(userRating);
+      const resultRatingIndex = ratingHierarchy.indexOf(cert);
+      
+      if (userRatingIndex === -1) return true;
+      if (resultRatingIndex === -1) return true;
+      
+      return resultRatingIndex <= userRatingIndex;
+    });
+    
+    logger.debug(`TVDB filtered ${finalResults.length} results to ${ageFilteredResults.length} based on age rating: ${config.ageRating}`);
+  }
+  logger.info(`TVDB people search results completed in ${Date.now() - searchStartTime}ms`);
 
   return ageFilteredResults;
 }
@@ -1345,7 +1483,7 @@ async function parseTvmazeResult(show, config) {
 
 
 /**
- * Perform Trakt search for movies or series
+ * Perform Trakt search for movies or series 
  * Note: Trakt search doesn't support pagination (page parameter is ignored),
  * so we return a flat 30 results from a single API call.
  */
@@ -1354,24 +1492,247 @@ async function performTraktSearch(type, query, language, config) {
   logger.info(`Starting Trakt search for type "${type}" with query: "${query}"`);
 
   try {
-    const { fetchTraktSearchItems, fetchTraktPersonSearch, fetchTraktPersonCredits } = require('../utils/traktUtils.js');
+    const { fetchTraktSearchItems } = require('../utils/traktUtils.js');
     const searchType = type === 'movie' ? 'movie' : 'show';
     const rawResults = new Map();
     
-    const addRawResult = (media, matchType = 'title') => {
+    const addRawResult = (media) => {
+      if (media && media.ids) {
+        if (!rawResults.has(media.ids.trakt)) {
+          media.media_type = searchType;
+          rawResults.set(media.ids.trakt, media);
+        }
+      }
+    };
+
+    const titleResults = await fetchTraktSearchItems(searchType, query, config);
+    
+    if (titleResults && titleResults.length > 0) {
+      titleResults.forEach(item => {
+        const media = item[searchType];
+        if (media) {
+          addRawResult(media);
+        }
+      });
+    }
+
+    logger.debug(`Trakt gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+
+    if (rawResults.size === 0) {
+      logger.info(`No Trakt results found for query: "${query}"`);
+      return [];
+    }
+
+    const allResults = Array.from(rawResults.values());
+    
+    // Sort by votes (descending)
+    /*const sortedResults = [...allResults].sort((a, b) => {
+      const aVotes = (a.votes !== undefined && a.votes !== null) ? a.votes : 0;
+      const bVotes = (b.votes !== undefined && b.votes !== null) ? b.votes : 0;
+      return bVotes - aVotes;
+    });*/
+
+    const limitedResults = allResults.slice(0, 30);
+
+    logger.debug(`Trakt limiting results to ${limitedResults.length}, sorted by votes`);
+
+    const metas = await Promise.all(
+      limitedResults.map(async (media) => {
+        try {
+          const ids = media.ids || {};
+          const imdbId = ids.imdb;
+          const tmdbId = ids.tmdb;
+          const tvdbId = ids.tvdb;
+          const traktId = ids.trakt;
+
+          let allIds = {
+            tmdbId: tmdbId,
+            imdbId: imdbId,
+            tvdbId: tvdbId
+          };
+          if(!imdbId && tmdbId && !tvdbId) {
+            allIds = await resolveAllIds(
+              `tmdb:${tmdbId}`,
+              type,
+              config,
+              allIds,
+              ['imdb']
+            );
+          }
+          else if(!imdbId && tvdbId && !tmdbId) {
+            allIds = await resolveAllIds(
+              `tvdb:${tvdbId}`,
+              type,
+              config,
+              allIds,
+              ['imdb']
+            );
+          }
+
+          let stremioId = imdbId || (type === 'movie' ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`);
+          if (!stremioId && traktId) {
+            stremioId = `trakt:${traktId}`;
+          }
+
+          const fallbackImage = `${host}/missing_poster.png`;
+          const posterArray = media.images?.poster || [];
+          const fanartArray = media.images?.fanart || [];
+          const logoArray = media.images?.logo || [];
+          
+          const normalizeImageUrl = (url) => {
+            if (!url) return null;
+            if (url.startsWith('http://') || url.startsWith('https://')) return url;
+            return `https://${url}`;
+          };
+          
+          let posterUrl = posterArray.length > 0 ? normalizeImageUrl(posterArray[0]) : fallbackImage;
+          let backgroundUrl = fanartArray.length > 0 ? normalizeImageUrl(fanartArray[0]) : null;
+          let logoUrl = logoArray.length > 0 ? normalizeImageUrl(logoArray[0]) : null;
+          
+          if (!logoUrl) {
+            if (imdbId) {
+              logoUrl = imdb.getLogoFromImdb(imdbId);
+            }
+          }
+
+          const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
+            ? posterUrl 
+            : fallbackImage;
+          
+          let posterProxyId = imdbId || (type === 'movie' ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`);
+          if (config.posterRatingProvider === 'top' && !imdbId && !tmdbId) {
+            posterProxyId = null; 
+          }
+          const posterProxyUrl = posterProxyId 
+            ? Utils.buildPosterProxyUrl(host, type, posterProxyId, validPosterUrl, language, config)
+            : validPosterUrl;
+
+          const imdbRating = allIds.imdbId ? await getImdbRating(allIds.imdbId, type) : 'N/A';
+
+          let releaseDates = null;
+          if (type === 'movie' && tmdbId && config.hideUnreleasedDigitalSearch) {
+            try {
+              const movieDetails = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
+              releaseDates = movieDetails.release_dates;
+            } catch (error) {
+              logger.debug(`Failed to get TMDB release dates for movie ${tmdbId}: ${error.message}`);
+            }
+          }
+
+          const certification = media.certification || null;
+
+          const meta = {
+            id: stremioId,
+            type: type,
+            name: media.title || media.name,
+            poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : posterUrl,
+            background: backgroundUrl,
+            description: Utils.addMetaProviderAttribution(media.overview || '', 'Trakt', config),
+            certification: certification,
+            logo: logoUrl,
+            genres: media.genres || [],
+            year: media.year || null,
+            imdbRating: imdbRating,
+            runtime: type === 'movie' ? Utils.parseRunTime(media.runtime) : null,
+            status: type === 'series' ? (media.status || null) : null
+          };
+
+          if (releaseDates) {
+            meta.app_extras = { releaseDates: releaseDates };
+          }
+
+          return meta;
+        } catch (error) {
+          logger.error(`Error parsing Trakt result:`, error.message);
+          return null;
+        }
+      })
+    );
+
+    const validMetas = metas.filter(Boolean);
+    
+    let finalMetas = validMetas;
+    
+    if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+      const beforeCount = finalMetas.length;
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+      const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
+      finalMetas = finalMetas.filter(result => {
+        const cert = result.certification;
+        
+        const isTvRating = type === 'series';
+        const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+        const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                       (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                       (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+        
+        if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+          return !isUserRatingRestrictive; 
+        }
+        
+        const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+        const userRatingIndex = ratingHierarchy.indexOf(userRating);
+        const resultRatingIndex = ratingHierarchy.indexOf(cert);
+        
+        if (userRatingIndex === -1) return true; 
+        if (resultRatingIndex === -1) return true; 
+        
+        return resultRatingIndex <= userRatingIndex;
+      });
+      
+      const afterCount = finalMetas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Age rating filter (Trakt): filtered out ${beforeCount - afterCount} results`);
+      }
+    }
+    
+    if (type === 'movie' && config.hideUnreleasedDigitalSearch) {
+      const beforeCount = finalMetas.length;
+      finalMetas = finalMetas.filter(meta => Utils.isReleasedDigitally(meta));
+      const afterCount = finalMetas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter (Trakt): filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    logger.success(`Completed Trakt search for "${query}" in ${Date.now() - startTime}ms. Returning ${finalMetas.length} results.`);
+    return finalMetas;
+
+  } catch (error) {
+    logger.error(`Trakt search failed for "${query}":`, error.message);
+    return [];
+  }
+}
+
+/**
+ * Perform Trakt people-only search for movies or series
+ * Note: Trakt search doesn't support pagination (page parameter is ignored),
+ * flat 30 results from a single API call.
+ */
+async function performTraktPeopleSearch(type, query, language, config) {
+  const startTime = Date.now();
+  logger.info(`Starting Trakt people-only search for type "${type}" with query: "${query}"`);
+
+  try {
+    const { fetchTraktPersonSearch, fetchTraktPersonCredits } = require('../utils/traktUtils.js');
+    const searchType = type === 'movie' ? 'movie' : 'show';
+    const rawResults = new Map();
+    
+    const addRawResult = (media, matchType = 'person') => {
       if (media && media.ids) {
         const existing = rawResults.get(media.ids.trakt);
         if (!existing) {
-          // New result, add it
           media.media_type = searchType;
           media.matchType = matchType;
           rawResults.set(media.ids.trakt, media);
         } else {
-          // Duplicate - prefer the one with more votes, or keep existing if votes are equal
           const existingVotes = existing.votes || 0;
           const newVotes = media.votes || 0;
           if (newVotes > existingVotes) {
-            // Replace with the one that has more votes
             media.media_type = searchType;
             media.matchType = matchType;
             rawResults.set(media.ids.trakt, media);
@@ -1382,7 +1743,6 @@ async function performTraktSearch(type, query, language, config) {
 
     // Determine if we should search for persons
     const shouldSearchPersons = (() => {
-      // Skip if contains invalid symbols or standalone numbers/years
       const invalidNamePattern = /[:()[\]?!$#@&]|\b\d+\b/;
       if (invalidNamePattern.test(query)) {
         logger.debug(`Skipping person search due to invalid characters or numbers: "${query}"`);
@@ -1391,31 +1751,15 @@ async function performTraktSearch(type, query, language, config) {
       return true;
     })();
 
-    // Run title search and person search concurrently
-    // Trakt search returns up to 30 items in a single call (no pagination support)
-    const [titleResults, personResults] = await Promise.all([
-      fetchTraktSearchItems(searchType, query, config),
-      shouldSearchPersons ? fetchTraktPersonSearch(query) : Promise.resolve([])
-    ]);
+    const personResults = shouldSearchPersons ? await fetchTraktPersonSearch(query) : [];
     
-    if (titleResults && titleResults.length > 0) {
-      titleResults.forEach(item => {
-        const media = item[searchType];
-        if (media) {
-          addRawResult(media, 'title');
-        }
-      });
-    }
-
     if (personResults && personResults.length > 0) {
       const topPerson = personResults[0]?.person;
       if (topPerson && topPerson.ids?.trakt) {
         try {
           logger.debug(`Person found: ${topPerson.name} (Trakt ID: ${topPerson.ids.trakt})`);
           
-          // Get person's credits (limit to 20 to avoid hitting rate limits)
-          // We'll combine with title results and limit total to 30 later
-          const credits = await fetchTraktPersonCredits(topPerson.ids.trakt, searchType, 20);
+          const credits = await fetchTraktPersonCredits(topPerson.ids.trakt, searchType, 30);
           
           if (credits && credits.length > 0) {
             credits.forEach(media => {
@@ -1429,7 +1773,7 @@ async function performTraktSearch(type, query, language, config) {
       }
     }
 
-    logger.debug(`Trakt gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+    logger.debug(`Trakt people search gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
 
     if (rawResults.size === 0) {
       logger.info(`No Trakt results found for query: "${query}"`);
@@ -1640,6 +1984,9 @@ function getProviderFromSearchId(searchId) {
     return 'tvmaze';
   } else if (searchId.includes('trakt.')) {
     return 'trakt';
+  } else if (searchId === 'people_search') {
+    // For people search, determine the actual provider used based on type and config
+    return 'people_search'; // Generic people search - actual provider determined at runtime
   } else if (searchId === 'search') {
     // For generic 'search' case, we need to look at the actual provider used
     // This will be determined by the config.search.providers setting
@@ -1712,6 +2059,33 @@ async function getSearch(id, type, language, extra, config) {
           const query = extra.search;    
           // Perform single AI search that returns mixed movie/series results
           metas = await performAiSearch(query, language, config);
+        }
+        break;
+
+      case 'people_search':
+        if (extra.search) {
+          const query = extra.search;
+          let providerId;
+          logger.info(`Performing people search for type '${type}' with query '${query}'`);
+          if (type === 'movie') {
+            providerId = config.search?.providers?.people_search_movie || 'tmdb.people.search';
+          } else if (type === 'series') {
+            providerId = config.search?.providers?.people_search_series || 'tmdb.people.search';
+          }
+          
+          logger.debug(`Performing people-only search for type '${type}' using provider '${providerId}'`);
+          
+          switch (providerId) {
+              case 'tmdb.people.search':
+                metas = await performTmdbSearch(type, query, language, config, true, page, true);
+                break;
+              case 'tvdb.people.search':
+                metas = await performTvdbPeopleSearch(type, query, language, config);
+                break;
+              case 'trakt.people.search':
+                metas = await performTraktPeopleSearch(type, query, language, config);
+                break;
+          }
         }
         break;
 

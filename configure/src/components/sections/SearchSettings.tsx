@@ -136,6 +136,18 @@ export function SearchSettings() {
       enabledProviders.push({ id: 'anime_movie', type: 'anime.movie', provider: config.search.providers.anime_movie });
     }
     
+    // Add people search movie if enabled
+    const peopleSearchMovieProvider = config.search.providers.people_search_movie || 'tmdb.people.search';
+    if (config.search.engineEnabled?.[peopleSearchMovieProvider] !== false) {
+      enabledProviders.push({ id: 'people_search_movie', type: 'movie', provider: peopleSearchMovieProvider });
+    }
+    
+    // Add people search series if enabled
+    const peopleSearchSeriesProvider = config.search.providers.people_search_series || 'tmdb.people.search';
+    if (config.search.engineEnabled?.[peopleSearchSeriesProvider] !== false) {
+      enabledProviders.push({ id: 'people_search_series', type: 'series', provider: peopleSearchSeriesProvider });
+    }
+    
     // Sort by the searchOrder array
     return enabledProviders.sort((a, b) => {
       const aIndex = searchOrder.indexOf(a.id);
@@ -188,6 +200,8 @@ export function SearchSettings() {
       'anime_movie': 'Anime Movies Search',
       'tvdb.collections.search': 'TVDB Collections',
       'gemini.search': 'AI Search',
+      'people_search_movie': 'People Search (Movies)',
+      'people_search_series': 'People Search (Series)',
     };
     return searchNameMap[searchId] || searchId;
   };
@@ -255,7 +269,7 @@ export function SearchSettings() {
   };
 
   const handleProviderChange = (
-    type: 'movie' | 'series' | 'anime_movie' | 'anime_series', 
+    type: 'movie' | 'series' | 'anime_movie' | 'anime_series' | 'people_search_movie' | 'people_search_series', 
     value: string
   ) => {
     setConfig(prev => ({
@@ -317,6 +331,10 @@ export function SearchSettings() {
   
   const animeSearchProviders = allSearchProviders.filter(
     p => p.mediaType.includes('anime_movie') || p.mediaType.includes('anime_series')
+  );
+  
+  const peopleSearchProviders = allSearchProviders.filter(
+    p => p.value.includes('people.search')
   );
 
   return (
@@ -536,6 +554,126 @@ export function SearchSettings() {
                                 checked={config.search.engineEnabled?.[config.search.providers.anime_movie] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_movie, checked)}
                                 aria-label="Enable this engine"
+                            />
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* People Search */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>People Search</CardTitle>
+                    <CardDescription>
+                        Search for movies and series by person names (actors, directors, writers). Only searches people's credits, not titles.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+                        <div>
+                            <Label className="text-lg font-medium">People Search (Movies) Engine:</Label>
+                            <div className="text-sm text-muted-foreground mt-0.5">
+                                Search name: {getSearchDisplayName('people_search_movie', config.search.providers.people_search_movie || 'tmdb.people.search')}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <Select 
+                                value={config.search.providers.people_search_movie || 'tmdb.people.search'} 
+                                onValueChange={(val) => handleProviderChange('people_search_movie', val)}
+                            >
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {peopleSearchProviders
+                                      .filter(p => p.mediaType.includes('movie'))
+                                      .map(p => (
+                                        <SelectItem 
+                                          key={p.value} 
+                                          value={p.value}
+                                          disabled={p.value === 'tvdb.people.search' && !hasTvdbKey}
+                                        >
+                                          {getProviderDisplayName(p.value)}
+                                          {p.value === 'tvdb.people.search' && !hasTvdbKey && ' (API key required)'}
+                                        </SelectItem>
+                                      ))}
+                                </SelectContent>
+                            </Select>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditSearchName('people_search_movie')}
+                                className="px-2"
+                            >
+                                <Edit2 className="h-4 w-4" />
+                            </Button>
+                            {hasRPDBKey && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleengineRatingPostersChange(config.search.providers.people_search_movie || 'tmdb.people.search', !(config.search.engineRatingPosters?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true))}
+                                    className="px-2"
+                                    title={(config.search.engineRatingPosters?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
+                                >
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                </Button>
+                            )}
+                            <Switch
+                                checked={config.search.engineEnabled?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.people_search_movie || 'tmdb.people.search', checked)}
+                                aria-label="Enable people search for movies"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
+                        <div>
+                            <Label className="text-lg font-medium">People Search (Series) Engine:</Label>
+                            <div className="text-sm text-muted-foreground mt-0.5">
+                                Search name: {getSearchDisplayName('people_search_series', config.search.providers.people_search_series || 'tmdb.people.search')}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 w-full sm:w-[280px]">
+                            <Select 
+                                value={config.search.providers.people_search_series || 'tmdb.people.search'} 
+                                onValueChange={(val) => handleProviderChange('people_search_series', val)}
+                            >
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {peopleSearchProviders
+                                      .filter(p => p.mediaType.includes('series'))
+                                      .map(p => (
+                                        <SelectItem 
+                                          key={p.value} 
+                                          value={p.value}
+                                          disabled={p.value === 'tvdb.people.search' && !hasTvdbKey}
+                                        >
+                                          {getProviderDisplayName(p.value)}
+                                          {p.value === 'tvdb.people.search' && !hasTvdbKey && ' (API key required)'}
+                                        </SelectItem>
+                                      ))}
+                                </SelectContent>
+                            </Select>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditSearchName('people_search_series')}
+                                className="px-2"
+                            >
+                                <Edit2 className="h-4 w-4" />
+                            </Button>
+                            {hasRPDBKey && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleengineRatingPostersChange(config.search.providers.people_search_series || 'tmdb.people.search', !(config.search.engineRatingPosters?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true))}
+                                    className="px-2"
+                                    title={(config.search.engineRatingPosters?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
+                                >
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                </Button>
+                            )}
+                            <Switch
+                                checked={config.search.engineEnabled?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true}
+                                onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.people_search_series || 'tmdb.people.search', checked)}
+                                aria-label="Enable people search for series"
                             />
                         </div>
                     </div>

@@ -151,6 +151,8 @@ const initialConfig: AppConfig = {
       series: 'tvdb.search',
       anime_movie: 'mal.search.movie',
       anime_series: 'mal.search.series',
+      people_search_movie: 'tmdb.people.search',
+      people_search_series: 'tmdb.people.search',
     },
     engineEnabled: {
       'tmdb.search': true,
@@ -158,11 +160,14 @@ const initialConfig: AppConfig = {
       'tvdb.collections.search': false,
       'tvmaze.search': true,
       'trakt.search': true,
+      'tmdb.people.search': true,
+      'tvdb.people.search': true,
+      'trakt.people.search': true,
       'mal.search.movie': true,
       'mal.search.series': true,
     },
     searchNames: {},
-    searchOrder: ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'],
+    searchOrder: ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie', 'people_search_movie', 'people_search_series'],
   },
   streaming: [], // Added to satisfy AppConfig interface
 };
