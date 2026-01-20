@@ -120,6 +120,8 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [filterScoreMin, setFilterScoreMin] = useState<number | undefined>(catalog.filter_score_min);
   const [filterScoreMax, setFilterScoreMax] = useState<number | undefined>(catalog.filter_score_max);
+  const isUpNext = catalog.id === 'mdblist.upnext';
+  const showSortOptions = !isUpNext;
 
   const handleSave = () => {
     setConfig(prev => ({
@@ -140,54 +142,58 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
           <DialogTitle>MDBList Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Sort By</Label>
-            <Select value={sort} onValueChange={(value: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default') => setSort(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select sort option" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">Use Default Sorting</SelectItem>
-                <SelectItem value="rank">Rank</SelectItem>
-                <SelectItem value="score">Score</SelectItem>
-                <SelectItem value="usort">User Sort</SelectItem>
-                <SelectItem value="score_average">Score Average</SelectItem>
-                <SelectItem value="released">Release Date</SelectItem>
-                <SelectItem value="releasedigital">Digital Release</SelectItem>
-                <SelectItem value="imdbrating">IMDB Rating</SelectItem>
-                <SelectItem value="imdbvotes">IMDB Votes</SelectItem>
-                <SelectItem value="last_air_date">Last Air Date</SelectItem>
-                <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
-                <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
-                <SelectItem value="rogerbert">Roger Ebert</SelectItem>
-                <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
-                <SelectItem value="rtaudience">RT Audience</SelectItem>
-                <SelectItem value="metacritic">Metacritic</SelectItem>
-                <SelectItem value="myanimelist">MyAnimeList</SelectItem>
-                <SelectItem value="letterrating">Letterboxd Rating</SelectItem>
-                <SelectItem value="lettervotes">Letterboxd Votes</SelectItem>
-                <SelectItem value="budget">Budget</SelectItem>
-                <SelectItem value="revenue">Revenue</SelectItem>
-                <SelectItem value="runtime">Runtime</SelectItem>
-                <SelectItem value="title">Title</SelectItem>
-                <SelectItem value="added">Date Added</SelectItem>
-                <SelectItem value="random">Random</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {sort !== 'default' && (
-            <div className="space-y-2">
-              <Label>Order</Label>
-              <Select value={order} onValueChange={(value: 'asc' | 'desc') => setOrder(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="asc">Ascending</SelectItem>
-                  <SelectItem value="desc">Descending</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          {showSortOptions && (
+            <>
+              <div className="space-y-2">
+                <Label>Sort By</Label>
+                <Select value={sort} onValueChange={(value: 'rank' | 'score' | 'usort' | 'score_average' | 'released' | 'releasedigital' | 'imdbrating' | 'imdbvotes' | 'last_air_date' | 'imdbpopular' | 'tmdbpopular' | 'rogerbert' | 'rtomatoes' | 'rtaudience' | 'metacritic' | 'myanimelist' | 'letterrating' | 'lettervotes' | 'budget' | 'revenue' | 'runtime' | 'title' | 'added' | 'random' | 'default') => setSort(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select sort option" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Use Default Sorting</SelectItem>
+                    <SelectItem value="rank">Rank</SelectItem>
+                    <SelectItem value="score">Score</SelectItem>
+                    <SelectItem value="usort">User Sort</SelectItem>
+                    <SelectItem value="score_average">Score Average</SelectItem>
+                    <SelectItem value="released">Release Date</SelectItem>
+                    <SelectItem value="releasedigital">Digital Release</SelectItem>
+                    <SelectItem value="imdbrating">IMDB Rating</SelectItem>
+                    <SelectItem value="imdbvotes">IMDB Votes</SelectItem>
+                    <SelectItem value="last_air_date">Last Air Date</SelectItem>
+                    <SelectItem value="imdbpopular">IMDB Popular</SelectItem>
+                    <SelectItem value="tmdbpopular">TMDB Popular</SelectItem>
+                    <SelectItem value="rogerbert">Roger Ebert</SelectItem>
+                    <SelectItem value="rtomatoes">Rotten Tomatoes</SelectItem>
+                    <SelectItem value="rtaudience">RT Audience</SelectItem>
+                    <SelectItem value="metacritic">Metacritic</SelectItem>
+                    <SelectItem value="myanimelist">MyAnimeList</SelectItem>
+                    <SelectItem value="letterrating">Letterboxd Rating</SelectItem>
+                    <SelectItem value="lettervotes">Letterboxd Votes</SelectItem>
+                    <SelectItem value="budget">Budget</SelectItem>
+                    <SelectItem value="revenue">Revenue</SelectItem>
+                    <SelectItem value="runtime">Runtime</SelectItem>
+                    <SelectItem value="title">Title</SelectItem>
+                    <SelectItem value="added">Date Added</SelectItem>
+                    <SelectItem value="random">Random</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {sort !== 'default' && (
+                <div className="space-y-2">
+                  <Label>Order</Label>
+                  <Select value={order} onValueChange={(value: 'asc' | 'desc') => setOrder(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                      <SelectItem value="desc">Descending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </>
           )}
           {catalog.source === 'mdblist' && catalog.sourceUrl?.includes('/external/lists/') && (
             <>
@@ -299,7 +305,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
   const isUpNext = catalog.id === 'trakt.upnext';
   const isCalendar = catalog.id === 'trakt.calendar';
-  const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.');
+  const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.') && catalog.id !== 'trakt.upnext';
 
   const handleSave = () => {
     setConfig(prev => {
