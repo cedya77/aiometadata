@@ -513,6 +513,14 @@ async function getManifest(config) {
   const provideImdbId = config.provideImdbId === "true";
   const sessionId = config.sessionId;
   const userCatalogs = config.catalogs || getDefaultCatalogs();
+
+  // Force inject 'tmdb.latest_releases' if missing (for existing users to see the new feature)
+  if (!userCatalogs.some(c => c.id === 'tmdb.latest_releases')) {
+    userCatalogs.unshift(
+      { id: 'tmdb.latest_releases', type: 'movie', showInHome: true, enabled: true },
+      { id: 'tmdb.latest_releases', type: 'series', showInHome: true, enabled: true }
+    );
+  }
   const translatedCatalogs = loadTranslations(language);
 
 

@@ -869,6 +869,36 @@ async function buildParameters(type: string, language: string, page: number, id:
           parameters.with_genres = findGenreId(genre, genreList);
         }
         break;
+      case "tmdb.latest_releases":
+        const userTimezoneLR = config.timezone || process.env.TZ || 'UTC';
+        const formatterLR = new Intl.DateTimeFormat('en-CA', {
+          timeZone: userTimezoneLR,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const now = new Date();
+        const past = new Date();
+        past.setDate(now.getDate() - 30);
+
+        const todayStr = formatterLR.format(now);
+        const pastStr = formatterLR.format(past);
+
+        if (type === 'movie') {
+          parameters['primary_release_date.gte'] = pastStr;
+          parameters['primary_release_date.lte'] = todayStr;
+          parameters.sort_by = 'primary_release_date.desc';
+          parameters.with_release_type = "3|4|5|6";
+        } else {
+          parameters['first_air_date.gte'] = pastStr;
+          parameters['first_air_date.lte'] = todayStr;
+          parameters.sort_by = 'first_air_date.desc';
+        }
+
+        if (genre && genre.toLowerCase() !== 'none') {
+          parameters.with_genres = findGenreId(genre, genreList);
+        }
+        break;
       case "tmdb.airing_today":
         // Filter for TV shows with episodes airing today
         // Use first_air_date to find shows that first aired, but for "airing today" we want shows with episodes today
