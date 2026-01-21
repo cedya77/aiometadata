@@ -688,7 +688,25 @@ async function buildParameters(type: string, language: string, page: number, id:
   const parameters: any = { language, page, 'vote_count.gte': 50 };
 
   if (config.strictRegionFiltering) {
-    const region = language.split('-')[1];
+    let region = language.split('-')[1];
+    if (!region) {
+      // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')
+      const langCode = language.split('-')[0].toUpperCase();
+      const regionMap: Record<string, string> = {
+        'EN': 'US',
+        'JA': 'JP',
+        'KO': 'KR',
+        'ZH': 'CN',
+        'HI': 'IN',
+        'CS': 'CZ',
+        'DA': 'DK',
+        'EL': 'GR',
+        'SV': 'SE',
+        'VI': 'VN'
+      };
+      region = regionMap[langCode] || langCode;
+    }
+
     if (region) {
       parameters.region = region;
 
@@ -703,8 +721,12 @@ async function buildParameters(type: string, language: string, page: number, id:
 
       if (type === 'movie') {
         parameters['release_date.lte'] = today;
+        // Exclude Premiere (1) and Theatrical Limited (2) which often cause "future" movies to show up
+        // 3=Theatrical, 4=Digital, 5=Physical, 6=TV
+        parameters.with_release_type = "3|4|5|6";
       } else {
         parameters['first_air_date.lte'] = today;
+        // For TV shows, we can force monetization types or similar, but with_release_type is mainly for movies
       }
     }
   }
