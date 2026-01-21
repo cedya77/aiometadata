@@ -740,7 +740,9 @@ async function buildParameters(type: string, language: string, page: number, id:
       parameters.with_genres = findGenreId(genre, genreList);
     }
     parameters.with_watch_providers = provider.watchProviderId
-    parameters.watch_region = provider.country;
+    parameters.watch_region = (config.strictRegionFiltering && language.split('-')[1])
+      ? language.split('-')[1]
+      : provider.country;
     parameters.with_watch_monetization_types = "flatrate|free|ads";
     delete parameters['vote_count.gte'];
     const catalogConfig = config._currentCatalogConfig;
