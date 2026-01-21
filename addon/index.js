@@ -1695,6 +1695,77 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   config.userUUID = userUUID;
 
+  // Handle calendar-videos catalog
+  if (id === 'calendar-videos' && type === 'series' && extra) {
+    const logger = consola.withTag('Calendar');
+    
+    try {
+      // Extract IDs from extra parameter (format: calendarVideosIds=id1,id2,...)
+      let ids = extra;
+      if (extra.startsWith('calendarVideosIds=')) {
+        ids = decodeURIComponent(extra.substring('calendarVideosIds='.length));
+      } else {
+        ids = decodeURIComponent(extra);
+      }
+      
+      const uniqueIDs = [...new Set(ids.split(',')
+        .filter(id => id.startsWith("anilist:") || id.startsWith("kitsu:") || id.startsWith("mal:") || id.startsWith("anidb:") || id.startsWith("tmdb:") || id.startsWith("tvdb:") || id.startsWith("tvmaze:"))
+      )];
+
+      logger.debug(`Processing calendar request for ${uniqueIDs.length} IDs`);
+
+      const promises = uniqueIDs.map(async (id) => {
+        try {
+          const result = await cacheWrapMetaSmart(
+            userUUID,
+            id,
+            async () => {
+              return await getMeta('series', config.language || 'en-US', id, config, userUUID, true);
+            },
+            undefined, 
+            { enableErrorCaching: true, maxRetries: 2 },
+            'series',
+            true 
+          );
+          
+          if (!result || !result.meta) return null;
+          
+          const meta = result.meta;
+          
+          // Filter for future episodes
+          if (meta.videos && Array.isArray(meta.videos)) {
+            const now = new Date();
+            meta.videos = meta.videos.filter(video => {
+              if (!video.released) return false;
+              const releaseDate = new Date(video.released);
+              // Check if release date is valid and in the future
+              return !isNaN(releaseDate.getTime()) && releaseDate >= now;
+            });
+            
+            meta.videos.sort((a, b) => new Date(a.released) - new Date(b.released));
+          }
+          
+          if (!meta.videos || meta.videos.length === 0) return null;
+          
+          return meta;
+        } catch (err) {
+          logger.warn(`Failed to process ID ${id} for calendar: ${err.message}`);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(promises);
+      const metasDetailed = results.filter(Boolean);
+
+      res.setHeader('Cache-Control', "max-age=10800, stale-while-revalidate=3600, stale-if-error=259200");
+      return res.json({ metasDetailed });
+
+    } catch (error) {
+      logger.error("Calendar route error:", error);
+      return res.status(500).send({ error: "Internal Server Error" });
+    }
+  }
+
   let suffixType = null;
   const suffixMatch = id.match(/_(movie|series|anime)$/);
   if (suffixMatch) {
@@ -4362,6 +4433,7 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
     res.status(500).json({ error: 'Failed to execute maintenance task' });
   }
 });
+
 
 // Blocking startup function that waits for cache warming
 async function startServerWithCacheWarming() {

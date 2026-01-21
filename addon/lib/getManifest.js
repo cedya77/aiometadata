@@ -1033,6 +1033,25 @@ async function getManifest(config) {
     }
   }
 
+  catalogs.push({
+    type: "series",
+    id: "calendar-videos",
+    extra: [
+      {
+        name: "calendarVideosIds",
+        isRequired: true,
+        optionsLimit: 100
+      }
+    ],
+    extraSupported: [
+      "calendarVideosIds"
+    ],
+    extraRequired: [
+      "calendarVideosIds"
+    ],
+    name: "Calendar videos"
+  });
+
   // No separate addition for gemini.search here — the provider will be added in the searchCatalogConfigs loop above
 
   const activeConfigs = [
@@ -1079,6 +1098,7 @@ async function getManifest(config) {
     behaviorHints: {
       configurable: true,
       configurationRequired: false,
+      newEpisodeNotifications: true
     },
     catalogs,
   };
