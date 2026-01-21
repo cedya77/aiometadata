@@ -382,7 +382,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     if (config.strictRegionFiltering) {
       // Priority: use config.language if available (user explicit setting), otherwise request language
       const targetLang = config.language || language;
-      let region = targetLang.split('-')[1];
+      let region = targetLang.split('-')[1] ? targetLang.split('-')[1].toUpperCase() : null;
 
       if (!region) {
         // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')

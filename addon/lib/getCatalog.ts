@@ -687,10 +687,10 @@ async function buildParameters(type: string, language: string, page: number, id:
   const languages = await getLanguages(config);
   const parameters: any = { language, page, 'vote_count.gte': 50 };
 
-  if (config.strictRegionFiltering) {
+  if (config.strictRegionFiltering && id !== 'tmdb.language' && !id.includes('.cru')) {
     // Priority: use config.language if available (user explicit setting), otherwise request language
     const targetLang = config.language || language;
-    let region = targetLang.split('-')[1];
+    let region = targetLang.split('-')[1] ? targetLang.split('-')[1].toUpperCase() : null;
 
     if (!region) {
       // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')
@@ -722,6 +722,7 @@ async function buildParameters(type: string, language: string, page: number, id:
       });
       const today = formatter.format(new Date());
 
+      // Only apply date filtering if not checking an unreleased-specific catalog (though upcoming isn't TMDB algorithmic usually)
       if (type === 'movie') {
         parameters['release_date.lte'] = today;
         // Exclude Premiere (1) and Theatrical Limited (2) which often cause "future" movies to show up
@@ -780,9 +781,18 @@ async function buildParameters(type: string, language: string, page: number, id:
       parameters.with_genres = findGenreId(genre, genreList);
     }
     parameters.with_watch_providers = provider.watchProviderId
-    parameters.watch_region = (config.strictRegionFiltering && language.split('-')[1])
-      ? language.split('-')[1]
-      : provider.country;
+
+    // Consistent strict region logic for streaming, explicitly skipping excluded catalogs
+    let watchRegion = provider.country;
+    if (config.strictRegionFiltering && !id.includes('.cru')) {
+      const targetLang = config.language || language;
+      const regionCode = targetLang.split('-')[1];
+      if (regionCode) {
+        watchRegion = regionCode.toUpperCase();
+      }
+    }
+    parameters.watch_region = watchRegion;
+
     parameters.with_watch_monetization_types = "flatrate|free|ads";
     delete parameters['vote_count.gte'];
     const catalogConfig = config._currentCatalogConfig;
