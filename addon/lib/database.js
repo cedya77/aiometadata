@@ -94,54 +94,11 @@ class Database {
   }
 
   async initializePostgreSQL(uri) {
-    // Force IPv4 to avoid ENETUNREACH errors in some environments
-    const config = {
-      connectionString: uri,
-      // Force IPv4 resolution
-      host: uri.includes('@') ? uri.split('@')[1].split(':')[0].split('/')[0] : undefined,
-    };
-
-    // If we can't easily parse the host to check for IP type, we can pass specific options to pg
-    // pg-pool doesn't directly accept 'family' in all versions, but we can try passing it in config
-    // or by modifying the connection string? 
-    // Actually, passing 'family: 4' is supported in recent pg versions via socket options or similar.
-    // But 'pg' uses 'net.connect' which accepts 'family'.
-
-    // Safer approach: Use an object config for Pool and add standard options
-    this.db = new Pool({
-      connectionString: uri,
-    });
-
-    // Attempt to patch the connect method or just handle the error? 
-    // Wait, the error is ENETUNREACH.
-    // Let's try to override the Pool creation to include a custom log or retry?
-    // Actually, the simplest fix for "connect ENETUNREACH ...:::0" is often to ensure we use IPv4.
-    // We can do this by resolving the hostname before connecting? No, that's complex.
-
-    // Let's destroy the previous one and create a new one with explicit config if possible.
-    // A common workaround is to pass `host` as an IPv4 address if possible, but we only have URI.
-
-    // Let's try adding family: 4 to the options.
-    // "It works if you pass { family: 4 } to Client/Pool constructor" - popular stackoverflow fix.
-
-    this.db = new Pool({
-      connectionString: uri,
-      // Force IPv4
-      family: 4,
-    });
-
+    this.db = new Pool({ connectionString: uri });
     this.type = 'postgres';
 
     // Test connection
-    try {
-      await this.db.query('SELECT 1');
-    } catch (err) {
-      if (err.code === 'ENETUNREACH' || err.message.includes('ENETUNREACH')) {
-        logger.warn('IPv6 connection failed, retrying... (Ensure your DB host resolves to IPv4)');
-        throw err;
-      }
-      throw err;
-    }
+    await this.db.query('SELECT 1');
   }
 
   async createTables() {
