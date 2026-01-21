@@ -1,6 +1,7 @@
 {
   "en-US": {
     "popular": "Popular",
+    "latest_releases": "Latest Releases",
     "year": "Year",
     "language": "Language",
     "trending": "Trending",
@@ -70,6 +71,7 @@
   },
   "pt-BR": {
     "popular": "Popular",
+    "latest_releases": "Lançamentos",
     "year": "Ano",
     "language": "Idioma",
     "trending": "Tendências",
@@ -106,6 +108,7 @@
   },
   "es-ES": {
     "popular": "Popular",
+    "latest_releases": "Últimos Estrenos",
     "year": "Año",
     "language": "Idioma",
     "trending": "Tendencias",
@@ -136,6 +139,7 @@
   },
   "fr-FR": {
     "popular": "Populaire",
+    "latest_releases": "Dernières Sorties",
     "year": "Année",
     "language": "Langue",
     "trending": "Tendances",
@@ -166,6 +170,7 @@
   },
   "de-DE": {
     "popular": "Beliebt",
+    "latest_releases": "Neueste Veröffentlichungen",
     "year": "Jahr",
     "language": "Sprache",
     "trending": "Im Trend",
@@ -196,6 +201,7 @@
   },
   "it-IT": {
     "popular": "Popolare",
+    "latest_releases": "Ultime Uscite",
     "year": "Anno",
     "language": "Lingua",
     "trending": "Di tendenza",
@@ -226,6 +232,7 @@
   },
   "ru-RU": {
     "popular": "Популярное",
+    "latest_releases": "Новые релизы",
     "year": "Год",
     "language": "Язык",
     "trending": "В тренде",
@@ -256,6 +263,7 @@
   },
   "ja-JP": {
     "popular": "人気",
+    "latest_releases": "最新リリース",
     "year": "年",
     "language": "言語",
     "trending": "トレンド",
@@ -286,6 +294,7 @@
   },
   "zh-CN": {
     "popular": "热门",
+    "latest_releases": "最新发布",
     "year": "年份",
     "language": "语言",
     "trending": "趋势",
@@ -316,6 +325,7 @@
   },
   "ko-KR": {
     "popular": "인기",
+    "latest_releases": "최신 출시",
     "year": "년도",
     "language": "언어",
     "trending": "트렌드",
@@ -346,6 +356,7 @@
   },
   "hi-IN": {
     "popular": "लोकप्रिय",
+    "latest_releases": "नवीनतम रिलीज़",
     "year": "साल",
     "language": "भाषा",
     "trending": "प्रवृत्ति",
@@ -376,6 +387,7 @@
   },
   "ar-SA": {
     "popular": "شائع",
+    "latest_releases": "أحدث الإصدارات",
     "year": "السنة",
     "language": "اللغة",
     "trending": "الشائع",
@@ -406,6 +418,7 @@
   },
   "sr-RS": {
     "popular": "Популарно",
+    "latest_releases": "Најновија издања",
     "year": "Година",
     "language": "Језик",
     "trending": "У тренду",
@@ -436,6 +449,7 @@
   },
   "pl-PL": {
     "popular": "Popularne",
+    "latest_releases": "Najnowsze wydania",
     "year": "Rok",
     "language": "Język",
     "trending": "Trendy",
@@ -466,6 +480,7 @@
   },
   "he-IL": {
     "popular": "פופולרי",
+    "latest_releases": "הופעות אחרונות",
     "year": "שנה",
     "language": "שפה",
     "trending": "טרנדי",

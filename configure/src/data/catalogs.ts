@@ -2,13 +2,15 @@ interface CatalogDefinition {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime';
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; 
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom';
   isEnabledByDefault?: boolean;
   showOnHomeByDefault?: boolean;
 }
 
 // --- Catalogs sourced from TMDB and TVDB ---
 export const baseCatalogs: CatalogDefinition[] = [
+  { id: 'tmdb.latest_releases', name: 'Latest Releases', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.latest_releases', name: 'Latest Releases', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'tmdb.top', name: 'TMDB Popular', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'tmdb.top', name: 'TMDB Popular', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'tmdb.trending', name: 'TMDB Trending', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
@@ -39,7 +41,7 @@ export const animeCatalogs: CatalogDefinition[] = [
   { id: 'mal.00sDecade', name: 'MAL Best of 2000s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.10sDecade', name: 'MAL Best of 2010s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.20sDecade', name: 'MAL Best of 2020s', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'mal.genres', name: 'MAL Genres', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false }, 
+  { id: 'mal.genres', name: 'MAL Genres', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'mal.studios', name: 'MAL By Studio', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: false },
   { id: 'mal.top_movies', name: 'MAL Top Movies', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'mal.top_series', name: 'MAL Top Series', type: 'anime', source: 'mal', isEnabledByDefault: true, showOnHomeByDefault: true },
@@ -63,7 +65,7 @@ interface StreamingCatalogDefinition extends CatalogDefinition {
 export const streamingCatalogs: StreamingCatalogDefinition[] = streamingServices.flatMap(service => [
   {
     id: `streaming.${service.id}`,
-    name: `${service.name} (Movies)` ,
+    name: `${service.name} (Movies)`,
     type: 'movie',
     source: 'streaming',
     isEnabledByDefault: false,
@@ -75,7 +77,7 @@ export const streamingCatalogs: StreamingCatalogDefinition[] = streamingServices
   },
   {
     id: `streaming.${service.id}`,
-    name: `${service.name} (Series)` ,
+    name: `${service.name} (Series)`,
     type: 'series',
     source: 'streaming',
     isEnabledByDefault: false,
