@@ -9,8 +9,8 @@ interface CatalogDefinition {
 
 // --- Catalogs sourced from TMDB and TVDB ---
 export const baseCatalogs: CatalogDefinition[] = [
-  { id: 'tmdb.latest_releases', name: 'Latest Releases', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
-  { id: 'tmdb.latest_releases', name: 'Latest Releases', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.latest_releases', name: 'TMDB Latest Releases', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
+  { id: 'tmdb.latest_releases', name: 'TMDB Latest Releases', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'tmdb.top', name: 'TMDB Popular', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'tmdb.top', name: 'TMDB Popular', type: 'series', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
   { id: 'tmdb.trending', name: 'TMDB Trending', type: 'movie', source: 'tmdb', isEnabledByDefault: true, showOnHomeByDefault: true },
