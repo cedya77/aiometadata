@@ -44,12 +44,12 @@ async function loadLanguageData(config: UserConfig): Promise<LanguageData> {
     // Create a fast lookup map: 'en' -> { english_name: 'English', iso_639_2: 'eng' }
     const languageMap = new Map<string, LanguageDetails>(
       (allLanguages as TmdbLanguage[]).map(lang => {
-        const code3 = languages.alpha2ToAlpha3T(lang.iso_639_1) || 
-                     languages.alpha2ToAlpha3B(lang.iso_639_1) || 
-                     'eng';
-        return [lang.iso_639_1, { 
-          name: lang.english_name, 
-          code3: lang.iso_639_1 === "pt" ? lang.iso_639_1 : code3 
+        const code3 = languages.alpha2ToAlpha3T(lang.iso_639_1) ||
+          languages.alpha2ToAlpha3B(lang.iso_639_1) ||
+          'eng';
+        return [lang.iso_639_1, {
+          name: lang.english_name,
+          code3: lang.iso_639_1 === "pt" ? lang.iso_639_1 : code3
         }];
       })
     );
@@ -107,19 +107,44 @@ function to3LetterCountryCode(countryCode2: string | undefined): string {
   }
   //console.log(`Converting country code: ${countryCode2}`);
   const countryData = getCountryISO3(countryCode2.toUpperCase());
-  
+
   return countryData ? countryData.toLowerCase() : 'usa';
 }
 
 export {
   getLanguageListForConfig,
   to3LetterCode,
-  to3LetterCountryCode
+  to3LetterCountryCode,
+  getRegionFromLanguage
 };
 
+/**
+ * Infers a default 2-letter region code from a 2-letter language code.
+ * Used for TMDB strict region filtering when only a language code is available.
+ */
+function getRegionFromLanguage(langCode: string): string {
+  const code = langCode.toUpperCase();
+  const regionMap: Record<string, string> = {
+    'AF': 'ZA', 'SQ': 'AL', 'AR': 'SA', 'HY': 'AM', 'AZ': 'AZ',
+    'EU': 'ES', 'BE': 'BY', 'BN': 'BD', 'BG': 'BG', 'CA': 'ES',
+    'ZH': 'CN', 'HR': 'HR', 'CS': 'CZ', 'DA': 'DK', 'NL': 'NL',
+    'EN': 'US', 'ET': 'EE', 'FI': 'FI', 'FR': 'FR', 'KA': 'GE',
+    'DE': 'DE', 'EL': 'GR', 'GU': 'IN', 'HE': 'IL', 'HI': 'IN',
+    'HU': 'HU', 'IS': 'IS', 'ID': 'ID', 'GA': 'IE', 'IT': 'IT',
+    'JA': 'JP', 'KN': 'IN', 'KK': 'KZ', 'KO': 'KR', 'LV': 'LV',
+    'LT': 'LT', 'MK': 'MK', 'MS': 'MY', 'ML': 'IN', 'MR': 'IN',
+    'NO': 'NO', 'NB': 'NO', 'NN': 'NO', 'FA': 'IR', 'PL': 'PL',
+    'PT': 'PT', 'PA': 'IN', 'RO': 'RO', 'RU': 'RU', 'SR': 'RS',
+    'SK': 'SK', 'SL': 'SI', 'ES': 'ES', 'SW': 'KE', 'SV': 'SE',
+    'TA': 'IN', 'TE': 'IN', 'TH': 'TH', 'TR': 'TR', 'UK': 'UA',
+    'UR': 'PK', 'UZ': 'UZ', 'VI': 'VN', 'CY': 'GB', 'ZU': 'ZA'
+  };
+  return regionMap[code] || code;
+}
+
 // CommonJS compatibility
-module.exports = { 
-  getLanguageListForConfig, 
-  to3LetterCode, 
-  to3LetterCountryCode 
+module.exports = {
+  getLanguageListForConfig,
+  to3LetterCode,
+  to3LetterCountryCode
 };

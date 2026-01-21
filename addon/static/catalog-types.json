@@ -1,92 +1,226 @@
 {
   "default": {
+    "latest_releases": {
+      "nameKey": "latest_releases",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
     "top": {
       "nameKey": "popular",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "year": {
       "nameKey": "year",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "language": {
       "nameKey": "language",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "trending": {
       "nameKey": "trending",
-      "extraSupported": ["genre", "skip"],
-      "defaultOptions": ["Day", "Week"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ],
+      "defaultOptions": [
+        "Day",
+        "Week"
+      ]
     },
     "top_rated": {
       "nameKey": "top_rated",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "airing_today": {
       "nameKey": "airing_today",
-      "extraSupported": ["genre", "skip"],
-      "defaultOptions": ["AU", "BR", "CA", "DE", "FR", "GB", "IN", "NL", "PL", "PT", "SE", "US"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ],
+      "defaultOptions": [
+        "AU",
+        "BR",
+        "CA",
+        "DE",
+        "FR",
+        "GB",
+        "IN",
+        "NL",
+        "PL",
+        "PT",
+        "SE",
+        "US"
+      ]
     }
   },
   "tvdb": {
     "genres": {
       "nameKey": "tvdb_genres",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "trending": {
       "nameKey": "tvdb_trending",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "collections": {
       "nameKey": "tvdb_collections",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     }
   },
   "mal": {
     "airing": {
       "nameKey": "airing",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "upcoming": {
       "nameKey": "upcoming",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "genres": {
       "nameKey": "genres",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "schedule": {
       "nameKey": "schedule",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "seasons": {
       "nameKey": "seasons",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "studios": {
       "nameKey": "studios",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
-    "80sDecade": { "nameKey": "80sDecade", "extraSupported": ["genre", "skip"] },
-    "90sDecade": { "nameKey": "90sDecade", "extraSupported": ["genre", "skip"] },
-    "00sDecade": { "nameKey": "00sDecade", "extraSupported": ["genre", "skip"] },
-    "10sDecade": { "nameKey": "10sDecade", "extraSupported": ["genre", "skip"] },
-    "20sDecade": { "nameKey": "20sDecade", "extraSupported": ["genre", "skip"] },
-    "top_movies": { "nameKey": "top_movies", "extraSupported": ["genre", "skip"] },
-    "top_series": { "nameKey": "top_series", "extraSupported": ["genre", "skip"] },
-    "most_favorites": { "nameKey": "most_favorites", "extraSupported": ["genre", "skip"] },
-    "most_popular": { "nameKey": "most_popular", "extraSupported": ["genre", "skip"] },
-    "top_anime": { "nameKey": "top_anime", "extraSupported": ["genre", "skip"] }
+    "80sDecade": {
+      "nameKey": "80sDecade",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "90sDecade": {
+      "nameKey": "90sDecade",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "00sDecade": {
+      "nameKey": "00sDecade",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "10sDecade": {
+      "nameKey": "10sDecade",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "20sDecade": {
+      "nameKey": "20sDecade",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "top_movies": {
+      "nameKey": "top_movies",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "top_series": {
+      "nameKey": "top_series",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "most_favorites": {
+      "nameKey": "most_favorites",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "most_popular": {
+      "nameKey": "most_popular",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    },
+    "top_anime": {
+      "nameKey": "top_anime",
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
+    }
   },
   "tvmaze": {
     "schedule": {
       "nameKey": "tvmaze_schedule",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     }
   },
   "auth": {
     "favorites": {
       "nameKey": "favorites",
-      "extraSupported": ["genre", "skip"],
+      "extraSupported": [
+        "genre",
+        "skip"
+      ],
       "requiresAuth": true,
       "defaultOptions": [
         "added_date.desc",
@@ -100,7 +234,10 @@
     },
     "watchlist": {
       "nameKey": "watchlist",
-      "extraSupported": ["genre", "skip"],
+      "extraSupported": [
+        "genre",
+        "skip"
+      ],
       "requiresAuth": true,
       "defaultOptions": [
         "added_date.desc",
@@ -113,198 +250,294 @@
       ]
     }
   },
- "streaming": {
+  "streaming": {
     "nfx": {
       "nameKey": "nfx",
       "watchProviderId": 8,
       "country": "GB",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "nfk": {
       "nameKey": "nfk",
       "watchProviderId": 175,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "hbm": {
       "nameKey": "hbm",
       "watchProviderId": 1899,
       "country": "NL",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "dnp": {
       "nameKey": "dnp",
       "watchProviderId": 337,
       "country": "GB",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "amp": {
       "nameKey": "amp",
       "watchProviderId": 9,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "atp": {
       "nameKey": "atp",
       "watchProviderId": 350,
       "country": "GB",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "pmp": {
       "nameKey": "pmp",
       "watchProviderId": 2303,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "pcp": {
       "nameKey": "pcp",
       "watchProviderId": 386,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "hlu": {
       "nameKey": "hlu",
       "watchProviderId": 15,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "cts": {
       "nameKey": "cts",
       "watchProviderId": 190,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "mgl": {
       "nameKey": "mgl",
       "watchProviderId": 551,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "cru": {
       "nameKey": "cru",
       "watchProviderId": 283,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "hay": {
       "nameKey": "hay",
       "watchProviderId": 223,
       "country": "GB",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "clv": {
       "nameKey": "clv",
       "watchProviderId": 167,
       "country": "BR",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "gop": {
       "nameKey": "gop",
       "watchProviderId": 307,
       "country": "BR",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "hst": {
       "nameKey": "hst",
       "watchProviderId": 2336,
       "country": "IN",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "slv": {
       "nameKey": "slv",
       "watchProviderId": 237,
       "country": "IN",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "zee": {
       "nameKey": "zee",
       "watchProviderId": 232,
       "country": "IN",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "nlz": {
       "nameKey": "nlz",
       "watchProviderId": 472,
       "country": "NL",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "vil": {
       "nameKey": "vil",
       "watchProviderId": 72,
       "country": "NL",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "sst": {
       "nameKey": "sst",
       "watchProviderId": 1773,
       "country": "NL",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "sky": {
       "nameKey": "sky",
       "watchProviderId": 29,
       "country": "",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "wow": {
       "nameKey": "wow",
       "watchProviderId": 30,
       "country": "DE",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "blv": {
       "nameKey": "blv",
       "watchProviderId": 341,
       "country": "TR",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "cpd": {
       "nameKey": "cpd",
       "watchProviderId": 381,
       "country": "FR",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "crv": {
       "nameKey": "crv",
       "watchProviderId": 230,
       "country": "CA",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "dpe": {
       "nameKey": "dpe",
       "watchProviderId": 584,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "bet": {
       "nameKey": "bet",
       "watchProviderId": 343,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "mub": {
       "nameKey": "mub",
       "watchProviderId": 11,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "sta": {
       "nameKey": "sta",
       "watchProviderId": 43,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "crc": {
       "nameKey": "crc",
       "watchProviderId": 258,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     },
     "hid": {
       "nameKey": "hid",
       "watchProviderId": 2390,
       "country": "US",
-      "extraSupported": ["genre", "skip"]
+      "extraSupported": [
+        "genre",
+        "skip"
+      ]
     }
   }
 }

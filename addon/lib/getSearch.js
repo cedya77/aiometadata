@@ -4,7 +4,7 @@ const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
 const tvdb = require("./tvdb");
 const { getImdbRating } = require("./getImdbRating");
-const { to3LetterCode } = require("./language-map");
+const { to3LetterCode, getRegionFromLanguage } = require("./language-map");
 const jikan = require('./mal');
 const moviedb = require('./getTmdb');
 const imdb = require('./imdb');
@@ -386,20 +386,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
       if (!region) {
         // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')
-        const langCode = targetLang.split('-')[0].toUpperCase();
-        const regionMap = {
-          'EN': 'US',
-          'JA': 'JP',
-          'KO': 'KR',
-          'ZH': 'CN',
-          'HI': 'IN',
-          'CS': 'CZ',
-          'DA': 'DK',
-          'EL': 'GR',
-          'SV': 'SE',
-          'VI': 'VN'
-        };
-        region = regionMap[langCode] || langCode;
+        const langCode = targetLang.split('-')[0];
+        region = getRegionFromLanguage ? getRegionFromLanguage(langCode) : langCode.toUpperCase();
       }
 
       if (region) {

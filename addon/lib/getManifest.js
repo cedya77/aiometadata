@@ -113,10 +113,10 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
   // Get the default English name from translations to check if customName is just a placeholder
   const defaultEnglishTranslations = catalogsTranslations[DEFAULT_LANGUAGE] || {};
   const defaultEnglishName = defaultEnglishTranslations[catalogDef.nameKey];
-  
+
   // Check if customName is just the default English translation (not a true custom name)
   const isDefaultEnglishName = customName && customName === defaultEnglishName;
-  
+
   // Use custom name only if it's provided, not empty, and not just the default English name
   const hasCustomName = customName && typeof customName === 'string' && customName.trim() !== '' && !isDefaultEnglishName;
   const catalogName = hasCustomName ? customName : `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`;
@@ -134,7 +134,7 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
     name: catalogName,
     pageSize: pageSize,
     extra,
-    showInHome: showInHome 
+    showInHome: showInHome
   };
 }
 
@@ -182,11 +182,11 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
     logger.info(`Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
     const listId = userCatalog.id.split(".")[1];
     logger.debug(`MDBList list ID: ${listId}, API key present: ${!!mdblistKey}`);
-    
+
     // Use pre-fetched genres or fall back to static
     const genreSelection = userCatalog.genreSelection || 'standard';
     let genres = [];
-    
+
     // Use pre-fetched genres based on selection
     if (genreSelection === 'standard' && prefetchedStandardGenres.length > 0) {
       genres = prefetchedStandardGenres;
@@ -202,13 +202,13 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
       genres = getGenresBySelection(genreSelection);
       logger.info(`MDBList using ${genres.length} static fallback genres for selection: ${genreSelection}`);
     }
-    
+
     // Add "None" option when showInHome is false to work around Stremio's genre requirement
     const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
-    
+
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;
-    
+
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -220,7 +220,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
       ],
       showInHome: userCatalog.showInHome
     };
-    
+
     logger.success(`MDBList catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
@@ -232,7 +232,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
 async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = []) {
   try {
     logger.info(`Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
-    
+
     // Determine which genre list to use based on catalog type
     let genres = [];
     // Select the correct list of genre objects
@@ -246,19 +246,19 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
       const combined = [...prefetchedMovieGenres, ...prefetchedShowGenres];
       const uniqueMap = new Map(combined.map(g => [g.slug, g]));
       genres = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-      
+
       logger.debug(`Trakt using ${genres.length} combined genres`);
     } else {
       logger.warn(`Trakt no pre-fetched genres available for type: ${userCatalog.type}`);
     }
 
     const genreNames = genres.map(g => g.name);
-    
+
     const genreOptions = userCatalog.showInHome ? genreNames : ['None', ...genreNames];
-    
+
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;
-    
+
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -269,16 +269,16 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
       ],
       showInHome: userCatalog.showInHome
     };
-    
+
     // Only add genre extra if genres are available
     if (genreOptions.length > 0) {
-      catalog.extra.unshift({ 
-        name: "genre", 
-        options: genreOptions, 
-        isRequired: userCatalog.showInHome ? false : true 
+      catalog.extra.unshift({
+        name: "genre",
+        options: genreOptions,
+        isRequired: userCatalog.showInHome ? false : true
       });
     }
-    
+
     logger.success(`Trakt catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
@@ -290,9 +290,9 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
 async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = []) {
   try {
     logger.info(`Creating TMDB List catalog: ${userCatalog.id} (${userCatalog.type})`);
-    
+
     const catalogType = userCatalog.displayType || userCatalog.type;
-    
+
     let genres = [];
     if (userCatalog.type === 'movie' && movieGenres.length > 0) {
       genres = movieGenres;
@@ -306,11 +306,11 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
       genres = uniqueGenres;
       logger.debug(`TMDB List using ${genres.length} combined genres`);
     }
-    
-    const genreOptions = genres.length > 0 
+
+    const genreOptions = genres.length > 0
       ? (userCatalog.showInHome ? genres : ['None', ...genres])
       : ['None'];
-    
+
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -322,7 +322,7 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
       ],
       showInHome: userCatalog.showInHome
     };
-    
+
     logger.success(`TMDB List catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
@@ -334,29 +334,29 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
 async function createLetterboxdCatalog(userCatalog) {
   try {
     logger.info(`Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
-    
+
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;
     const genreNameById = {
-      "8G":  "Action",
-      "9k":  "Adventure",
-      "8m":  "Animation",
-      "7I":  "Comedy",
-      "9Y":  "Crime",
-      "ai":  "Documentary",
-      "7S":  "Drama",
-      "8w":  "Family",
-      "82":  "Fantasy",
-      "90":  "History",
-      "aC":  "Horror",
-      "b6":  "Music",
-      "aW":  "Mystery",
-      "8c":  "Romance",
-      "9a":  "Science Fiction",
-      "a8":  "Thriller",
+      "8G": "Action",
+      "9k": "Adventure",
+      "8m": "Animation",
+      "7I": "Comedy",
+      "9Y": "Crime",
+      "ai": "Documentary",
+      "7S": "Drama",
+      "8w": "Family",
+      "82": "Fantasy",
+      "90": "History",
+      "aC": "Horror",
+      "b6": "Music",
+      "aW": "Mystery",
+      "8c": "Romance",
+      "9a": "Science Fiction",
+      "a8": "Thriller",
       "1hO": "TV Movie",
-      "9u":  "War",
-      "8Q":  "Western",
+      "9u": "War",
+      "8Q": "Western",
     };
     let genreOptions = Object.values(genreNameById).sort((a, b) => a.localeCompare(b));
     genreOptions = userCatalog.showInHome ? genreOptions : ['None', ...genreOptions];
@@ -371,7 +371,7 @@ async function createLetterboxdCatalog(userCatalog) {
       ],
       showInHome: userCatalog.showInHome
     };
-    
+
     logger.success(`Letterboxd catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
@@ -391,23 +391,23 @@ async function createStremThruCatalog(userCatalog) {
     }
 
     logger.info(`Creating StremThru catalog: ${userCatalog.id}`);
-    
+
     const manifestId = parts[1];
     const catalogId = parts[2];
-    
+
     // Get the catalog URL from the user catalog (try sourceUrl first, fallback to source)
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
     if (!catalogUrl) {
       logger.warn(`No source URL found for catalog: ${userCatalog.id}`);
       return null;
     }
-    
+
     // Get genres from multiple sources with fallback priority:
     // 1. userCatalog.genres (from manifest import)
     // 2. userCatalog.manifestData.extra (from original StremThru manifest)
     // 3. Fetch from catalog items (as last resort)
     let genres = [];
-    
+
     if (userCatalog.genres && Array.isArray(userCatalog.genres) && userCatalog.genres.length > 0) {
       genres = userCatalog.genres;
     } else if (userCatalog.manifestData && userCatalog.manifestData.extra) {
@@ -417,7 +417,7 @@ async function createStremThruCatalog(userCatalog) {
         genres = genreExtra.options;
       }
     }
-    
+
     // If still no genres, try to fetch from catalog items
     if (genres.length === 0) {
       try {
@@ -438,19 +438,19 @@ async function createStremThruCatalog(userCatalog) {
         logger.warn(`Failed to fetch genres from catalog items for ${userCatalog.id}:`, genreError.message);
       }
     }
-    
+
     // Final fallback
     if (genres.length === 0) {
       logger.warn(`No genres found for ${userCatalog.id}, using fallback`);
       genres = ['None']; // Single option for catalogs without genre support
     }
-    
+
     // Add "None" option when showInHome is false to work around Stremio's genre requirement
     const genreOptions = userCatalog.showInHome ? genres : ['None', ...genres];
-    
+
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;
-    
+
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -462,7 +462,7 @@ async function createStremThruCatalog(userCatalog) {
       ],
       showInHome: userCatalog.showInHome
     };
-    
+
     logger.success(`StremThru catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
@@ -478,10 +478,10 @@ async function createStremThruCatalog(userCatalog) {
 function createAniListCatalog(userCatalog) {
   try {
     logger.info(`Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
-    
+
     // Use displayType if defined, otherwise use original type (default to 'series' for anime)
     const catalogType = userCatalog.displayType || userCatalog.type || 'series';
-    
+
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -493,7 +493,7 @@ function createAniListCatalog(userCatalog) {
       ],
       showInHome: userCatalog.showInHome
     };
-    
+
     logger.success(`AniList catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {
@@ -505,69 +505,75 @@ function createAniListCatalog(userCatalog) {
 async function getManifest(config) {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
-  
+
   // Generate manifest directly without caching to avoid cache key issues
   // The manifest is fast to generate and caching causes more problems than it solves
-    const language = config.language || DEFAULT_LANGUAGE;
-    const showPrefix = config.showPrefix === true;
-    const provideImdbId = config.provideImdbId === "true";
-    const sessionId = config.sessionId;
-    const userCatalogs = config.catalogs || getDefaultCatalogs();
-    const translatedCatalogs = loadTranslations(language);
+  const language = config.language || DEFAULT_LANGUAGE;
+  const showPrefix = config.showPrefix === true;
+  const provideImdbId = config.provideImdbId === "true";
+  const sessionId = config.sessionId;
+  const userCatalogs = config.catalogs || getDefaultCatalogs();
+  const translatedCatalogs = loadTranslations(language);
 
 
   const enabledCatalogs = userCatalogs.filter(c => c.enabled);
+  // Priority: Force 'tmdb.latest_releases' to the top if enabled
+  enabledCatalogs.sort((a, b) => {
+    if (a.id === 'tmdb.latest_releases' && b.id !== 'tmdb.latest_releases') return -1;
+    if (b.id === 'tmdb.latest_releases' && a.id !== 'tmdb.latest_releases') return 1;
+    return 0; // Keep original order otherwise
+  });
   logger.info(`Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
   logger.debug(`MDBList catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('mdblist.')).map(c => c.id));
   logger.debug(`Custom catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('custom.')).map(c => c.id));
   //logger.debug(`StremThru catalogs in enabled:`, enabledCatalogs.filter(c => c.id.startsWith('stremthru.')).map(c => c.id));
-  
+
   const years = generateArrayOfYears(new Date().getFullYear() - 1900);
-  
+
   // Only fetch genre lists if we actually have catalogs that need them
   const hasTmdbCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('tmdb.'));
   const hasTvdbCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('tvdb.'));
   const hasMalCatalogs = enabledCatalogs.some(cat => cat.id.startsWith('mal.'));
-  
+
   // Parallel fetch only what we need
   const fetchPromises = [];
-  
+
   if (hasTmdbCatalogs) {
     fetchPromises.push(
       getGenreList('tmdb', language, "movie", config),
       getGenreList('tmdb', language, "series", config)
     );
   }
-  
+
   if (hasTvdbCatalogs) {
     fetchPromises.push(
       getGenreList('tvdb', language, "series", config)
     );
   }
-  
+
   fetchPromises.push(
     cacheWrapGlobal(`languages:${language}`, () => getLanguages(config), 60 * 60)
   );
-  
+
   const genreStart = Date.now();
   const results = await Promise.all(fetchPromises);
   logger.debug(`Genre lists and languages fetched in ${Date.now() - genreStart}ms`);
-  
+
   // Extract results based on what was fetched
   let genres_movie = [], genres_series = [], genres_tvdb_all = [];
   let resultIndex = 0;
-  
+
   if (hasTmdbCatalogs) {
     genres_movie = results[resultIndex++];
     genres_series = results[resultIndex++];
   }
-  
+
   if (hasTvdbCatalogs) {
     genres_tvdb_all = results[resultIndex++];
   }
-  
+
   const languagesArray = results[resultIndex];
-  
+
   // Only fetch anime genres if we have MAL catalogs
   let animeGenreNames = [];
   let studioNames = [];
@@ -579,7 +585,7 @@ async function getManifest(config) {
     });
     animeGenreNames = animeGenres.filter(Boolean).map(genre => genre.name).sort();
     logger.debug(`Anime genres fetched in ${Date.now() - animeStart}ms`);
-    
+
     // Only fetch studios if we have a studio catalog - but don't block manifest generation
     const hasStudioCatalog = enabledCatalogs.some(cat => cat.id === 'mal.studios');
     if (hasStudioCatalog) {
@@ -589,14 +595,14 @@ async function getManifest(config) {
           logger.debug('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
           return await jikan.getStudios();
         }, 30 * 24 * 60 * 60); // Cache for 30 days
-        
+
         // Add timeout to prevent blocking manifest generation
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('Studio fetch timeout')), 2000); // 2 second timeout
         });
-        
+
         const studios = await Promise.race([studioPromise, timeoutPromise]);
-        
+
         studioNames = studios.map(studio => {
           const defaultTitle = studio.titles.find(t => t.type === 'Default');
           return defaultTitle ? defaultTitle.title : null;
@@ -616,11 +622,11 @@ async function getManifest(config) {
           logger.debug('[Cache Miss] Fetching available seasons from Jikan...');
           return await jikan.getAvailableSeasons();
         }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
-        
+
         // Build season options from API data
         const seasonOptions = [];
         const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
-        
+
         for (const yearData of seasonsData) {
           const availableSeasons = yearData.seasons || [];
           for (const season of availableSeasons) {
@@ -628,7 +634,7 @@ async function getManifest(config) {
             seasonOptions.push(`${capitalizedSeason} ${yearData.year}`);
           }
         }
-        
+
         // Store for later use
         global.availableSeasons = seasonOptions;
         logger.debug(`Available seasons fetched successfully (${seasonOptions.length} seasons)`);
@@ -638,7 +644,7 @@ async function getManifest(config) {
       }
     }
   }
-  
+
   const genres_movie_names = genres_movie.map(g => g.name).sort();
   const genres_series_names = genres_series.map(g => g.name).sort();
   const genres_tvdb_all_names = genres_tvdb_all.map(g => g.name).sort();
@@ -713,44 +719,44 @@ async function getManifest(config) {
     })
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
-          logger.debug(`Processing MDBList catalog: ${userCatalog.id}`);
-          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime);
-          logger.debug(`MDBList catalog result:`, result ? 'success' : 'failed');
-          return result;
+        logger.debug(`Processing MDBList catalog: ${userCatalog.id}`);
+        const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime);
+        logger.debug(`MDBList catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       if (isTrakt(userCatalog.id)) {
-          logger.debug(`Processing Trakt catalog: ${userCatalog.id}`);
-          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
-          logger.debug(`Trakt catalog result:`, result ? 'success' : 'failed');
-          return result;
+        logger.debug(`Processing Trakt catalog: ${userCatalog.id}`);
+        const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
+        logger.debug(`Trakt catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {
-          logger.debug(`Processing TMDB List catalog: ${userCatalog.id}`);
-          const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names);
-          logger.debug(`TMDB List catalog result:`, result ? 'success' : 'failed');
-          return result;
+        logger.debug(`Processing TMDB List catalog: ${userCatalog.id}`);
+        const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names);
+        logger.debug(`TMDB List catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
-          const result = await createStremThruCatalog(userCatalog);
-          return result;
+        const result = await createStremThruCatalog(userCatalog);
+        return result;
       }
       if (userCatalog.id.startsWith('custom.')) {
-          logger.debug(`Processing Custom catalog: ${userCatalog.id}`);
-          const result = await createStremThruCatalog(userCatalog);
-          logger.debug(`Custom catalog result:`, result ? 'success' : 'failed');
-          return result;
+        logger.debug(`Processing Custom catalog: ${userCatalog.id}`);
+        const result = await createStremThruCatalog(userCatalog);
+        logger.debug(`Custom catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       if (userCatalog.id.startsWith('anilist.')) {
-          logger.debug(`Processing AniList catalog: ${userCatalog.id}`);
-          const result = createAniListCatalog(userCatalog);
-          logger.debug(`AniList catalog result:`, result ? 'success' : 'failed');
-          return result;
+        logger.debug(`Processing AniList catalog: ${userCatalog.id}`);
+        const result = createAniListCatalog(userCatalog);
+        logger.debug(`AniList catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
-          logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);
-          const result = await createLetterboxdCatalog(userCatalog);
-          logger.debug(`Letterboxd catalog result:`, result ? 'success' : 'failed');
-          return result;
+        logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);
+        const result = await createLetterboxdCatalog(userCatalog);
+        logger.debug(`Letterboxd catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
       let catalogOptions = [];
@@ -776,10 +782,10 @@ async function getManifest(config) {
         );
       }
       else if (userCatalog.id === 'mal.genres') {
-          // Use pre-fetched anime genres
-          // Add "None" option when showInHome is false to work around Stremio's genre requirement
-          catalogOptions = animeGenreNames;
-      } else if (userCatalog.id === 'mal.studios'){
+        // Use pre-fetched anime genres
+        // Add "None" option when showInHome is false to work around Stremio's genre requirement
+        catalogOptions = animeGenreNames;
+      } else if (userCatalog.id === 'mal.studios') {
         // Use pre-fetched studio names, fallback to empty if not available
         catalogOptions = studioNames.length > 0 ? studioNames : ['None'];
       }
@@ -800,16 +806,16 @@ async function getManifest(config) {
           const currentDate = new Date();
           const currentYear = currentDate.getFullYear();
           const currentMonth = currentDate.getMonth(); // 0-11
-          
+
           // Determine current season based on month
           let currentSeasonIndex;
           if (currentMonth <= 2) currentSeasonIndex = 0; // Winter (Jan-Mar)
           else if (currentMonth <= 5) currentSeasonIndex = 1; // Spring (Apr-Jun)
           else if (currentMonth <= 8) currentSeasonIndex = 2; // Summer (Jul-Sep)
           else currentSeasonIndex = 3; // Fall (Oct-Dec)
-          
+
           const seasonOptions = [];
-          
+
           // Generate from current season down to Winter 2000
           for (let year = currentYear; year >= 2000; year--) {
             const maxSeasonIndex = (year === currentYear) ? currentSeasonIndex : 3;
@@ -817,14 +823,14 @@ async function getManifest(config) {
               seasonOptions.push(`${seasons[s]} ${year}`);
             }
           }
-          
+
           catalogOptions = seasonOptions;
         }
-      } 
-      else if (userCatalog.id === 'mal.airing' || userCatalog.id === 'mal.upcoming' || 
-               userCatalog.id === 'mal.top_movies' || userCatalog.id === 'mal.top_series' || 
-               userCatalog.id === 'mal.most_favorites' || userCatalog.id === 'mal.most_popular' || 
-               userCatalog.id === 'mal.top_anime') {
+      }
+      else if (userCatalog.id === 'mal.airing' || userCatalog.id === 'mal.upcoming' ||
+        userCatalog.id === 'mal.top_movies' || userCatalog.id === 'mal.top_series' ||
+        userCatalog.id === 'mal.most_favorites' || userCatalog.id === 'mal.most_popular' ||
+        userCatalog.id === 'mal.top_anime') {
         // Provide "None" option to work around Stremio's genre requirement
         catalogOptions = ['None'];
       }
@@ -841,19 +847,19 @@ async function getManifest(config) {
       }
 
       const catalog = createCatalog(
-          userCatalog.id,
-          userCatalog.type,
-          catalogDef,
-          catalogOptions,
-          showPrefix,
-          translatedCatalogs,
-          userCatalog.showInHome,
-          userCatalog.name,
-          userCatalog.displayType
+        userCatalog.id,
+        userCatalog.type,
+        catalogDef,
+        catalogOptions,
+        showPrefix,
+        translatedCatalogs,
+        userCatalog.showInHome,
+        userCatalog.name,
+        userCatalog.displayType
       );
-      return catalog;   
+      return catalog;
     }));
-  
+
   catalogs = catalogs.filter(Boolean);
 
   const seen = new Set();
@@ -871,7 +877,7 @@ async function getManifest(config) {
   // Backward compatibility: support old providerNames format
   const legacyProviderNames = config.search?.providerNames || {};
   const searchOrder = config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'];
-  
+
   // Helper function to get default search name
   const getDefaultSearchName = (searchId) => {
     const searchNameMap = {
@@ -894,7 +900,7 @@ async function getManifest(config) {
       // If custom name is provided, use it as-is (no suffix)
       return `${prefix}${customName}`;
     }
-    
+
     let legacyName = null;
     if (searchId === 'movie' && legacyProviderNames[searchProviders.movie]) {
       legacyName = legacyProviderNames[searchProviders.movie];
@@ -909,18 +915,18 @@ async function getManifest(config) {
     } else if (searchId === 'gemini.search' && legacyProviderNames['gemini.search']) {
       legacyName = legacyProviderNames['gemini.search'];
     }
-    
+
     if (legacyName) {
       return `${prefix}${legacyName}`;
     }
-    
+
     // Fallback to default search name
     return `${prefix}${getDefaultSearchName(searchId)}`;
   };
 
   if (isSearchEnabled) {
     const prefix = showPrefix ? "AIOMetadata - " : "";
-    
+
     // Generate search catalogs in the specified order
     const searchCatalogConfigs = [
       {
@@ -980,7 +986,7 @@ async function getManifest(config) {
         suffix: 'AI Search'
       }
     ];
-    
+
     // Sort by searchOrder and add enabled catalogs
     searchCatalogConfigs
       .sort((a, b) => {
@@ -991,8 +997,8 @@ async function getManifest(config) {
       .filter(config => config.enabled)
       .forEach(config => {
         // Use provider id as the catalog id (e.g., 'tmdb.search' or 'gemini.search')
-        const catalogId = config.provider === 'gemini.search' 
-          ? 'gemini.search' 
+        const catalogId = config.provider === 'gemini.search'
+          ? 'gemini.search'
           : (config.id === 'people_search_movie' || config.id === 'people_search_series')
             ? 'people_search'
             : "search";
@@ -1034,11 +1040,11 @@ async function getManifest(config) {
     `TMDB Account: ${sessionId ? 'Connected' : 'Not Connected'}`,
     `MDBList Integration: ${config.apiKeys?.mdblist ? 'Connected' : 'Not Connected'}`,
     `IMDb Integration: ${provideImdbId ? 'Enabled' : 'Disabled'}`,
-    `RPDB Integration: ${config.apiKeys?.rpdb } ? 'Enabled' : 'Disabled'}`,
+    `RPDB Integration: ${config.apiKeys?.rpdb} ? 'Enabled' : 'Disabled'}`,
     `Search: ${config.searchEnabled !== "false" ? 'Enabled' : 'Disabled'}`,
     `Active Catalogs: ${catalogs.length}`
   ].join(' | ');
-  
+
 
   // Support custom name suffix (e.g., "| ElfHosted")
   const nameSuffix = process.env.ADDON_NAME_SUFFIX || "";
@@ -1052,10 +1058,10 @@ async function getManifest(config) {
   // Add subtitles resource for watch tracking
   resources.push("subtitles");
   // Add stream resource for rating page
-  if(config.showRateMeButton) {
+  if (config.showRateMeButton) {
     resources.push("stream");
   }
-  
+
   const manifest = {
     id: packageJson.name,
     version: packageJson.version,
@@ -1069,17 +1075,17 @@ async function getManifest(config) {
     stremioAddonsConfig: {
       "issuer": "https://stremio-addons.net",
       "signature": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..3_iKJ-pKhR-LclfTPxvyag.uY747PgjymdL0OMdZrE7HTOVG-8nNWC-LrlJ5tCXm2i2FioXv_ismzWV0_XsLl0Me9cW9D3xog6d4tSHDY8Pe27mbIylUb61MS4VVqg_sFZXUVon2le-fRFrtmMnIqCF.oyYRDftPN2sohMpDMbMbYg"
-    },  
+    },
     behaviorHints: {
       configurable: true,
       configurationRequired: false,
     },
     catalogs,
   };
-  
+
   const endTime = Date.now();
   logger.success(`Manifest generation completed in ${endTime - startTime}ms`);
-  
+
   return manifest;
 }
 
@@ -1095,33 +1101,33 @@ function getDefaultCatalogs() {
       id: `tmdb.${id}`,
       type,
       showInHome: true,
-      enabled: true 
+      enabled: true
     }))
   );
   const tvdbCatalogs = defaultTvdbCatalogs.flatMap(id =>
     id === 'collections'
       ? [{ id: `tvdb.${id}`, type: 'series', showInHome: false, enabled: true }]
       : defaultTypes.map(type => ({
-          id: `tvdb.${id}`,
-          type,
-          showInHome: false,
-          enabled: true 
-        }))
+        id: `tvdb.${id}`,
+        type,
+        showInHome: false,
+        enabled: true
+      }))
   );
   const malCatalogs = defaultMalCatalogs.map(id => ({
     id: `mal.${id}`,
     type: 'anime',
     showInHome: !['genres', 'schedule'].includes(id),
-    enabled: true 
+    enabled: true
   }));
 
   const streamingCatalogs = defaultStreamingCatalogs.flatMap(id =>
     defaultTypes.map(type => ({
-    id: `streaming.${id}`,
-    type,
-    showInHome: false,
-    enabled: true
-  }))
+      id: `streaming.${id}`,
+      type,
+      showInHome: false,
+      enabled: true
+    }))
   );
 
   return [...tmdbCatalogs, ...tvdbCatalogs, ...malCatalogs, ...streamingCatalogs];

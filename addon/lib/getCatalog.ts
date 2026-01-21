@@ -10,7 +10,7 @@ import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
-import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
+import { to3LetterCode, to3LetterCountryCode, getRegionFromLanguage } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
@@ -646,7 +646,20 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     ? () => moviedb.discoverMovie(parameters, config)
     : () => moviedb.discoverTv(parameters, config);
 
-  const res: any = await fetchFunction();
+  let res: any = await fetchFunction();
+
+  // FALLBACK: If Strict Region Filtering is on and we found < 10 items, 
+  // try falling back to US region to ensure the catalog isn't empty/sparse.
+  if (config.strictRegionFiltering && res?.results && res.results.length < 10 && parameters.region !== 'US') {
+    logger.info(`[Strict Filter] Too few results (${res.results.length}) for region ${parameters.region}. Falling back to 'US'.`);
+
+    parameters.region = 'US';
+    // We keep the release types/dates to still filter for "released content", 
+    // but now relative to the US market (which populate most global metadata).
+
+    res = await fetchFunction();
+  }
+
   // define preferred provider as string
 
   // Sort results by release date (newest first) for catalogs that explicitly sort by release date
@@ -694,20 +707,8 @@ async function buildParameters(type: string, language: string, page: number, id:
 
     if (!region) {
       // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')
-      const langCode = targetLang.split('-')[0].toUpperCase();
-      const regionMap: Record<string, string> = {
-        'EN': 'US',
-        'JA': 'JP',
-        'KO': 'KR',
-        'ZH': 'CN',
-        'HI': 'IN',
-        'CS': 'CZ',
-        'DA': 'DK',
-        'EL': 'GR',
-        'SV': 'SE',
-        'VI': 'VN'
-      };
-      region = regionMap[langCode] || langCode;
+      const langCode = targetLang.split('-')[0];
+      region = getRegionFromLanguage(langCode);
     }
 
     if (region) {
