@@ -26,16 +26,16 @@ async function warmUserContent(userUUID, contentType) {
     // Load user config
     const config = await loadConfigFromDatabase(userUUID);
     if (!config) return;
-    
+
     // Add userUUID to config for per-user token caching
     config.userUUID = userUUID;
-    
+
     // Warm popular content based on user's preferences
     const language = config.language || DEFAULT_LANGUAGE;
-    
+
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours and caches trending content for all users
-    
+
     consola.success(`[Cache Warming] User content warmed for ${userUUID} (${contentType})`);
   } catch (error) {
     consola.warn(`[Cache Warming] Failed to warm user content for ${userUUID}:`, error.message);
@@ -104,21 +104,21 @@ const CACHE_WARMING_INTERVAL = parseInt(process.env.CACHE_WARMING_INTERVAL || '3
 
 if (ENABLE_CACHE_WARMING && !NO_CACHE) {
   consola.info(`[Cache Warming] Initializing essential content warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
-  
+
   // Schedule periodic warming (non-blocking)
   scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
-  
+
   // Schedule popular content warming based on CACHE_WARM_INTERVAL_HOURS env (default 24h, minimum 12h)
   const POPULAR_WARM_INTERVAL_HOURS = Math.max(12, parseInt(process.env.CACHE_WARM_INTERVAL_HOURS || '24', 10));
   const POPULAR_WARM_CHECK_INTERVAL = 15 * 60 * 1000; // Check every 15 minutes
-  
+
   consola.info(`[Cache Warming] Scheduling popular content warming (interval: ${POPULAR_WARM_INTERVAL_HOURS}h, check every 15min)`);
-  
+
   // Check immediately on startup
   warmPopularContent().catch(error => {
     consola.warn('[Cache Warming] Initial popular content warming check failed:', error.message);
   });
-  
+
   // Then check periodically (the function itself will decide if warming is needed)
   setInterval(async () => {
     await warmPopularContent().catch(error => {
@@ -146,7 +146,7 @@ const getCacheHeaders = function (opts) {
       return cacheHeaders[prop] + "=" + value;
     })
     .filter((val) => !!val);
-  
+
   return headerParts.length > 0 ? headerParts.join(", ") : false;
 };
 
@@ -164,17 +164,17 @@ const respond = function (req, res, data, opts) {
     res.setHeader('Expires', '0');
   } else {
     const userUUID = req.params.userUUID || '';
-    
+
     // Enhanced ETag generation with config hash for better cache invalidation
     const configString = req.userConfig ? JSON.stringify(req.userConfig) : '';
     const configHash = crypto.createHash('md5').update(configString).digest('hex').substring(0, 8);
     let etagContent = ADDON_VERSION + JSON.stringify(data) + userUUID + configHash;
-    
+
     // Force ETag to change when language changes
     if (req.userConfig && req.userConfig.language) {
-        etagContent += ':lang:' + req.userConfig.language;
+      etagContent += ':lang:' + req.userConfig.language;
     }
-    
+
     // Add route-specific cache invalidation factors
     if (req.route && req.route.path) {
       if (req.route.path.includes('/manifest.json')) {
@@ -190,11 +190,12 @@ const respond = function (req, res, data, opts) {
           ageRating: req.userConfig.ageRating,
           hideUnreleasedDigital: req.userConfig.hideUnreleasedDigital,
           hideUnreleasedDigitalSearch: req.userConfig.hideUnreleasedDigitalSearch,
+          strictRegionFiltering: req.userConfig.strictRegionFiltering,
           exclusionKeywords: req.userConfig.exclusionKeywords,
           regexExclusionFilter: req.userConfig.regexExclusionFilter,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
           displayAgeRating: req.userConfig.displayAgeRating,
-          apiKeys: { 
+          apiKeys: {
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
             mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
           },
@@ -211,7 +212,7 @@ const respond = function (req, res, data, opts) {
           blurThumbs: req.userConfig.blurThumbs,
           showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
           displayAgeRating: req.userConfig.displayAgeRating,
-          apiKeys: { 
+          apiKeys: {
             rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
             mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
           },
@@ -220,7 +221,7 @@ const respond = function (req, res, data, opts) {
         etagContent += crypto.createHash('md5').update(JSON.stringify(metaConfig)).digest('hex').substring(0, 8);
       }
     }
-    
+
     const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
     const etag = `W/"${etagHash}"`;
 
@@ -245,7 +246,7 @@ const respond = function (req, res, data, opts) {
         const configVersion = req.userConfig?.configVersion || Date.now();
         res.setHeader('X-Config-Version', configVersion.toString());
         res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
-        
+
         // Use very short cache to force refresh when config changes
         cacheControl = "no-cache, must-revalidate, max-age=0";
         consola.debug('[Cache] Setting catalog Cache-Control:', cacheControl);
@@ -254,7 +255,7 @@ const respond = function (req, res, data, opts) {
         const configVersion = req.userConfig?.configVersion || Date.now();
         res.setHeader('X-Config-Version', configVersion.toString());
         res.setHeader('Last-Modified', new Date(configVersion).toUTCString());
-        
+
         // Use very short cache to force refresh when config changes
         cacheControl = "no-cache, must-revalidate, max-age=0";
         consola.debug('[Cache] Setting aggressive meta Cache-Control:', cacheControl);
@@ -264,112 +265,112 @@ const respond = function (req, res, data, opts) {
         cacheControl = defaultCacheControl || "public, max-age=3600";
         consola.debug('[Cache] Setting default Cache-Control:', cacheControl);
       }
-      } else {
-        // For routes without path info, use getCacheHeaders if available, otherwise default
-        const defaultCacheControl = getCacheHeaders(opts);
-        cacheControl = defaultCacheControl || "public, max-age=3600";
-        consola.debug('[Cache] Setting default Cache-Control:', cacheControl);
-      }
-    
+    } else {
+      // For routes without path info, use getCacheHeaders if available, otherwise default
+      const defaultCacheControl = getCacheHeaders(opts);
+      cacheControl = defaultCacheControl || "public, max-age=3600";
+      consola.debug('[Cache] Setting default Cache-Control:', cacheControl);
+    }
+
     res.setHeader("Cache-Control", cacheControl);
   }
-  
+
   // Force aggressive cache control for meta routes (final override)
   if (req.route && req.route.path && (req.route.path.includes('/meta/') || req.route.path.includes('/catalog/'))) {
     res.setHeader('Cache-Control', 'no-cache, must-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
   }
-  
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
   res.setHeader("Content-Type", "application/json");
   res.send(data);
 };
 
-  addon.get("/api/config", (req, res) => {
-    const publicEnvConfig = {
-      tmdb: process.env.TMDB_API || "",
-      tvdb: process.env.TVDB_API_KEY || "",
-      fanart: process.env.FANART_API_KEY || "",
-      rpdb: process.env.RPDB_API_KEY || "",
-      mdblist: process.env.MDBLIST_API_KEY || "",
-      gemini: process.env.GEMINI_API_KEY || "",
-      trakt: process.env.TRAKT_CLIENT_ID || "",
-      customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
-      addonVersion: ADDON_VERSION,
-      hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
-      hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
-      catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
-    };
-    
-    // No cache to prevent cross-instance contamination
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    
-    res.json(publicEnvConfig);
-  });
+addon.get("/api/config", (req, res) => {
+  const publicEnvConfig = {
+    tmdb: process.env.TMDB_API || "",
+    tvdb: process.env.TVDB_API_KEY || "",
+    fanart: process.env.FANART_API_KEY || "",
+    rpdb: process.env.RPDB_API_KEY || "",
+    mdblist: process.env.MDBLIST_API_KEY || "",
+    gemini: process.env.GEMINI_API_KEY || "",
+    trakt: process.env.TRAKT_CLIENT_ID || "",
+    customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
+    addonVersion: ADDON_VERSION,
+    hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
+    hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
+    catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
+  };
 
-  addon.get("/health", async (req, res) => {
-    const health = {
-      status: "healthy",
-      timestamp: new Date().toISOString(),
-      version: ADDON_VERSION,
-      checks: {
-        server: true,
-        database: false,
-        redis: false
-      }
-    };
+  // No cache to prevent cross-instance contamination
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
 
-    let criticalFailure = false;
-    let degraded = false;
+  res.json(publicEnvConfig);
+});
 
-    try {
-      if (database && database.initialized) {
-        await database.runQuery('SELECT 1');
-        health.checks.database = true;
-      } else {
-        health.checks.database = false;
-        criticalFailure = true;
-      }
-    } catch (error) {
+addon.get("/health", async (req, res) => {
+  const health = {
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    version: ADDON_VERSION,
+    checks: {
+      server: true,
+      database: false,
+      redis: false
+    }
+  };
+
+  let criticalFailure = false;
+  let degraded = false;
+
+  try {
+    if (database && database.initialized) {
+      await database.runQuery('SELECT 1');
+      health.checks.database = true;
+    } else {
       health.checks.database = false;
       criticalFailure = true;
-      consola.warn('[Healthcheck] Database check failed:', error.message);
     }
+  } catch (error) {
+    health.checks.database = false;
+    criticalFailure = true;
+    consola.warn('[Healthcheck] Database check failed:', error.message);
+  }
 
-    try {
-      if (redis && redis.status === 'ready') {
-        health.checks.redis = true;
-      } else if (redis) {
-        const result = await redis.ping();
-        health.checks.redis = result === 'PONG';
-        if (!health.checks.redis) degraded = true;
-      } else {
-        health.checks.redis = false;
-        if (process.env.NO_CACHE !== 'true') {
-             degraded = true;
-             consola.warn('[Healthcheck] Redis configured but not available');
-        }
-      }
-    } catch (error) {
-      health.checks.redis = false;
-      degraded = true;
-      consola.warn('[Healthcheck] Redis check failed:', error.message);
-    }
-
-    if (criticalFailure) {
-        health.status = "unhealthy";
-        res.status(503).json(health);
-    } else if (degraded) {
-        health.status = "degraded";
-        res.status(200).json(health); 
+  try {
+    if (redis && redis.status === 'ready') {
+      health.checks.redis = true;
+    } else if (redis) {
+      const result = await redis.ping();
+      health.checks.redis = result === 'PONG';
+      if (!health.checks.redis) degraded = true;
     } else {
-        health.status = "healthy";
-        res.status(200).json(health);
+      health.checks.redis = false;
+      if (process.env.NO_CACHE !== 'true') {
+        degraded = true;
+        consola.warn('[Healthcheck] Redis configured but not available');
+      }
     }
+  } catch (error) {
+    health.checks.redis = false;
+    degraded = true;
+    consola.warn('[Healthcheck] Redis check failed:', error.message);
+  }
+
+  if (criticalFailure) {
+    health.status = "unhealthy";
+    res.status(503).json(health);
+  } else if (degraded) {
+    health.status = "degraded";
+    res.status(200).json(health);
+  } else {
+    health.status = "healthy";
+    res.status(200).json(health);
+  }
 });
 
 // --- Configuration Database API Routes ---
@@ -386,16 +387,16 @@ addon.get("/api/auth/trakt/authorize", async (req, res) => {
     const clientId = process.env.TRAKT_CLIENT_ID;
     const clientSecret = process.env.TRAKT_CLIENT_SECRET;
     const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
-    
+
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: "Trakt OAuth not configured. Please set TRAKT_CLIENT_ID and TRAKT_CLIENT_SECRET environment variables." });
     }
-    
+
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
-    
+
     // Get authorization URL (no state needed - token ID generated in callback)
     const authUrl = traktClient.getAuthorizationUrl();
-    
+
     res.redirect(authUrl);
   } catch (error) {
     consola.error("[Trakt OAuth] Authorization error:", error);
@@ -406,7 +407,7 @@ addon.get("/api/auth/trakt/authorize", async (req, res) => {
 addon.get("/api/auth/trakt/callback", async (req, res) => {
   try {
     const { code } = req.query;
-    
+
     if (!code) {
       return res.status(400).send(`
         <!DOCTYPE html>
@@ -419,11 +420,11 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     const clientId = process.env.TRAKT_CLIENT_ID;
     const clientSecret = process.env.TRAKT_CLIENT_SECRET;
     const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
-    
+
     if (!clientId || !clientSecret) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -436,27 +437,27 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
-    
+
     // Exchange code for tokens
     const tokens = await traktClient.exchangeCodeForToken(code);
-    
+
     // Get user info
     const user = await traktClient.getMe(tokens.access_token);
-    
+
     // Check if this Trakt user already has a token in the database
     const existingTokens = await database.getOAuthTokensByProvider('trakt');
     const existingToken = existingTokens.find(t => t.user_id.toLowerCase() === user.username.toLowerCase());
-    
+
     let tokenId;
     let saved;
-    
+
     if (existingToken) {
       // Update existing token
       tokenId = existingToken.id;
       consola.info(`[Trakt OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
-      
+
       saved = await database.updateOAuthToken(
         tokenId,
         tokens.access_token,
@@ -467,7 +468,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
       // Create new token
       tokenId = crypto.randomUUID();
       consola.info(`[Trakt OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
-      
+
       saved = await database.saveOAuthToken(
         tokenId,
         'trakt',
@@ -478,7 +479,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         tokens.scope || ''
       );
     }
-    
+
     if (!saved) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -491,18 +492,18 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     // Update config
     try {
       const allUsers = await database.getAllUsers();
       for (const dbUser of allUsers) {
         const userConfig = JSON.parse(dbUser.config || '{}');
         let configUpdated = false;
-        
+
         // Only update if user has an existing Trakt token configured
         if (userConfig.apiKeys?.traktTokenId) {
           const currentToken = await database.getOAuthToken(userConfig.apiKeys.traktTokenId);
-          
+
           if (currentToken && currentToken.user_id.toLowerCase() === user.username.toLowerCase()) {
             userConfig.apiKeys.traktTokenId = tokenId;
             configUpdated = true;
@@ -511,7 +512,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
             consola.warn(`[Trakt OAuth] User ${dbUser.id} has missing Trakt token ${userConfig.apiKeys.traktTokenId} - manual reconnection required`);
           }
         }
-        
+
         // Save updated config if changed
         if (configUpdated) {
           await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
@@ -521,7 +522,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     } catch (configError) {
       consola.warn(`[Trakt OAuth] Warning: Could not auto-update user configs - ${configError.message}`);
     }
-    
+
     // Display success page with token ID
     res.send(`
       <!DOCTYPE html>
@@ -617,41 +618,41 @@ addon.post("/api/oauth/token/info", async (req, res) => {
 addon.post("/api/auth/trakt/disconnect", async (req, res) => {
   try {
     const { userUUID } = req.body;
-    
+
     if (!userUUID) {
       return res.status(400).json({ error: "userUUID is required" });
     }
-    
+
     // Load user's config
     const config = await loadConfigFromDatabase(userUUID);
     if (!config) {
       return res.status(404).json({ error: "User config not found" });
     }
-    
+
     // Delete OAuth token from database if it exists
     if (config.apiKeys?.traktTokenId) {
       await database.deleteOAuthToken(config.apiKeys.traktTokenId);
       delete config.apiKeys.traktTokenId;
     }
-    
+
     // Remove Trakt user info
     delete config.traktUser;
-    
+
     // Remove Trakt catalogs
     config.catalogs = (config.catalogs || []).filter(c => !c.id.startsWith('trakt.'));
-    
+
     // Get user's password hash to save config
     const user = await database.getUser(userUUID);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    
+
     // Save updated config directly to database
     await database.saveUserConfig(userUUID, user.password_hash, config);
-    
+
     // Invalidate config cache
     configCache.del(userUUID);
-    
+
     res.json({ success: true });
   } catch (error) {
     consola.error("[Trakt] Disconnect error:", error);
@@ -663,7 +664,7 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
 addon.post("/api/trakt/proxy", async (req, res) => {
   try {
     const { tokenId, endpoint, method = 'GET' } = req.body;
-    
+
     if (!tokenId || !endpoint) {
       return res.status(400).json({ error: "tokenId and endpoint are required" });
     }
@@ -676,7 +677,7 @@ addon.post("/api/trakt/proxy", async (req, res) => {
 
 
     const { makeAuthenticatedRateLimitedTraktRequest } = require('./utils/traktUtils');
-    
+
     // Make the authenticated, rate-limited request to Trakt API
     const traktUrl = `https://api.trakt.tv${endpoint}`;
     const response = await makeAuthenticatedRateLimitedTraktRequest(traktUrl, token.access_token, `Trakt Proxy - ${endpoint}`);
@@ -699,19 +700,19 @@ const { makeRateLimitedMDBListRequest } = require('./utils/mdbList');
 addon.get("/api/mdblist/lists/user", async (req, res) => {
   try {
     const { apikey, username, sort } = req.query;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
-    let url = username 
+
+    let url = username
       ? `https://api.mdblist.com/lists/user/${username}?apikey=${apikey}`
       : `https://api.mdblist.com/lists/user?apikey=${apikey}`;
-    
+
     if (sort) {
       url += `&sort=${sort}`;
     }
-    
+
     const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get User Lists');
     res.json(response.data);
   } catch (error) {
@@ -725,11 +726,11 @@ addon.get("/api/mdblist/lists/user", async (req, res) => {
 addon.get("/api/mdblist/lists/top", async (req, res) => {
   try {
     const { apikey } = req.query;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     const url = `https://api.mdblist.com/lists/top?apikey=${apikey}`;
     const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get Top Lists');
     res.json(response.data);
@@ -745,11 +746,11 @@ addon.get("/api/mdblist/lists/:username/:listname", async (req, res) => {
   try {
     const { username, listname } = req.params;
     const { apikey } = req.query;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     const url = `https://api.mdblist.com/lists/${username}/${listname}?apikey=${apikey}`;
     const response = await makeRateLimitedMDBListRequest(url, apikey, `MDBList Proxy - Get User List ${username}/${listname}`);
     res.json(response.data);
@@ -765,11 +766,11 @@ addon.get("/api/mdblist/lists/:listId", async (req, res) => {
   try {
     const { listId } = req.params;
     const { apikey } = req.query;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     const url = `https://api.mdblist.com/lists/${listId}?apikey=${apikey}`;
     const response = await makeRateLimitedMDBListRequest(url, apikey, `MDBList Proxy - Get List ${listId}`);
     res.json(response.data);
@@ -788,16 +789,16 @@ addon.get("/api/tmdb/list/:listId", async (req, res) => {
   try {
     const { listId } = req.params;
     const { apikey } = req.query;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     consola.debug(`[TMDB Proxy] Fetching list ${listId}`);
-    
+
     const config = { apiKeys: { tmdb: apikey } };
     const data = await moviedb.getTmdbListDetails({ list_id: listId }, config);
-    
+
     res.json(data);
   } catch (error) {
     consola.error("[TMDB Proxy] Error fetching list details:", error.message);
@@ -810,16 +811,16 @@ addon.get("/api/tmdb/list/:listId", async (req, res) => {
 addon.post("/api/tmdb/auth/request_token", async (req, res) => {
   try {
     const { apikey } = req.body;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     consola.debug(`[TMDB Proxy] Getting request token`);
-    
+
     const config = { apiKeys: { tmdb: apikey } };
     const data = await moviedb.requestToken(config);
-    
+
     res.json(data);
   } catch (error) {
     consola.error("[TMDB Proxy] Error getting request token:", error.message);
@@ -832,27 +833,27 @@ addon.post("/api/tmdb/auth/request_token", async (req, res) => {
 addon.post("/api/tmdb/auth/session", async (req, res) => {
   try {
     const { apikey, requestToken } = req.body;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     if (!requestToken) {
       return res.status(400).json({ error: "requestToken is required" });
     }
-    
+
     consola.debug(`[TMDB Proxy] Creating session from request token: ${requestToken.substring(0, 10)}...`);
-    
+
     const config = { apiKeys: { tmdb: apikey } };
     const data = await moviedb.sessionId({ request_token: requestToken }, config);
-    
+
     consola.debug(`[TMDB Proxy] Session creation response:`, data);
-    
+
     if (!data.success) {
       consola.warn(`[TMDB Proxy] Session creation failed:`, data);
       return res.json(data);
     }
-    
+
     // Validate the session by trying to get account details
     if (data.session_id) {
       try {
@@ -867,13 +868,13 @@ addon.post("/api/tmdb/auth/session", async (req, res) => {
         });
       }
     }
-    
+
     res.json(data);
   } catch (error) {
     consola.error("[TMDB Proxy] Error creating session:", error.message);
     consola.error("[TMDB Proxy] Full error:", error);
     const status = error.response?.status || 500;
-    res.status(status).json({ 
+    res.status(status).json({
       error: error.message || "Failed to create TMDB session",
       details: error.response?.data || null
     });
@@ -884,11 +885,11 @@ addon.post("/api/tmdb/auth/session", async (req, res) => {
 addon.get("/api/mdblist/external/lists/user", async (req, res) => {
   try {
     const { apikey } = req.query;
-    
+
     if (!apikey) {
       return res.status(400).json({ error: "apikey is required" });
     }
-    
+
     const url = `https://api.mdblist.com/external/lists/user?apikey=${apikey}`;
     const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get External User Lists');
     res.json(response.data);
@@ -906,11 +907,11 @@ addon.get("/api/mdblist/external/lists/user", async (req, res) => {
 addon.get("/api/trakt/users/:username/stats", async (req, res) => {
   try {
     const { username } = req.params;
-    
+
     if (!username) {
       return res.status(400).json({ error: "username is required" });
     }
-    
+
 
     const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
     const url = `https://api.trakt.tv/users/${encodeURIComponent(username)}/stats`;
@@ -927,11 +928,11 @@ addon.get("/api/trakt/users/:username/stats", async (req, res) => {
 addon.get("/api/trakt/users/:username/lists", async (req, res) => {
   try {
     const { username } = req.params;
-    
+
     if (!username) {
       return res.status(400).json({ error: "username is required" });
     }
-    
+
 
     const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
     const url = `https://api.trakt.tv/users/${encodeURIComponent(username)}/lists`;
@@ -948,11 +949,11 @@ addon.get("/api/trakt/users/:username/lists", async (req, res) => {
 addon.get("/api/trakt/users/:username/lists/:slug", async (req, res) => {
   try {
     const { username, slug } = req.params;
-    
+
     if (!username || !slug) {
       return res.status(400).json({ error: "username and slug are required" });
     }
-    
+
 
     const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
     const url = `https://api.trakt.tv/users/${encodeURIComponent(username)}/lists/${encodeURIComponent(slug)}`;
@@ -970,11 +971,11 @@ addon.get("/api/trakt/lists/trending/:type", async (req, res) => {
   try {
     const { type } = req.params;
     const { limit = '100' } = req.query;
-    
+
     if (!type) {
       return res.status(400).json({ error: "type is required (personal or official)" });
     }
-    
+
 
     const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
     const url = `https://api.trakt.tv/lists/trending/${encodeURIComponent(type)}?limit=${limit}`;
@@ -992,11 +993,11 @@ addon.get("/api/trakt/lists/popular/:type", async (req, res) => {
   try {
     const { type } = req.params;
     const { limit = '100' } = req.query;
-    
+
     if (!type) {
       return res.status(400).json({ error: "type is required (personal or official)" });
     }
-    
+
 
     const { makeRateLimitedTraktRequest } = require('./utils/traktUtils');
     const url = `https://api.trakt.tv/lists/popular/${encodeURIComponent(type)}?limit=${limit}`;
@@ -1015,13 +1016,13 @@ addon.get("/api/trakt/lists/popular/:type", async (req, res) => {
 addon.post("/api/letterboxd/extract-identifier", async (req, res) => {
   try {
     const { url } = req.body;
-    
+
     if (!url) {
       return res.status(400).json({ error: "url is required" });
     }
 
     const { extractLetterboxdIdentifier, validateLetterboxdUrl } = require('./utils/letterboxdUtils');
-    
+
     // Validate URL first
     const validation = validateLetterboxdUrl(url);
     if (!validation.valid) {
@@ -1030,7 +1031,7 @@ addon.post("/api/letterboxd/extract-identifier", async (req, res) => {
 
     // Extract identifier
     const identifier = await extractLetterboxdIdentifier(url);
-    
+
     res.json({
       identifier,
       isWatchlist: validation.isWatchlist,
@@ -1048,15 +1049,15 @@ addon.post("/api/letterboxd/extract-identifier", async (req, res) => {
 addon.post("/api/letterboxd/list", async (req, res) => {
   try {
     const { identifier, isWatchlist } = req.body;
-    
+
     if (!identifier) {
       return res.status(400).json({ error: "identifier is required" });
     }
 
     const { fetchLetterboxdList } = require('./utils/letterboxdUtils');
-    
+
     const listData = await fetchLetterboxdList(identifier, isWatchlist || false);
-    
+
     res.json(listData);
   } catch (error) {
     consola.error("[Letterboxd] Error fetching list:", error.message);
@@ -1074,20 +1075,20 @@ addon.get("/anilist/auth", async (req, res) => {
     const clientId = process.env.ANILIST_CLIENT_ID;
     const clientSecret = process.env.ANILIST_CLIENT_SECRET;
     const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
-    
+
     consola.info(`[AniList OAuth] Starting auth flow with client_id=${clientId}, redirect_uri=${redirectUri}`);
-    
+
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: "AniList OAuth not configured. Please set ANILIST_CLIENT_ID and ANILIST_CLIENT_SECRET environment variables." });
     }
-    
+
     // Generate state parameter for CSRF protection
     const state = crypto.randomBytes(32).toString('hex');
-    
+
     // Store state in a short-lived way (we'll validate it in callback)
     // For simplicity, we encode it in the URL - in production you might use a session store
     const authUrl = anilistTracker.getAuthorizationUrl(redirectUri, state);
-    
+
     res.redirect(authUrl);
   } catch (error) {
     consola.error("[AniList OAuth] Authorization error:", error);
@@ -1099,7 +1100,7 @@ addon.get("/anilist/auth", async (req, res) => {
 addon.get("/anilist/callback", async (req, res) => {
   try {
     const { code } = req.query;
-    
+
     if (!code) {
       return res.status(400).send(`
         <!DOCTYPE html>
@@ -1112,11 +1113,11 @@ addon.get("/anilist/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     const clientId = process.env.ANILIST_CLIENT_ID;
     const clientSecret = process.env.ANILIST_CLIENT_SECRET;
     const redirectUri = normalizeRedirectUri(process.env.ANILIST_REDIRECT_URI || `${process.env.HOST_NAME}/anilist/callback`);
-    
+
     if (!clientId || !clientSecret) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -1129,10 +1130,10 @@ addon.get("/anilist/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     // Exchange code for tokens
     const tokens = await anilistTracker.exchangeCodeForTokens(code, redirectUri);
-    
+
     if (!tokens) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -1145,10 +1146,10 @@ addon.get("/anilist/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     // Get user info from AniList
     const user = await anilistTracker.getAuthenticatedUser(tokens.access_token);
-    
+
     if (!user) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -1161,10 +1162,10 @@ addon.get("/anilist/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     // Generate UUID for this token
     const tokenId = crypto.randomUUID();
-    
+
     // Store tokens in database with provider='anilist'
     const saved = await database.saveOAuthToken(
       tokenId,
@@ -1175,7 +1176,7 @@ addon.get("/anilist/callback", async (req, res) => {
       tokens.expires_at,
       '' // scope
     );
-    
+
     if (!saved) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -1188,7 +1189,7 @@ addon.get("/anilist/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     // Display success page with token ID
     res.send(`
       <!DOCTYPE html>
@@ -1264,39 +1265,39 @@ addon.get("/anilist/callback", async (req, res) => {
 addon.post("/anilist/disconnect", async (req, res) => {
   try {
     const { userUUID } = req.body;
-    
+
     if (!userUUID) {
       return res.status(400).json({ error: "userUUID is required" });
     }
-    
+
     // Load user's config
     const config = await loadConfigFromDatabase(userUUID);
     if (!config) {
       return res.status(404).json({ error: "User config not found" });
     }
-    
+
     // Delete OAuth token from database if it exists
     // Token ID is stored in apiKeys.anilistTokenId by the frontend
     if (config.apiKeys?.anilistTokenId) {
       await database.deleteOAuthToken(config.apiKeys.anilistTokenId);
       delete config.apiKeys.anilistTokenId;
     }
-    
+
     // Disable AniList watch tracking
     delete config.anilistWatchTracking;
-    
+
     // Get user's password hash to save config
     const user = await database.getUser(userUUID);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    
+
     // Save updated config directly to database
     await database.saveUserConfig(userUUID, user.password_hash, config);
-    
+
     // Invalidate config cache
     configCache.del(userUUID);
-    
+
     res.json({ success: true });
   } catch (error) {
     consola.error("[AniList] Disconnect error:", error);
@@ -1308,37 +1309,37 @@ addon.post("/anilist/disconnect", async (req, res) => {
 addon.get("/anilist/status/:userUUID", async (req, res) => {
   try {
     const { userUUID } = req.params;
-    
+
     if (!userUUID) {
       return res.status(400).json({ error: "userUUID is required" });
     }
-    
+
     // Load user's config
     const config = await loadConfigFromDatabase(userUUID);
     if (!config) {
       return res.status(404).json({ error: "User config not found" });
     }
-    
+
     // Check if AniList token exists
     // Token ID is stored in apiKeys.anilistTokenId by the frontend
     const anilistTokenId = config.apiKeys?.anilistTokenId;
     if (!anilistTokenId) {
-      return res.json({ 
+      return res.json({
         connected: false,
         username: null
       });
     }
-    
+
     // Get the OAuth token from database
     const token = await database.getOAuthToken(anilistTokenId);
     if (!token) {
-      return res.json({ 
+      return res.json({
         connected: false,
         username: null
       });
     }
-    
-    res.json({ 
+
+    res.json({
       connected: true,
       username: token.user_id,
       trackingEnabled: config.anilistWatchTracking !== false
@@ -1353,32 +1354,32 @@ addon.get("/anilist/status/:userUUID", async (req, res) => {
 addon.post("/api/anilist/lists", async (req, res) => {
   try {
     const { tokenId } = req.body;
-    
+
     if (!tokenId) {
       return res.status(400).json({ error: "tokenId is required" });
     }
-    
+
     // Get the OAuth token from database to retrieve username
     const token = await database.getOAuthToken(tokenId);
     if (!token) {
       return res.status(404).json({ error: "Token not found" });
     }
-    
+
     // Verify this is an AniList token
     if (token.provider !== 'anilist') {
       return res.status(400).json({ error: "Invalid token provider - expected AniList token" });
     }
-    
+
     const username = token.user_id;
     if (!username) {
       return res.status(400).json({ error: "Username not found in token" });
     }
-    
+
     consola.info(`[AniList Lists] Fetching lists for user: ${username}`);
-    
+
     // Fetch user's lists from AniList API
     const result = await anilist.fetchUserLists(username);
-    
+
     res.json({
       success: true,
       username: username,
@@ -1394,17 +1395,17 @@ addon.post("/api/anilist/lists", async (req, res) => {
 addon.get("/api/anilist/lists/by-username/:username", async (req, res) => {
   try {
     const { username } = req.params;
-    
+
     if (!username || typeof username !== 'string' || username.trim().length === 0) {
       return res.status(400).json({ error: "Username is required and must be a non-empty string" });
     }
-    
+
     const trimmedUsername = username.trim();
     consola.info(`[AniList Lists] Fetching available lists for username: ${trimmedUsername}`);
-    
+
     // Fetch user's lists from AniList API (public endpoint, doesn't require auth)
     const result = await anilist.fetchUserLists(trimmedUsername);
-    
+
     res.json({
       success: true,
       username: trimmedUsername,
@@ -1413,8 +1414,8 @@ addon.get("/api/anilist/lists/by-username/:username", async (req, res) => {
   } catch (error) {
     consola.error("[AniList Lists] Error fetching lists by username:", error);
     // Don't expose internal error details to avoid leaking sensitive info
-    res.status(500).json({ 
-      error: "Failed to fetch AniList lists for this username. Please verify the username is correct and the user's lists are public." 
+    res.status(500).json({
+      error: "Failed to fetch AniList lists for this username. Please verify the username is correct and the user's lists are public."
     });
   }
 });
@@ -1460,20 +1461,20 @@ addon.post("/api/cache/warm", async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     consola.info('[API] Manual essential content warming requested');
     const results = await warmEssentialContent();
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Essential content warming completed',
-      results 
+      results
     });
   } catch (error) {
     consola.error('[API] Essential content warming failed:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -1483,9 +1484,9 @@ addon.get("/api/cache/status", (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const { isInitialWarmingComplete } = require('./lib/cacheWarmer');
-  
+
   res.json({
     cacheEnabled: !NO_CACHE,
     warmingEnabled: ENABLE_CACHE_WARMING,
@@ -1501,7 +1502,7 @@ addon.get("/api/cache/health", (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const health = getCacheHealth();
   res.json({
     success: true,
@@ -1515,7 +1516,7 @@ addon.post("/api/cache/health/clear", (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   clearCacheHealth();
   res.json({
     success: true,
@@ -1528,7 +1529,7 @@ addon.post("/api/cache/health/log", (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   logCacheHealth();
   res.json({
     success: true,
@@ -1542,10 +1543,10 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const { key } = req.params;
   const { pattern } = req.query;
-  
+
   try {
     if (pattern === 'true') {
       // Clear all keys matching pattern (safe SCAN-based deletion)
@@ -1585,101 +1586,101 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
 
 // --- Static, Auth, and Configuration Routes ---
 addon.get("/", function (_, res) {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0'); 
-    res.redirect("/configure"); 
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.redirect("/configure");
 });
 // --- Basic Manifest Route ---
 addon.get("/stremio/manifest.json", function (req, res) {
   const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
-    const basicManifest = {
-        id: "com.aio.metadata",
-        version: packageJson.version,
-        name: "AIO Metadata",
-        description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
-        logo: `${host}/logo.png`,
-        types: ["movie", "series"],
-        catalogs: [],
-        resources: [],
-        idPrefixes: [],
-        behaviorHints: {
-          configurable: true,
-          configurationRequired: false,
-        },
-    };
-    
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.json(basicManifest);
+  const basicManifest = {
+    id: "com.aio.metadata",
+    version: packageJson.version,
+    name: "AIO Metadata",
+    description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
+    logo: `${host}/logo.png`,
+    types: ["movie", "series"],
+    catalogs: [],
+    resources: [],
+    idPrefixes: [],
+    behaviorHints: {
+      configurable: true,
+      configurationRequired: false,
+    },
+  };
+
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.json(basicManifest);
 });
 
 // --- Database-Only Manifest Route ---
 addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
-    const { userUUID } = req.params;
-    try {
-        // Load config from database
-        const config = await database.getUserConfig(userUUID);
-        if (!config) {
-            consola.debug(`[Manifest] No config found for user: ${userUUID}`);
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Headers', '*');
-            return res.status(404).send({ err: "User configuration not found." });
-        }
-        
-        consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}`);
-        const manifest = await getManifest(config);
-            if (!manifest) {
-                res.setHeader('Access-Control-Allow-Origin', '*');
-                res.setHeader('Access-Control-Allow-Headers', '*');
-                return res.status(500).send({ err: "Failed to build manifest." });
-            }
-            
-        // Pass config to request object for ETag generation
-        req.userConfig = config;
-        
-        // Add configVersion to manifest for cache busting when language changes
-        if (config.configVersion) {
-            manifest.configVersion = config.configVersion;
-        }
-        
-        // Add language to manifest for additional cache busting
-        manifest.language = config.language || DEFAULT_LANGUAGE;
-        
-        // Add aggressive cache-busting headers specifically for manifest
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-        res.setHeader('X-Manifest-Language', config.language || DEFAULT_LANGUAGE);
-        res.setHeader('X-Manifest-Version', config.configVersion ? config.configVersion.toString() : Date.now().toString());
-        
-        // Add a comment in the manifest to help with debugging
-        manifest._debug = {
-            language: config.language || DEFAULT_LANGUAGE,
-            configVersion: config.configVersion || Date.now(),
-            timestamp: new Date().toISOString()
-        };
-        
-        // Add a timestamp to force cache invalidation
-        manifest._timestamp = Date.now();
-        
-        // Use shorter cache time and add cache-busting for catalog changes
-        const cacheOpts = { 
-            cacheMaxAge: 0, // No cache to force immediate refresh
-            staleRevalidate: 5 * 60, // 5 minutes stale-while-revalidate
-            staleError: 24 * 60 * 60 // 24 hours stale-if-error
-        };
-            respond(req, res, manifest, cacheOpts);
-    } catch (error) {
-        consola.error(`[Manifest] Error for user ${userUUID}:`, error);
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Headers', '*');
-        res.status(500).send({ err: "Failed to build manifest." });
+  const { userUUID } = req.params;
+  try {
+    // Load config from database
+    const config = await database.getUserConfig(userUUID);
+    if (!config) {
+      consola.debug(`[Manifest] No config found for user: ${userUUID}`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      return res.status(404).send({ err: "User configuration not found." });
     }
+
+    consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}`);
+    const manifest = await getManifest(config);
+    if (!manifest) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      return res.status(500).send({ err: "Failed to build manifest." });
+    }
+
+    // Pass config to request object for ETag generation
+    req.userConfig = config;
+
+    // Add configVersion to manifest for cache busting when language changes
+    if (config.configVersion) {
+      manifest.configVersion = config.configVersion;
+    }
+
+    // Add language to manifest for additional cache busting
+    manifest.language = config.language || DEFAULT_LANGUAGE;
+
+    // Add aggressive cache-busting headers specifically for manifest
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0, s-maxage=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Manifest-Language', config.language || DEFAULT_LANGUAGE);
+    res.setHeader('X-Manifest-Version', config.configVersion ? config.configVersion.toString() : Date.now().toString());
+
+    // Add a comment in the manifest to help with debugging
+    manifest._debug = {
+      language: config.language || DEFAULT_LANGUAGE,
+      configVersion: config.configVersion || Date.now(),
+      timestamp: new Date().toISOString()
+    };
+
+    // Add a timestamp to force cache invalidation
+    manifest._timestamp = Date.now();
+
+    // Use shorter cache time and add cache-busting for catalog changes
+    const cacheOpts = {
+      cacheMaxAge: 0, // No cache to force immediate refresh
+      staleRevalidate: 5 * 60, // 5 minutes stale-while-revalidate
+      staleError: 24 * 60 * 60 // 24 hours stale-if-error
+    };
+    respond(req, res, manifest, cacheOpts);
+  } catch (error) {
+    consola.error(`[Manifest] Error for user ${userUUID}:`, error);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.status(500).send({ err: "Failed to build manifest." });
+  }
 });
 
 
@@ -1688,7 +1689,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
 addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
   const config = await loadConfigFromDatabase(userUUID);
-  
+
   if (!config) {
     return res.status(404).send({ error: "User configuration not found" });
   }
@@ -1713,30 +1714,30 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   if (!catalogConfig) {
     consola.debug(`[CATALOG ROUTE] No catalog config found for id: ${id}, type: ${type}`);
     const strippedId = id.replace(/_(movie|series|anime)$/, '');
-    
+
     // Only proceed if a replacement actually happened
     if (strippedId !== id) {
 
       if (suffixType) {
         catalogConfig = config.catalogs?.find(c =>
-         c.id === strippedId && c.type === suffixType 
-       );
-     } 
-     
-     // Fallback (or if no suffix matched logic)
-     if (!catalogConfig) {
-       catalogConfig = config.catalogs?.find(c =>
-         c.id === strippedId && (c.type === type || c.displayType === type)
-       );
-     }
+          c.id === strippedId && c.type === suffixType
+        );
+      }
 
-     if (catalogConfig) {
-       cleanId = strippedId;
-     }
+      // Fallback (or if no suffix matched logic)
+      if (!catalogConfig) {
+        catalogConfig = config.catalogs?.find(c =>
+          c.id === strippedId && (c.type === type || c.displayType === type)
+        );
+      }
+
+      if (catalogConfig) {
+        cleanId = strippedId;
+      }
     }
   }
   const actualType = catalogConfig ? catalogConfig.type : type;
-  
+
   // Check if user has either RPDB or Top Poster API key
   const hasRatingPosterKey =
     (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0) ||
@@ -1748,13 +1749,13 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
   consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
   //consola.debug(`[CATALOG ROUTE] enableRatingPosters value:`, catalogConfig?.enableRatingPosters, `(type: ${typeof catalogConfig?.enableRatingPosters})`);
-  
+
   // Add current catalog config to global config for per-catalog settings (like enableRatingPosters)
   config._currentCatalogConfig = catalogConfig;
-  
+
   const language = config.language || DEFAULT_LANGUAGE;
   const sessionId = config.sessionId;
-  
+
   // Debug logging for TMDB personal lists
   if (cleanId === 'tmdb.favorites' || cleanId === 'tmdb.watchlist') {
     consola.debug(`[CATALOG ROUTE] TMDB personal list - sessionId: ${sessionId ? sessionId.substring(0, 10) + '...' : 'MISSING'}`);
@@ -1807,10 +1808,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   // Trakt up next needs poster preference in cache key
   if (cleanId === 'trakt.upnext') {
-      // Always send a boolean, never undefined
-      extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
-        ? catalogConfig.metadata.useShowPosterForUpNext
-        : false;
+    // Always send a boolean, never undefined
+    extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
+      ? catalogConfig.metadata.useShowPosterForUpNext
+      : false;
   }
   // Trakt calendar needs today's date and days in cache key
   if (cleanId === 'trakt.calendar') {
@@ -1820,8 +1821,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       return formatter.format(new Date());
     };
     extraArgs.date = getTodayInTimezone(getUserTimezone());
-    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
-      ? catalogConfig.metadata.airingSoonDays 
+    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number'
+      ? catalogConfig.metadata.airingSoonDays
       : 1;
   }
   if (cleanId === 'tvmaze.schedule') {
@@ -1831,23 +1832,23 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
       return formatter.format(new Date());
     };
-    
+
     const dateString = extraArgs.date || getTodayInTimezone(getUserTimezone());
     extraArgs.date = dateString;
     extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
   }
 
   const catalogKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
-  
+
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2,
   };
-  
+
   try {
     let responseData;
-      
-      if (cleanId === 'search' || cleanId === 'gemini.search' || cleanId === 'people_search') {
+
+    if (cleanId === 'search' || cleanId === 'gemini.search' || cleanId === 'people_search') {
       // Determine which search engine is being used based on type
       let searchEngine = null;
       if (cleanId === 'gemini.search') {
@@ -1870,22 +1871,22 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         searchEngine = 'tvdb.collections.search';
       }
       config._currentSearchEngine = searchEngine;
-      
+
       // Use search-specific cache wrapper
       const searchKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
-      
+
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
         const searchResult = await getSearch(cleanId, actualType, language, extraArgs, config);
         return { metas: searchResult.metas || [] };
       }, searchEngine, cacheOptions);
-      } else {
+    } else {
       // Use regular catalog cache wrapper
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
         let metas = [];
-        const { genre: genreName, type_filter,  skip } = extraArgs;
-        const pageSize = cleanId.includes(`mal.`) ? 25 : 
-                         (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) ? 
-                         parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
+        const { genre: genreName, type_filter, skip } = extraArgs;
+        const pageSize = cleanId.includes(`mal.`) ? 25 :
+          (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) ?
+            parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
         switch (cleanId) {
@@ -1965,23 +1966,23 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else {
-            const [startDate, endDate] = decadeMap[cleanId];
-            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-              return await jikan.getAnimeGenres();
-             });
-                const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
-            if (genreNameToFetch) {
-              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-              if (selectedGenre) {
-                const genreId = selectedGenre.mal_id;
-                    const animeResults = await cacheWrapJikanApi(`mal-${cleanId}-${page}-${genreId}-${config.sfw}`, async () => {
-                  return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
-                });
-                    metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+              const [startDate, endDate] = decadeMap[cleanId];
+              const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+                //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
+                return await jikan.getAnimeGenres();
+              });
+              const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
+              if (genreNameToFetch) {
+                const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+                if (selectedGenre) {
+                  const genreId = selectedGenre.mal_id;
+                  const animeResults = await cacheWrapJikanApi(`mal-${cleanId}-${page}-${genreId}-${config.sfw}`, async () => {
+                    return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+                  });
+                  metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
                 }
               }
-              
+
             }
             break;
           }
@@ -2024,16 +2025,16 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               try {
                 const allIds = await resolveAllIds(stremioId, 'series', config);
                 if (allIds) {
-                    if (allIds.imdbId) {
-                        stremioId = allIds.imdbId;
-                    } else if (allIds.tvdbId) {
-                        stremioId = `tvdb:${allIds.tvdbId}`;
-                    } else if (allIds.tmdbId) {
-                        stremioId = `tmdb:${allIds.tmdbId}`;
-                    }
+                  if (allIds.imdbId) {
+                    stremioId = allIds.imdbId;
+                  } else if (allIds.tvdbId) {
+                    stremioId = `tvdb:${allIds.tvdbId}`;
+                  } else if (allIds.tmdbId) {
+                    stremioId = `tmdb:${allIds.tmdbId}`;
+                  }
                 }
               } catch (e) {
-                  // Fallback to original tvmaze ID if resolution fails
+                // Fallback to original tvmaze ID if resolution fails
               }
               let meta;
 
@@ -2077,22 +2078,22 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
           case 'mal.studios': {
             if (genreName) {
-                //consola.debug(`[Catalog] Fetching anime for MAL studio: ${genreName}`);
-                const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100));
-                const selectedStudio = studios.find(studio => {
-                    const defaultTitle = studio.titles.find(t => t.type === 'Default');
-                    return defaultTitle && defaultTitle.title === genreName;
+              //consola.debug(`[Catalog] Fetching anime for MAL studio: ${genreName}`);
+              const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100));
+              const selectedStudio = studios.find(studio => {
+                const defaultTitle = studio.titles.find(t => t.type === 'Default');
+                return defaultTitle && defaultTitle.title === genreName;
+              });
+
+              if (selectedStudio) {
+                const studioId = selectedStudio.mal_id;
+                const animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
+                  return await jikan.getAnimeByStudio(studioId, page);
                 });
-        
-                if (selectedStudio) {
-                    const studioId = selectedStudio.mal_id;
-                    const animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
-                      return await jikan.getAnimeByStudio(studioId, page);
-                    });
-                    metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-                } else {
-                    consola.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
-                }
+                metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
+              } else {
+                consola.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
+              }
             }
             break;
           }
@@ -2107,22 +2108,22 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           case 'mal.seasons': {
             // Parse season string like "Winter 2024" into season and year
             let seasonString = genreName;
-            
+
             // If no season specified, calculate current season based on today's date
             if (!seasonString) {
               const currentDate = new Date();
               const currentYear = currentDate.getFullYear();
               const currentMonth = currentDate.getMonth(); // 0-11
-              
+
               let currentSeason;
               if (currentMonth <= 2) currentSeason = 'Winter'; // Jan-Mar
               else if (currentMonth <= 5) currentSeason = 'Spring'; // Apr-Jun
               else if (currentMonth <= 8) currentSeason = 'Summer'; // Jul-Sep
               else currentSeason = 'Fall'; // Oct-Dec
-              
+
               seasonString = `${currentSeason} ${currentYear}`;
             }
-            
+
             const parts = seasonString.split(' ');
             const season = parts[0].toLowerCase(); // winter, spring, summer, fall
             const year = parseInt(parts[1]);
@@ -2135,11 +2136,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           default:
             metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false)).metas;
             break;
-      }
-      return { metas: metas || [] };
-    }, undefined, cacheOptions);
+        }
+        return { metas: metas || [] };
+      }, undefined, cacheOptions);
     }
-    
+
     if (config.hideUnreleasedDigital && responseData?.metas && Array.isArray(responseData.metas)) {
       const { isReleasedDigitally } = require("./utils/parseProps");
       const beforeCount = responseData.metas.length;
@@ -2149,7 +2150,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         consola.debug(`[Catalog Route] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
       }
     }
-    
+
     if ((config.exclusionKeywords || config.regexExclusionFilter) && responseData?.metas && Array.isArray(responseData.metas)) {
       const { filterMetasByRegex } = require("./utils/regexFilter");
       const beforeCount = responseData.metas.length;
@@ -2159,7 +2160,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         consola.debug(`[Catalog Route] Content exclusion filter: filtered out ${beforeCount - afterCount} items`);
       }
     }
-    
+
     if (catalogConfig?.randomizePerPage && Array.isArray(responseData?.metas) && responseData.metas.length > 1) {
       responseData = {
         ...responseData,
@@ -2178,32 +2179,32 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 // --- Meta Route (with enhanced caching) ---
 addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   const { userUUID, type, id: stremioId } = req.params;
-  
+
   // Load config from database
   const config = await loadConfigFromDatabase(userUUID);
   if (!config) {
     return res.status(404).send({ error: "User configuration not found" });
   }
-  
+
   // Add userUUID to config for per-user token caching
   config.userUUID = userUUID;
-  
+
   const language = config.language || DEFAULT_LANGUAGE;
-  const fullConfig = config; 
-  
+  const fullConfig = config;
+
   // Pass config to req for ETag generation
-  req.userConfig = config; 
+  req.userConfig = config;
   // Enhanced caching options for better error handling
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2, // Allow retries for temporary failures
   };
-  
+
   try {
     // Determine useShowPoster for Trakt Up Next
     let useShowPoster = false;
     if (type === 'series' && stremioId && stremioId.startsWith('upnext_')) {
-      console.debug('[Meta Route] Detected Trakt Up Next meta request with ID:', stremioId);  
+      console.debug('[Meta Route] Detected Trakt Up Next meta request with ID:', stremioId);
       const catalogConfig = fullConfig.catalogs?.find(c => c.id === 'trakt.upnext');
       if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
         consola.debug('[Meta Route] Using catalog-specific useShowPosterForUpNext setting:', catalogConfig.metadata.useShowPosterForUpNext);
@@ -2260,7 +2261,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         }
       }
     }*/
-    
+
     // Extract actual poster URL from RPDB proxy URL for meta route
     // Only remove RPDB proxy if enableRatingPostersForLibrary is disabled
     // Meta routes (continue watching/library) should keep RPDB if the option is enabled
@@ -2281,7 +2282,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
             isRatingPoster = true;
           }
         }
-        
+
         // Case 2: TopPoster Direct API
         else if (urlObj.hostname.includes('top-streaming.stream') && urlObj.searchParams.has('fallback_url')) {
           //consola.debug('[Meta Route] Extracting actual poster URL from TopPoster direct API:', urlObj.searchParams.get('fallback_url'));
@@ -2291,45 +2292,45 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
             isRatingPoster = true;
           }
         }
-        
+
         // Case 3: RPDB Direct API
         else if (urlObj.hostname.includes('ratingposterdb.com')) {
-          isRatingPoster = true; 
+          isRatingPoster = true;
         }
 
         // Apply fallback if detected
         if (isRatingPoster) {
           //consola.debug('[Meta Route] Applying actual poster URL:', cleanPoster);
-             if (result.meta._rawPosterUrl) {
-                 result.meta.poster = result.meta._rawPosterUrl;
-                 //consola.debug('[Meta Route] Using stashed raw poster URL:', result.meta._rawPosterUrl);
-             } 
-             else if (cleanPoster !== posterUrl) {
-                 result.meta.poster = cleanPoster;
-             }
+          if (result.meta._rawPosterUrl) {
+            result.meta.poster = result.meta._rawPosterUrl;
+            //consola.debug('[Meta Route] Using stashed raw poster URL:', result.meta._rawPosterUrl);
+          }
+          else if (cleanPoster !== posterUrl) {
+            result.meta.poster = cleanPoster;
+          }
         }
 
       } catch (e) {
       }
     }
-    
+
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
-    
+
     // Warm user's frequently accessed content in background
     if (!NO_CACHE) {
       warmUserContent(userUUID, type).catch(error => {
         consola.warn(`[Cache Warming] User content warming failed for ${userUUID}:`, error.message);
       });
     }
-    
+
     // Use aggressive cache control for meta routes to ensure fresh data when config changes
     // Don't pass cacheOpts to let the respond function use the aggressive cache control
     respond(req, res, result);
-    
+
   } catch (error) {
     consola.error(`CRITICAL ERROR in meta route for ${stremioId}:`, error);
-    
+
     // Log error for dashboard (fire-and-forget)
     try {
       requestTracker.logError('error', `Meta route failed for ${stremioId}`, {
@@ -2337,11 +2338,11 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         type,
         error: error.message,
         stack: error.stack
-      }).catch(() => {});
+      }).catch(() => { });
     } catch (logError) {
       consola.warn('Failed to log error:', logError.message);
     }
-    
+
     res.status(500).send("Internal Server Error");
   }
 });
@@ -2360,7 +2361,7 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
     const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
       ? process.env.HOST_NAME
       : `https://${process.env.HOST_NAME}`;
-    
+
     // For series, strip out season:episode from id
     // IMDb: "tt1234567:1:5" -> "tt1234567"
     // Others: "kitsu:12345:1:5" -> "kitsu:12345", "tmdb:12345:1:5" -> "tmdb:12345"
@@ -2375,7 +2376,7 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
         cleanId = `${parts[0]}:${parts[1]}`;
       }
     }
-    
+
     // Build rating page URL
     streamUrl = `${host}/stremio/${userUUID}/rating?id=${encodeURIComponent(cleanId)}&type=${type}`;
   }
@@ -2387,10 +2388,10 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
 // where extra contains filename, videoSize, and videoHash parameters
 addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function (req, res) {
   const { userUUID, type, id } = req.params;
-  
+
   // Debug logging for all watch tracking attempts with media ID and user UUID
   consola.debug(`[Watch Tracking] Subtitle route matched - userUUID: ${userUUID}, type: ${type}, id: ${id}, extra: ${req.params.extra || 'none'}`);
-  
+
   try {
     // Load config from database
     const config = await loadConfigFromDatabase(userUUID);
@@ -2399,23 +2400,23 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       // Use Promise.resolve() for immediate response
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
-    
+
     // Check if any watch tracking is enabled (MDBList or AniList)
     const hasMdblistKey = config?.apiKeys?.mdblist;
     const mdblistEnabled = !!config?.mdblistWatchTracking;
     const hasAnilistToken = config?.apiKeys?.anilistTokenId;
     const anilistEnabled = !!config?.anilistWatchTracking;
-    
+
     const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
     const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
-    
+
     if (shouldTrackMdblist || shouldTrackAnilist) {
       // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
-      
+
       // Call handler synchronously (no await)
       const result = handleSubtitleRequest(type, id, config, userUUID);
-      
+
       // Return empty subtitle response immediately
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
@@ -2428,7 +2429,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       stack: error.stack,
       extra: req.params.extra
     });
-    
+
     return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
   }
 });
@@ -2442,9 +2443,9 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
   try {
     // Validate input
     if (!ids || !ids.stremio || !type || typeof score !== 'number' || score < 1 || score > 10) {
-      return res.status(400).json({ 
-        ok: false, 
-        error: "Invalid request. Required: ids.stremio, type (movie/series), score (1-10)" 
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid request. Required: ids.stremio, type (movie/series), score (1-10)"
       });
     }
 
@@ -2465,9 +2466,9 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
     const isTmdbIdAnime = stremioId.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(stremioId.replace('tmdb:', '')) && type.toLowerCase() === 'movie';
     // Check if the Stremio ID is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = stremioId && typeof stremioId === 'string' && (
-      stremioId.startsWith('anilist:') || 
-      stremioId.startsWith('mal:') || 
-      stremioId.startsWith('kitsu:') || 
+      stremioId.startsWith('anilist:') ||
+      stremioId.startsWith('mal:') ||
+      stremioId.startsWith('kitsu:') ||
       stremioId.startsWith('anidb:')
     );
 
@@ -2492,24 +2493,24 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
           const { httpPost } = require('./utils/httpClient');
           const { Agent } = require('undici');
           const traktDispatcher = new Agent({ connect: { timeout: 30000 } });
-          
+
           // Import the rate limiting function from traktUtils
           // Since makeRateLimitedRequest is not exported, we'll use a similar pattern
           const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
           const TRAKT_BASE_URL = 'https://api.trakt.tv';
-          
+
           const traktType = type.toLowerCase() === 'series' ? 'shows' : 'movies';
           const tmdbId = allIds.tmdbId;
           const imdbId = allIds.imdbId;
           const tvdbId = allIds.tvdbId;
-          
+
           if (tmdbId || imdbId || tvdbId) {
             // Build IDs object for Trakt (only include non-null values)
             const ids = {};
             if (tmdbId) ids.tmdb = parseInt(tmdbId);
             if (imdbId) ids.imdb = imdbId;
             if (tvdbId) ids.tvdb = parseInt(tvdbId);
-            
+
             // Trakt sync/ratings payload format
             const payload = {
               [traktType]: [
@@ -2531,7 +2532,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
                 'trakt-api-key': TRAKT_CLIENT_ID
               }
             });
-            
+
             // httpClient treats 200-299 as success, so 201 is handled correctly
             results.trakt.success = true;
             consola.info(`[Rating] Successfully rated ${traktType} on Trakt with score ${score} (status: ${response.status})`);
@@ -2551,7 +2552,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
       try {
         const token = await database.getOAuthToken(config.apiKeys.anilistTokenId);
         if (token && token.access_token) {
-          let anilistId = null; 
+          let anilistId = null;
           if (stremioId.startsWith('anilist:')) {
             anilistId = stremioId.replace('anilist:', '');
           } else if (stremioId.startsWith('mal:')) {
@@ -2563,7 +2564,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
           }
 
           if (isImdbIdAnime) {
-            const malId =  idMapper.getTraktAnimeMovieByImdbId(stremioId)?.myanimelist.id;
+            const malId = idMapper.getTraktAnimeMovieByImdbId(stremioId)?.myanimelist.id;
             if (malId) {
               anilistId = idMapper.getMappingByMalId(malId)?.anilist_id;
             }
@@ -2584,7 +2585,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
             } else {
               anilistIdNum = parseInt(anilistId);
             }
-            
+
             if (isNaN(anilistIdNum)) {
               results.anilist.error = "Invalid AniList/MAL ID format";
             } else {
@@ -2596,12 +2597,12 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
                 results.anilist.error = `Invalid score: ${anilistScore} (must be 1-100)`;
               } else {
                 consola.debug(`[Rating] AniList rating - mediaId: ${anilistIdNum}, score: ${anilistScore}`);
-                
+
                 try {
                   // Use the submitRating method from anilist instance (uses makeRateLimitedRequest internally)
                   // The method now handles error extraction internally
                   const response = await anilist.submitRating(anilistIdNum, anilistScore, token.access_token);
-                  
+
                   // Check for successful response
                   if (response?.data?.data?.SaveMediaListEntry) {
                     results.anilist.success = true;
@@ -2634,23 +2635,23 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
       try {
         const mdblistApiKey = config.apiKeys.mdblist;
         const { httpPost } = require('./utils/httpClient');
-        
+
         const tmdbId = allIds.tmdbId;
         const imdbId = allIds.imdbId;
         const tvdbId = allIds.tvdbId;
-        
+
         if (tmdbId || imdbId || tvdbId) {
           const mdblistType = type.toLowerCase() === 'series' ? 'shows' : 'movies';
-          
+
           // Build IDs object for MDBList
           const ids = {};
           if (tmdbId) ids.tmdb = parseInt(tmdbId);
           if (imdbId) ids.imdb = imdbId;
           if (tvdbId) ids.tvdb = parseInt(tvdbId);
-          
+
           // MDBList sync/ratings endpoint: POST /sync/ratings?apikey=...
           const url = `https://api.mdblist.com/sync/ratings?apikey=${mdblistApiKey}`;
-          
+
           // Build payload according to MDBList API format
           const payload = {
             [mdblistType]: [
@@ -2660,13 +2661,13 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
               }
             ]
           };
-          
+
           await httpPost(url, payload, {
             headers: {
               'Content-Type': 'application/json'
             }
           });
-          
+
           results.mdblist.success = true;
           consola.info(`[Rating] Successfully rated ${type} on MDBList with score ${score}`);
         } else {
@@ -2680,25 +2681,25 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
 
     // Check if at least one service succeeded
     const anySuccess = results.trakt.success || results.anilist.success || results.mdblist.success;
-    
+
     if (anySuccess) {
-      return res.json({ 
-        ok: true, 
+      return res.json({
+        ok: true,
         results,
         message: "Rating submitted successfully to at least one service"
       });
     } else {
-      return res.status(400).json({ 
-        ok: false, 
+      return res.status(400).json({
+        ok: false,
         error: "Failed to submit rating to any service",
         results
       });
     }
   } catch (error) {
     consola.error(`[Rating] Error in rating route:`, error);
-    return res.status(500).json({ 
-      ok: false, 
-      error: error.message || "Internal server error" 
+    return res.status(500).json({
+      ok: false,
+      error: error.message || "Internal server error"
     });
   }
 });
@@ -2706,7 +2707,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
 // Proxy endpoint for fetching manifests from internal Docker network URLs
 addon.get("/api/proxy-manifest", async function (req, res) {
   const { url } = req.query;
-  
+
   if (!url) {
     return res.status(400).json({ error: 'Missing url parameter' });
   }
@@ -2716,15 +2717,15 @@ addon.get("/api/proxy-manifest", async function (req, res) {
     const manifestData = await httpGet(url, {
       timeout: 10000
     });
-    
+
     // Set CORS headers to allow frontend access
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     res.json(manifestData.data);
   } catch (error) {
     consola.error(`[Proxy Manifest] Failed to fetch manifest from ${url}:`, error.message);
-    res.status(error.response?.status || 500).json({ 
-      error: error.message || 'Failed to fetch manifest' 
+    res.status(error.response?.status || 500).json({
+      error: error.message || 'Failed to fetch manifest'
     });
   }
 });
@@ -2732,26 +2733,26 @@ addon.get("/api/proxy-manifest", async function (req, res) {
 // API endpoint to auto-detect page size for external addon catalogs
 addon.get("/api/detect-page-size", async function (req, res) {
   const { catalogUrl } = req.query;
-  
+
   if (!catalogUrl) {
     return res.status(400).json({ error: 'Missing catalogUrl parameter' });
   }
 
   try {
     const { httpGet } = require('./utils/httpClient');
-    
+
     // For the first page, Stremio doesn't include skip parameter at all
     // Fetch the base catalog URL directly without any skip parameter
     const response = await httpGet(catalogUrl, { timeout: 10000 });
-    
+
     if (!response.data || !response.data.metas) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.json({ pageSize: 100, detected: false, error: 'Invalid response format' });
       return;
     }
-    
+
     const pageSize = response.data.metas.length;
-    
+
     if (pageSize === 0) {
       // If first page is empty, return error
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -2763,10 +2764,10 @@ addon.get("/api/detect-page-size", async function (req, res) {
   } catch (error) {
     consola.error(`[Detect Page Size] Failed to detect page size for ${catalogUrl}:`, error.message);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(error.response?.status || 500).json({ 
+    res.status(error.response?.status || 500).json({
       pageSize: 100,
       detected: false,
-      error: error.message || 'Failed to detect page size' 
+      error: error.message || 'Failed to detect page size'
     });
   }
 });
@@ -2790,7 +2791,7 @@ addon.get("/poster/:type/:id", async function (req, res) {
     // Top Poster API keys start with "TP-", RPDB keys have different formats
     const isTopPoster = key.startsWith('TP-');
     let posterUrl = null;
-    
+
     if (isTopPoster) {
       // Use Top Poster API with fallback_url parameter
       // Top Poster API will automatically use fallback_url on any non-200 response
@@ -2825,12 +2826,12 @@ addon.get("/poster/:type/:id", async function (req, res) {
 addon.get("/api/image/blur", async function (req, res) {
   const imageUrl = req.query.url;
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
-  
+
   // Add security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  
+
   try {
     const blurredImageBuffer = await blurImage(imageUrl);
     res.setHeader('Content-Type', 'image/jpeg');
@@ -2846,10 +2847,10 @@ addon.get("/api/image/blur", async function (req, res) {
 addon.get("/api/image/banner-to-background", async function (req, res) {
   const imageUrl = req.query.url;
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
-  
+
   try {
     const { convertBannerToBackground } = require('./utils/imageProcessor');
-    
+
     // Parse options from query parameters
     const options = {
       width: parseInt(req.query.width) || 1920,
@@ -2859,7 +2860,7 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
       contrast: parseFloat(req.query.contrast) || 1,
       position: req.query.position || 'center' // Add position parameter
     };
-    
+
     const processedImage = await convertBannerToBackground(imageUrl, options);
     if (processedImage) {
       res.setHeader('Content-Type', 'image/jpeg');
@@ -2878,15 +2879,15 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
 addon.get("/api/image/gradient-overlay", async function (req, res) {
   const imageUrl = req.query.url;
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
-  
+
   try {
     const { addGradientOverlay } = require('./utils/imageProcessor');
-    
+
     const options = {
       gradient: req.query.gradient || 'dark',
       opacity: parseFloat(req.query.opacity) || 0.7
     };
-    
+
     const processedImage = await addGradientOverlay(imageUrl, options);
     if (processedImage) {
       res.setHeader('Content-Type', 'image/jpeg');
@@ -2914,14 +2915,14 @@ addon.get('/resize-image', async function (req, res) {
 
   // Import the validation function
   const { validateImageUrl } = require('./utils/imageProcessor');
-  
+
   // Validate URL before processing
   if (!validateImageUrl(imageUrl)) {
     return res.status(400).send('Invalid or unauthorized image URL');
   }
 
   try {
-    const response = await axios.get(imageUrl, { 
+    const response = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
       timeout: 10000,
       maxContentLength: 10 * 1024 * 1024, // 10MB limit
@@ -2957,13 +2958,13 @@ addon.get('/resize-image', async function (req, res) {
 
 
 // Support Stremio settings opening under /stremio/:uuid/:config/configure
-  addon.get('/stremio/:userUUID/configure', function (req, res) {
-    // No cache to prevent cross-instance contamination
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
-  });
+addon.get('/stremio/:userUUID/configure', function (req, res) {
+  // No cache to prevent cross-instance contamination
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
 
 // Rating Page Route - MUST be before static middleware
 // Access via: /stremio/:userUUID/rating?id=stremioId&type=Series&title=Title
@@ -2971,22 +2972,22 @@ addon.get('/resize-image', async function (req, res) {
 addon.get("/stremio/:userUUID/rating", async function (req, res) {
   const { userUUID } = req.params;
   const { id, type } = req.query;
-  
+
   // No cache to prevent cross-instance contamination
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  
+
   const indexPath = path.join(__dirname, '../dist/index.html');
   const fs = require('fs');
-  
+
   try {
     let html = fs.readFileSync(indexPath, 'utf8');
-    
+
     let metaTitle = '';
     let metaPoster = '';
     let metaDescription = '';
-    
+
     // Use type from URL query parameter (source of truth)
     // Normalize: Series/series -> Series, Movie/movie -> Movie
     let metaType = 'Series'; // Default
@@ -2994,26 +2995,26 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
       const normalizedType = type.toLowerCase();
       metaType = normalizedType === 'series' ? 'Series' : 'Movie';
     }
-    
+
     // Check which services are available for this user
     let availableServices = {
       trakt: false,
       anilist: false,
       mdblist: false
     };
-    consola.debug(`[Rating Page] Checking if ID is anime - id: ${id}, metaType: ${metaType}, gettraktanimemoviebyimdbid: ${JSON.stringify(idMapper.getTraktAnimeMovieByImdbId(id))}`);  
+    consola.debug(`[Rating Page] Checking if ID is anime - id: ${id}, metaType: ${metaType}, gettraktanimemoviebyimdbid: ${JSON.stringify(idMapper.getTraktAnimeMovieByImdbId(id))}`);
     const isImdbIdAnime = id && id.startsWith('tt') && !!idMapper.getTraktAnimeMovieByImdbId(id) && metaType === 'Movie';
     const isTmdbIdAnime = id && id.startsWith('tmdb:') && !!idMapper.getTraktAnimeMovieByTmdbId(id.replace('tmdb:', '')) && metaType === 'Movie';
     // Check if the Stremio ID in URL is from an anime provider (anilist, mal, kitsu, anidb)
     const isAnimeId = id && typeof id === 'string' && (
-      id.startsWith('anilist:') || 
-      id.startsWith('mal:') || 
-      id.startsWith('kitsu:') || 
+      id.startsWith('anilist:') ||
+      id.startsWith('mal:') ||
+      id.startsWith('kitsu:') ||
       id.startsWith('anidb:') ||
       isImdbIdAnime ||
       isTmdbIdAnime
     );
-    
+
     try {
       const config = await loadConfigFromDatabase(userUUID);
       if (config) {
@@ -3022,26 +3023,26 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
           const token = await database.getOAuthToken(config.apiKeys.traktTokenId);
           availableServices.trakt = !!(token && token.access_token);
         }
-        
+
         // Check AniList (only if Stremio ID is from anime provider and user has AniList configured)
         if (isAnimeId && config.apiKeys?.anilistTokenId) {
           const token = await database.getOAuthToken(config.apiKeys.anilistTokenId);
           availableServices.anilist = !!(token && token.access_token);
         }
-        
+
         // Check MDBList
         availableServices.mdblist = !!config.apiKeys?.mdblist;
       }
     } catch (error) {
       consola.warn('[Rating Page] Failed to check available services:', error.message);
     }
-    
+
     if (id && userUUID) {
       try {
         // Use the type from URL to look up metadata
         const stremioType = metaType.toLowerCase();
         const contentKey = `${stremioType}:${id}`;
-        
+
         // Try to get metadata from cache with multiple key variants (same as dashboard)
         const tryKeys = [];
         // exact member key (often includes .json or provider prefix)
@@ -3062,15 +3063,15 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
           const providerEncoded = encodeURIComponent(cleanId) + ".json";
           tryKeys.push(`content_metadata:${keyType}:${providerEncoded}`);
         }
-        
+
         let metadataStr = null;
         for (const k of tryKeys) {
           try {
             metadataStr = await redis.get(k);
             if (metadataStr) break;
-          } catch (_) {}
+          } catch (_) { }
         }
-        
+
         if (metadataStr) {
           const metadata = JSON.parse(metadataStr);
           metaTitle = metadata.title || metadata.name || '';
@@ -3082,13 +3083,13 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
         // Continue with empty values - frontend will handle fallback
       }
     }
-    
+
     const pageTitle = metaTitle ? `Rate ${metaTitle} - AIO Metadata` : 'Rate This Title - AIO Metadata';
     html = html.replace(
       /<title>.*?<\/title>/,
       `<title>${pageTitle}</title>`
     );
-    
+
     const ratingScript = `
       <script>
         window.RATING_MODE = true;
@@ -3101,13 +3102,13 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
         window.RATING_AVAILABLE_SERVICES = ${JSON.stringify(availableServices)};
       </script>
     `;
-    
+
     // Add rating-specific script
     html = html.replace(
       '</head>',
       ratingScript + '</head>'
     );
-    
+
     res.send(html);
   } catch (error) {
     consola.error('Error serving rating page:', error);
@@ -3117,17 +3118,17 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
 
 addon.get("/rating", (req, res) => {
   const { user, id, type, title } = req.query;
-  
+
   if (!user || !id) {
     return res.status(400).send('Missing required parameters: user and id');
   }
-  
+
   // Redirect to the proper route format
   const params = new URLSearchParams();
   if (id) params.set('id', id);
   if (type) params.set('type', type);
   if (title) params.set('title', title);
-  
+
   res.redirect(`/stremio/${user}/rating?${params.toString()}`);
 });
 
@@ -3141,16 +3142,16 @@ addon.get("/dashboard", (req, res) => {
   // Serve the same HTML but with dashboard-specific handling
   const indexPath = path.join(__dirname, '../dist/index.html');
   const fs = require('fs');
-  
+
   try {
     let html = fs.readFileSync(indexPath, 'utf8');
-    
+
     // Inject dashboard-specific meta tags and title
     html = html.replace(
       /<title>.*?<\/title>/,
       '<title>AIO Metadata Dashboard</title>'
     );
-    
+
     // Add dashboard-specific script to auto-navigate to dashboard
     html = html.replace(
       '</head>',
@@ -3168,7 +3169,7 @@ addon.get("/dashboard", (req, res) => {
       </script>
       </head>`
     );
-    
+
     res.send(html);
   } catch (error) {
     consola.error('Error serving dashboard page:', error);
@@ -3210,9 +3211,9 @@ addon.post('/api/admin/prune-id-mappings', async (req, res) => {
 addon.get('/api/admin/users', async (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-       return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const users = await database.getAllUsersWithStats();
     res.json({ users });
@@ -3228,15 +3229,15 @@ addon.get('/api/admin/users/:userUUID', async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const { userUUID } = req.params;
     const userDetails = await database.getUserDetails(userUUID);
-    
+
     if (!userDetails) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json({ user: userDetails });
   } catch (error) {
     consola.error('[Admin API] Error fetching user details:', error);
@@ -3250,15 +3251,15 @@ addon.post('/api/admin/users/:userUUID/reset-password', async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const { userUUID } = req.params;
     const newPassword = await database.resetUserPassword(userUUID);
-    
+
     if (!newPassword) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json({ newPassword });
   } catch (error) {
     consola.error('[Admin API] Error resetting password:', error);
@@ -3272,15 +3273,15 @@ addon.delete('/api/admin/users/:userUUID', async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const { userUUID } = req.params;
     const success = await database.deleteUser(userUUID);
-    
+
     if (!success) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     consola.error('[Admin API] Error deleting user:', error);
@@ -3294,7 +3295,7 @@ addon.get('/api/admin/users/export', async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const userData = await database.exportAllUserData();
     res.setHeader('Content-Type', 'application/json');
@@ -3312,7 +3313,7 @@ addon.post('/api/admin/users/bulk-delete-inactive', async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const { days = 30 } = req.body;
     const deletedCount = await database.deleteInactiveUsers(days);
@@ -3331,10 +3332,10 @@ addon.get("/api/debug/catalogs/:userUUID", async function (req, res) {
     if (!config) {
       return res.status(404).json({ error: "User not found" });
     }
-    
+
     const streamingCatalogs = config.catalogs?.filter(c => c.source === 'streaming') || [];
     const mdblistCatalogs = config.catalogs?.filter(c => c.source === 'mdblist') || [];
-    
+
     res.json({
       userUUID,
       streaming: config.streaming || [],
@@ -3396,19 +3397,19 @@ addon.delete('/api/config/delete-user/:userUUID', async (req, res) => {
 
     // Delete user and all associated data
     await database.deleteUser(userUUID);
-    
+
     consola.info(`[Delete User] Successfully deleted user ${userUUID} and all associated data`);
-    
-    res.json({ 
-      success: true, 
-      message: 'User account and all associated data have been permanently deleted' 
+
+    res.json({
+      success: true,
+      message: 'User account and all associated data have been permanently deleted'
     });
 
   } catch (error) {
     consola.error(`[Delete User] Error deleting user ${userUUID}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to delete user account',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3420,7 +3421,7 @@ addon.post('/api/cache/clean-bad', async (req, res) => {
   try {
     const cacheValidator = require('./lib/cacheValidator');
     const result = await cacheValidator.cleanAllBadCache();
-    
+
     res.json({
       success: true,
       message: 'Cache cleaning completed',
@@ -3428,9 +3429,9 @@ addon.post('/api/cache/clean-bad', async (req, res) => {
     });
   } catch (error) {
     consola.error('[Cache Clean] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to clean cache',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3440,16 +3441,16 @@ addon.get('/api/cache/health', async (req, res) => {
   try {
     const { getCacheHealth } = require('./lib/getCache');
     const health = getCacheHealth();
-    
+
     res.json({
       success: true,
       health: health
     });
   } catch (error) {
     consola.error('[Cache Health] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to get cache health',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3458,16 +3459,16 @@ addon.get('/api/cache/health', async (req, res) => {
 addon.post('/api/cache/test-granular', async (req, res) => {
   try {
     const { userUUID, metaId, type } = req.body;
-    
+
     if (!userUUID || !metaId || !type) {
       return res.status(400).json({ error: 'userUUID, metaId, and type are required' });
     }
-    
+
     const { cacheWrapMetaSmart, reconstructMetaFromComponents } = require('./lib/getCache');
-    
+
     // Test reconstruction
     const reconstructed = await reconstructMetaFromComponents(userUUID, metaId, undefined, {}, type);
-    
+
     res.json({
       success: true,
       reconstructed: !!reconstructed,
@@ -3476,9 +3477,9 @@ addon.post('/api/cache/test-granular', async (req, res) => {
     });
   } catch (error) {
     consola.error('[Cache Test] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to test granular caching',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3488,28 +3489,28 @@ addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
   try {
     const { userUUID } = req.params;
     const { password } = req.body;
-    
+
     if (!userUUID || !password) {
       return res.status(400).json({ error: 'userUUID and password are required' });
     }
-    
+
     // Verify the user exists and password is correct
     const user = await database.getUser(userUUID);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     const isValidPassword = await database.verifyPassword(userUUID, password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid password' });
     }
-    
+
     // Clear all cache entries for this user (safe SCAN-based deletion)
     const userCachePattern = `*${userUUID}*`;
     const deleted = await deleteKeysByPattern(userCachePattern);
     if (deleted > 0) {
       consola.info(`[Cache Invalidation] Cleared ${deleted} cache entries for user ${userUUID}`);
-      
+
       res.json({
         success: true,
         message: `Cache invalidated for user ${userUUID}`,
@@ -3522,12 +3523,12 @@ addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
         cacheEntriesCleared: 0
       });
     }
-    
+
   } catch (error) {
     consola.error('[Cache Invalidation] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to invalidate cache',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3539,7 +3540,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   try {
     const essentialKeys = [
       `global:${ADDON_VERSION}:jikan-api:anime-genres`,
@@ -3549,27 +3550,27 @@ addon.get('/api/cache/test-essential', async (req, res) => {
       `global:${ADDON_VERSION}:genre:tvdb:en-US:series`,
       `global:${ADDON_VERSION}:languages:en-US`
     ];
-    
+
     const results = {};
     for (const key of essentialKeys) {
       const exists = await redis.exists(key);
       results[key] = exists === 1;
     }
-    
+
     const allCached = Object.values(results).every(exists => exists);
-    
+
     res.json({
       success: true,
       allEssentialContentCached: allCached,
       cacheStatus: results,
       timestamp: new Date().toISOString()
     });
-    
+
   } catch (error) {
     consola.error('[Cache Test] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to test cache',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3577,7 +3578,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
 addon.get('api/cache/invalidation-status/:userUUID', async (req, res) => {
   try {
     const { userUUID } = req.params;
-    
+
     // Count cache entries for this user
     const userCachePattern = `*${userUUID}*`;
     // Group by cache type
@@ -3593,18 +3594,18 @@ addon.get('api/cache/invalidation-status/:userUUID', async (req, res) => {
       else if (k.includes('manifest')) cacheStats.byType.manifest = (cacheStats.byType.manifest || 0) + 1;
       else cacheStats.byType.other = (cacheStats.byType.other || 0) + 1;
     });
-    
+
     res.json({
       success: true,
       userUUID,
       cacheStats
     });
-    
+
   } catch (error) {
     consola.error('[Cache Status] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to get cache status',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -3637,34 +3638,34 @@ const noCache = (req, res, next) => {
 // Middleware to require admin authentication for dashboard routes
 function requireDashboardAdmin(req, res, next) {
   const adminKey = process.env.ADMIN_KEY;
-  
+
   // If ADMIN_KEY is not configured, deny access with specific message
   if (!adminKey) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: 'Unauthorized',
       message: 'ADMIN_KEY environment variable must be configured to access the dashboard'
     });
   }
-  
+
   // Validate the provided admin key
   if (req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   // Valid key - proceed to route handler
   next();
 }
 
 // Middleware for conditionally-protected endpoints (public when guest mode enabled)
 function requireAuthUnlessGuestMode(req, res, next) {
-  const disableGuestMode = process.env.DISABLE_GUEST_MODE === 'true' || 
-                           process.env.DISABLE_GUEST_MODE === '1';
-  
+  const disableGuestMode = process.env.DISABLE_GUEST_MODE === 'true' ||
+    process.env.DISABLE_GUEST_MODE === '1';
+
   // If guest mode is enabled (env var not set/falsy), allow access without auth
   if (!disableGuestMode) {
     return next();
   }
-  
+
   // Guest mode disabled - require admin auth
   return requireDashboardAdmin(req, res, next);
 }
@@ -3700,7 +3701,7 @@ addon.get("/api/dashboard/auth/check", requireDashboardAdmin, (req, res) => {
 addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, async (req, res) => {
   try {
     const dashboardApi = getDashboardAPI();
-    
+
     // If metrics are disabled, return minimal essential data with disabled flag
     if (isMetricsDisabled()) {
       Promise.all([
@@ -3719,7 +3720,7 @@ addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, async (req, res
       });
       return;
     }
-    
+
     // Overview tab only needs: systemOverview, quickStats
     // Other data is fetched by their respective tab endpoints
     const [systemOverview, quickStats] = await Promise.all([
@@ -3732,7 +3733,7 @@ addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, async (req, res
       quickStats,
       timestamp: new Date().toISOString(),
     };
-    
+
     res.json(data);
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
@@ -3743,14 +3744,14 @@ addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, async (req, res
 addon.get("/api/dashboard/stats", requireAuthUnlessGuestMode, (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
-    return res.json({ 
+    return res.json({
       metricsDisabled: true,
       message: "Metrics have been disabled on this instance"
     });
   }
-  
-  
-  
+
+
+
   try {
     const dashboardApi = getDashboardAPI();
     Promise.all([
@@ -3770,10 +3771,10 @@ addon.get("/api/dashboard/stats", requireAuthUnlessGuestMode, (req, res) => {
 });
 
 addon.get("/api/dashboard/system", requireAuthUnlessGuestMode, (req, res) => {
-  
+
   try {
     const dashboardApi = getDashboardAPI();
-    
+
     // If metrics disabled, don't fetch recentActivity
     if (isMetricsDisabled()) {
       Promise.all([
@@ -3788,7 +3789,7 @@ addon.get("/api/dashboard/system", requireAuthUnlessGuestMode, (req, res) => {
       });
       return;
     }
-    
+
     Promise.all([
       dashboardApi.getSystemConfig(),
       dashboardApi.getResourceUsage(),
@@ -3807,8 +3808,8 @@ addon.get("/api/dashboard/system", requireAuthUnlessGuestMode, (req, res) => {
 });
 
 addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
-  
-  
+
+
   try {
     const dashboardApi = getDashboardAPI();
     Promise.all([
@@ -3831,16 +3832,16 @@ addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
 addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
-    return res.json({ 
+    return res.json({
       metricsDisabled: true,
       message: "Metrics have been disabled on this instance"
     });
   }
-  
+
   try {
     const timingMetrics = require('./lib/timing-metrics');
     const { getPerformanceStats } = require('./lib/id-resolver.js');
-    
+
     // Get comprehensive timing data
     const [dashboardData, providerBreakdown, resolutionBreakdown, idResolverStats] = await Promise.all([
       timingMetrics.getDashboardData(),
@@ -3848,15 +3849,15 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
       timingMetrics.getResolutionTimingBreakdown(),
       Promise.resolve(getPerformanceStats())
     ]);
-    
+
     // Get timing trends for key metrics
     const timingTrends = {};
     const keyMetrics = ['id_resolution_total', 'search_operation', 'api_lookup'];
-    
+
     for (const metric of keyMetrics) {
       timingTrends[metric] = await timingMetrics.getTimingTrends(metric);
     }
-    
+
     // Add IMDb ratings stats
     let imdbRatingsStats = null;
     try {
@@ -3865,7 +3866,7 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
     } catch (err) {
       consola.warn('[Dashboard API] Failed to get IMDb ratings stats:', err);
     }
-    
+
     res.json({
       dashboard: dashboardData,
       providerBreakdown,
@@ -3882,14 +3883,14 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
 });
 
 addon.post("/api/dashboard/cache/clear", requireDashboardAdmin, (req, res) => {
-  
-  
+
+
   try {
     const { type } = req.body;
     if (!type) {
       return res.status(400).json({ error: 'Cache type is required' });
     }
-    
+
     const dashboardApi = getDashboardAPI();
     dashboardApi.clearCache(type)
       .then(result => res.json(result))
@@ -3904,11 +3905,11 @@ addon.post("/api/dashboard/cache/clear", requireDashboardAdmin, (req, res) => {
 });
 
 addon.post("/api/dashboard/users/clear", requireDashboardAdmin, (req, res) => {
-  
-  
+
+
   try {
     const dashboardApi = getDashboardAPI();
-    
+
     // Call the new method to clear inflated user data
     if (dashboardApi.requestTracker && dashboardApi.requestTracker.clearActiveUserData) {
       dashboardApi.requestTracker.clearActiveUserData()
@@ -3929,16 +3930,16 @@ addon.post("/api/dashboard/users/clear", requireDashboardAdmin, (req, res) => {
 addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
-    return res.json({ 
+    return res.json({
       metricsDisabled: true,
       message: "Metrics have been disabled on this instance"
     });
   }
-  
+
   try {
     const { getPerformanceStats } = require('./lib/id-resolver.js');
     const dashboardApi = getDashboardAPI();
-    
+
     const [stats, hourlyStats, topEndpoints, providerHourlyData, idResolverStats, cachePerformance, providerPerformance] = await Promise.all([
       requestTracker.getStats(),
       requestTracker.getHourlyStats(24),
@@ -3949,8 +3950,8 @@ addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, re
       dashboardApi.getProviderPerformance()
     ]);
 
-    res.json({ 
-      requestStats: stats, 
+    res.json({
+      requestStats: stats,
       hourlyData: hourlyStats,
       topEndpoints: topEndpoints,
       providerHourlyData: providerHourlyData,
@@ -3965,13 +3966,13 @@ addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, re
 });
 
 addon.post("/api/dashboard/uptime/reset", requireDashboardAdmin, (req, res) => {
-  
-  
+
+
   try {
     // Reset the persistent uptime counter
     redis.set('addon:start_time', Date.now().toString()).then(() => {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Uptime counter reset successfully',
         newStartTime: new Date().toISOString()
       });
@@ -3987,8 +3988,8 @@ addon.post("/api/dashboard/uptime/reset", requireDashboardAdmin, (req, res) => {
 
 // Test endpoint to generate sample error logs
 addon.post("/api/dashboard/test-errors", requireDashboardAdmin, (req, res) => {
-  
-  
+
+
   try {
     // Generate some test error logs
     requestTracker.logError('error', 'Test error: Failed to fetch from AniList API', {
@@ -3996,19 +3997,19 @@ addon.post("/api/dashboard/test-errors", requireDashboardAdmin, (req, res) => {
       status: 500,
       responseTime: 2500
     });
-    
+
     requestTracker.logError('warning', 'Test warning: TMDB rate limit approaching', {
       remaining: 5,
       resetTime: Date.now() + 3600000
     });
-    
+
     requestTracker.logError('info', 'Test info: Cache warming completed', {
       itemsWarmed: 150,
       duration: '2.5s'
     });
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Test error logs generated successfully'
     });
   } catch (error) {
@@ -4021,7 +4022,7 @@ addon.post("/api/dashboard/test-errors", requireDashboardAdmin, (req, res) => {
 addon.post("/api/dashboard/errors/clear", requireDashboardAdmin, async (req, res) => {
   try {
     const result = await requestTracker.clearErrorLogs();
-    
+
     if (result.success) {
       res.json(result);
     } else {
@@ -4036,12 +4037,12 @@ addon.post("/api/dashboard/errors/clear", requireDashboardAdmin, async (req, res
 addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   // Check if metrics are disabled
   if (isMetricsDisabled()) {
-    return res.json({ 
+    return res.json({
       metricsDisabled: true,
       message: "Metrics have been disabled on this instance"
     });
   }
-  
+
   try {
     const limit = parseInt(req.query.limit) || 10;
     Promise.all([
@@ -4049,7 +4050,7 @@ addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
       requestTracker.getSearchPatterns(limit),
       requestTracker.getStats() // For content quality metrics
     ]).then(([popularContent, searchPatterns, stats]) => {
-      res.json({ 
+      res.json({
         popularContent,
         searchPatterns,
         contentQuality: {
@@ -4072,8 +4073,8 @@ addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
 addon.get("/api/dashboard/users", requireDashboardAdmin, (req, res) => {
   // Users endpoint is NOT disabled when metrics are disabled
   // It provides user management which is essential for admin UI
-  
-  
+
+
   try {
     const dashboardApi = getDashboardAPI();
     dashboardApi.getUserStats()
@@ -4119,11 +4120,11 @@ addon.get("/api/dashboard/warming", requireAuthUnlessGuestMode, (req, res) => {
     const { getWarmupStats: getMALStats } = require('./lib/malCatalogWarmer');
     const { getWarmupStats: getCatalogStats } = require('./lib/comprehensiveCatalogWarmer');
     const { getWarmupStats: getEssentialStats } = require('./lib/cacheWarmer');
-    
+
     const malStats = getMALStats();
     const catalogStats = getCatalogStats();
     const essentialStats = getEssentialStats();
-    
+
     // Get current environment configuration
     const config = {
       mode: process.env.CACHE_WARMUP_MODE || 'essential',
@@ -4133,7 +4134,7 @@ addon.get("/api/dashboard/warming", requireAuthUnlessGuestMode, (req, res) => {
       catalogInterval: parseInt(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24,
       malInterval: parseInt(process.env.MAL_WARMUP_INTERVAL_HOURS) || 6,
     };
-    
+
     res.json({
       config,
       systems: {
@@ -4159,17 +4160,17 @@ addon.get("/api/dashboard/warming", requireAuthUnlessGuestMode, (req, res) => {
 
 // Warming Control Endpoints
 addon.post("/api/dashboard/warming/control", requireDashboardAdmin, (req, res) => {
-  
-  
+
+
   try {
     const { action, system } = req.body;
-    
+
     if (!action || !system) {
       return res.status(400).json({ error: 'Action and system are required' });
     }
-    
+
     let result = { success: false, message: '' };
-    
+
     switch (system) {
       case 'mal':
         if (action === 'start') {
@@ -4181,7 +4182,7 @@ addon.post("/api/dashboard/warming/control", requireDashboardAdmin, (req, res) =
           result = { success: true, message: 'MAL warming will stop after current task' };
         }
         break;
-        
+
       case 'comprehensive':
         if (action === 'start') {
           const { startComprehensiveCatalogWarming } = require('./lib/comprehensiveCatalogWarmer');
@@ -4192,7 +4193,7 @@ addon.post("/api/dashboard/warming/control", requireDashboardAdmin, (req, res) =
           result = { success: true, message: 'Comprehensive warming will stop after current task' };
         }
         break;
-        
+
       case 'essential':
         if (action === 'start') {
           const { warmEssentialContent } = require('./lib/cacheWarmer');
@@ -4202,11 +4203,11 @@ addon.post("/api/dashboard/warming/control", requireDashboardAdmin, (req, res) =
           result = { success: true, message: 'Essential warming will stop after current task' };
         }
         break;
-        
+
       default:
         return res.status(400).json({ error: 'Invalid system specified' });
     }
-    
+
     res.json(result);
   } catch (error) {
     consola.error('[Warming Control API] Error:', error);
@@ -4216,17 +4217,17 @@ addon.post("/api/dashboard/warming/control", requireDashboardAdmin, (req, res) =
 
 // Maintenance Task Execution endpoint
 addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (req, res) => {
-  
-  
+
+
   try {
     const { taskId, action } = req.body;
-    
+
     if (!taskId || !action) {
       return res.status(400).json({ error: 'Task ID and action are required' });
     }
-    
+
     let result = { success: false, message: '' };
-    
+
     // Handle maintenance tasks
     if (taskId === 1) { // Clear expired cache entries
       if (action === 'restart' || action === 'enable') {
@@ -4334,7 +4335,7 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
     } else if (taskId === 10) { // Cache Cleanup Scheduler Control
       const { getCacheCleanupScheduler } = require('./lib/cacheCleanupScheduler');
       const scheduler = getCacheCleanupScheduler();
-      
+
       if (action === 'restart' || action === 'enable') {
         if (scheduler) {
           scheduler.start();
@@ -4354,7 +4355,7 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
       // Handle other maintenance tasks (cache cleanup, etc.)
       result = { success: false, message: 'Task execution not implemented yet' };
     }
-    
+
     res.json(result);
   } catch (error) {
     consola.error('[Maintenance Task API] Error:', error);
@@ -4367,7 +4368,7 @@ async function startServerWithCacheWarming() {
   if (ENABLE_CACHE_WARMING && !NO_CACHE) {
     consola.info('[Server Startup] Waiting for initial cache warming to complete...');
     const { warmEssentialContent } = require("./lib/cacheWarmer");
-    
+
     try {
       await warmEssentialContent();
       consola.success('[Server Startup] Initial cache warming completed successfully');
@@ -4376,7 +4377,7 @@ async function startServerWithCacheWarming() {
       consola.info('[Server Startup] Continuing with server startup despite cache warming failure');
     }
   }
-  
+
   consola.success('[Server Startup] Server ready to accept requests');
   return addon;
 }

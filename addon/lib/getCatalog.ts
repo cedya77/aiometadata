@@ -27,8 +27,8 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
 
 const host = process.env.HOST_NAME?.startsWith('http')
-    ? process.env.HOST_NAME
-    : `https://${process.env.HOST_NAME}`;
+  ? process.env.HOST_NAME
+  : `https://${process.env.HOST_NAME}`;
 
 /**
  * Apply age rating filter to metas based on user configuration
@@ -45,18 +45,18 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
   logger.debug(`[StremThru] Applying age rating filter: ${config.ageRating} for type: ${type}`);
   const beforeCount = metas.length;
   const filterStartTime = performance.now();
-  
+
   const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
   const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
-  
+
   const movieToTvMap: { [key: string]: string } = {
     'G': 'TV-G',
-    'PG': 'TV-PG', 
+    'PG': 'TV-PG',
     'PG-13': 'TV-14',
     'R': 'TV-MA',
     'NC-17': 'TV-MA'
   };
-  
+
   const isTvRating = type === 'series';
   const finalUserRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
   const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
@@ -68,7 +68,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
 
   const filteredMetas = metas.filter(meta => {
     let cert: string | null = null;
-    
+
     if (meta.app_extras?.certification) {
       cert = meta.app_extras.certification;
     } else {
@@ -76,24 +76,24 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
     }
 
     // If rating is PG-13 or lower, exclude NR content as it could be inappropriate
-    const isUserRatingRestrictive = finalUserRating === 'PG-13' || 
-                                   (movieRatingHierarchy.indexOf(finalUserRating) !== -1 && 
-                                    movieRatingHierarchy.indexOf(finalUserRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
-                                   (tvRatingHierarchy.indexOf(finalUserRating) !== -1 && 
-                                    tvRatingHierarchy.indexOf(finalUserRating) <= tvRatingHierarchy.indexOf('TV-14'));
-    
+    const isUserRatingRestrictive = finalUserRating === 'PG-13' ||
+      (movieRatingHierarchy.indexOf(finalUserRating) !== -1 &&
+        movieRatingHierarchy.indexOf(finalUserRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+      (tvRatingHierarchy.indexOf(finalUserRating) !== -1 &&
+        tvRatingHierarchy.indexOf(finalUserRating) <= tvRatingHierarchy.indexOf('TV-14'));
+
     if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
       return !isUserRatingRestrictive; // Exclude NR if user rating is restrictive
     }
-      
+
     const resultRatingIndex = ratingHierarchy.indexOf(cert);
     if (resultRatingIndex === -1) {
       return true; // Allow items with unknown ratings
     }
-    
+
     return resultRatingIndex <= userRatingIndex;
   });
-  
+
   const afterCount = filteredMetas.length;
   const filterTime = performance.now() - filterStartTime;
   if (beforeCount !== afterCount) {
@@ -115,7 +115,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.debug(`Routing to TVDB catalog handler for id: ${id}`);
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
       return { metas: tvdbResults };
-    } 
+    }
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       logger.debug(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
       const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
@@ -162,25 +162,25 @@ async function getCatalog(type: string, language: string, page: number, id: stri
 
 async function getTvdbCatalog(type: string, catalogId: string, genreName: string, page: number, language: string, config: UserConfig, isTrending: boolean, includeVideos: boolean = false): Promise<any[]> {
   logger.debug(`Fetching TVDB catalog: ${catalogId}, Genre: ${genreName}, Page: ${page}`);
-  
+
   // Cache the raw TVDB API response using a cache key that doesn't include page
   const cacheKey = `tvdb-filter:${type}:${genreName}:${language}:${isTrending}`;
-  
+
   const allTvdbGenres = await getGenreList('tvdb', language, type as "movie" | "series", config);
   logger.debug(`TVDB genres fetched: ${allTvdbGenres.length} genres available`);
-  
+
   const genre = allTvdbGenres.find(g => g.name === genreName);
   logger.debug(`Genre lookup for "${genreName}":`, genre ? `Found ID ${genre.id}` : 'NOT FOUND');
-  
+
   const langParts = language.split('-');
   const langCode2 = langParts[0];
-  const countryCode2 = langParts[1] || langCode2; 
+  const countryCode2 = langParts[1] || langCode2;
   const langCode3 = await to3LetterCode(langCode2, config);
   const countryCode3 = to3LetterCountryCode(countryCode2);
   const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating as string, countryCode3, type === 'movie' ? 'movie' : 'episode');
-  
+
   const params: any = {
-    country:'usa',
+    country: config.strictRegionFiltering ? countryCode3 : 'usa',
     lang: 'eng',
     sort: 'score'
   };
@@ -196,23 +196,23 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   } else {
     logger.warn(`No genre found for "${genreName}", proceeding without genre filter`);
   }
-  
+
   const tvdbType = type === 'movie' ? 'movies' : 'series';
-  if(tvdbType === 'series'){
+  if (tvdbType === 'series') {
     params.sortType = 'desc';
   }
-  if(tvdbType === 'movies'){
+  if (tvdbType === 'movies') {
     params.status = 5;
   }
-  
+
   logger.debug(`TVDB filter params:`, JSON.stringify(params));
-  
+
   // Use cacheWrapTvdbApi to cache the raw API response
   const results = await cacheWrapTvdbApi(cacheKey, async () => {
     if (isTrending) {
       const currentYear = new Date().getFullYear();
       const lastYear = currentYear - 1;
-      
+
       // Fetch both years in parallel
       const [currentYearResults, lastYearResults] = await Promise.all([
         tvdb.filter(tvdbType, { ...params, year: currentYear }, config),
@@ -221,7 +221,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
 
       // Combine results
       const combined = [...(currentYearResults || []), ...(lastYearResults || [])];
-      
+
       // Simple deduplication just in case
       const seen = new Set();
       return combined.filter(item => {
@@ -234,9 +234,9 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
       return await tvdb.filter(tvdbType, params, config);
     }
   });
-  
+
   logger.debug(`TVDB filter results: ${results ? results.length : 0} items returned`);
-  
+
   if (!results || results.length === 0) {
     logger.warn(`No results from TVDB filter, returning empty array`);
     return [];
@@ -251,23 +251,23 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
 
     filteredResults = results.filter((item: any) => {
       if (!item.firstAired) return false;
-      
+
       const firstAired = new Date(item.firstAired);
       return firstAired <= nextWeek;
     });
-    
+
     logger.debug(`[TVDB Trending] Filtered ${results.length} -> ${filteredResults.length} series based on air date`);
   }
 
   // Sort results by score (highest first)
   const sortedResults = filteredResults.sort((a: any, b: any) => b.score - a.score);
-  
+
   // Apply client-side pagination
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize;
   const paginatedResults = sortedResults.slice(startIndex, endIndex);
-  
+
   logger.debug(`Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
   let preferredProvider: string;
@@ -279,7 +279,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const metas = await Promise.all(paginatedResults.map(async (item: any) => {
     const tvdbId = item.id;
     if (!tvdbId) return null;
-    
+
     let stremioId = `tvdb:${tvdbId}`;
     //if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
     //  stremioId = `tmdb:${allIds.tmdbId}`;
@@ -288,11 +288,11 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     //} else if(preferredProvider === 'imdb' && allIds?.imdbId) {
     //  stremioId = allIds.imdbId;
     //}
-    
+
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, config.userUUID, includeVideos);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
-    
+    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, type as any, includeVideos);
+
     if (result && result.meta) {
       return result.meta;
     }
@@ -301,7 +301,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
 
   let validMetas = metas.filter(meta => meta !== null);
   validMetas.sort((a, b) => new Date(b.released).getTime() - new Date(a.released).getTime());
-  
+
   return validMetas;
 }
 
@@ -311,18 +311,18 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     // Cache the collections list for this specific page
     const collections = await cacheWrapTvdbApi(`collections-list:${page}`, () => tvdb.getCollectionsList(config, page));
     if (!collections || !collections.length) return [];
-    
+
     logger.info(`Page ${page}: fetched ${collections.length} collections from TVDB API`);
-    
+
     // Fetch extended details and translations for each collection in parallel
     const metas = await Promise.all(collections.map(async (col: any) => {
       const extended = await cacheWrapTvdbApi(`collection-extended:${col.id}`, () => tvdb.getCollectionDetails(col.id, config));
       if (!extended || !Array.isArray(extended.entities)) return null;
-      
+
       // Only include collections that have at least one movie
       const hasMovies = extended.entities.some((e: any) => e.movieId);
       if (!hasMovies) return null;
-      
+
       const langCode3 = await to3LetterCode(langCode, config);
       let translation = await tvdb.getCollectionTranslations(col.id, langCode3, config);
 
@@ -348,7 +348,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   if (id.startsWith("mdblist.")) {
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const catalogConfig = config.catalogs?.find(c => c.id === id);
-    
+
     // Handle MDBList Up Next catalog
     if (id === 'mdblist.upnext') {
       // MDBList Up Next catalog - only supports series type
@@ -356,51 +356,51 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         logger.info(`MDBList Up Next: Type ${type} requested, returning empty (only series supported)`);
         return [];
       }
-      
+
       const upNextStart = Date.now();
       logger.info(`[MDBList Up Next] Starting catalog fetch (page: ${page})`);
-      
+
       const apiKey = config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '';
       if (!apiKey) {
         logger.warn('[MDBList Up Next] Missing API key');
         return [];
       }
-      
+
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
       // Ensure page is a number
       const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
       const response = await fetchMDBListUpNext(apiKey, pageNum, pageSize);
-      
+
       // Early exit for empty pages beyond list end
       if (!response.hasMore && (!response.items || response.items.length === 0)) {
         logger.info(`[MDBList Up Next] No more items at page ${pageNum}`);
         return [];
       }
-      
+
       if (!response.items || response.items.length === 0) {
         logger.info(`[MDBList Up Next] No items found for page ${pageNum}`);
         return [];
       }
-      
+
       const totalTime = Date.now() - upNextStart;
       logger.info(`[MDBList Up Next] Fetched ${response.items.length} items in ${totalTime}ms`);
-      
+
       // Get useShowPoster setting from catalog config
       const useShowPoster = catalogConfig?.metadata?.useShowPosterForUpNext || false;
       logger.debug(`[MDBList Up Next] useShowPosterForUpNext = ${useShowPoster}`);
-      
+
       const parseStart = Date.now();
       let metas = await parseMDBListUpNextItems(response.items, language, config, includeVideos, useShowPoster);
       const parseTime = Date.now() - parseStart;
       logger.info(`[MDBList Up Next] parseMDBListUpNextItems took ${parseTime}ms for ${response.items.length} items`);
-      
+
       // Apply age rating filter
       metas = applyAgeRatingFilter(metas, type, config);
-      
+
       logger.success(`[MDBList Up Next] Processed ${metas.length} items`);
       return metas;
     }
-    
+
     // Handle external lists via sourceUrl
     if (catalogConfig?.sourceUrl && catalogConfig.sourceUrl.includes('/external/lists/')) {
       logger.info(`Fetching MDBList external list from sourceUrl: ${catalogConfig.sourceUrl}`);
@@ -431,25 +431,25 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
 
       metas = applyAgeRatingFilter(metas, type, config);
-      
+
       return metas;
     }
 
     const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
     const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
     logger.debug(`MDBList sorting - sort: ${sort}, order: ${order}`);
-    
+
     // Convert genre title to slug format for MDBList API (using the mapping from API)
     const { convertGenreToSlug } = await import('../utils/mdbList');
     const genreSlug = convertGenreToSlug(genre);
     if (genreSlug !== genre) {
       logger.debug(`Converted genre "${genre}" to slug "${genreSlug}"`);
     }
-    
+
     // Handle different watchlist catalog IDs
     let listId: string;
     let unified: boolean | undefined;
-    
+
     if (id === 'mdblist.watchlist') {
       // Unified watchlist
       listId = 'watchlist';
@@ -464,20 +464,20 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       if (!catalogConfig?.sourceUrl) {
         unified = true;
       } else {
-      unified = catalogConfig?.type === 'all' || false;
+        unified = catalogConfig?.type === 'all' || false;
       }
     }
-    
+
     const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug, unified, type);
-    
+
     // Smart pagination handling
     if (listId === 'watchlist') {
       // For watchlist, we only have hasMore information
       const itemInfo = `${response.items.length} items`;
       const statusInfo = response.hasMore ? 'more available' : 'end reached';
-      
+
       logger.debug(`MDBList watchlist pagination - page ${page}, ${itemInfo}, ${statusInfo}`);
-      
+
       // Early exit for empty pages beyond list end
       if (!response.hasMore && response.items.length === 0) {
         logger.debug(`MDBList watchlist early exit - no more items at page ${page}`);
@@ -488,66 +488,66 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       const itemInfo = `${response.items.length} items`;
       const totalInfo = `${response.totalItems} total`;
       const statusInfo = response.hasMore ? 'more available' : 'end reached';
-      
+
       logger.debug(`MDBList smart pagination - ${pageInfo}, ${itemInfo}, ${totalInfo}, ${statusInfo}`);
-      
+
       // Early exit for empty pages beyond list end
       if (!response.hasMore && response.items.length === 0) {
         logger.debug(`MDBList early exit - no more items for list ${listId} at page ${page}`);
         return [];
       }
-      
+
       // Performance warning for large offsets
       if (page > 50) {
         logger.warn(`MDBList performance warning - requesting page ${page} (offset ${(page - 1) * (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20)}) for list ${listId}`);
       }
     }
-    
+
     let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
-    
+
     metas = applyAgeRatingFilter(metas, type, config);
-    
+
     return metas;
   }
 
   // Handle TMDB List catalogs (tmdb.list.{listId} or tmdb.list.{listId}.movies/series)
   if (id.startsWith('tmdb.list.')) {
     logger.info(`Fetching TMDB list catalog: ${id}, Type: ${type}, Page: ${page}, Genre: ${genre}`);
-    
+
     const catalogConfig = config.catalogs?.find(c => c.id === id);
     const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || '';
-    
+
     if (!tmdbApiKey) {
       logger.warn('[TMDB List] Missing API key');
       return [];
     }
-    
+
     // Formats: tmdb.list.{listId} or tmdb.list.{listId}.movies or tmdb.list.{listId}.series
     const parts = id.split('.');
     const listId = parts[2]; // The list ID is always at index 2
     const isUnified = parts.length === 3; // tmdb.list.{listId} = unified
     const isSplit = parts.length === 4; // tmdb.list.{listId}.movies or tmdb.list.{listId}.series
-    
+
     if (!listId) {
       logger.error(`[TMDB List] Invalid list ID format: ${id}`);
       return [];
     }
-    
+
     try {
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
       const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
-      
+
       logger.debug(`[TMDB List] Fetching list ${listId}, page ${pageNum}, pageSize ${pageSize}`);
-      
+
       const result = await moviedb.getTmdbListItems({ list_id: listId, page: pageNum }, config);
-      
+
       if (!result || !result.items || result.items.length === 0) {
         logger.info(`[TMDB List] No items found for list ${listId} at page ${pageNum}`);
         return [];
       }
-      
+
       logger.info(`[TMDB List] Fetched ${result.items.length} items from list ${listId}`);
-      
+
       let items = result.items;
       if (isSplit) {
         const mediaType = parts[3];
@@ -555,7 +555,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         items = items.filter((item: any) => item.media_type === tmdbMediaType);
         logger.debug(`[TMDB List] Filtered to ${items.length} ${mediaType} items`);
       }
-      
+
       if (genre && genre.toLowerCase() !== 'none') {
         let genreList: Array<{ id: number; name: string }> = [];
         if (type === 'all') {
@@ -570,7 +570,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         } else {
           genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
         }
-        
+
         const genreObj = genreList.find(g => g.name === genre);
 
         logger.debug(`[TMDB List] Genre object: ${JSON.stringify(genreObj)}`);
@@ -584,7 +584,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
           logger.warn(`[TMDB List] Genre "${genre}" not found in genre list`);
         }
       }
-      
+
       const metas = await Promise.all(items.map(async (item: any) => {
         const itemType = item.media_type === 'movie' ? 'movie' : 'series';
 
@@ -592,31 +592,31 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         } else if (isUnified && itemType !== type) {
           return null;
         }
-        
+
         const stremioId = `tmdb:${item.id}`;
-        
+
         try {
           const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
             return await getMeta(itemType, language, stremioId, config, userUUID, includeVideos);
-          }, undefined, {enableErrorCaching: true, maxRetries: 2}, itemType as any, includeVideos);
-          
+          }, undefined, { enableErrorCaching: true, maxRetries: 2 }, itemType as any, includeVideos);
+
           if (result && result.meta) {
             return result.meta;
           }
         } catch (error: any) {
           logger.warn(`[TMDB List] Failed to get meta for ${stremioId}: ${error.message}`);
         }
-        
+
         return null;
       }));
-      
+
       let validMetas = metas.filter(meta => meta !== null);
-      
+
       validMetas = applyAgeRatingFilter(validMetas, type, config);
-      
+
       logger.success(`[TMDB List] Processed ${validMetas.length} items for list ${listId}`);
       return validMetas;
-      
+
     } catch (error: any) {
       logger.error(`[TMDB List] Error fetching list ${listId}: ${error.message}`);
       return [];
@@ -642,13 +642,13 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     // Note: Full URL/params logging removed to avoid exposing API keys in logs
   }
 
-  const fetchFunction = type === "movie" 
-    ? () => moviedb.discoverMovie(parameters, config) 
+  const fetchFunction = type === "movie"
+    ? () => moviedb.discoverMovie(parameters, config)
     : () => moviedb.discoverTv(parameters, config);
 
   const res: any = await fetchFunction();
   // define preferred provider as string
-  
+
   // Sort results by release date (newest first) for catalogs that explicitly sort by release date
   // Top rated, year, and language catalogs should keep TMDB's default sorting, so skip this
   if (res?.results) {
@@ -664,20 +664,20 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       res.results.sort((a: any, b: any) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime());
     }
     const metas = await Promise.all(res.results.map(async (item: any) => {
-    let stremioId = `tmdb:${item.id}`;
-    
-    const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
-    if (result && result.meta) {
-      return result.meta;
-    }
-    return null;
-  }));
+      let stremioId = `tmdb:${item.id}`;
 
-  let validMetas = metas.filter(meta => meta !== null);
-  
-  return validMetas;
+      const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+        return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
+      }, undefined, { enableErrorCaching: true, maxRetries: 2 }, type as any, includeVideos);
+      if (result && result.meta) {
+        return result.meta;
+      }
+      return null;
+    }));
+
+    let validMetas = metas.filter(meta => meta !== null);
+
+    return validMetas;
   } else {
     return [];
   }
@@ -685,7 +685,14 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
 async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {
   const languages = await getLanguages(config);
-  const parameters: any = { language, page, 'vote_count.gte': 50};
+  const parameters: any = { language, page, 'vote_count.gte': 50 };
+
+  if (config.strictRegionFiltering) {
+    const region = language.split('-')[1];
+    if (region) {
+      parameters.region = region;
+    }
+  }
 
   /*if (id === 'tmdb.top' && type === 'series') {
     logger.debug('Applying genre exclusion for popular series catalog.');
@@ -729,7 +736,7 @@ async function buildParameters(type: string, language: string, page: number, id:
     const provider = findProvider(id.split(".")[1]);
     logger.debug(`Found provider: ${JSON.stringify(provider)}`);
 
-    if(genre && genre.toLowerCase() !== 'none') {
+    if (genre && genre.toLowerCase() !== 'none') {
       parameters.with_genres = findGenreId(genre, genreList);
     }
     parameters.with_watch_providers = provider.watchProviderId
@@ -740,40 +747,40 @@ async function buildParameters(type: string, language: string, page: number, id:
     if (catalogConfig?.sort) {
       const direction = catalogConfig.sortDirection || 'desc';
       let sortField = catalogConfig.sort;
-      
+
       if (sortField === 'release_date') {
         sortField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
       }
-      
+
       parameters.sort_by = `${sortField}.${direction}`;
-      
+
       if (sortField === 'vote_average') {
-        parameters['vote_count.gte'] = 50; 
+        parameters['vote_count.gte'] = 50;
       }
     } else {
-       parameters.sort_by = 'popularity.desc';
+      parameters.sort_by = 'popularity.desc';
     }
   } else {
     const catalogConfig = config._currentCatalogConfig;
     if (catalogConfig?.sort && (id === 'tmdb.year' || id === 'tmdb.language')) {
       const direction = catalogConfig.sortDirection || 'desc';
       let sortField = catalogConfig.sort;
-      
+
       if (sortField === 'release_date') {
         sortField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
       }
-      
+
       parameters.sort_by = `${sortField}.${direction}`;
-      
+
       if (sortField === 'vote_average') {
-        parameters['vote_count.gte'] = 50; 
+        parameters['vote_count.gte'] = 50;
       }
     }
-    
+
     switch (id) {
       case "tmdb.top":
         parameters.sort_by = 'primary_release_date.desc'
-        if(genre && genre.toLowerCase() !== 'none') {
+        if (genre && genre.toLowerCase() !== 'none') {
           logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
           parameters.with_genres = findGenreId(genre, genreList);
         }
@@ -804,7 +811,7 @@ async function buildParameters(type: string, language: string, page: number, id:
         parameters['vote_count.gte'] = 500; // Require at least 500 votes for top rated
         // Exclude Documentary (99) and News (10755) genres
         parameters.without_genres = '99,10755';
-        if(genre && genre.toLowerCase() !== 'none') {
+        if (genre && genre.toLowerCase() !== 'none') {
           logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
           parameters.with_genres = findGenreId(genre, genreList);
         }
@@ -815,11 +822,11 @@ async function buildParameters(type: string, language: string, page: number, id:
         // TMDB's discover endpoint doesn't have direct "airing today" filter, so we use air_date range
         // Use user's configured timezone (or server timezone as fallback)
         const userTimezone = config.timezone || process.env.TZ || 'UTC';
-        const formatter = new Intl.DateTimeFormat('en-CA', { 
-          timeZone: userTimezone, 
-          year: 'numeric', 
-          month: '2-digit', 
-          day: '2-digit' 
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: userTimezone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
         });
         const today = formatter.format(new Date()); // YYYY-MM-DD format in user's timezone
         parameters['air_date.gte'] = today;
@@ -827,7 +834,7 @@ async function buildParameters(type: string, language: string, page: number, id:
         parameters.sort_by = 'popularity.desc';
         parameters.with_type = '2|3|4'; // Filter by TV show types (Scripted, Reality, Miniseries)
         delete parameters['vote_count.gte'];
-        if(genre && genre.toLowerCase() !== 'none') {
+        if (genre && genre.toLowerCase() !== 'none') {
           parameters.with_origin_country = genre.toUpperCase();
           logger.debug(`Found origin country: ${genre}`);
         }
@@ -858,19 +865,19 @@ function findProvider(providerId: string): any {
 async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
   try {
     logger.info(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
-    
+
     // Find the user catalog configuration to get the source URL
     const userCatalog = config.catalogs?.find(c => c.id === catalogId && c.type === type);
     if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
       logger.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
       return [];
     }
-    
+
     // Use sourceUrl for StremThru catalogs, fallback to source for backward compatibility
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
     // sparkle emoji
     logger.debug(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
-    
+
     // --- Dynamic pagination ---
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
     // Use catalog-specific page size if configured, otherwise default to 100
@@ -897,13 +904,13 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
       const skip = firstBatchSkip + i * stremThruBatchSize;
       batchSkips.push(skip);
       const cacheKey = `custom-batch:${catalogId}:${genre || 'all'}:skip=${skip}`;
-      
+
       // Use cacheWrap to cache the batch fetch
       const batch = await cacheWrap(cacheKey, async () => {
         logger.debug(`[✨ StremThru] Fetching fresh batch: skip=${skip}, genre=${genre || 'all'}`);
         return await fetchStremThruCatalog(catalogUrl, skip, genre);
       }, 300, { enableErrorCaching: true, maxRetries: 2 }); // 5 minute TTL for batches
-      
+
       if (batch?.length) allItems = allItems.concat(batch);
     }
 
@@ -919,7 +926,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
 
     // 📋 Print pagination debug info
     debugPagination(batchSkips, localStartIndex, localEndIndex, allItems.length);
-    
+
     // Log caching benefits
     logger.debug(`[✨ StremThru] Batch caching: fetched ${batchesNeeded} batch(es) for page ${page}, total items: ${allItems.length}`);
 
@@ -943,27 +950,27 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
 }
 
 async function getTraktCatalog(
-  type: string, 
-  catalogId: string, 
-  genre: string, 
-  page: number, 
-  language: string, 
-  config: UserConfig, 
-  userUUID: string, 
+  type: string,
+  catalogId: string,
+  genre: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
   includeVideos: boolean = false
 ): Promise<any[]> {
   try {
     logger.info(`Fetching Trakt catalog: ${catalogId}, Genre: ${genre}, Page: ${page}`);
-    
+
     // Get Trakt access token from database
     const accessToken = await getTraktAccessToken(config);
     if (!accessToken) {
       logger.warn(`Trakt not connected for user ${userUUID}`);
       return [];
     }
-    
+
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-    
+
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const sort = catalogConfig?.sort;
     const sortDirection = catalogConfig?.sortDirection;
@@ -975,38 +982,38 @@ async function getTraktCatalog(
 
     let genreSlug = undefined;
     if (genre && genre !== 'None') {
-       // Fetch the full genre objects list (cached)
-       const genreList = await require('../utils/traktUtils.js').fetchTraktGenres(traktType || 'all');
-       
-       // Find the object where name matches the user selection
-       const genreObj = genreList.find((g: any) => g.name === genre);
-       
-       // Use the slug if found, otherwise fallback to lowercase (handles legacy/manual inputs)
-       genreSlug = genreObj ? genreObj.slug : genre.toLowerCase();
-       
-       logger.debug(`[Trakt] Resolved genre '${genre}' to slug '${genreSlug}'`);
+      // Fetch the full genre objects list (cached)
+      const genreList = await require('../utils/traktUtils.js').fetchTraktGenres(traktType || 'all');
+
+      // Find the object where name matches the user selection
+      const genreObj = genreList.find((g: any) => g.name === genre);
+
+      // Use the slug if found, otherwise fallback to lowercase (handles legacy/manual inputs)
+      genreSlug = genreObj ? genreObj.slug : genre.toLowerCase();
+
+      logger.debug(`[Trakt] Resolved genre '${genre}' to slug '${genreSlug}'`);
     }
-    
+
     let response: any;
-    
+
     if (catalogId === 'trakt.upnext') {
       // Trakt Up Next catalog with last_activities optimization
       // Up Next only has one page - return empty for page 2+
       if (page > 1) {
         logger.info(`Up Next: Page ${page} requested, returning empty (only page 1 exists)`);
-        response = { 
-          items: [], 
+        response = {
+          items: [],
           hasMore: false
         };
       } else {
         const upNextStart = Date.now();
         logger.info('Up Next: Starting catalog fetch');
-        
+
         const cacheKey = `trakt_upnext_${accessToken.substring(0, 8)}`;
         const timestampKey = `trakt_upnext_timestamp_${accessToken.substring(0, 8)}`;
         const cacheTTL = 300; // 5 minutes for items
         const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
-        
+
         const cacheCheckStart = Date.now();
         const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
 
@@ -1016,36 +1023,36 @@ async function getTraktCatalog(
         const cachedTimestamp = cachedData ? await cacheWrap(timestampKey, async () => null, timestampTTL) : null;
         const cacheCheckTime = Date.now() - cacheCheckStart;
         logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
-        
+
         const fetchStart = Date.now();
         const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(accessToken, cachedTimestamp);
         const fetchTime = Date.now() - fetchStart;
         logger.info(`Up Next: fetchTraktUpNextEpisodes took ${fetchTime}ms`);
-        
+
         let allItems: any[];
-        
+
         if (result.items.length === 0 && cachedData?.items) {
           logger.info(`Up Next: No activity changes, extending cache for ${cachedData.items.length} items`);
           allItems = cachedData.items;
-          
+
           await cacheWrap(cacheKey, async () => cachedData, cacheTTL);
         } else {
           allItems = result.items;
-          
+
           const parseStart = Date.now();
           // Cache both items and timestamp
           await cacheWrap(cacheKey, async () => ({ items: allItems, watched_at: result.watched_at }), cacheTTL);
           await cacheWrap(timestampKey, async () => result.watched_at, timestampTTL);
           const parseTime = Date.now() - parseStart;
-          
+
           logger.info(`Up Next: Rebuilt and cached ${allItems.length} items (watched_at: ${result.watched_at}) [cache write: ${parseTime}ms]`);
         }
-        
+
         const totalTime = Date.now() - upNextStart;
         logger.info(`Up Next: Total catalog fetch time: ${totalTime}ms`);
-        
-        response = { 
-          items: allItems, 
+
+        response = {
+          items: allItems,
           hasMore: false
         };
       }
@@ -1094,32 +1101,32 @@ async function getTraktCatalog(
       } else {
         // Get timezone from config or default to UTC
         const timezone = config.timezone || process.env.TZ || 'UTC';
-        
+
         // Get today's date in the user's timezone (YYYY-MM-DD format)
         // Create a date formatter for the user's timezone
-        const formatter = new Intl.DateTimeFormat('en-CA', { 
+        const formatter = new Intl.DateTimeFormat('en-CA', {
           timeZone: timezone,
           year: 'numeric',
           month: '2-digit',
           day: '2-digit'
         });
         const startDate = formatter.format(new Date()); // Returns YYYY-MM-DD
-        
+
         // Get configured days (1-7), default to 1 if not set
         const catalogConfig = config.catalogs?.find(c => c.id === 'trakt.calendar');
         const days = catalogConfig?.metadata?.airingSoonDays || 1;
         const clampedDays = Math.max(1, Math.min(7, days));
-        
+
         logger.info(`Trakt Calendar: Fetching shows airing in next ${clampedDays} day(s) (${startDate}, timezone: ${timezone})`);
-        
+
         // Fetch shows for the configured number of days
         const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, clampedDays);
-        
+
         response = {
           items: calendarResult.items,
           hasMore: false
         };
-        
+
         logger.info(`Trakt Calendar: Retrieved ${response.items.length} shows`);
       }
     } else if (catalogId.startsWith('trakt.most_favorited.')) {
@@ -1218,7 +1225,7 @@ async function getTraktCatalog(
         response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection);
       }
     }
-    
+
     // Log pagination info
     if (response.totalItems !== undefined && response.totalPages !== undefined) {
       logger.debug(
@@ -1230,13 +1237,13 @@ async function getTraktCatalog(
         `Trakt pagination - page ${page}, items: ${response.items.length}, hasMore: ${response.hasMore}`
       );
     }
-    
+
     // Early exit for empty pages
     if (!response.hasMore && response.items.length === 0) {
       logger.debug(`Trakt early exit - no more items at page ${page}`);
       return [];
     }
-    
+
     const parseStart = Date.now();
     // Pass useShowPosterForUpNext setting to items
     const useShowPoster = catalogConfig?.metadata?.useShowPosterForUpNext || false;
@@ -1244,13 +1251,13 @@ async function getTraktCatalog(
     let metas = await parseTraktItems(response.items, type, language, config, includeVideos, useShowPoster);
     const parseTime = Date.now() - parseStart;
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
-    
+
     // Apply age rating filter
     metas = applyAgeRatingFilter(metas, type, config);
-    
+
     logger.success(`[Trakt] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
-    
+
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`[Trakt] Error processing catalog ${catalogId}: ${err.message}`);
@@ -1275,14 +1282,14 @@ async function getAniListCatalog(
 ): Promise<any[]> {
   try {
     logger.info(`[AniList] Fetching catalog: ${catalogId}, Page: ${page}`);
-    
+
     // Handle trending catalog - doesn't require username
     if (catalogId === 'anilist.trending') {
       const pageSize = 50;
       const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
       const customCacheTTL = catalogConfig?.cacheTTL || null;
       const sfw = config.sfw || false;
-      
+
       // Fetch trending anime with caching
       // Include sfw in cache key to prevent mixing SFW and non-SFW results
       const response = await cacheWrapAniListCatalog(
@@ -1293,34 +1300,34 @@ async function getAniListCatalog(
         customCacheTTL,
         { enableErrorCaching: true }
       );
-      
+
       // Handle cached error responses
       if (response && (response as any).error) {
         logger.warn(`[AniList] Cached error for trending: ${(response as any).message}`);
         return [];
       }
-      
+
       logger.debug(`[AniList] Fetched ${response.items.length} trending items, hasMore: ${response.hasMore}`);
-      
+
       if (response.items.length === 0) {
         return [];
       }
-      
+
       // Resolve AniList media IDs to Stremio metas
       const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
       logger.success(`[AniList] Processed ${metas.length} trending items (page ${page})`);
       return metas;
     }
-    
+
     // Get the catalog config to retrieve username, list name and custom TTL
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const username = catalogConfig?.metadata?.username;
-    
+
     // Prefer explicit listName metadata; fall back to id parsing to support older configs
     const idWithoutPrefix = catalogId.replace('anilist.', '');
     const listName = catalogConfig?.metadata?.listName
       || (idWithoutPrefix.includes('.') ? idWithoutPrefix.split('.').slice(1).join('.') : idWithoutPrefix);
-    
+
     if (!username) {
       logger.error(`[AniList] No username found in catalog config for: ${catalogId}`);
       return [];
@@ -1329,19 +1336,19 @@ async function getAniListCatalog(
       logger.error(`[AniList] No list name resolved for catalog: ${catalogId}`);
       return [];
     }
-    
+
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-    
+
     // Get custom cache TTL and sort option from catalog config if specified
     const customCacheTTL = catalogConfig?.cacheTTL || null;
     const sortBase = catalogConfig?.sort || 'ADDED_TIME';
     const sortDirection = catalogConfig?.sortDirection || 'desc';
-    
+
     // Combine sort and direction for AniList (e.g., ADDED_TIME + desc = ADDED_TIME_DESC)
     const sort = sortDirection === 'desc' ? `${sortBase}_DESC` : sortBase;
-    
+
     logger.debug(`[AniList] Using sort: ${sortBase}, direction: ${sortDirection}, combined: ${sort}`);
-    
+
     // Fetch list items from AniList API with caching
     const response = await cacheWrapAniListCatalog(
       username,
@@ -1351,27 +1358,27 @@ async function getAniListCatalog(
       customCacheTTL,
       { enableErrorCaching: true }
     );
-    
+
     // Handle cached error responses
     if (response && (response as any).error) {
       logger.warn(`[AniList] Cached error for list "${listName}": ${(response as any).message}`);
       return [];
     }
-    
+
     logger.debug(`[AniList] Fetched ${response.items.length} items from list "${listName}", hasMore: ${response.hasMore}`);
-    
+
     // Early exit for empty pages
     if (response.items.length === 0) {
       logger.debug(`[AniList] No items at page ${page} for list "${listName}"`);
       return [];
     }
-    
+
     // Resolve AniList media IDs to Stremio metas
     const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
-    
+
     logger.success(`[AniList] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
-    
+
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`[AniList] Error processing catalog ${catalogId}: ${err.message}`);
@@ -1405,14 +1412,14 @@ async function resolveAniListItemsToMetas(
 
   const getStremioTypeFromFormat = (format: string | null | undefined): string => {
     if (!format) return 'series';
-    
+
     const formatUpper = format.toUpperCase();
-    
+
     // Movie formats: MOVIE, SPECIAL, ONE_SHOT
     if (formatUpper === 'MOVIE' || formatUpper === 'SPECIAL' || formatUpper === 'ONE_SHOT') {
       return 'movie';
     }
-    
+
     // Series formats: TV, TV_SHORT, OVA, ONA (and everything else defaults to series)
     // TV, TV_SHORT, OVA, ONA are all series
     return 'series';
@@ -1422,15 +1429,15 @@ async function resolveAniListItemsToMetas(
   const newItems = items.map(item => {
     const media = item.media;
     const itemType = getStremioTypeFromFormat(media.format) || type;
-    
+
     // Format dates from AniList structure
-    const airedFrom = media.startDate?.year 
+    const airedFrom = media.startDate?.year
       ? `${media.startDate.year}-${String(media.startDate.month || 1).padStart(2, '0')}-${String(media.startDate.day || 1).padStart(2, '0')}`
       : null;
     const airedTo = media.endDate?.year
       ? `${media.endDate.year}-${String(media.endDate.month || 12).padStart(2, '0')}-${String(media.endDate.day || 31).padStart(2, '0')}`
       : null;
-    
+
     return {
       mal_id: media.idMal,
       type: itemType,
@@ -1452,11 +1459,11 @@ async function resolveAniListItemsToMetas(
       status: airedTo ? 'Finished Airing' : 'Currently Airing'
     };
   });
-  const metas= await Utils.parseAnimeCatalogMetaBatch(newItems, config, language);
-  
+  const metas = await Utils.parseAnimeCatalogMetaBatch(newItems, config, language);
+
   // Filter out null results
   let validMetas = metas.filter(meta => meta !== null);
-  
+
   return validMetas;
 }
 
@@ -1476,7 +1483,7 @@ async function getLetterboxdCatalog(
   try {
     // Extract identifier from catalog ID (format: letterboxd.<identifier>)
     const identifier = catalogId.replace('letterboxd.', '');
-    
+
     if (!identifier) {
       logger.error(`Invalid Letterboxd catalog ID: ${catalogId}`);
       return [];
@@ -1496,7 +1503,7 @@ async function getLetterboxdCatalog(
       catalogConfig?.cacheTTL || 7200,
       { enableErrorCaching: true, maxRetries: 2 }
     );
-    
+
     if (!listData?.data?.items) {
       logger.warn(`No items found in Letterboxd list: ${identifier}`);
       return [];
@@ -1505,7 +1512,7 @@ async function getLetterboxdCatalog(
     const allItems = listData.data.items;
     logger.info(`Retrieved ${allItems.length} items from Letterboxd list`);
     let filteredItems = allItems;
-    if( genreName && genreName.toLowerCase() !== 'none') {
+    if (genreName && genreName.toLowerCase() !== 'none') {
       filteredItems = filteredItems.filter(item => item.genre_ids.includes(getLetterboxdGenreIdByName(genreName)));
     }
 

@@ -7,12 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 
 // Define the options for the age rating select dropdown
 const ageRatingOptions = [
-    { value: 'None', label: 'None (Show All)' },
-    { value: 'G', label: 'G (All Ages)' },
-    { value: 'PG', label: 'PG (Parental Guidance)' },
-    { value: 'PG-13', label: 'PG-13 (Parents Strongly Cautioned)' },
-    { value: 'R', label: 'R (Restricted)' },
-    { value: 'NC-17', label: 'NC-17 (Adults Only)' },
+  { value: 'None', label: 'None (Show All)' },
+  { value: 'G', label: 'G (All Ages)' },
+  { value: 'PG', label: 'PG (Parental Guidance)' },
+  { value: 'PG-13', label: 'PG-13 (Parents Strongly Cautioned)' },
+  { value: 'R', label: 'R (Restricted)' },
+  { value: 'NC-17', label: 'NC-17 (Adults Only)' },
 ];
 
 export function FiltersSettings() {
@@ -60,14 +60,14 @@ export function FiltersSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-            <Select value={config.ageRating} onValueChange={handleAgeRatingChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a rating" />
-              </SelectTrigger>
-              <SelectContent>
-                {ageRatingOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <Select value={config.ageRating} onValueChange={handleAgeRatingChange}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select a rating" />
+            </SelectTrigger>
+            <SelectContent>
+              {ageRatingOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 
@@ -87,6 +87,26 @@ export function FiltersSettings() {
               onCheckedChange={handleSfwChange}
             />
             <Label htmlFor="sfw-mode">Safe for Work (SFW) Mode</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Strict Region Filtering Card */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Strict Region Filtering</CardTitle>
+          <CardDescription>
+            Restrict results to content available in the selected language region (e.g., Italian to Italy). Includes local releases of international content.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="strict-region-filtering"
+              checked={config.strictRegionFiltering ?? false}
+              onCheckedChange={(checked) => setConfig(prev => ({ ...prev, strictRegionFiltering: checked }))}
+            />
+            <Label htmlFor="strict-region-filtering">Enable Strict Region Filtering</Label>
           </div>
         </CardContent>
       </Card>
@@ -159,7 +179,7 @@ export function FiltersSettings() {
           </div>
 
           <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
-            <strong>Tip:</strong> Use simple keywords for easy filtering, or advanced regex for precise control. 
+            <strong>Tip:</strong> Use simple keywords for easy filtering, or advanced regex for precise control.
             Both work together - content matching either will be excluded.
           </div>
         </CardContent>
