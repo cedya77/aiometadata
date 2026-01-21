@@ -691,6 +691,21 @@ async function buildParameters(type: string, language: string, page: number, id:
     const region = language.split('-')[1];
     if (region) {
       parameters.region = region;
+
+      const userTimezone = config.timezone || process.env.TZ || 'UTC';
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: userTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const today = formatter.format(new Date());
+
+      if (type === 'movie') {
+        parameters['release_date.lte'] = today;
+      } else {
+        parameters['first_air_date.lte'] = today;
+      }
     }
   }
 
