@@ -34,7 +34,7 @@ class Database {
     // Fallback to SHA-256 verification (for legacy passwords)
     const hashRaw = crypto.createHash('sha256').update(password).digest('hex');
     const hashTrim = crypto.createHash('sha256').update((password || '').trim()).digest('hex');
-    
+
     return storedHash === hashRaw || storedHash === hashTrim;
   }
 
@@ -69,7 +69,7 @@ class Database {
   async initializeSQLite(uri) {
     const dbPath = uri.replace('sqlite://', '');
     const fullPath = path.resolve(dbPath);
-    
+
     // Ensure directory exists
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
@@ -94,11 +94,54 @@ class Database {
   }
 
   async initializePostgreSQL(uri) {
-    this.db = new Pool({ connectionString: uri });
+    // Force IPv4 to avoid ENETUNREACH errors in some environments
+    const config = {
+      connectionString: uri,
+      // Force IPv4 resolution
+      host: uri.includes('@') ? uri.split('@')[1].split(':')[0].split('/')[0] : undefined,
+    };
+
+    // If we can't easily parse the host to check for IP type, we can pass specific options to pg
+    // pg-pool doesn't directly accept 'family' in all versions, but we can try passing it in config
+    // or by modifying the connection string? 
+    // Actually, passing 'family: 4' is supported in recent pg versions via socket options or similar.
+    // But 'pg' uses 'net.connect' which accepts 'family'.
+
+    // Safer approach: Use an object config for Pool and add standard options
+    this.db = new Pool({
+      connectionString: uri,
+    });
+
+    // Attempt to patch the connect method or just handle the error? 
+    // Wait, the error is ENETUNREACH.
+    // Let's try to override the Pool creation to include a custom log or retry?
+    // Actually, the simplest fix for "connect ENETUNREACH ...:::0" is often to ensure we use IPv4.
+    // We can do this by resolving the hostname before connecting? No, that's complex.
+
+    // Let's destroy the previous one and create a new one with explicit config if possible.
+    // A common workaround is to pass `host` as an IPv4 address if possible, but we only have URI.
+
+    // Let's try adding family: 4 to the options.
+    // "It works if you pass { family: 4 } to Client/Pool constructor" - popular stackoverflow fix.
+
+    this.db = new Pool({
+      connectionString: uri,
+      // Force IPv4
+      family: 4,
+    });
+
     this.type = 'postgres';
-    
+
     // Test connection
-    await this.db.query('SELECT 1');
+    try {
+      await this.db.query('SELECT 1');
+    } catch (err) {
+      if (err.code === 'ENETUNREACH' || err.message.includes('ENETUNREACH')) {
+        logger.warn('IPv6 connection failed, retrying... (Ensure your DB host resolves to IPv4)');
+        throw err;
+      }
+      throw err;
+    }
   }
 
   async createTables() {
@@ -216,7 +259,7 @@ class Database {
 
     if (this.type === 'sqlite') {
       return new Promise((resolve, reject) => {
-        this.db.run(query, params, function(err) {
+        this.db.run(query, params, function (err) {
           if (err) reject(err);
           else resolve({ lastID: this.lastID, changes: this.changes });
         });
@@ -271,7 +314,7 @@ class Database {
   // Save user configuration by UUID with password
   async saveUserConfig(userUUID, passwordHash, configData) {
     const configJson = typeof configData === 'string' ? configData : JSON.stringify(configData);
-    
+
     if (this.type === 'sqlite') {
       try {
         // First try to insert as new user
@@ -309,12 +352,12 @@ class Database {
       ? 'SELECT config_data FROM user_configs WHERE user_uuid = ?'
       : 'SELECT config_data FROM user_configs WHERE user_uuid = $1';
     const row = await this.getQuery(query, [userUUID]);
-    
+
     if (!row) return null;
-    
+
     try {
-      return typeof row.config_data === 'string' 
-        ? JSON.parse(row.config_data) 
+      return typeof row.config_data === 'string'
+        ? JSON.parse(row.config_data)
         : row.config_data;
     } catch (error) {
       logger.error('Error parsing config data:', error);
@@ -433,7 +476,7 @@ class Database {
     if (!row) return null;
 
     const storedHash = row.password_hash;
-    
+
     // Verify password using new method that supports both SHA-256 and bcrypt
     const isValidPassword = await this.verifyPasswordHash(password, storedHash);
     if (!isValidPassword) {
@@ -447,7 +490,7 @@ class Database {
         const updateQuery = this.type === 'sqlite'
           ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
           : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
-        
+
         await this.runQuery(updateQuery, [newBcryptHash, userUUID]);
         logger.info(`Migrated user ${userUUID} from SHA-256 to bcrypt hash`);
       } catch (error) {
@@ -490,13 +533,13 @@ class Database {
   async deleteUser(userUUID) {
     try {
       await this.deleteUserConfig(userUUID);
-      
+
       // Delete from trusted_uuids table
       const deleteTrustedQuery = this.type === 'sqlite'
         ? 'DELETE FROM trusted_uuids WHERE user_uuid = ?'
         : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
       await this.runQuery(deleteTrustedQuery, [userUUID]);
-      
+
       logger.info(`Successfully deleted user ${userUUID} and all associated data`);
     } catch (error) {
       logger.error(`Error deleting user ${userUUID}:`, error);
@@ -507,22 +550,22 @@ class Database {
   // Migrate from localStorage (for backward compatibility)
   async migrateFromLocalStorage(localStorageData, password) {
     if (!localStorageData) return null;
-    
+
     try {
-      const config = typeof localStorageData === 'string' 
-        ? JSON.parse(localStorageData) 
+      const config = typeof localStorageData === 'string'
+        ? JSON.parse(localStorageData)
         : localStorageData;
-      
+
       // Generate a new UUID for the user
       const userUUID = this.generateUserUUID();
-      
+
       // Hash the password
       const crypto = require('crypto');
       const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
-      
+
       await this.saveUserConfig(userUUID, passwordHash, config);
       logger.info('[Database] Migrated localStorage config for user:', userUUID);
-      
+
       return userUUID;
     } catch (error) {
       logger.error('Migration failed:', error);
@@ -582,7 +625,7 @@ class Database {
    */
   async getIdMappingsBatch(offset, limit) {
     let query, params;
-    
+
     if (this.type === 'sqlite') {
       query = `
         SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id 
@@ -601,7 +644,7 @@ class Database {
       `;
       params = [limit, offset];
     }
-    
+
     return await this.allQuery(query, params);
   }
 
@@ -661,8 +704,8 @@ class Database {
       return rows.map(row => {
         let configData = null;
         try {
-          configData = typeof row.config_data === 'string' 
-            ? JSON.parse(row.config_data) 
+          configData = typeof row.config_data === 'string'
+            ? JSON.parse(row.config_data)
             : row.config_data;
         } catch (error) {
           logger.warn('Error parsing config data for user:', row.user_uuid);
@@ -670,9 +713,9 @@ class Database {
 
         // Check if user has API keys configured
         const hasApiKeys = configData?.apiKeys && (
-          configData.apiKeys.tmdb || 
-          configData.apiKeys.tvdb || 
-          configData.apiKeys.imdb || 
+          configData.apiKeys.tmdb ||
+          configData.apiKeys.tvdb ||
+          configData.apiKeys.imdb ||
           configData.apiKeys.kitsu
         );
 
@@ -704,15 +747,15 @@ class Database {
       const query = this.type === 'sqlite'
         ? 'SELECT * FROM user_configs WHERE user_uuid = ?'
         : 'SELECT * FROM user_configs WHERE user_uuid = $1';
-      
+
       const row = await this.getQuery(query, [userUUID]);
-      
+
       if (!row) return null;
 
       let configData = null;
       try {
-        configData = typeof row.config_data === 'string' 
-          ? JSON.parse(row.config_data) 
+        configData = typeof row.config_data === 'string'
+          ? JSON.parse(row.config_data)
           : row.config_data;
       } catch (error) {
         logger.warn('Error parsing config data for user:', userUUID);
@@ -754,11 +797,11 @@ class Database {
         : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
 
       const result = await this.runQuery(query, [hashedPassword, userUUID]);
-      
+
       if (this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0) {
         return newPassword;
       }
-      
+
       return null;
     } catch (error) {
       logger.error('Error resetting user password:', error);
@@ -774,7 +817,7 @@ class Database {
         : 'DELETE FROM user_configs WHERE user_uuid = $1';
 
       const result = await this.runQuery(query, [userUUID]);
-      
+
       return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
     } catch (error) {
       logger.error('Error deleting user:', error);
@@ -809,8 +852,8 @@ class Database {
         users: rows.map(row => {
           let configData = null;
           try {
-            configData = typeof row.config_data === 'string' 
-              ? JSON.parse(row.config_data) 
+            configData = typeof row.config_data === 'string'
+              ? JSON.parse(row.config_data)
               : row.config_data;
           } catch (error) {
             logger.warn('Error parsing config data for export:', row.user_uuid);
@@ -841,7 +884,7 @@ class Database {
         : 'DELETE FROM user_configs WHERE updated_at < $1';
 
       const result = await this.runQuery(query, [cutoffDateStr]);
-      
+
       return this.type === 'sqlite' ? result.changes : result.rowCount;
     } catch (error) {
       logger.error('Error deleting inactive users:', error);

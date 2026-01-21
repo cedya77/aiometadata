@@ -4,11 +4,10 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 
-COPY package*.json package-lock.json* ./
+RUN apk add --no-cache git
+RUN git clone -b dev https://github.com/realbestia2/aiometadata .
 
 RUN npm ci
-
-COPY . .
 
 
 RUN npm run build
@@ -23,7 +22,7 @@ WORKDIR /app
 # Install CA certificates for SSL/TLS verification
 RUN apk add --no-cache ca-certificates
 
-COPY package*.json package-lock.json* ./
+COPY --from=builder /app/package*.json ./
 
 
 RUN npm ci --production
