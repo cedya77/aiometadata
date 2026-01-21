@@ -4,6 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
+import { fetchSimklTrendingItems, parseSimklItems, getSimklAccessToken } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
@@ -145,6 +146,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.debug(`Routing to Letterboxd catalog handler for id: ${id}`);
       const letterboxdResults = await getLetterboxdCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: letterboxdResults };
+    }
+    else if (id.startsWith('simkl.')) {
+      logger.debug(`Routing to Simkl catalog handler for id: ${id}`);
+      const simklResults = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      return { metas: simklResults };
     }
 
     else {
@@ -1538,6 +1544,77 @@ async function getLetterboxdCatalog(
   } catch (error: any) {
     logger.error(`Error in getLetterboxdCatalog: ${error.message}`);
     logger.error(`Stack trace:`, error.stack);
+    return [];
+  }
+}
+
+/**
+ * Get Simkl catalog items
+ * Handles 'simkl.*' catalog IDs (e.g., simkl.trending.movies, simkl.trending.shows, simkl.trending.anime)
+ */
+async function getSimklCatalog(
+  type: string,
+  catalogId: string,
+  genre: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    logger.info(`[Simkl] Fetching catalog: ${catalogId}, Type: ${type}, Page: ${page}`);
+    
+    const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
+    
+    const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase()) 
+      ? genre.toLowerCase() as 'today' | 'week' | 'month'
+      : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
+    
+    // Use configured pageSize from metadata for trending catalogs, default to 50
+    const pageSize = catalogConfig?.metadata?.pageSize || 50;
+    
+    let response: any;
+    
+    if (catalogId === 'simkl.trending.movies') {
+      logger.debug(`[Simkl] Fetching trending movies (interval: ${interval}, pageSize: ${pageSize})`);
+      const result = await fetchSimklTrendingItems('movies', interval, page, pageSize);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else if (catalogId === 'simkl.trending.shows') {
+      logger.debug(`[Simkl] Fetching trending shows (interval: ${interval}, pageSize: ${pageSize})`);
+      const result = await fetchSimklTrendingItems('shows', interval, page, pageSize);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else if (catalogId === 'simkl.trending.anime') {
+      logger.debug(`[Simkl] Fetching trending anime (interval: ${interval}, pageSize: ${pageSize})`);
+      const result = await fetchSimklTrendingItems('anime', interval, page, pageSize);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else {
+      logger.warn(`[Simkl] Unknown catalog ID: ${catalogId}`);
+      return [];
+    }
+    
+    // Early exit for empty pages
+    if (!response.hasMore && response.items.length === 0) {
+      logger.debug(`[Simkl] No more items at page ${page}`);
+      return [];
+    }
+    
+    const parseStart = Date.now();
+    let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID);
+    const parseTime = Date.now() - parseStart;
+    logger.info(`[Simkl] parseSimklItems took ${parseTime}ms for ${response.items.length} items`);
+    
+    // Apply age rating filter
+    metas = applyAgeRatingFilter(metas, type, config);
+    
+    logger.success(`[Simkl] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
+    return metas;
+    
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[Simkl] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
+    logger.error(`Full stack trace:`, err.stack);
     return [];
   }
 }

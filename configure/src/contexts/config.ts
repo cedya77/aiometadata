@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -49,6 +49,9 @@ export interface CatalogConfig {
     // TMDB-specific metadata
     listId?: string;
     listDescription?: string;
+    // Simkl-specific metadata
+    interval?: 'today' | 'week' | 'month';
+    pageSize?: number; // Results per page for Simkl trending catalogs (default: 50)
   };
 }
 
@@ -114,6 +117,7 @@ export interface AppConfig {
     topPoster: string;
     mdblist: string;
     traktTokenId?: string;
+    simklTokenId?: string;
     anilistTokenId?: string;
     customDescriptionBlurb?: string;
   };

@@ -502,6 +502,45 @@ function createAniListCatalog(userCatalog) {
   }
 }
 
+async function createSimklCatalog(userCatalog) {
+  try {
+    logger.info(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+    // Use displayType if defined, otherwise use original type
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: userCatalog.name,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+    
+    // Add genre (interval) option for trending catalogs - using "genre" to match TMDB trending pattern
+    if (userCatalog.id.startsWith('simkl.trending.')) {
+      const intervalOptions = ['today', 'week', 'month'];
+      const defaultInterval = userCatalog.metadata?.interval || 'today';
+      
+      catalog.extra.unshift({
+        name: "genre",
+        options: intervalOptions,
+        isRequired: false,
+        default: defaultInterval
+      });
+    }
+    
+    logger.success(`Simkl catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    logger.error(`Error creating Simkl catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function getManifest(config) {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
@@ -645,6 +684,7 @@ async function getManifest(config) {
   const filterLanguages = setOrderLanguage(language, languagesArray);
   const isMDBList = (id) => id.startsWith("mdblist.");
   const isTrakt = (id) => id.startsWith("trakt.");
+  const isSimkl = (id) => id.startsWith("simkl.");
   const options = { years, genres_movie: genres_movie_names, genres_series: genres_series_names, filterLanguages };
 
   // Pre-fetch MDBList genres once to avoid repeated API calls
@@ -688,6 +728,9 @@ async function getManifest(config) {
       if (isTrakt(userCatalog.id)) {
         return true;
       }
+      if (isSimkl(userCatalog.id)) {
+        return true;
+      }
       if (userCatalog.id.startsWith('tmdb.list.')) {
         return true;
       }
@@ -722,6 +765,12 @@ async function getManifest(config) {
           logger.debug(`Processing Trakt catalog: ${userCatalog.id}`);
           const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
           logger.debug(`Trakt catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (isSimkl(userCatalog.id)) {
+          logger.debug(`Processing Simkl catalog: ${userCatalog.id}`);
+          const result = await createSimklCatalog(userCatalog);
+          logger.debug(`Simkl catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {

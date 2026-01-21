@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
+import { SimklIntegration } from './SimklIntegration';
 import { TMDBIntegration } from './TMDBIntegration';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
@@ -435,6 +436,92 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               </Select>
               <p className="text-xs text-muted-foreground">
                 Shows airing within the selected number of days
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <DialogClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL } = useConfig();
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const isTrending = catalog.id.startsWith('simkl.trending.');
+  const [pageSize, setPageSize] = useState<number>(catalog.metadata?.pageSize || 50);
+  
+  const minCacheTTL = 300; // 5 minutes minimum for Simkl catalogs
+
+  const handleSave = () => {
+    setConfig(prev => {
+      const updatedCatalogs = prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { 
+              ...c, 
+              cacheTTL: Math.max(cacheTTL, minCacheTTL),
+              metadata: {
+                ...c.metadata,
+                ...(isTrending && { pageSize: Math.max(1, pageSize) || 50 })
+              }
+            }
+          : c
+      ) as CatalogConfig[];
+
+      return {
+        ...prev,
+        catalogs: updatedCatalogs,
+      };
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Simkl Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Cache TTL (seconds)</Label>
+            <Input
+              type="number"
+              min={5}
+              value={cacheTTL}
+              onChange={(e) => setCacheTTL(Number(e.target.value) || 0)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Minimum 5 minutes to avoid excessive API calls
+            </p>
+          </div>
+          
+          {isTrending && (
+            <div className="space-y-2">
+              <Label>Results Per Page</Label>
+              <Select 
+                value={pageSize.toString()} 
+                onValueChange={(value) => setPageSize(Number(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                  <SelectItem value="500">500</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Number of results to fetch per page from Simkl trending API (default: 50). 
+                <strong> Must match the value in your SimKL settings.</strong>
               </p>
             </div>
           )}
@@ -1167,7 +1254,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'simkl' || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))) && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1351,7 +1438,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {((catalog.source === 'mdblist' || catalog.source === 'streaming' || catalog.source === 'stremthru' || catalog.source === 'custom' || catalog.source === 'trakt' || catalog.source === 'anilist' || catalog.source === 'letterboxd') || 
+          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.')))) && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1379,6 +1466,12 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       <TraktSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'trakt'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <SimklSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'simkl'}
         onClose={() => setShowSettings(false)}
       />
 
@@ -1562,6 +1655,7 @@ function CatalogsSettingsContent({
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isTraktOpen, setIsTraktOpen] = useState(false);
+  const [isSimklOpen, setIsSimklOpen] = useState(false);
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
@@ -2059,8 +2153,8 @@ function CatalogsSettingsContent({
     setLoadingAction('delete');
 
     try {
-      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt, anilist)
-      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'anilist'];
+      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt, simkl, anilist)
+      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist'];
       const catalogsToDelete = selectedCatalogs.filter(catalog =>
         removableSources.includes(catalog.source)
       );
@@ -2182,6 +2276,25 @@ function CatalogsSettingsContent({
                     <Button 
                       variant="ghost" 
                       size="icon" 
+                      onClick={() => setIsSimklOpen(true)} 
+                      aria-label="Simkl Integration"
+                      className="h-9 w-9"
+                    >
+                      <img 
+                        src="https://us.simkl.in/img_favicon/v2/favicon-192x192.png" 
+                        alt="Simkl" 
+                        className="h-5 w-5 rounded object-contain" 
+                      />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Simkl Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
                       onClick={() => setIsTmdbListOpen(true)} 
                       aria-label="TMDB Lists"
                       className="h-9 w-9"
@@ -2280,6 +2393,10 @@ function CatalogsSettingsContent({
             isOpen={isTraktOpen}
             onClose={() => setIsTraktOpen(false)}
           />
+          <SimklIntegration
+            isOpen={isSimklOpen}
+            onClose={() => setIsSimklOpen(false)}
+          />
           <LetterboxdIntegration
             isOpen={isLetterboxdOpen}
             onClose={() => setIsLetterboxdOpen(false)}
@@ -2361,6 +2478,10 @@ function CatalogsSettingsContent({
         isOpen={isTraktOpen}
         onClose={() => setIsTraktOpen(false)}
       />
+      <SimklIntegration
+        isOpen={isSimklOpen}
+        onClose={() => setIsSimklOpen(false)}
+      />
       <TMDBIntegration
         isOpen={isTmdbListOpen}
         onClose={() => setIsTmdbListOpen(false)}
@@ -2385,7 +2506,7 @@ function CatalogsSettingsContent({
         onConfirm={handleConfirmBulkDelete}
         title="Delete Selected Catalogs"
         description={(() => {
-          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'anilist'];
+          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist'];
           const catalogsToDelete = selectedCatalogs.filter(catalog =>
             removableSources.includes(catalog.source)
           );

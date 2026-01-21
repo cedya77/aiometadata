@@ -866,6 +866,24 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     }
   }
   
+  // Use custom cache TTL for AniList catalogs if specified
+  if (idOnly.startsWith('anilist.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for AniList catalog ${idOnly}: ${cacheTTL}s`);
+    }
+  }
+  
+  // Use custom cache TTL for SimKL catalogs if specified
+  if (idOnly.startsWith('simkl.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for SimKL catalog ${idOnly}: ${cacheTTL}s`);
+    }
+  }
+  
   // Include TTL in cache key to ensure proper cache invalidation when TTL changes
   // Auth catalogs (watchlist/favorites) use sessionId in cache key (since they're tied to TMDB account)
   // Airing today catalog needs today's date in cache key (results change daily)

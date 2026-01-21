@@ -49,6 +49,7 @@ const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta,
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { blurImage } = require('./utils/imageProcessor');
 const { TraktClient } = require('./lib/trakt');
+const { SimklClient } = require('./lib/simkl');
 const axios = require('axios');
 const jikan = require('./lib/mal');
 const tvmaze = require('./lib/tvmaze');
@@ -296,6 +297,7 @@ const respond = function (req, res, data, opts) {
       mdblist: process.env.MDBLIST_API_KEY || "",
       gemini: process.env.GEMINI_API_KEY || "",
       trakt: process.env.TRAKT_CLIENT_ID || "",
+      simkl: process.env.SIMKL_CLIENT_ID || "",
       customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
       addonVersion: ADDON_VERSION,
       hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
@@ -614,6 +616,220 @@ addon.post("/api/oauth/token/info", async (req, res) => {
   }
 });
 
+// --- Simkl OAuth Routes ---
+addon.get("/api/auth/simkl/authorize", async (req, res) => {
+  try {
+    const clientId = process.env.SIMKL_CLIENT_ID;
+    const clientSecret = process.env.SIMKL_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.SIMKL_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/simkl/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "Simkl OAuth not configured. Please set SIMKL_CLIENT_ID and SIMKL_CLIENT_SECRET environment variables." });
+    }
+    
+    const simklClient = new SimklClient(clientId, clientSecret, redirectUri);
+    
+    // Get authorization URL
+    const authUrl = simklClient.getAuthorizationUrl();
+    
+    res.redirect(authUrl);
+  } catch (error) {
+    consola.error("[Simkl OAuth] Authorization error:", error);
+    res.status(500).json({ error: "Failed to initiate Simkl authorization" });
+  }
+});
+
+addon.get("/api/auth/simkl/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Simkl OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ OAuth Error</h1>
+          <p>Invalid callback parameters - missing authorization code.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const clientId = process.env.SIMKL_CLIENT_ID;
+    const clientSecret = process.env.SIMKL_CLIENT_SECRET;
+    const redirectUri = normalizeRedirectUri(process.env.SIMKL_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/simkl/callback`);
+    
+    if (!clientId || !clientSecret) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Simkl OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Configuration Error</h1>
+          <p>Simkl OAuth is not configured on this server.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    const simklClient = new SimklClient(clientId, clientSecret, redirectUri);
+    
+    // Exchange code for tokens (Simkl tokens never expire)
+    const tokens = await simklClient.exchangeCodeForToken(code);
+    
+    // Get user info
+    const user = await simklClient.getMe(tokens.access_token);
+    
+    // Check if this Simkl user already has a token in the database
+    const existingTokens = await database.getOAuthTokensByProvider('simkl');
+    const existingToken = existingTokens.find(t => t.user_id.toLowerCase() === user.username.toLowerCase());
+    
+    let tokenId;
+    let saved;
+    
+    if (existingToken) {
+      // Update existing token
+      tokenId = existingToken.id;
+      consola.info(`[Simkl OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
+      
+      // Simkl tokens don't expire, so we don't have expires_at
+      saved = await database.updateOAuthToken(
+        tokenId,
+        tokens.access_token,
+        null, // No refresh token for Simkl
+        null  // No expiration for Simkl
+      );
+    } else {
+      // Create new token
+      tokenId = crypto.randomUUID();
+      consola.info(`[Simkl OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
+      
+      saved = await database.saveOAuthToken(
+        tokenId,
+        'simkl',
+        user.username,
+        tokens.access_token,
+        null, // No refresh token for Simkl
+        null, // No expiration for Simkl (tokens never expire)
+        ''    // No scope field in Simkl response
+      );
+    }
+    
+    if (!saved) {
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Simkl OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Database Error</h1>
+          <p>Failed to save OAuth token to database.</p>
+        </body>
+        </html>
+      `);
+    }
+    
+    // Update config
+    try {
+      const allUsers = await database.getAllUsers();
+      for (const dbUser of allUsers) {
+        const userConfig = JSON.parse(dbUser.config || '{}');
+        let configUpdated = false;
+        
+        // Only update if user has an existing Simkl token configured
+        if (userConfig.apiKeys?.simklTokenId) {
+          const currentToken = await database.getOAuthToken(userConfig.apiKeys.simklTokenId);
+          
+          if (currentToken && currentToken.user_id.toLowerCase() === user.username.toLowerCase()) {
+            userConfig.apiKeys.simklTokenId = tokenId;
+            configUpdated = true;
+            consola.info(`[Simkl OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
+          } else if (!currentToken) {
+            consola.warn(`[Simkl OAuth] User ${dbUser.id} has missing Simkl token ${userConfig.apiKeys.simklTokenId} - manual reconnection required`);
+          }
+        }
+        
+        // Save updated config if changed
+        if (configUpdated) {
+          await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
+          configCache.del(dbUser.id);
+        }
+      }
+    } catch (configError) {
+      consola.warn(`[Simkl OAuth] Warning: Could not auto-update user configs - ${configError.message}`);
+    }
+    
+    // Display success page with token ID
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Simkl OAuth Success</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #ff6b35; }
+          .token-box { background: #f9f9f9; border: 2px dashed #ff6b35; padding: 20px; margin: 20px 0; border-radius: 5px; word-break: break-all; }
+          .token { font-family: monospace; font-size: 14px; color: #333; }
+          button { background: #ff6b35; color: white; border: none; padding: 12px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px; }
+          button:hover { background: #e55a2b; }
+          .instructions { text-align: left; margin-top: 30px; padding: 20px; background: #f0f8ff; border-left: 4px solid #007acc; }
+          .instructions ol { padding-left: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Simkl OAuth Successful</h1>
+          <p>Your Simkl account <strong>${user.username}</strong> has been authorized!</p>
+          
+          <div class="token-box">
+            <div class="token" id="tokenId">${tokenId}</div>
+          </div>
+          
+          <button onclick="copyToken()">📋 Copy Token ID</button>
+          
+          <div class="instructions">
+            <h3>📝 Next Steps:</h3>
+            <ol>
+              <li>Copy the Token ID above</li>
+              <li>Go to your addon configuration page</li>
+              <li>Find the <strong>Simkl Integration</strong> section</li>
+              <li>Paste this Token ID in the <strong>Simkl Token ID</strong> field</li>
+              <li>Save your configuration</li>
+            </ol>
+            <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your Simkl account through this addon.</p>
+          </div>
+        </div>
+        
+        <script>
+          function copyToken() {
+            const tokenText = document.getElementById('tokenId').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+              alert('✅ Token ID copied to clipboard!');
+            }).catch(err => {
+              alert('❌ Failed to copy. Please select and copy manually.');
+            });
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    consola.error("[Simkl OAuth] Callback error:", error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Simkl OAuth Error</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1>❌ OAuth Error</h1>
+        <p>An error occurred during authentication: ${error.message}</p>
+        <p><a href="${process.env.HOST_NAME}/configure">← Back to Configuration</a></p>
+      </body>
+      </html>
+    `);
+  }
+});
+
 addon.post("/api/auth/trakt/disconnect", async (req, res) => {
   try {
     const { userUUID } = req.body;
@@ -656,6 +872,51 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
   } catch (error) {
     consola.error("[Trakt] Disconnect error:", error);
     res.status(500).json({ error: "Failed to disconnect Trakt" });
+  }
+});
+
+addon.post("/api/auth/simkl/disconnect", async (req, res) => {
+  try {
+    const { userUUID } = req.body;
+    
+    if (!userUUID) {
+      return res.status(400).json({ error: "userUUID is required" });
+    }
+    
+    // Load user's config
+    const config = await loadConfigFromDatabase(userUUID);
+    if (!config) {
+      return res.status(404).json({ error: "User config not found" });
+    }
+    
+    // Delete OAuth token from database if it exists
+    if (config.apiKeys?.simklTokenId) {
+      await database.deleteOAuthToken(config.apiKeys.simklTokenId);
+      delete config.apiKeys.simklTokenId;
+    }
+    
+    // Remove Simkl user info
+    delete config.simklUser;
+    
+    // Remove Simkl catalogs
+    config.catalogs = (config.catalogs || []).filter(c => !c.id.startsWith('simkl.'));
+    
+    // Get user's password hash to save config
+    const user = await database.getUser(userUUID);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Save updated config directly to database
+    await database.saveUserConfig(userUUID, user.password_hash, config);
+    
+    // Invalidate config cache
+    configCache.del(userUUID);
+    
+    res.json({ success: true });
+  } catch (error) {
+    consola.error("[Simkl] Disconnect error:", error);
+    res.status(500).json({ error: "Failed to disconnect Simkl" });
   }
 });
 
@@ -918,6 +1179,35 @@ addon.get("/api/trakt/users/:username/stats", async (req, res) => {
     res.json(response.data);
   } catch (error) {
     consola.error("[Trakt Proxy] Error fetching user stats:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user stats" });
+  }
+});
+
+// Simkl stats endpoint - requires authenticated token
+addon.post("/api/simkl/users/stats", async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+    
+    if (!tokenId) {
+      return res.status(400).json({ error: "tokenId is required" });
+    }
+
+    // Get the access token from database
+    const token = await database.getOAuthToken(tokenId);
+    if (!token) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+
+    if (token.provider !== 'simkl') {
+      return res.status(400).json({ error: "Invalid token provider" });
+    }
+
+    const { fetchSimklUserStats } = require('./utils/simklUtils');
+    const stats = await fetchSimklUserStats(token.access_token);
+    res.json(stats);
+  } catch (error) {
+    consola.error("[Simkl] Error fetching user stats:", error.message);
     const status = error.response?.status || 500;
     res.status(status).json({ error: error.message || "Failed to fetch user stats" });
   }
@@ -1731,13 +2021,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           
           const meta = result.meta;
           
-          // Filter for future episodes
           if (meta.videos && Array.isArray(meta.videos)) {
             const now = new Date();
             meta.videos = meta.videos.filter(video => {
               if (!video.released) return false;
               const releaseDate = new Date(video.released);
-              // Check if release date is valid and in the future
               return !isNaN(releaseDate.getTime()) && releaseDate >= now;
             });
             
@@ -1895,6 +2183,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       ? catalogConfig.metadata.airingSoonDays 
       : 1;
   }
+  // SimKL trending catalogs need pageSize in cache key for proper cache invalidation
+  if (cleanId.startsWith('simkl.trending.')) {
+    extraArgs.pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
+      ? catalogConfig.metadata.pageSize 
+      : 50;
+  }
   if (cleanId === 'tvmaze.schedule') {
     // Format date in user's configured timezone (or server timezone as fallback)
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
@@ -1955,7 +2249,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
         const pageSize = cleanId.includes(`mal.`) ? 25 : 
-                         (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) ? 
+                         (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('simkl.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) ? 
                          parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
