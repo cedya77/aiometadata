@@ -379,9 +379,50 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
     // Run the initial title search and person search concurrently
     // Skip title search if peopleOnly is true
     const searchParams = { query, language, include_adult: config.includeAdult, page };
-    if (config.strictRegionFiltering && language) {
-      const region = language.split('-')[1];
-      if (region) searchParams.region = region;
+    if (config.strictRegionFiltering) {
+      // Priority: use config.language if available (user explicit setting), otherwise request language
+      const targetLang = config.language || language;
+      let region = targetLang.split('-')[1];
+
+      if (!region) {
+        // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')
+        const langCode = targetLang.split('-')[0].toUpperCase();
+        const regionMap = {
+          'EN': 'US',
+          'JA': 'JP',
+          'KO': 'KR',
+          'ZH': 'CN',
+          'HI': 'IN',
+          'CS': 'CZ',
+          'DA': 'DK',
+          'EL': 'GR',
+          'SV': 'SE',
+          'VI': 'VN'
+        };
+        region = regionMap[langCode] || langCode;
+      }
+
+      if (region) {
+        searchParams.region = region;
+
+        // Strict filtering logic parity with getCatalog.ts
+        const userTimezone = config.timezone || process.env.TZ || 'UTC';
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: userTimezone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const today = formatter.format(new Date());
+
+        if (type === 'movie') {
+          searchParams['release_date.lte'] = today;
+          // Exclude Premiere (1) and Theatrical Limited (2)
+          searchParams.with_release_type = "3|4|5|6";
+        } else {
+          searchParams['first_air_date.lte'] = today;
+        }
+      }
     }
 
     const [titleRes, personCredits] = await Promise.all([

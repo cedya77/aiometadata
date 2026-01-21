@@ -688,10 +688,13 @@ async function buildParameters(type: string, language: string, page: number, id:
   const parameters: any = { language, page, 'vote_count.gte': 50 };
 
   if (config.strictRegionFiltering) {
-    let region = language.split('-')[1];
+    // Priority: use config.language if available (user explicit setting), otherwise request language
+    const targetLang = config.language || language;
+    let region = targetLang.split('-')[1];
+
     if (!region) {
       // Fallback: Infer region from language code if only 2 letters (e.g. 'it' -> 'IT')
-      const langCode = language.split('-')[0].toUpperCase();
+      const langCode = targetLang.split('-')[0].toUpperCase();
       const regionMap: Record<string, string> = {
         'EN': 'US',
         'JA': 'JP',
