@@ -697,8 +697,8 @@ addon.get("/api/auth/simkl/callback", async (req, res) => {
       saved = await database.updateOAuthToken(
         tokenId,
         tokens.access_token,
-        null, // No refresh token for Simkl
-        null  // No expiration for Simkl
+        '', // No refresh token for Simkl (use empty string instead of null)
+        0   // No expiration for Simkl (tokens never expire, use 0 instead of null)
       );
     } else {
       // Create new token
@@ -710,8 +710,8 @@ addon.get("/api/auth/simkl/callback", async (req, res) => {
         'simkl',
         user.username,
         tokens.access_token,
-        null, // No refresh token for Simkl
-        null, // No expiration for Simkl (tokens never expire)
+        '', 
+        0, 
         ''    // No scope field in Simkl response
       );
     }
