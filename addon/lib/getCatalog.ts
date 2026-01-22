@@ -1569,7 +1569,11 @@ async function getSimklCatalog(
     
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     
-    const pageSize = catalogConfig?.metadata?.pageSize || 50;
+    // For watchlists, use default pageSize (Simkl doesn't support pagination, we do local pagination)
+    // For trending, use configured pageSize
+    const pageSize = catalogId.startsWith('simkl.watchlist.')
+      ? parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20')
+      : (catalogConfig?.metadata?.pageSize || 50);
     
     let response: any;
     
@@ -1631,11 +1635,14 @@ async function getSimklCatalog(
           return [];
         }
         
-        logger.debug(`[Simkl] Fetching watchlist ${watchlistType}/${status} (pageSize: ${pageSize})`);
+        logger.debug(`[Simkl] Fetching watchlist ${watchlistType}/${status} (all items, local pagination)`);
         const cacheTTL = catalogConfig?.cacheTTL || (60 * 60); // Default 1 hour if not specified
-        const result = await fetchSimklWatchlistItems(accessToken, watchlistType, status, page, pageSize, cacheTTL);
         
-        const items = result.items
+        // Fetch all items at once (Simkl doesn't support pagination)
+        const result = await fetchSimklWatchlistItems(accessToken, watchlistType, status, cacheTTL);
+        
+        // Filter and map items
+        const allItems = result.items
           .map((item: any) => {
             const media = item.show || item.movie || item;
             const ids = media.ids || {};
@@ -1665,26 +1672,20 @@ async function getSimklCatalog(
           })
           .filter((item: any) => item !== null); // Remove null items
         
-        response = { items, hasMore: result.hasMore };
+        const globalItemIndex = (page - 1) * pageSize;
+        const endIndex = globalItemIndex + pageSize;
+        const paginatedItems = allItems.slice(globalItemIndex, endIndex);
+        const hasMore = endIndex < allItems.length;
+        
+        logger.debug(`[Simkl] Local pagination: ${allItems.length} total items, showing ${globalItemIndex}-${Math.min(endIndex, allItems.length)} (hasMore: ${hasMore})`);
+        
+        response = { items: paginatedItems, hasMore };
       } else {
         logger.warn(`[Simkl] Invalid watchlist catalog ID format: ${catalogId}`);
         return [];
       }
     } else {
       logger.warn(`[Simkl] Unknown catalog ID: ${catalogId}`);
-      return [];
-    }
-    
-    // Early exit for pages beyond available content
-    // If hasMore is false, there are less than pageSize items total
-    // So if skip >= pageSize, we're beyond available items
-    if (!response.hasMore && skip !== undefined && skip >= pageSize) {
-      logger.debug(`[Simkl] No more items available (hasMore=false, skip=${skip} >= pageSize=${pageSize}), returning empty`);
-      return [];
-    }
-    
-    if (!response.hasMore && page > 1) {
-      logger.debug(`[Simkl] No more items available, returning empty for page ${page}`);
       return [];
     }
     

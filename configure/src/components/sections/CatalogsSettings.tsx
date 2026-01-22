@@ -469,7 +469,10 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
               metadata: {
                 ...c.metadata,
-                ...((isTrending || isWatchlist) && { pageSize: Math.max(1, pageSize) || 50 })
+                // Only include pageSize for trending (watchlists use local pagination)
+                ...(isTrending && { pageSize: Math.max(1, pageSize) || 50 }),
+                // Remove pageSize from watchlists if it exists
+                ...(isWatchlist && catalog.metadata?.pageSize && { pageSize: undefined })
               }
             }
           : c
@@ -503,7 +506,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
             </p>
           </div>
           
-          {(isTrending || isWatchlist) && (
+          {isTrending && (
             <div className="space-y-2">
               <Label>Results Per Page</Label>
               <Select 
@@ -521,7 +524,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Number of results to fetch per page from Simkl API (default: 50). 
+                Number of results to fetch per page from Simkl API for trending catalogs (default: 50). Watchlists use local pagination. 
                 <strong> Must match the value in your SimKL settings.</strong>
               </p>
             </div>

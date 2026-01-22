@@ -7,6 +7,7 @@ const { Agent } = require('undici');
 const crypto = require('crypto');
 const database = require('../lib/database.js');
 const requestTracker = require('../lib/requestTracker.js');
+const redis = require('../lib/redisClient');
 
 const logger = consola.withTag('Simkl');
 
@@ -259,30 +260,56 @@ async function fetchSimklUserStats(accessToken: string): Promise<any> {
 
 /**
  * Fetch Simkl watchlist items by type and status
+ * Note: Simkl API doesn't support pagination for watchlists, so we fetch all items at once
+ * and do local pagination like StremThru
  * @param accessToken - User's Simkl access token
  * @param type - Content type: 'movies', 'shows', or 'anime'
  * @param status - Item status: 'watching', 'plantowatch', 'hold', 'completed', 'dropped'
- * @param page - Page number (1-indexed)
- * @param limit - Items per page
- * @returns Object with items array and pagination info
+ * @param cacheTTL - Cache TTL in seconds
+ * @returns Object with all items array (no pagination)
  */
 async function fetchSimklWatchlistItems(
   accessToken: string,
   type: 'movies' | 'shows' | 'anime',
   status: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped',
-  page: number = 1,
-  limit: number = 50,
   cacheTTL: number = SIMKL_WATCHLIST_TTL
-): Promise<{items: any[], hasMore: boolean}> {
+): Promise<{items: any[]}> {
   try {
     const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'shows' : 'anime';
-    const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/${status}?extended=full&page=${page}&limit=${limit}`;
-    
-    logger.debug(`Simkl watchlist ${type}/${status}: page=${page}, limit=${limit}`);
     
     // Create user-specific cache key by hashing accessToken
     const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
-    const cacheKey = `simkl-watchlist:${tokenHash}:${type}:${status}:${page}:${limit}`;
+    
+    const fullListKey = `simkl-watchlist-full:${tokenHash}:${endpoint}:${status}`;
+    const lastSyncKey = `simkl-last-sync:${tokenHash}:${endpoint}:${status}`;
+    
+    let fullItems: any[] = [];
+    let dateFrom: string | null = null;
+    
+    try {
+      const cachedFullList = await redis.get(fullListKey);
+      if (cachedFullList) {
+        fullItems = JSON.parse(cachedFullList);
+        logger.debug(`Simkl using cached full watchlist: ${fullItems.length} items for ${type}/${status}`);
+        
+        const lastSync = await redis.get(lastSyncKey);
+        if (lastSync) {
+          dateFrom = lastSync;
+          logger.debug(`Simkl will fetch changes since ${dateFrom}`);
+        }
+      }
+    } catch (error: any) {
+      logger.debug(`Failed to get cached watchlist: ${error.message}`);
+    }
+    
+    let url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/${status}?extended=full`;
+    if (dateFrom) {
+      url += `&date_from=${encodeURIComponent(dateFrom)}`;
+    }
+    
+    logger.debug(`Simkl watchlist ${type}/${status}${dateFrom ? `, date_from=${dateFrom} (incremental)` : ' (full sync)'}`);
+    
+    const cacheKey = `simkl-watchlist-api:${tokenHash}:${type}:${status}${dateFrom ? `:${dateFrom}` : ''}`;
     
     const response: any = await cacheWrapGlobal(
       cacheKey,
@@ -290,34 +317,71 @@ async function fetchSimklWatchlistItems(
         return await makeAuthenticatedSimklRequest(
           url,
           accessToken,
-          `Simkl fetchWatchlistItems (${type}, ${status}, page: ${page})`
+          `Simkl fetchWatchlistItems (${type}, ${status}${dateFrom ? `, date_from=${dateFrom}` : ''})`
         );
       },
       cacheTTL
     );
     
-    // Simkl returns items in a format like { shows: [...], movies: [...], anime: [...] }
-    // Extract the relevant array based on type
-    let items: any[] = [];
+    // Extract items from API response
+    let apiItems: any[] = [];
     if (response.data) {
       if (type === 'movies' && response.data.movies) {
-        items = response.data.movies;
+        apiItems = response.data.movies;
       } else if (type === 'shows' && response.data.shows) {
-        items = response.data.shows;
+        apiItems = response.data.shows;
       } else if (type === 'anime' && response.data.anime) {
-        items = response.data.anime;
+        apiItems = response.data.anime;
       }
     }
     
-    // Simkl API doesn't return pagination headers, determine hasMore by checking if array length matches limit
-    const hasMore = items.length >= limit;
+    // Merge: if we have date_from, merge changes with cached full list
+    // Otherwise, use API response as the full list
+    if (dateFrom && fullItems.length > 0) {
+      // Incremental update: merge changes with cached full list
+      // Create a map of existing items by Simkl ID for efficient lookup
+      const existingMap = new Map();
+      fullItems.forEach((item: any) => {
+        const simklId = item.show?.ids?.simkl || item.movie?.ids?.simkl || item.ids?.simkl;
+        if (simklId) {
+          existingMap.set(simklId, item);
+        }
+      });
+      
+      // Update or add items from API response
+      apiItems.forEach((item: any) => {
+        const simklId = item.show?.ids?.simkl || item.movie?.ids?.simkl || item.ids?.simkl;
+        if (simklId) {
+          existingMap.set(simklId, item);
+        }
+      });
+      
+      fullItems = Array.from(existingMap.values());
+      logger.debug(`Simkl merged incremental update: ${apiItems.length} changes, ${fullItems.length} total items`);
+    } else {
+      // Full sync: use API response as the full list
+      fullItems = apiItems;
+      logger.debug(`Simkl full sync: ${fullItems.length} total items`);
+    }
     
-    logger.debug(`Simkl watchlist page ${page}: ${items.length} items, hasMore: ${hasMore}`);
+    // Cache the full list in Redis (separate from API response cache)
+    try {
+      const now = new Date().toISOString();
+      // Cache full list for same duration as API cache
+      await redis.setex(fullListKey, cacheTTL, JSON.stringify(fullItems));
+      // Store/update last sync timestamp
+      await redis.setex(lastSyncKey, 30 * 24 * 60 * 60, now);
+      logger.debug(`Simkl cached full watchlist (${fullItems.length} items) and stored last sync timestamp: ${now}`);
+    } catch (error: any) {
+      logger.debug(`Failed to cache watchlist or store timestamp: ${error.message}`);
+    }
     
-    return { items: Array.isArray(items) ? items : [], hasMore };
+    logger.debug(`Simkl watchlist ${type}/${status}: returning ${fullItems.length} total items`);
+    
+    return { items: Array.isArray(fullItems) ? fullItems : [] };
   } catch (error: any) {
     logger.error(`Error fetching Simkl watchlist items: ${error.message}`);
-    return { items: [], hasMore: false };
+    return { items: [] };
   }
 }
 

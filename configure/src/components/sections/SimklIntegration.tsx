@@ -194,7 +194,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
       enabled: true,
       showInHome: true,
       source: 'simkl' as any,
-      metadata: { status, pageSize: 50 },
+      metadata: { status },
       ...(displayType && { displayType })
     };
     setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));

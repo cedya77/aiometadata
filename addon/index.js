@@ -2253,11 +2253,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
           pageSize = 25;
         } else if (cleanId === 'anilist.trending') {
           pageSize = 50;
-        } else if (cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.watchlist.')) {
+        } else if (cleanId.startsWith('simkl.trending.')) {
           pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
             ? catalogConfig.metadata.pageSize 
             : 50;
-        } else if (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
+        }  else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
           pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
         } else {
           pageSize = 20;
