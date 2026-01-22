@@ -409,8 +409,8 @@ class ComprehensiveCatalogWarmer {
     
     const catalogId = catalog.id;
     const pageSize = catalogId.startsWith('mal.') ? 25 : 
-             ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.') || catalogId.startsWith('simkl.') || catalogId.startsWith('custom.') || catalogId.startsWith('letterboxd.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
-             parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
+            ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.') || catalogId.startsWith('simkl.watchlist.') || catalogId.startsWith('custom.') || catalogId.startsWith('letterboxd.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
+            parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
     const shouldIncludeGenreNone = (
@@ -556,7 +556,7 @@ class ComprehensiveCatalogWarmer {
             : 1;
         }
         
-        if (catalogId.startsWith('simkl.trending.') || catalogId.startsWith('simkl.watchlist.')) {
+        if (catalogId.startsWith('simkl.trending.')) {
           extraArgs.pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
             ? catalogConfig.metadata.pageSize 
             : 50;
