@@ -1,9 +1,10 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
 import { getMeta } from "../lib/getMeta.js";
-import { cacheWrapMetaSmart, cacheWrapMDBListGenres } from "../lib/getCache.js";
+import { cacheWrapMetaSmart, cacheWrapMDBListGenres, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
+const crypto = require('crypto');
 const { socksDispatcher } = require('fetch-socks');
 const { Agent, ProxyAgent } = require('undici');
 
@@ -292,121 +293,130 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
-async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string, genre?: string, unified?: boolean, catalogType?: string): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
+async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string, genre?: string, unified?: boolean, catalogType?: string, cacheTTL?: number): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
   // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-  const offset = (page * pageSize) - pageSize;
   
-  try {
-    let url: string;
+  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+  
+  const cacheKey = `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${language}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    const offset = (page * pageSize) - pageSize;
     
-    // Special handling for watchlist
-    if (listId === 'watchlist') {
-      url = `https://api.mdblist.com/watchlist/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
-    } else {
-      url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
-    }
-    
-    // Add sort and order parameters if provided and not empty
-    if (sort && sort.trim() !== '') {
-      url += `&sort=${sort}`;
-    }
-    if (order && order.trim() !== '') {
-      url += `&order=${order}`;
-    }
-    if (genre && genre.toLowerCase() !== 'none') {
-      url += `&filter_genre=${genre}`;
-    }
-    
-    // Log the final URL for debugging (with API key sanitized)
-    logger.debug(`MDBList request URL: ${sanitizeUrlForLogging(url)}`);
-    
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { dispatcher: mdblistDispatcher }),
-      apiKey,
-      `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
-    );
-    
-    // Extract pagination metadata from headers
-    let totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
-    const hasMore = response.headers?.['x-has-more'] === 'true';
-    
-    // For watchlist, we can only rely on X-Has-More header
-    let totalPages: number | undefined;
-    if (listId === 'watchlist') {
-      totalItems = undefined; // Watchlist doesn't provide total items
-      totalPages = undefined; // Can't calculate pages without total items
-    } else {
-      // Calculate total pages from headers for regular lists
-      totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
-    }
-    
-    let items: any[];
-    
-    // Handle different response formats based on unified parameter
-    if (listId === 'watchlist' && unified === false) {
-      // Non-unified format: response has separate movies and shows arrays
-      // Extract the appropriate array based on catalog type
-      if (catalogType === 'series') {
-        items = response.data.shows || [];
+    try {
+      let url: string;
+      
+      // Special handling for watchlist
+      if (listId === 'watchlist') {
+        url = `https://api.mdblist.com/watchlist/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
       } else {
-        items = response.data.movies || [];
+        url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
       }
-    } else {
-      if (Array.isArray(response.data)) {
-        items = response.data;
+      
+      // Add sort and order parameters if provided and not empty
+      if (sort && sort.trim() !== '') {
+        url += `&sort=${sort}`;
+      }
+      if (order && order.trim() !== '') {
+        url += `&order=${order}`;
+      }
+      if (genre && genre.toLowerCase() !== 'none') {
+        url += `&filter_genre=${genre}`;
+      }
+      
+      // Log the final URL for debugging (with API key sanitized)
+      logger.debug(`MDBList request URL: ${sanitizeUrlForLogging(url)}`);
+      
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { dispatcher: mdblistDispatcher }),
+        apiKey,
+        `MDBList fetchMDBListItems (listId: ${listId}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
+      );
+      
+      // Extract pagination metadata from headers
+      let totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
+      const hasMore = response.headers?.['x-has-more'] === 'true';
+      
+      // For watchlist, we can only rely on X-Has-More header
+      let totalPages: number | undefined;
+      if (listId === 'watchlist') {
+        totalItems = undefined; // Watchlist doesn't provide total items
+        totalPages = undefined; // Can't calculate pages without total items
       } else {
-        items = [
-          ...(response.data?.movies || []),
-          ...(response.data?.shows || [])
-        ];
+        // Calculate total pages from headers for regular lists
+        totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
       }
+      
+      let items: any[];
+      
+      // Handle different response formats based on unified parameter
+      if (listId === 'watchlist' && unified === false) {
+        // Non-unified format: response has separate movies and shows arrays
+        // Extract the appropriate array based on catalog type
+        if (catalogType === 'series') {
+          items = response.data.shows || [];
+        } else {
+          items = response.data.movies || [];
+        }
+      } else {
+        if (Array.isArray(response.data)) {
+          items = response.data;
+        } else {
+          items = [
+            ...(response.data?.movies || []),
+            ...(response.data?.shows || [])
+          ];
+        }
+      }
+      
+      // Smart pagination validation and logging
+      if (listId === 'watchlist') {
+        logger.debug(`Watchlist pagination - page: ${page}, items: ${items.length}, hasMore: ${hasMore}`);
+      } else if (totalItems !== undefined) {
+        if (offset >= totalItems) {
+          logger.warn(`Requested offset ${offset} exceeds total items ${totalItems} for list ${listId}`);
+          return { 
+            items: [], 
+            totalItems, 
+            hasMore: false, 
+            totalPages 
+          };
+        }
+        
+        // Enhanced logging with pagination context
+        const itemsReturned = items.length;
+        const expectedItems = Math.min(pageSize, totalItems - offset);
+        
+        logger.debug(`Smart pagination - listId: ${listId}, page: ${page}/${totalPages}, items: ${itemsReturned}/${expectedItems}, offset: ${offset}, totalItems: ${totalItems}, hasMore: ${hasMore}${genre && genre.toLowerCase() !== 'none' ? ` (filtered by: ${genre})` : ''}`);
+        
+        // Validate response consistency (but skip when genre filter is active as totalItems is unfiltered count)
+        const isFiltered = genre && genre.toLowerCase() !== 'none';
+        if (!hasMore && itemsReturned > 0 && offset + itemsReturned < totalItems && !isFiltered) {
+          logger.warn(`Inconsistent pagination: hasMore=false but ${offset + itemsReturned} < ${totalItems}`);
+        }
+        
+        // Early exit detection
+        if (!hasMore && itemsReturned === 0) {
+          logger.info(`Reached end of list at page ${page} (no items returned)`);
+        }
+      } else {
+        logger.debug(`No pagination headers - listId: ${listId}, page: ${page}, items: ${items.length}, hasMore: ${hasMore}`);
+      }
+      
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages
+      };
+    } catch (err: any) {
+      logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
+      return { items: [] };
     }
-    
-    // Smart pagination validation and logging
-    if (listId === 'watchlist') {
-      logger.debug(`Watchlist pagination - page: ${page}, items: ${items.length}, hasMore: ${hasMore}`);
-    } else if (totalItems !== undefined) {
-      if (offset >= totalItems) {
-        logger.warn(`Requested offset ${offset} exceeds total items ${totalItems} for list ${listId}`);
-        return { 
-          items: [], 
-          totalItems, 
-          hasMore: false, 
-          totalPages 
-        };
-      }
-      
-      // Enhanced logging with pagination context
-      const itemsReturned = items.length;
-      const expectedItems = Math.min(pageSize, totalItems - offset);
-      
-      logger.debug(`Smart pagination - listId: ${listId}, page: ${page}/${totalPages}, items: ${itemsReturned}/${expectedItems}, offset: ${offset}, totalItems: ${totalItems}, hasMore: ${hasMore}${genre && genre.toLowerCase() !== 'none' ? ` (filtered by: ${genre})` : ''}`);
-      
-      // Validate response consistency (but skip when genre filter is active as totalItems is unfiltered count)
-      const isFiltered = genre && genre.toLowerCase() !== 'none';
-      if (!hasMore && itemsReturned > 0 && offset + itemsReturned < totalItems && !isFiltered) {
-        logger.warn(`Inconsistent pagination: hasMore=false but ${offset + itemsReturned} < ${totalItems}`);
-      }
-      
-      // Early exit detection
-      if (!hasMore && itemsReturned === 0) {
-        logger.info(`Reached end of list at page ${page} (no items returned)`);
-      }
-    } else {
-      logger.debug(`No pagination headers - listId: ${listId}, page: ${page}, items: ${items.length}, hasMore: ${hasMore}`);
-    }
-    
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages
-    };
-  } catch (err: any) {
-    logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
-    return { items: [] };
-  }
+  }, ttl);
 }
 
 
@@ -556,72 +566,96 @@ async function fetchMDBListExternalItems(
   catalogType?: string,
   unified?: boolean,
   filterScoreMin?: number,
-  filterScoreMax?: number
+  filterScoreMax?: number,
+  cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-  const offset = (page * pageSize) - pageSize;
+  
+  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+  
+  const normalizedUrl = new URL(url);
+  normalizedUrl.searchParams.delete('apikey');
+  normalizedUrl.searchParams.delete('limit');
+  normalizedUrl.searchParams.delete('offset');
+  normalizedUrl.searchParams.delete('language');
+  normalizedUrl.searchParams.delete('append_to_response');
+  normalizedUrl.searchParams.delete('unified');
+  normalizedUrl.searchParams.delete('sort');
+  normalizedUrl.searchParams.delete('order');
+  normalizedUrl.searchParams.delete('filter_genre');
+  normalizedUrl.searchParams.delete('filter_score_min');
+  normalizedUrl.searchParams.delete('filter_score_max');
+  const urlBase = normalizedUrl.toString();
+  
+  const cacheKey = `mdblist-api:external:${apiKeyHash}:${urlBase}:${page}:${language}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
-  try {
-    const urlWithParams = new URL(url);
-    urlWithParams.searchParams.set('apikey', apiKey);
-    urlWithParams.searchParams.set('limit', pageSize.toString());
-    urlWithParams.searchParams.set('offset', offset.toString());
-    urlWithParams.searchParams.set('language', language);
-    urlWithParams.searchParams.set('append_to_response', 'genre,poster');
-    urlWithParams.searchParams.set('unified', String(unified));
+  return await cacheWrapGlobal(cacheKey, async () => {
+    const offset = (page * pageSize) - pageSize;
 
-    if (sort && sort.trim() !== '') {
-      urlWithParams.searchParams.set('sort', sort);
-    }
-    if (order && order.trim() !== '') {
-      urlWithParams.searchParams.set('order', order);
-    }
-    if (genre && genre.toLowerCase() !== 'none') {
-      urlWithParams.searchParams.set('filter_genre', genre);
-    }
-    if (typeof filterScoreMin === 'number') {
-      urlWithParams.searchParams.set('filter_score_min', String(filterScoreMin));
-    }
-    if (typeof filterScoreMax === 'number') {
-      urlWithParams.searchParams.set('filter_score_max', String(filterScoreMax));
-    }
+    try {
+      const urlWithParams = new URL(url);
+      urlWithParams.searchParams.set('apikey', apiKey);
+      urlWithParams.searchParams.set('limit', pageSize.toString());
+      urlWithParams.searchParams.set('offset', offset.toString());
+      urlWithParams.searchParams.set('language', language);
+      urlWithParams.searchParams.set('append_to_response', 'genre,poster');
+      urlWithParams.searchParams.set('unified', String(unified));
 
-    const fullUrl = urlWithParams.toString();
-
-    logger.debug(`MDBList external request URL: ${sanitizeUrlForLogging(fullUrl)}`);
-
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(fullUrl, { dispatcher: mdblistDispatcher }),
-      apiKey,
-      `MDBList fetchMDBListExternalItems (url: ${sanitizeUrlForLogging(url)}, page: ${page})`
-    );
-
-    const hasMore = response.headers?.['x-has-more'] === 'true';
-
-    let items: any[];
-
-    if (unified === false) {
-      if (catalogType === 'series') {
-        items = response.data.shows || [];
-      } else {
-        items = response.data.movies || [];
+      if (sort && sort.trim() !== '') {
+        urlWithParams.searchParams.set('sort', sort);
       }
-    } else {
-      if (Array.isArray(response.data)) {
-        items = response.data;
-      } else {
-        items = [
-          ...(response.data?.movies || []),
-          ...(response.data?.shows || [])
-        ];
+      if (order && order.trim() !== '') {
+        urlWithParams.searchParams.set('order', order);
       }
-    }
+      if (genre && genre.toLowerCase() !== 'none') {
+        urlWithParams.searchParams.set('filter_genre', genre);
+      }
+      if (typeof filterScoreMin === 'number') {
+        urlWithParams.searchParams.set('filter_score_min', String(filterScoreMin));
+      }
+      if (typeof filterScoreMax === 'number') {
+        urlWithParams.searchParams.set('filter_score_max', String(filterScoreMax));
+      }
 
-    return { items, hasMore };
-  } catch (err: any) {
-    logger.error(`Error retrieving items from URL ${sanitizeUrlForLogging(url)}, page ${page}:`, err.message);
-    return { items: [] };
-  }
+      const fullUrl = urlWithParams.toString();
+
+      logger.debug(`MDBList external request URL: ${sanitizeUrlForLogging(fullUrl)}`);
+
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(fullUrl, { dispatcher: mdblistDispatcher }),
+        apiKey,
+        `MDBList fetchMDBListExternalItems (url: ${sanitizeUrlForLogging(url)}, page: ${page})`
+      );
+
+      const hasMore = response.headers?.['x-has-more'] === 'true';
+
+      let items: any[];
+
+      if (unified === false) {
+        if (catalogType === 'series') {
+          items = response.data.shows || [];
+        } else {
+          items = response.data.movies || [];
+        }
+      } else {
+        if (Array.isArray(response.data)) {
+          items = response.data;
+        } else {
+          items = [
+            ...(response.data?.movies || []),
+            ...(response.data?.shows || [])
+          ];
+        }
+      }
+
+      return { items, hasMore };
+    } catch (err: any) {
+      logger.error(`Error retrieving items from URL ${sanitizeUrlForLogging(url)}, page ${page}:`, err.message);
+      return { items: [] };
+    }
+  }, ttl);
 }
 
 async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig, includeVideos: boolean = false): Promise<any[]> {

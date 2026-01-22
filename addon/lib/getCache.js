@@ -403,8 +403,17 @@ function classifyResult(result, error = null, cacheKey = null) {
   const isExternalApi = cacheKey && (
     cacheKey.includes('tvdb-api:') || 
     cacheKey.includes('tmdb-api:') || 
+    cacheKey.includes('tmdb:') || 
     cacheKey.includes('tvmaze-api:') ||
-    cacheKey.includes('jikan-api:')
+    cacheKey.includes('jikan-api:') ||
+    cacheKey.includes('simkl-') ||
+    cacheKey.includes('fanart-api:') ||
+    cacheKey.includes('anilist-') ||
+    cacheKey.includes('kitsu-') ||
+    cacheKey.includes('mdblist-') ||
+    cacheKey.includes('trakt-') ||
+    cacheKey.includes('stremthru-') ||
+    cacheKey.includes('cinemeta-')
   );
   
   if (isExternalApi) {
@@ -794,6 +803,20 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       traktTokenId: config.apiKeys?.traktTokenId || ''
     };
   }
+
+  // Only include SimKL token ID for watchlist catalogs (trending is public, no token)
+  if (idOnly.startsWith('simkl.watchlist.')) {
+    catalogConfig.apiKeys = {
+      simklTokenId: config.apiKeys?.simklTokenId || ''
+    };
+  }
+
+  // Only include AniList token ID for user-list catalogs (trending is public, no token)
+  if (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') {
+    catalogConfig.apiKeys = {
+      anilistTokenId: config.apiKeys?.anilistTokenId || ''
+    };
+  }
   
   // Only include MAL config for MAL catalogs
   if (isMALCatalog) {
@@ -900,15 +923,18 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
     key = `catalog:${today}:${configHash}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.')) {
+  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.')) {
     key = `catalog:${userUUID}:${configHash}:${cacheTTL}:${catalogKey}`;
+  } else if (idOnly.startsWith('simkl.') || idOnly.startsWith('anilist.')) {
+    key = `catalog:${configHash}:${catalogKey}`;
   } else {
     key = `catalog:${configHash}:${catalogKey}`;
   }
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
-  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || isAuthCatalog} ttl:${cacheTTL}s`);
+  const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isAuthCatalog;
+  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state

@@ -105,7 +105,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
 }
 
 
-async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
+async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
       logger.debug(`Fetching TVDB collections catalog: ${id}`);
@@ -149,7 +149,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     else if (id.startsWith('simkl.')) {
       logger.debug(`Routing to Simkl catalog handler for id: ${id}`);
-      const simklResults = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      const simklResults = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
       return { metas: simklResults };
     }
 
@@ -431,7 +431,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         type,
         unified,
         filterScoreMin,
-        filterScoreMax
+        filterScoreMax,
+        catalogConfig?.cacheTTL
       );
 
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
@@ -474,7 +475,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     
-    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug, unified, type);
+    const response = await fetchMDBListItems(listId, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '', language, page, sort, order, genreSlug, unified, type, catalogConfig?.cacheTTL);
     
     // Smart pagination handling
     if (listId === 'watchlist') {
@@ -1119,7 +1120,7 @@ async function getTraktCatalog(
         logger.info(`Trakt Calendar: Fetching shows airing in next ${clampedDays} day(s) (${startDate}, timezone: ${timezone})`);
         
         // Fetch shows for the configured number of days
-        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, clampedDays);
+        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, clampedDays, catalogConfig?.cacheTTL);
         
         response = {
           items: calendarResult.items,
@@ -1139,51 +1140,51 @@ async function getTraktCatalog(
       const favType = parts[2]; // 'movies' or 'shows'
       const favPeriod = parts[3]; // 'daily', 'weekly', 'monthly', 'all'
       logger.debug(`Fetching Trakt most favorited: type=${favType}, period=${favPeriod}`);
-      response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genreSlug);
+      response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.trending.movies') {
       logger.debug('Fetching Trakt trending movies');
-      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('movies', page, pageSize, genreSlug);
+      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.trending.shows') {
       logger.debug('Fetching Trakt trending shows');
-      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('shows', page, pageSize, genreSlug);
+      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.popular.movies') {
       logger.debug('Fetching Trakt popular movies');
-      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('movies', page, pageSize, genreSlug);
+      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.popular.shows') {
       logger.debug('Fetching Trakt popular shows');
-      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('shows', page, pageSize, genreSlug);
+      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist
       logger.debug(`Fetching Trakt unified watchlist`);
-      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort, sortDirection, genreSlug);
+      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.watchlist.movies') {
       // Movies-only watchlist
       logger.debug(`Fetching Trakt watchlist (movies only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug);
+      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.watchlist.series') {
       // Series-only watchlist
       logger.debug(`Fetching Trakt watchlist (shows only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug);
+      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.favorites.movies') {
       // Movies-only favorites
       logger.debug(`Fetching Trakt favorites (movies only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug);
+      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.favorites.shows') {
       // Shows-only favorites
       logger.debug(`Fetching Trakt favorites (shows only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug);
+      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.recommendations.movies') {
       // Movies-only recommendations
       logger.debug(`Fetching Trakt recommendations (movies only)`);
-      response = await fetchTraktRecommendationsItems(accessToken, 'movies', page, pageSize);
+      response = await fetchTraktRecommendationsItems(accessToken, 'movies', page, 50, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.recommendations.shows') {
       // Shows-only recommendations
       logger.debug(`Fetching Trakt recommendations (shows only)`);
-      response = await fetchTraktRecommendationsItems(accessToken, 'shows', page, pageSize);
+      response = await fetchTraktRecommendationsItems(accessToken, 'shows', page, 50, catalogConfig?.cacheTTL);
     } else {
       // Custom list: supports two formats:
       // - trakt.list.<traktListId>
@@ -1208,7 +1209,7 @@ async function getTraktCatalog(
         }
 
         logger.debug(`Fetching Trakt list by id: ${listId} (splitType=${splitType || 'all'})`);
-        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection);
+        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL);
       } else {
         // Legacy username + slug format
         const username = parts[1];
@@ -1221,7 +1222,7 @@ async function getTraktCatalog(
         }
 
         logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
-        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection);
+        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL);
       }
     }
     
@@ -1560,7 +1561,8 @@ async function getSimklCatalog(
   language: string,
   config: UserConfig,
   userUUID: string,
-  includeVideos: boolean = false
+  includeVideos: boolean = false,
+  skip?: number
 ): Promise<any[]> {
   try {
     logger.info(`[Simkl] Fetching catalog: ${catalogId}, Type: ${type}, Page: ${page}`);
@@ -1670,6 +1672,19 @@ async function getSimklCatalog(
       }
     } else {
       logger.warn(`[Simkl] Unknown catalog ID: ${catalogId}`);
+      return [];
+    }
+    
+    // Early exit for pages beyond available content
+    // If hasMore is false, there are less than pageSize items total
+    // So if skip >= pageSize, we're beyond available items
+    if (!response.hasMore && skip !== undefined && skip >= pageSize) {
+      logger.debug(`[Simkl] No more items available (hasMore=false, skip=${skip} >= pageSize=${pageSize}), returning empty`);
+      return [];
+    }
+    
+    if (!response.hasMore && page > 1) {
+      logger.debug(`[Simkl] No more items available, returning empty for page ${page}`);
       return [];
     }
     

@@ -441,10 +441,11 @@ async function fetchTraktUnwatchedEpisodes(
 }
 import { httpGet } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
-import { cacheWrapMetaSmart } from "../lib/getCache.js";
+import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 import { meta } from "@eslint/js";
 const consola = require('consola');
+const crypto = require('crypto');
 const { Agent } = require('undici');
 const database = require('../lib/database.js');
 
@@ -713,63 +714,71 @@ async function fetchTraktWatchlistItems(
   limit: number = 20,
   sort?: string,
   sortDirection?: 'asc' | 'desc',
-  genre?: string
+  genre?: string,
+  cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    // Construct the URL based on type
-    const typeParam = type || 'all';
-    const sortParam = sort || 'rank';
-    const sortHow = sortDirection || 'asc';
-    let url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
+  const typeParam = type || 'all';
+  const sortParam = sort || 'rank';
+  const sortHow = sortDirection || 'asc';
+  
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const cacheKey = `trakt-api:watchlist:${tokenHash}:${typeParam}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      
+      logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
+      
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { 
+          dispatcher: traktDispatcher,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchWatchlistItems (type: ${typeParam}, page: ${page})`
+      );
+      
+      // Extract pagination info from headers
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : undefined;
+      const currentPage = paginationHeaders['x-pagination-page']
+        ? parseInt(paginationHeaders['x-pagination-page'])
+        : page;
+      
+      const items = Array.isArray(response.data) ? response.data : [];
+      const hasMore = currentPage < (pageCount || 1);
+      
+      logger.debug(
+        `Trakt watchlist pagination - page ${currentPage}/${pageCount || '?'}, ` +
+        `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
+      );
+      
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages: pageCount
+      };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt watchlist, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
     }
-    
-    logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
-    
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { 
-        dispatcher: traktDispatcher,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchWatchlistItems (type: ${typeParam}, page: ${page})`
-    );
-    
-    // Extract pagination info from headers
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] 
-      ? parseInt(paginationHeaders['x-pagination-item-count']) 
-      : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] 
-      ? parseInt(paginationHeaders['x-pagination-page-count']) 
-      : undefined;
-    const currentPage = paginationHeaders['x-pagination-page']
-      ? parseInt(paginationHeaders['x-pagination-page'])
-      : page;
-    
-    const items = Array.isArray(response.data) ? response.data : [];
-    const hasMore = currentPage < (pageCount || 1);
-    
-    logger.debug(
-      `Trakt watchlist pagination - page ${currentPage}/${pageCount || '?'}, ` +
-      `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
-    );
-    
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages: pageCount
-    };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt watchlist, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+  }, ttl);
 }
 
 /**
@@ -788,61 +797,70 @@ async function fetchTraktFavoritesItems(
   limit: number = 20,
   sort?: string,
   sortDirection?: 'asc' | 'desc',
-  genre?: string
+  genre?: string,
+  cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    const sortParam = sort || 'rank';
-    const sortHow = sortDirection || 'asc';
-    let url = `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
+  const sortParam = sort || 'rank';
+  const sortHow = sortDirection || 'asc';
+  
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const cacheKey = `trakt-api:favorites:${tokenHash}:${type}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      
+      logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
+      
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { 
+          dispatcher: traktDispatcher,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchFavoritesItems (type: ${type}, page: ${page})`
+      );
+      
+      // Extract pagination info from headers
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : undefined;
+      const currentPage = paginationHeaders['x-pagination-page']
+        ? parseInt(paginationHeaders['x-pagination-page'])
+        : page;
+      
+      const items = Array.isArray(response.data) ? response.data : [];
+      const hasMore = currentPage < (pageCount || 1);
+      
+      logger.debug(
+        `Trakt favorites pagination - type: ${type}, page ${currentPage}/${pageCount || '?'}, ` +
+        `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
+      );
+      
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages: pageCount
+      };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt favorites for type ${type}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
     }
-    
-    logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
-    
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { 
-        dispatcher: traktDispatcher,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchFavoritesItems (type: ${type}, page: ${page})`
-    );
-    
-    // Extract pagination info from headers
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] 
-      ? parseInt(paginationHeaders['x-pagination-item-count']) 
-      : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] 
-      ? parseInt(paginationHeaders['x-pagination-page-count']) 
-      : undefined;
-    const currentPage = paginationHeaders['x-pagination-page']
-      ? parseInt(paginationHeaders['x-pagination-page'])
-      : page;
-    
-    const items = Array.isArray(response.data) ? response.data : [];
-    const hasMore = currentPage < (pageCount || 1);
-    
-    logger.debug(
-      `Trakt favorites pagination - type: ${type}, page ${currentPage}/${pageCount || '?'}, ` +
-      `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
-    );
-    
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages: pageCount
-    };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt favorites for type ${type}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+  }, ttl);
 }
 
 /**
@@ -857,67 +875,75 @@ async function fetchTraktRecommendationsItems(
   accessToken: string,
   type: 'movies' | 'shows',
   page: number,
-  limit: number = 50
+  limit: number = 50,
+  cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    // Trakt recommendations endpoint doesn't support pagination, only a limit (max 100)
-    // We use limit=50 and ignore the page parameter
-    const recommendationsLimit = 50;
-    const url = `${TRAKT_BASE_URL}/recommendations/${type}?limit=${recommendationsLimit}&ignore_collected=false&ignore_watchlisted=false`;
-    
-    logger.debug(`Trakt recommendations request: type=${type}, limit=${recommendationsLimit}`);
-    
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { 
-        dispatcher: traktDispatcher,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchRecommendationsItems (type: ${type}, page: ${page})`
-    );
-    
-    // Extract pagination info from headers
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] 
-      ? parseInt(paginationHeaders['x-pagination-item-count']) 
-      : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] 
-      ? parseInt(paginationHeaders['x-pagination-page-count']) 
-      : undefined;
-    const currentPage = paginationHeaders['x-pagination-page']
-      ? parseInt(paginationHeaders['x-pagination-page'])
-      : page;
-    
-    // Transform recommendations to match list item format
-    // Recommendations return movies/shows directly, not wrapped in list items
-    const rawItems = Array.isArray(response.data) ? response.data : [];
-    const items = rawItems.map((media: any) => ({
-      type: type === 'movies' ? 'movie' : 'show',
-      movie: type === 'movies' ? media : undefined,
-      show: type === 'shows' ? media : undefined
-    }));
-    
-    // Trakt recommendations endpoint does NOT support pagination
-    // We fetch a single batch of results with limit=50
-    const hasMore = false;
-    
-    logger.debug(
-      `Trakt recommendations - type: ${type}, items: ${items.length}, hasMore: ${hasMore}`
-    );
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages: pageCount
-    };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt recommendations for type ${type}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const cacheKey = `trakt-api:recommendations:${tokenHash}:${type}:${page}:${limit}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      // Trakt recommendations endpoint doesn't support pagination, only a limit (max 100)
+      // We use limit=50 and ignore the page parameter
+      const recommendationsLimit = 50;
+      const url = `${TRAKT_BASE_URL}/recommendations/${type}?limit=${recommendationsLimit}&ignore_collected=false&ignore_watchlisted=false`;
+      
+      logger.debug(`Trakt recommendations request: type=${type}, limit=${recommendationsLimit}`);
+      
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { 
+          dispatcher: traktDispatcher,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchRecommendationsItems (type: ${type}, page: ${page})`
+      );
+      
+      // Extract pagination info from headers
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : undefined;
+      const currentPage = paginationHeaders['x-pagination-page']
+        ? parseInt(paginationHeaders['x-pagination-page'])
+        : page;
+      
+      // Transform recommendations to match list item format
+      // Recommendations return movies/shows directly, not wrapped in list items
+      const rawItems = Array.isArray(response.data) ? response.data : [];
+      const items = rawItems.map((media: any) => ({
+        type: type === 'movies' ? 'movie' : 'show',
+        movie: type === 'movies' ? media : undefined,
+        show: type === 'shows' ? media : undefined
+      }));
+      
+      // Trakt recommendations endpoint does NOT support pagination
+      // We fetch a single batch of results with limit=50
+      const hasMore = false;
+      
+      logger.debug(
+        `Trakt recommendations - type: ${type}, items: ${items.length}, hasMore: ${hasMore}`
+      );
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages: pageCount
+      };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt recommendations for type ${type}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
+    }
+  }, ttl);
 }
 
 /**
@@ -940,64 +966,72 @@ async function fetchTraktListItems(
   limit: number = 20,
   sort?: string,
   genre?: string,
-  sortDirection?: 'asc' | 'desc'
+  sortDirection?: 'asc' | 'desc',
+  cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    const typeParam = type || 'all';
-    let url = `${TRAKT_BASE_URL}/users/${username}/lists/${listSlug}/items/${typeParam}?page=${page}&limit=${limit}`;
-    if (sort) {
-      url += `&sort_by=${encodeURIComponent(sort)}`;
-      if (sortDirection) {
-        url += `&sort_how=${sortDirection}`;
-      }
-    }
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
-    }
-    logger.debug(`Trakt list request: user=${username}, list=${listSlug}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { 
-        dispatcher: traktDispatcher,
-        headers: {
-          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
+  const typeParam = type || 'all';
+  const tokenHash = accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public';
+  const cacheKey = `trakt-api:list:${tokenHash}:${username}:${listSlug}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/users/${username}/lists/${listSlug}/items/${typeParam}?page=${page}&limit=${limit}`;
+      if (sort) {
+        url += `&sort_by=${encodeURIComponent(sort)}`;
+        if (sortDirection) {
+          url += `&sort_how=${sortDirection}`;
         }
-      }),
-      `Trakt fetchListItems (${username}/${listSlug}, page: ${page}, genre: ${genre || 'none'})`
-    );
-    
-    // Extract pagination info from headers
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] 
-      ? parseInt(paginationHeaders['x-pagination-item-count']) 
-      : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] 
-      ? parseInt(paginationHeaders['x-pagination-page-count']) 
-      : undefined;
-    const currentPage = paginationHeaders['x-pagination-page']
-      ? parseInt(paginationHeaders['x-pagination-page'])
-      : page;
-    
-    const items = Array.isArray(response.data) ? response.data : [];
-    const hasMore = currentPage < (pageCount || 1);
-    
-    logger.debug(
-      `Trakt list pagination - ${username}/${listSlug} page ${currentPage}/${pageCount || '?'}, ` +
-      `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
-    );
-    
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages: pageCount
-    };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt list ${username}/${listSlug}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+      }
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      logger.debug(`Trakt list request: user=${username}, list=${listSlug}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { 
+          dispatcher: traktDispatcher,
+          headers: {
+            ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchListItems (${username}/${listSlug}, page: ${page}, genre: ${genre || 'none'})`
+      );
+      
+      // Extract pagination info from headers
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : undefined;
+      const currentPage = paginationHeaders['x-pagination-page']
+        ? parseInt(paginationHeaders['x-pagination-page'])
+        : page;
+      
+      const items = Array.isArray(response.data) ? response.data : [];
+      const hasMore = currentPage < (pageCount || 1);
+      
+      logger.debug(
+        `Trakt list pagination - ${username}/${listSlug} page ${currentPage}/${pageCount || '?'}, ` +
+        `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
+      );
+      
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages: pageCount
+      };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt list ${username}/${listSlug}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
+    }
+  }, ttl);
 }
 
 /**
@@ -1019,64 +1053,72 @@ async function fetchTraktListItemsById(
   limit: number = 20,
   sort?: string,
   genre?: string,
-  sortDirection?: 'asc' | 'desc'
+  sortDirection?: 'asc' | 'desc',
+  cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    const typeParam = type || 'movie,show';
-    let url = `${TRAKT_BASE_URL}/lists/${listId}/items/${typeParam}?page=${page}&limit=${limit}`;
-    if (sort) {
-      url += `&sort_by=${encodeURIComponent(sort)}`;
-      if (sortDirection) {
-        url += `&sort_how=${sortDirection}`;
-      }
-    }
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
-    }
-
-    logger.debug(`Trakt list request by id: listId=${listId}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { 
-        dispatcher: traktDispatcher,
-        headers: {
-          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
+  const typeParam = type || 'movie,show';
+  const tokenHash = accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public';
+  const cacheKey = `trakt-api:list-by-id:${tokenHash}:${listId}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/lists/${listId}/items/${typeParam}?page=${page}&limit=${limit}`;
+      if (sort) {
+        url += `&sort_by=${encodeURIComponent(sort)}`;
+        if (sortDirection) {
+          url += `&sort_how=${sortDirection}`;
         }
-      }),
-      `Trakt fetchListItemsById (${listId}, page: ${page}, genre: ${genre || 'none'})`
-    );
+      }
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
 
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] 
-      ? parseInt(paginationHeaders['x-pagination-item-count']) 
-      : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] 
-      ? parseInt(paginationHeaders['x-pagination-page-count']) 
-      : undefined;
-    const currentPage = paginationHeaders['x-pagination-page']
-      ? parseInt(paginationHeaders['x-pagination-page'])
-      : page;
+      logger.debug(`Trakt list request by id: listId=${listId}, type=${typeParam}, page=${page}, sort=${sort || 'default'}, sortDirection=${sortDirection || 'default'}, genre=${genre || 'none'}`);
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { 
+          dispatcher: traktDispatcher,
+          headers: {
+            ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchListItemsById (${listId}, page: ${page}, genre: ${genre || 'none'})`
+      );
 
-    const items = Array.isArray(response.data) ? response.data : [];
-    const hasMore = currentPage < (pageCount || 1);
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : undefined;
+      const currentPage = paginationHeaders['x-pagination-page']
+        ? parseInt(paginationHeaders['x-pagination-page'])
+        : page;
 
-    logger.debug(
-      `Trakt list pagination by id - ${listId} page ${currentPage}/${pageCount || '?'}, ` +
-      `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
-    );
+      const items = Array.isArray(response.data) ? response.data : [];
+      const hasMore = currentPage < (pageCount || 1);
 
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages: pageCount
-    };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt list by id ${listId}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+      logger.debug(
+        `Trakt list pagination by id - ${listId} page ${currentPage}/${pageCount || '?'}, ` +
+        `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
+      );
+
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages: pageCount
+      };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt list by id ${listId}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
+    }
+  }, ttl);
 }
 
 /**
@@ -1420,68 +1462,76 @@ async function getTraktListDetailsById(
 async function fetchTraktCalendarShows(
   accessToken: string,
   startDate: string,
-  days: number
+  days: number,
+  cacheTTL?: number
 ): Promise<{items: any[]}> {
-  try {
-    const url = `${TRAKT_BASE_URL}/calendars/my/shows/${startDate}/${days}`;
-    
-    logger.debug(`Trakt calendar request: startDate=${startDate}, days=${days}`);
-    
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, { 
-        dispatcher: traktDispatcher,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchCalendarShows (startDate: ${startDate}, days: ${days})`
-    );
-    
-    const items = Array.isArray(response.data) ? response.data : [];
-    
-    logger.debug(`Trakt calendar - fetched ${items.length} calendar entries`);
-    
-    // Transform calendar entries to match list item format
-    // Group by show to avoid duplicates
-    const showMap = new Map<number, any>();
-    
-    for (const entry of items) {
-      const show = entry.show;
-      const episode = entry.episode;
-      const firstAired = entry.first_aired;
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const cacheKey = `trakt-api:calendar:${tokenHash}:${startDate}:${days}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      const url = `${TRAKT_BASE_URL}/calendars/my/shows/${startDate}/${days}`;
       
-      if (!show?.ids?.trakt) continue;
+      logger.debug(`Trakt calendar request: startDate=${startDate}, days=${days}`);
       
-      const showId = show.ids.trakt;
-      
-      // Keep the earliest airing episode for each show
-      if (!showMap.has(showId) || new Date(firstAired) < new Date(showMap.get(showId).first_aired)) {
-        showMap.set(showId, {
-          type: 'show',
-          show: show,
-          first_aired: firstAired,
-          next_episode: {
-            season: episode.season,
-            number: episode.number,
-            title: episode.title,
-            ids: episode.ids
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { 
+          dispatcher: traktDispatcher,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
           }
-        });
+        }),
+        `Trakt fetchCalendarShows (startDate: ${startDate}, days: ${days})`
+      );
+      
+      const items = Array.isArray(response.data) ? response.data : [];
+      
+      logger.debug(`Trakt calendar - fetched ${items.length} calendar entries`);
+      
+      // Transform calendar entries to match list item format
+      // Group by show to avoid duplicates
+      const showMap = new Map<number, any>();
+      
+      for (const entry of items) {
+        const show = entry.show;
+        const episode = entry.episode;
+        const firstAired = entry.first_aired;
+        
+        if (!show?.ids?.trakt) continue;
+        
+        const showId = show.ids.trakt;
+        
+        // Keep the earliest airing episode for each show
+        if (!showMap.has(showId) || new Date(firstAired) < new Date(showMap.get(showId).first_aired)) {
+          showMap.set(showId, {
+            type: 'show',
+            show: show,
+            first_aired: firstAired,
+            next_episode: {
+              season: episode.season,
+              number: episode.number,
+              title: episode.title,
+              ids: episode.ids
+            }
+          });
+        }
       }
+      
+      const uniqueItems = Array.from(showMap.values());
+      
+      logger.info(`Trakt calendar - ${uniqueItems.length} unique shows from ${items.length} total entries`);
+      
+      return { items: uniqueItems };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt calendar shows:`, err.message);
+      return { items: [] };
     }
-    
-    const uniqueItems = Array.from(showMap.values());
-    
-    logger.info(`Trakt calendar - ${uniqueItems.length} unique shows from ${items.length} total entries`);
-    
-    return { items: uniqueItems };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt calendar shows:`, err.message);
-    return { items: [] };
-  }
+  }, ttl);
 }
 
 export { 
@@ -1558,60 +1608,67 @@ async function fetchTraktMostFavoritedItems(
   period: 'daily' | 'weekly' | 'monthly' | 'all',
   page: number = 1,
   limit: number = 20,
-  genre?: string
+  genre?: string,
+  cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    let url = `${TRAKT_BASE_URL}/${type}/favorited/${period}?page=${page}&limit=${limit}`;
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
-    }
-    logger.debug(`Trakt most favorited ${type}: period=${period}, page=${page}, limit=${limit}, genre=${genre || 'none'}`);
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, {
-        dispatcher: traktDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchMostFavoritedItems (${type}, period: ${period}, page: ${page}, genre: ${genre || 'none'})`
-    );
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] 
-      ? parseInt(paginationHeaders['x-pagination-item-count']) 
-      : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] 
-      ? parseInt(paginationHeaders['x-pagination-page-count']) 
-      : undefined;
-    const currentPage = paginationHeaders['x-pagination-page']
-      ? parseInt(paginationHeaders['x-pagination-page'])
-      : page;
-    const rawItems = Array.isArray(response.data) ? response.data : [];
-    const items = rawItems.map((entry: any) => {
-      const media = entry?.movie || entry?.show || entry;
-      const itemType = type === 'movies' ? 'movie' : 'show';
+  const cacheKey = `trakt-api:most-favorited:${type}:${period}:${page}:${limit}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/${type}/favorited/${period}?page=${page}&limit=${limit}`;
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      logger.debug(`Trakt most favorited ${type}: period=${period}, page=${page}, limit=${limit}, genre=${genre || 'none'}`);
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, {
+          dispatcher: traktDispatcher,
+          headers: {
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchMostFavoritedItems (${type}, period: ${period}, page: ${page}, genre: ${genre || 'none'})`
+      );
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] 
+        ? parseInt(paginationHeaders['x-pagination-item-count']) 
+        : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] 
+        ? parseInt(paginationHeaders['x-pagination-page-count']) 
+        : undefined;
+      const currentPage = paginationHeaders['x-pagination-page']
+        ? parseInt(paginationHeaders['x-pagination-page'])
+        : page;
+      const rawItems = Array.isArray(response.data) ? response.data : [];
+      const items = rawItems.map((entry: any) => {
+        const media = entry?.movie || entry?.show || entry;
+        const itemType = type === 'movies' ? 'movie' : 'show';
+        return {
+          type: itemType,
+          movie: itemType === 'movie' ? media : undefined,
+          show: itemType === 'show' ? media : undefined
+        } as TraktListItem;
+      });
+      const hasMore = currentPage < (pageCount || 1);
+      logger.debug(
+        `Trakt most favorited ${type} pagination - period ${period} page ${currentPage}/${pageCount || '?'}, ` +
+        `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
+      );
       return {
-        type: itemType,
-        movie: itemType === 'movie' ? media : undefined,
-        show: itemType === 'show' ? media : undefined
-      } as TraktListItem;
-    });
-    const hasMore = currentPage < (pageCount || 1);
-    logger.debug(
-      `Trakt most favorited ${type} pagination - period ${period} page ${currentPage}/${pageCount || '?'}, ` +
-      `items: ${items.length}, totalItems: ${totalItems || '?'}, hasMore: ${hasMore}`
-    );
-    return {
-      items,
-      totalItems,
-      hasMore,
-      totalPages: pageCount
-    };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt most favorited ${type} for period ${period}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+        items,
+        totalItems,
+        hasMore,
+        totalPages: pageCount
+      };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt most favorited ${type} for period ${period}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
+    }
+  }, ttl);
 }
 
 /**
@@ -1621,45 +1678,52 @@ async function fetchTraktTrendingItems(
   type: 'movies' | 'shows',
   page: number = 1,
   limit: number = 20,
-  genre?: string
+  genre?: string,
+  cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    let url = `${TRAKT_BASE_URL}/${type}/trending?page=${page}&limit=${limit}`;
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
+  const cacheKey = `trakt-api:trending:${type}:${page}:${limit}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/${type}/trending?page=${page}&limit=${limit}`;
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      logger.debug(`Trakt trending ${type}: page=${page}, limit=${limit}, genre=${genre || 'none'}`);
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, {
+          dispatcher: traktDispatcher,
+          headers: {
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchTrendingItems (${type}, page: ${page})`
+      );
+
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] ? parseInt(paginationHeaders['x-pagination-item-count']) : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] ? parseInt(paginationHeaders['x-pagination-page-count']) : undefined;
+      const currentPage = paginationHeaders['x-pagination-page'] ? parseInt(paginationHeaders['x-pagination-page']) : page;
+
+      const rawItems = Array.isArray(response.data) ? response.data : [];
+      // Map Trakt response to TraktListItem-like objects
+      const items = rawItems.map((entry: any) => {
+        const media = entry.movie || entry.show || entry;
+        const itemType = type === 'movies' ? 'movie' : 'show';
+        return { type: itemType, movie: itemType === 'movie' ? media : undefined, show: itemType === 'show' ? media : undefined } as TraktListItem;
+      });
+
+      const hasMore = currentPage < (pageCount || 1);
+      return { items, totalItems, hasMore, totalPages: pageCount };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt trending ${type}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
     }
-    logger.debug(`Trakt trending ${type}: page=${page}, limit=${limit}, genre=${genre || 'none'}`);
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, {
-        dispatcher: traktDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchTrendingItems (${type}, page: ${page})`
-    );
-
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] ? parseInt(paginationHeaders['x-pagination-item-count']) : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] ? parseInt(paginationHeaders['x-pagination-page-count']) : undefined;
-    const currentPage = paginationHeaders['x-pagination-page'] ? parseInt(paginationHeaders['x-pagination-page']) : page;
-
-    const rawItems = Array.isArray(response.data) ? response.data : [];
-    // Map Trakt response to TraktListItem-like objects
-    const items = rawItems.map((entry: any) => {
-      const media = entry.movie || entry.show || entry;
-      const itemType = type === 'movies' ? 'movie' : 'show';
-      return { type: itemType, movie: itemType === 'movie' ? media : undefined, show: itemType === 'show' ? media : undefined } as TraktListItem;
-    });
-
-    const hasMore = currentPage < (pageCount || 1);
-    return { items, totalItems, hasMore, totalPages: pageCount };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt trending ${type}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+  }, ttl);
 }
 
 /**
@@ -1669,44 +1733,51 @@ async function fetchTraktPopularItems(
   type: 'movies' | 'shows',
   page: number = 1,
   limit: number = 20,
-  genre?: string
+  genre?: string,
+  cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  try {
-    let url = `${TRAKT_BASE_URL}/${type}/popular?page=${page}&limit=${limit}`;
-    if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
-      url += `&genres=${encodeURIComponent(genre)}`;
+  const cacheKey = `trakt-api:popular:${type}:${page}:${limit}:${genre || ''}`;
+  
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+  
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/${type}/popular?page=${page}&limit=${limit}`;
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      logger.debug(`Trakt popular ${type}: page=${page}, limit=${limit}, genre=${genre || 'none'}`);
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, {
+          dispatcher: traktDispatcher,
+          headers: {
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchPopularItems (${type}, page: ${page})`
+      );
+
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] ? parseInt(paginationHeaders['x-pagination-item-count']) : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] ? parseInt(paginationHeaders['x-pagination-page-count']) : undefined;
+      const currentPage = paginationHeaders['x-pagination-page'] ? parseInt(paginationHeaders['x-pagination-page']) : page;
+
+      const rawItems = Array.isArray(response.data) ? response.data : [];
+      const items = rawItems.map((entry: any) => {
+        const media = entry.movie || entry.show || entry;
+        const itemType = type === 'movies' ? 'movie' : 'show';
+        return { type: itemType, movie: itemType === 'movie' ? media : undefined, show: itemType === 'show' ? media : undefined } as TraktListItem;
+      });
+
+      const hasMore = currentPage < (pageCount || 1);
+      return { items, totalItems, hasMore, totalPages: pageCount };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt popular ${type}, page ${page}:`, err.message);
+      return { items: [], hasMore: false };
     }
-    logger.debug(`Trakt popular ${type}: page=${page}, limit=${limit}, genre=${genre || 'none'}`);
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, {
-        dispatcher: traktDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'trakt-api-version': '2',
-          'trakt-api-key': TRAKT_CLIENT_ID
-        }
-      }),
-      `Trakt fetchPopularItems (${type}, page: ${page})`
-    );
-
-    const paginationHeaders = response.headers || {};
-    const totalItems = paginationHeaders['x-pagination-item-count'] ? parseInt(paginationHeaders['x-pagination-item-count']) : undefined;
-    const pageCount = paginationHeaders['x-pagination-page-count'] ? parseInt(paginationHeaders['x-pagination-page-count']) : undefined;
-    const currentPage = paginationHeaders['x-pagination-page'] ? parseInt(paginationHeaders['x-pagination-page']) : page;
-
-    const rawItems = Array.isArray(response.data) ? response.data : [];
-    const items = rawItems.map((entry: any) => {
-      const media = entry.movie || entry.show || entry;
-      const itemType = type === 'movies' ? 'movie' : 'show';
-      return { type: itemType, movie: itemType === 'movie' ? media : undefined, show: itemType === 'show' ? media : undefined } as TraktListItem;
-    });
-
-    const hasMore = currentPage < (pageCount || 1);
-    return { items, totalItems, hasMore, totalPages: pageCount };
-  } catch (err: any) {
-    logger.error(`Error fetching Trakt popular ${type}, page ${page}:`, err.message);
-    return { items: [], hasMore: false };
-  }
+  }, ttl);
 }
 
 /**
