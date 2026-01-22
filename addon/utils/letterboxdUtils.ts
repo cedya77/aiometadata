@@ -1,5 +1,5 @@
 
-import { httpGet } from "./httpClient.js";
+import { httpGet, httpHead } from "./httpClient.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
 import { getMeta } from "../lib/getMeta.js";
 import { UserConfig } from "../types/index.js";
@@ -132,19 +132,20 @@ export async function extractLetterboxdIdentifier(url: string): Promise<string> 
       }
     }
 
-    // Make request with Accept: application/json header
+    // Make HEAD request to extract identifier from headers
     const response: any = await makeRateLimitedRequest(
-      () => httpGet(requestUrl, {
+      () => httpHead(requestUrl, {
         dispatcher: letterboxdDispatcher,
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'AIOMetadata/1.0'
+          'User-Agent': 'AIOMetadata/1.0',
+          'Accept-Language': 'en-US,en;q=0.9'
         }
       }),
       `Letterboxd extractIdentifier (${requestUrl})`
     );
 
-    consola.debug(`[Letterboxd] Response: ${response}`);
+    //consola.debug(`[Letterboxd] Response headers:`, response.headers);
+    
     // Extract x-letterboxd-identifier from response headers
     const identifier = response.headers?.['x-letterboxd-identifier'];
     
