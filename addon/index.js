@@ -697,8 +697,8 @@ addon.get("/api/auth/simkl/callback", async (req, res) => {
       saved = await database.updateOAuthToken(
         tokenId,
         tokens.access_token,
-        '', // No refresh token for Simkl (use empty string instead of null)
-        0   // No expiration for Simkl (tokens never expire, use 0 instead of null)
+        '', 
+        0 
       );
     } else {
       // Create new token
@@ -712,7 +712,7 @@ addon.get("/api/auth/simkl/callback", async (req, res) => {
         tokens.access_token,
         '', 
         0, 
-        ''    // No scope field in Simkl response
+        '' 
       );
     }
     
@@ -2248,9 +2248,20 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
         let metas = [];
         const { genre: genreName, type_filter,  skip } = extraArgs;
-        const pageSize = cleanId.includes(`mal.`) ? 25 : 
-                         (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('simkl.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) ? 
-                         parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20;
+        let pageSize;
+        if (cleanId.includes(`mal.`)) {
+          pageSize = 25;
+        } else if (cleanId === 'anilist.trending') {
+          pageSize = 50;
+        } else if (cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.watchlist.')) {
+          pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
+            ? catalogConfig.metadata.pageSize 
+            : 50;
+        } else if (cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
+          pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+        } else {
+          pageSize = 20;
+        }
         const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
         const args = [actualType, language, page];
         switch (cleanId) {
@@ -2498,7 +2509,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             break;
           }
           default:
-            metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false)).metas;
+            const skipValue = skip ? parseInt(skip) : undefined;
+            metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipValue)).metas;
             break;
       }
       return { metas: metas || [] };

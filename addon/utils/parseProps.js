@@ -2344,9 +2344,10 @@ async function getTmdbMovieArtBatch(tmdbId, config) {
       const poster = posterImg?.file_path 
         ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
         : null;
-      
-      // Extract background (first backdrop, no language filtering needed)
-      const backgroundImg = res.backdrops?.[0];
+      const backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
+      || res.backdrops?.find(b => b.iso_639_1 === null)
+      || res.backdrops?.find(b => b.iso_639_1 === langCode)
+      || res.backdrops?.[0];
       const background = backgroundImg?.file_path
         ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
         : null;
@@ -2679,7 +2680,10 @@ async function getTmdbSeriesArtBatch(tmdbId, config) {
         : null;
       
       // Extract background (first backdrop, no language filtering needed)
-      const backgroundImg = res.backdrops?.[0];
+      const backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
+      || res.backdrops?.find(b => b.iso_639_1 === null)
+      || res.backdrops?.find(b => b.iso_639_1 === langCode)
+      || res.backdrops?.[0];
       const background = backgroundImg?.file_path
         ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
         : null;

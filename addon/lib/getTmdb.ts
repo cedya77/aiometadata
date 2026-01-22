@@ -788,6 +788,24 @@ export async function seasonInfo(params: any, config: UserConfig) {
   );
 }
 
+export async function movieImages(params: any, config: UserConfig) {
+  const { id, ...queryParams } = params;
+  const cacheKey = `tmdb:movie:images:${id}:${queryParams.include_image_language || 'all'}`;
+  return cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/movie/${id}/images`, getApiKey(config), queryParams, 'GET', null, config),
+    24 * 60 * 60
+  );
+}
+
+export async function tvImages(params: any, config: UserConfig) {
+  const { id, ...queryParams } = params;
+  const cacheKey = `tmdb:tv:images:${id}:${queryParams.include_image_language || 'all'}`;
+  return cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/tv/${id}/images`, getApiKey(config), queryParams, 'GET', null, config),
+    24 * 60 * 60
+  );
+}
+
 module.exports = {
   makeTmdbRequest, 
   movieInfo,
@@ -833,5 +851,7 @@ module.exports = {
   tvCredits,
   getTmdbImages,
   getWatchProviders,
-  selectTmdbImageByLang
+  selectTmdbImageByLang,
+  movieImages,
+  tvImages
 };
