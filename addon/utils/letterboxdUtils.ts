@@ -138,21 +138,7 @@ export async function extractLetterboxdIdentifier(url: string): Promise<string> 
         dispatcher: letterboxdDispatcher,
         headers: {
           'User-Agent': 'AIOMetadata/1.0',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Referer': 'https://letterboxd.com/',
-          'DNT': '1',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'same-origin',
-          'Sec-Fetch-User': '?1',
-          'Cache-Control': 'max-age=0',
-          'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-          'sec-ch-ua-mobile': '?0',
-          'sec-ch-ua-platform': '"Windows"'
+          'Accept-Language': 'en-US,en;q=0.9'
         }
       }),
       `Letterboxd extractIdentifier (${requestUrl})`
