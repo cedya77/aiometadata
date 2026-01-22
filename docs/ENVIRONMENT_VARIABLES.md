@@ -117,6 +117,26 @@ cp .env.example .env
 - **Description**: Trakt API client secret for enabling Trakt account integration
 - **Get it**: https://trakt.tv/oauth/applications
 
+### `TRAKT_REDIRECT_URI`
+- **Required for Trakt integration**: Yes
+- **Description**: Redirect URI for Trakt OAuth. Must match the value set in your Trakt app settings.
+- **Example**: `TRAKT_REDIRECT_URI=https://your-domain.com/api/auth/trakt/callback`
+
+### `SIMKL_CLIENT_ID`
+- **Required for SimKL integration**: Yes
+- **Description**: SimKL API client ID for enabling SimKL account integration (watchlists, trending catalogs, etc.)
+- **Get it**: https://simkl.com/oauth/applications
+
+### `SIMKL_CLIENT_SECRET`
+- **Required for SimKL integration**: Yes
+- **Description**: SimKL API client secret for enabling SimKL account integration
+- **Get it**: https://simkl.com/oauth/applications
+
+### `SIMKL_REDIRECT_URI`
+- **Required for SimKL integration**: No (optional)
+- **Description**: Redirect URI for SimKL OAuth. If not set, defaults to `${HOST_NAME}/api/auth/simkl/callback`. Must match the value set in your SimKL app settings if explicitly set.
+- **Example**: `SIMKL_REDIRECT_URI=https://your-domain.com/api/auth/simkl/callback`
+
 ### `GEMINI_API_KEY`
 - **Optional**: Yes
 - **Description**: Google Gemini API key for AI search features
@@ -482,6 +502,10 @@ TMDB_API=your_key_here
 TVDB_API_KEY=your_key_here  # Optional
 FANART_API_KEY=your_key_here
 MDBLIST_API_KEY=your_key_here
+TRAKT_CLIENT_ID=your_key_here  # Optional
+TRAKT_CLIENT_SECRET=your_key_here  # Optional
+SIMKL_CLIENT_ID=your_key_here  # Optional
+SIMKL_CLIENT_SECRET=your_key_here  # Optional
 
 # Cache Warmup Configuration
 CACHE_WARMUP_UUIDS=your-user-uuid-here,another-user-uuid  # Multiple UUIDs (up to 3)
@@ -554,6 +578,8 @@ MAL_WARMUP_LOG_LEVEL=silent
 | Fanart.tv | https://fanart.tv/get-an-api-key/ | Yes | No |
 | RPDB | https://ratingposterdb.com/ | Yes | No |
 | MDBList | https://mdblist.com/ | Yes | No |
+| Trakt | https://trakt.tv/oauth/applications | Yes | No |
+| SimKL | https://simkl.com/oauth/applications | Yes | No |
 | Gemini | https://makersuite.google.com/app/apikey | Yes | No |
 
 ---
