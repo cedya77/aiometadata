@@ -22,6 +22,8 @@ export interface UserConfig {
     gemini?: string;
     imdb?: string;
     traktTokenId?: string;
+    /** Simkl OAuth token ID stored in oauth_tokens table */
+    simklTokenId?: string;
     /** AniList OAuth token ID stored in oauth_tokens table */
     anilistTokenId?: string;
   };

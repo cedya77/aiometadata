@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, parseSimklItems, getSimklAccessToken } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklAccessToken } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
@@ -1567,27 +1567,107 @@ async function getSimklCatalog(
     
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     
-    const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase()) 
-      ? genre.toLowerCase() as 'today' | 'week' | 'month'
-      : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
-    
-    // Use configured pageSize from metadata for trending catalogs, default to 50
     const pageSize = catalogConfig?.metadata?.pageSize || 50;
     
     let response: any;
     
     if (catalogId === 'simkl.trending.movies') {
+      const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase()) 
+        ? genre.toLowerCase() as 'today' | 'week' | 'month'
+        : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
       logger.debug(`[Simkl] Fetching trending movies (interval: ${interval}, pageSize: ${pageSize})`);
       const result = await fetchSimklTrendingItems('movies', interval, page, pageSize);
-      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+      const items = (result.items as any[]).filter((it: any) => {
+        const ids = it.ids || {};
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal);
+        if (!ok) logger.debug(`[Simkl] Skipping trending item with only simkl ID: ${it.title || 'Unknown'}`);
+        return ok;
+      });
+      response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
     } else if (catalogId === 'simkl.trending.shows') {
+      const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase()) 
+        ? genre.toLowerCase() as 'today' | 'week' | 'month'
+        : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
       logger.debug(`[Simkl] Fetching trending shows (interval: ${interval}, pageSize: ${pageSize})`);
       const result = await fetchSimklTrendingItems('shows', interval, page, pageSize);
-      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+      const items = (result.items as any[]).filter((it: any) => {
+        const ids = it.ids || {};
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal);
+        if (!ok) logger.debug(`[Simkl] Skipping trending item with only simkl ID: ${JSON.stringify(it)}`);
+        return ok;
+      });
+      response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
     } else if (catalogId === 'simkl.trending.anime') {
+      const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase()) 
+        ? genre.toLowerCase() as 'today' | 'week' | 'month'
+        : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
       logger.debug(`[Simkl] Fetching trending anime (interval: ${interval}, pageSize: ${pageSize})`);
       const result = await fetchSimklTrendingItems('anime', interval, page, pageSize);
-      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+      const items = (result.items as any[]).filter((it: any) => {
+        const ids = it.ids || {};
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb);
+        if (!ok) logger.debug(`[Simkl] Skipping trending anime item with only simkl ID: ${JSON.stringify(it)}`);
+        return ok;
+      });
+      response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } 
+    else if (catalogId.startsWith('simkl.watchlist.')) {
+      const parts = catalogId.split('.');
+      if (parts.length === 4) {
+        const watchlistType = parts[2] as 'movies' | 'shows' | 'anime';
+        const status = parts[3] as 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped';
+        
+        const tokenId = (config.apiKeys as any)?.simklTokenId;
+        if (!tokenId) {
+          logger.error(`[Simkl] No Simkl token ID found for watchlist catalog`);
+          return [];
+        }
+        
+        const accessToken = await getSimklAccessToken(tokenId);
+        if (!accessToken) {
+          logger.error(`[Simkl] Failed to get Simkl access token for watchlist catalog`);
+          return [];
+        }
+        
+        logger.debug(`[Simkl] Fetching watchlist ${watchlistType}/${status} (pageSize: ${pageSize})`);
+        const cacheTTL = catalogConfig?.cacheTTL || (60 * 60); // Default 1 hour if not specified
+        const result = await fetchSimklWatchlistItems(accessToken, watchlistType, status, page, pageSize, cacheTTL);
+        
+        const items = result.items
+          .map((item: any) => {
+            const media = item.show || item.movie || item;
+            const ids = media.ids || {};
+            
+            const hasValidId = watchlistType === 'anime'
+              ? !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb)
+              : !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal);
+            if (!hasValidId) {
+              logger.debug(`[Simkl] Skipping watchlist item with only simkl ID: ${media.title || 'Unknown'}`);
+              return null;
+            }
+            let itemType: 'movie' | 'series';
+            if (watchlistType === 'anime' && item.anime_type) {
+              itemType = (item.anime_type === 'movie' || item.anime_type === 'ona') ? 'movie' : 'series';
+            } else {
+              itemType = watchlistType === 'movies' ? 'movie' : 'series';
+            }
+            
+            return {
+              type: itemType,
+              ...media,
+              simkl_status: item.status,
+              simkl_rating: item.user_rating,
+              simkl_last_watched: item.last_watched,
+              simkl_next_to_watch: item.next_to_watch
+            };
+          })
+          .filter((item: any) => item !== null); // Remove null items
+        
+        response = { items, hasMore: result.hasMore };
+      } else {
+        logger.warn(`[Simkl] Invalid watchlist catalog ID format: ${catalogId}`);
+        return [];
+      }
     } else {
       logger.warn(`[Simkl] Unknown catalog ID: ${catalogId}`);
       return [];
@@ -1599,8 +1679,9 @@ async function getSimklCatalog(
       return [];
     }
     
+    const isAnimeCatalog = catalogId === 'simkl.trending.anime' || catalogId.startsWith('simkl.watchlist.anime.');
     const parseStart = Date.now();
-    let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID);
+    let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID, includeVideos, isAnimeCatalog);
     const parseTime = Date.now() - parseStart;
     logger.info(`[Simkl] parseSimklItems took ${parseTime}ms for ${response.items.length} items`);
     

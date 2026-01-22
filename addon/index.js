@@ -2183,8 +2183,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       ? catalogConfig.metadata.airingSoonDays 
       : 1;
   }
-  // SimKL trending catalogs need pageSize in cache key for proper cache invalidation
-  if (cleanId.startsWith('simkl.trending.')) {
+  // SimKL trending and watchlist catalogs need pageSize in cache key for proper cache invalidation
+  if (cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.watchlist.')) {
     extraArgs.pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
       ? catalogConfig.metadata.pageSize 
       : 50;

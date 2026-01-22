@@ -556,7 +556,7 @@ class ComprehensiveCatalogWarmer {
             : 1;
         }
         
-        if (catalogId.startsWith('simkl.trending.')) {
+        if (catalogId.startsWith('simkl.trending.') || catalogId.startsWith('simkl.watchlist.')) {
           extraArgs.pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
             ? catalogConfig.metadata.pageSize 
             : 50;

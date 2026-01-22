@@ -155,7 +155,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
       toast.info(`Trending ${type} catalog already added.`);
       return;
     }
-    const catalogType = type === 'movies' ? 'movie' : 'series';
+    const catalogType = type === 'movies' ? 'movie' : type === 'anime' ? 'anime' : 'series';
     const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
     const newCatalog: CatalogConfig = {
       id,
@@ -169,6 +169,36 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
     };
     setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
     toast.success(`Added Simkl Trending ${type}`);
+  };
+
+  // Handlers to add watchlist catalogs
+  const handleAddWatchlistCatalog = (type: 'movies' | 'shows' | 'anime', status: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped') => {
+    const id = `simkl.watchlist.${type}.${status}`;
+    if (config.catalogs.some(c => c.id === id)) {
+      toast.info(`Watchlist ${type} ${status} catalog already added.`);
+      return;
+    }
+    const catalogType = type === 'movies' ? 'movie' : type === 'anime' ? 'anime' : 'series';
+    const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
+    const statusDisplayNames: Record<string, string> = {
+      'watching': 'Watching',
+      'plantowatch': 'Plan to Watch',
+      'hold': 'On Hold',
+      'completed': 'Completed',
+      'dropped': 'Dropped'
+    };
+    const newCatalog: CatalogConfig = {
+      id,
+      type: catalogType,
+      name: `Simkl ${statusDisplayNames[status]} ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      enabled: true,
+      showInHome: true,
+      source: 'simkl' as any,
+      metadata: { status, pageSize: 50 },
+      ...(displayType && { displayType })
+    };
+    setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+    toast.success(`Added Simkl ${statusDisplayNames[status]} ${type}`);
   };
 
   const handleDisconnect = async () => {
@@ -483,6 +513,175 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         These catalogs use Simkl's trending endpoints for movies, shows, and anime. They update automatically.
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Watchlist Catalogs</CardTitle>
+                      <CardDescription>Add watchlist catalogs for movies, shows, and anime by status</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-sm font-medium mb-2">Movies</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('movies', 'watching')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.movies.watching')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Watching
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('movies', 'plantowatch')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.movies.plantowatch')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Plan to Watch
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('movies', 'completed')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.movies.completed')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Completed
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('movies', 'hold')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.movies.hold')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              On Hold
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('movies', 'dropped')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.movies.dropped')}
+                              className="col-span-2"
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Dropped
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium mb-2">Shows</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('shows', 'watching')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.shows.watching')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Watching
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('shows', 'plantowatch')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.shows.plantowatch')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Plan to Watch
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('shows', 'completed')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.shows.completed')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Completed
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('shows', 'hold')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.shows.hold')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              On Hold
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('shows', 'dropped')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.shows.dropped')}
+                              className="col-span-2"
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Dropped
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium mb-2">Anime</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('anime', 'watching')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.anime.watching')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Watching
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('anime', 'plantowatch')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.anime.plantowatch')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Plan to Watch
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('anime', 'completed')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.anime.completed')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Completed
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('anime', 'hold')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.anime.hold')}
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              On Hold
+                            </Button>
+                            <Button 
+                              onClick={() => handleAddWatchlistCatalog('anime', 'dropped')} 
+                              variant="outline" 
+                              size="sm"
+                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.anime.dropped')}
+                              className="col-span-2"
+                            >
+                              <Plus className="mr-2 h-3 w-3" />
+                              Dropped
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        These catalogs show your Simkl watchlist items by status. Page size must match your SimKL settings.
                       </p>
                     </CardContent>
                   </Card>

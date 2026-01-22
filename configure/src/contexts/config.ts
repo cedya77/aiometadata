@@ -51,7 +51,8 @@ export interface CatalogConfig {
     listDescription?: string;
     // Simkl-specific metadata
     interval?: 'today' | 'week' | 'month';
-    pageSize?: number; // Results per page for Simkl trending catalogs (default: 50)
+    pageSize?: number; // Results per page for Simkl trending and watchlist catalogs (default: 50)
+    status?: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped'; // Status for Simkl watchlist catalogs
   };
 }
 

@@ -532,7 +532,7 @@ async function createSimklCatalog(userCatalog) {
         default: defaultInterval
       });
     }
-    
+        
     logger.success(`Simkl catalog created successfully: ${catalog.id}`);
     return catalog;
   } catch (error) {

@@ -1,15 +1,20 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
-import { cacheWrapMetaSmart } from "../lib/getCache.js";
+import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const { Agent } = require('undici');
+const crypto = require('crypto');
 const database = require('../lib/database.js');
+const requestTracker = require('../lib/requestTracker.js');
 
 const logger = consola.withTag('Simkl');
 
 const SIMKL_BASE_URL = 'https://api.simkl.com';
 const SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || '';
+
+const SIMKL_TRENDING_TTL = 12 * 60 * 60; // 12 hours
+const SIMKL_WATCHLIST_TTL = 60 * 60; // 1 hour default
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -25,13 +30,9 @@ const simklDispatcher = new Agent({ connect: { timeout: 30000 } });
  */
 function isPermanentError(error: any): boolean {
   const status = error.response?.status;
-  // Consider 4xx errors (except 429 rate limit) as permanent.
-  // 401 (unauthorized) and 403 (forbidden) are permanent auth errors
   return status >= 400 && status < 500 && status !== 429;
 }
 
-// Rate limiting configuration for Simkl API
-// Simkl rate limit: Check API documentation for actual limits
 const RATE_LIMIT_CONFIG = {
   maxRetries: 5,
   baseDelay: 1000, // 1 second base delay
@@ -72,12 +73,10 @@ function getRetryAfterMs(error: any, fallbackMs: number): number {
   const headers = error.response?.headers;
   if (!headers) return fallbackMs;
 
-  // Try to get Retry-After header (value is in seconds)
   const retryAfter = headers['retry-after'] || headers['Retry-After'];
   if (retryAfter) {
     const retrySeconds = parseInt(retryAfter, 10);
     if (!isNaN(retrySeconds) && retrySeconds > 0) {
-      // Add small jitter (0-1 second) to prevent thundering herd
       const jitter = Math.random() * 1000;
       return (retrySeconds * 1000) + jitter;
     }
@@ -87,7 +86,7 @@ function getRetryAfterMs(error: any, fallbackMs: number): number {
 }
 
 /**
- * Rate limiting and retry logic for Simkl API calls
+ * Rate limiting and retry logic for Simkl API calls (aligned with Trakt)
  */
 async function makeRateLimitedRequest<T>(
   requestFn: () => Promise<T>, 
@@ -102,77 +101,71 @@ async function makeRateLimitedRequest<T>(
 
     const now = Date.now();
     
-    // Check if we're in a global cooldown period from a previous rate limit hit.
     if (rateLimitState.isRateLimited && rateLimitState.rateLimitResetTime > now) {
       const waitTime = rateLimitState.rateLimitResetTime - now;
       logger.debug(`Global rate limit cooldown active, waiting ${waitTime}ms - ${context}`);
       await sleep(waitTime);
     }
-    rateLimitState.isRateLimited = false; // Cooldown is over
+    rateLimitState.isRateLimited = false;
 
-    // Enforce minimum interval between every single request attempt.
     const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
     if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
       const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
       await sleep(waitTime);
     }
     
-    // Update the timestamp BEFORE making the request to prevent parallel calls
     rateLimitState.lastRequestTime = Date.now();
     const startTime = Date.now();
     
     try {
       const response = await requestFn();
-      const duration = Date.now() - startTime;
-      
-      // Reset rate limit state on successful request
+      const responseTime = Date.now() - startTime;
+      requestTracker.trackProviderCall('simkl', responseTime, true);
       rateLimitState.recentRateLimitHits = 0;
-      
-      logger.debug(`Simkl API call succeeded: ${context} [${duration}ms]`);
+      logger.debug(`Simkl API call succeeded: ${context} [${responseTime}ms]`);
       return response;
     } catch (error: any) {
-      const duration = Date.now() - startTime;
+      const responseTime = Date.now() - startTime;
+      requestTracker.trackProviderCall('simkl', responseTime, false);
       const status = error.response?.status;
-      
-      // Handle rate limiting
-      if (isRateLimitError(error)) {
-        rateLimitState.recentRateLimitHits++;
-        rateLimitState.lastRateLimitTime = now;
-        
-        const retryAfterMs = getRetryAfterMs(error, RATE_LIMIT_CONFIG.rateLimitDelay);
-        rateLimitState.rateLimitResetTime = now + retryAfterMs;
-        rateLimitState.isRateLimited = true;
-        
-        logger.warn(`[Simkl] Rate limit hit (${status}). Retrying in ${Math.round(retryAfterMs / 1000)}s (attempt ${attempt}/${retries}) - ${context}`);
-        
-        if (isLastAttempt) {
-          logger.error(`[Simkl] Rate limit exceeded after ${retries} attempts: ${context}`);
-          throw error;
-        }
-        
-        await sleep(retryAfterMs);
-        continue;
-      }
-      
-      // Handle permanent errors (don't retry)
+
       if (isPermanentError(error)) {
         logger.error(`[Simkl] Permanent error (${status}): ${context} - ${error.message || String(error)}`);
         throw error;
       }
       
-      // Handle transient errors (retry with exponential backoff)
+      if (isRateLimitError(error)) {
+        rateLimitState.lastRateLimitTime = Date.now();
+        rateLimitState.recentRateLimitHits++;
+        
+        if (isLastAttempt) {
+          logger.error(`[Simkl] Rate limit exceeded after ${retries} attempts: ${context}`);
+          throw error;
+        }
+
+        const fallbackDelay = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits - 1);
+        const totalDelay = Math.min(getRetryAfterMs(error, fallbackDelay), RATE_LIMIT_CONFIG.maxDelay);
+
+        logger.warn(`[Simkl] Rate limit hit (${status}). Retrying in ${Math.round(totalDelay / 1000)}s (attempt ${attempt}/${retries}) - ${context}`);
+
+        rateLimitState.isRateLimited = true;
+        rateLimitState.rateLimitResetTime = Date.now() + totalDelay;
+
+        await sleep(totalDelay);
+        continue;
+      }
+      
       if (isLastAttempt) {
         logger.error(`[Simkl] Request failed after ${retries} attempts: ${context} - ${error.message || String(error)}`);
         throw error;
       }
       
-      const backoffDelay = Math.min(
+      const delay = Math.min(
         RATE_LIMIT_CONFIG.baseDelay * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, attempt - 1),
         RATE_LIMIT_CONFIG.maxDelay
       );
-      
-      logger.warn(`[Simkl] Request failed (${status}), retrying in ${backoffDelay}ms (attempt ${attempt}/${retries}): ${context} - ${error.message || String(error)}`);
-      await sleep(backoffDelay);
+      logger.warn(`[Simkl] Request failed (${status}), retrying in ${delay}ms (attempt ${attempt}/${retries}): ${context} - ${error.message || String(error)}`);
+      await sleep(delay);
     }
   }
   
@@ -255,53 +248,76 @@ async function makeRateLimitedSimklRequest(url: string, context: string = 'Simkl
  */
 async function fetchSimklUserStats(accessToken: string): Promise<any> {
   const url = `${SIMKL_BASE_URL}/users/me/stats`;
-  const response: any = await makeRateLimitedRequest(
-    () => httpPost(url, {}, {
-      dispatcher: simklDispatcher,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'simkl-api-key': SIMKL_CLIENT_ID
-      }
-    }),
-    'Simkl fetchUserStats'
+  const response: any = await makeAuthenticatedSimklRequest(
+    url,
+    accessToken,
+    'Simkl fetchUserStats',
+    'POST'
   );
   return response.data;
 }
 
 /**
- * Fetch Simkl watchlist items
+ * Fetch Simkl watchlist items by type and status
  * @param accessToken - User's Simkl access token
  * @param type - Content type: 'movies', 'shows', or 'anime'
- * @returns Array of watchlist items
+ * @param status - Item status: 'watching', 'plantowatch', 'hold', 'completed', 'dropped'
+ * @param page - Page number (1-indexed)
+ * @param limit - Items per page
+ * @returns Object with items array and pagination info
  */
 async function fetchSimklWatchlistItems(
   accessToken: string,
-  type: 'movies' | 'shows' | 'anime' = 'movies'
-): Promise<any[]> {
+  type: 'movies' | 'shows' | 'anime',
+  status: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped',
+  page: number = 1,
+  limit: number = 50,
+  cacheTTL: number = SIMKL_WATCHLIST_TTL
+): Promise<{items: any[], hasMore: boolean}> {
   try {
-    // Simkl API endpoint for watchlist - adjust based on actual API documentation
-    const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'tv' : 'anime';
-    const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/plantowatch`;
+    const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'shows' : 'anime';
+    const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/${status}?extended=full&page=${page}&limit=${limit}`;
     
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, {
-        dispatcher: simklDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-          'simkl-api-key': SIMKL_CLIENT_ID
-        }
-      }),
-      `Simkl fetchWatchlistItems (${type})`
+    logger.debug(`Simkl watchlist ${type}/${status}: page=${page}, limit=${limit}`);
+    
+    // Create user-specific cache key by hashing accessToken
+    const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+    const cacheKey = `simkl-watchlist:${tokenHash}:${type}:${status}:${page}:${limit}`;
+    
+    const response: any = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        return await makeAuthenticatedSimklRequest(
+          url,
+          accessToken,
+          `Simkl fetchWatchlistItems (${type}, ${status}, page: ${page})`
+        );
+      },
+      cacheTTL
     );
     
-    // Simkl returns items in a specific format - adjust parsing based on actual API response
-    const items = response.data || [];
-    return Array.isArray(items) ? items : [];
+    // Simkl returns items in a format like { shows: [...], movies: [...], anime: [...] }
+    // Extract the relevant array based on type
+    let items: any[] = [];
+    if (response.data) {
+      if (type === 'movies' && response.data.movies) {
+        items = response.data.movies;
+      } else if (type === 'shows' && response.data.shows) {
+        items = response.data.shows;
+      } else if (type === 'anime' && response.data.anime) {
+        items = response.data.anime;
+      }
+    }
+    
+    // Simkl API doesn't return pagination headers, determine hasMore by checking if array length matches limit
+    const hasMore = items.length >= limit;
+    
+    logger.debug(`Simkl watchlist page ${page}: ${items.length} items, hasMore: ${hasMore}`);
+    
+    return { items: Array.isArray(items) ? items : [], hasMore };
   } catch (error: any) {
     logger.error(`Error fetching Simkl watchlist items: ${error.message}`);
-    return [];
+    return { items: [], hasMore: false };
   }
 }
 
@@ -319,15 +335,9 @@ async function fetchSimklWatchedItems(
     const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'tv' : 'anime';
     const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/completed`;
     
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, {
-        dispatcher: simklDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-          'simkl-api-key': SIMKL_CLIENT_ID
-        }
-      }),
+    const response: any = await makeAuthenticatedSimklRequest(
+      url,
+      accessToken,
       `Simkl fetchWatchedItems (${type})`
     );
     
@@ -353,15 +363,9 @@ async function fetchSimklWatchingItems(
     const endpoint = type === 'shows' ? 'tv' : 'anime';
     const url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/watching`;
     
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(url, {
-        dispatcher: simklDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-          'simkl-api-key': SIMKL_CLIENT_ID
-        }
-      }),
+    const response: any = await makeAuthenticatedSimklRequest(
+      url,
+      accessToken,
       `Simkl fetchWatchingItems (${type})`
     );
     
@@ -379,69 +383,100 @@ async function fetchSimklWatchingItems(
  * @param type - Content type: 'movie' or 'series'
  * @param config - User configuration
  * @param userUUID - User UUID
+ * @param includeVideos - Whether to include video/episode data
+ * @param isAnimeCatalog - If true, prefer mal/anilist/kitsu/anidb over tmdb/imdb/tvdb for getMeta
  * @returns Array of parsed meta items
  */
 async function parseSimklItems(
   items: any[],
   type: 'movie' | 'series',
   config: UserConfig,
-  userUUID: string
+  userUUID: string,
+  includeVideos: boolean = false,
+  isAnimeCatalog: boolean = false
 ): Promise<any[]> {
   if (!items || items.length === 0) {
     return [];
   }
 
-  const parsedItems: any[] = [];
+  const metas = await Promise.all(
+    items.map(async (item: any) => {
+      try {
+        const itemType = item.type || type;
+        
+        const imdbId = item.ids?.imdb;
+        const tmdbId = item.ids?.tmdb;
+        const tvdbId = item.ids?.tvdb;
+        const malId = item.ids?.mal;
+        const anilistId = item.ids?.anilist;
+        const kitsuId = item.ids?.kitsu;
+        const anidbId = item.ids?.anidb;
+        
+        const hasValidId = isAnimeCatalog
+          ? !!(malId || anilistId || kitsuId || anidbId || tmdbId || imdbId || tvdbId)
+          : !!(imdbId || tmdbId || tvdbId || malId);
+        if (!hasValidId) {
+          logger.debug(`[Simkl] Skipping item with only simkl ID: ${JSON.stringify(item)}`);
+          return null;
+        }
+        
+        let stremioId: string | null = null;
+        if (isAnimeCatalog) {
+          // Anime catalogs: prefer mal → anilist → kitsu → anidb, then tmdb → imdb → tvdb
+          if (malId) {
+            stremioId = `mal:${malId}`;
+          } else if (anilistId) {
+            stremioId = `anilist:${anilistId}`;
+          } else if (kitsuId) {
+            stremioId = `kitsu:${kitsuId}`;
+          } else if (anidbId) {
+            stremioId = `anidb:${anidbId}`;
+          } else if (tmdbId) {
+            stremioId = `tmdb:${tmdbId}`;
+          } else if (imdbId) {
+            stremioId = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+          } else if (tvdbId) {
+            stremioId = `tvdb:${tvdbId}`;
+          }
+        } else {
+          if (imdbId) {
+            stremioId = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+          } else if (tmdbId) {
+            stremioId = `tmdb:${tmdbId}`;
+          } else if (tvdbId) {
+            stremioId = `tvdb:${tvdbId}`;
+          } else if (malId) {
+            stremioId = `mal:${malId}`;
+          }
+        }
+        if (!stremioId) {
+          return null;
+        }
+        
+        const result = await cacheWrapMetaSmart(
+          userUUID,
+          stremioId,
+          async () => {
+            return await getMeta(itemType, config.language, stremioId!, config, userUUID, includeVideos);
+          },
+          undefined,
+          { enableErrorCaching: true, maxRetries: 2 },
+          itemType as any,
+          includeVideos
+        );
+        
+        if (result?.meta) {
+          return result.meta;
+        }
+        return null;
+      } catch (error: any) {
+        logger.warn(`Error parsing Simkl item: ${error.message}`);
+        return null;
+      }
+    })
+  );
   
-  for (const item of items) {
-    try {
-      // Simkl item structure - adjust based on actual API response
-      // Typically includes: ids (simkl, imdb, tmdb, tvdb), title, year, etc.
-      const simklId = item.ids?.simkl;
-      const imdbId = item.ids?.imdb;
-      const tmdbId = item.ids?.tmdb;
-      const tvdbId = item.ids?.tvdb;
-      
-      // Determine the best ID to use for Stremio
-      let stremioId: string | null = null;
-      if (imdbId) {
-        stremioId = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
-      } else if (tmdbId) {
-        stremioId = `tmdb:${tmdbId}`;
-      } else if (tvdbId) {
-        stremioId = `tvdb:${tvdbId}`;
-      } else if (simklId) {
-        stremioId = `simkl:${simklId}`;
-      }
-      
-      if (!stremioId) {
-        logger.debug(`Skipping Simkl item without valid ID: ${JSON.stringify(item)}`);
-        continue;
-      }
-      
-      // Fetch meta using the ID resolver
-      const result = await cacheWrapMetaSmart(
-        userUUID,
-        stremioId,
-        async () => {
-          return await getMeta(type, config.language || 'en-US', stremioId!, config, userUUID, false);
-        },
-        undefined,
-        { enableErrorCaching: true, maxRetries: 2 },
-        type as any,
-        false
-      );
-      
-      if (result?.meta) {
-        parsedItems.push(result.meta);
-      }
-    } catch (error: any) {
-      logger.warn(`Error parsing Simkl item: ${error.message}`);
-      continue;
-    }
-  }
-  
-  return parsedItems;
+  return metas.filter(Boolean);
 }
 
 /**
@@ -461,36 +496,37 @@ async function fetchSimklTrendingItems(
   try {
     const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'tv' : 'anime';
     
-    // Build URL with interval in path
-    // Format: /anime/trending/week?client_id=... (for week/month)
-    // Or: /anime/trending/?extended=...&client_id=... (for default today)
     let url = `${SIMKL_BASE_URL}/${endpoint}/trending/`;
     
-    // Add interval to path if not default (today)
     if (interval !== 'today') {
       url += `${interval}?`;
     } else {
       url += '?';
     }
     
-    // Add extended parameters for full metadata
     url += `extended=overview,metadata,tmdb,genres,trailer&client_id=${SIMKL_CLIENT_ID}`;
     
-    // Simkl API supports page and limit parameters but doesn't return pagination headers
-    // We'll fetch the requested page and determine hasMore by checking if we get an empty array
     const urlWithPagination = `${url}&page=${page}&limit=${limit}`;
     
     logger.debug(`Simkl trending ${type}: interval=${interval}, page=${page}, limit=${limit}`);
     
-    const response: any = await makeRateLimitedRequest(
-      () => httpGet(urlWithPagination, {
-        dispatcher: simklDispatcher,
-        headers: {
-          'Content-Type': 'application/json',
-          'simkl-api-key': SIMKL_CLIENT_ID
-        }
-      }),
-      `Simkl fetchTrendingItems (${type}, interval: ${interval}, page: ${page})`
+    const cacheKey = `simkl-trending:${type}:${interval}:${page}:${limit}`;
+    
+    const response: any = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        return await makeRateLimitedRequest(
+          () => httpGet(urlWithPagination, {
+            dispatcher: simklDispatcher,
+            headers: {
+              'Content-Type': 'application/json',
+              'simkl-api-key': SIMKL_CLIENT_ID
+            }
+          }),
+          `Simkl fetchTrendingItems (${type}, interval: ${interval}, page: ${page})`
+        );
+      },
+      SIMKL_TRENDING_TTL
     );
 
     // Simkl returns an array directly (no pagination headers)
@@ -500,10 +536,17 @@ async function fetchSimklTrendingItems(
     
     logger.debug(`Simkl trending page ${page}: ${rawItems.length} items, hasMore: ${hasMore}`);
     
-    // Map Simkl response to items (items are already in the correct format)
     const items = rawItems.map((entry: any) => {
+      // For anime, use anime_type to determine if it's a movie or series
+      // movies and onas are movies, everything else is series
+      let itemType: 'movie' | 'series';
+      if (type === 'anime' && entry.anime_type) {
+        itemType = (entry.anime_type === 'movie' || entry.anime_type === 'ona') ? 'movie' : 'series';
+      } else {
+        itemType = type === 'movies' ? 'movie' : 'series';
+      }
       return {
-        type: type === 'movies' ? 'movie' : 'series',
+        type: itemType,
         ...entry
       };
     });

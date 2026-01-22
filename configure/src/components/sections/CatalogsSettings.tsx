@@ -455,6 +455,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const { setConfig, catalogTTL } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const isTrending = catalog.id.startsWith('simkl.trending.');
+  const isWatchlist = catalog.id.startsWith('simkl.watchlist.');
   const [pageSize, setPageSize] = useState<number>(catalog.metadata?.pageSize || 50);
   
   const minCacheTTL = 300; // 5 minutes minimum for Simkl catalogs
@@ -468,7 +469,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
               metadata: {
                 ...c.metadata,
-                ...(isTrending && { pageSize: Math.max(1, pageSize) || 50 })
+                ...((isTrending || isWatchlist) && { pageSize: Math.max(1, pageSize) || 50 })
               }
             }
           : c
@@ -502,7 +503,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
             </p>
           </div>
           
-          {isTrending && (
+          {(isTrending || isWatchlist) && (
             <div className="space-y-2">
               <Label>Results Per Page</Label>
               <Select 
@@ -520,7 +521,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Number of results to fetch per page from Simkl trending API (default: 50). 
+                Number of results to fetch per page from Simkl API (default: 50). 
                 <strong> Must match the value in your SimKL settings.</strong>
               </p>
             </div>
