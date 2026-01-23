@@ -1,7 +1,3 @@
-### `TRAKT_REDIRECT_URI`
-- **Required for Trakt integration**: Yes
-- **Description**: Redirect URI for Trakt OAuth. Must match the value set in your Trakt app settings.
-- **Example**: `TRAKT_REDIRECT_URI=https://your-domain.com/api/auth/trakt/callback`
 # Environment Variables Configuration
 
 This document describes all available environment variables for AIO Metadata.
