@@ -598,8 +598,8 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
     return method();
   }
 
-  const versionedKey = `global:${ADDON_VERSION}:${key}`;
-  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries, skipVersion = false } = options;
+  const versionedKey = skipVersion ? `global:${key}` : `global:${ADDON_VERSION}:${key}`;
   
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);
@@ -1753,200 +1753,6 @@ async function cacheComponent(cacheKey, componentData, ttl) {
 }
 
 
-/**
- * Cache individual meta components during meta generation
- * This is used within getMeta functions to cache expensive components like videos, cast, etc.
- */
-async function cacheMetaComponent(userUUID, metaId, componentName, componentData, ttl = META_TTL, type = null) {
-  if (!redis || !componentData) return;
-  
-  // Validate metaId
-  if (!metaId || typeof metaId !== 'string') {
-    cacheLogger.warn(`Invalid metaId provided to cacheMetaComponent: ${metaId}`);
-    return;
-  }
-  
-  try {
-    let config;
-    try {
-      config = await loadConfigFromDatabase(userUUID);
-    } catch (error) {
-      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
-      return; // Skip caching for invalid UUIDs
-    }
-    
-    if (!config) {
-      cacheLogger.warn(`No config found for user ${userUUID}`);
-      return;
-    }
-    
-    // Parse metaId to determine context
-    const [prefix, sourceId] = metaId.split(':');
-    const metaType = type;
-    
-    // Create context-aware meta config object
-    const metaConfig = {
-      language: config.language || 'en-US',
-      castCount: config.castCount || 0,
-      blurThumbs: config.blurThumbs || false,
-      showPrefix: config.showPrefix || false,
-      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
-      displayAgeRating: config.displayAgeRating || false,
-    };
-    
-    // Add context-specific settings
-    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
-    const isAnime = isAnimeMeta || animePrefixes.includes(prefix) || metaType === 'anime';
-    
-    if (isAnime) {
-      metaConfig.metaProvider = config.providers?.anime || 'mal';
-      metaConfig.artProvider = {
-       poster: resolveArtProvider('anime', 'poster', config),
-       background: resolveArtProvider('anime', 'background', config),
-       logo: resolveArtProvider('anime', 'logo', config)
-     };
-      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-      metaConfig.mal = {
-        skipFiller: config.mal?.skipFiller || false,
-        skipRecap: config.mal?.skipRecap || false,
-        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
-        useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
-      };
-    } else if (metaType === 'movie') {
-      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-      metaConfig.artProvider = {
-       poster: resolveArtProvider('movie', 'poster', config),
-       background: resolveArtProvider('movie', 'background', config),
-       logo: resolveArtProvider('movie', 'logo', config)
-     };
-     metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false
-     };
-    } else if (metaType === 'series') {
-      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-      metaConfig.artProvider = {
-       poster: resolveArtProvider('series', 'poster', config),
-       background: resolveArtProvider('series', 'background', config),
-       logo: resolveArtProvider('series', 'logo', config)
-     };
-      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-      metaConfig.tmdb = {
-        scrapeImdb: config.tmdb?.scrapeImdb || false
-      };
-    }
-    
-    const metaConfigString = stableStringify(metaConfig);
-    const cacheKey = `meta-${componentName}:${metaConfigString}:${metaId}`;
-    
-    // Cache the component
-    await redis.set(cacheKey, JSON.stringify(componentData), 'EX', ttl);
-    // Track as cache write (miss equivalent) since this is being cached
-    updateCacheHealth(cacheKey, 'miss', true);
-    
-  } catch (error) {
-    cacheLogger.warn(`Failed to cache component ${componentName} for ${metaId}:`, error);
-  }
-}
-
-/**
- * Get cached meta component
- * This is used within getMeta functions to retrieve cached components
- */
-async function getCachedMetaComponent(userUUID, metaId, componentName, type = null) {
-  if (!redis) return null;
-  
-  try {
-    // Load config from database
-    let config;
-    try {
-      config = await loadConfigFromDatabase(userUUID);
-    } catch (error) {
-      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
-      return null; // Return null for invalid UUIDs
-    }
-    
-    if (!config) {
-      cacheLogger.warn(`No config found for user ${userUUID}`);
-      return null;
-    }
-    
-    // Parse metaId to determine context
-    const [prefix, sourceId] = metaId.split(':');
-    const metaType = type;
-    
-    // Create context-aware meta config object
-    const metaConfig = {
-      language: config.language || 'en-US',
-      castCount: config.castCount || 0,
-      blurThumbs: config.blurThumbs || false,
-      showPrefix: config.showPrefix || false,
-      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
-      displayAgeRating: config.displayAgeRating || false,
-    };
-    
-    // Add context-specific settings
-    const isAnime = prefix === 'mal' || prefix === 'kitsu' || prefix === 'anilist' || prefix === 'anidb' || metaType === 'anime';
-    
-    if (isAnime) {
-      metaConfig.metaProvider = config.providers?.anime || 'mal';
-      metaConfig.artProvider = {
-       poster: resolveArtProvider('anime', 'poster', config),
-       background: resolveArtProvider('anime', 'background', config),
-       logo: resolveArtProvider('anime', 'logo', config)
-     };
-      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-      metaConfig.mal = {
-        skipFiller: config.mal?.skipFiller || false,
-        skipRecap: config.mal?.skipRecap || false,
-        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
-        useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
-      };
-    } else if (metaType === 'movie') {
-      metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-      metaConfig.artProvider = {
-       poster: resolveArtProvider('movie', 'poster', config),
-       background: resolveArtProvider('movie', 'background', config),
-       logo: resolveArtProvider('movie', 'logo', config)
-     };
-     metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false
-     };
-    } else if (metaType === 'series') {
-      metaConfig.metaProvider = config.providers?.series || 'tvdb';
-      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-      metaConfig.artProvider = {
-       poster: resolveArtProvider('series', 'poster', config),
-       background: resolveArtProvider('series', 'background', config),
-       logo: resolveArtProvider('series', 'logo', config)
-     };
-      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-      metaConfig.tmdb = {
-        scrapeImdb: config.tmdb?.scrapeImdb || false
-      };
-    }
-    
-    const metaConfigString = stableStringify(metaConfig);
-    const cacheKey = `meta-${componentName}:${metaConfigString}:${metaId}`;
-    
-    // Get the cached component
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
-      updateCacheHealth(cacheKey, 'hit', true);
-      return parsed;
-    } else {
-      //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
-      updateCacheHealth(cacheKey, 'miss', true);
-      return null;
-    }
-    
-  } catch (error) {
-    cacheLogger.warn(`Failed to get cached component ${componentName} for ${metaId}:`, error);
-    return null;
-  }
-}
 
 function cacheWrapJikanApi(key, method, customTTL = null) {
   const subkey = key.replace(/\s/g, '-');
@@ -2187,8 +1993,6 @@ module.exports = {
   cacheWrapMetaComponents,
   reconstructMetaFromComponents,
   cacheWrapMetaSmart,
-  cacheMetaComponent,
-  getCachedMetaComponent,
   getCacheHealth,
   clearCacheHealth,
   clearCache,

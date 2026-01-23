@@ -248,14 +248,25 @@ async function makeRateLimitedSimklRequest(url: string, context: string = 'Simkl
  * @returns Stats object
  */
 async function fetchSimklUserStats(accessToken: string): Promise<any> {
-  const url = `${SIMKL_BASE_URL}/users/me/stats`;
-  const response: any = await makeAuthenticatedSimklRequest(
-    url,
-    accessToken,
-    'Simkl fetchUserStats',
-    'POST'
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const cacheKey = `simkl-stats:${tokenHash}`;
+  const statsTTL = 24 * 60 * 60; 
+  
+  return await cacheWrapGlobal(
+    cacheKey,
+    async () => {
+      const url = `${SIMKL_BASE_URL}/users/me/stats`;
+      const response: any = await makeAuthenticatedSimklRequest(
+        url,
+        accessToken,
+        'Simkl fetchUserStats',
+        'POST'
+      );
+      return response.data;
+    },
+    statsTTL,
+    { skipVersion: true }
   );
-  return response.data;
 }
 
 /**
@@ -275,22 +286,22 @@ async function fetchSimklWatchlistItems(
   cacheTTL: number = SIMKL_WATCHLIST_TTL
 ): Promise<{items: any[]}> {
   try {
-    const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'shows' : 'anime';
-    
     // Create user-specific cache key by hashing accessToken
     const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
     
-    const fullListKey = `simkl-watchlist-full:${tokenHash}:${endpoint}:${status}`;
-    const lastSyncKey = `simkl-last-sync:${tokenHash}:${endpoint}:${status}`;
+    // Cache keys are status-only (not type-specific) since we fetch all types in one call
+    const fullListKey = `simkl-watchlist-full:${tokenHash}:${status}`;
+    const lastSyncKey = `simkl-last-sync:${tokenHash}:${status}`;
     
-    let fullItems: any[] = [];
+    // Get cached full response (contains all types: movies, shows, anime)
+    let cachedFullResponse: any = null;
     let dateFrom: string | null = null;
     
     try {
       const cachedFullList = await redis.get(fullListKey);
       if (cachedFullList) {
-        fullItems = JSON.parse(cachedFullList);
-        logger.debug(`Simkl using cached full watchlist: ${fullItems.length} items for ${type}/${status}`);
+        cachedFullResponse = JSON.parse(cachedFullList);
+        logger.debug(`Simkl using cached full watchlist response for ${status}`);
         
         const lastSync = await redis.get(lastSyncKey);
         if (lastSync) {
@@ -302,14 +313,17 @@ async function fetchSimklWatchlistItems(
       logger.debug(`Failed to get cached watchlist: ${error.message}`);
     }
     
-    let url = `${SIMKL_BASE_URL}/sync/all-items/${endpoint}/${status}?extended=full`;
+    // Make single API call to get all types (movies, shows, anime) for this status
+    // This is more efficient than separate calls per type
+    let url = `${SIMKL_BASE_URL}/sync/all-items/${status}?extended=full`;
     if (dateFrom) {
       url += `&date_from=${encodeURIComponent(dateFrom)}`;
     }
     
-    logger.debug(`Simkl watchlist ${type}/${status}${dateFrom ? `, date_from=${dateFrom} (incremental)` : ' (full sync)'}`);
+    logger.debug(`Simkl watchlist ${status}${dateFrom ? `, date_from=${dateFrom} (incremental)` : ' (full sync)'}`);
     
-    const cacheKey = `simkl-watchlist-api:${tokenHash}:${type}:${status}${dateFrom ? `:${dateFrom}` : ''}`;
+    // Cache key is status-only (not type-specific) since response contains all types
+    const cacheKey = `simkl-watchlist-api:${tokenHash}:${status}${dateFrom ? `:${dateFrom}` : ''}`;
     
     const response: any = await cacheWrapGlobal(
       cacheKey,
@@ -317,72 +331,92 @@ async function fetchSimklWatchlistItems(
         return await makeAuthenticatedSimklRequest(
           url,
           accessToken,
-          `Simkl fetchWatchlistItems (${type}, ${status}${dateFrom ? `, date_from=${dateFrom}` : ''})`
+          `Simkl fetchWatchlistItems (${status}${dateFrom ? `, date_from=${dateFrom}` : ''})`
         );
       },
-      cacheTTL
+      cacheTTL,
+      { skipVersion: true }
     );
     
-    // Extract items from API response
-    let apiItems: any[] = [];
-    if (response.data) {
-      if (type === 'movies' && response.data.movies) {
-        apiItems = response.data.movies;
-      } else if (type === 'shows' && response.data.shows) {
-        apiItems = response.data.shows;
-      } else if (type === 'anime' && response.data.anime) {
-        apiItems = response.data.anime;
-      }
-    }
+    const allApiItems: any = {
+      movies: response.data?.movies || [],
+      shows: response.data?.shows || [],
+      anime: response.data?.anime || []
+    };
     
-    // Merge: if we have date_from, merge changes with cached full list
-    // Otherwise, use API response as the full list
-    if (dateFrom && fullItems.length > 0) {
-      // Incremental update: merge changes with cached full list
-      // Create a map of existing items by Simkl ID for efficient lookup
-      const existingMap = new Map();
-      fullItems.forEach((item: any) => {
-        const simklId = item.show?.ids?.simkl || item.movie?.ids?.simkl || item.ids?.simkl;
-        if (simklId) {
-          existingMap.set(simklId, item);
-        }
-      });
-      
-      // Update or add items from API response
-      apiItems.forEach((item: any) => {
-        const simklId = item.show?.ids?.simkl || item.movie?.ids?.simkl || item.ids?.simkl;
-        if (simklId) {
-          existingMap.set(simklId, item);
-        }
-      });
-      
-      fullItems = Array.from(existingMap.values());
-      logger.debug(`Simkl merged incremental update: ${apiItems.length} changes, ${fullItems.length} total items`);
+    // Merge: if we have date_from, merge changes with cached full response
+    // Otherwise, use API response as the full response
+    let fullResponse: any;
+    if (dateFrom && cachedFullResponse) {
+      fullResponse = {
+        movies: mergeItems(cachedFullResponse.movies || [], allApiItems.movies),
+        shows: mergeItems(cachedFullResponse.shows || [], allApiItems.shows),
+        anime: mergeItems(cachedFullResponse.anime || [], allApiItems.anime)
+      };
+      const totalChanges = allApiItems.movies.length + allApiItems.shows.length + allApiItems.anime.length;
+      const totalItems = fullResponse.movies.length + fullResponse.shows.length + fullResponse.anime.length;
+      logger.debug(`Simkl merged incremental update: ${totalChanges} changes, ${totalItems} total items`);
     } else {
-      // Full sync: use API response as the full list
-      fullItems = apiItems;
-      logger.debug(`Simkl full sync: ${fullItems.length} total items`);
+      // Full sync: use API response as the full response
+      fullResponse = allApiItems;
+      const totalItems = fullResponse.movies.length + fullResponse.shows.length + fullResponse.anime.length;
+      logger.debug(`Simkl full sync: ${totalItems} total items`);
     }
     
-    // Cache the full list in Redis (separate from API response cache)
+    // Cache the full response (all types)
     try {
       const now = new Date().toISOString();
-      // Cache full list for same duration as API cache
-      await redis.setex(fullListKey, cacheTTL, JSON.stringify(fullItems));
-      // Store/update last sync timestamp
+      await redis.setex(fullListKey, cacheTTL, JSON.stringify(fullResponse));
       await redis.setex(lastSyncKey, 30 * 24 * 60 * 60, now);
-      logger.debug(`Simkl cached full watchlist (${fullItems.length} items) and stored last sync timestamp: ${now}`);
+      logger.debug(`Simkl cached full watchlist response and stored last sync timestamp: ${now}`);
     } catch (error: any) {
       logger.debug(`Failed to cache watchlist or store timestamp: ${error.message}`);
     }
     
-    logger.debug(`Simkl watchlist ${type}/${status}: returning ${fullItems.length} total items`);
+    let items: any[] = [];
+    if (type === 'movies') {
+      items = fullResponse.movies || [];
+    } else if (type === 'shows') {
+      items = fullResponse.shows || [];
+    } else if (type === 'anime') {
+      items = fullResponse.anime || [];
+    }
     
-    return { items: Array.isArray(fullItems) ? fullItems : [] };
+    // Sort by last_watched_at (most recent first)
+    // Handle both last_watched_at and last_watched field names
+    items.sort((a: any, b: any) => {
+      const aTime = (a.last_watched_at || a.last_watched) ? new Date(a.last_watched_at || a.last_watched).getTime() : 0;
+      const bTime = (b.last_watched_at || b.last_watched) ? new Date(b.last_watched_at || b.last_watched).getTime() : 0;
+      // Most recent first (descending order)
+      return bTime - aTime;
+    });
+    
+    logger.debug(`Simkl watchlist ${type}/${status}: returning ${items.length} items (from full response, sorted by last_watched_at)`);
+    
+    return { items: Array.isArray(items) ? items : [] };
   } catch (error: any) {
     logger.error(`Error fetching Simkl watchlist items: ${error.message}`);
     return { items: [] };
   }
+}
+
+function mergeItems(existingItems: any[], newItems: any[]): any[] {
+  const existingMap = new Map();
+  existingItems.forEach((item: any) => {
+    const simklId = item.show?.ids?.simkl || item.movie?.ids?.simkl || item.ids?.simkl;
+    if (simklId) {
+      existingMap.set(simklId, item);
+    }
+  });
+  
+  newItems.forEach((item: any) => {
+    const simklId = item.show?.ids?.simkl || item.movie?.ids?.simkl || item.ids?.simkl;
+    if (simklId) {
+      existingMap.set(simklId, item);
+    }
+  });
+  
+  return Array.from(existingMap.values());
 }
 
 /**
@@ -590,7 +624,8 @@ async function fetchSimklTrendingItems(
           `Simkl fetchTrendingItems (${type}, interval: ${interval}, page: ${page})`
         );
       },
-      SIMKL_TRENDING_TTL
+      SIMKL_TRENDING_TTL,
+      { skipVersion: true }
     );
 
     // Simkl returns an array directly (no pagination headers)

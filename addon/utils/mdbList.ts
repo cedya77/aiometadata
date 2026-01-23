@@ -416,7 +416,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
       logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
       return { items: [] };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 
@@ -655,7 +655,7 @@ async function fetchMDBListExternalItems(
       logger.error(`Error retrieving items from URL ${sanitizeUrlForLogging(url)}, page ${page}:`, err.message);
       return { items: [] };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig, includeVideos: boolean = false): Promise<any[]> {

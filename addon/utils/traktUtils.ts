@@ -778,7 +778,7 @@ async function fetchTraktWatchlistItems(
       logger.error(`Error fetching Trakt watchlist, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -860,7 +860,7 @@ async function fetchTraktFavoritesItems(
       logger.error(`Error fetching Trakt favorites for type ${type}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -943,7 +943,7 @@ async function fetchTraktRecommendationsItems(
       logger.error(`Error fetching Trakt recommendations for type ${type}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -1031,7 +1031,7 @@ async function fetchTraktListItems(
       logger.error(`Error fetching Trakt list ${username}/${listSlug}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -1118,7 +1118,7 @@ async function fetchTraktListItemsById(
       logger.error(`Error fetching Trakt list by id ${listId}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -1668,7 +1668,7 @@ async function fetchTraktMostFavoritedItems(
       logger.error(`Error fetching Trakt most favorited ${type} for period ${period}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -1723,7 +1723,7 @@ async function fetchTraktTrendingItems(
       logger.error(`Error fetching Trakt trending ${type}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**
@@ -1777,7 +1777,7 @@ async function fetchTraktPopularItems(
       logger.error(`Error fetching Trakt popular ${type}, page ${page}:`, err.message);
       return { items: [], hasMore: false };
     }
-  }, ttl);
+  }, ttl, { skipVersion: true });
 }
 
 /**

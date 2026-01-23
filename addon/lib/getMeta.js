@@ -1817,7 +1817,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     writer: castCount !== 0 ? writers.join(', ') : '',
     year: year,
     releaseInfo: year,
-    released: movieData.first_release.Date ? new Date(movieData.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
+    released: movieData.first_release.date ? new Date(movieData.first_release.date + 'T12:00:00.000Z').toISOString() : null,
     runtime: Utils.parseRunTime(movieData.runtime),
     country: movieData.originalCountry,
     imdbRating,
