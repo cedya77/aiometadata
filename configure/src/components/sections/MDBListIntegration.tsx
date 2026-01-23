@@ -691,32 +691,54 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       const response = await fetch(`/api/mdblist/lists/${encodeURIComponent(username)}/${encodeURIComponent(listname)}?apikey=${tempKey}`);
       if (!response.ok) throw new Error(`Error fetching list (Status: ${response.status})`);
 
-      const [list] = await response.json();
+      const lists = await response.json();
+      if (!Array.isArray(lists) || lists.length === 0) {
+        throw new Error("No lists found in the response.");
+      }
       
       setConfig(prev => {
-        const newCatalog = createMDBListCatalog({
-          list,
-          sort: defaultSort,
-          order: defaultOrder,
-          cacheTTL: defaultCacheTTL,
-          genreSelection: defaultGenreSelection,
-          displayTypeOverrides: prev.displayTypeOverrides,
-          listUrl: customListUrl,
+        let newCatalogs: CatalogConfig[] = [];
+        let addedCount = 0;
+        let skippedCount = 0;
+
+        lists.forEach((list: any) => {
+          const newCatalog = createMDBListCatalog({
+            list,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            displayTypeOverrides: prev.displayTypeOverrides,
+            listUrl: customListUrl,
+          });
+
+          // Prevent duplicates
+          if (prev.catalogs.some(c => c.id === newCatalog.id)) {
+            skippedCount++;
+            return;
+          }
+          
+          newCatalogs.push(newCatalog);
+          addedCount++;
         });
 
-        // Prevent duplicates
-        if (prev.catalogs.some(c => c.id === newCatalog.id)) {
-            toast.info(`List "${list.name}" is already in your catalog list.`);
-            return prev;
+        if (addedCount === 0) {
+          toast.info(`List "${lists[0]?.name || 'Unknown'}" is already in your catalog list.`);
+          return prev;
         }
         
         return { 
           ...prev, 
-          catalogs: [...prev.catalogs, newCatalog],
+          catalogs: [...prev.catalogs, ...newCatalogs],
         };
       });
 
-      toast.success("List Added", { description: `The list "${list.name}" has been added to your catalogs.` });
+      const listName = lists[0]?.name || 'List';
+      if (lists.length === 1) {
+        toast.success("List Added", { description: `The list "${listName}" has been added to your catalogs.` });
+      } else {
+        toast.success("Lists Added", { description: `${lists.length} catalog(s) from "${listName}" have been added to your catalogs.` });
+      }
       setCustomListUrl("");
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unknown error occurred.";

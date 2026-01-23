@@ -111,6 +111,7 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
       ...(list.items !== undefined && { itemCount: list.items }),
       ...(list.user_name ? { author: list.user_name } : {}),
       ...(finalListUrl && { url: finalListUrl }),
+      ...(list.mediatype && { mediatype: list.mediatype }),
     },
   };
 }

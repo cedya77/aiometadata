@@ -299,7 +299,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
   
   const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
   
-  const cacheKey = `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${language}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
+  const cacheKey = `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
   
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
@@ -311,9 +311,9 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
       
       // Special handling for watchlist
       if (listId === 'watchlist') {
-        url = `https://api.mdblist.com/watchlist/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
+        url = `https://api.mdblist.com/watchlist/items?limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
       } else {
-        url = `https://api.mdblist.com/lists/${listId}/items?language=${language}&limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
+        url = `https://api.mdblist.com/lists/${listId}/items?limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=${unified !== false}`;
       }
       
       // Add sort and order parameters if provided and not empty
@@ -352,24 +352,29 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
       
       let items: any[];
       
-      // Handle different response formats based on unified parameter
-      if (listId === 'watchlist' && unified === false) {
-        // Non-unified format: response has separate movies and shows arrays
-        // Extract the appropriate array based on catalog type
+      const hasMoviesShowsStructure = response.data && 
+                                      typeof response.data === 'object' && 
+                                      !Array.isArray(response.data) &&
+                                      ('movies' in response.data || 'shows' in response.data);
+      
+      if (hasMoviesShowsStructure) {
         if (catalogType === 'series') {
           items = response.data.shows || [];
-        } else {
+        } else if (catalogType === 'movie') {
           items = response.data.movies || [];
-        }
-      } else {
-        if (Array.isArray(response.data)) {
-          items = response.data;
         } else {
           items = [
             ...(response.data?.movies || []),
             ...(response.data?.shows || [])
           ];
         }
+      } else if (Array.isArray(response.data)) {
+        items = response.data;
+      } else {
+        items = [
+          ...(response.data?.movies || []),
+          ...(response.data?.shows || [])
+        ];
       }
       
       // Smart pagination validation and logging
@@ -587,7 +592,7 @@ async function fetchMDBListExternalItems(
   normalizedUrl.searchParams.delete('filter_score_max');
   const urlBase = normalizedUrl.toString();
   
-  const cacheKey = `mdblist-api:external:${apiKeyHash}:${urlBase}:${page}:${language}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}`;
+  const cacheKey = `mdblist-api:external:${apiKeyHash}:${urlBase}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}`;
   
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
@@ -599,7 +604,6 @@ async function fetchMDBListExternalItems(
       urlWithParams.searchParams.set('apikey', apiKey);
       urlWithParams.searchParams.set('limit', pageSize.toString());
       urlWithParams.searchParams.set('offset', offset.toString());
-      urlWithParams.searchParams.set('language', language);
       urlWithParams.searchParams.set('append_to_response', 'genre,poster');
       urlWithParams.searchParams.set('unified', String(unified));
 
@@ -633,21 +637,29 @@ async function fetchMDBListExternalItems(
 
       let items: any[];
 
-      if (unified === false) {
+      const hasMoviesShowsStructure = response.data && 
+                                      typeof response.data === 'object' && 
+                                      !Array.isArray(response.data) &&
+                                      ('movies' in response.data || 'shows' in response.data);
+      
+      if (hasMoviesShowsStructure) {
         if (catalogType === 'series') {
           items = response.data.shows || [];
-        } else {
+        } else if (catalogType === 'movie') {
           items = response.data.movies || [];
-        }
-      } else {
-        if (Array.isArray(response.data)) {
-          items = response.data;
         } else {
           items = [
             ...(response.data?.movies || []),
             ...(response.data?.shows || [])
           ];
         }
+      } else if (Array.isArray(response.data)) {
+        items = response.data;
+      } else {
+        items = [
+          ...(response.data?.movies || []),
+          ...(response.data?.shows || [])
+        ];
       }
 
       return { items, hasMore };
@@ -668,6 +680,7 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   // Normalize IDs, falling back to imdb_id or tvdb_id when possible
   const normalizedItems = filteredItems.map((item: any) => {
     if (!item.id || item.id === null || item.id === undefined) {
+      if(item.imdb_id.startsWith('tr')) item.imdb_id = null;
       const fallbackId = item.imdb_id || item.tvdb_id;
       if (fallbackId) {
         const resolvedId = typeof fallbackId === 'string' ? fallbackId : String(fallbackId);
