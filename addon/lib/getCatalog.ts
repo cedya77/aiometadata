@@ -1585,7 +1585,7 @@ async function getSimklCatalog(
       const result = await fetchSimklTrendingItems('movies', interval, page, pageSize);
       const items = (result.items as any[]).filter((it: any) => {
         const ids = it.ids || {};
-        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal);
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.simkl || ids.simkl_id);
         if (!ok) logger.debug(`[Simkl] Skipping trending item with only simkl ID: ${it.title || 'Unknown'}`);
         return ok;
       });
@@ -1598,7 +1598,7 @@ async function getSimklCatalog(
       const result = await fetchSimklTrendingItems('shows', interval, page, pageSize);
       const items = (result.items as any[]).filter((it: any) => {
         const ids = it.ids || {};
-        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal);
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.simkl || ids.simkl_id);
         if (!ok) logger.debug(`[Simkl] Skipping trending item with only simkl ID: ${JSON.stringify(it)}`);
         return ok;
       });
@@ -1611,7 +1611,7 @@ async function getSimklCatalog(
       const result = await fetchSimklTrendingItems('anime', interval, page, pageSize);
       const items = (result.items as any[]).filter((it: any) => {
         const ids = it.ids || {};
-        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb);
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb || ids.simkl || ids.simkl_id);
         if (!ok) logger.debug(`[Simkl] Skipping trending anime item with only simkl ID: ${JSON.stringify(it)}`);
         return ok;
       });
@@ -1648,8 +1648,8 @@ async function getSimklCatalog(
             const ids = media.ids || {};
             
             const hasValidId = watchlistType === 'anime'
-              ? !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb)
-              : !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal);
+              ? !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb || ids.simkl || ids.simkl_id)
+              : !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.simkl || ids.simkl_id);
             if (!hasValidId) {
               logger.debug(`[Simkl] Skipping watchlist item with only simkl ID: ${media.title || 'Unknown'}`);
               return null;

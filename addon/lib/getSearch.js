@@ -1569,10 +1569,7 @@ async function performTraktSearch(type, query, language, config) {
             );
           }
 
-          let stremioId = imdbId || (type === 'movie' ? `tmdb:${tmdbId}` : `tvdb:${tvdbId}`);
-          if (!stremioId && traktId) {
-            stremioId = `trakt:${traktId}`;
-          }
+          let stremioId = imdbId  || `tmdb:${tmdbId}` || `tvdb:${tvdbId}`;
 
           const fallbackImage = `${host}/missing_poster.png`;
           const posterArray = media.images?.poster || [];

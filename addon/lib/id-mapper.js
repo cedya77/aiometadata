@@ -36,6 +36,7 @@ let kitsuIdMap = new Map();
 let anidbIdMap = new Map();
 let anilistIdMap = new Map();
 let imdbIdMap = new Map();
+let simklIdMap = new Map();
 
 async function getTmdbSeasonInfo(tmdbId, config = {}) {
   if (tmdbSeasonCache.has(tmdbId)) {
@@ -113,6 +114,7 @@ function processAndIndexData(data) {
   anidbIdMap.clear();
   anilistIdMap.clear();
   imdbIdMap.clear();
+  simklIdMap.clear();
   
   for (const item of animeList) {
     if (item.mal_id) {
@@ -124,6 +126,7 @@ function processAndIndexData(data) {
     if (item.anidb_id) anidbIdMap.set(item.anidb_id, item);
     if (item.anilist_id) anilistIdMap.set(item.anilist_id, item);
     if (item.imdb_id) imdbIdMap.set(item.imdb_id, item);
+    if (item.simkl_id) simklIdMap.set(item.simkl_id, item);
     
     if (item.tvdb_id) {
       const tvdbId = item.tvdb_id;
@@ -822,7 +825,11 @@ async function resolveImdbSeasonFromKitsu(kitsuId) {
   }
 }
 
-
+function getMappingBySimklId(simklId) {
+  if (!isInitialized) return null;
+  const numericSimklId = parseInt(simklId, 10);
+  return simklIdMap.get(numericSimklId) || null;
+}
 
 function getMappingByMalId(malId) {
   if (!isInitialized) {
@@ -1786,11 +1793,11 @@ function determineMappingScenario(tvSeriesCount, ovaCount, totalSeasons) {
  */
 function getAllMappings() {
   if (!isInitialized) return null;
-  
   return {
     animeIdMapSize: animeIdMap.size,
     tvdbIdMapSize: tvdbIdToAnimeListMap.size,
     imdbIdMapSize: imdbIdToAnimeListMap.size,
+    simklIdMapSize: simklIdMap.size, // Added stats
     tmdbIndexArraySize: tmdbIndexArray ? tmdbIndexArray.length : 0,
     animeIdMap: animeIdMap,
     tvdbIdToAnimeListMap: tvdbIdToAnimeListMap,
@@ -2072,6 +2079,7 @@ module.exports = {
   getMappingByTvdbId,
   getMappingByImdbId,
   getMappingByKitsuId,
+  getMappingBySimklId,
   resolveKitsuIdFromTvdbSeason,
   resolveKitsuIdFromTmdbSeason,
   resolveKitsuIdForEpisodeByTmdb,
