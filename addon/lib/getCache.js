@@ -1754,7 +1754,7 @@ async function cacheComponent(cacheKey, componentData, ttl) {
 
 
 
-function cacheWrapJikanApi(key, method, customTTL = null) {
+function cacheWrapJikanApi(key, method, customTTL = null, options = {}) {
   const subkey = key.replace(/\s/g, '-');
   const ttl = customTTL !== null ? customTTL : JIKAN_API_TTL;
   
@@ -1774,7 +1774,8 @@ function cacheWrapJikanApi(key, method, customTTL = null) {
   };
   
   return cacheWrapGlobal(`jikan-api:${subkey}`, method, ttl, {
-    resultClassifier: jikanResultClassifier
+    resultClassifier: jikanResultClassifier,
+    ...options
   });
 }
 

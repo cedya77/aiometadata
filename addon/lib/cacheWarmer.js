@@ -75,21 +75,21 @@ async function warmEssentialContent() {
     if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('anime-genres', async () => {
       return await mal.getAnimeGenres();
-    });
+    }, null, { skipVersion: true });
     warmingItemsCount++;
     
     // Warm MAL studios
     if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('mal-studios', async () => {
       return await mal.getStudios(100);
-    }, 30 * 24 * 60 * 1000); // Cache for 30 days
+    }, 30 * 24 * 60 * 1000, { skipVersion: true }); // Cache for 30 days
     warmingItemsCount++;
     
     // Warm MAL available seasons
     if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('mal-available-seasons', async () => {
       return await mal.getAvailableSeasons();
-    }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
+    }, 7 * 24 * 60 * 60, { skipVersion: true }); // Cache for 7 days (seasons only change quarterly)
     warmingItemsCount++;
     
     // Warm TVDB collections (first page)

@@ -615,7 +615,7 @@ async function getManifest(config) {
     const animeGenres = await cacheWrapJikanApi('anime-genres', async () => {
       logger.info('[Cache Miss] Fetching fresh anime genre list in manifest from Jikan...');
       return await jikan.getAnimeGenres();
-    });
+    }, null, { skipVersion: true });
     animeGenreNames = animeGenres.filter(Boolean).map(genre => genre.name).sort();
     logger.debug(`Anime genres fetched in ${Date.now() - animeStart}ms`);
     
@@ -627,7 +627,7 @@ async function getManifest(config) {
         const studioPromise = cacheWrapJikanApi('mal-studios', async () => {
           logger.debug('[Cache Miss] Fetching fresh anime studio list in manifest from Jikan...');
           return await jikan.getStudios();
-        }, 30 * 24 * 60 * 60); // Cache for 30 days
+        }, 30 * 24 * 60 * 60, { skipVersion: true }); // Cache for 30 days
         
         // Add timeout to prevent blocking manifest generation
         const timeoutPromise = new Promise((_, reject) => {
@@ -654,7 +654,7 @@ async function getManifest(config) {
         const seasonsData = await cacheWrapJikanApi('mal-available-seasons', async () => {
           logger.debug('[Cache Miss] Fetching available seasons from Jikan...');
           return await jikan.getAvailableSeasons();
-        }, 7 * 24 * 60 * 60); // Cache for 7 days (seasons only change quarterly)
+        }, 7 * 24 * 60 * 60, { skipVersion: true }); // Cache for 7 days (seasons only change quarterly)
         
         // Build season options from API data
         const seasonOptions = [];

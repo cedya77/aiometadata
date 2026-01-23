@@ -386,10 +386,10 @@ class MALCatalogWarmer {
             const animeResults = catalog.hasGenreId 
               ? await cacheWrapJikanApi(`mal-${catalog.name}-${page}-${warmingConfig.sfw}`, async () => {
                   return await fn(...args, page, null, warmingConfig);  // Has genreId param
-                })
+                }, null, { skipVersion: true })
               : await cacheWrapJikanApi(`mal-${catalog.name}-${page}-${warmingConfig.sfw}`, async () => {
                   return await fn(...args, page, warmingConfig);        // No genreId param
-                });
+                }, null, { skipVersion: true });
             const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
             return { metas };
           }, { enableErrorCaching: false, maxRetries: 1 });
@@ -463,7 +463,7 @@ class MALCatalogWarmer {
           // getAiringSchedule(day, page, config)
           const animeResults = await cacheWrapJikanApi(`mal-schedule-${day}-1-${warmingConfig.sfw}`, async () => {
             return await jikan.getAiringSchedule(day, 1, warmingConfig);
-          });
+          }, null, { skipVersion: true });
           const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
           return { metas };
         }, { enableErrorCaching: false, maxRetries: 1 });
@@ -536,7 +536,7 @@ class MALCatalogWarmer {
             // getTopAnimeByDateRange(startDate, endDate, page, genreId, config)
             const animeResults = await cacheWrapJikanApi(`mal-${decade.catalogId}-1-${warmingConfig.sfw}`, async () => {
               return await jikan.getTopAnimeByDateRange(decade.start, decade.end, 1, null, warmingConfig);
-            });
+            }, null, { skipVersion: true });
             const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
             return { metas };
           }, { enableErrorCaching: false, maxRetries: 1 });

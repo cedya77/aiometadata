@@ -228,7 +228,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.airing': {
         const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
           return await jikan.getAiringNow(page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -244,7 +244,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.top_movies': {
         const animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByType('movie', page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -252,7 +252,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.top_series': {
         const animeResults = await cacheWrapJikanApi(`mal-top-series-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByType('tv', page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -260,7 +260,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.most_popular': {
         const animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByFilter('bypopularity', page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -268,7 +268,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.most_favorites': {
         const animeResults = await cacheWrapJikanApi(`mal-most-favorites-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByFilter('favorite', page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -276,7 +276,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.top_anime': {
         const animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
           return await jikan.getTopAnimeByType('anime', page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -297,7 +297,7 @@ class ComprehensiveCatalogWarmer {
         const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
           this.log('debug', 'Fetching anime genre list from Jikan...');
           return await jikan.getAnimeGenres();
-        });
+        }, null, { skipVersion: true });
         const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
         if (genreNameToFetch) {
           const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
@@ -305,7 +305,7 @@ class ComprehensiveCatalogWarmer {
             const genreId = selectedGenre.mal_id;
             const animeResults = await cacheWrapJikanApi(`mal-decade-${catalogId}-${page}-${genreId}-${config.sfw}`, async () => {
               return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
-            });
+            }, null, { skipVersion: true });
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
           }
         }
@@ -317,7 +317,7 @@ class ComprehensiveCatalogWarmer {
         const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
           this.log('debug', 'Fetching anime genre list from Jikan...');
           return await jikan.getAnimeGenres();
-        });
+        }, null, { skipVersion: true });
         const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
         if (genreNameToFetch) {
           const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
@@ -325,7 +325,7 @@ class ComprehensiveCatalogWarmer {
             const genreId = selectedGenre.mal_id;
             const animeResults = await cacheWrapJikanApi(`mal-genre-${genreId}-${mediaType}-${page}-${config.sfw}`, async () => {
               return await jikan.getAnimeByGenre(genreId, mediaType, page, config);
-            });
+            }, null, { skipVersion: true });
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
           }
         }
@@ -335,7 +335,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.studios': {
         if (genreName) {
           this.log('debug', `Fetching anime for MAL studio: ${genreName}`);
-          const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100));
+          const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100), null, { skipVersion: true });
           const selectedStudio = studios.find(studio => {
             const defaultTitle = studio.titles.find(t => t.type === 'Default');
             return defaultTitle && defaultTitle.title === genreName;
@@ -345,7 +345,7 @@ class ComprehensiveCatalogWarmer {
             const studioId = selectedStudio.mal_id;
             const animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
               return await jikan.getAnimeByStudio(studioId, page);
-            });
+            }, null, { skipVersion: true });
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
           } else {
             this.log('warn', `Could not find a MAL ID for studio name: ${genreName}`);
@@ -358,7 +358,7 @@ class ComprehensiveCatalogWarmer {
         const dayOfWeek = genreName || 'Monday';
         const animeResults = await cacheWrapJikanApi(`mal-schedule-${dayOfWeek}-${page}-${config.sfw}`, async () => {
           return await jikan.getAiringSchedule(dayOfWeek, page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -386,7 +386,7 @@ class ComprehensiveCatalogWarmer {
         const year = parseInt(parts[1]);
         const animeResults = await cacheWrapJikanApi(`mal-season-${year}-${season}-${page}-${config.sfw}`, async () => {
           return await jikan.getAnimeBySeason(year, season, page, config);
-        });
+        }, null, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -484,7 +484,7 @@ class ComprehensiveCatalogWarmer {
       } else if (catalogId === 'mal.genres') {
         try {
           // Use the same cache key as getManifest for available anime genres
-          const animeGenres = await cacheWrapJikanApi('anime-genres', async () => await jikan.getAnimeGenres(), 30 * 24 * 60 * 60);
+          const animeGenres = await cacheWrapJikanApi('anime-genres', async () => await jikan.getAnimeGenres(), 30 * 24 * 60 * 60, { skipVersion: true });
           if (animeGenres && animeGenres.length > 0) {
             let animeGenreNames = animeGenres.filter(Boolean).map(genre => genre.name).sort();
             if (animeGenreNames.length > 0) {

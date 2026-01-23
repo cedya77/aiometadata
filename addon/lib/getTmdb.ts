@@ -450,7 +450,8 @@ export async function genreMovieList(params: any, config: UserConfig) {
   const language = params.language || 'en';
   return cacheWrapGlobal(`tmdb:genre:movie:${language}`, () =>
     makeTmdbRequest('/genre/movie/list', getApiKey(config), params, 'GET', null, config),
-    30 * 24 * 60 * 60 
+    30 * 24 * 60 * 60,
+    { skipVersion: true }
   );
 }
 
@@ -458,7 +459,8 @@ export async function genreTvList(params: any, config: UserConfig) {
   const language = params.language || 'en';
   return cacheWrapGlobal(`tmdb:genre:tv:${language}`, () =>
     makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config),
-    30 * 24 * 60 * 60 
+    30 * 24 * 60 * 60,
+    { skipVersion: true }
   );
 }
 

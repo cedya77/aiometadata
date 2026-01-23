@@ -37,7 +37,7 @@ async function getGenreList(catalogType, language, type, config) {
       console.error(`Error fetching ${type} genres from ${catalogType}:`, error.message);
       return [];
     }
-  }, 30 * 24 * 60 * 60); // Cache for 30 days
+  }, 30 * 24 * 60 * 60, { skipVersion: true });
 }
 
 module.exports = { getGenreList };
