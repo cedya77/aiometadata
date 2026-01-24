@@ -667,5 +667,122 @@ export {
   makeRateLimitedSimklRequest,
   makeAuthenticatedSimklRequest,
   getSimklAccessToken,
-  fetchSimklTrendingItems
+  fetchSimklTrendingItems,
+  fetchSimklCalendarItems
 };
+
+async function fetchSimklCalendar(
+  type: 'tv' | 'anime' | 'movie_release',
+  cacheTTL: number = 14400 // 4 hours
+): Promise<any[]> {
+  try {
+    const cacheKey = `simkl-calendar:${type}`;
+    
+    return await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        const url = `https://data.simkl.in/calendar/${type}.json`;
+        // Use a simple GET request for the CDN file
+        const response: any = await makeRateLimitedRequest(
+          () => httpGet(url, { dispatcher: simklDispatcher }),
+          `Simkl Calendar (${type})`
+        );
+        return Array.isArray(response.data) ? response.data : [];
+      },
+      cacheTTL,
+      { skipVersion: true }
+    );
+  } catch (err: any) {
+    logger.error(`Error fetching Simkl calendar ${type}:`, err.message);
+    return [];
+  }
+}
+
+async function fetchSimklCalendarItems(
+  days: number = 1,
+  timezone: string = 'UTC',
+  cacheTTL?: number,
+  type: 'all' | 'anime' | 'series' = 'all'
+): Promise<{items: any[]}> {
+  try {
+    let allItems: any[] = [];
+    
+    const promises: Promise<any[]>[] = [];
+    
+    if (type === 'all' || type === 'series') {
+      promises.push(fetchSimklCalendar('tv', cacheTTL));
+    }
+    
+    if (type === 'all' || type === 'anime') {
+      promises.push(fetchSimklCalendar('anime', cacheTTL));
+    }
+    
+    const results = await Promise.all(promises);
+    results.forEach(items => {
+      allItems = [...allItems, ...items];
+    });
+    
+    if (allItems.length === 0) {
+      return { items: [] };
+    }
+
+    // 2. Filter by date range in user's timezone
+    const now = new Date();
+    const allowedDates = new Set<string>();
+    
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    
+    for (let i = 0; i < days; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + i);
+        allowedDates.add(dateFormatter.format(d));
+    }
+
+    const filtered = allItems.filter(item => {
+      if (!item.date) return false;
+      const itemDate = new Date(item.date);
+      
+      const itemDateStr = dateFormatter.format(itemDate);
+      return allowedDates.has(itemDateStr);
+    });
+
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      
+      if (dateA !== dateB) {
+        return dateA - dateB;
+      }
+      
+      const rankA = a.rank || 999999;
+      const rankB = b.rank || 999999;
+      
+      return rankA - rankB;
+    });
+
+    const mappedItems = filtered.map(item => {
+      let type: 'movie' | 'series' = 'series'; // Default to series for calendar
+      if (item.anime_type && (item.anime_type === 'movie' || item.anime_type === 'ona')) {
+        // Some anime might be movies
+        // But typically calendar "airing" implies episodes.
+        // We will trust getMeta to handle it if we pass the right ID.
+        // But parseSimklItems expects a type to fallback to.
+      }
+      
+      return {
+        ...item,
+        type
+      };
+    });
+
+    return { items: mappedItems };
+  } catch (err: any) {
+    logger.error(`Error processing Simkl calendar items:`, err.message);
+    return { items: [] };
+  }
+}

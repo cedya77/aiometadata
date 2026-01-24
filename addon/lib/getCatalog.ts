@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklAccessToken } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklAccessToken, fetchSimklCalendarItems } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
@@ -1616,6 +1616,47 @@ async function getSimklCatalog(
         return ok;
       });
       response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else if (catalogId.startsWith('simkl.calendar')) {
+      // Simkl Calendar - Shows airing soon
+      const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+      
+      // Get timezone from config or default to UTC
+      const timezone = config.timezone || process.env.TZ || 'UTC';
+      
+      // Get configured days (1-7), default to 1 if not set
+      const days = catalogConfig?.metadata?.airingSoonDays || 1;
+      const clampedDays = Math.max(1, Math.min(7, days));
+      
+      // Determine type
+      let calendarType: 'all' | 'anime' | 'series' = 'all';
+      if (catalogId === 'simkl.calendar.anime') {
+        calendarType = 'anime';
+      } else if (catalogId === 'simkl.calendar.series') {
+        calendarType = 'series';
+      }
+      
+      logger.debug(`[Simkl] Fetching calendar items (type: ${calendarType}, days: ${clampedDays}, timezone: ${timezone}, page: ${page})`);
+      
+      // Fetch calendar items (fetches all items for the period)
+      const result = await fetchSimklCalendarItems(clampedDays, timezone, catalogConfig?.cacheTTL, calendarType);
+      
+      // Filter out items with no IDs before pagination
+      const validItems = result.items.filter((it: any) => {
+        const ids = it.ids || {};
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.simkl || ids.simkl_id);
+        if (!ok) logger.debug(`[Simkl] Skipping calendar item with only simkl ID: ${it.title || 'Unknown'}`);
+        return ok;
+      });
+      
+      // Local pagination
+      const globalItemIndex = (page - 1) * pageSize;
+      const endIndex = globalItemIndex + pageSize;
+      const paginatedItems = validItems.slice(globalItemIndex, endIndex);
+      const hasMore = endIndex < validItems.length;
+      
+      logger.debug(`[Simkl] Local pagination: ${validItems.length} total valid items, showing ${globalItemIndex}-${Math.min(endIndex, validItems.length)} (hasMore: ${hasMore})`);
+      
+      response = { items: paginatedItems, hasMore };
     } 
     else if (catalogId.startsWith('simkl.watchlist.')) {
       const parts = catalogId.split('.');
@@ -1695,7 +1736,7 @@ async function getSimklCatalog(
       return [];
     }
     
-    const isAnimeCatalog = catalogId === 'simkl.trending.anime' || catalogId.startsWith('simkl.watchlist.anime.');
+    const isAnimeCatalog = catalogId === 'simkl.trending.anime' || catalogId.startsWith('simkl.watchlist.anime.') || catalogId === 'simkl.calendar' || catalogId === 'simkl.calendar.anime';
     const parseStart = Date.now();
     let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID, includeVideos, isAnimeCatalog);
     const parseTime = Date.now() - parseStart;

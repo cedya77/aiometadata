@@ -476,8 +476,8 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                   {/* Trending Catalogs Section */}
                   <Card>
                     <CardHeader>
-                      <CardTitle>Trending Catalogs</CardTitle>
-                      <CardDescription>Add trending catalogs for movies, shows, and anime</CardDescription>
+                      <CardTitle>Trending & Calendar</CardTitle>
+                      <CardDescription>Add trending catalogs or view upcoming releases</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex gap-2">
@@ -510,9 +510,51 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           <Plus className="mr-2 h-4 w-4" />
                           Trending Anime
                         </Button>
+                        <Button 
+                          onClick={() => {
+                            const newCatalog: CatalogConfig = {
+                              id: "simkl.calendar.anime",
+                              type: "anime",
+                              name: "Simkl Anime Airing Soon",
+                              enabled: true,
+                              showInHome: true,
+                              source: "simkl",
+                              metadata: { airingSoonDays: 1 }
+                            };
+                            setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+                            toast.success("Added Simkl Anime Airing Soon");
+                          }}
+                          variant="outline"
+                          className="flex-1"
+                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.calendar.anime')}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Airing Soon (Anime)
+                        </Button>
+                        <Button 
+                          onClick={() => {
+                            const newCatalog: CatalogConfig = {
+                              id: "simkl.calendar.series",
+                              type: "series",
+                              name: "Simkl TV Airing Soon",
+                              enabled: true,
+                              showInHome: true,
+                              source: "simkl",
+                              metadata: { airingSoonDays: 1 }
+                            };
+                            setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+                            toast.success("Added Simkl TV Airing Soon");
+                          }}
+                          variant="outline"
+                          className="flex-1"
+                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.calendar.series')}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Airing Soon (Series)
+                        </Button>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        These catalogs use Simkl's trending endpoints for movies, shows, and anime. They update automatically.
+                        Trending catalogs update automatically. Airing Soon shows TV and Anime episodes releasing in your timezone.
                       </p>
                     </CardContent>
                   </Card>

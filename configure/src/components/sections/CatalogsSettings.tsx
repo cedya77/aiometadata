@@ -456,7 +456,15 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const isTrending = catalog.id.startsWith('simkl.trending.');
   const isWatchlist = catalog.id.startsWith('simkl.watchlist.');
+  const isCalendar = catalog.id.startsWith('simkl.calendar');
   const [pageSize, setPageSize] = useState<number>(catalog.metadata?.pageSize || 50);
+  const [airingSoonDays, setAiringSoonDays] = useState<number>(() => {
+    const days = catalog.metadata?.airingSoonDays;
+    if (typeof days === 'number' && days >= 1 && days <= 7) {
+      return days;
+    }
+    return 1;
+  });
   
   const minCacheTTL = 300; // 5 minutes minimum for Simkl catalogs
 
@@ -472,7 +480,9 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
                 // Only include pageSize for trending (watchlists use local pagination)
                 ...(isTrending && { pageSize: Math.max(1, pageSize) || 50 }),
                 // Remove pageSize from watchlists if it exists
-                ...(isWatchlist && catalog.metadata?.pageSize && { pageSize: undefined })
+                ...(isWatchlist && catalog.metadata?.pageSize && { pageSize: undefined }),
+                // Airing soon days
+                ...(isCalendar && { airingSoonDays: Math.max(1, Math.min(7, airingSoonDays)) })
               }
             }
           : c
@@ -528,6 +538,27 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               <p className="text-xs text-muted-foreground">
                 Number of results to fetch per page from Simkl API for trending catalogs (default: 50). Watchlists use local pagination. 
                 <strong> Must match the value in your SimKL settings.</strong>
+              </p>
+            </div>
+          )}
+
+          {isCalendar && (
+            <div className="space-y-2">
+              <Label>Days Ahead</Label>
+              <Select value={airingSoonDays.toString()} onValueChange={(value) => setAiringSoonDays(Number(value))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6, 7].map(days => (
+                    <SelectItem key={days} value={days.toString()}>
+                      {days} {days === 1 ? 'day' : 'days'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Shows airing within the selected number of days
               </p>
             </div>
           )}
