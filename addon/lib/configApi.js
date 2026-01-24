@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
+const packageJson = require('../../package.json');
 
 // Gemini dispatcher configuration for API key testing
 // Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
@@ -1001,7 +1002,7 @@ class ConfigApi {
           try {
             const response = await request(url, {
               ...options,
-              headers: { "User-Agent": "AIOMetadata/1.0", ...options.headers },
+              headers: { "User-Agent": `AIOMetadata/${packageJson.version}`, ...options.headers },
               signal: AbortSignal.timeout(5000),
             });
 

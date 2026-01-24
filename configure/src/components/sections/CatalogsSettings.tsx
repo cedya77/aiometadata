@@ -493,18 +493,20 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
           <DialogTitle>Simkl Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Cache TTL (seconds)</Label>
-            <Input
-              type="number"
-              min={5}
-              value={cacheTTL}
-              onChange={(e) => setCacheTTL(Number(e.target.value) || 0)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Minimum 5 minutes to avoid excessive API calls
-            </p>
-          </div>
+          {!isWatchlist && (
+            <div className="space-y-2">
+              <Label>Cache TTL (seconds)</Label>
+              <Input
+                type="number"
+                min={5}
+                value={cacheTTL}
+                onChange={(e) => setCacheTTL(Number(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Minimum 5 minutes to avoid excessive API calls
+              </p>
+            </div>
+          )}
           
           {isTrending && (
             <div className="space-y-2">
@@ -1258,7 +1260,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           </Tooltip>
 
 
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || catalog.source === 'simkl' || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))) && (
             <Tooltip>
               <TooltipTrigger asChild>

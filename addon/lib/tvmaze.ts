@@ -37,7 +37,7 @@ if (HTTP_PROXY_URL) {
 const DEFAULT_HTTP_CONFIG = {
   timeout: DEFAULT_TIMEOUT,
   headers: {
-    'User-Agent': `${packageJson.name}/${packageJson.version} (https://github.com/cedya77/aiometadata)`
+    'User-Agent': `AIOMetadata/${packageJson.version}`
   },
   dispatcher: tvmazeAgent,
 };

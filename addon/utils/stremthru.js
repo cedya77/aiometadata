@@ -7,6 +7,7 @@ const imdb = require("../lib/imdb");
 const { getImdbRating } = require("../lib/getImdbRating");
 const { resolveAllIds } = require('../lib/id-resolver');
 const consola = require('consola');
+const packageJson = require('../../package.json');
 
 const logger = consola.withTag('StremThru');
 
@@ -22,7 +23,7 @@ const host = process.env.HOST_NAME.startsWith('http')
  */
 async function _makeRequest(url) {
   try {
-    const response = await httpGet(url, { headers: { 'User-Agent': 'aiometadata-addon/1.0' }, timeout: 30000 });
+    const response = await httpGet(url, { headers: { 'User-Agent': `AIOMetadata/${packageJson.version}` }, timeout: 30000 });
     return response.data;
   } catch (err) {
     if (err.response) {

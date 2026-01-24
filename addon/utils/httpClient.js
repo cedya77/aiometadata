@@ -1,4 +1,5 @@
 const { request, setGlobalDispatcher, ProxyAgent } = require("undici");
+const packageJson = require('../../package.json');
 
 // Global proxy configuration - applies to all undici requests
 // Prefers HTTPS_PROXY since most API calls are HTTPS, falls back to HTTP_PROXY
@@ -42,7 +43,7 @@ async function httpRequest(url, options = {}) {
   const requestOptions = {
     method,
     headers: {
-      'User-Agent': 'AIO-Metadata/1.0',
+      'User-Agent': `AIOMetadata/${packageJson.version}`,
       ...headers
     },
     bodyTimeout: timeout,

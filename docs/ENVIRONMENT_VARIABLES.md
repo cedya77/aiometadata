@@ -1,6 +1,6 @@
 # Environment Variables Configuration
 
-This document describes all available environment variables for AIO Metadata.
+This document describes all available environment variables for AIOMetadata.
 
 ## Quick Start
 
@@ -132,6 +132,11 @@ cp .env.example .env
 - **Required for SimKL integration**: No (optional)
 - **Description**: Redirect URI for SimKL OAuth. If not set, defaults to `${HOST_NAME}/api/auth/simkl/callback`. Must match the value set in your SimKL app settings if explicitly set.
 - **Example**: `SIMKL_REDIRECT_URI=https://your-domain.com/api/auth/simkl/callback`
+
+### `SIMKL_ACTIVITIES_TTL`
+- **Default**: `21600` (6 hours)
+- **Description**: Time-to-live (in seconds) for caching SimKL activity checks. Reduces API spam when paginating.
+- **Example**: `SIMKL_ACTIVITIES_TTL=3600` (1 hour)
 
 ### `GEMINI_API_KEY`
 - **Optional**: Yes

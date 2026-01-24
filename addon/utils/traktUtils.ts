@@ -73,7 +73,7 @@ async function fetchTraktUpNextEpisodes(
                 'Content-Type': 'application/json',
                 'trakt-api-version': '2',
                 'trakt-api-key': TRAKT_CLIENT_ID,
-                'User-Agent': `AIOMetadata/${process.env.npm_package_version || 'dev'} (https://github.com/AIOMetadata/AIOMetadata)`
+                'User-Agent': `AIOMetadata/${packageJson.version}`
               },
               params: {
                 'now': Date.now() 
@@ -650,6 +650,7 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`[${context}] All ${retries} attempts failed.`);
 }
 
+const packageJson = require('../../package.json');
 const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
 const TRAKT_BASE_URL = 'https://api.trakt.tv';
 

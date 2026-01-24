@@ -89,7 +89,7 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
   if (!finalListUrl && list.user_name && list.name) {
     // Construct URL from username and list name/slug
     const username = list.user_name.toLowerCase().replace(/\s+/g, '');
-    const listSlug = list.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const listSlug = list.slug || list.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     finalListUrl = `https://mdblist.com/lists/${username}/${listSlug}`;
   }
 

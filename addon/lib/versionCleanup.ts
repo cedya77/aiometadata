@@ -9,9 +9,8 @@ const logger = consola.withTag('Version-Cleanup');
 const CURRENT_VERSION = packageJson.version;
 const VERSION_KEY = 'system:app_version';
 
-// Regex to extract version from key patterns
-const VERSIONED_KEY_REGEX = /^v(\d+\.\d+\.\d+):/;
-const GLOBAL_KEY_REGEX = /^global:(\d+\.\d+\.\d+):/;
+const VERSIONED_KEY_REGEX = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?):/;
+const GLOBAL_KEY_REGEX = /^global:(\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?):/;
 
 export async function performVersionCleanup(): Promise<void> {
   if (!redis) {

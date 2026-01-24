@@ -15,7 +15,7 @@ const SIMKL_BASE_URL = 'https://api.simkl.com';
 const SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || '';
 const SIMKL_TRENDING_TTL = 12 * 60 * 60; // 12 hours
 const SIMKL_WATCHLIST_TTL = 24 * 60 * 60; // Cache in Redis for 24h, relies on activity check to invalidate
-const SIMKL_ACTIVITIES_TTL = 5 * 60; // Cache activity check for 5 minutes to prevent spamming on pagination
+const SIMKL_ACTIVITIES_TTL = parseInt(process.env.SIMKL_ACTIVITIES_TTL || '21600'); // Cache activity check for 6 hours (21600s) to prevent spamming on pagination
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -262,7 +262,7 @@ async function fetchSimklLastActivities(accessToken: string): Promise<any> {
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
   const cacheKey = `simkl-api-last-activities:${tokenHash}`;
   
-  // Cache the activity check itself for 5 minutes.
+  // Cache the activity check itself for 6 hours.
   // This ensures rapid pagination requests use the cached "state of truth" 
   // instead of hitting the API 5 times in 1 second.
   return await cacheWrapGlobal(
@@ -294,7 +294,7 @@ async function fetchSimklWatchlistItems(
     const fullListKey = `simkl-watchlist-full:${tokenHash}:${status}`; // Stores the full object { movies:[], shows:[], anime:[] }
     const activitiesKey = `simkl-activities:${tokenHash}`; // Stores the last fetched activities object
 
-    // 1. Get latest activities from Simkl (Cached via fetchSimklLastActivities for 5 mins)
+    // 1. Get latest activities from Simkl (Cached via fetchSimklLastActivities for 6 hours)
     let currentActivities;
     try {
       currentActivities = await fetchSimklLastActivities(accessToken);

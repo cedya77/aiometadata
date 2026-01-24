@@ -1652,18 +1652,41 @@ class DashboardAPI {
         return { count: 0, error: "Cache not available" };
       }
 
-      const allKeys = await this.cache.keys("*");
+      let cursor = '0';
       let expiredCount = 0;
+      let totalKeys = 0;
+      let noTtlCount = 0;
 
-      // Count keys that will expire within the next hour
-      for (const key of allKeys) {
-        const ttl = await this.cache.ttl(key);
-        if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
-          expiredCount++;
+      do {
+        const reply = await this.cache.scan(cursor, 'COUNT', 1000);
+        cursor = reply[0];
+        const keys = reply[1];
+        
+        if (keys.length > 0) {
+          totalKeys += keys.length;
+          
+          // Pipeline TTL commands for performance
+          const pipeline = this.cache.pipeline();
+          keys.forEach(key => pipeline.ttl(key));
+          const ttls = await pipeline.exec();
+          
+          ttls.forEach(([err, ttl]) => {
+            if (!err) {
+              if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
+                expiredCount++;
+              } else if (ttl === -1) {
+                noTtlCount++;
+              }
+            }
+          });
         }
+      } while (cursor !== '0');
+
+      if (noTtlCount > 1000) {
+        logger.warn(`[Cache Cleanup] Found ${noTtlCount} keys with no TTL (potential leaks)`);
       }
 
-      return { count: expiredCount, totalKeys: allKeys.length };
+      return { count: expiredCount, totalKeys, noTtlCount };
     } catch (error) {
       logger.error("[Cache Cleanup Scheduler] Error checking expired keys:", error);
       return { count: 0, error: error.message };
@@ -1713,20 +1736,26 @@ class DashboardAPI {
 
       //logger.debug("[Maintenance Task] Starting expired cache cleanup...");
       
-      // Get all keys
-      const allKeys = await this.cache.keys("*");
+      let cursor = '0';
       const expiredKeys = [];
-      const totalKeys = allKeys.length;
-
-      //logger.debug(`[Maintenance Task] Checking ${totalKeys} keys for expiration...`);
-
-      // Check each key's TTL
-      for (const key of allKeys) {
-        const ttl = await this.cache.ttl(key);
-        if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
-          expiredKeys.push(key);
+      
+      do {
+        const reply = await this.cache.scan(cursor, 'COUNT', 1000);
+        cursor = reply[0];
+        const keys = reply[1];
+        
+        if (keys.length > 0) {
+          const pipeline = this.cache.pipeline();
+          keys.forEach(key => pipeline.ttl(key));
+          const ttls = await pipeline.exec();
+          
+          ttls.forEach(([err, ttl], index) => {
+            if (!err && ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
+              expiredKeys.push(keys[index]);
+            }
+          });
         }
-      }
+      } while (cursor !== '0');
 
       //logger.debug(`[Maintenance Task] Found ${expiredKeys.length} expired keys to clear`);
 
@@ -1774,50 +1803,64 @@ class DashboardAPI {
       ];
 
       let deletedCount = 0;
+      let cursor = '0';
       
       switch (type) {
         case "all":
-          // Get all keys first
-          const allKeys = await this.cache.keys("*");
-          
-          // Filter out keys that should be preserved
-          const keysToDelete = allKeys.filter(key => {
-            return !preservePatterns.some(pattern => {
-              if (pattern.endsWith('*')) {
-                return key.startsWith(pattern.slice(0, -1));
+          do {
+            const reply = await this.cache.scan(cursor, 'COUNT', 1000);
+            cursor = reply[0];
+            const keys = reply[1];
+            
+            if (keys.length > 0) {
+              // Filter out keys that should be preserved
+              const keysToDelete = keys.filter(key => {
+                return !preservePatterns.some(pattern => {
+                  if (pattern.endsWith('*')) {
+                    return key.startsWith(pattern.slice(0, -1));
+                  }
+                  return key === pattern;
+                });
+              });
+              
+              if (keysToDelete.length > 0) {
+                const batchSize = 100;
+                for (let i = 0; i < keysToDelete.length; i += batchSize) {
+                  const batch = keysToDelete.slice(i, i + batchSize);
+                  await this.cache.del(...batch);
+                }
+                deletedCount += keysToDelete.length;
               }
-              return key === pattern;
-            });
-          });
-          
-          // Delete in batches
-          if (keysToDelete.length > 0) {
-            const batchSize = 100;
-            for (let i = 0; i < keysToDelete.length; i += batchSize) {
-              const batch = keysToDelete.slice(i, i + batchSize);
-              await this.cache.del(...batch);
             }
-            deletedCount = keysToDelete.length;
-          }
+          } while (cursor !== '0');
 
           // Wait for cache warming to complete
           await new Promise((resolve) => setTimeout(resolve, 3000));
           break;
+          
         case "expired":
           // Clear keys that are close to expiration (TTL < 1 hour)
-          const expiredCheckKeys = await this.cache.keys("*");
           const expiredKeys = [];
-
-          for (const key of expiredCheckKeys) {
-            const ttl = await this.cache.ttl(key);
-            if (ttl > 0 && ttl < 3600) {
-              // Less than 1 hour remaining
-              expiredKeys.push(key);
+          
+          do {
+            const reply = await this.cache.scan(cursor, 'COUNT', 1000);
+            cursor = reply[0];
+            const keys = reply[1];
+            
+            if (keys.length > 0) {
+              const pipeline = this.cache.pipeline();
+              keys.forEach(key => pipeline.ttl(key));
+              const ttls = await pipeline.exec();
+              
+              ttls.forEach(([err, ttl], index) => {
+                if (!err && ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
+                  expiredKeys.push(keys[index]);
+                }
+              });
             }
-          }
+          } while (cursor !== '0');
 
           if (expiredKeys.length > 0) {
-            // Delete in batches to avoid overwhelming Redis
             const batchSize = 100;
             for (let i = 0; i < expiredKeys.length; i += batchSize) {
               const batch = expiredKeys.slice(i, i + batchSize);
@@ -1826,19 +1869,25 @@ class DashboardAPI {
             deletedCount = expiredKeys.length;
           }
           break;
+          
         case "metadata":
-          // Clear metadata-related keys
-          const metadataKeys = await this.cache.keys("*meta*");
-          if (metadataKeys.length > 0) {
-            // Delete in batches to avoid overwhelming Redis
-            const batchSize = 100;
-            for (let i = 0; i < metadataKeys.length; i += batchSize) {
-              const batch = metadataKeys.slice(i, i + batchSize);
-              await this.cache.del(...batch);
+          // Clear metadata-related keys using SCAN with MATCH
+          do {
+            const reply = await this.cache.scan(cursor, 'MATCH', '*meta*', 'COUNT', 1000);
+            cursor = reply[0];
+            const keys = reply[1];
+            
+            if (keys.length > 0) {
+              const batchSize = 100;
+              for (let i = 0; i < keys.length; i += batchSize) {
+                const batch = keys.slice(i, i + batchSize);
+                await this.cache.del(...batch);
+              }
+              deletedCount += keys.length;
             }
-            deletedCount = metadataKeys.length;
-          }
+          } while (cursor !== '0');
           break;
+          
         default:
           throw new Error(`Unknown cache type: ${type}`);
       }
