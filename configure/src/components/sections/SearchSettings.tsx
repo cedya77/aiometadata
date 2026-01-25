@@ -352,17 +352,17 @@ export function SearchSettings() {
   const hasRPDBKey = !!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster;
   
   const movieSearchProviders = allSearchProviders.filter(p => {
-    if (p.mediaType.includes('movie')) {
-      return true;
-    }
-    return false;
+    return p.mediaType.includes('movie') && 
+           !p.value.includes('people.search') &&
+           p.value !== 'mal.search.movie' &&
+           p.value !== 'kitsu.search.movie';
   });
   
   const seriesSearchProviders = allSearchProviders.filter(p => {
-    if (p.mediaType.includes('series')) {
-      return true;
-    }
-    return false;
+    return p.mediaType.includes('series') && 
+           !p.value.includes('people.search') &&
+           p.value !== 'mal.search.series' &&
+           p.value !== 'kitsu.search.series';
   });
   
   const animeSearchProviders = allSearchProviders.filter(
