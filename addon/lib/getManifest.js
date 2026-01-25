@@ -119,7 +119,8 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
   
   // Use custom name only if it's provided, not empty, and not just the default English name
   const hasCustomName = customName && typeof customName === 'string' && customName.trim() !== '' && !isDefaultEnglishName;
-  const catalogName = hasCustomName ? customName : `${showPrefix ? "AIOMetadata - " : ""}${translatedCatalogs[catalogDef.nameKey]}`;
+  const baseName = hasCustomName ? customName : translatedCatalogs[catalogDef.nameKey];
+  const catalogName = `${showPrefix ? "AIOMetadata - " : ""}${baseName}`;
 
   // Use displayType if defined, otherwise use original type
   const catalogType = displayType || type;
@@ -212,7 +213,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -229,7 +230,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
   }
 }
 
-async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = []) {
+async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = [], showPrefix = false) {
   try {
     logger.info(`Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -262,7 +263,7 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "skip" },
@@ -287,7 +288,7 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
   }
 }
 
-async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = []) {
+async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false) {
   try {
     logger.info(`Creating TMDB List catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -314,7 +315,7 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -363,7 +364,7 @@ async function createLetterboxdCatalog(userCatalog) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -380,7 +381,7 @@ async function createLetterboxdCatalog(userCatalog) {
   }
 }
 
-async function createStremThruCatalog(userCatalog) {
+async function createStremThruCatalog(userCatalog, showPrefix = false) {
   try {
     // Extract catalog info from the StremThru catalog ID
     // Format: stremthru.{manifestId}.{catalogId}
@@ -454,7 +455,7 @@ async function createStremThruCatalog(userCatalog) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -475,7 +476,7 @@ async function createStremThruCatalog(userCatalog) {
  * Create an AniList catalog entry for the manifest
  * AniList catalogs are user's personal anime lists (Watching, Completed, etc.)
  */
-function createAniListCatalog(userCatalog) {
+function createAniListCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -485,7 +486,7 @@ function createAniListCatalog(userCatalog) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: ["None"], isRequired: userCatalog.showInHome ? false : true },
@@ -502,7 +503,7 @@ function createAniListCatalog(userCatalog) {
   }
 }
 
-async function createSimklCatalog(userCatalog) {
+async function createSimklCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -512,7 +513,7 @@ async function createSimklCatalog(userCatalog) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: userCatalog.name,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "skip" },
@@ -763,29 +764,29 @@ async function getManifest(config) {
       }
       if (isTrakt(userCatalog.id)) {
           logger.debug(`Processing Trakt catalog: ${userCatalog.id}`);
-          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows);
+          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows, showPrefix);
           logger.debug(`Trakt catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (isSimkl(userCatalog.id)) {
           logger.debug(`Processing Simkl catalog: ${userCatalog.id}`);
-          const result = await createSimklCatalog(userCatalog);
+          const result = await createSimklCatalog(userCatalog, showPrefix);
           logger.debug(`Simkl catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {
           logger.debug(`Processing TMDB List catalog: ${userCatalog.id}`);
-          const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names);
+          const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix);
           logger.debug(`TMDB List catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
-          const result = await createStremThruCatalog(userCatalog);
+          const result = await createStremThruCatalog(userCatalog, showPrefix);
           return result;
       }
       if (userCatalog.id.startsWith('custom.')) {
           logger.debug(`Processing Custom catalog: ${userCatalog.id}`);
-          const result = await createStremThruCatalog(userCatalog);
+          const result = await createStremThruCatalog(userCatalog, showPrefix);
           logger.debug(`Custom catalog result:`, result ? 'success' : 'failed');
           return result;
       }
@@ -797,7 +798,7 @@ async function getManifest(config) {
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
           logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);
-          const result = await createLetterboxdCatalog(userCatalog);
+          const result = await createLetterboxdCatalog(userCatalog, showPrefix);
           logger.debug(`Letterboxd catalog result:`, result ? 'success' : 'failed');
           return result;
       }
