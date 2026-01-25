@@ -1045,6 +1045,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
      
+     englishArtOnly: config.artProviders?.englishArtOnly || false,
+     
      // Poster rating provider (affects poster URLs)
      posterRatingProvider: config.posterRatingProvider || 'rpdb',
      usePosterProxy: !!config.usePosterProxy,
@@ -1142,6 +1144,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
+     englishArtOnly: config.artProviders?.englishArtOnly || false,
      // Poster rating provider (affects poster URLs)
      posterRatingProvider: config.posterRatingProvider || 'rpdb',
      usePosterProxy: !!config.usePosterProxy,
@@ -1419,6 +1422,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      showPrefix: config.showPrefix || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
+     englishArtOnly: config.artProviders?.englishArtOnly || false,
      posterRatingProvider: config.posterRatingProvider || 'rpdb',
      usePosterProxy: !!config.usePosterProxy,
      apiKeys: { 

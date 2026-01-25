@@ -33,6 +33,11 @@ const processLogo = (logoUrl) => {
 };
 
 const findArtwork = (artworks, type, lang, config, typeToFind="image") => {
+  if (lang === null) {
+    return artworks?.find(a => a.type === type && a.language === null)?.[typeToFind]
+      || artworks?.find(a => a.type === type)?.[typeToFind];
+  }
+  
   // If englishArtOnly is enabled, prefer English artwork first
   if (config?.artProviders?.englishArtOnly) {
     return artworks?.find(a => a.type === type && a.language === 'eng')?.[typeToFind]
@@ -1942,8 +1947,6 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const tvdbBackgroundUrl = findArtwork(tvdbShow.artworks, 3, null, config);
   const tvdbLogoUrl = findArtwork(tvdbShow.artworks, 23, langCode3, config);
   let poster, background, logoUrl, imdbRatingValue;
-
-
   // console log art provider preference
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders

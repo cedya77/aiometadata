@@ -922,6 +922,10 @@ async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<
 }
 
 const findArtwork = (artworks, type, lang, config) => {
+  if (lang === null) {
+    return artworks?.find(a => a.type === type && a.language === null)?.image
+      || artworks?.find(a => a.type === type)?.image;
+  }
   // If englishArtOnly is enabled, prefer English artwork first
   if (config?.artProviders?.englishArtOnly) {
     return artworks?.find(a => a.type === type && a.language === 'eng')?.image

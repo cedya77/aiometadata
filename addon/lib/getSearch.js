@@ -73,7 +73,12 @@ const host = process.env.HOST_NAME.startsWith('http')
     : `https://${process.env.HOST_NAME}`;
 
 const findArtwork = (artworks, type, lang, config) => {
+  if (lang === null) {
+    return artworks?.find(a => a.type === type && a.language === null)?.image
+      || artworks?.find(a => a.type === type)?.image;
+  }
   // If englishArtOnly is enabled, prefer English artwork first
+  
   if (config?.artProviders?.englishArtOnly) {
     return artworks?.find(a => a.type === type && a.language === 'eng')?.image
       || artworks?.find(a => a.type === type)?.image;
