@@ -2189,6 +2189,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       ? catalogConfig.metadata.pageSize 
       : 50;
   }
+  // Simkl calendar needs today's date and days in cache key
+  if (cleanId.startsWith('simkl.calendar')) {
+    const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+    const getTodayInTimezone = (tz) => {
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(new Date());
+    };
+    extraArgs.date = getTodayInTimezone(getUserTimezone());
+    extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
+      ? catalogConfig.metadata.airingSoonDays 
+      : 1;
+  }
   if (cleanId === 'tvmaze.schedule') {
     // Format date in user's configured timezone (or server timezone as fallback)
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
