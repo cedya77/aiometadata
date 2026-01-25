@@ -2067,6 +2067,20 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
   let cleanId = id;
 
+  // Handle search catalog IDs (format: search.{originalId} or people_search.{originalId})
+  if (id.startsWith('search.') || id.startsWith('people_search.')) {
+    // Extract the original search catalog ID
+    const parts = id.split('.');
+    if (parts.length >= 2) {
+      cleanId = parts.slice(1).join('.'); // Handle cases like search.anime_series
+      if (id.startsWith('people_search.')) {
+        cleanId = 'people_search'; // Keep as people_search for routing
+      } else {
+        cleanId = 'search'; // Keep as search for routing
+      }
+    }
+  }
+
   // 2. If NOT found, check if it's a suffixed ID (created by getManifest for display overrides)
   // e.g. "streaming.nfx_series" -> "streaming.nfx"
   if (!catalogConfig) {
@@ -2225,25 +2239,63 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     let responseData;
       
       if (cleanId === 'search' || cleanId === 'gemini.search' || cleanId === 'people_search') {
-      // Determine which search engine is being used based on type
-      let searchEngine = null;
-      if (cleanId === 'gemini.search') {
-        searchEngine = 'gemini.search';
-      } else if (cleanId === 'people_search') {
-        if (actualType === 'movie') {
-          searchEngine = config.search?.providers?.people_search_movie || 'tmdb.people.search';
-        } else if (actualType === 'series') {
-          searchEngine = config.search?.providers?.people_search_series || 'tmdb.people.search';
+      // Extract original search catalog ID from the URL id (format: search.{originalId})
+      let originalSearchId = null;
+      if (id.startsWith('search.')) {
+        originalSearchId = id.substring('search.'.length);
+      } else if (id.startsWith('people_search.')) {
+        originalSearchId = id.substring('people_search.'.length);
+      } else if (id === 'gemini.search') {
+        originalSearchId = 'gemini.search';
+      }
+      
+      // Determine which search engine is being used based on original search catalog ID
+      let searchType = actualType;
+      const searchDisplayTypes = config.search?.searchDisplayTypes || {};
+      
+      const searchCatalogTypeMap = {
+        'movie': 'movie',
+        'series': 'series',
+        'anime_series': 'anime.series',
+        'anime_movie': 'anime.movie',
+        'tvdb.collections.search': 'collection',
+        'gemini.search': 'other',
+        'people_search_movie': 'movie',
+        'people_search_series': 'series'
+      };
+      
+      // If we have the original search ID, use it to determine the search type
+      if (originalSearchId && searchCatalogTypeMap[originalSearchId]) {
+        searchType = searchCatalogTypeMap[originalSearchId];
+      } else {
+        // Fallback: try to map from displayType
+        const expectedTypes = ['movie', 'series', 'anime.series', 'anime.movie', 'collection', 'other'];
+        if (!expectedTypes.includes(actualType)) {
+          for (const [searchId, originalType] of Object.entries(searchCatalogTypeMap)) {
+            if (searchDisplayTypes[searchId] === actualType) {
+              searchType = originalType;
+              break;
+            }
+          }
         }
-      } else if (actualType === 'movie') {
+      }
+      
+      let searchEngine = null;
+      if (originalSearchId === 'gemini.search' || cleanId === 'gemini.search') {
+        searchEngine = 'gemini.search';
+      } else if (originalSearchId === 'people_search_movie' || (cleanId === 'people_search' && searchType === 'movie')) {
+        searchEngine = config.search?.providers?.people_search_movie || 'tmdb.people.search';
+      } else if (originalSearchId === 'people_search_series' || (cleanId === 'people_search' && searchType === 'series')) {
+        searchEngine = config.search?.providers?.people_search_series || 'tmdb.people.search';
+      } else if (originalSearchId === 'movie' || searchType === 'movie') {
         searchEngine = config.search?.providers?.movie;
-      } else if (actualType === 'series') {
+      } else if (originalSearchId === 'series' || searchType === 'series') {
         searchEngine = config.search?.providers?.series;
-      } else if (actualType === 'anime.series') {
+      } else if (originalSearchId === 'anime_series' || searchType === 'anime.series') {
         searchEngine = config.search?.providers?.anime_series;
-      } else if (actualType === 'anime.movie') {
+      } else if (originalSearchId === 'anime_movie' || searchType === 'anime.movie') {
         searchEngine = config.search?.providers?.anime_movie;
-      } else if (actualType === 'collection') {
+      } else if (originalSearchId === 'tvdb.collections.search' || searchType === 'collection') {
         searchEngine = 'tvdb.collections.search';
       }
       config._currentSearchEngine = searchEngine;
@@ -2252,7 +2304,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       const searchKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
-        const searchResult = await getSearch(cleanId, actualType, language, extraArgs, config);
+        // Use searchType (mapped back to original) for the search function, but actualType for response
+        const searchResult = await getSearch(cleanId, searchType, language, extraArgs, config);
         return { metas: searchResult.metas || [] };
       }, searchEngine, cacheOptions);
       } else {

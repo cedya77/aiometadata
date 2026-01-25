@@ -16,7 +16,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 // Sortable Search Provider Item Component
-function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnabledChange, onengineRatingPostersChange, getSearchDisplayName, getProviderBaseLabel, getSearchCustomName, hasRPDBKey, engineRatingPostersEnabled }: {
+function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnabledChange, onengineRatingPostersChange, getSearchDisplayName, getProviderBaseLabel, getSearchCustomName, getSearchDisplayType, hasRPDBKey, engineRatingPostersEnabled }: {
   provider: { id: string; type: string; provider: string };
   onEditSearchName: (searchId: string) => void;
   onEngineEnabledChange: (engine: string, checked: boolean) => void;
@@ -24,6 +24,7 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
   getSearchDisplayName: (searchId: string, providerId: string) => string;
   getProviderBaseLabel: (providerId: string) => string;
   getSearchCustomName: (searchId: string) => string;
+  getSearchDisplayType: (searchId: string) => string;
   hasRPDBKey: boolean;
   engineRatingPostersEnabled: boolean;
 }) {
@@ -37,6 +38,7 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
 
   const searchName = getSearchDisplayName(provider.id, provider.provider);
   const providerLabel = getProviderBaseLabel(provider.provider);
+  const displayType = getSearchDisplayType(provider.id);
 
   return (
     <div
@@ -57,8 +59,10 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
         <div className="font-medium">
           {searchName}
         </div>
-          <div className="text-xs text-muted-foreground">
-          {providerLabel}
+          <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <span>{providerLabel}</span>
+          <span className="text-muted-foreground/60">•</span>
+          <span className="capitalize">{displayType}</span>
           </div>
       </div>
       <Button
@@ -93,6 +97,7 @@ export function SearchSettings() {
   const { config, setConfig, hasBuiltInTvdb } = useConfig();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState('');
   const hasGeminiKey = !!config.apiKeys?.gemini;
 
   const sensors = useSensors(
@@ -215,13 +220,40 @@ export function SearchSettings() {
     return getDefaultSearchName(searchId);
   };
 
+  // Helper function to get default type for a search catalog
+  const getDefaultSearchType = (searchId: string) => {
+    const searchTypeMap: { [key: string]: string } = {
+      'movie': 'movie',
+      'series': 'series',
+      'anime_series': 'anime.series',
+      'anime_movie': 'anime.movie',
+      'tvdb.collections.search': 'collection',
+      'gemini.search': 'other',
+      'people_search_movie': 'movie',
+      'people_search_series': 'series',
+    };
+    return searchTypeMap[searchId] || 'movie';
+  };
+
+  const getSearchCustomType = (searchId: string) =>
+    config.search.searchDisplayTypes?.[searchId]?.trim() || '';
+
+  const getSearchDisplayType = (searchId: string) => {
+    const customType = getSearchCustomType(searchId);
+    if (customType) {
+      return customType;
+    }
+    return getDefaultSearchType(searchId);
+  };
+
   const handleEditSearchName = (searchId: string) => {
     setEditingProvider(searchId);
     setEditName(getSearchCustomName(searchId) || getDefaultSearchName(searchId));
+    setEditType(getSearchCustomType(searchId) || getDefaultSearchType(searchId));
   };
 
   const handleSaveSearchName = () => {
-    if (editingProvider && editName.trim()) {
+    if (editingProvider && editName.trim() && editType.trim()) {
       setConfig(prev => ({
         ...prev,
         search: {
@@ -229,17 +261,23 @@ export function SearchSettings() {
           searchNames: {
             ...prev.search.searchNames,
             [editingProvider]: editName.trim()
+          },
+          searchDisplayTypes: {
+            ...prev.search.searchDisplayTypes,
+            [editingProvider]: editType.trim()
           }
         }
       }));
     }
     setEditingProvider(null);
     setEditName('');
+    setEditType('');
   };
 
   const handleCancelEdit = () => {
     setEditingProvider(null);
     setEditName('');
+    setEditType('');
   };
 
   // Legacy function for backward compatibility with Primary Keyword Engines section
@@ -785,6 +823,7 @@ export function SearchSettings() {
                                         getSearchDisplayName={getSearchDisplayName}
                                         getProviderBaseLabel={getProviderBaseLabel}
                                         getSearchCustomName={getSearchCustomName}
+                                        getSearchDisplayType={getSearchDisplayType}
                                         hasRPDBKey={hasRPDBKey}
                                         engineRatingPostersEnabled={config.search.engineRatingPosters?.[provider.provider] ?? true}
                                     />
@@ -801,7 +840,7 @@ export function SearchSettings() {
       <Dialog open={!!editingProvider} onOpenChange={handleCancelEdit}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Search Name</DialogTitle>
+            <DialogTitle>Edit Search Catalog</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -822,12 +861,29 @@ export function SearchSettings() {
                 placeholder="Enter custom name for this search"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-search-type">Type</Label>
+              <Input
+                id="edit-search-type"
+                value={editType}
+                onChange={(e) => setEditType(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveSearchName();
+                  } else if (e.key === 'Escape') {
+                    handleCancelEdit();
+                  }
+                }}
+                placeholder="Enter custom type for this search"
+              />
+            </div>
           </div>
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={handleCancelEdit}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSearchName} disabled={!editName.trim()}>
+            <Button onClick={handleSaveSearchName} disabled={!editName.trim() || !editType.trim()}>
               Save
             </Button>
           </div>

@@ -178,7 +178,7 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
   }
 }
 
-async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardGenres = [], prefetchedAnimeGenres = []) {
+async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardGenres = [], prefetchedAnimeGenres = [], showPrefix = false) {
   try {
     logger.info(`Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
     const listId = userCatalog.id.split(".")[1];
@@ -758,7 +758,7 @@ async function getManifest(config) {
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
           logger.debug(`Processing MDBList catalog: ${userCatalog.id}`);
-          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime);
+          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime, showPrefix);
           logger.debug(`MDBList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
@@ -918,6 +918,7 @@ async function getManifest(config) {
   const engineEnabled = config.search?.engineEnabled || {};
   const searchProviders = config.search?.providers || {};
   const searchNames = config.search?.searchNames || {};
+  const searchDisplayTypes = config.search?.searchDisplayTypes || {};
   // Backward compatibility: support old providerNames format
   const legacyProviderNames = config.search?.providerNames || {};
   const searchOrder = config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'];
@@ -966,6 +967,14 @@ async function getManifest(config) {
     
     // Fallback to default search name
     return `${prefix}${getDefaultSearchName(searchId)}`;
+  };
+
+  const getSearchCatalogType = (searchId, defaultType) => {
+    const customType = searchDisplayTypes[searchId];
+    if (customType) {
+      return customType;
+    }
+    return defaultType;
   };
 
   if (isSearchEnabled) {
@@ -1040,15 +1049,17 @@ async function getManifest(config) {
       })
       .filter(config => config.enabled)
       .forEach(config => {
-        // Use provider id as the catalog id (e.g., 'tmdb.search' or 'gemini.search')
-        const catalogId = config.provider === 'gemini.search' 
-          ? 'gemini.search' 
-          : (config.id === 'people_search_movie' || config.id === 'people_search_series')
-            ? 'people_search'
-            : "search";
+        let catalogId;
+        if (config.provider === 'gemini.search') {
+          catalogId = 'gemini.search';
+        } else if (config.id === 'people_search_movie' || config.id === 'people_search_series') {
+          catalogId = `people_search.${config.id}`;
+        } else {
+          catalogId = `search.${config.id}`;
+        }
         catalogs.push({
           id: catalogId,
-          type: config.type,
+          type: getSearchCatalogType(config.id, config.type),
           name: getSearchCatalogName(config.id, prefix, config.suffix),
           extra: [{ name: 'search', isRequired: true }]
         });

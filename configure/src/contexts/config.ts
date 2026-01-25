@@ -167,6 +167,10 @@ export interface AppConfig {
     searchNames?: {
       [searchType: string]: string;
     };
+    // Custom display types for search catalogs (overrides the default type in manifest)
+    searchDisplayTypes?: {
+      [searchType: string]: string;
+    };
     // Order of search catalogs
     searchOrder?: string[];
   };
