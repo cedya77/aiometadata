@@ -32,6 +32,48 @@ const processLogo = (logoUrl) => {
   return logoUrl.replace(/^http:/, "https:");
 };
 
+/**
+ * Creates a Date object from a date string (YYYY-MM-DD) at noon in the user's timezone
+ * @param {string} dateString - Date string in YYYY-MM-DD format
+ * @param {string} timezone - IANA timezone string (e.g., 'America/New_York', 'UTC')
+ * @returns {Date} - Date object representing noon in the specified timezone
+ */
+const createDateInTimezone = (dateString, timezone = 'UTC') => {
+  if (!dateString) return null;
+  
+  try {
+    // Parse the date string (YYYY-MM-DD)
+    const [year, month, day] = dateString.split('-').map(Number);
+    
+    // Create a date at noon UTC as a starting point
+    const noonUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    
+    // Get what time it is in the target timezone when it's noon UTC
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    const localTimeAtNoonUTC = formatter.format(noonUTC);
+    const [localHour, localMinute] = localTimeAtNoonUTC.split(':').map(Number);
+    
+    // Calculate how many hours we need to adjust from noon UTC to get noon in target timezone
+    // If it's 7:00 in target timezone when it's noon UTC, we need to go back 5 hours
+    const hoursDiff = 12 - localHour;
+    const minutesDiff = 0 - localMinute;
+    const totalMsDiff = (hoursDiff * 60 + minutesDiff) * 60 * 1000;
+    
+    // Adjust the UTC time to get noon in the target timezone
+    return new Date(noonUTC.getTime() + totalMsDiff);
+  } catch (error) {
+    logger.warn(`Error creating date in timezone ${timezone} for ${dateString}: ${error.message}`);
+    // Fallback to UTC if timezone parsing fails
+    return new Date(dateString + 'T12:00:00.000Z');
+  }
+};
+
 const findArtwork = (artworks, type, lang, config, typeToFind="image") => {
   if (lang === null) {
     return artworks?.find(a => a.type === type && a.language === null)?.[typeToFind]
@@ -370,7 +412,7 @@ async function processCollectionEntities(movieEntities, seriesEntities, langCode
             episode: ep.number,
             overview: ep.overview,
             thumbnail: ep.image ? (ep.image.startsWith('http') ? ep.image : `${TVDB_IMAGE_BASE}${ep.image}`) : `${host}/missing_thumbnail.png`,
-            released: ep.aired ? new Date(ep.aired + 'T12:00:00.000Z').toISOString() : null,
+            released: ep.aired ? createDateInTimezone(ep.aired, config.timezone || 'UTC').toISOString() : null,
             available: ep.aired ? new Date(ep.aired) < new Date() : false
           });
         }
@@ -444,7 +486,7 @@ async function processMovieEntity(entity, langCode3, config) {
       episode: 0, // Will be set by caller
       overview: translatedOverview,
       thumbnail: tvdbPosterUrl,
-      released: movie.first_release?.Date ? new Date(movie.first_release.Date + 'T12:00:00.000Z').toISOString() : null,
+      released: movie.first_release?.Date ? createDateInTimezone(movie.first_release.Date, config.timezone || 'UTC').toISOString() : null,
       available: movie.first_release?.Date ? new Date(movie.first_release.Date) < new Date() : false
     },
     genres: movie.genres?.map(g => g.name) || []
@@ -1011,7 +1053,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     const movieData = await moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates,videos", include_video_language: videoLanguages }, config);
     if (movieData) {
     imdbData.app_extras = imdbData.app_extras || {};
-    imdbData.released = movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null;
+    imdbData.released = movieData.release_date ? createDateInTimezone(movieData.release_date, config.timezone || 'UTC') : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
     const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates); 
     imdbData.app_extras.certification = certification;
@@ -1197,7 +1239,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     director: castCount !== 0 ? Utils.parseDirector(credits).join(', ') : '',
     writer: castCount !== 0 ? Utils.parseWriter(credits).join(', ') : '',
     year: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
-    released: movieData.release_date ? new Date(movieData.release_date + 'T12:00:00.000Z') : null,
+    released: movieData.release_date ? createDateInTimezone(movieData.release_date, config.timezone || 'UTC') : null,
     releaseInfo: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
     runtime: Utils.parseRunTime(movieData.runtime),
     country: Utils.parseCoutry(movieData.production_countries),
@@ -1569,7 +1611,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
         
         // Fallback to TMDB thumbnail if Top Poster not available
         if (!thumbnailUrl) {
-          const isUnaired = !ep.air_date || new Date(ep.air_date + 'T12:00:00.000Z') > new Date();
+          const isUnaired = !ep.air_date || createDateInTimezone(ep.air_date, config.timezone || 'UTC') > new Date();
           if (ep.still_path) {
             thumbnailUrl = `https://image.tmdb.org/t/p/w500${ep.still_path}`;
           } else if (isUnaired) {
@@ -1598,7 +1640,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           title: ep.name || `Episode ${ep.episode_number}`,
           season: ep.season_number,
           episode: ep.episode_number,
-          released: ep.air_date ? new Date(ep.air_date + 'T12:00:00.000Z').toISOString() : null,
+          released: ep.air_date ? createDateInTimezone(ep.air_date, config.timezone || 'UTC').toISOString() : null,
           overview: ep.overview,
           thumbnail: finalThumbnail,
           runtime: Utils.parseRunTime(ep.runtime),
@@ -1669,7 +1711,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
     releaseInfo: releaseInfo,
-    released: seriesData.first_air_date ? new Date(seriesData.first_air_date + 'T12:00:00.000Z').toISOString() : null,
+    released: seriesData.first_air_date ? createDateInTimezone(seriesData.first_air_date, config.timezone || 'UTC').toISOString() : null,
     status: seriesData.status,
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
@@ -1822,7 +1864,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     writer: castCount !== 0 ? writers.join(', ') : '',
     year: year,
     releaseInfo: year,
-    released: movieData.first_release.date ? new Date(movieData.first_release.date + 'T12:00:00.000Z').toISOString() : null,
+    released: movieData.first_release.date ? createDateInTimezone(movieData.first_release.date, config.timezone || 'UTC').toISOString() : null,
     runtime: Utils.parseRunTime(movieData.runtime),
     country: movieData.originalCountry,
     imdbRating,
@@ -2195,7 +2237,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               episode: episode.number,
               thumbnail: finalThumbnail,
               overview: episode.overview,
-              released: episode.aired ? new Date(episode.aired + 'T12:00:00.000Z') : null,
+              released: episode.aired ? createDateInTimezone(episode.aired, config.timezone || 'UTC') : null,
               available: episode.aired ? new Date(episode.aired) < new Date() : false,
               runtime: Utils.parseRunTime(episode.runtime),
           };
@@ -2250,7 +2292,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     year: year,
     releaseInfo: tvdbReleaseInfo,
-    released: tvdbShow.firstAired ? new Date(tvdbShow.firstAired + 'T12:00:00.000Z') : null,
+    released: tvdbShow.firstAired ? createDateInTimezone(tvdbShow.firstAired, config.timezone || 'UTC') : null,
     runtime: Utils.parseRunTime(tvdbShow.averageRuntime),
     status: tvdbShow.status?.name,
     country: tvdbShow.originalCountry,
@@ -2548,7 +2590,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     description: Utils.addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     year: premiered ? premiered.substring(0, 4) : "",
     releaseInfo: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
-    released: premiered ? new Date(premiered + 'T12:00:00.000Z') : null,
+    released: premiered ? createDateInTimezone(premiered, config.timezone || 'UTC') : null,
     runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
     status: tvmazeShow.status,
     country: tvmazeShow.network?.country?.name || null,
@@ -2748,7 +2790,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         }
         // If still no thumbnail: treat unaired (upcoming) episodes specially and fallback to season poster -> background -> null
         if (!thumbnailUrl) {
-          const isUnaired = !airDate || new Date(airDate + 'T12:00:00.000Z') > new Date();
+          const isUnaired = !airDate || createDateInTimezone(airDate, config.timezone || 'UTC') > new Date();
           if (isUnaired) {
             if (bestBackgroundUrl) {
               logger.debug(`[buildAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuId} Ep ${ep.mal_id}`);
@@ -2928,7 +2970,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       slug: Utils.parseSlug('series', malData.title_english || malData.title, imdbId, malData.mal_id),
       genres: malData.genres?.map(g => g.name) || [],
       year: malData.year || malData.aired?.from?.substring(0, 4),
-      released: (malData.aired?.from || malData.start_date) ? new Date((malData.aired?.from || malData.start_date) + 'T12:00:00.000Z') : null,
+      released: (malData.aired?.from || malData.start_date) ? createDateInTimezone(malData.aired?.from || malData.start_date, config.timezone || 'UTC') : null,
       runtime: Utils.parseRunTime(malData.duration),
       status: malData.status,
       imdbRating,
@@ -3038,7 +3080,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       year: kitsuData.attributes.startDate
         ? kitsuData.attributes.startDate.substring(0, 4) : null,
       released: kitsuData.attributes.startDate
-        ? new Date(kitsuData.attributes.startDate + 'T12:00:00.000Z')
+        ? createDateInTimezone(kitsuData.attributes.startDate, config.timezone || 'UTC')
         : null,
       releaseInfo: kitsuReleaseInfo,
       runtime: Utils.parseRunTime(kitsuData.attributes.episodeLength),
@@ -3206,7 +3248,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         }
         // If still no thumbnail: treat unaired (upcoming) episodes specially and fallback to season poster -> background -> null
         if (!thumbnailUrl) {
-          const isUnaired = !airDate || new Date(airDate + 'T12:00:00.000Z') > new Date();
+          const isUnaired = !airDate || createDateInTimezone(airDate, config.timezone || 'UTC') > new Date();
           if (isUnaired) {
             if (bestBackgroundUrl) {
               logger.debug(`[buildKitsuAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuData.id} Ep ${ep.number}`);
@@ -3257,7 +3299,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           id: episodeId,
           title: episodeTitle,
           released: airDate
-            ? new Date(airDate + 'T12:00:00.000Z')
+            ? createDateInTimezone(airDate, config.timezone || 'UTC')
             : null,
           overview: episodeOverview,
           thumbnail: finalThumbnail || (airDate && new Date(airDate) < new Date() ? `${host}/missing_thumbnail.png` : null),
