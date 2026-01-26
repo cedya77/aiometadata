@@ -1548,7 +1548,6 @@ async function performTraktSearch(type, query, language, config) {
           const imdbId = ids.imdb;
           const tmdbId = ids.tmdb;
           const tvdbId = ids.tvdb;
-          const traktId = ids.trakt;
 
           let allIds = {
             tmdbId: tmdbId,
@@ -2205,6 +2204,28 @@ async function getSearch(id, type, language, extra, config) {
       if (beforeCount !== afterCount) {
         logger.info(`Content filter excluded ${beforeCount - afterCount} search results`);
       }
+    }
+    
+    const beforeFilterCount = metas.length;
+    metas = metas.filter(meta => {
+      if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
+        logger.debug(`Filtering out search result with bad ID: ${meta.id}`);
+        return false;
+      }
+      if (meta.name === 'undefined' || meta.name === undefined) {
+        logger.debug(`Filtering out search result with undefined name`);
+        return false;
+      }
+      if (meta.type === 'undefined' || meta.type === undefined) {
+        logger.debug(`Filtering out search result with undefined type`);
+        return false;
+      }
+      return true;
+    });
+    
+    const afterFilterCount = metas.length;
+    if (beforeFilterCount !== afterFilterCount) {
+      logger.info(`Filtered out ${beforeFilterCount - afterFilterCount} malformed search results`);
     }
     
     return { metas };

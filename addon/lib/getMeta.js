@@ -33,8 +33,8 @@ const processLogo = (logoUrl) => {
 };
 
 /**
- * Creates a Date object from a date string (YYYY-MM-DD) at noon in the user's timezone
- * @param {string} dateString - Date string in YYYY-MM-DD format
+ * Creates a Date object from a date string (YYYY-MM-DD or ISO format) at noon in the user's timezone
+ * @param {string} dateString - Date string in YYYY-MM-DD format or ISO format (e.g., 1999-10-20T00:00:00+00:00)
  * @param {string} timezone - IANA timezone string (e.g., 'America/New_York', 'UTC')
  * @returns {Date} - Date object representing noon in the specified timezone
  */
@@ -42,8 +42,9 @@ const createDateInTimezone = (dateString, timezone = 'UTC') => {
   if (!dateString) return null;
   
   try {
+    const dateOnly = dateString.split('T')[0].split(' ')[0];
     // Parse the date string (YYYY-MM-DD)
-    const [year, month, day] = dateString.split('-').map(Number);
+    const [year, month, day] = dateOnly.split('-').map(Number);
     
     // Create a date at noon UTC as a starting point
     const noonUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
