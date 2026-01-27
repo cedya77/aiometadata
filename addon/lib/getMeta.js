@@ -1270,7 +1270,13 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     credits = { cast: [], crew: [] };
   }
 
-  const idProvider = config.providers?.anime_id_provider || 'imdb';
+  let idProvider = config.providers?.anime_id_provider || 'imdb';
+  if (idProvider === 'retain') {
+    if (stremioId.startsWith('mal:')) idProvider = 'mal';
+    else if (stremioId.startsWith('kitsu:')) idProvider = 'kitsu';
+    else if (stremioId.startsWith('tt')) idProvider = 'imdb';
+    else idProvider = 'imdb';
+  }
   const langCode = language.split('-')[0];
 
   // Get artwork based on art provider preference
@@ -1752,7 +1758,14 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const overview = overviewTranslations.find(t => t.language === langCode3)?.overview
   || overviewTranslations.find(t => t.language === 'eng')?.overview
   || movieData.overview;
-  const idProvider = config.providers?.anime_id_provider || 'kitsu';
+  
+  let idProvider = config.providers?.anime_id_provider || 'kitsu';
+  if (idProvider === 'retain') {
+    if (stremioId.startsWith('mal:')) idProvider = 'mal';
+    else if (stremioId.startsWith('kitsu:')) idProvider = 'kitsu';
+    else if (stremioId.startsWith('tt')) idProvider = 'imdb';
+    else idProvider = 'kitsu';
+  }
 
   const castCount = config.castCount;
 
@@ -2620,7 +2633,14 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     const castCount = config.castCount;  
     let videos = [];
     const seriesId = `mal:${malData.mal_id}`;
-    const idProvider = config.providers?.anime_id_provider || 'kitsu';
+    
+    let idProvider = config.providers?.anime_id_provider || 'kitsu';
+    if (idProvider === 'retain') {
+      if (stremioId.startsWith('mal:')) idProvider = 'mal';
+      else if (stremioId.startsWith('kitsu:')) idProvider = 'kitsu';
+      else if (stremioId.startsWith('tt')) idProvider = 'imdb';
+      else idProvider = 'kitsu';
+    }
 
     if (idProvider === 'kitsu' && kitsuId) {
       primaryId = `kitsu:${kitsuId}`;
@@ -3019,7 +3039,14 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
     const imdbId = mapping?.imdbId
     const malId = mapping?.malId
     const seriesId = `kitsu:${kitsuData.id}`
-    const idProvider = config.providers?.anime_id_provider || 'kitsu'
+    
+    let idProvider = config.providers?.anime_id_provider || 'kitsu'
+    if (idProvider === 'retain') {
+      if (stremioId.startsWith('mal:')) idProvider = 'mal';
+      else if (stremioId.startsWith('kitsu:')) idProvider = 'kitsu';
+      else if (stremioId.startsWith('tt')) idProvider = 'imdb';
+      else idProvider = 'kitsu';
+    }
     const _rawPosterUrl = bestPosterUrl || `${config.host}/missing_poster.png`;
 
     let kitsuReleaseInfo = kitsuData.attributes.startDate ? kitsuData.attributes.startDate.substring(0, 4) : null;

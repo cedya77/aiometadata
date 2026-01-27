@@ -29,6 +29,7 @@ const animeIdProviders = [
   { value: 'imdb', label: 'IMDb (More compatibility)' },
   { value: 'kitsu', label: 'Kitsu ID (Recommended)' },
   { value: 'mal', label: 'MyAnimeList ID' },
+  { value: 'retain', label: 'Retain Requested ID (Auto-detect)' },
 ];
 
 const tvdbSeasonTypes = [
@@ -293,7 +294,7 @@ export function ProvidersSettings() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground mt-2">
-              "IMDb" can improve compatibility as it is supported by most streaming addons. Kitsu is recommended when using MAL as meta provider.
+              "IMDb" can improve compatibility as it is supported by most streaming addons. "Retain Requested ID" automatically uses the ID type from the request (e.g., IMDb for tt123, Kitsu for kitsu:456, MAL for mal:789). Kitsu is recommended when using MAL as meta provider.
             </p>
             <p className="text-xs text-amber-600 mt-1">
               ⚠️ Using TVDB/IMDb as anime meta provider with Kitsu/MAL anime compatibility ID is considered experimental as they rely on community mappings and could contain inaccurate information.
