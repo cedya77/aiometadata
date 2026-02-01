@@ -1159,7 +1159,6 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     || images?.backdrops?.[0];
   const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config);
   const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedLandscapePoster?.file_path}` : null;
-  logger.debug(`[buildTmdbMovieResponse] tmdbLandscapePosterUrl: ${tmdbLandscapePosterUrl}`);
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
