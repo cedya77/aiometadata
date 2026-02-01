@@ -2,6 +2,7 @@ import { httpGet, httpPost } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
+import * as Utils from "./parseProps.js";
 const consola = require('consola');
 const { Agent } = require('undici');
 const crypto = require('crypto');
@@ -476,6 +477,28 @@ async function fetchSimklWatchingItems(
   }
 }
 
+/** Resolves mal_id only from native anime IDs (mal, anilist, kitsu, anidb). Does NOT resolve from imdb/tmdb/tvdb - those go through getMeta. */
+function resolveMalIdFromIds(ids: any): number | null {
+  const malId = ids.mal;
+  if (malId && typeof malId === 'number' && malId > 0) return malId;
+  const anilistId = ids.anilist;
+  if (anilistId) {
+    const m = idMapper.getMappingByAnilistId(anilistId);
+    if (m?.mal_id) return m.mal_id;
+  }
+  const kitsuId = ids.kitsu;
+  if (kitsuId) {
+    const m = idMapper.getMappingByKitsuId(kitsuId);
+    if (m?.mal_id) return m.mal_id;
+  }
+  const anidbId = ids.anidb;
+  if (anidbId) {
+    const m = idMapper.getMappingByAnidbId(anidbId);
+    if (m?.mal_id) return m.mal_id;
+  }
+  return null;
+}
+
 async function parseSimklItems(
   items: any[],
   type: 'movie' | 'series',
@@ -488,12 +511,16 @@ async function parseSimklItems(
     return [];
   }
 
-  const metas = await Promise.all(
-    items.map(async (item: any) => {
+  if (isAnimeCatalog) {
+    // Split: items with mal/kitsu/anidb/anilist -> parseAnimeCatalogMetaBatch; items with only tmdb/imdb/tvdb -> getMeta
+    const animeItems: any[] = [];
+    const getMetaItems: { item: any; itemType: string; stremioId: string; index: number }[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       try {
-        const itemType = item.type || type;
+        const itemType = (item.type || type) as 'movie' | 'series';
         const ids = item.ids || {};
-        
         const simklId = ids.simkl_id || ids.simkl;
 
         if (simklId) {
@@ -506,63 +533,142 @@ async function parseSimklItems(
             if (!ids.anilist && mapping.anilist_id) ids.anilist = mapping.anilist_id;
             if (!ids.kitsu && mapping.kitsu_id) ids.kitsu = mapping.kitsu_id;
             if (!ids.anidb && mapping.anidb_id) ids.anidb = mapping.anidb_id;
-            
             logger.debug(`[Simkl] Enriched item ${simklId} (${item.title || 'Unknown'}) with IDs from mapping: ${JSON.stringify(ids)}`);
           }
         }
-        
+
+        const malId = resolveMalIdFromIds(ids);
+        if (malId) {
+          const year = item.release_date ? new Date(item.release_date).getFullYear() : null;
+          const posterUrl = `https://wsrv.nl/?url=https://simkl.in/posters/${item.poster}_m.jpg`;
+          const airedFrom = item.release_date ? `${item.release_date}`.substring(0, 10) : (year ? `${year}-01-01` : null);
+          const years = item.metadata.match(/\b\d{4}\b/g);
+          const secondYear = years?.[1];
+          const airedTo = secondYear ? `${secondYear}-12-31` : null;
+          animeItems.push({
+            mal_id: malId,
+            type: itemType,
+            title: item.title,
+            year,
+            duration: item.runtime,
+            synopsis: item.overview,
+            images: { jpg: { large_image_url: posterUrl } },
+            aired: { from: airedFrom, to: airedTo },
+            status: item.status
+          });
+        } else {
+          const imdbId = ids.imdb;
+          const tmdbId = ids.tmdb;
+          const tvdbId = ids.tvdb;
+          const anilistId = ids.anilist;
+          const kitsuId = ids.kitsu;
+          const anidbId = ids.anidb;
+          const hasValidId = !!(ids.mal || anilistId || kitsuId || anidbId || tmdbId || imdbId || tvdbId);
+          if (hasValidId) {
+            let stremioId: string;
+            if (ids.mal) {
+              stremioId = `mal:${ids.mal}`;
+            } else if (imdbId) {
+              stremioId = typeof imdbId === 'string' && imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+            } else if (tmdbId) {
+              stremioId = `tmdb:${tmdbId}`;
+            } else if (tvdbId) {
+              stremioId = `tvdb:${tvdbId}`;
+            } else if (anilistId) {
+              stremioId = `anilist:${anilistId}`;
+            } else if (kitsuId) {
+              stremioId = `kitsu:${kitsuId}`;
+            } else {
+              stremioId = `anidb:${anidbId}`;
+            }
+            getMetaItems.push({ item, itemType, stremioId, index: i });
+          }
+        }
+      } catch (error: any) {
+        logger.warn(`Error building Simkl anime item: ${error.message}`);
+      }
+    }
+
+    const result: (any | null)[] = new Array(items.length).fill(null);
+
+    if (animeItems.length > 0) {
+      const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeItems, config, config.language || 'en-US', includeVideos);
+      let batchIdx = 0;
+      for (let i = 0; i < items.length && batchIdx < batchMetas.length; i++) {
+        const malId = resolveMalIdFromIds(items[i].ids || {});
+        if (malId) {
+          result[i] = batchMetas[batchIdx++] ?? null;
+        }
+      }
+    }
+
+    if (getMetaItems.length > 0) {
+      const getMetaMetas = await Promise.all(
+        getMetaItems.map(async ({ itemType, stremioId }) => {
+          const r = await cacheWrapMetaSmart(
+            userUUID,
+            stremioId,
+            async () => getMeta(itemType, config.language, stremioId, config, userUUID, includeVideos),
+            undefined,
+            { enableErrorCaching: true, maxRetries: 2 },
+            itemType as any,
+            includeVideos
+          );
+          return r?.meta ?? null;
+        })
+      );
+      getMetaItems.forEach((g, idx) => {
+        result[g.index] = getMetaMetas[idx];
+      });
+    }
+
+    return result.filter(Boolean);
+  }
+
+  // Standard catalog: use getMeta per item
+  const metas = await Promise.all(
+    items.map(async (item: any) => {
+      try {
+        const itemType = item.type || type;
+        const ids = item.ids || {};
+        const simklId = ids.simkl_id || ids.simkl;
+
+        if (simklId) {
+          const mapping = idMapper.getMappingBySimklId(simklId);
+          if (mapping) {
+            if (!ids.imdb && mapping.imdb_id) ids.imdb = mapping.imdb_id;
+            if (!ids.tmdb && mapping.themoviedb_id) ids.tmdb = mapping.themoviedb_id;
+            if (!ids.tvdb && mapping.tvdb_id) ids.tvdb = mapping.tvdb_id;
+            if (!ids.mal && mapping.mal_id) ids.mal = mapping.mal_id;
+            if (!ids.anilist && mapping.anilist_id) ids.anilist = mapping.anilist_id;
+            if (!ids.kitsu && mapping.kitsu_id) ids.kitsu = mapping.kitsu_id;
+            if (!ids.anidb && mapping.anidb_id) ids.anidb = mapping.anidb_id;
+            logger.debug(`[Simkl] Enriched item ${simklId} (${item.title || 'Unknown'}) with IDs from mapping: ${JSON.stringify(ids)}`);
+          }
+        }
+
         const imdbId = ids.imdb;
         const tmdbId = ids.tmdb;
         const tvdbId = ids.tvdb;
         const malId = ids.mal;
-        const anilistId = ids.anilist;
-        const kitsuId = ids.kitsu;
-        const anidbId = ids.anidb;
-        
-        // Different validation for anime vs standard catalogs
-        const hasValidId = isAnimeCatalog 
-          ? !!(malId || anilistId || kitsuId || anidbId || tmdbId || imdbId || tvdbId)
-          : !!(imdbId || tmdbId || tvdbId || malId);
-
+        const hasValidId = !!(imdbId || tmdbId || tvdbId || malId);
         if (!hasValidId) {
           logger.debug(`[Simkl] Skipping item with only simkl ID: ${JSON.stringify(item)}`);
           return null;
         }
 
         let stremioId: string | null = null;
-        
-        if (isAnimeCatalog) {
-          if (malId) {
-            stremioId = `mal:${malId}`;
-          } else if (anilistId) {
-            stremioId = `anilist:${anilistId}`;
-          } else if (kitsuId) {
-            stremioId = `kitsu:${kitsuId}`;
-          } else if (anidbId) {
-            stremioId = `anidb:${anidbId}`;
-          } else if (tmdbId) {
-            stremioId = `tmdb:${tmdbId}`;
-          } else if (imdbId) {
-            stremioId = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
-          } else if (tvdbId) {
-            stremioId = `tvdb:${tvdbId}`;
-          }
-        } else {
-          // Standard catalog prioritization
-          if (imdbId) {
-            stremioId = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
-          } else if (tmdbId) {
-            stremioId = `tmdb:${tmdbId}`;
-          } else if (tvdbId) {
-            stremioId = `tvdb:${tvdbId}`;
-          } else if (malId) {
-            stremioId = `mal:${malId}`;
-          }
+        if (imdbId) {
+          stremioId = typeof imdbId === 'string' && imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+        } else if (tmdbId) {
+          stremioId = `tmdb:${tmdbId}`;
+        } else if (tvdbId) {
+          stremioId = `tvdb:${tvdbId}`;
+        } else if (malId) {
+          stremioId = `mal:${malId}`;
         }
 
-        if (!stremioId) {
-          return null;
-        }
+        if (!stremioId) return null;
 
         const result = await cacheWrapMetaSmart(
           userUUID,
@@ -576,9 +682,7 @@ async function parseSimklItems(
           includeVideos
         );
 
-        if (result?.meta) {
-          return result.meta;
-        }
+        if (result?.meta) return result.meta;
         return null;
       } catch (error: any) {
         logger.warn(`Error parsing Simkl item: ${error.message}`);
