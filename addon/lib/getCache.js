@@ -1635,7 +1635,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          // Also strip any trailing episode identifier we append to upnext cache keys
          // Examples: 'tmdb:123_trakt456' or 'tvdb:789_S1E02' -> keep only the canonical media id
          canonicalProxyId = canonicalProxyId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');
-         cacheLogger.debug(`[Reconstruct] Rebuilding poster proxy URL for ${reconstructedMeta.id} (canonical: ${canonicalProxyId}), cached poster: ${data.poster?.substring(0, 100)}...`);
+         //cacheLogger.debug(`[Reconstruct] Rebuilding poster proxy URL for ${reconstructedMeta.id} (canonical: ${canonicalProxyId}), cached poster: ${data.poster?.substring(0, 100)}...`);
          reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
        } else {
          if (isUpNextWithEpisodeThumbnail || hasEpisodeThumbnailShape) {
