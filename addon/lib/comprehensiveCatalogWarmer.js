@@ -896,12 +896,13 @@ class ComprehensiveCatalogWarmer {
     
     // nextRun is already updated by runWarmup() if it executed
     // Calculate delay until next scheduled run
+    const MIN_RETRY_DELAY_MS = 60 * 1000;
     let delayMs;
     if (this.stats.nextRun) {
       // Calculate delay based on the scheduled nextRun time
       const nextRunTime = new Date(this.stats.nextRun).getTime();
       const now = Date.now();
-      delayMs = Math.max(0, nextRunTime - now);
+      delayMs = Math.max(MIN_RETRY_DELAY_MS, nextRunTime - now);
       
       const delayMinutes = Math.round(delayMs / 60000);
       this.log('info', `Next check scheduled in ${delayMinutes} minutes`);
@@ -909,6 +910,11 @@ class ComprehensiveCatalogWarmer {
       // Fallback to interval if nextRun is not set
       delayMs = this.config.intervalHours * 60 * 60 * 1000;
       this.log('info', `Next check scheduled in ${this.config.intervalHours} hours`);
+    }
+    
+    if (!didRun && delayMs < MIN_RETRY_DELAY_MS) {
+      delayMs = MIN_RETRY_DELAY_MS;
+      this.log('info', 'Warmup skipped - retrying in 1 minute');
     }
     
     // Schedule the next check based on calculated delay
