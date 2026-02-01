@@ -2648,7 +2648,7 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
-  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}`;l
+  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}:${landscape}`;
   
   // Check if there's already an in-flight request for this series
   if (tmdbTvImagesInflight.has(cacheKey)) {
