@@ -138,6 +138,11 @@ cp .env.example .env
 - **Description**: Time-to-live (in seconds) for caching SimKL activity checks. Reduces API spam when paginating.
 - **Example**: `SIMKL_ACTIVITIES_TTL=3600` (1 hour)
 
+### `SIMKL_TRENDING_PAGE_SIZE_OPTIONS`
+- **Default**: `50,100`
+- **Description**: Comma-separated list of page size options (1-500) shown in the UI for SimKL trending catalogs. Use this to limit choices on public instances and prevent API overload.
+- **Example**: `SIMKL_TRENDING_PAGE_SIZE_OPTIONS=50,100,200` (allow 50, 100, 200)
+
 ### `GEMINI_API_KEY`
 - **Optional**: Yes
 - **Description**: Google Gemini API key for AI search features
@@ -175,6 +180,20 @@ cp .env.example .env
 - **Description**: SOCKS proxy for Jikan API requests (if your IP is rate-limited)
 - **Format**: `socks5://user:pass@host:port` or `socks4://host:port`
 - **Example**: `MAL_SOCKS_PROXY_URL=socks5://user:pass@proxy.example.com:1080`
+
+---
+
+## ID Mapping & Ratings Update Configuration
+
+### `WIKI_MAPPER_UPDATE_INTERVAL_HOURS`
+- **Default**: `24`
+- **Description**: How often to fetch Wikidata ID mappings (series/movies) from GitHub (in hours). Uses ETag to avoid re-downloading when unchanged.
+- **Example**: `WIKI_MAPPER_UPDATE_INTERVAL_HOURS=12`
+
+### `IMDB_RATINGS_UPDATE_INTERVAL_HOURS`
+- **Default**: `24`
+- **Description**: How often to fetch IMDb ratings from the official IMDb dataset (in hours). Uses ETag to avoid re-downloading when unchanged.
+- **Example**: `IMDB_RATINGS_UPDATE_INTERVAL_HOURS=12`
 
 ---
 

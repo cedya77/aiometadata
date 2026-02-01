@@ -12,10 +12,10 @@ const logger = consola.withTag('IMDB Ratings');
 const IMDB_RATINGS_URL = 'https://datasets.imdbws.com/title.ratings.tsv.gz';
 const REDIS_RATINGS_ETAG_KEY = 'imdb-ratings-etag';
 const REDIS_RATINGS_HASH = 'imdb:ratings';
+const UPDATE_INTERVAL_HOURS = parseInt(process.env.IMDB_RATINGS_UPDATE_INTERVAL_HOURS || '24');
 const MIN_VOTES = 20;
 const REDIS_BATCH_SIZE = 10000;
 
-// Types
 export interface ImdbRating {
   rating: number;
   votes: number;
@@ -23,6 +23,7 @@ export interface ImdbRating {
 
 // State tracking
 let ratingsLoaded = false;
+let ratingsUpdateInterval: ReturnType<typeof setInterval> | null = null;
 let ratingsCount = 0;
 
 // Stats tracking
@@ -210,6 +211,21 @@ export async function initializeRatings(): Promise<void> {
 
   logger.start('Initializing IMDb ratings...');
   await downloadAndCacheIMDbRatings();
+
+  // Schedule periodic updates
+  if (!ratingsUpdateInterval) {
+    const intervalMs = UPDATE_INTERVAL_HOURS * 60 * 60 * 1000;
+    ratingsUpdateInterval = setInterval(async () => {
+      logger.info(`Running scheduled IMDb ratings update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
+      try {
+        await downloadAndCacheIMDbRatings();
+        logger.success('Scheduled IMDb ratings update completed.');
+      } catch (error) {
+        logger.error('Scheduled IMDb ratings update failed:', (error as Error).message);
+      }
+    }, intervalMs);
+    logger.info(`Scheduled periodic IMDb ratings updates every ${UPDATE_INTERVAL_HOURS} hours.`);
+  }
 }
 
 /**
@@ -294,9 +310,10 @@ export async function forceUpdateImdbRatings(): Promise<{ success: boolean; mess
 /**
  * Get stats for IMDb Ratings (dashboard)
  */
-export function getImdbRatingsStatsForDashboard(): { count: number; initialized: boolean } {
+export function getImdbRatingsStatsForDashboard(): { count: number; initialized: boolean; updateIntervalHours: number } {
   return {
     count: ratingsCount,
-    initialized: ratingsLoaded
+    initialized: ratingsLoaded,
+    updateIntervalHours: UPDATE_INTERVAL_HOURS
   };
 }

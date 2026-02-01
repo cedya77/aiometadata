@@ -289,6 +289,16 @@ const respond = function (req, res, data, opts) {
 };
 
   addon.get("/api/config", (req, res) => {
+    // Simkl trending page size options: comma-separated, e.g. "50,100" or "50,100,200,500"
+    const simklPageSizeStr = process.env.SIMKL_TRENDING_PAGE_SIZE_OPTIONS || "50,100";
+    const simklTrendingPageSizeOptions = simklPageSizeStr
+      .split(",")
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n) && n >= 1 && n <= 500)
+      .sort((a, b) => a - b);
+    const fallbackOptions = [50, 100];
+    const resolvedOptions = simklTrendingPageSizeOptions.length > 0 ? simklTrendingPageSizeOptions : fallbackOptions;
+
     const publicEnvConfig = {
       tmdb: process.env.TMDB_API || "",
       tvdb: process.env.TVDB_API_KEY || "",
@@ -303,6 +313,7 @@ const respond = function (req, res, data, opts) {
       hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
       hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
       catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
+      simklTrendingPageSizeOptions: resolvedOptions,
     };
     
     // No cache to prevent cross-instance contamination
@@ -2067,16 +2078,14 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
 
   let cleanId = id;
 
-  // Handle search catalog IDs (format: search.{originalId} or people_search.{originalId})
   if (id.startsWith('search.') || id.startsWith('people_search.')) {
-    // Extract the original search catalog ID
     const parts = id.split('.');
     if (parts.length >= 2) {
-      cleanId = parts.slice(1).join('.'); // Handle cases like search.anime_series
+      cleanId = parts.slice(1).join('.');
       if (id.startsWith('people_search.')) {
-        cleanId = 'people_search'; // Keep as people_search for routing
+        cleanId = 'people_search';
       } else {
-        cleanId = 'search'; // Keep as search for routing
+        cleanId = 'search';
       }
     }
   }
@@ -2239,7 +2248,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     let responseData;
       
       if (cleanId === 'search' || cleanId === 'gemini.search' || cleanId === 'people_search') {
-      // Extract original search catalog ID from the URL id (format: search.{originalId})
       let originalSearchId = null;
       if (id.startsWith('search.')) {
         originalSearchId = id.substring('search.'.length);
@@ -2249,7 +2257,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         originalSearchId = 'gemini.search';
       }
       
-      // Determine which search engine is being used based on original search catalog ID
       let searchType = actualType;
       const searchDisplayTypes = config.search?.searchDisplayTypes || {};
       
@@ -2264,11 +2271,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         'people_search_series': 'series'
       };
       
-      // If we have the original search ID, use it to determine the search type
       if (originalSearchId && searchCatalogTypeMap[originalSearchId]) {
         searchType = searchCatalogTypeMap[originalSearchId];
       } else {
-        // Fallback: try to map from displayType
         const expectedTypes = ['movie', 'series', 'anime.series', 'anime.movie', 'collection', 'other'];
         if (!expectedTypes.includes(actualType)) {
           for (const [searchId, originalType] of Object.entries(searchCatalogTypeMap)) {
@@ -2304,7 +2309,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       const searchKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
-        // Use searchType (mapped back to original) for the search function, but actualType for response
         const searchResult = await getSearch(cleanId, searchType, language, extraArgs, config);
         return { metas: searchResult.metas || [] };
       }, searchEngine, cacheOptions);

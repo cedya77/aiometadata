@@ -1216,6 +1216,7 @@ const configHash = hashConfig(metaConfigString);
      poster: `meta-poster:${configHash}:${metaId}`,
      rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
      background: `meta-background:${configHash}:${metaId}`,
+     landscapePoster: `meta-landscape-poster:${configHash}:${metaId}`,
      logo: `meta-logo:${configHash}:${metaId}`,
      videos: `meta-videos:${configHash}:${metaId}`,
      cast: `meta-cast:${configHash}:${metaId}`,
@@ -1271,6 +1272,7 @@ const configHash = hashConfig(metaConfigString);
       posterShape: meta.posterShape || 'poster',
       _hasPoster: !!meta.poster,
       _hasBackground: !!meta.background,
+      _hasLandscapePoster: !!meta.landscapePoster,
       _hasLogo: !!meta.logo,
       _hasVideos: !!(meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0),
       _hasLinks: !!(meta.links && Array.isArray(meta.links) && meta.links.length > 0)
@@ -1312,6 +1314,11 @@ const configHash = hashConfig(metaConfigString);
    if (meta.background) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.background, { background: meta.background }, ttl)
+     );
+   }
+   if (meta.landscapePoster) {
+     componentPromises.push(
+       cacheComponent(componentCacheKeys.landscapePoster, { landscapePoster: meta.landscapePoster }, ttl)
      );
    }
    
@@ -1490,6 +1497,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      poster: `meta-poster:${configHash}:${metaId}`,
      rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
      background: `meta-background:${configHash}:${metaId}`,
+     landscapePoster: `meta-landscape-poster:${configHash}:${metaId}`,
      logo: `meta-logo:${configHash}:${metaId}`,
      videos: `meta-videos:${configHash}:${metaId}`,
      cast: `meta-cast:${configHash}:${metaId}`,
@@ -1574,6 +1582,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
             return { errorReason: 'corrupted: missing background' };
         }
     }
+    if (bd._hasLandscapePoster) {
+        const hasLandscapePoster = availableComponents.some(c => c.componentName === 'landscapePoster');
+        if (!hasLandscapePoster) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required landscape poster.`);
+            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
+            return { errorReason: 'corrupted: missing landscape poster' };
+        }
+    }
 
     if (bd._hasLogo) {
         const hasLogo = availableComponents.some(c => c.componentName === 'logo');
@@ -1631,6 +1647,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        reconstructedMeta._rawPosterUrl = data._rawPosterUrl;
      } else if (componentName === 'background') {
        reconstructedMeta.background = data.background;
+     } else if (componentName === 'landscapePoster') {
+       reconstructedMeta.landscapePoster = data.landscapePoster;
      } else if (componentName === 'logo') {
        reconstructedMeta.logo = data.logo;
      } else if (componentName === 'videos') {
@@ -1858,23 +1876,26 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
 }
 
 function cacheWrapTvdbApi(key, method) {
+  const fullKey = `tvdb-api:${key}`;
   // Custom result classifier for TVDB API - don't cache null results
-  const tvdbResultClassifier = (result, error = null) => {
+  const tvdbResultClassifier = (result, error = null, cacheKey = null) => {
+    const keyForClassify = cacheKey || fullKey;
     if (error) {
-      return classifyResult(result, error);
+      return classifyResult(result, error, keyForClassify);
     }
-    
+
     // Don't cache null results from TVDB API - let them retry immediately
     if (result === null || result === undefined) {
       cacheLogger.debug(`TVDB Cache - Skipping cache for null result: ${key}`);
       return { type: 'SKIP_CACHE', ttl: 0 };
     }
-    
-    return classifyResult(result, error);
+
+    return classifyResult(result, error, keyForClassify);
   };
 
   return cacheWrapGlobal(`tvdb-api:${key}`, method, TVDB_API_TTL, {
-    resultClassifier: tvdbResultClassifier
+    resultClassifier: tvdbResultClassifier,
+    skipVersion: true
   });
 }
 

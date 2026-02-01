@@ -452,7 +452,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
 };
 
 const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig, catalogTTL } = useConfig();
+  const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const isTrending = catalog.id.startsWith('simkl.trending.');
   const isWatchlist = catalog.id.startsWith('simkl.watchlist.');
@@ -521,18 +521,25 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
           {isTrending && (
             <div className="space-y-2">
               <Label>Results Per Page</Label>
-              <Select 
-                value={pageSize.toString()} 
+              <Select
+                value={pageSize.toString()}
                 onValueChange={(value) => setPageSize(Number(value))}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                  <SelectItem value="200">200</SelectItem>
-                  <SelectItem value="500">500</SelectItem>
+                  {(() => {
+                    const options = (config.apiKeys as any)?.simklTrendingPageSizeOptions || [50, 100];
+                    const optionsWithCurrent = options.includes(pageSize)
+                      ? options
+                      : [...options, pageSize].sort((a, b) => a - b);
+                    return optionsWithCurrent.map((n) => (
+                      <SelectItem key={n} value={n.toString()}>
+                        {n}
+                      </SelectItem>
+                    ));
+                  })()}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">

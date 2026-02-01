@@ -422,6 +422,7 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
+        catalogId.startsWith('simkl.') ||
         catalogId === 'tmdb.top' ||
         catalogId === 'tvmaze.schedule' ||
         catalogId === 'tmdb.airing_today' ||

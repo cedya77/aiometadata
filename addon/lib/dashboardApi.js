@@ -1424,7 +1424,7 @@ class DashboardAPI {
         });
       }
 
-      // 5. Wikidata Mappings update task (manual only - no automatic scheduling)
+      // 5. Wikidata Mappings update task (scheduled every WIKI_MAPPER_UPDATE_INTERVAL_HOURS)
       try {
         const wikiMapperStats = getWikiMapperStats();
         
@@ -1434,18 +1434,33 @@ class DashboardAPI {
           );
           const wikiMapperStatus = wikiMapperLastUpdate
             ? "completed"
-            : "pending";
+            : "scheduled";
           const wikiMapperTime = wikiMapperLastUpdate
             ? this.getTimeAgo(new Date(parseInt(wikiMapperLastUpdate)))
             : "Never";
+
+          // Calculate actual next run time based on last update and interval
+          let nextRunDisplay = "Now";
+          if (wikiMapperLastUpdate) {
+            const lastUpdateTime = parseInt(wikiMapperLastUpdate);
+            const intervalMs = wikiMapperStats.updateIntervalHours * 60 * 60 * 1000;
+            const nextRunTime = lastUpdateTime + intervalMs;
+            const now = Date.now();
+            
+            if (nextRunTime > now) {
+              nextRunDisplay = this.getTimeUntil(new Date(nextRunTime));
+            } else {
+              nextRunDisplay = "Soon";
+            }
+          }
 
           tasks.push({
             id: 5,
             name: "Update Wikidata Mappings",
             status: wikiMapperStatus,
             lastRun: wikiMapperTime,
-            description: `Updates ID mappings from Wikidata (${wikiMapperStats.totalCount.toLocaleString()} entries)`,
-            nextRun: "On startup",
+            description: `Updates ID mappings from Wikidata (${wikiMapperStats.totalCount.toLocaleString()} entries, every ${wikiMapperStats.updateIntervalHours}h)`,
+            nextRun: nextRunDisplay,
             action: "restart",
             category: "mapping"
           });
@@ -1461,13 +1476,13 @@ class DashboardAPI {
           status: "error",
           lastRun: "Unknown",
           description: "Updates ID mappings from Wikidata",
-          nextRun: "On startup",
+          nextRun: "Now",
           action: "restart",
           category: "mapping"
         });
       }
 
-      // 11. IMDb Ratings update task (manual only - no automatic scheduling)
+      // 11. IMDb Ratings update task (scheduled every IMDB_RATINGS_UPDATE_INTERVAL_HOURS)
       try {
         const imdbRatingsStats = getImdbRatingsStatsForDashboard();
         
@@ -1477,18 +1492,33 @@ class DashboardAPI {
           );
           const imdbRatingsStatus = imdbRatingsLastUpdate
             ? "completed"
-            : "pending";
+            : "scheduled";
           const imdbRatingsTime = imdbRatingsLastUpdate
             ? this.getTimeAgo(new Date(parseInt(imdbRatingsLastUpdate)))
             : "Never";
+
+          // Calculate actual next run time based on last update and interval
+          let nextRunDisplay = "Now";
+          if (imdbRatingsLastUpdate) {
+            const lastUpdateTime = parseInt(imdbRatingsLastUpdate);
+            const intervalMs = imdbRatingsStats.updateIntervalHours * 60 * 60 * 1000;
+            const nextRunTime = lastUpdateTime + intervalMs;
+            const now = Date.now();
+            
+            if (nextRunTime > now) {
+              nextRunDisplay = this.getTimeUntil(new Date(nextRunTime));
+            } else {
+              nextRunDisplay = "Soon";
+            }
+          }
 
           tasks.push({
             id: 11,
             name: "Update IMDb Ratings",
             status: imdbRatingsStatus,
             lastRun: imdbRatingsTime,
-            description: `Updates IMDb ratings from official dataset (${imdbRatingsStats.count.toLocaleString()} ratings)`,
-            nextRun: "On startup",
+            description: `Updates IMDb ratings from official dataset (${imdbRatingsStats.count.toLocaleString()} ratings, every ${imdbRatingsStats.updateIntervalHours}h)`,
+            nextRun: nextRunDisplay,
             action: "restart",
             category: "mapping"
           });
@@ -1504,7 +1534,7 @@ class DashboardAPI {
           status: "error",
           lastRun: "Unknown",
           description: "Updates IMDb ratings from official dataset",
-          nextRun: "On startup",
+          nextRun: "Now",
           action: "restart",
           category: "mapping"
         });

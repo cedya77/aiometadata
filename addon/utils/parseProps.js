@@ -1430,7 +1430,7 @@ function getDefaultProvider(contentType) {
   }
 }
 
-async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaType = 'series' }, config) {
+async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaType = 'series' }, config, isLandscape = false) {
   
   // logger.debug(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
   const artProvider = resolveArtProvider('anime', 'background', config);
@@ -1490,8 +1490,8 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
     try {
       // Use the appropriate TVDB function based on media type
       const tvdbBackground = mediaType === 'movie'
-          ? await tvdb.getMovieBackground(tvdbId, config)
-          : await tvdb.getSeriesBackground(tvdbId, config);
+          ? await tvdb.getMovieBackground(tvdbId, config, isLandscape)
+          : await tvdb.getSeriesBackground(tvdbId, config, isLandscape);
         
         if (tvdbBackground) {
           // logger.debug(`[getAnimeBg] Found TVDB background for MAL ID: ${malId} (TVDB ID: ${mapping.tvdb_id}, Type: ${mediaType})`);
@@ -1513,26 +1513,10 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
   if (artProvider === 'tmdb' && tmdbId) {
     try {
       // Use TMDB background for anime
-        const tmdbBackground = mediaType === 'movie' 
-          ? await tmdb.movieImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-            const img = res?.backdrops?.[0];
-            if (img?.file_path) {
-              return `https://image.tmdb.org/t/p/original${img.file_path}`;
-            }
-            return null;
-          })
-          : await tmdb.tvImages({ id: tmdbId, include_image_language: null }, config).then(res => {
-            const img = res?.backdrops?.[0];
-            if (img?.file_path) {
-              return `https://image.tmdb.org/t/p/original${img.file_path}`;
-            }
-            return null;
-          });
-        
-        if (tmdbBackground) {
-          // logger.debug(`[getAnimeBg] Found TMDB background for MAL ID: ${malId} (TMDB ID: ${tmdbId}, Type: ${mediaType})`);
-          return tmdbBackground;
-        }
+      const batchArt = mediaType === 'movie' ? await getTmdbMovieArtBatch(tmdbId, config, isLandscape) : await getTmdbSeriesArtBatch(tmdbId, config, isLandscape);
+      if (batchArt.background) {
+        return batchArt.background;
+      }
     } catch (error) {
       logger.warn(`[getAnimeBg] TMDB background fetch failed for MAL ID ${malId}:`, error.message);
     }
@@ -2316,13 +2300,14 @@ const tmdbMovieImagesInflight = new Map();
  * @param {object} config - User configuration
  * @returns {Promise<{poster: string|null, background: string|null, logo: string|null}>}
  */
-async function getTmdbMovieArtBatch(tmdbId, config) {
+async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false) {
   if (!tmdbId) return { poster: null, background: null, logo: null };
   
   // Include language in cache key since results vary by language
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
-  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}`;
+  const landscape = isLandscape ? '1' : '0';
+  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}:${landscape}`;
   
   // Check if there's already an in-flight request for this movie
   if (tmdbMovieImagesInflight.has(cacheKey)) {
@@ -2345,10 +2330,16 @@ async function getTmdbMovieArtBatch(tmdbId, config) {
       const poster = posterImg?.file_path 
         ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
         : null;
-      const backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
+      let backgroundImg;
+      if (isLandscape) {
+        backgroundImg = selectTmdbImageByLang(res.backdrops, config);
+      }
+      else {
+      backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
       || res.backdrops?.find(b => b.iso_639_1 === null)
       || res.backdrops?.find(b => b.iso_639_1 === langCode)
       || res.backdrops?.[0];
+      }
       const background = backgroundImg?.file_path
         ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
         : null;
@@ -2378,13 +2369,13 @@ async function getTmdbMovieArtBatch(tmdbId, config) {
 /**
  * Get movie poster with art provider preference
  */
-async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
+async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config, isLandscape = false) {
   const artProvider = resolveArtProvider('movie', 'poster', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
       if(tvdbId) {
-      const tvdbPoster = await tvdb.getMoviePoster(tvdbId, config);
+      const tvdbPoster = await tvdb.getMoviePoster(tvdbId, config, isLandscape);
       if (tvdbPoster) {
         // logger.debug(`[getMoviePoster] Found TVDB poster for movie (TVDB ID: ${tvdbId})`);
           return tvdbPoster;
@@ -2394,7 +2385,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
         if(!tmdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'movie', config);
         if(mappedIds.tvdbId) {
-          const tvdbPoster = await tvdb.getMoviePoster(mappedIds.tvdbId, config);
+          const tvdbPoster = await tvdb.getMoviePoster(mappedIds.tvdbId, config, isLandscape);
           // logger.debug(`[getMoviePoster] Found TVDB poster via ID mapping for movie (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbPoster;
         }
@@ -2432,7 +2423,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbMovieArtBatch(tmdbId, config);
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config, isLandscape);
         if (batchArt.poster) {
           return batchArt.poster;
         }
@@ -2441,7 +2432,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config);
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config, isLandscape);
           if (batchArt.poster) {
             return batchArt.poster;
           }
@@ -2650,13 +2641,14 @@ const tmdbTvImagesInflight = new Map();
  * @param {object} config - User configuration
  * @returns {Promise<{poster: string|null, background: string|null, logo: string|null}>}
  */
-async function getTmdbSeriesArtBatch(tmdbId, config) {
+async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
   if (!tmdbId) return { poster: null, background: null, logo: null };
   
   // Include language in cache key since results vary by language
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
-  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}`;
+  const landscape = isLandscape ? '1' : '0';
+  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}:${landscape}`;
   
   // Check if there's already an in-flight request for this series
   if (tmdbTvImagesInflight.has(cacheKey)) {
@@ -2680,11 +2672,16 @@ async function getTmdbSeriesArtBatch(tmdbId, config) {
         ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
         : null;
       
-      // Extract background (first backdrop, no language filtering needed)
-      const backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
-      || res.backdrops?.find(b => b.iso_639_1 === null)
-      || res.backdrops?.find(b => b.iso_639_1 === langCode)
-      || res.backdrops?.[0];
+      let backgroundImg;
+      if (isLandscape) {
+        backgroundImg = selectTmdbImageByLang(res.backdrops, config);
+      }
+      else {
+      backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
+        || res.backdrops?.find(b => b.iso_639_1 === null)
+        || res.backdrops?.find(b => b.iso_639_1 === langCode)
+        || res.backdrops?.[0];
+      }
       const background = backgroundImg?.file_path
         ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
         : null;
@@ -2799,13 +2796,13 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
 /**
  * Get series background with art provider preference
  */
-async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config) {
+async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config, isLandscape = false) {
   const artProvider = resolveArtProvider('series', 'background', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
     try {
       if(tvdbId) {
-      const tvdbBackground = await tvdb.getSeriesBackground(tvdbId, config);
+      const tvdbBackground = await tvdb.getSeriesBackground(tvdbId, config, isLandscape);
       if (tvdbBackground) {
         // logger.debug(`[getSeriesBackground] Found TVDB background for series (TVDB ID: ${tvdbId})`);
           return tvdbBackground;
@@ -2815,7 +2812,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
         if(!tmdbId) return fallbackBackgroundUrl;
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config, null, ['tvdb']);
         if(mappedIds.tvdbId) {
-          const tvdbBackground = await tvdb.getSeriesBackground(mappedIds.tvdbId, config);
+          const tvdbBackground = await tvdb.getSeriesBackground(mappedIds.tvdbId, config, isLandscape);
           // logger.debug(`[getSeriesBackground] Found TVDB background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
           return tvdbBackground;
         }
@@ -2836,7 +2833,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       } else if(tmdbId) {
         const mappedIds = await resolveAllIds(`tmdb:${tmdbId}`, 'series', config);
         if(mappedIds.tvdbId) {
-          const bg = await fanart.getBestSeriesBackground(mappedIds.tvdbId, config);
+          const bg = await fanart.getBestSeriesBackground(mappedIds.tvdbId, config, isLandscape);
           if (bg) {
             // logger.debug(`[getSeriesBackground] Found Fanart.tv background via ID mapping for series (TMDB ID: ${tmdbId} → TVDB ID: ${mappedIds.tvdbId})`);
             return bg;
@@ -2852,7 +2849,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config);
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config, isLandscape);
         if (batchArt.background) {
           return batchArt.background;
         }
@@ -2860,7 +2857,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       else {
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config);
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config, isLandscape);
           if (batchArt.background) {
             return batchArt.background;
           }
@@ -3088,7 +3085,6 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1') {
   // If englishArtOnly is enabled, force English language selection
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
   const targetCountry = config.language.split('-')[1]?.toUpperCase() || 'US';
-  
   // Sort by vote_average descending
   return (
     images.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||

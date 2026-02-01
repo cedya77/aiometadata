@@ -718,16 +718,16 @@ async function getCinemetaVideosForImdbSeries(imdbId) {
     logger.debug(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
     const response = await httpGet(cinemetaUrl);
-    const cinemetaData = response.data.meta;
-    
-    if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {
+    const cinemetaData = response?.data?.meta;
+
+    if (!cinemetaData?.videos || !Array.isArray(cinemetaData.videos)) {
       logger.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
       return null;
     }
-    
+
     logger.debug(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
     return cinemetaData.videos;
-    
+
   } catch (error) {
     logger.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
     return null;
@@ -746,16 +746,16 @@ async function getCinemetaVideosForImdbIoSeries(imdbId) {
     logger.debug(`[ID Mapper] Fetching Cinemeta videos for IMDB ${imdbId}: ${cinemetaUrl}`);
     
     const response = await httpGet(cinemetaUrl);
-    const cinemetaData = response.data.meta;
-    
-    if (!cinemetaData.videos || !Array.isArray(cinemetaData.videos)) {
+    const cinemetaData = response?.data?.meta;
+
+    if (!cinemetaData?.videos || !Array.isArray(cinemetaData.videos)) {
       logger.warn(`[ID Mapper] No videos array found in Cinemeta data for ${imdbId}`);
       return null;
     }
-    
+
     logger.debug(`[ID Mapper] Successfully fetched ${cinemetaData.videos.length} videos from Cinemeta for IMDB ${imdbId}`);
     return cinemetaData.videos;
-    
+
   } catch (error) {
     logger.error(`[ID Mapper] Error fetching Cinemeta data for IMDB ${imdbId}:`, error.message);
     return null;

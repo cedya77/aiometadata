@@ -93,7 +93,7 @@ const findArtwork = (artworks, type, lang, config, typeToFind="image") => {
 };
 
 async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgroundUrl, type) {
-  const [background, poster, logo, imdbRatingValue] = await Promise.all([
+  const [background, poster, logo, imdbRatingValue, landscapePosterUrl] = await Promise.all([
     Utils.getAnimeBg({
       tvdbId: allIds?.tvdbId,
       tmdbId: allIds?.tmdbId,
@@ -117,10 +117,18 @@ async function getAnimeArtwork(allIds, config, fallbackPosterUrl, fallbackBackgr
       tmdbId: allIds?.tmdbId,
       mediaType: type
     }, config),
-    getImdbRating(allIds?.imdbId, type)
+    getImdbRating(allIds?.imdbId, type),
+    Utils.getAnimeBg({
+      tvdbId: allIds?.tvdbId,
+      tmdbId: allIds?.tmdbId,
+      malId: allIds?.malId,
+      imdbId: allIds?.imdbId,
+      malPosterUrl: fallbackBackgroundUrl,
+      mediaType: type
+    }, config, true)
   ]);
 
-  return { background, poster, logo, imdbRatingValue };
+  return { background, poster, logo, imdbRatingValue, landscapePosterUrl };
 }
 
 
@@ -852,14 +860,15 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }
       const details = kitsuDetails.data[0];
       const artwork = await getAnimeArtwork(allIds, config, details.attributes?.posterImage?.original, details.attributes?.coverImage?.original, type);
-      const { background, poster, logo } = artwork;
+      const { background, poster, logo, landscapePosterUrl } = artwork;
       let episodes = kitsuDetails.included?.filter(item => item.type === 'episodes') || [];
       let genres = kitsuDetails.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
       return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, {
         mapping: allIds,
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
-        bestLogoUrl: logo
+        bestLogoUrl: logo,
+        bestLandscapePosterUrl: landscapePosterUrl
       });
     } catch (kitsuError) {
       logger.warn(`[AnimeMeta] Kitsu provider failed: ${kitsuError.message}`);
@@ -879,12 +888,13 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
         throw new Error(`Jikan returned no core details for MAL ID ${allIds.malId}.`);
       }
       const artwork = await getAnimeArtwork(allIds, config, details.images?.jpg?.large_image_url, details.images?.jpg?.large_image_url, type);
-      const { background, poster, logo } = artwork;
+      const { background, poster, logo, landscapePosterUrl } = artwork;
       return await buildAnimeResponse(stremioId, details, language, characters, episodes, config, userUUID, {
         mapping: allIds,
         bestBackgroundUrl: background,
         bestPosterUrl: poster,
-        bestLogoUrl: logo
+        bestLogoUrl: logo,
+        bestLandscapePosterUrl: landscapePosterUrl
       });
     } catch (malError) {
       logger.error(`[AnimeMeta] CRITICAL: Final fallback 'mal' also failed for ${stremioId}: ${malError.message}`);
@@ -908,7 +918,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   const { tmdbId, tvdbId, imdbId } = allIds || {};
   const { poster: imdbPosterUrl, background: imdbBackgroundUrl, logo: imdbLogoUrl } = imdbData;
 
-  let poster, background, logoUrl;
+  let poster, background, logoUrl, landscapePosterUrl;
 
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -917,11 +927,13 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     poster = artwork.poster;
     background = artwork.background;
     logoUrl = artwork.logo;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl] = await Promise.all([
+    [poster, background, logoUrl, landscapePosterUrl] = await Promise.all([
       Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
       Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
-      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config)
+      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
+      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: landscapePosterUrl }, config, true)
     ]);
   }
 
@@ -1018,7 +1030,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   const { tmdbId, tvdbId, imdbId } = allIds || {};
   const { poster: imdbPosterUrl, background: imdbBackgroundUrl, logo: imdbLogoUrl } = imdbData;
 
-  let poster, background, logoUrl;
+  let poster, background, logoUrl, landscapePosterUrl;
 
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -1027,11 +1039,13 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     poster = artwork.poster;
     background = artwork.background;
     logoUrl = artwork.logo;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl] = await Promise.all([
+    [poster, background, logoUrl, landscapePosterUrl] = await Promise.all([
       Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
       Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
-      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config)
+      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
+      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: landscapePosterUrl }, config, true)
     ]);
   }
 
@@ -1143,11 +1157,13 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === langCode)
     || images?.backdrops?.[0];
+  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config);
+  const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedLandscapePoster?.file_path}` : null;
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   
-  let poster, background, logoUrl, imdbRatingValue;
+  let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
   
   if (isAnime) {
     const artwork = await getAnimeArtwork(allIds, config, tmdbPosterUrl, tmdbBackgroundUrl, 'movie');
@@ -1155,12 +1171,14 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     background = artwork.background;
     logoUrl = artwork.logo;
     imdbRatingValue = artwork.imdbRatingValue;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-      Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config, isAnime),
-      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config, isAnime),
-      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config, isAnime),
-      getImdbRating(imdbId, 'movie')
+    [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
+      Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
+      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
+      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config),
+      getImdbRating(imdbId, 'movie'),
+      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbLandscapePosterUrl }, config, true)
   ]);
   }
   
@@ -1248,6 +1266,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     _rawPosterUrl: _rawPosterUrl,
     background: background,
+    landscapePoster: landscapePosterUrl,
     logo: processLogo(logoUrl),
     trailers: finalTrailers,
     trailerStreams: finalTrailerStreams,
@@ -1280,10 +1299,12 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === langCode)
     || images?.backdrops?.[0];
+  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config);
+  const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedLandscapePoster?.file_path}` : null;
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
-  let poster, background, logoUrl, imdbRatingValue;
+  let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
   
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -1293,12 +1314,14 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     background = artwork.background;
     logoUrl = artwork.logo;
     imdbRatingValue = artwork.imdbRatingValue;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-      Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config, isAnime),
-      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config, isAnime),
-      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config, isAnime),
-      getImdbRating(imdbId, 'series')
+    [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
+      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
+      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config),
+      getImdbRating(imdbId, 'series'),
+      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbLandscapePosterUrl }, config, true)
   ]);
   }
   // log arts 
@@ -1718,6 +1741,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     _rawPosterUrl: _rawPosterUrl,
     background: background,
+    landscapePoster: landscapePosterUrl,
     logo: logoUrl,
     trailers: finalTrailers,
     links: links,
@@ -1760,7 +1784,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   const tvdbPosterUrl = findArtwork(movieData.artworks, 14, langCode3, config) || `${host}/missing_poster.png`;
   const tvdbBackgroundUrl = findArtwork(movieData.artworks, 15, null, config);
   const tvdbLogoUrl = findArtwork(movieData.artworks, 25, langCode3, config);
-  let poster, background, logoUrl, imdbRatingValue;
+  const tvdbLandscapePosterUrl = findArtwork(movieData.artworks, 15, langCode3, config);
+  let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
   
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -1770,12 +1795,14 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     background = artwork.background;
     logoUrl = artwork.logo;
     imdbRatingValue = artwork.imdbRatingValue;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-      Utils.getMoviePoster({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config, isAnime),
-      Utils.getMovieBackground({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config, isAnime),
-      Utils.getMovieLogo({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config, isAnime),
-      getImdbRating(imdbId, 'movie')
+    [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
+      Utils.getMoviePoster({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config),
+      Utils.getMovieBackground({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config),
+      Utils.getMovieLogo({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config),
+      getImdbRating(imdbId, 'movie'),
+      Utils.getMovieBackground({ tmdbId: tmdbId?.toString(), tvdbId: tvdbId?.toString(), imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbLandscapePosterUrl }, config, true)
     ]);
   }
   const imdbRating = imdbRatingValue || "N/A";
@@ -1872,6 +1899,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     _rawPosterUrl: _rawPosterUrl,
     background: background,
+    landscapePoster: landscapePosterUrl,
     logo: processLogo(logoUrl),
     trailers: trailers,
     trailerStreams: trailerStreams,
@@ -1989,7 +2017,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const tvdbPosterUrl = findArtwork(tvdbShow.artworks, 2, langCode3, config) || `${host}/missing_poster.png`;
   const tvdbBackgroundUrl = findArtwork(tvdbShow.artworks, 3, null, config);
   const tvdbLogoUrl = findArtwork(tvdbShow.artworks, 23, langCode3, config);
-  let poster, background, logoUrl, imdbRatingValue;
+  const tvdbLandscapePosterUrl = findArtwork(tvdbShow.artworks, 3, langCode3, config);
+  let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
   // console log art provider preference
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -1999,12 +2028,14 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     background = artwork.background;
     logoUrl = artwork.logo;
     imdbRatingValue = artwork.imdbRatingValue;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config, isAnime),
-      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config, isAnime),
-      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config, isAnime),
-      getImdbRating(imdbId, 'series')
+    [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackPosterUrl: tvdbPosterUrl }, config),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbBackgroundUrl }, config),
+      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackLogoUrl: tvdbLogoUrl }, config),
+      getImdbRating(imdbId, 'series'),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvdb', fallbackBackgroundUrl: tvdbLandscapePosterUrl }, config, true)
   ]);
   }
   const imdbRating = imdbRatingValue || "N/A";
@@ -2301,6 +2332,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
     _rawPosterUrl: _rawPosterUrl,
     background: background, 
+    landscapePoster: landscapePosterUrl,
     logo: logoUrl,
     videos: videos,
     trailers: trailers,
@@ -2355,7 +2387,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   const tvmazePosterUrl = image?.original ? `${image.original}` : null;
   const tvmazeBackgroundUrl = image?.original ? `${image.original}` : null;
   const tvmazeLogoUrl = null;
-  let poster, background, logoUrl, imdbRatingValue;
+  let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
   
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -2365,12 +2397,14 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     background = artwork.background;
     logoUrl = artwork.logo;
     imdbRatingValue = artwork.imdbRatingValue;
+    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, imdbRatingValue] = await Promise.all([
-      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackPosterUrl: tvmazePosterUrl }, config, isAnime),
-      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackBackgroundUrl: tvmazeBackgroundUrl }, config, isAnime),
-      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackLogoUrl: tvmazeLogoUrl }, config, isAnime),
-    getImdbRating(imdbId, 'series')
+    [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
+      Utils.getSeriesPoster({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackPosterUrl: tvmazePosterUrl }, config),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackBackgroundUrl: tvmazeBackgroundUrl }, config),
+      Utils.getSeriesLogo({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackLogoUrl: tvmazeLogoUrl }, config),
+      getImdbRating(imdbId, 'series'),
+      Utils.getSeriesBackground({ tmdbId: tmdbId, tvdbId: tvdbId, imdbId: imdbId, metaProvider: 'tvmaze', fallbackBackgroundUrl: landscapePosterUrl }, config, true)
   ]);
   }
   const imdbRating = imdbRatingValue || tvmazeShow.rating?.average?.toFixed(1) || "N/A";
@@ -2599,6 +2633,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster, 
     _rawPosterUrl: _rawPosterUrl,
     background: background,
+    landscapePoster: landscapePosterUrl,
     logo: processLogo(logoUrl), 
     videos,
     links: links,
@@ -2612,7 +2647,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
 
 async function buildAnimeResponse(stremioId, malData, language, characterData, episodeData, config, userUUID, enrichmentData = {}) {
   try {
-    const { mapping, bestBackgroundUrl } = enrichmentData;
+    const { mapping, bestBackgroundUrl, bestLandscapePosterUrl } = enrichmentData;
     const stremioType = malData.type.toLowerCase() === 'movie' ? 'movie' : 'series';
     const imdbId = mapping?.imdbId;
     const kitsuId = mapping?.kitsuId;
@@ -2978,6 +3013,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       poster: finalPosterUrl,
       _rawPosterUrl: _rawPosterUrl,
       background: bestBackgroundUrl,
+      landscapePoster: bestLandscapePosterUrl,
       logo: enrichmentData.bestLogoUrl,
       links: links.filter(Boolean),
       trailers: trailers,
@@ -3009,7 +3045,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
 
 async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObject, episodeData, config, userUUID, enrichmentData = {}) {
   try {
-    const { mapping, bestBackgroundUrl, bestPosterUrl, bestLogoUrl } = enrichmentData
+    const { mapping, bestBackgroundUrl, bestPosterUrl, bestLogoUrl, bestLandscapePosterUrl } = enrichmentData
 
     const stremioType =
       kitsuData.attributes.subtype?.toLowerCase() === 'movie' ? 'movie' : 'series'
@@ -3095,6 +3131,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       background:
         bestBackgroundUrl ||
         kitsuData.attributes.coverImage?.original,
+      landscapePoster: bestLandscapePosterUrl,
       logo: bestLogoUrl,
       links: links,
       trailers: [],

@@ -523,14 +523,21 @@ async function createSimklCatalog(userCatalog, showPrefix = false) {
     
     // Add genre (interval) option for trending catalogs - using "genre" to match TMDB trending pattern
     if (userCatalog.id.startsWith('simkl.trending.')) {
-      const intervalOptions = ['today', 'week', 'month'];
+      const intervalOptions = userCatalog.showInHome ? ['today', 'week', 'month'] : ['None', 'today', 'week', 'month'];
       const defaultInterval = userCatalog.metadata?.interval || 'today';
       
       catalog.extra.unshift({
         name: "genre",
         options: intervalOptions,
-        isRequired: false,
-        default: defaultInterval
+        isRequired: !userCatalog.showInHome,
+        default: userCatalog.showInHome ? defaultInterval : 'None'
+      });
+    } else if (!userCatalog.showInHome) {
+      catalog.extra.unshift({
+        name: "genre",
+        options: ["None"],
+        isRequired: true,
+        default: "None"
       });
     }
         

@@ -957,12 +957,19 @@ async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<st
 }
 
 
-async function getSeriesBackground(seriesId: string, config: UserConfig): Promise<string | null> {
+async function getSeriesBackground(seriesId: string, config: UserConfig, isLandscape = false): Promise<string | null> {
   try {
     const seriesData = await getSeriesExtended(seriesId, config);
     if (seriesData && seriesData.artworks) {
       // Look for background artwork (type 3 is typically background)
-      const backgroundArtwork = findArtwork(seriesData.artworks, 3, null, config);
+      let langCode3;
+      if (isLandscape) {
+        const langCode = config.language?.split('-')[0];
+        if (langCode) {
+          langCode3 = await to3LetterCode(langCode, config);
+        }
+      }
+      const backgroundArtwork = findArtwork(seriesData.artworks, 3, langCode3, config);
       logger.debug(`Found background artwork for series ${seriesId}: ${backgroundArtwork}`);
       return backgroundArtwork;
     }
@@ -992,12 +999,19 @@ async function getMoviePoster(movieId: string, config: UserConfig): Promise<stri
   }
 }
 
-async function getMovieBackground(movieId: string, config: UserConfig): Promise<string | null> {
+async function getMovieBackground(movieId: string, config: UserConfig, isLandscape = false): Promise<string | null> {
   try {
     const movieData = await getMovieExtended(movieId, config);
     if (movieData && movieData.artworks) {
+      let langCode3;
+      if (isLandscape) {
+        const langCode = config.language?.split('-')[0];
+        if (langCode) {
+          langCode3 = await to3LetterCode(langCode, config);
+        }
+      }
       // Look for background artwork (type 15 is background for movies)
-      const backgroundArtwork = findArtwork(movieData.artworks, 15, null, config);
+      const backgroundArtwork = findArtwork(movieData.artworks, 15, langCode3, config);
       if (backgroundArtwork) {
         return backgroundArtwork;
       }

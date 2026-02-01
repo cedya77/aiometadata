@@ -570,15 +570,6 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           <p className="text-sm font-medium mb-2">Movies</p>
                           <div className="grid grid-cols-2 gap-2">
                             <Button 
-                              onClick={() => handleAddWatchlistCatalog('movies', 'watching')} 
-                              variant="outline" 
-                              size="sm"
-                              disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.watchlist.movies.watching')}
-                            >
-                              <Plus className="mr-2 h-3 w-3" />
-                              Watching
-                            </Button>
-                            <Button 
                               onClick={() => handleAddWatchlistCatalog('movies', 'plantowatch')} 
                               variant="outline" 
                               size="sm"

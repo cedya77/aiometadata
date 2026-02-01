@@ -29,6 +29,7 @@ const moviesTvdbToAll = new Map<number, IdMap>();
 const moviesTmdbToAll = new Map<number, IdMap>();
 
 let isInitialized = false;
+let updateInterval: ReturnType<typeof setInterval> | null = null;
 
 async function downloadCsv(url: string, cachePath: string, etagKey: string, maxRetries: number = 3): Promise<string> {
   // Check ETag first
@@ -229,30 +230,48 @@ function loadMappings(csvData: string, maps: { imdb: Map<string, IdMap>, tvdb: M
   console.log(`[Wiki Mapper] Loaded ${validCount} valid mappings, skipped ${invalidCount} invalid entries`);
 }
 
+async function refreshMappings(): Promise<void> {
+  const [seriesCsv, moviesCsv] = await Promise.all([
+    downloadCsv(REMOTE_SERIES_URL, SERIES_CACHE, 'tv_mappings_etag'),
+    downloadCsv(REMOTE_MOVIES_URL, MOVIES_CACHE, 'movie_mappings_etag')
+  ]);
+
+  loadMappings(seriesCsv, { imdb: seriesImdbToAll, tvdb: seriesTvdbToAll, tmdb: seriesTmdbToAll, tvmaze: seriesTvmazeToAll });
+  loadMappings(moviesCsv, { imdb: moviesImdbToAll, tvdb: moviesTvdbToAll, tmdb: moviesTmdbToAll });
+
+  if (redis && redis.status === 'ready') {
+    await redis.set('maintenance:last_wiki_mapper_update', Date.now().toString());
+  }
+}
+
 async function initialize() {
   if (isInitialized) return;
 
   try {
-    const [seriesCsv, moviesCsv] = await Promise.all([
-      downloadCsv(REMOTE_SERIES_URL, SERIES_CACHE, 'tv_mappings_etag'),
-      downloadCsv(REMOTE_MOVIES_URL, MOVIES_CACHE, 'movie_mappings_etag')
-    ]);
-
-    loadMappings(seriesCsv, { imdb: seriesImdbToAll, tvdb: seriesTvdbToAll, tmdb: seriesTmdbToAll, tvmaze: seriesTvmazeToAll });
-    loadMappings(moviesCsv, { imdb: moviesImdbToAll, tvdb: moviesTvdbToAll, tmdb: moviesTmdbToAll });
+    await refreshMappings();
 
     isInitialized = true;
-    
-    // Write maintenance timestamp
-    if (redis && redis.status === 'ready') {
-      await redis.set('maintenance:last_wiki_mapper_update', Date.now().toString());
+
+    // Schedule periodic updates
+    if (!updateInterval) {
+      const intervalMs = UPDATE_INTERVAL_HOURS * 60 * 60 * 1000;
+      updateInterval = setInterval(async () => {
+        console.log(`[Wiki Mapper] Running scheduled update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
+        try {
+          await refreshMappings();
+          console.log('[Wiki Mapper] Scheduled update completed successfully.');
+        } catch (error: any) {
+          console.error(`[Wiki Mapper] Scheduled update failed: ${error.message}`);
+        }
+      }, intervalMs);
+
+      console.log(`[Wiki Mapper] Scheduled periodic updates every ${UPDATE_INTERVAL_HOURS} hours.`);
     }
-    
+
     console.log('[Wiki Mapper] Initialization complete');
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
     console.error(`[Wiki Mapper] Initialization failed: ${errorMessage}`);
-    // Re-throw with a more descriptive error message
     throw new Error(`Wiki Mappings failed to initialize: ${errorMessage}`);
   }
 }
@@ -422,12 +441,13 @@ export async function forceUpdateWikiMappings(): Promise<{ success: boolean; mes
  * Get stats for the Wiki Mapper (for dashboard display)
  * @returns {Object} Stats object with counts and initialized status
  */
-export function getWikiMapperStats(): { seriesCount: number; moviesCount: number; totalCount: number; initialized: boolean } {
+export function getWikiMapperStats(): { seriesCount: number; moviesCount: number; totalCount: number; initialized: boolean; updateIntervalHours: number } {
   return {
     seriesCount: seriesImdbToAll.size,
     moviesCount: moviesImdbToAll.size,
     totalCount: seriesImdbToAll.size + moviesImdbToAll.size,
-    initialized: isInitialized
+    initialized: isInitialized,
+    updateIntervalHours: UPDATE_INTERVAL_HOURS
   };
 }
 
