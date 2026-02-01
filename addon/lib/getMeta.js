@@ -976,6 +976,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
           category: 'Genres',
           url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${language}`
         };
+        if (!Array.isArray(imdbData.links)) imdbData.links = [];
         imdbData.links.unshift(certificationLink);
       }
     }
@@ -1078,6 +1079,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
         category: 'Genres',
         url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
       };
+      if (!Array.isArray(imdbData.links)) imdbData.links = [];
       imdbData.links.unshift(certificationLink);
     }
     if (movieData.videos) {
@@ -1866,7 +1868,9 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
   }
   }
-  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb')];
+  let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb');
+  if (!Array.isArray(links)) links = [];
+  else links = [...links];
   if (castCount !== 0) {
     links.push(...directorLinks, ...writerLinks);
   }
@@ -2297,7 +2301,9 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
 
   const certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
-  let links = [...Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb')];
+  let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb');
+  if (!Array.isArray(links)) links = [];
+  else links = [...links];
   if (castCount !== 0) {
     links.push(...directorLinks, ...writerLinks);
   }
