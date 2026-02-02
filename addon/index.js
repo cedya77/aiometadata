@@ -2585,8 +2585,17 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       return { metas: metas || [] };
     }, undefined, cacheOptions);
     }
-    
-    if (config.hideUnreleasedDigital && responseData?.metas && Array.isArray(responseData.metas)) {
+    // Digital release filter for catalog ids only not for search results
+    if (config.hideUnreleasedDigital && !['search', 'people_search', 'gemini.search'].includes(cleanId) && responseData?.metas && Array.isArray(responseData.metas)) {
+      const { isReleasedDigitally } = require("./utils/parseProps");
+      const beforeCount = responseData.metas.length;
+      responseData.metas = responseData.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
+      const afterCount = responseData.metas.length;
+      if (beforeCount !== afterCount) {
+        consola.debug(`[Catalog Route] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    if (config.hideUnreleasedDigitalSearch && ['search', 'people_search', 'gemini.search'].includes(cleanId) && responseData?.metas && Array.isArray(responseData.metas)) {
       const { isReleasedDigitally } = require("./utils/parseProps");
       const beforeCount = responseData.metas.length;
       responseData.metas = responseData.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
