@@ -1225,9 +1225,6 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   );
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
   let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
-  if (castCount !== 0) {
-    links.push(...directorLinks, ...writerLinks);
-  }
   if (certification && config.displayAgeRating) {
     const certificationLink = {
       name: certification,
