@@ -542,7 +542,10 @@ async function parseSimklItems(
           const year = item.release_date ? new Date(item.release_date).getFullYear() : null;
           const posterUrl = `https://wsrv.nl/?url=https://simkl.in/posters/${item.poster}_m.jpg`;
           const airedFrom = item.release_date ? `${item.release_date}`.substring(0, 10) : (year ? `${year}-01-01` : null);
-          const years = item.metadata.match(/\b\d{4}\b/g);
+          const years = typeof item.metadata === "string"
+            ? item.metadata.match(/\b\d{4}\b/g)
+            : null;
+
           const secondYear = years?.[1];
           const airedTo = secondYear ? `${secondYear}-12-31` : null;
           animeItems.push({

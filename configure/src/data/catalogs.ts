@@ -101,7 +101,7 @@ export const allSearchProviders: SearchProviderDefinition[] = [
   { value: 'tvdb.search', label: 'TheTVDB Search', mediaType: ['movie', 'series'] },
   { value: 'tvmaze.search', label: 'TVmaze Search', mediaType: ['series'] },
   { value: 'trakt.search', label: 'Trakt Search', mediaType: ['movie', 'series'] },
-
+  { value: 'mdblist.search', label: 'MDBList Search', mediaType: ['movie', 'series'] },
   // People Search Providers
   { value: 'tmdb.people.search', label: 'TMDB People Search', mediaType: ['movie', 'series'] },
   { value: 'tvdb.people.search', label: 'TheTVDB People Search', mediaType: ['movie', 'series'] },

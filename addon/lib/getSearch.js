@@ -1709,6 +1709,161 @@ async function performTraktSearch(type, query, language, config) {
   }
 }
 
+async function performMdbListSearch(type, query, language, config) {
+  const startTime = Date.now();
+  logger.info(`Starting MDBList search for type "${type}" with query: "${query}"`);
+  if (!config.apiKeys.mdblist) {
+    logger.error(`MDBList API key not found in config`);
+    return [];
+  }
+  try {
+    const { fetchMdbListSearchItems, fetchMDBListBatchMediaInfo }  = require('../utils/mdbList.js');
+
+    const searchType = type === 'movie' ? 'movie' : 'show';
+    const rawResults = new Map();
+    
+    const addRawResult = (media) => {
+      if (media && media.ids) {
+        if (media.ids.tmdbid && !rawResults.has(media.ids.tmdbid)) {
+          media.media_type = searchType;
+          rawResults.set(media.ids.tmdbid, media);
+        }
+      }
+    };
+
+    const titleResults = await fetchMdbListSearchItems(query, searchType, config.apiKeys.mdblist);
+    
+    if (titleResults?.length) {
+      titleResults.forEach(item => addRawResult(item));
+    }
+
+    logger.debug(`MDBList gathered ${rawResults.size} unique potential results in ${Date.now() - startTime}ms`);
+
+    if (rawResults.size === 0) {
+      logger.info(`No MDBList results found for query: "${query}"`);
+      return [];
+    }
+
+    const allResults = Array.from(rawResults.values());
+
+    const tmdbIds = allResults
+      .map(m => m?.ids?.tmdbid)
+      .filter(Boolean);
+
+    const batchMediaInfo = await fetchMDBListBatchMediaInfo(
+      "tmdb",
+      searchType,
+      tmdbIds,
+      config.apiKeys.mdblist
+    );
+
+    const metas = await Promise.all(batchMediaInfo.map(async (media) => {
+
+      let releaseDates = null;
+      if (type === 'movie' && media.ids?.tmdb && config.hideUnreleasedDigitalSearch) {
+        try {
+          const movieDetails = await moviedb.movieInfo({ id: media.ids?.tmdb, language, append_to_response: "release_dates" }, config);
+          releaseDates = movieDetails.release_dates;
+        } catch (error) {
+          logger.debug(`Failed to get TMDB release dates for movie ${media.ids?.tmdb}: ${error.message}`);
+        }
+      }
+      let logoUrl;
+      if (media.ids?.imdb) {
+        logoUrl = imdb.getLogoFromImdb(media.ids.imdb);
+      } 
+      const posterUrl = media.poster || `${host}/missing_poster.png`;
+      const fallbackImage = `${host}/missing_poster.png`;
+      const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 
+            ? posterUrl 
+            : fallbackImage;
+          
+      let posterProxyId = media.ids?.imdb || (type === 'movie' ? `tmdb:${media.ids?.tmdb}` : `tvdb:${media.ids?.tvdb}`);
+      if (config.posterRatingProvider === 'top' && !media.ids?.imdb && !media.ids?.tmdb) {
+        posterProxyId = null; 
+      }
+      const posterProxyUrl = posterProxyId 
+        ? Utils.buildPosterProxyUrl(host, type, posterProxyId, validPosterUrl, language, config)
+        : validPosterUrl;
+        if(media.ids?.imdb?.startsWith('tr')) media.ids.imdb = null;
+      const meta = {
+        id: media.ids?.imdb || `tmdb:${media.ids?.tmdb}` || `tvdb:${media.ids?.tvdb}`,
+        type: type,
+        name: media.title || media.name,
+        description: Utils.addMetaProviderAttribution(media.description, 'MDBList', config),
+        poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : posterUrl,
+        logo: logoUrl,
+        certification: media.certification || null,
+        genres: media.genres.map(genre => genre.title) || [],
+        year: media.year || null,
+        imdbRating: media.ratings.find(rating => rating.source === 'imdb')?.value || null,
+        runtime: type === 'movie' ? Utils.parseRunTime(media.runtime) : null,
+        status: type === 'series' ? (media.status || null) : null,
+      };
+      if (releaseDates) {
+        meta.app_extras = { releaseDates: releaseDates };
+      }
+      return meta;
+    }));
+    const validMetas = metas.filter(Boolean);
+    
+    let finalMetas = validMetas;
+    
+    if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+      const beforeCount = finalMetas.length;
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
+      const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
+      finalMetas = finalMetas.filter(result => {
+        const cert = result.certification;
+
+        const isTvRating = type === 'series';
+        const userRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+        const isUserRatingRestrictive = userRating === 'PG-13' || 
+                                       (movieRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        movieRatingHierarchy.indexOf(userRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+                                       (tvRatingHierarchy.indexOf(userRating) !== -1 && 
+                                        tvRatingHierarchy.indexOf(userRating) <= tvRatingHierarchy.indexOf('TV-14'));
+        
+        if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
+          return !isUserRatingRestrictive; 
+        }
+        
+        const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+        const userRatingIndex = ratingHierarchy.indexOf(userRating);
+        const resultRatingIndex = ratingHierarchy.indexOf(cert);
+        
+        if (userRatingIndex === -1) return true; 
+        if (resultRatingIndex === -1) return true; 
+        
+        return resultRatingIndex <= userRatingIndex;
+      });
+      
+      const afterCount = finalMetas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Age rating filter (MDBList): filtered out ${beforeCount - afterCount} results`);
+      }
+    }
+    
+    if (type === 'movie' && config.hideUnreleasedDigitalSearch) {
+      const beforeCount = finalMetas.length;
+      finalMetas = finalMetas.filter(meta => Utils.isReleasedDigitally(meta));
+      const afterCount = finalMetas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Digital release filter (MDBList): filtered out ${beforeCount - afterCount} unreleased movies`);
+      }
+    }
+    
+    logger.success(`Completed MDBList search for "${query}" in ${Date.now() - startTime}ms. Returning ${finalMetas.length} results.`);
+    return finalMetas;
+  }
+  catch (error) {
+    logger.error(`MDBList search failed for "${query}":`, error.message);
+    return [];
+  }
+}
+
 /**
  * Perform Trakt people-only search for movies or series
  * Note: Trakt search doesn't support pagination (page parameter is ignored),
@@ -1985,6 +2140,8 @@ function getProviderFromSearchId(searchId) {
     return 'tvmaze';
   } else if (searchId.includes('trakt.')) {
     return 'trakt';
+  } else if (searchId.includes('mdblist.')) {
+    return 'mdblist';
   } else if (searchId === 'people_search') {
     // For people search, determine the actual provider used based on type and config
     return 'people_search'; // Generic people search - actual provider determined at runtime
@@ -2141,6 +2298,9 @@ async function getSearch(id, type, language, extra, config) {
                 // Trakt search doesn't support pagination, returns flat 30 results
                 metas = await performTraktSearch(type, query, language, config);
                 break;
+              case 'mdblist.search':
+                metas = await performMdbListSearch(type, query, language, config);
+                break;
           }
         }
         break;
@@ -2177,6 +2337,7 @@ async function getSearch(id, type, language, extra, config) {
         else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
         else if (providerId.includes('trakt.')) actualProvider = 'trakt';
+        else if (providerId.includes('mdblist.')) actualProvider = 'mdblist';
       }
     }
     
@@ -2257,6 +2418,7 @@ async function getSearch(id, type, language, extra, config) {
         else if (providerId.includes('tvdb.')) actualProvider = 'tvdb';
         else if (providerId.includes('tvmaze.')) actualProvider = 'tvmaze';
         else if (providerId.includes('trakt.')) actualProvider = 'trakt';
+        else if (providerId.includes('mdblist.')) actualProvider = 'mdblist';
       }
     }
     

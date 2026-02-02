@@ -777,6 +777,18 @@ async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Pro
   }
 }
 
+async function fetchMdbListSearchItems(query: string, type: string, apiKey: string): Promise<any[]> {
+  const url = `https://api.mdblist.com/search/${type}?query=${encodeURIComponent(query)}&limit=30&apikey=${apiKey}`;
+
+  const res: Response = await makeRateLimitedRequest(async () => {
+    return await fetch(url, { headers: { Accept: "application/json" } });
+  }, apiKey, `MDBList Search API (type=${type})`);
+
+  const data = await res.json() as any;
+
+  return data.search ?? [];
+}
+
 // Convert genre title to slug using the mapping from the API
 function convertGenreToSlug(genre: string): string {
   if (!genre || genre.toLowerCase() === 'none') {
@@ -1409,5 +1421,19 @@ async function parseMDBListUpNextItems(
   return validMetas;
 }
 
-export { fetchMDBListItems, fetchMDBListExternalItems, fetchMDBListBatchMediaInfo, getGenresFromMDBList, parseMDBListItems, getMediaRatingFromMDBList, fetchMDBListGenres, convertGenreToSlug, markMovieAsWatched, markEpisodeAsWatched, makeRateLimitedMDBListRequest, fetchMDBListUpNext, parseMDBListUpNextItems };
+export { 
+  fetchMDBListItems, 
+  fetchMDBListExternalItems, 
+  fetchMDBListBatchMediaInfo, 
+  getGenresFromMDBList, 
+  parseMDBListItems, 
+  getMediaRatingFromMDBList, 
+  fetchMDBListGenres, 
+  convertGenreToSlug, 
+  markMovieAsWatched, 
+  markEpisodeAsWatched, 
+  makeRateLimitedMDBListRequest, 
+  fetchMDBListUpNext, 
+  parseMDBListUpNextItems,
+  fetchMdbListSearchItems };
 
