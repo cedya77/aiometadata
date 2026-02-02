@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.24.2](https://github.com/cedya77/aiometadata/compare/v1.24.1...v1.24.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* **search:** add search type to cachekey for cache key singularity ([c0498a8](https://github.com/cedya77/aiometadata/commit/c0498a807f44326f493a3d31af6e2950ae888cc5))
+
 ## [1.24.1](https://github.com/cedya77/aiometadata/compare/v1.24.0...v1.24.1) (2026-02-02)
 
 
