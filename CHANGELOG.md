@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.24.1](https://github.com/cedya77/aiometadata/compare/v1.24.0...v1.24.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* **letterboxd:** fix variable scope issue ([b323b7a](https://github.com/cedya77/aiometadata/commit/b323b7aa2715efcfa78394cfde362dc67bee6a35))
+* **search:** ensure search cache key is unique for each search type ([b323b7a](https://github.com/cedya77/aiometadata/commit/b323b7aa2715efcfa78394cfde362dc67bee6a35))
+* **tmdb movie:** fix duplicate directors link ([568a068](https://github.com/cedya77/aiometadata/commit/568a068f2f32bb5507d1ee7e3cbd3e8d1c147d8a))
+
 ## [1.24.0](https://github.com/cedya77/aiometadata/compare/v1.23.5...v1.24.0) (2026-02-01)
 
 
