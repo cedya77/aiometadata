@@ -25,6 +25,8 @@ export interface CatalogConfig {
   regionFilterEnabled?: boolean;
   // Streaming-only: show only provider originals (heuristic based on origin country)
   onlyOriginals?: boolean;
+  // Streaming-only: manual override for TMDB watch_region (ISO 3166-1 alpha-2, e.g., 'IT')
+  watchRegion?: string;
   // Enable RPDB for this catalog (for poster enhancements)
   enableRatingPosters?: boolean;
   // Randomize items within each page on every load

@@ -735,13 +735,14 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
   const [sort, setSort] = useState<TMDBSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
   const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
+  const [originCountry, setOriginCountry] = useState<string>((catalog as any).originCountry || '');
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, regionFilterEnabled }
+          ? { ...c, sort, sortDirection, regionFilterEnabled, originCountry: originCountry?.trim().toUpperCase() || undefined }
           : c
       )
     }));
@@ -803,6 +804,44 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
                 onCheckedChange={setRegionFilterEnabled}
               />
             </div>
+          </div>
+          )}
+          {catalog.type === 'series' && (
+          <div className="space-y-2">
+            <Label htmlFor="tmdb-origin-country">Origin Country (Series)</Label>
+            <Select value={originCountry || ''} onValueChange={(value) => setOriginCountry((value || '').toUpperCase())}>
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">None</SelectItem>
+                <SelectItem value="IT">Italy (IT)</SelectItem>
+                <SelectItem value="US">United States (US)</SelectItem>
+                <SelectItem value="CA">Canada (CA)</SelectItem>
+                <SelectItem value="GB">United Kingdom (GB)</SelectItem>
+                <SelectItem value="DE">Germany (DE)</SelectItem>
+                <SelectItem value="FR">France (FR)</SelectItem>
+                <SelectItem value="NL">Netherlands (NL)</SelectItem>
+                <SelectItem value="BR">Brazil (BR)</SelectItem>
+                <SelectItem value="IN">India (IN)</SelectItem>
+                <SelectItem value="AU">Australia (AU)</SelectItem>
+                <SelectItem value="PL">Poland (PL)</SelectItem>
+                <SelectItem value="SE">Sweden (SE)</SelectItem>
+                <SelectItem value="DK">Denmark (DK)</SelectItem>
+                <SelectItem value="ES">Spain (ES)</SelectItem>
+                <SelectItem value="PT">Portugal (PT)</SelectItem>
+                <SelectItem value="JP">Japan (JP)</SelectItem>
+                <SelectItem value="KR">South Korea (KR)</SelectItem>
+                <SelectItem value="CN">China (CN)</SelectItem>
+                <SelectItem value="IL">Israel (IL)</SelectItem>
+                <SelectItem value="EE">Estonia (EE)</SelectItem>
+                <SelectItem value="AL">Albania (AL)</SelectItem>
+                <SelectItem value="UA">Ukraine (UA)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Filter series by origin country (ISO 3166-1 alpha-2). Leave empty to disable.
+            </p>
           </div>
           )}
         </div>
@@ -1045,13 +1084,14 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
   const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
   const [onlyOriginalsEnabled, setOnlyOriginalsEnabled] = useState<boolean>(catalog.onlyOriginals || false);
+  const [watchRegion, setWatchRegion] = useState<string>(catalog.watchRegion || '');
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, regionFilterEnabled, onlyOriginals: onlyOriginalsEnabled }
+          ? { ...c, sort, sortDirection, regionFilterEnabled, onlyOriginals: onlyOriginalsEnabled, watchRegion: watchRegion?.trim() || undefined }
           : c
       )
     }));
@@ -1109,6 +1149,40 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
             </div>
           </div>
           )}
+          <div className="space-y-2">
+            <Label htmlFor="streaming-watch-region">Watch Region Override</Label>
+            <Select value={watchRegion || ''} onValueChange={(value) => setWatchRegion(value || '')}>
+              <SelectTrigger>
+                <SelectValue placeholder="Auto" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Auto</SelectItem>
+                <SelectItem value="IT">Italy (IT)</SelectItem>
+                <SelectItem value="US">United States (US)</SelectItem>
+                <SelectItem value="CA">Canada (CA)</SelectItem>
+                <SelectItem value="GB">United Kingdom (GB)</SelectItem>
+                <SelectItem value="DE">Germany (DE)</SelectItem>
+                <SelectItem value="FR">France (FR)</SelectItem>
+                <SelectItem value="NL">Netherlands (NL)</SelectItem>
+                <SelectItem value="BR">Brazil (BR)</SelectItem>
+                <SelectItem value="IN">India (IN)</SelectItem>
+                <SelectItem value="AU">Australia (AU)</SelectItem>
+                <SelectItem value="PL">Poland (PL)</SelectItem>
+                <SelectItem value="SE">Sweden (SE)</SelectItem>
+                <SelectItem value="DK">Denmark (DK)</SelectItem>
+                <SelectItem value="ES">Spain (ES)</SelectItem>
+                <SelectItem value="PT">Portugal (PT)</SelectItem>
+                <SelectItem value="JP">Japan (JP)</SelectItem>
+                <SelectItem value="KR">South Korea (KR)</SelectItem>
+                <SelectItem value="CN">China (CN)</SelectItem>
+                <SelectItem value="IL">Israel (IL)</SelectItem>
+                <SelectItem value="EE">Estonia (EE)</SelectItem>
+                <SelectItem value="AL">Albania (AL)</SelectItem>
+                <SelectItem value="UA">Ukraine (UA)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Choose a country code; Auto derives from language or provider.</p>
+          </div>
           {(catalog.source === 'streaming' && (catalog.id === 'streaming.rai' || catalog.id === 'streaming.mdi')) && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">

@@ -1036,7 +1036,13 @@ async function buildParameters(type: string, language: string, page: number, id:
       parameters.with_genres = findGenreId(genre, genreList);
     }
     parameters.with_watch_providers = provider.watchProviderId
-    parameters.watch_region = provider.country;
+    const __p = language.split('-'); 
+    let __r = (__p[1] || __p[0]).toUpperCase();
+    const __m: Record<string, string> = { EN: 'US', JA: 'JP', KO: 'KR', ZH: 'CN', HI: 'IN', HE: 'IL', SV: 'SE', DA: 'DK', EL: 'GR', CS: 'CZ', FA: 'IR', VI: 'VN', ET: 'EE', SQ: 'AL', UK: 'UA' };
+    if (__m[__r]) { __r = __m[__r]; }
+    parameters.watch_region = (catalogConfig?.watchRegion && catalogConfig.watchRegion.length === 2)
+      ? catalogConfig.watchRegion.toUpperCase()
+      : (catalogConfig?.regionFilterEnabled ? __r : provider.country);
     parameters.with_watch_monetization_types = "flatrate|free|ads";
     // Heuristic: for RaiPlay/Mediaset (and other country-specific providers), allow filtering to origin country
     if (catalogConfig?.onlyOriginals && provider?.country) {
@@ -1087,6 +1093,12 @@ async function buildParameters(type: string, language: string, page: number, id:
         if (type === "series") {
           parameters.watch_region = language.split("-")[1];
           parameters.with_watch_monetization_types = "flatrate|free|ads|rent|buy";
+          const oc = (catalogConfig?.originCountry && catalogConfig.originCountry.length === 2)
+            ? catalogConfig.originCountry.toUpperCase()
+            : undefined;
+          if (oc) {
+            parameters.with_origin_country = oc;
+          }
         }
         break;
       case "tmdb.year":
@@ -1096,6 +1108,14 @@ async function buildParameters(type: string, language: string, page: number, id:
         if (!catalogConfig?.sort) {
           parameters.sort_by = 'popularity.desc';
         }
+        if (type === 'series') {
+          const oc = (catalogConfig?.originCountry && catalogConfig.originCountry.length === 2)
+            ? catalogConfig.originCountry.toUpperCase()
+            : undefined;
+          if (oc) {
+            parameters.with_origin_country = oc;
+          }
+        }
         break;
       case "tmdb.language":
         const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, languages) : language.split("-")[0];
@@ -1103,6 +1123,14 @@ async function buildParameters(type: string, language: string, page: number, id:
         // Only set default sort if no custom sort is configured
         if (!catalogConfig?.sort) {
           parameters.sort_by = 'popularity.desc';
+        }
+        if (type === 'series') {
+          const oc = (catalogConfig?.originCountry && catalogConfig.originCountry.length === 2)
+            ? catalogConfig.originCountry.toUpperCase()
+            : undefined;
+          if (oc) {
+            parameters.with_origin_country = oc;
+          }
         }
         break;
       case "tmdb.top_rated":
@@ -1116,6 +1144,14 @@ async function buildParameters(type: string, language: string, page: number, id:
         if(genre && genre.toLowerCase() !== 'none') {
           logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
           parameters.with_genres = findGenreId(genre, genreList);
+        }
+        if (type === 'series') {
+          const oc = (catalogConfig?.originCountry && catalogConfig.originCountry.length === 2)
+            ? catalogConfig.originCountry.toUpperCase()
+            : undefined;
+          if (oc) {
+            parameters.with_origin_country = oc;
+          }
         }
         break;
       case "tmdb.airing_today":
