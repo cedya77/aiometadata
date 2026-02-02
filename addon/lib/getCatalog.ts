@@ -1820,8 +1820,14 @@ async function getLetterboxdCatalog(
     const allItems = listData.data.items;
     logger.info(`Retrieved ${allItems.length} items from Letterboxd list`);
     let filteredItems = allItems;
-    if( genreName && genreName.toLowerCase() !== 'none') {
-      filteredItems = filteredItems.filter(item => item.genre_ids.includes(getLetterboxdGenreIdByName(genreName)));
+    if (genreName && genreName.toLowerCase() !== 'none') {
+      const genreId = getLetterboxdGenreIdByName(genreName);
+      if (genreId) {
+        filteredItems = filteredItems.filter(
+          (item: { genre_ids?: string[] }) =>
+            Array.isArray(item.genre_ids) && item.genre_ids.includes(genreId)
+        );
+      }
     }
 
     // Calculate pagination - use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
