@@ -1038,8 +1038,11 @@ async function buildParameters(type: string, language: string, page: number, id:
     parameters.with_watch_providers = provider.watchProviderId
     parameters.watch_region = provider.country;
     parameters.with_watch_monetization_types = "flatrate|free|ads";
+    // Heuristic: for RaiPlay/Mediaset (and other country-specific providers), allow filtering to origin country
+    if (catalogConfig?.onlyOriginals && provider?.country) {
+      parameters.with_origin_country = provider.country;
+    }
     delete parameters['vote_count.gte'];
-    const catalogConfig = config._currentCatalogConfig;
     if (catalogConfig?.sort) {
       const direction = catalogConfig.sortDirection || 'desc';
       let sortField = catalogConfig.sort;
@@ -1057,7 +1060,6 @@ async function buildParameters(type: string, language: string, page: number, id:
        parameters.sort_by = 'popularity.desc';
     }
   } else {
-    const catalogConfig = config._currentCatalogConfig;
     if (catalogConfig?.sort) {
       const direction = catalogConfig.sortDirection || 'desc';
       let sortField = catalogConfig.sort;

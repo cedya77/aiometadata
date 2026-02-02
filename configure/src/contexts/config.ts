@@ -23,7 +23,9 @@ export interface CatalogConfig {
   filter_score_min?: number;
   filter_score_max?: number;
   regionFilterEnabled?: boolean;
-}  // Enable RPDB for this catalog (for poster enhancements)
+  // Streaming-only: show only provider originals (heuristic based on origin country)
+  onlyOriginals?: boolean;
+  // Enable RPDB for this catalog (for poster enhancements)
   enableRatingPosters?: boolean;
   // Randomize items within each page on every load
   randomizePerPage?: boolean;

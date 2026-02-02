@@ -305,6 +305,18 @@
       "watchProviderId": 2390,
       "country": "US",
       "extraSupported": ["genre", "skip"]
+    },
+    "rai": {
+      "nameKey": "rai",
+      "watchProviderId": 222,
+      "country": "IT",
+      "extraSupported": ["genre", "skip"]
+    },
+    "mdi": {
+      "nameKey": "mdi",
+      "watchProviderId": 359,
+      "country": "IT",
+      "extraSupported": ["genre", "skip"]
     }
   }
 }

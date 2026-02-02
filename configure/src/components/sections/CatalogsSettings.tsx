@@ -1044,13 +1044,14 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
   const [sort, setSort] = useState<StreamingSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
   const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
+  const [onlyOriginalsEnabled, setOnlyOriginalsEnabled] = useState<boolean>(catalog.onlyOriginals || false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, regionFilterEnabled }
+          ? { ...c, sort, sortDirection, regionFilterEnabled, onlyOriginals: onlyOriginalsEnabled }
           : c
       )
     }));
@@ -1104,6 +1105,23 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
                 id="streaming-region-filter-toggle"
                 checked={regionFilterEnabled}
                 onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
+          {(catalog.source === 'streaming' && (catalog.id === 'streaming.rai' || catalog.id === 'streaming.mdi')) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="streaming-originals-toggle">Solo produzioni italiane (heuristica)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Limita ai titoli con paese d’origine IT; utile per RaiPlay/Mediaset
+                </p>
+              </div>
+              <Switch
+                id="streaming-originals-toggle"
+                checked={!!onlyOriginalsEnabled}
+                onCheckedChange={setOnlyOriginalsEnabled}
               />
             </div>
           </div>
