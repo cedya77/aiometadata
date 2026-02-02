@@ -22,7 +22,8 @@ export interface CatalogConfig {
   // MDBList external list score filters
   filter_score_min?: number;
   filter_score_max?: number;
-  // Enable RPDB for this catalog (for poster enhancements)
+  regionFilterEnabled?: boolean;
+}  // Enable RPDB for this catalog (for poster enhancements)
   enableRatingPosters?: boolean;
   // Randomize items within each page on every load
   randomizePerPage?: boolean;
@@ -146,6 +147,8 @@ export interface AppConfig {
     enabled: boolean; 
     // This is the switch for the AI layer.
     ai_enabled: boolean; 
+    // Region filter toggle for search results
+    regionFilterEnabled?: boolean;
     // This stores the primary keyword engine for each type.
     providers: {
         movie: 'tmdb.search' | 'tvdb.search' | 'trakt.search' | 'mal.search.movie';

@@ -52,6 +52,9 @@ export const streamingServices = [
     'France': [
       'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'hay', 'cpd', 'mub'
     ],
+    'Italy': [
+      'nfx', 'nfk', 'dnp', 'amp', 'atp', 'pmp', 'cru', 'mgl', 'cts', 'dpe', 'mub'
+    ],
     'Any': [
       'nfx', 'nfk', 'dnp', 'amp', 'atp', 'hbm', 'pmp', 'hlu', 'pcp', 'clv', 'gop', 'blv', 'bet', 'mub', 'sta',
       'zee', 'hst', 'slv', 'hay', 'vil', 'sst', 'sky', 'wow', 'mgl', 'cts', 'cru', 'nlz', 'cpd', 'crv', 'dpe',

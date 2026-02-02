@@ -121,6 +121,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [filterScoreMin, setFilterScoreMin] = useState<number | undefined>(catalog.filter_score_min);
   const [filterScoreMax, setFilterScoreMax] = useState<number | undefined>(catalog.filter_score_max);
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
   const isUpNext = catalog.id === 'mdblist.upnext';
   const showSortOptions = !isUpNext;
 
@@ -129,7 +130,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters, filter_score_min: filterScoreMin, filter_score_max: filterScoreMax }
+          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters, filter_score_min: filterScoreMin, filter_score_max: filterScoreMax, regionFilterEnabled }
           : c
       )
     }));
@@ -222,6 +223,24 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </div>
             </>
           )}
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="mdblist-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="mdblist-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
+
           <div className="space-y-2">
             <Label>Cache TTL (seconds)</Label>
             <div className="flex items-center space-x-2">
@@ -295,6 +314,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
   const [airingSoonDays, setAiringSoonDays] = useState<number>(() => {
     const days = catalog.metadata?.airingSoonDays;
     if (typeof days === 'number' && days >= 1 && days <= 7) {
@@ -317,6 +337,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               sort, 
               sortDirection, 
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
+              regionFilterEnabled,
               metadata: {
                 ...c.metadata,
                 ...(isUpNext && { useShowPosterForUpNext: useShowPoster }),
@@ -389,6 +410,24 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
             </>
           )}
 
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="trakt-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="trakt-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
+
           <div className="space-y-2">
             <Label>Cache TTL (seconds)</Label>
             <Input
@@ -454,6 +493,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
 const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
   const isTrending = catalog.id.startsWith('simkl.trending.');
   const isWatchlist = catalog.id.startsWith('simkl.watchlist.');
   const isCalendar = catalog.id.startsWith('simkl.calendar');
@@ -475,6 +515,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
           ? { 
               ...c, 
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
+              regionFilterEnabled,
               metadata: {
                 ...c.metadata,
                 // Only include pageSize for trending (watchlists use local pagination)
@@ -503,6 +544,23 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
           <DialogTitle>Simkl Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="simkl-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="simkl-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
           {!isWatchlist && (
             <div className="space-y-2">
               <Label>Cache TTL (seconds)</Label>
@@ -585,13 +643,14 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL: Math.max(cacheTTL, 7200), enableRatingPosters }
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 7200), enableRatingPosters, regionFilterEnabled }
           : c
       )
     }));
@@ -621,6 +680,23 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
               How long to cache this catalog before refreshing. Range: 2 hours to 7 days.
             </p>
           </div>
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="letterboxd-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="letterboxd-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
           {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -658,18 +734,21 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
   
   const [sort, setSort] = useState<TMDBSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection }
+          ? { ...c, sort, sortDirection, regionFilterEnabled }
           : c
       )
     }));
     onClose();
   };
+
+  const isSortable = catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -678,33 +757,54 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
           <DialogTitle>TMDB Catalog Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          {isSortable && (
+            <>
+              <div className="space-y-2">
+                <Label>Sort By</Label>
+                <Select value={sort} onValueChange={(value) => setSort(value as TMDBSortOption)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TMDB_SORT_OPTIONS.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Sort Direction</Label>
+                <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="desc">Descending</SelectItem>
+                    <SelectItem value="asc">Ascending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
+          {catalog.type !== 'series' && (
           <div className="space-y-2">
-            <Label>Sort By</Label>
-            <Select value={sort} onValueChange={(value) => setSort(value as TMDBSortOption)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TMDB_SORT_OPTIONS.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="tmdb-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="tmdb-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Sort Direction</Label>
-            <Select value={sortDirection} onValueChange={(value) => setSortDirection(value as 'asc' | 'desc')}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">Descending</SelectItem>
-                <SelectItem value="asc">Ascending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -722,13 +822,14 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [pageSize, setPageSize] = useState<number>(catalog.pageSize || 100);
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL: Math.max(cacheTTL, 300), enableRatingPosters, pageSize }
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 300), enableRatingPosters, pageSize, regionFilterEnabled }
           : c
       )
     }));
@@ -783,6 +884,23 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
               Number of items per page for this catalog. Default: 100. This should match the imported addon's page size for accurate pagination.
             </p>
           </div>
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="custom-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="custom-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
           {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -815,13 +933,14 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [sort, setSort] = useState<AniListSortOption>(catalog.sort as AniListSortOption || 'ADDED_TIME');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'desc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, 300) }
+          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, 300), regionFilterEnabled }
           : c
       )
     }));
@@ -862,6 +981,23 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </SelectContent>
             </Select>
           </div>
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="anilist-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="anilist-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="anilist-cache-ttl">Cache TTL (seconds)</Label>
             <div className="flex items-center space-x-2">
@@ -907,13 +1043,14 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
   
   const [sort, setSort] = useState<StreamingSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+  const [regionFilterEnabled, setRegionFilterEnabled] = useState<boolean>(catalog.regionFilterEnabled || false);
 
   const handleSave = () => {
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection }
+          ? { ...c, sort, sortDirection, regionFilterEnabled }
           : c
       )
     }));
@@ -954,6 +1091,23 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
               </SelectContent>
             </Select>
           </div>
+          {catalog.type !== 'series' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="streaming-region-filter-toggle">Region Filter</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only show content released in your language region
+                </p>
+              </div>
+              <Switch
+                id="streaming-region-filter-toggle"
+                checked={regionFilterEnabled}
+                onCheckedChange={setRegionFilterEnabled}
+              />
+            </div>
+          </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -1299,7 +1453,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
 
           {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
-            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))) && (
+            catalog.source === 'tmdb') && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`}>
@@ -1533,7 +1687,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
       <TMDBSettingsDialog
         catalog={catalog}
-        isOpen={showSettings && catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')}
+        isOpen={showSettings && catalog.source === 'tmdb'}
         onClose={() => setShowSettings(false)}
       />
 

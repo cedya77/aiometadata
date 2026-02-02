@@ -146,6 +146,7 @@ const initialConfig: AppConfig = {
   search: {
     enabled: true,
     ai_enabled: false,
+    regionFilterEnabled: false,
     providers: {
       movie: 'tmdb.search',
       series: 'tvdb.search',

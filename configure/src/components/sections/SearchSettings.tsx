@@ -796,6 +796,34 @@ export function SearchSettings() {
                 </CardContent>
             </Card>
 
+            {/* Region Filter for Search (movies only) */}
+            <Card>
+                <CardHeader>
+                  <CardTitle>Region Filter (Movies Search)</CardTitle>
+                  <CardDescription>Applies only to movies; series are not region-filtered</CardDescription>
+                </CardHeader>
+                <CardContent className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                    <Label htmlFor="search-region-filter-toggle">Enable region filter for search (movies)</Label>
+                        <p className="text-xs text-muted-foreground">
+                        Apply release date checks for your region (e.g., IT) for movies only
+                        </p>
+                    </div>
+                    <Switch
+                        id="search-region-filter-toggle"
+                        checked={!!config.search.regionFilterEnabled}
+                        onCheckedChange={(checked) => setConfig(prev => ({
+                            ...prev,
+                            search: {
+                                ...prev.search,
+                                regionFilterEnabled: checked
+                            }
+                        }))}
+                    aria-label="Enable region filter for search (movies)"
+                    />
+                </CardContent>
+            </Card>
+
             {/* Search Ordering */}
             <Card>
                 <CardHeader>

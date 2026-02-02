@@ -104,6 +104,214 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
   return filteredMetas;
 }
 
+const COUNTRY_NAME_MAP: Record<string, string> = {
+  // North America
+  'UNITED STATES': 'US', 'USA': 'US', 'UNITED STATES OF AMERICA': 'US', 'US': 'US',
+  'CANADA': 'CA', 'CA': 'CA',
+  'MEXICO': 'MX', 'MX': 'MX',
+  
+  // Europe
+  'UNITED KINGDOM': 'GB', 'UK': 'GB', 'GREAT BRITAIN': 'GB', 'GB': 'GB',
+  'ITALY': 'IT', 'ITALIA': 'IT', 'IT': 'IT',
+  'FRANCE': 'FR', 'FR': 'FR',
+  'GERMANY': 'DE', 'DEUTSCHLAND': 'DE', 'DE': 'DE',
+  'SPAIN': 'ES', 'ESPAÑA': 'ES', 'ES': 'ES',
+  'PORTUGAL': 'PT', 'PT': 'PT',
+  'NETHERLANDS': 'NL', 'HOLLAND': 'NL', 'NL': 'NL',
+  'BELGIUM': 'BE', 'BE': 'BE',
+  'SWITZERLAND': 'CH', 'SWISS': 'CH', 'CH': 'CH',
+  'AUSTRIA': 'AT', 'AT': 'AT',
+  'SWEDEN': 'SE', 'SE': 'SE',
+  'NORWAY': 'NO', 'NO': 'NO',
+  'DENMARK': 'DK', 'DK': 'DK',
+  'FINLAND': 'FI', 'FI': 'FI',
+  'ICELAND': 'IS', 'IS': 'IS',
+  'IRELAND': 'IE', 'IE': 'IE',
+  'POLAND': 'PL', 'PL': 'PL',
+  'CZECH REPUBLIC': 'CZ', 'CZECHIA': 'CZ', 'CZ': 'CZ',
+  'SLOVAKIA': 'SK', 'SK': 'SK',
+  'HUNGARY': 'HU', 'HU': 'HU',
+  'ROMANIA': 'RO', 'RO': 'RO',
+  'BULGARIA': 'BG', 'BG': 'BG',
+  'GREECE': 'GR', 'GR': 'GR',
+  'TURKEY': 'TR', 'TÜRKIYE': 'TR', 'TR': 'TR',
+  'RUSSIA': 'RU', 'RUSSIAN FEDERATION': 'RU', 'RU': 'RU',
+  'UKRAINE': 'UA', 'UA': 'UA',
+  'BELARUS': 'BY', 'BY': 'BY',
+  'CROATIA': 'HR', 'HR': 'HR',
+  'SERBIA': 'RS', 'RS': 'RS',
+  'SLOVENIA': 'SI', 'SI': 'SI',
+  'BOSNIA AND HERZEGOVINA': 'BA', 'BOSNIA': 'BA', 'BA': 'BA',
+  'MONTENEGRO': 'ME', 'ME': 'ME',
+  'MACEDONIA': 'MK', 'NORTH MACEDONIA': 'MK', 'MK': 'MK',
+  'ALBANIA': 'AL', 'AL': 'AL',
+  'ESTONIA': 'EE', 'EE': 'EE',
+  'LATVIA': 'LV', 'LV': 'LV',
+  'LITHUANIA': 'LT', 'LT': 'LT',
+  'MOLDOVA': 'MD', 'MD': 'MD',
+  'MALTA': 'MT', 'MT': 'MT',
+  'CYPRUS': 'CY', 'CY': 'CY',
+  'LUXEMBOURG': 'LU', 'LU': 'LU',
+  'ANDORRA': 'AD', 'AD': 'AD',
+  'MONACO': 'MC', 'MC': 'MC',
+  'LIECHTENSTEIN': 'LI', 'LI': 'LI',
+  'SAN MARINO': 'SM', 'SM': 'SM',
+  'VATICAN CITY': 'VA', 'HOLY SEE': 'VA', 'VA': 'VA',
+
+  // Asia
+  'JAPAN': 'JP', 'JP': 'JP',
+  'SOUTH KOREA': 'KR', 'KOREA': 'KR', 'REPUBLIC OF KOREA': 'KR', 'KR': 'KR',
+  'CHINA': 'CN', 'CN': 'CN',
+  'HONG KONG': 'HK', 'HK': 'HK',
+  'TAIWAN': 'TW', 'TW': 'TW',
+  'INDIA': 'IN', 'IN': 'IN',
+  'INDONESIA': 'ID', 'ID': 'ID',
+  'THAILAND': 'TH', 'TH': 'TH',
+  'VIETNAM': 'VN', 'VIET NAM': 'VN', 'VN': 'VN',
+  'PHILIPPINES': 'PH', 'PH': 'PH',
+  'MALAYSIA': 'MY', 'MY': 'MY',
+  'SINGAPORE': 'SG', 'SG': 'SG',
+  'PAKISTAN': 'PK', 'PK': 'PK',
+  'BANGLADESH': 'BD', 'BD': 'BD',
+  'SRI LANKA': 'LK', 'LK': 'LK',
+  'NEPAL': 'NP', 'NP': 'NP',
+  'KAZAKHSTAN': 'KZ', 'KZ': 'KZ',
+  'UZBEKISTAN': 'UZ', 'UZ': 'UZ',
+  'ISRAEL': 'IL', 'IL': 'IL',
+  'SAUDI ARABIA': 'SA', 'SA': 'SA',
+  'UNITED ARAB EMIRATES': 'AE', 'UAE': 'AE', 'AE': 'AE',
+  'IRAN': 'IR', 'IR': 'IR',
+  'IRAQ': 'IQ', 'IQ': 'IQ',
+  'QATAR': 'QA', 'QA': 'QA',
+  'KUWAIT': 'KW', 'KW': 'KW',
+  'LEBANON': 'LB', 'LB': 'LB',
+  'JORDAN': 'JO', 'JO': 'JO',
+  'OMAN': 'OM', 'OM': 'OM',
+  'BAHRAIN': 'BH', 'BH': 'BH',
+  'YEMEN': 'YE', 'YE': 'YE',
+  'SYRIA': 'SY', 'SY': 'SY',
+  'AFGHANISTAN': 'AF', 'AF': 'AF',
+  'GEORGIA': 'GE', 'GE': 'GE',
+  'ARMENIA': 'AM', 'AM': 'AM',
+  'AZERBAIJAN': 'AZ', 'AZ': 'AZ',
+
+  // South America
+  'BRAZIL': 'BR', 'BRASIL': 'BR', 'BR': 'BR',
+  'ARGENTINA': 'AR', 'AR': 'AR',
+  'COLOMBIA': 'CO', 'CO': 'CO',
+  'CHILE': 'CL', 'CL': 'CL',
+  'PERU': 'PE', 'PE': 'PE',
+  'VENEZUELA': 'VE', 'VE': 'VE',
+  'ECUADOR': 'EC', 'EC': 'EC',
+  'BOLIVIA': 'BO', 'BO': 'BO',
+  'PARAGUAY': 'PY', 'PY': 'PY',
+  'URUGUAY': 'UY', 'UY': 'UY',
+  'GUYANA': 'GY', 'GY': 'GY',
+  'SURINAME': 'SR', 'SR': 'SR',
+
+  // Oceania
+  'AUSTRALIA': 'AU', 'AU': 'AU',
+  'NEW ZEALAND': 'NZ', 'NZ': 'NZ',
+  'FIJI': 'FJ', 'FJ': 'FJ',
+  'PAPUA NEW GUINEA': 'PG', 'PG': 'PG',
+
+  // Africa
+  'SOUTH AFRICA': 'ZA', 'ZA': 'ZA',
+  'EGYPT': 'EG', 'EG': 'EG',
+  'NIGERIA': 'NG', 'NG': 'NG',
+  'KENYA': 'KE', 'KE': 'KE',
+  'MOROCCO': 'MA', 'MA': 'MA',
+  'ALGERIA': 'DZ', 'DZ': 'DZ',
+  'TUNISIA': 'TN', 'TN': 'TN',
+  'ETHIOPIA': 'ET', 'ET': 'ET',
+  'GHANA': 'GH', 'GH': 'GH',
+  'TANZANIA': 'TZ', 'TZ': 'TZ',
+  'UGANDA': 'UG', 'UG': 'UG',
+  'ZIMBABWE': 'ZW', 'ZW': 'ZW',
+  'SENEGAL': 'SN', 'SN': 'SN',
+  'CAMEROON': 'CM', 'CM': 'CM',
+  'IVORY COAST': 'CI', 'CÔTE D\'IVOIRE': 'CI', 'CI': 'CI',
+  'ANGOLA': 'AO', 'AO': 'AO',
+  
+  // Central America & Caribbean
+  'COSTA RICA': 'CR', 'CR': 'CR',
+  'PANAMA': 'PA', 'PA': 'PA',
+  'CUBA': 'CU', 'CU': 'CU',
+  'DOMINICAN REPUBLIC': 'DO', 'DO': 'DO',
+  'JAMAICA': 'JM', 'JM': 'JM',
+  'PUERTO RICO': 'PR', 'PR': 'PR',
+  'GUATEMALA': 'GT', 'GT': 'GT',
+  'HONDURAS': 'HN', 'HN': 'HN',
+  'EL SALVADOR': 'SV', 'SV': 'SV',
+  'NICARAGUA': 'NI', 'NI': 'NI',
+  'BAHAMAS': 'BS', 'BS': 'BS',
+  'BARBADOS': 'BB', 'BB': 'BB',
+  'TRINIDAD AND TOBAGO': 'TT', 'TT': 'TT',
+  'HAITI': 'HT', 'HT': 'HT',
+};
+
+function normalizeCountryCode(country: string): string {
+  if (!country) return '';
+  const upper = country.toUpperCase();
+  // If it's already a 2-letter code
+  if (upper.length === 2) return upper;
+  // Check map
+  return COUNTRY_NAME_MAP[upper] || upper;
+}
+
+/**
+ * Apply region filter to metas based on user configuration
+ * Uses catalog configuration to determine if filter should be applied
+ */
+function applyRegionFilter(metas: any[], language: string, catalogConfig: any): any[] {
+  if (!catalogConfig?.regionFilterEnabled) {
+    return metas;
+  }
+
+  const langParts = language.split('-');
+  const regionCode = (langParts[1] || langParts[0]).toUpperCase();
+  const tz = (process.env.TZ || 'UTC');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const allowedTypes = new Set([3, 4, 5, 6]);
+  const before = metas.length;
+  logger.info(`[Region Filter] Start: region=${regionCode}, items=${before}, date<=${today}`);
+  const filtered = metas.filter(meta => {
+    // Disabilitato per le series: nessun filtro regionale
+    if (meta?.type === 'series') {
+      return true;
+    }
+    if (meta?.type === 'movie' && meta?.app_extras?.releaseDates?.results) {
+      const results = meta.app_extras.releaseDates.results;
+      const countryEntry = results.find((r: any) => (r.iso_3166_1 || '').toUpperCase() === regionCode);
+      if (countryEntry && Array.isArray(countryEntry.release_dates)) {
+        const ok = countryEntry.release_dates.some((rd: any) => {
+          const dateStr = (rd.release_date || '').substring(0, 10);
+          return !!dateStr && allowedTypes.has(rd.type) && dateStr <= today;
+        });
+        if (ok) return true;
+        return false;
+      }
+      return false;
+    }
+    if (meta.app_extras?.certification) {
+      const cert = meta.app_extras.certification;
+      if (cert.includes(':')) {
+        const certCountry = cert.split(':')[0].toUpperCase();
+        if (normalizeCountryCode(certCountry) === regionCode) return true;
+      }
+    }
+    if (meta.country) {
+      const countries = Array.isArray(meta.country) ? meta.country : [meta.country];
+      if (countries.some((c: string) => normalizeCountryCode(c) === regionCode)) {
+        return true;
+      }
+    }
+    return false;
+  });
+  logger.info(`[Region Filter] End: filtered ${before} -> ${filtered.length} items (region=${regionCode})`);
+  return filtered;
+}
+
 
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
@@ -178,6 +386,8 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const genre = allTvdbGenres.find(g => g.name === genreName);
   logger.debug(`Genre lookup for "${genreName}":`, genre ? `Found ID ${genre.id}` : 'NOT FOUND');
   
+  const catalogConfig = config.catalogs?.find(c => c.id === catalogId && c.type === type);
+
   const langParts = language.split('-');
   const langCode2 = langParts[0];
   const countryCode2 = langParts[1] || langCode2; 
@@ -186,10 +396,19 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating as string, countryCode3, type === 'movie' ? 'movie' : 'episode');
   
   const params: any = {
-    country:'usa',
+    country: 'usa', // Default
     lang: 'eng',
     sort: 'score'
   };
+
+  if (catalogConfig?.regionFilterEnabled) {
+     // If region filter is enabled, try to use the region from language
+     // TVDB uses 3-letter country codes
+     if (countryCode3) {
+       params.country = countryCode3.toLowerCase();
+       logger.debug(`[TVDB Filter] Setting country to ${params.country}`);
+     }
+  }
 
   if (tvdbContentRatingId) {
     logger.debug(`Using TVDB content rating ID ${tvdbContentRatingId} for TVDB filter`);
@@ -308,6 +527,8 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   let validMetas = metas.filter(meta => meta !== null);
   validMetas.sort((a, b) => new Date(b.released).getTime() - new Date(a.released).getTime());
   
+  validMetas = applyRegionFilter(validMetas, language, catalogConfig);
+  
   return validMetas;
 }
 
@@ -402,6 +623,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       
       // Apply age rating filter
       metas = applyAgeRatingFilter(metas, type, config);
+      metas = applyRegionFilter(metas, language, catalogConfig);
       
       logger.success(`[MDBList Up Next] Processed ${metas.length} items`);
       return metas;
@@ -438,6 +660,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
 
       metas = applyAgeRatingFilter(metas, type, config);
+      metas = applyRegionFilter(metas, language, catalogConfig);
       
       return metas;
     }
@@ -513,6 +736,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
     
     metas = applyAgeRatingFilter(metas, type, config);
+    metas = applyRegionFilter(metas, language, catalogConfig);
     
     return metas;
   }
@@ -620,6 +844,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       let validMetas = metas.filter(meta => meta !== null);
       
       validMetas = applyAgeRatingFilter(validMetas, type, config);
+      validMetas = applyRegionFilter(validMetas, language, catalogConfig);
       
       logger.success(`[TMDB List] Processed ${validMetas.length} items for list ${listId}`);
       return validMetas;
@@ -631,7 +856,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }
 
   const genreList = await getGenreList('tmdb', language, type as "movie" | "series", config);
-  const parameters = await buildParameters(type, language, page, id, genre, genreList, config);
+  const catalogConfig = config.catalogs?.find(c => c.id === id && c.type === type);
+  const parameters = await buildParameters(type, language, page, id, genre, genreList, config, catalogConfig);
 
   // Log the full URL for airing_today catalog
   if (id === 'tmdb.airing_today') {
@@ -683,6 +909,9 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }));
 
   let validMetas = metas.filter(meta => meta !== null);
+
+  const catalogConfig = config.catalogs?.find(c => c.id === id && c.type === type);
+  validMetas = applyRegionFilter(validMetas, language, catalogConfig);
   
   return validMetas;
   } else {
@@ -690,9 +919,76 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   }
 }
 
-async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {
+async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig, catalogConfig?: any): Promise<any> {
   const languages = await getLanguages(config);
   const parameters: any = { language, page, 'vote_count.gte': 50};
+
+  // Apply region filter if enabled
+  if (catalogConfig?.regionFilterEnabled) {
+    const langParts = language.split('-');
+    // If language is like "it-IT", part[1] is IT.
+    // If language is "it", part[0] is it -> IT.
+    let regionCode = (langParts[1] || langParts[0]).toUpperCase();
+    
+    // Map common language codes to country codes where they differ
+    const LANG_TO_REGION: Record<string, string> = {
+      'EN': 'US', // English -> US (Default)
+      'JA': 'JP', // Japanese -> Japan
+      'KO': 'KR', // Korean -> South Korea
+      'ZH': 'CN', // Chinese -> China
+      'HI': 'IN', // Hindi -> India
+      'HE': 'IL', // Hebrew -> Israel
+      'SV': 'SE', // Swedish -> Sweden
+      'DA': 'DK', // Danish -> Denmark
+      'EL': 'GR', // Greek -> Greece
+      'CS': 'CZ', // Czech -> Czech Republic
+      'FA': 'IR', // Persian -> Iran
+      'VI': 'VN', // Vietnamese -> Vietnam
+      'ET': 'EE', // Estonian -> Estonia
+      'SQ': 'AL', // Albanian -> Albania
+      'UK': 'UA', // Ukrainian -> Ukraine (UK is reserved for UK in generic map, but uk language code is Ukraine)
+      // Note: 'uk' language code is Ukrainian. 'UK' country code is United Kingdom (GB).
+      // If language is 'uk', regionCode is 'UK'.
+      // If we want Ukrainian content, region should be UA.
+    };
+
+    if (LANG_TO_REGION[regionCode]) {
+        regionCode = LANG_TO_REGION[regionCode];
+    }
+    
+    // Only apply if it looks like a country code (2 letters)
+    if (regionCode.length === 2) {
+      parameters.region = regionCode;
+      
+      // If we are filtering by region, we want to ensure we are looking at released content
+      // by using the release date or air date filter relative to today.
+      // This solves "seeing stuff not released yet".
+      // We use the current date in the user's timezone or UTC.
+      const userTimezone = config.timezone || process.env.TZ || 'UTC';
+      const formatter = new Intl.DateTimeFormat('en-CA', { 
+        timeZone: userTimezone, 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit' 
+      });
+      const today = formatter.format(new Date());
+
+      if (type === 'movie') {
+        // For movies, we want released items (release_date <= today)
+        // AND we want to prioritize theatrical releases or digital?
+        // Usually region + release_date.lte is enough to filter future releases.
+        // We only apply this if there isn't already a stricter date filter
+        if (!parameters['primary_release_date.lte'] && !parameters['release_date.lte']) {
+             parameters['release_date.lte'] = today;
+             parameters['primary_release_date.lte'] = today;
+             // We also want to ensure we're looking at theatrical or digital releases, not just premieres
+             parameters.with_release_type = '3|4|5|6'; // Theatrical, Digital, Physical, TV
+        }
+      }
+
+      logger.info(`[TMDB API] Region=${regionCode} + date<=${today} applied (type=${type})`);
+    }
+  }
 
   /*if (id === 'tmdb.top' && type === 'series') {
     logger.debug('Applying genre exclusion for popular series catalog.');
@@ -762,7 +1058,7 @@ async function buildParameters(type: string, language: string, page: number, id:
     }
   } else {
     const catalogConfig = config._currentCatalogConfig;
-    if (catalogConfig?.sort && (id === 'tmdb.year' || id === 'tmdb.language')) {
+    if (catalogConfig?.sort) {
       const direction = catalogConfig.sortDirection || 'desc';
       let sortField = catalogConfig.sort;
       
@@ -779,7 +1075,9 @@ async function buildParameters(type: string, language: string, page: number, id:
     
     switch (id) {
       case "tmdb.top":
-        parameters.sort_by = 'primary_release_date.desc'
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = 'primary_release_date.desc';
+        }
         if(genre && genre.toLowerCase() !== 'none') {
           logger.debug(`Found genre: ${genre}, genre ID: ${findGenreId(genre, genreList)}`);
           parameters.with_genres = findGenreId(genre, genreList);
@@ -807,7 +1105,9 @@ async function buildParameters(type: string, language: string, page: number, id:
         break;
       case "tmdb.top_rated":
         // Sort by vote average (highest rated first) with minimum vote count
-        parameters.sort_by = type === "movie" ? 'vote_average.desc' : 'vote_average.desc';
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = type === "movie" ? 'vote_average.desc' : 'vote_average.desc';
+        }
         parameters['vote_count.gte'] = 500; // Require at least 500 votes for top rated
         // Exclude Documentary (99) and News (10755) genres
         parameters.without_genres = '99,10755';
@@ -831,7 +1131,9 @@ async function buildParameters(type: string, language: string, page: number, id:
         const today = formatter.format(new Date()); // YYYY-MM-DD format in user's timezone
         parameters['air_date.gte'] = today;
         parameters['air_date.lte'] = today;
-        parameters.sort_by = 'popularity.desc';
+        if (!catalogConfig?.sort) {
+          parameters.sort_by = 'popularity.desc';
+        }
         parameters.with_type = '2|3|4'; // Filter by TV show types (Scripted, Reality, Miniseries)
         delete parameters['vote_count.gte'];
         if(genre && genre.toLowerCase() !== 'none') {
@@ -936,6 +1238,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
     // Filter unreleased content if configured
     // Filter by age rating if enabled
     metas = applyAgeRatingFilter(metas, type, config);
+    metas = applyRegionFilter(metas, language, userCatalog);
 
     logger.success(`[StremThru] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
@@ -1254,6 +1557,7 @@ async function getTraktCatalog(
     
     // Apply age rating filter
     metas = applyAgeRatingFilter(metas, type, config);
+    metas = applyRegionFilter(metas, language, catalogConfig);
     
     logger.success(`[Trakt] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
@@ -1314,7 +1618,8 @@ async function getAniListCatalog(
       }
       
       // Resolve AniList media IDs to Stremio metas
-      const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+      let metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+      metas = applyRegionFilter(metas, language, catalogConfig);
       logger.success(`[AniList] Processed ${metas.length} trending items (page ${page})`);
       return metas;
     }
@@ -1374,7 +1679,8 @@ async function getAniListCatalog(
     }
     
     // Resolve AniList media IDs to Stremio metas
-    const metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+    let metas = await resolveAniListItemsToMetas(response.items, type, language, config, userUUID, includeVideos);
+    metas = applyRegionFilter(metas, language, catalogConfig);
     
     logger.success(`[AniList] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
@@ -1539,6 +1845,7 @@ async function getLetterboxdCatalog(
     );
 
     metas = applyAgeRatingFilter(metas, type, config);
+    metas = applyRegionFilter(metas, language, catalogConfig);
 
     logger.debug(`Successfully processed ${metas.length} Letterboxd items`);
     return metas;
@@ -1744,6 +2051,7 @@ async function getSimklCatalog(
     
     // Apply age rating filter
     metas = applyAgeRatingFilter(metas, type, config);
+    metas = applyRegionFilter(metas, language, catalogConfig);
     
     logger.success(`[Simkl] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;

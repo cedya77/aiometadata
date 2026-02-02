@@ -638,10 +638,39 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
   // STEP 4: FINAL SORTING AND FILTERING
   let filteredResults = hydratedMetas;
+  
+  // Apply Region Filter for TMDB search results
+  try {
+    // Applicare region filter solo per i film
+    if (config?.search?.regionFilterEnabled && type === 'movie') {
+    const langParts = language.split('-');
+    const regionCode = (langParts[1] || langParts[0]).toUpperCase();
+    const tz = (process.env.TZ || 'UTC');
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const allowedTypes = new Set([3, 4, 5, 6]); // Theatrical, Digital, Physical, TV
+    logger.info(`[Search Region Filter] Start: region=${regionCode}, items=${filteredResults.length}, date<=${today}`);
+    
+      filteredResults = filteredResults.filter(meta => {
+        const results = meta?.app_extras?.releaseDates?.results;
+        const countryEntry = Array.isArray(results) ? results.find(r => (r.iso_3166_1 || '').toUpperCase() === regionCode) : null;
+        if (countryEntry && Array.isArray(countryEntry.release_dates)) {
+          return countryEntry.release_dates.some(rd => {
+            const dateStr = (rd.release_date || '').substring(0, 10);
+            return !!dateStr && allowedTypes.has(rd.type) && dateStr <= today;
+          });
+        }
+        return false;
+      });
+    logger.info(`[Search Region Filter] End: filtered to ${filteredResults.length} items (region=${regionCode})`);
+    }
+  } catch (e) {
+    logger.warn(`[Search Region Filter] Failed to apply: ${e.message}`);
+  }
   if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
       const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
       const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
       const movieToTvMap = { 'G': 'TV-G', 'PG': 'TV-PG', 'PG-13': 'TV-14', 'R': 'TV-MA', 'NC-17': 'TV-MA' };
+
 
       filteredResults = filteredResults.filter(result => {
           const cert = result.certification;
