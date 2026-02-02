@@ -23,7 +23,7 @@ export const streamingServices = [
     { id: "sky", name: "Sky Go", icon: "/skygo.jpg" },
     { id: "wow", name: "WOW", icon: "/wow.jpg" },
     { id: "rai", name: "Rai Play", icon: "/raiplay.png" },
-    { id: "mdi", name: "Mediaset Infinity", icon: "/mediaset-infinity.webp" },
+    { id: "mdi", name: "Mediaset Infinity", icon: "/mediaset-infinity.png" },
     { id: "blv", name: "BluTV", icon: "/blu.webp" },
     { id: "cpd", name: "Canal+", icon: "/canal-plus.webp" },
     { id: "crv", name: "Crave", icon: "/crave.jpg" },
