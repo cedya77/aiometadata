@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.24.0](https://github.com/cedya77/aiometadata/compare/v1.23.5...v1.24.0) (2026-02-01)
+
+
+### Features
+
+* add 0 cast members option ([fbbd6bc](https://github.com/cedya77/aiometadata/commit/fbbd6bcbe9844954d64d161cc9cc2fc1e432cfe1))
+* add Calendar support for kitsu, mal, anilist, anidb, tmdb, tvdb and tvmaze ids ([4db6628](https://github.com/cedya77/aiometadata/commit/4db662872fad260cbb1952bd5d3bed7d69470a85))
+* add TMDB release date fetching for anime movies ([fbbd6bc](https://github.com/cedya77/aiometadata/commit/fbbd6bcbe9844954d64d161cc9cc2fc1e432cfe1))
+* add Trakt search ([b327237](https://github.com/cedya77/aiometadata/commit/b327237a043e892c6261d06cd7e2e5bec261e687))
+* **search:** add search catalog type editing feature ([68bf7a9](https://github.com/cedya77/aiometadata/commit/68bf7a911475b0120db92121a52ffcff17826d6c))
+* separate people search from title search for tmdb/trakt/tvdb ([2956fbf](https://github.com/cedya77/aiometadata/commit/2956fbf06c1593b5386e63147d2229b3d473591b))
+* simkl integration ([59e5aa8](https://github.com/cedya77/aiometadata/commit/59e5aa835d86cd8220cd23fdedaa0e25afb60525))
+* **simkl:** implement local pagination for watchlists and date_from sync ([9c366fa](https://github.com/cedya77/aiometadata/commit/9c366fa2161f9eee42c0482ddbe1d2f60f1a5bdc))
+* **simkl:** improve watchlist support, ID filtering, and performance ([fa2edaf](https://github.com/cedya77/aiometadata/commit/fa2edaf9adbd9afdee48caf13997771ec813cd0e))
+* **simkl:** make SIMKL_ACTIVITIES_TTL configurable ([c15b5d1](https://github.com/cedya77/aiometadata/commit/c15b5d190f766061aaab0831a1c6fe4a161ab575))
+
+
+### Bug Fixes
+
+* add media.kitsu.app to allowed domains and increase blur intensity ([1477dce](https://github.com/cedya77/aiometadata/commit/1477dce279ea74146c7afa4059467f2cc89253f2))
+* AI search on without key when importing ([5dfc82b](https://github.com/cedya77/aiometadata/commit/5dfc82b3334d2785338ac3c2bf079a248690da26))
+* apply showPrefix to all catalog types ([a3443d5](https://github.com/cedya77/aiometadata/commit/a3443d53b4da12d6f5de77333277bc6ecefaf6db))
+* **catalog-warmer:** update Simkl pageSize handling for watchlists ([3acc908](https://github.com/cedya77/aiometadata/commit/3acc9083f247d3a2d746ab2a04886f05e992de76))
+* **cleanup:** update version cleanup regex for semver tags ([c15b5d1](https://github.com/cedya77/aiometadata/commit/c15b5d190f766061aaab0831a1c6fe4a161ab575))
+* **getCache:** pass cacheKey to TVDB classifier to fix TTL:0 skip, remove version from TVDB cache keys ([7c4c59e](https://github.com/cedya77/aiometadata/commit/7c4c59ed80cb5a1a35694dc6910280dada770198))
+* **getMeta:** guard imdbData.links and links array before unshift ([db633ec](https://github.com/cedya77/aiometadata/commit/db633ec46ff3b23af2366adbf2d9f21df9f84340))
+* **id-mapper:** add null checks for Cinemeta response data ([7c4c59e](https://github.com/cedya77/aiometadata/commit/7c4c59ed80cb5a1a35694dc6910280dada770198))
+* **kitsu:** fix language fallback logic ([af1972e](https://github.com/cedya77/aiometadata/commit/af1972e915e2c3ed2adfc386e4ec24d49e3109e8))
+* lbox id extraction ([807d483](https://github.com/cedya77/aiometadata/commit/807d4833f98ff14d0a6ed52224b80751b5485cc7))
+* lbox id extraction ([f566a1a](https://github.com/cedya77/aiometadata/commit/f566a1ad89c70b095effe6c36bb680a64f4b4b07))
+* **mdblist:** prioritize list slug for url generation ([c15b5d1](https://github.com/cedya77/aiometadata/commit/c15b5d190f766061aaab0831a1c6fe4a161ab575))
+* **simkl:** use empty string and 0 instead of null for refresh_token and expires_at ([7bbe929](https://github.com/cedya77/aiometadata/commit/7bbe9291229dd416d34097e9a00f60f23ff86a80))
+* **tvdb art:** refine english only art logic to exclude backgrounds ([70c9cd8](https://github.com/cedya77/aiometadata/commit/70c9cd891f2f3fd1f968d8e9bc2fb227db71abc7))
+* **ui:** hide cache ttl option and settings gear for simkl watchlist ([c15b5d1](https://github.com/cedya77/aiometadata/commit/c15b5d190f766061aaab0831a1c6fe4a161ab575))
+* wiki-mapper and IMDb ratings scheduled updates, Simkl improvements, TVDB cache fix ([7c4c59e](https://github.com/cedya77/aiometadata/commit/7c4c59ed80cb5a1a35694dc6910280dada770198))
+
+
+### Performance Improvements
+
+* cache-wrap TMDB API methods for better performance ([fbbd6bc](https://github.com/cedya77/aiometadata/commit/fbbd6bcbe9844954d64d161cc9cc2fc1e432cfe1))
+* **cache:** refactor redis cache cleanup to use SCAN ([c15b5d1](https://github.com/cedya77/aiometadata/commit/c15b5d190f766061aaab0831a1c6fe4a161ab575))
+* improve MAL/Jikan API request handling and caching ([54a0c85](https://github.com/cedya77/aiometadata/commit/54a0c8569ffa907b89d23e8ab6003c9e204be9e7))
+* **tmdb:** optimize request handling and rate limiting ([af1972e](https://github.com/cedya77/aiometadata/commit/af1972e915e2c3ed2adfc386e4ec24d49e3109e8))
+
 ## [1.23.5](https://github.com/cedya77/aiometadata/compare/v1.23.4...v1.23.5) (2026-01-17)
 
 
