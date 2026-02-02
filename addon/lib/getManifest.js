@@ -332,7 +332,7 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
   }
 }
 
-async function createLetterboxdCatalog(userCatalog) {
+async function createLetterboxdCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
     

@@ -2306,7 +2306,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       config._currentSearchEngine = searchEngine;
       
       // Use search-specific cache wrapper
-      const searchKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
+      const searchKey = `${cleanId}:${originalSearchId}:${stableStringify(extraArgs)}`;
       
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
         const searchResult = await getSearch(cleanId, searchType, language, extraArgs, config);
