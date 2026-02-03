@@ -908,7 +908,7 @@ addon.post("/api/auth/simkl/disconnect", async (req, res) => {
     
     // Remove Simkl user info
     delete config.simklUser;
-    
+    delete config.simklWatchTracking;
     // Remove Simkl catalogs
     config.catalogs = (config.catalogs || []).filter(c => !c.id.startsWith('simkl.'));
     
@@ -2860,11 +2860,13 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
     const mdblistEnabled = !!config?.mdblistWatchTracking;
     const hasAnilistToken = config?.apiKeys?.anilistTokenId;
     const anilistEnabled = !!config?.anilistWatchTracking;
+    const hasSimklToken = config?.apiKeys?.simklTokenId;
+    const simklEnabled = !!config?.simklWatchTracking;
     
     const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
     const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
-    
-    if (shouldTrackMdblist || shouldTrackAnilist) {
+    const shouldTrackSimkl = hasSimklToken && simklEnabled;
+    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackSimkl) {
       // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
@@ -2875,7 +2877,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
       // Watch tracking disabled or no credentials - return empty subtitles
-      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}`);
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, simkl: ${shouldTrackSimkl}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {

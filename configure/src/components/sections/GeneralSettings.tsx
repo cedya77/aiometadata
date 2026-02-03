@@ -297,6 +297,10 @@ export function GeneralSettings() {
   const handleAniListTrackingChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, anilistWatchTracking: checked }));
   };
+  
+  const handleSimklTrackingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, simklWatchTracking: checked }));
+  };
 
   const handleEnableRatingPostersForLibraryChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
@@ -467,6 +471,19 @@ export function GeneralSettings() {
             id="anilist-watch-tracking"
             checked={!!config.anilistWatchTracking}
             onCheckedChange={handleAniListTrackingChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="simkl-watch-tracking" className="text-lg font-medium">Simkl Checkin</Label>
+            <p className="text-sm text-muted-foreground">
+              Automatically sync simkl watch progress when you play titles (requires connection in Catalogs → 'Manage Simkl Integration').
+            </p>
+          </div>
+          <Switch
+            id="simkl-watch-tracking"
+            checked={!!config.simklWatchTracking}
+            onCheckedChange={handleSimklTrackingChange}
           />
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">

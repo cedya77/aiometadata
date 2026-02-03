@@ -3,6 +3,7 @@ import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 import * as Utils from "./parseProps.js";
+import { progress } from "framer-motion";
 const consola = require('consola');
 const { Agent } = require('undici');
 const crypto = require('crypto');
@@ -415,6 +416,249 @@ async function fetchSimklWatchlistItems(
   }
 }
 
+type MovieIdInput =
+  | string
+  | {
+      imdb?: string;
+      tmdb?: number | string;
+      simkl?: number | string;
+      mal?: number | string;
+    };
+
+type EpisodeIdInput =
+  | string
+  | {
+    imdb?: string;
+    tmdb?: number | string;
+    simkl?: number | string;
+    tvdb?: number | string;
+    mal?: number | string;
+  };
+
+function formatIdSummary(ids: Record<string, string | number>) {
+  return Object.entries(ids)
+    .map(([key, value]) => `${key}:${value}`)
+    .join(', ');
+}
+
+function toOptionalNumber(value: number | string | undefined) {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeMovieIdInput(input: MovieIdInput | null | undefined) {
+  if (!input) return null;
+
+  const ids: Record<string, string | number> = {};
+
+  if (typeof input === 'string') {
+    if (input.startsWith('tt')) {
+      ids.imdb = input;
+      return ids;
+    }
+    const [prefix, value] = input.split(':');
+    if (prefix && value) {
+      ids[prefix] = /^\d+$/.test(value) ? Number(value) : value;
+      return ids;
+    }
+    return null;
+  }
+
+  if (input.imdb) ids.imdb = input.imdb;
+  const tmdb = toOptionalNumber(input.tmdb);
+  if (tmdb !== undefined) ids.tmdb = tmdb;
+  const simkl = toOptionalNumber(input.simkl);
+  if (simkl !== undefined) ids.simkl = simkl;
+  const mal = toOptionalNumber(input.mal);
+  if (mal !== undefined) ids.mal = mal;
+
+  return Object.keys(ids).length > 0 ? ids : null;
+}
+
+function normalizeEpisodeIdInput(input: EpisodeIdInput | null | undefined) {
+  if (!input) return null;
+
+  const ids: Record<string, string | number> = {};
+
+  if (typeof input === 'string') {
+    if (input.startsWith('tt')) {
+      ids.imdb = input;
+      return ids;
+    }
+    const [prefix, value] = input.split(':');
+    if (prefix && value) {
+      ids[prefix] = /^\d+$/.test(value) ? Number(value) : value;
+      return ids;
+    }
+    return null;
+  }
+
+  if (input.imdb) ids.imdb = input.imdb;
+  const tmdb = toOptionalNumber(input.tmdb);
+  if (tmdb !== undefined) ids.tmdb = tmdb;
+  const simkl = toOptionalNumber(input.simkl);
+  if (simkl !== undefined) ids.simkl = simkl;
+  const tvdb = toOptionalNumber(input.tvdb);
+  if (tvdb !== undefined) ids.tvdb = tvdb;
+  const mal = toOptionalNumber(input.mal);
+  if (mal !== undefined) ids.mal = mal;
+
+  return Object.keys(ids).length > 0 ? ids : null;
+}
+
+async function checkinMovie(idInput: MovieIdInput, accessToken: string): Promise<boolean> {
+  const normalizedIds = normalizeMovieIdInput(idInput);
+
+  if (!normalizedIds || !accessToken) {
+    logger.debug('[Simkl Checkin] Missing ID or accessToken for checkinMovie', {
+      id: idInput,
+      hasToken: !!accessToken
+    });
+    return false;
+  }
+
+  try {
+
+    const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
+    const watchedAt = new Date().toISOString();
+
+    const payload = {
+      progress: 1,
+      movie:
+        {
+          ids: normalizedIds,
+        }
+    };
+
+    logger.debug(
+      `[Simkl Checkin] Checkin for movie - ids: ${formatIdSummary(normalizedIds)}, timestamp: ${watchedAt}`
+    );
+
+    await makeAuthenticatedSimklRequest(
+      url,
+      accessToken,
+      'Simkl Checkin',
+      'POST',
+      payload
+    );
+
+    logger.info('[Simkl Checkin] Check in for movie successful', {
+      ids: normalizedIds
+    });
+    return true;
+  } catch (error: any) {
+    logger.error(
+      `[Simkl Checkin] Failed to checkin movie- ids: ${formatIdSummary(normalizedIds)}, error: ${error.message}`,
+      {
+        stack: error.stack
+      }
+    );
+
+    if (error.response) {
+      logger.error(
+        `[Simkl Checkin] Simkl API error response - status: ${error.response.status}, statusText: ${
+          error.response.statusText || 'N/A'
+        }`,
+        {
+          responseData: error.response.data,
+          headers: error.response.headers
+        }
+      );
+    } else if (error.code) {
+      logger.error(`[Simkl Checkin] Network error - code: ${error.code}`, {
+        errno: error.errno,
+        syscall: error.syscall
+      });
+    }
+
+    return false;
+  }
+}
+
+async function checkinSeries(
+  idInput: EpisodeIdInput,
+  season: number,
+  episode: number,
+  accessToken: string
+): Promise<boolean> {
+  const normalizedIds = normalizeEpisodeIdInput(idInput);
+
+  if (!normalizedIds || !accessToken || season < 1 || episode < 1) {
+    logger.warn('[Simkl Checkin] Invalid parameters for checkinSeries', {
+      id: idInput,
+      season,
+      episode,
+      hasToken: !!accessToken
+    });
+    return false;
+  }
+
+  try {
+
+    const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
+    const watchedAt = new Date().toISOString();
+
+    const payload = {
+      progress: 1,
+      show:
+      {
+        ids: normalizedIds
+      },
+      episode:
+      {
+        season: season,
+        number: episode
+      }
+    };
+
+    logger.debug(
+      `[Simkl Checkin] Checkin in episode - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, timestamp: ${watchedAt}`
+    );
+
+    await makeAuthenticatedSimklRequest(
+      url,
+      accessToken,
+      'Simkl Checkin',
+      'POST',
+      payload
+    );
+
+    logger.info('[Watch Tracking] Episode marked as watched', {
+      ids: normalizedIds,
+      season,
+      episode
+    });
+    return true;
+  } catch (error: any) {
+    logger.error(
+      `[Simkl Checkin] Failed to check in episode - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, error: ${error.message}`,
+      {
+        stack: error.stack
+      }
+    );
+
+    if (error.response) {
+      logger.error(
+        `[Simkl Checkin] Simkl API error response - status: ${error.response.status}, statusText: ${error.response.statusText || 'N/A'}`,
+        {
+          responseData: error.response.data,
+          headers: error.response.headers
+        }
+      );
+    } else if (error.code) {
+      logger.error(`[Simkl Checkin] Network error - code: ${error.code}`, {
+        errno: error.errno,
+        syscall: error.syscall
+      });
+    }
+
+    return false;
+  }
+}
+
+
 function mergeItems(existingItems: any[], newItems: any[]): any[] {
   const itemMap = new Map();
   
@@ -775,7 +1019,9 @@ export {
   makeAuthenticatedSimklRequest,
   getSimklAccessToken,
   fetchSimklTrendingItems,
-  fetchSimklCalendarItems
+  fetchSimklCalendarItems,
+  checkinMovie,
+  checkinSeries
 };
 
 async function fetchSimklCalendar(

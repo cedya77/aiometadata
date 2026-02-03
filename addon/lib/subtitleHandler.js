@@ -1,7 +1,9 @@
 const consola = require('consola');
 const idMapper = require('./id-mapper');
 const { resolveTmdbEpisodeFromKitsu } = require('./id-mapper');
+const { resolveTvdbEpisodeFromAnidbEpisode } = require('./anime-list-mapper');
 const anilistTracker = require('./anilistTracker');
+const simklUtils = require('../utils/simklUtils');
 
 
 const logger = consola.withTag('SubtitleHandler');
@@ -193,6 +195,28 @@ function shouldTrackAniList(config) {
 }
 
 /**
+ * Check if Simkl watch tracking should be enabled for this request
+ * @param {Object} config - User configuration
+ * @returns {boolean} True if Simkl tracking should proceed
+ */
+function shouldTrackSimkl(config) {
+  // Check if simklTokenId exists in config (user has connected their account)
+  if (!config?.apiKeys?.simklTokenId) {
+    logger.debug('[Watch Tracking] Simkl skipped - No Simkl account connected');
+    return false;
+  }
+
+  // Check if simklWatchTracking is enabled
+  if (!config.simklWatchTracking) {
+    logger.debug('[Watch Tracking] Simkl skipped - Feature disabled in user config');
+    return false;
+  }
+
+  logger.debug('[Watch Tracking] Simkl enabled - Account connected and tracking enabled');
+  return true;
+}
+
+/**
  * Main handler for subtitle requests - coordinates parsing and tracking
  * @param {string} type - Content type ('movie' or 'series')
  * @param {string} id - Media ID (e.g., 'tt1234567' or 'tt1234567:2:5')
@@ -227,6 +251,16 @@ function handleSubtitleRequest(type, id, config, userUUID) {
     if (shouldTrackAniList(config)) {
       anilistTracker.trackAnimeProgress(parsedId, config, userUUID).catch(error => {
         logger.error(`[Watch Tracking] AniList tracking failed for ${id}: ${error.message}`, {
+          stack: error.stack,
+          parsedId: parsedId
+        });
+      });
+    }
+
+    // Simkl tracking (fire-and-forget) - executes asynchronously without blocking response
+    if (shouldTrackSimkl(config)) {
+      checkinSimkl(parsedId, config).catch(error => {
+        logger.error(`[Watch Tracking] Simkl tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
         });
@@ -292,7 +326,7 @@ function normalizeIdsForMovie(parsedId) {
   }
 }
 
-async function resolveSeriesIds(parsedId, config = {}) {
+async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
   switch (parsedId.provider) {
     case 'imdb':
       return {
@@ -324,19 +358,45 @@ async function resolveSeriesIds(parsedId, config = {}) {
       return { ids, season: parsedId.season, episode: parsedId.episode };
     }
     case 'kitsu': {
-      const resolved = await resolveTmdbEpisodeFromKitsu(
-        parseInt(parsedId.id, 10),
-        parseInt(parsedId.episode, 10),
-        config
-      );
-
-      if (!resolved) {
-        logger.debug(`[Watch Tracking] Could not resolve Kitsu → TMDB for Kitsu series ${parsedId.id}`);
-        return null;
+      let resolved;
+      if(!isSimkl){
+        resolved = await resolveTmdbEpisodeFromKitsu(
+          parseInt(parsedId.id, 10),
+          parseInt(parsedId.episode, 10),
+          config
+        );
+  
+        if (!resolved) {
+          logger.debug(`[Watch Tracking] Could not resolve Kitsu → TMDB for Kitsu series ${parsedId.id}`);
+          return null;
+        }
+      } else {
+        const mappings = idMapper.getMappingByKitsuId(parseInt(parsedId.id, 10));
+        const malId = mappings?.mal_id || null;
+        const anidbId = mappings.anidb_id;
+        let tvdbInfo;
+        if(anidbId){
+          tvdbInfo = resolveTvdbEpisodeFromAnidbEpisode(anidbId, 1, parseInt(parsedId.episode, 10))
+        }
+        if(tvdbInfo){
+          resolved = {
+            tvdbId: tvdbInfo.tvdbId,
+            seasonNumber: tvdbInfo.tvdbSeason,
+            episodeNumber: tvdbInfo.tvdbEpisode
+          }
+        }
+        else if(malId){
+          resolved = {
+            malId: malId,
+            seasonNumber: 1,
+            episodeNumber: parseInt(parsedId.episode, 10)
+          }
+        }
       }
+      
 
       return {
-        ids: { tmdb: resolved.tmdbId },
+        ids: { tmdb: resolved.tmdbId, mal: resolved.malId, tvdb: resolved.tvdbId },
         season: resolved.seasonNumber,
         episode: resolved.episodeNumber
       };
@@ -387,6 +447,52 @@ async function trackWatchStatus(parsedId, config) {
     logger.debug(`[Watch Tracking] Unsupported content type for tracking: ${parsedId.type}`);
   } catch (error) {
     logger.error(`[Watch Tracking] Unexpected tracking error: ${error.message}`, {
+      stack: error.stack
+    });
+  }
+}
+
+async function checkinSimkl(parsedId, config) {
+  try {
+    // Import MDBList functions dynamically to avoid circular dependencies
+    const { checkinSeries, checkinMovie, getSimklAccessToken } = require('../utils/simklUtils');
+    const tokenId = config.apiKeys?.simklTokenId;
+    const accessToken = await getSimklAccessToken(tokenId);
+
+    if (!tokenId) {
+      logger.debug('[Simkl Checkin] Skipping checkin - missing token Id');
+      return;
+    }
+
+    if (parsedId.type === 'movie') {
+      const ids = normalizeIdsForMovie(parsedId);
+      if (!ids) {
+        logger.debug(`[Simkl Checkin] No valid identifiers for movie provider ${parsedId.provider}`);
+        return;
+      }
+
+      logger.debug(`[Simkl Checkin] Checking in movie (${buildIdSummary(ids)})`);
+      await checkinMovie(ids, accessToken);
+      return;
+    }
+
+    if (parsedId.type === 'series') {
+      const resolution = await resolveSeriesIds(parsedId, config, true);
+      if (!resolution) {
+        logger.debug(`[Simkl Checkin] Unable to resolve identifiers for series provider ${parsedId.provider}`);
+        return;
+      }
+
+      logger.debug(
+        `[Simkl Checkin] Checkin in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
+      );
+      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken);
+      return;
+    }
+
+    logger.debug(`[Simkl Checkin] Unsupported content type for tracking: ${parsedId.type}`);
+  } catch (error) {
+    logger.error(`[Simkl Checkin] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }

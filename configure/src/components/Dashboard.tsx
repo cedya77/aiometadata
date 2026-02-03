@@ -2121,6 +2121,10 @@ function DashboardSystem({ data, loading }) {
                     <span className="text-muted-foreground">AniList</span>
                     <span className="font-semibold">{systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0}%</span>
                   </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Simkl</span>
+                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.simklWatchTracking || 0}%</span>
+                  </div>
                 </div>
               </div>
 

@@ -127,6 +127,7 @@ export interface AppConfig {
   usePosterProxy: boolean;
   mdblistWatchTracking: boolean;
   anilistWatchTracking: boolean;
+  simklWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
   enableRatingPostersForLibrary?: boolean;
   /** If true, display a "⭐ Rate Me" genre button in meta pages that links to the rating page */
