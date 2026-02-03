@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.25.1](https://github.com/cedya77/aiometadata/compare/v1.25.0...v1.25.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **search:** fix forced person search call in tmdb/tvmaze ([231b949](https://github.com/cedya77/aiometadata/commit/231b949f1f35d76d794b276ac638f2695cd92dbf))
+
 ## [1.25.0](https://github.com/cedya77/aiometadata/compare/v1.24.2...v1.25.0) (2026-02-03)
 
 
