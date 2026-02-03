@@ -1349,7 +1349,7 @@ async function performTvdbPeopleSearch(type, query, language, config) {
   return ageFilteredResults;
 }
 
-async function performTvmazeSearch(query, language, config) {
+async function performTvmazeSearch(query, language, config, searchPersons = true) {
   // Check if query is an IMDb ID
   if (isImdbId(query)) {
     logger.info(`Detected IMDb ID: ${query}, using TVMaze getShowByImdbId`);
@@ -1375,6 +1375,7 @@ async function performTvmazeSearch(query, language, config) {
   if (!sanitizedQuery) return [];
 
   const shouldSearchPersons = (() => {
+    if (!searchPersons) return false;
     const nameInvalidatingSymbols = /[:()[\]?!$#@&]/;
     if (nameInvalidatingSymbols.test(query)) {
       logger.debug(`Skipping person search due to invalid symbols in query: "${query}"`);
@@ -2283,7 +2284,7 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performKitsuSearch('movie', query, language, config, page);
                 break;
               case 'tmdb.search':
-                metas = await performTmdbSearch(type, query, language, config, true, page);
+                metas = await performTmdbSearch(type, query, language, config, false, page);
                 break;
               case 'tvdb.search':
                 metas = await performTvdbSearch(type, query, language, config);
@@ -2292,7 +2293,7 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performTvdbCollectionsSearch(query, language, config);
                 break;
               case 'tvmaze.search':
-                metas = await performTvmazeSearch(query, language, config);
+                metas = await performTvmazeSearch(query, language, config, false);
                 break;
               case 'trakt.search':
                 // Trakt search doesn't support pagination, returns flat 30 results
