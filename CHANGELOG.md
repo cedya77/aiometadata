@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.25.2](https://github.com/cedya77/aiometadata/compare/v1.25.1...v1.25.2) (2026-02-03)
+
+
+### Bug Fixes
+
+* **kitsu search:** fix anime tv types set definition ([2063214](https://github.com/cedya77/aiometadata/commit/2063214a81ea9f4e17b86d30cccc84c2dcc4b4dc))
+
 ## [1.25.1](https://github.com/cedya77/aiometadata/compare/v1.25.0...v1.25.1) (2026-02-03)
 
 
