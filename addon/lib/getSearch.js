@@ -222,12 +222,11 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
       'NONE': 'none'
     };
     const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
+    const subtypesArray = type === 'movie' ? ['movie'] : Array.from(desiredTvTypes);
     const searchResults = await kitsu.searchByName(
       query,
-      type === 'movie'
-        ? ['movie']
-        : desiredTvTypes,
-        KITSU_RATING_MAP[config.ageRating.toUpperCase()]
+      subtypesArray,
+      'none'
     );
     
     if (!searchResults || searchResults.length === 0) {
@@ -307,7 +306,30 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
       })
     );
     
-    return metas.filter(Boolean);
+    let finalMetas = metas.filter(Boolean);
+
+    if (config.ageRating && config.ageRating.toLowerCase() !== 'none') {
+      const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+      const kitsuMap = { 'G': 'G', 'PG': 'PG', 'PG-13': 'PG-13', 'R': 'R', 'R18': 'NC-17' };
+      
+      finalMetas = finalMetas.filter(result => {
+        const cert = result.certification;
+        if (!cert) return true;
+        
+        const mappedCert = kitsuMap[cert] || cert;
+        const userRating = config.ageRating === 'R18' ? 'NC-17' : config.ageRating;
+        
+        const userRatingIndex = movieRatingHierarchy.indexOf(userRating);
+        const resultRatingIndex = movieRatingHierarchy.indexOf(mappedCert);
+        
+        if (userRatingIndex === -1) return true;
+        if (resultRatingIndex === -1) return true;
+        
+        return resultRatingIndex <= userRatingIndex;
+      });
+    }
+
+    return finalMetas;
   } catch (error) {
     logger.error(`Kitsu search failed for "${query}":`, error.message);
     return [];
