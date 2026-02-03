@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.25.0](https://github.com/cedya77/aiometadata/compare/v1.24.2...v1.25.0) (2026-02-03)
+
+
+### Features
+
+* **search:** add mdblist as search provider ([2e805e2](https://github.com/cedya77/aiometadata/commit/2e805e2a0cea6d5bbcffffe486cf12731cdf787f))
+* **simkl:** Add Simkl check in functionality for watch syncing ([238da3f](https://github.com/cedya77/aiometadata/commit/238da3fdb25c916c89fa400b6bd41bead0746bfd))
+
+
+### Bug Fixes
+
+* **search filter:** fix search filtering by catalog vs search ([a200eac](https://github.com/cedya77/aiometadata/commit/a200eacd55cb111f5beec604259c8107c60c54dc))
+* **tmdb:** fix crew photo path ([2e805e2](https://github.com/cedya77/aiometadata/commit/2e805e2a0cea6d5bbcffffe486cf12731cdf787f))
+
 ## [1.24.2](https://github.com/cedya77/aiometadata/compare/v1.24.1...v1.24.2) (2026-02-02)
 
 
