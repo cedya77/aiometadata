@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.25.3](https://github.com/cedya77/aiometadata/compare/v1.25.2...v1.25.3) (2026-02-04)
+
+
+### Bug Fixes
+
+* **simkl checkin:** Add fallback ids to MAL  when simkl cant find metadata via tvdb for anime and fix season fetching for anidb --&gt; tvdb ([1526a97](https://github.com/cedya77/aiometadata/commit/1526a9745e460d1bb228959b9db4bc8f824cd808))
+
 ## [1.25.2](https://github.com/cedya77/aiometadata/compare/v1.25.1...v1.25.2) (2026-02-03)
 
 
