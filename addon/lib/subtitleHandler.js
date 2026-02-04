@@ -152,7 +152,7 @@ function parseMediaId(id) {
  * @param {Object} config - User configuration
  * @returns {boolean} - True if tracking should proceed
  */
-function shouldTrackWatch(config) {
+function shouldTrackMdblistWatch(config) {
   // Check if MDBList API key exists (never log the actual key value)
   if (!config?.apiKeys?.mdblist) {
     logger.debug('[Watch Tracking] Skipped - No MDBList API key configured');
@@ -238,9 +238,9 @@ function handleSubtitleRequest(type, id, config, userUUID) {
     }
 
     // MDBList tracking (fire-and-forget)
-    if (shouldTrackWatch(config)) {
-      trackWatchStatus(parsedId, config).catch(error => {
-        logger.error(`[Watch Tracking] MDBList tracking failed for ${id}: ${error.message}`, {
+    if (shouldTrackMdblistWatch(config)) {
+      trackMdblistWatchStatus(parsedId, config).catch(error => {
+        logger.error(`[Mdblist Watch Tracking] MDBList tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
         });
@@ -359,6 +359,7 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
     }
     case 'kitsu': {
       let resolved;
+      let fallback;
       if(!isSimkl){
         resolved = await resolveTmdbEpisodeFromKitsu(
           parseInt(parsedId.id, 10),
@@ -379,14 +380,15 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
           tvdbInfo = resolveTvdbEpisodeFromAnidbEpisode(anidbId, 1, parseInt(parsedId.episode, 10))
         }
         if(tvdbInfo){
+          logger.debug(`[tvdb anilist] tvdb anilist mapping: ${JSON.stringify(tvdbInfo)} `)
           resolved = {
             tvdbId: tvdbInfo.tvdbId,
             seasonNumber: tvdbInfo.tvdbSeason,
             episodeNumber: tvdbInfo.tvdbEpisode
           }
         }
-        else if(malId){
-          resolved = {
+        if(malId){
+          fallback = {
             malId: malId,
             seasonNumber: 1,
             episodeNumber: parseInt(parsedId.episode, 10)
@@ -397,6 +399,7 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
 
       return {
         ids: { tmdb: resolved.tmdbId, mal: resolved.malId, tvdb: resolved.tvdbId },
+        fallbackData: fallback?.malId ? {ids:  {mal: fallback.malId}, season: 1, episode: fallback.episodeNumber} : null,
         season: resolved.seasonNumber,
         episode: resolved.episodeNumber
       };
@@ -407,25 +410,25 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
   }
 }
 
-async function trackWatchStatus(parsedId, config) {
+async function trackMdblistWatchStatus(parsedId, config) {
   try {
     // Import MDBList functions dynamically to avoid circular dependencies
     const { markMovieAsWatched, markEpisodeAsWatched } = require('../utils/mdbList');
     const apiKey = config.apiKeys.mdblist;
 
     if (!apiKey) {
-      logger.debug('[Watch Tracking] Skipping tracking - missing MDBList API key');
+      logger.debug('[Mdblist Watch Tracking] Skipping tracking - missing MDBList API key');
       return;
     }
 
     if (parsedId.type === 'movie') {
       const ids = normalizeIdsForMovie(parsedId);
       if (!ids) {
-        logger.debug(`[Watch Tracking] No valid identifiers for movie provider ${parsedId.provider}`);
+        logger.debug(`[Mdblist Watch Tracking] No valid identifiers for movie provider ${parsedId.provider}`);
         return;
       }
 
-      logger.debug(`[Watch Tracking] Marking movie as watched (${buildIdSummary(ids)})`);
+      logger.debug(`[Mdblist Watch Tracking] Marking movie as watched (${buildIdSummary(ids)})`);
       await markMovieAsWatched(ids, apiKey);
       return;
     }
@@ -433,20 +436,20 @@ async function trackWatchStatus(parsedId, config) {
     if (parsedId.type === 'series') {
       const resolution = await resolveSeriesIds(parsedId, config);
       if (!resolution) {
-        logger.debug(`[Watch Tracking] Unable to resolve identifiers for series provider ${parsedId.provider}`);
+        logger.debug(`[Mdblist Watch Tracking] Unable to resolve identifiers for series provider ${parsedId.provider}`);
         return;
       }
 
       logger.debug(
-        `[Watch Tracking] Marking episode as watched (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
+        `[Mdblist Watch Tracking] Marking episode as watched (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
       );
       await markEpisodeAsWatched(resolution.ids, resolution.season, resolution.episode, apiKey);
       return;
     }
 
-    logger.debug(`[Watch Tracking] Unsupported content type for tracking: ${parsedId.type}`);
+    logger.debug(`[Mdblist Watch Tracking] Unsupported content type for tracking: ${parsedId.type}`);
   } catch (error) {
-    logger.error(`[Watch Tracking] Unexpected tracking error: ${error.message}`, {
+    logger.error(`[Mdblist Watch Tracking] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }
@@ -486,7 +489,7 @@ async function checkinSimkl(parsedId, config) {
       logger.debug(
         `[Simkl Checkin] Checkin in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
       );
-      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken);
+      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken, resolution.fallbackData);
       return;
     }
 
@@ -501,6 +504,6 @@ async function checkinSimkl(parsedId, config) {
 module.exports = {
   handleSubtitleRequest,
   parseMediaId,
-  shouldTrackWatch,
+  shouldTrackMdblistWatch,
   shouldTrackAniList
 };

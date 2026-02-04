@@ -581,7 +581,8 @@ async function checkinSeries(
   idInput: EpisodeIdInput,
   season: number,
   episode: number,
-  accessToken: string
+  accessToken: string,
+  fallbackData?: any // Made optional
 ): Promise<boolean> {
   const normalizedIds = normalizeEpisodeIdInput(idInput);
 
@@ -595,65 +596,58 @@ async function checkinSeries(
     return false;
   }
 
-  try {
+  const doCheckin = async (ids: Record<string, string | number>, attemptLabel: string, seasonNumber: number, episodeNumber:number) => {
+    try {
+      const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
+      const payload = {
+        progress: 1,
+        show: { ids: ids },
+        episode: { season: seasonNumber, number: episodeNumber }
+      };
 
-    const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
-    const watchedAt = new Date().toISOString();
+      logger.debug(`[Simkl Checkin] ${attemptLabel} - ids: ${formatIdSummary(ids)}, S${seasonNumber}E${episodeNumber}`);
 
-    const payload = {
-      progress: 1,
-      show:
-      {
-        ids: normalizedIds
-      },
-      episode:
-      {
-        season: season,
-        number: episode
+      await makeAuthenticatedSimklRequest(url, accessToken, 'Simkl Checkin', 'POST', payload);
+      
+      logger.info(`[Simkl Checkin] Checked into episode (${attemptLabel})`, { ids, seasonNumber, episodeNumber });
+      return true;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        logger.warn(`[Simkl Checkin] ${attemptLabel} failed with 404 (Not Found)`);
+        throw error;
       }
-    };
+      throw error;
+    }
+  };
 
-    logger.debug(
-      `[Simkl Checkin] Checkin in episode - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, timestamp: ${watchedAt}`
-    );
-
-    await makeAuthenticatedSimklRequest(
-      url,
-      accessToken,
-      'Simkl Checkin',
-      'POST',
-      payload
-    );
-
-    logger.info('[Watch Tracking] Episode marked as watched', {
-      ids: normalizedIds,
-      season,
-      episode
-    });
+  try {
+    await doCheckin(normalizedIds, 'Primary ID', season, episode);
     return true;
   } catch (error: any) {
-    logger.error(
-      `[Simkl Checkin] Failed to check in episode - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, error: ${error.message}`,
-      {
-        stack: error.stack
-      }
-    );
-
-    if (error.response) {
-      logger.error(
-        `[Simkl Checkin] Simkl API error response - status: ${error.response.status}, statusText: ${error.response.statusText || 'N/A'}`,
-        {
-          responseData: error.response.data,
-          headers: error.response.headers
+    if (error.response?.status === 404 && fallbackData && fallbackData.ids) {
+      const normalizedFallbackIds = normalizeEpisodeIdInput(fallbackData.ids);
+      if (normalizedFallbackIds) {
+        logger.info('[Simkl Checkin] Primary ID failed (404), attempting fallback IDs...');
+        try {
+          await doCheckin(normalizedFallbackIds, 'Fallback ID', fallbackData.season, fallbackData.episode);
+          return true;
+        } catch (fallbackError: any) {
+          logger.error(`[Simkl Checkin] Fallback check-in also failed: ${fallbackError.message}`);
+          return false;
         }
-      );
-    } else if (error.code) {
-      logger.error(`[Simkl Checkin] Network error - code: ${error.code}`, {
-        errno: error.errno,
-        syscall: error.syscall
-      });
+      }
     }
 
+    // Logging for the initial failure if no fallback or fallback not applicable
+    logger.error(
+      `[Simkl Checkin] Failed to check in episode - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, error: ${error.message}`
+    );
+    if (error.response) {
+      logger.debug(
+        `[Simkl Checkin] API error response:`,
+        { status: error.response.status, data: error.response.data }
+      );
+    }
     return false;
   }
 }

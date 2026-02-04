@@ -661,6 +661,7 @@ function resolveTvdbEpisodeFromAnidbEpisode(anidbId, anidbSeason, anidbEpisode) 
       const mappingAnidbSeason = parseInt(mapping.$.anidbseason);
       if (mappingAnidbSeason !== anidbSeason) continue;
 
+      if (mapping.$.tvdbseason === undefined) continue;
       const tvdbSeason = parseInt(mapping.$.tvdbseason);
       const offset = parseInt(mapping.$.offset) || 0;
 
@@ -677,7 +678,17 @@ function resolveTvdbEpisodeFromAnidbEpisode(anidbId, anidbSeason, anidbEpisode) 
             offset,
           });
         }
-      } else if (mapping._) {
+      } else if (mapping.$.start && !mapping.$.end) {
+        const start = parseInt(mapping.$.start);
+        if (anidbEpisode >= start) {
+           const tvdbEpisode = anidbEpisode + offset;
+           return buildResult(tvdbSeason, tvdbEpisode, {
+             type: 'absolute_numbering_open',
+             start,
+             offset,
+           });
+        }
+     } else if (mapping._) {
         const ranges = parseEpisodeMapping(mapping._);
         for (const range of ranges) {
           if (anidbEpisode >= range.start && anidbEpisode <= range.end) {
