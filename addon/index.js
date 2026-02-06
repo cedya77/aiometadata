@@ -68,7 +68,8 @@ const normalizeRedirectUri = (uri) => {
   }
   return `https://${trimmed.replace(/^\/+/, '')}`;
 };
-
+const usedTraktCodes = new Set();
+const usedAnilistCodes = new Set();
 function shuffleMetas(metas = []) {
   const shuffled = Array.isArray(metas) ? metas.slice() : [];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -419,7 +420,6 @@ addon.get("/api/auth/trakt/authorize", async (req, res) => {
 addon.get("/api/auth/trakt/callback", async (req, res) => {
   try {
     const { code } = req.query;
-    
     if (!code) {
       return res.status(400).send(`
         <!DOCTYPE html>
@@ -432,7 +432,20 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
-    
+    if (usedTraktCodes.has(code)) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Code Already Used</h1>
+          <p>This authorization code has already been exchanged. Please try authenticating again.</p>
+        </body>
+        </html>
+      `);
+    }
+    usedTraktCodes.add(code);
+    setTimeout(() => usedTraktCodes.delete(code), 120000);
     const clientId = process.env.TRAKT_CLIENT_ID;
     const clientSecret = process.env.TRAKT_CLIENT_SECRET;
     const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
@@ -1434,6 +1447,20 @@ addon.get("/anilist/callback", async (req, res) => {
         </html>
       `);
     }
+    if (usedAnilistCodes.has(code)) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Anilist OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>⚠️ Code Already Used</h1>
+          <p>This authorization code has already been exchanged. Please try authenticating again.</p>
+        </body>
+        </html>
+      `);
+    }
+    usedAnilistCodes.add(code);
+    setTimeout(() => usedAnilistCodes.delete(code), 120000);
     
     const clientId = process.env.ANILIST_CLIENT_ID;
     const clientSecret = process.env.ANILIST_CLIENT_SECRET;
@@ -1484,19 +1511,32 @@ addon.get("/anilist/callback", async (req, res) => {
       `);
     }
     
-    // Generate UUID for this token
-    const tokenId = crypto.randomUUID();
-    
-    // Store tokens in database with provider='anilist'
-    const saved = await database.saveOAuthToken(
-      tokenId,
-      'anilist',
-      user.username,
-      tokens.access_token,
-      tokens.refresh_token,
-      tokens.expires_at,
-      '' // scope
-    );
+    const existingTokens = await database.getOAuthTokensByProvider('anilist');
+    const existingToken = existingTokens.find(t => t.user_id.toLowerCase() === user.username.toLowerCase());
+    let tokenId;
+    let saved;
+    if (existingToken) {
+      tokenId = existingToken.id;
+      consola.info(`[AniList OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
+      saved = await database.updateOAuthToken(
+        tokenId,
+        tokens.access_token,
+        tokens.refresh_token || '',
+        tokens.expires_at
+      );
+    } else {
+      tokenId = crypto.randomUUID();
+      consola.info(`[AniList OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
+      saved = await database.saveOAuthToken(
+        tokenId,
+        'anilist',
+        user.username,
+        tokens.access_token,
+        tokens.refresh_token || '',
+        tokens.expires_at,
+        ''
+      );
+    }
     
     if (!saved) {
       return res.status(500).send(`
@@ -1660,8 +1700,12 @@ addon.get("/anilist/status/:userUUID", async (req, res) => {
       });
     }
     
-    res.json({ 
-      connected: true,
+    const isExpired = token.expires_at && Date.now() >= token.expires_at;
+    const expiresAt = token.expires_at || null;
+    res.json({
+      connected: !isExpired,
+      expired: isExpired,
+      expiresAt,
       username: token.user_id,
       trackingEnabled: config.anilistWatchTracking !== false
     });

@@ -48,6 +48,7 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
   const [selectedPublicLists, setSelectedPublicLists] = useState<Set<string>>(new Set());
   const [isLoadingPublicLists, setIsLoadingPublicLists] = useState(false);
   const [publicListsLoaded, setPublicListsLoaded] = useState(false);
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
 
   const authUrl = "/anilist/auth";
 
@@ -66,6 +67,7 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
           .then(res => res.ok ? res.json() : null)
           .then(data => {
             if (data?.username) setUsername(data.username);
+            if (data?.expiresAt) setTokenExpiresAt(data.expiresAt);
           })
           .catch(() => setUsername(null))
           .finally(() => setLoadingUsername(false));
@@ -495,7 +497,7 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
               <CardTitle className="text-lg">Connection Status</CardTitle>
             </CardHeader>
             <CardContent>
-              {isConnected ? (
+            {isConnected ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-green-600">
                     <CheckCircle2 className="h-5 w-5" />
@@ -506,6 +508,24 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
                       <span className="text-muted-foreground">as @{username}</span>
                     )}
                   </div>
+                  {tokenExpiresAt && (() => {
+                    const daysLeft = Math.floor((tokenExpiresAt - Date.now()) / (1000 * 60 * 60 * 24));
+                    if (daysLeft <= 0) {
+                      return (
+                        <div className="flex items-center gap-2 text-red-600 text-sm">
+                          <XCircle className="h-4 w-4" />
+                          <span>Token expired — please reconnect your AniList account.</span>
+                        </div>
+                      );
+                    } else if (daysLeft <= 30) {
+                      return (
+                        <div className="flex items-center gap-2 text-yellow-600 text-sm">
+                          <span>⚠️ Token expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} — you'll need to reconnect then.</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   <Button 
                     variant="destructive" 
                     onClick={handleDisconnect}

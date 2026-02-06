@@ -73,74 +73,154 @@ if (!malDispatcher) {
   }
 }
 
-// Queue Configuration
-const MIN_REQUEST_INTERVAL = 340; 
+// --- Rate limit configuration ---
+// Jikan limits: 3 requests/second, 60 requests/minute
+// We stay conservative for shared instances where the cache warmer + multiple
+// users can generate bursts. Self-hosted Jikan can override via env vars.
+const MAX_CONCURRENT = parseInt(process.env.JIKAN_MAX_CONCURRENT, 10) || 2;  // In-flight requests at once
+const MIN_REQUEST_INTERVAL = parseInt(process.env.JIKAN_MIN_INTERVAL, 10) || 350; // ms between dispatches
+const MAX_REQUESTS_PER_MINUTE = parseInt(process.env.JIKAN_MAX_PER_MINUTE, 10) || 55; // Stay under 60/min
 const MAX_RETRIES = 3;
 const RATE_LIMIT_DELAY = 2000;
+
+// --- Queue state ---
 let requestQueue = [];
+let activeRequests = 0;
 let isProcessing = false;
-let lastRequestTime = 0;
 let rateLimitHitTimestamps = [];
+let requestTimestamps = [];       // Sliding window for per-minute tracking
+let lastDispatchTime = 0;
+let adaptiveConcurrency = MAX_CONCURRENT;  // Dynamically reduced on 429s
+let lastAdaptiveRestore = Date.now();
 
 
-async function processQueue() {
-  if (requestQueue.length === 0) {
-    isProcessing = false;
-    return;
+// --- Adaptive concurrency ---
+// When we hit rate limits, temporarily reduce concurrency.
+// Gradually restore it after a cool-down period.
+function onRateLimitHit() {
+  const now = Date.now();
+  rateLimitHitTimestamps.push(now);
+  rateLimitHitTimestamps = rateLimitHitTimestamps.filter(t => now - t < 60000);
+
+  // Drop to 1 concurrent on any 429
+  adaptiveConcurrency = 1;
+  lastAdaptiveRestore = now;
+
+  logger.warn(`[Rate Limiter] Concurrency reduced to 1 (${rateLimitHitTimestamps.length} hits in last 60s)`);
+}
+
+function maybeRestoreConcurrency() {
+  const now = Date.now();
+  const recentHits = rateLimitHitTimestamps.filter(t => now - t < 60000).length;
+
+  // Only restore if no 429s for 30 seconds
+  if (recentHits === 0 && now - lastAdaptiveRestore > 30000 && adaptiveConcurrency < MAX_CONCURRENT) {
+    adaptiveConcurrency = Math.min(adaptiveConcurrency + 1, MAX_CONCURRENT);
+    lastAdaptiveRestore = now;
+    logger.debug(`[Rate Limiter] Concurrency restored to ${adaptiveConcurrency}/${MAX_CONCURRENT}`);
   }
+}
+
+// --- Per-minute sliding window check ---
+function getMinuteWaitTime() {
+  const now = Date.now();
+  requestTimestamps = requestTimestamps.filter(t => now - t < 60000);
+
+  if (requestTimestamps.length >= MAX_REQUESTS_PER_MINUTE) {
+    const oldestInWindow = requestTimestamps[0];
+    const waitMs = 60000 - (now - oldestInWindow) + 150; // 150ms safety buffer
+    return Math.max(0, waitMs);
+  }
+  return 0;
+}
+
+
+// --- Core queue processor ---
+// Dispatches up to `adaptiveConcurrency` requests concurrently,
+// respecting both per-second and per-minute rate limits.
+async function processQueue() {
+  if (isProcessing) return;
   isProcessing = true;
 
-  const now = Date.now();
-  const timeSinceLast = now - lastRequestTime;
-  const waitTime = Math.max(0, MIN_REQUEST_INTERVAL - timeSinceLast);
+  while (requestQueue.length > 0) {
+    // Check if we can dispatch another concurrent request
+    if (activeRequests >= adaptiveConcurrency) {
+      // Wait for a slot to free up
+      await new Promise(resolve => setTimeout(resolve, 50));
+      continue;
+    }
 
-  if (waitTime > 0) {
-    await new Promise(resolve => setTimeout(resolve, waitTime));
+    // Per-minute rate limit check
+    const minuteWait = getMinuteWaitTime();
+    if (minuteWait > 0) {
+      logger.debug(`[Rate Limiter] Per-minute limit approaching (${requestTimestamps.length}/${MAX_REQUESTS_PER_MINUTE}), waiting ${minuteWait}ms`);
+      await new Promise(resolve => setTimeout(resolve, minuteWait));
+      continue;
+    }
+
+    // Per-second spacing: enforce minimum interval between dispatches
+    const now = Date.now();
+    const timeSinceLast = now - lastDispatchTime;
+    const perSecondWait = Math.max(0, MIN_REQUEST_INTERVAL - timeSinceLast);
+    if (perSecondWait > 0) {
+      await new Promise(resolve => setTimeout(resolve, perSecondWait));
+    }
+
+    // Grab the next task
+    const task = requestQueue.shift();
+    if (!task) break;
+
+    // Record dispatch time
+    lastDispatchTime = Date.now();
+    requestTimestamps.push(lastDispatchTime);
+    activeRequests++;
+
+    // Fire and don't await — let it run concurrently
+    processRequest(task).finally(() => {
+      activeRequests--;
+      maybeRestoreConcurrency();
+
+      // Kick the queue again in case it stalled waiting for a slot
+      if (requestQueue.length > 0 && !isProcessing) {
+        processQueue();
+      }
+    });
   }
 
-  const task = requestQueue.shift();
-  lastRequestTime = Date.now();
+  isProcessing = false;
 
-  processRequest(task).finally(() => {
-     processQueue();
-  });
+  if (requestQueue.length > 0) {
+    processQueue();
+  }
 }
 
 async function processRequest(requestTask) {
   const startTime = Date.now();
-
   try {
     const result = await requestTask.task();
-    
     const responseTime = Date.now() - startTime;
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('mal', responseTime, true);
-    
     requestTask.resolve(result);
-    
   } catch (error) {
     const isRateLimit = error.response?.status === 429;
     const isTimeout = error.code && (
-        error.code.includes('TIMEOUT') || 
-        error.code.includes('UND_ERR_HEADERS_TIMEOUT') || 
+        error.code.includes('TIMEOUT') ||
+        error.code.includes('UND_ERR_HEADERS_TIMEOUT') ||
         error.code.includes('UND_ERR_BODY_TIMEOUT')
     );
     const isRetryable = (isRateLimit || isTimeout) && requestTask.retries < MAX_RETRIES;
-    
+
     if (isRetryable) {
-      requestTask.retries++; 
-      
+      requestTask.retries++;
+
       if (isRateLimit) {
-        const now = Date.now();
-        rateLimitHitTimestamps.push(now);
-        rateLimitHitTimestamps = rateLimitHitTimestamps.filter(t => now - t < 60000);
-        
+        onRateLimitHit();
+
         const recentHitCount = rateLimitHitTimestamps.length;
-        
         let baseBackoffTime = Math.pow(2, requestTask.retries - 1) * RATE_LIMIT_DELAY;
         if (recentHitCount > 10) baseBackoffTime *= 2.5;
         else if (recentHitCount > 5) baseBackoffTime *= 1.8;
-        
         const jitter = Math.random() * 300;
         const totalDelay = baseBackoffTime + jitter;
 
@@ -148,7 +228,7 @@ async function processRequest(requestTask) {
           `Jikan rate limit hit (${recentHitCount} hits in last 60s). Retrying in ${Math.round(totalDelay)}ms. ` +
           `(Attempt ${requestTask.retries}/${MAX_RETRIES})`
         );
-        
+
         const requestTracker = require('./requestTracker');
         requestTracker.logError('warning', `MAL API rate limit hit`, {
           retries: requestTask.retries,
@@ -157,29 +237,26 @@ async function processRequest(requestTask) {
         });
 
         setTimeout(() => {
-          requestQueue.unshift(requestTask); // Put back at front of queue
+          // Re-queue at front with high priority
+          requestQueue.unshift(requestTask);
           if (!isProcessing) processQueue();
         }, totalDelay);
 
       } else if (isTimeout) {
         const timeoutDelay = Math.pow(2, requestTask.retries - 1) * 1000;
         const totalDelay = timeoutDelay + (Math.random() * 500);
-        
         logger.warn(
           `Jikan request timeout for "${requestTask.url}". Retrying in ${Math.round(totalDelay)}ms.`
         );
-        
         setTimeout(() => {
           requestQueue.unshift(requestTask);
           if (!isProcessing) processQueue();
         }, totalDelay);
       }
-      
     } else {
       const responseTime = Date.now() - startTime;
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('mal', responseTime, false);
-      
       if (requestTask.retries >= MAX_RETRIES) {
         logger.error(`Jikan request failed for "${requestTask.url}" after ${MAX_RETRIES} retries.`);
         requestTracker.logError('error', `MAL API request failed`, {
@@ -229,8 +306,8 @@ async function _makeJikanRequest(url) {
                return { data: JSON.parse(cachedBody) };
            }
        }
-       logger.warn(`[304] ETag match but body missing for ${url}. Re-fetching...`);
-       return httpGet(url, { dispatcher: malDispatcher, timeout: 15000 });
+       logger.warn(`[304] ETag match but body missing for ${url}. Re-fetching without ETag...`);
+       return httpGet(url, { dispatcher: malDispatcher, timeout: 15000, headers: {} });
   }
 
   if (response.headers?.etag && redis) {
@@ -326,7 +403,7 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
   const desiredPages = Math.ceil(totalItemsToFetch / JIKAN_PAGE_LIMIT);
   let allItems = [];
 
-  async function _fetchPage(page) {
+  function _fetchPage(page) {
     const params = new URLSearchParams({
       page: page,
       limit: JIKAN_PAGE_LIMIT,
@@ -341,20 +418,26 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
       });
   }
 
+  // First page: need pagination info
   const firstPageResponse = await _fetchPage(1);
   if (!firstPageResponse.data || firstPageResponse.data.length === 0) {
     return [];
   }
-
   allItems.push(...firstPageResponse.data);
+
   const lastVisiblePage = firstPageResponse.pagination?.last_visible_page || 1;
   const actualTotalPagesToFetch = Math.min(desiredPages, lastVisiblePage);
 
   if (actualTotalPagesToFetch > 1) {
-    // Fetch pages sequentially instead of in parallel to respect rate limits
+    // Enqueue all remaining pages at once — queue handles pacing
+    const pagePromises = [];
     for (let page = 2; page <= actualTotalPagesToFetch; page++) {
-      const result = await _fetchPage(page);
-      const pageData = result?.data || [];
+      pagePromises.push(
+        _fetchPage(page).then(result => result?.data || [])
+      );
+    }
+    const results = await Promise.all(pagePromises);
+    for (const pageData of results) {
       if (pageData.length > 0) {
         allItems.push(...pageData);
       }
@@ -364,40 +447,51 @@ async function jikanPaginator(endpoint, totalItemsToFetch, queryParams = {}) {
   return allItems.slice(0, totalItemsToFetch);
 }
 
-
-/**
- * A generic paginator for fetching all entries from a given Jikan endpoint.
- * This is used for endpoints that don't need complex query parameters.
- * @param {string} endpoint - The full Jikan endpoint path (e.g., `/anime/21/episodes`).
- * @returns {Promise<Array>} - A promise that resolves to a flat array of all fetched items.
- */
+// --- Get all pages: fetches until no more pages exist ---
+// First page is awaited to get pagination info, then remaining pages
+// are enqueued all at once for concurrent processing.
 async function jikanGetAllPages(endpoint, initialParams = {}) {
   let allItems = [];
-  let page = 1;
-  let hasNextPage = true;
 
-  while (hasNextPage) {
-    const params = new URLSearchParams({
-      ...initialParams,
-      page: page,
-    });
-    const url = `${JIKAN_API_BASE}${endpoint}?${params.toString()}`;
-    try {
-      const response = await enqueueRequest(() => _makeJikanRequest(url), url);
-      const data = response.data;
-      
-      if (data?.data && data.data.length > 0) {
-        allItems.push(...data.data);
-        hasNextPage = data.pagination?.has_next_page || false;
-      } else {
-        hasNextPage = false;
-      }
-    } catch (error) {
-      logger.warn(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message || error || 'Unknown error');
-      hasNextPage = false; 
+  // Fetch first page to discover total pages
+  const firstParams = new URLSearchParams({ ...initialParams, page: 1 });
+  const firstUrl = `${JIKAN_API_BASE}${endpoint}?${firstParams.toString()}`;
+
+  try {
+    const firstResponse = await enqueueRequest(() => _makeJikanRequest(firstUrl), firstUrl);
+    const firstData = firstResponse.data;
+
+    if (!firstData?.data || firstData.data.length === 0) return [];
+    allItems.push(...firstData.data);
+
+    const hasNextPage = firstData.pagination?.has_next_page || false;
+    const lastPage = firstData.pagination?.last_visible_page || 1;
+
+    if (!hasNextPage || lastPage <= 1) return allItems;
+
+    // Enqueue all remaining pages at once
+    const pagePromises = [];
+    for (let page = 2; page <= lastPage; page++) {
+      const params = new URLSearchParams({ ...initialParams, page: page });
+      const url = `${JIKAN_API_BASE}${endpoint}?${params.toString()}`;
+      pagePromises.push(
+        enqueueRequest(() => _makeJikanRequest(url), url)
+          .then(response => response.data?.data || [])
+          .catch(error => {
+            logger.warn(`Failed to fetch page ${page} for endpoint ${endpoint}:`, error.message || error);
+            return [];
+          })
+      );
     }
-    page++;
+
+    const results = await Promise.all(pagePromises);
+    for (const pageData of results) {
+      allItems.push(...pageData);
+    }
+  } catch (error) {
+    logger.warn(`Failed to fetch first page for endpoint ${endpoint}:`, error.message || error);
   }
+
   return allItems;
 }
 

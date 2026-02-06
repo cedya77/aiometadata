@@ -652,6 +652,13 @@ async function makeRateLimitedRequest<T>(
 
 const packageJson = require('../../package.json');
 const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
+const TRAKT_REDIRECT_URI = (() => {
+  const uri = process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`;
+  if (!uri) return uri;
+  const trimmed = uri.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  return `https://${trimmed.replace(/^\/+/, '')}`;
+})();
 const TRAKT_BASE_URL = 'https://api.trakt.tv';
 
 interface TraktListItem {
@@ -1781,6 +1788,7 @@ async function fetchTraktPopularItems(
   }, ttl, { skipVersion: true });
 }
 
+const refreshLocks = new Map<string, Promise<string | null>>();
 /**
  * Get Trakt access token from database with automatic refresh
  * @param config - User configuration object
@@ -1839,48 +1847,54 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   const oneHour = 60 * 60 * 1000;
   
   if (expiresAt && expiresAt < (now + oneHour)) {
-    logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
-    
-    try {
-      const { TraktClient } = require('../lib/trakt');
-      const traktClient = new TraktClient(
-        process.env.TRAKT_CLIENT_ID!,
-        process.env.TRAKT_CLIENT_SECRET!,
-        process.env.TRAKT_REDIRECT_URI!
-      );
-      
-      const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
-      
-      const updateSuccess = await database.updateOAuthToken(
-        tokenId,
-        newTokens.access_token,
-        newTokens.refresh_token,
-        newTokens.expires_at
-      );
-      
-      if (!updateSuccess) {
-        logger.error(`Failed to update Trakt token in database after refresh`);
+    // Prevent concurrent refreshes for the same token
+    if (refreshLocks.has(tokenId)) {
+      logger.debug(`Trakt token refresh already in progress for ${tokenId}, waiting...`);
+      return refreshLocks.get(tokenId)!;
+    }
+
+    const refreshPromise = (async (): Promise<string | null> => {
+      logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
+      try {
+        const { TraktClient } = require('../lib/trakt');
+        const traktClient = new TraktClient(
+          process.env.TRAKT_CLIENT_ID!,
+          process.env.TRAKT_CLIENT_SECRET!,
+          TRAKT_REDIRECT_URI!
+        );
+        const newTokens = await traktClient.refreshAccessToken(tokenData.refresh_token);
+        const updateSuccess = await database.updateOAuthToken(
+          tokenId,
+          newTokens.access_token,
+          newTokens.refresh_token,
+          newTokens.expires_at
+        );
+        if (!updateSuccess) {
+          logger.error(`Failed to update Trakt token in database after refresh`);
+          return null;
+        }
+        logger.debug(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
+        return newTokens.access_token;
+      } catch (error: any) {
+        logger.error(`Failed to refresh Trakt token: ${error.message}`);
+        logger.error(`Stack trace:`, error.stack);
+        try {
+          const stillExists = await database.getOAuthToken(tokenId);
+          if (!stillExists) {
+            logger.error(`Trakt token was deleted during refresh attempt`);
+          }
+        } catch (dbError: any) {
+          logger.error(`Database error during token existence check: ${dbError.message}`);
+        }
         return null;
       }
-      
-      logger.debug(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
-      
-      return newTokens.access_token;
-    } catch (error: any) {
-      logger.error(`Failed to refresh Trakt token: ${error.message}`);
-      logger.error(`Stack trace:`, error.stack);
-      
-      // If refresh fails, check if the token still exists in database
-      try {
-        const stillExists = await database.getOAuthToken(tokenId);
-        if (!stillExists) {
-          logger.error(`Trakt token was deleted during refresh attempt`);
-        }
-      } catch (dbError: any) {
-        logger.error(`Database error during token existence check: ${dbError.message}`);
-      }
-      
-      return null;
+    })();
+
+    refreshLocks.set(tokenId, refreshPromise);
+    try {
+      return await refreshPromise;
+    } finally {
+      refreshLocks.delete(tokenId);
     }
   }
   

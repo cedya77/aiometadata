@@ -104,26 +104,9 @@ async function getValidAccessToken(userUUID) {
       return null;
     }
 
-    // Check if token is expired or about to expire
     if (isTokenExpired(tokenData.expires_at)) {
-      logger.debug(`[AniList Tracker] Token expired for user ${userUUID}, attempting refresh`);
-      
-      // Attempt to refresh the token
-      const refreshSuccess = await refreshAccessToken(anilistTokenId, tokenData.refresh_token);
-      
-      if (!refreshSuccess) {
-        logger.warn(`[AniList Tracker] Token refresh failed for user ${userUUID}`);
-        return null;
-      }
-
-      // Get the updated token after refresh
-      const updatedToken = await database.getOAuthToken(anilistTokenId);
-      if (!updatedToken) {
-        logger.error(`[AniList Tracker] Failed to retrieve updated token after refresh`);
-        return null;
-      }
-
-      return updatedToken.access_token;
+      logger.warn(`[AniList Tracker] Token expired for user ${userUUID}. AniList does not support refresh tokens — user must re-authenticate.`);
+      return null;
     }
 
     return tokenData.access_token;
@@ -133,86 +116,6 @@ async function getValidAccessToken(userUUID) {
   }
 }
 
-/**
- * Refresh an expired access token using the refresh token
- * 
- * Uses retry logic with exponential backoff for rate limits and server errors.
- * Handles authentication failures by marking connection as disconnected.
- * 
- * @param {string} tokenId - OAuth token ID in database
- * @param {string} refreshToken - OAuth refresh token
- * @returns {Promise<boolean>} True if refresh was successful
- */
-async function refreshAccessToken(tokenId, refreshToken) {
-  try {
-    if (!ANILIST_CLIENT_ID || !ANILIST_CLIENT_SECRET) {
-      logger.error('[AniList Tracker] Missing ANILIST_CLIENT_ID or ANILIST_CLIENT_SECRET environment variables');
-      return false;
-    }
-
-    logger.debug(`[AniList Tracker] Attempting token refresh for token ID ${tokenId}`);
-
-    // Make POST request to AniList OAuth token endpoint with retry logic
-    const response = await makeRateLimitedRequest(() =>
-      httpPost(ANILIST_TOKEN_URL, {
-        grant_type: 'refresh_token',
-        client_id: ANILIST_CLIENT_ID,
-        client_secret: ANILIST_CLIENT_SECRET,
-        refresh_token: refreshToken
-      }, {
-        timeout: REQUEST_TIMEOUT_MS
-      })
-    );
-
-    const data = response.data;
-
-    if (!data || !data.access_token) {
-      logger.error('[AniList Tracker] Invalid response from token refresh endpoint');
-      return false;
-    }
-
-    // Calculate new expiration timestamp
-    const expiresAt = Date.now() + (data.expires_in * 1000);
-
-    // Update database with new tokens
-    const updateSuccess = await database.updateOAuthToken(
-      tokenId,
-      data.access_token,
-      data.refresh_token || refreshToken, // Use new refresh token if provided, otherwise keep old one
-      expiresAt
-    );
-
-    if (!updateSuccess) {
-      logger.error('[AniList Tracker] Failed to update token in database');
-      return false;
-    }
-
-    logger.info(`[AniList Tracker] Successfully refreshed token for token ID ${tokenId}`);
-    return true;
-  } catch (error) {
-    const errorDetails = extractErrorDetails(error);
-    const status = errorDetails.status;
-    
-    // Handle specific error cases
-    if (status === 401 || status === 403) {
-      // Invalid refresh token - mark connection as disconnected
-      logger.warn(`[AniList Tracker] Refresh token invalid (${status}), marking connection as disconnected`);
-      
-      try {
-        // Delete the invalid token from database
-        await database.deleteOAuthToken(tokenId);
-        logger.info(`[AniList Tracker] Deleted invalid token ${tokenId} from database`);
-      } catch (deleteError) {
-        logger.error('[AniList Tracker] Failed to delete invalid token:', deleteError.message || deleteError);
-      }
-      
-      return false;
-    }
-
-    logger.error(`[AniList Tracker] Token refresh failed: ${errorDetails.message} (status: ${status || 'N/A'})`);
-    return false;
-  }
-}
 
 /**
  * Check if an error is retryable (rate limit or server error)
@@ -833,7 +736,7 @@ async function exchangeCodeForTokens(code, redirectUri) {
 
     return {
       access_token: data.access_token,
-      refresh_token: data.refresh_token,
+      refresh_token: data.refresh_token || '',
       expires_at: expiresAt,
       token_type: data.token_type
     };
@@ -908,7 +811,6 @@ module.exports = {
   // Token management
   isTokenExpired,
   getValidAccessToken,
-  refreshAccessToken,
   
   // OAuth flow
   getAuthorizationUrl,
