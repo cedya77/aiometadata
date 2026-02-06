@@ -2050,8 +2050,17 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   }
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, 'series', posterProxyId, fallbackPosterUrl, language, config);
   const tvdbCredits = {
-    cast: (characters || [])
+    cast: [...(characters || [])]
       .filter(c => c.peopleType === 'Actor')
+      .sort((a, b) => {
+        if (a.isFeatured !== b.isFeatured) {
+          return a.isFeatured ? -1 : 1;
+        }
+        const sortA = (a.sort === null || a.sort === undefined) ? 999 : Number(a.sort);
+        const sortB = (b.sort === null || b.sort === undefined) ? 999 : Number(b.sort);
+        
+        return sortA - sortB;
+      })
       .map(c => ({
         name: c.personName,
         character: c.name,

@@ -1,5 +1,6 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
+import packageJson from "../../package.json";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapMDBListGenres, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
@@ -1172,7 +1173,7 @@ async function markEpisodeAsWatched(
     };
 
     logger.debug(
-      `[Watch Tracking] Marking episode as watched - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, timestamp: ${watchedAt}`
+      `[Mdblist Watch Tracking] Marking episode as watched - ids: ${formatIdSummary(normalizedIds)}, S${season}E${episode}, timestamp: ${watchedAt}`
     );
 
     await makeRateLimitedRequest(
@@ -1421,6 +1422,97 @@ async function parseMDBListUpNextItems(
   return validMetas;
 }
 
+async function checkinMovie(idInput: Record<string, string | number>, apiKey: string): Promise<boolean> {
+  if (!idInput || !apiKey) return false;
+
+  try {
+    const url = `https://api.mdblist.com/checkin?apikey=${apiKey}`;
+    const payload = {
+      movie: {
+        ids: idInput
+      },
+      app_version: `AIOMetadata ${packageJson.version}`,
+      app_date: new Date().toISOString().split('T')[0]
+    };
+
+    logger.debug(`[MDBList Checkin] Checking in movie: ${formatIdSummary(idInput)}`);
+
+    await makeRateLimitedRequest(
+      () => httpPost(url, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher
+      }),
+      apiKey,
+      `MDBList checkinMovie (${formatIdSummary(idInput)})`
+    );
+
+    logger.info('[MDBList Checkin] Movie check-in successful', { ids: idInput });
+    return true;
+  } catch (error: any) {
+    if (error.response?.status === 409) {
+      logger.info('[MDBList Checkin] Session already managed by another API (409 Conflict)');
+      return true;
+    }
+    logger.error(`[MDBList Checkin] Movie check-in failed: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Perform a manual check-in for a TV episode on MDBList
+ */
+async function checkinEpisode(
+  idInput: Record<string, string | number>,
+  season: number,
+  episode: number,
+  apiKey: string
+): Promise<boolean> {
+  if (!idInput || !apiKey) return false;
+
+  try {
+    const url = `https://api.mdblist.com/checkin?apikey=${apiKey}`;
+    
+    // Note: MDBList uses a nested structure for episode check-ins
+    const payload = {
+      show: {
+        ids: idInput,
+        season: {
+          number: season,
+          episode: {
+            number: episode
+          }
+        }
+      },
+      app_version: `AIOMetadata ${packageJson.version}`,
+      app_date: new Date().toISOString().split('T')[0]
+    };
+
+    logger.debug(`[MDBList Checkin] Checking in episode: ${formatIdSummary(idInput)} S${season}E${episode}`);
+
+    await makeRateLimitedRequest(
+      () => httpPost(url, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        dispatcher: mdblistDispatcher
+      }),
+      apiKey,
+      `MDBList checkinEpisode (${formatIdSummary(idInput)} S${season}E${episode})`
+    );
+
+    logger.info('[MDBList Checkin] Episode check-in successful', { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    if (error.response?.status === 409) {
+      logger.info('[MDBList Checkin] Session already managed by another API (409 Conflict)');
+      return true;
+    }
+    logger.error(`[MDBList Checkin] Episode check-in failed: ${error.message}`);
+    return false;
+  }
+}
+
+
 export { 
   fetchMDBListItems, 
   fetchMDBListExternalItems, 
@@ -1435,5 +1527,8 @@ export {
   makeRateLimitedMDBListRequest, 
   fetchMDBListUpNext, 
   parseMDBListUpNextItems,
-  fetchMdbListSearchItems };
+  fetchMdbListSearchItems,
+  checkinMovie,
+  checkinEpisode  
+};
 

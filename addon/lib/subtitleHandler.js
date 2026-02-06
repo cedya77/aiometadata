@@ -413,7 +413,7 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
 async function trackMdblistWatchStatus(parsedId, config) {
   try {
     // Import MDBList functions dynamically to avoid circular dependencies
-    const { markMovieAsWatched, markEpisodeAsWatched } = require('../utils/mdbList');
+    const { checkinMovie, checkinEpisode } = require('../utils/mdbList');
     const apiKey = config.apiKeys.mdblist;
 
     if (!apiKey) {
@@ -428,8 +428,8 @@ async function trackMdblistWatchStatus(parsedId, config) {
         return;
       }
 
-      logger.debug(`[Mdblist Watch Tracking] Marking movie as watched (${buildIdSummary(ids)})`);
-      await markMovieAsWatched(ids, apiKey);
+      logger.debug(`[Mdblist Watch Tracking] Checkin in movie (${buildIdSummary(ids)})`);
+      await checkinMovie(ids, apiKey);
       return;
     }
 
@@ -441,9 +441,9 @@ async function trackMdblistWatchStatus(parsedId, config) {
       }
 
       logger.debug(
-        `[Mdblist Watch Tracking] Marking episode as watched (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
+        `[Mdblist Watch Tracking] Checkin in for episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
       );
-      await markEpisodeAsWatched(resolution.ids, resolution.season, resolution.episode, apiKey);
+      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey);
       return;
     }
 

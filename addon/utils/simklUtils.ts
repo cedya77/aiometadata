@@ -596,8 +596,13 @@ async function checkinSeries(
     return false;
   }
 
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`,
+    'simkl-api-key': SIMKL_CLIENT_ID
+  };
+
   const doCheckin = async (ids: Record<string, string | number>, attemptLabel: string, seasonNumber: number, episodeNumber:number) => {
-    try {
       const url = `${SIMKL_BASE_URL}/scrobble/checkin`;
       const payload = {
         progress: 1,
@@ -607,17 +612,18 @@ async function checkinSeries(
 
       logger.debug(`[Simkl Checkin] ${attemptLabel} - ids: ${formatIdSummary(ids)}, S${seasonNumber}E${episodeNumber}`);
 
-      await makeAuthenticatedSimklRequest(url, accessToken, 'Simkl Checkin', 'POST', payload);
-      
-      logger.info(`[Simkl Checkin] Checked into episode (${attemptLabel})`, { ids, seasonNumber, episodeNumber });
-      return true;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        logger.warn(`[Simkl Checkin] ${attemptLabel} failed with 404 (Not Found)`);
-        throw error;
+      const response = await httpPost(url, payload, { 
+        headers, 
+        dispatcher: simklDispatcher,
+        timeout: 10000 
+      });
+  
+      if (response.status >= 200 && response.status < 300) {
+        logger.info(`[Simkl Checkin] Checked into episode (${attemptLabel})`, { ids, seasonNumber, episodeNumber });
+        return true;
       }
-      throw error;
-    }
+      
+      throw { response }; 
   };
 
   try {
