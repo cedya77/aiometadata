@@ -417,16 +417,30 @@ function classifyResult(result, error = null, cacheKey = null) {
   );
   
   if (isExternalApi) {
-    // For external APIs, any non-null result is valid
-    const hasValidData = (typeof result === 'object' && result !== null && Object.keys(result).length > 0) ||
-                        (Array.isArray(result) && result.length > 0) ||
-                        (typeof result === 'string' && result.length > 0) ||
-                        (typeof result === 'number');
-    
+    // Deep-check for truly useful data — objects with only empty arrays/false booleans
+    // are effectively empty (e.g. { items: [], hasMore: false } from an API error fallback)
+    const hasValidData = (() => {
+      if (Array.isArray(result)) return result.length > 0;
+      if (typeof result === 'string') return result.length > 0;
+      if (typeof result === 'number') return true;
+      if (typeof result === 'object' && result !== null) {
+        const values = Object.values(result);
+        if (values.length === 0) return false;
+        return values.some(v => {
+          if (Array.isArray(v)) return v.length > 0;
+          if (typeof v === 'object' && v !== null) return Object.keys(v).length > 0;
+          if (typeof v === 'string') return v.length > 0;
+          if (typeof v === 'number') return v > 0;
+          return false;
+        });
+      }
+      return false;
+    })();
+
     if (hasValidData) {
       return { type: 'SUCCESS', ttl: null };
     } else {
-    return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
+      return { type: 'EMPTY_RESULT', ttl: ERROR_TTL_STRATEGIES.EMPTY_RESULT };
     }
   }
   
