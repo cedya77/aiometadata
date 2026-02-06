@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.26.1](https://github.com/cedya77/aiometadata/compare/v1.26.0...v1.26.1) (2026-02-06)
+
+
+### Bug Fixes
+
+* **cache:** avoid caching empty data returned by api providers ([50fb58f](https://github.com/cedya77/aiometadata/commit/50fb58f283fcbde807294891ea0549ba9594cd3c))
+
 ## [1.26.0](https://github.com/cedya77/aiometadata/compare/v1.25.3...v1.26.0) (2026-02-06)
 
 
