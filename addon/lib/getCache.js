@@ -45,7 +45,7 @@ let currentRequestContext = {
 
 // Enhanced error caching strategy with self-healing
 const ERROR_TTL_STRATEGIES = {
-  EMPTY_RESULT: 0,             // Don't cache empty results at all
+  EMPTY_RESULT: 60,             // Don't cache empty results at all
   RATE_LIMITED: 15 * 60,       // 15 minutes for rate limit errors
   TEMPORARY_ERROR: 2 * 60,     // 2 minutes for temporary errors
   PERMANENT_ERROR: 30 * 60,    // 30 minutes for permanent errors

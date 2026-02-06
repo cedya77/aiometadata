@@ -784,7 +784,7 @@ async function fetchTraktWatchlistItems(
       };
     } catch (err: any) {
       logger.error(`Error fetching Trakt watchlist, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
@@ -866,7 +866,7 @@ async function fetchTraktFavoritesItems(
       };
     } catch (err: any) {
       logger.error(`Error fetching Trakt favorites for type ${type}, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
@@ -949,7 +949,7 @@ async function fetchTraktRecommendationsItems(
       };
     } catch (err: any) {
       logger.error(`Error fetching Trakt recommendations for type ${type}, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
@@ -1037,7 +1037,7 @@ async function fetchTraktListItems(
       };
     } catch (err: any) {
       logger.error(`Error fetching Trakt list ${username}/${listSlug}, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
@@ -1124,7 +1124,7 @@ async function fetchTraktListItemsById(
       };
     } catch (err: any) {
       logger.error(`Error fetching Trakt list by id ${listId}, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
@@ -1729,7 +1729,7 @@ async function fetchTraktTrendingItems(
       return { items, totalItems, hasMore, totalPages: pageCount };
     } catch (err: any) {
       logger.error(`Error fetching Trakt trending ${type}, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
@@ -1783,7 +1783,7 @@ async function fetchTraktPopularItems(
       return { items, totalItems, hasMore, totalPages: pageCount };
     } catch (err: any) {
       logger.error(`Error fetching Trakt popular ${type}, page ${page}:`, err.message);
-      return { items: [], hasMore: false };
+      throw err;
     }
   }, ttl, { skipVersion: true });
 }
