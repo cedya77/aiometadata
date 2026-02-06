@@ -61,6 +61,13 @@ export class TraktClient {
         client_secret: this.clientSecret,
         redirect_uri: this.redirectUri,
         grant_type: 'authorization_code',
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': TRAKT_API_VERSION,
+          'trakt-api-key': this.clientId,
+          'User-Agent': `AIOMetadata/${process.env.npm_package_version || '1.0.0'}`
+        }
       });
 
       const data = response.data;
@@ -76,6 +83,9 @@ export class TraktClient {
         token_type: data.token_type,
       };
     } catch (error) {
+      if (error.response?.data) {
+        logger.error(`Trakt OAuth Error Body: ${typeof error.response.data === 'object' ? JSON.stringify(error.response.data) : error.response.data}`);
+      }
       logger.error('Failed to exchange code for token:', error);
       throw error;
     }

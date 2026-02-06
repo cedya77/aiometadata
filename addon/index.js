@@ -453,7 +453,28 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
     
     // Exchange code for tokens
-    const tokens = await traktClient.exchangeCodeForToken(code);
+    let tokens;
+    try {
+      tokens = await traktClient.exchangeCodeForToken(code);
+    } catch (tokenError) {
+      consola.error("[Trakt OAuth] Detailed Exchange Error:", {
+        message: tokenError.message,
+        status: tokenError.response?.status,
+        data: tokenError.response?.data 
+      });
+      
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Token Exchange Failed</h1>
+          <p>Trakt returned an error: ${tokenError.response?.data?.error_description || tokenError.message}</p>
+          <p>Please check if your <b>TRAKT_REDIRECT_URI</b> exactly matches the one in your Trakt Dashboard.</p>
+        </body>
+        </html>
+      `);
+    }
     
     // Get user info
     const user = await traktClient.getMe(tokens.access_token);
