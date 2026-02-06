@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.26.0](https://github.com/cedya77/aiometadata/compare/v1.25.3...v1.26.0) (2026-02-06)
+
+
+### Features
+
+* **mdblist:** Add mdblist check in feature. Playback will now sync to mdblist via check in. ([35f9ffe](https://github.com/cedya77/aiometadata/commit/35f9ffe557152f1dd79d82fba8fcf5b574ca4bf5))
+
+
+### Bug Fixes
+
+* **tvdb:** order cast by tvdb sort property and isFeatured instead of returning the raw order. ([35f9ffe](https://github.com/cedya77/aiometadata/commit/35f9ffe557152f1dd79d82fba8fcf5b574ca4bf5))
+
+
+### Performance Improvements
+
+* **anilist && trakt:** imporve token handling ([e8b1ccb](https://github.com/cedya77/aiometadata/commit/e8b1ccb09698fec4989aa2a3c7bf39341fa37707))
+* **mal:** improve rate limit and concurrency ([e8b1ccb](https://github.com/cedya77/aiometadata/commit/e8b1ccb09698fec4989aa2a3c7bf39341fa37707))
+
 ## [1.25.3](https://github.com/cedya77/aiometadata/compare/v1.25.2...v1.25.3) (2026-02-04)
 
 
