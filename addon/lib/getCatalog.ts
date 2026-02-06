@@ -1683,7 +1683,7 @@ async function getSimklCatalog(
         const result = await fetchSimklWatchlistItems(accessToken, watchlistType, status, cacheTTL);
         
         // Filter and map items
-        const allItems = result.items
+        let allItems = result.items
           .map((item: any) => {
             const media = item.show || item.movie || item;
             const ids = media.ids || {};
@@ -1708,10 +1708,34 @@ async function getSimklCatalog(
               simkl_status: item.status,
               simkl_rating: item.user_rating,
               simkl_last_watched: item.last_watched,
-              simkl_next_to_watch: item.next_to_watch
+              simkl_next_to_watch: item.next_to_watch,
+              simkl_watched_episodes_count: item.watched_episodes_count,
+              simkl_total_episodes_count: item.total_episodes_count,
+              simkl_not_aired_episodes_count: item.not_aired_episodes_count
             };
           })
           .filter((item: any) => item !== null); // Remove null items
+
+        if (status === 'watching' && (watchlistType === 'shows' || watchlistType === 'anime')) {
+          const beforeCount = allItems.length;
+          allItems = allItems.filter((item: any) => {
+            if (item.simkl_next_to_watch) return true;
+
+            const watched = item.simkl_watched_episodes_count;
+            const total = item.simkl_total_episodes_count;
+            const notAired = item.simkl_not_aired_episodes_count || 0;
+            if (typeof watched === 'number' && typeof total === 'number') {
+              const availableEpisodes = total - notAired;
+              return watched < availableEpisodes;
+            }
+
+            // If we can't determine, keep the item
+            return true;
+          });
+          if (beforeCount !== allItems.length) {
+            logger.debug(`[Simkl] Filtered ${beforeCount - allItems.length} fully caught-up shows from watching list (${allItems.length} remaining with unwatched episodes)`);
+          }
+        }
         
         const globalItemIndex = (page - 1) * pageSize;
         const endIndex = globalItemIndex + pageSize;

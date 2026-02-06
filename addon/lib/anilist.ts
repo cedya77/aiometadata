@@ -262,6 +262,7 @@ class AniListAPI {
           Page(page: $page, perPage: $perPage) {
             pageInfo { hasNextPage total }
             mediaList(userName: $userName, type: ANIME, status: $status, sort: $sort) {
+              hiddenFromStatusLists
               score(format: POINT_100)
               media {
                 id
@@ -319,10 +320,12 @@ class AniListAPI {
       const pageInfo = data?.Page?.pageInfo || { hasNextPage: false, total: 0 };
       const mediaList = data?.Page?.mediaList || [];
 
-      const items = mediaList.map((entry: any) => ({
-        score: entry.score,
-        media: entry.media,
-      }));
+      const items = mediaList
+        .filter((entry: any) => !entry.hiddenFromStatusLists)
+        .map((entry: any) => ({
+          score: entry.score,
+          media: entry.media,
+        }));
 
       return {
         items,
