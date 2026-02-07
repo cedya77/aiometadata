@@ -479,17 +479,29 @@ async function createStremThruCatalog(userCatalog, showPrefix = false) {
 function createAniListCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
-    
-    // Use displayType if defined, otherwise use original type (default to 'series' for anime)
     const catalogType = userCatalog.displayType || userCatalog.type || 'series';
-    
+
+    // AniList genres for trending catalog
+    const anilistGenres = [
+      'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy',
+      'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological',
+      'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'
+    ];
+
+    let genreOptions;
+    if (userCatalog.id === 'anilist.trending') {
+      genreOptions = userCatalog.showInHome ? anilistGenres : ['None', ...anilistGenres];
+    } else {
+      genreOptions = ['None'];
+    }
+
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
       name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
-      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      pageSize: userCatalog.id === 'anilist.trending' ? 50 : (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20),
       extra: [
-        { name: "genre", options: ["None"], isRequired: userCatalog.showInHome ? false : true },
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
       showInHome: userCatalog.showInHome

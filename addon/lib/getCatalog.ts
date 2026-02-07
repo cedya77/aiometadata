@@ -139,7 +139,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     else if (id.startsWith('anilist.')) {
       logger.debug(`Routing to AniList catalog handler for id: ${id}`);
-      const anilistResults = await getAniListCatalog(type, id, page, language, config, userUUID, includeVideos);
+      const anilistResults = await getAniListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: anilistResults };
     }
     else if (id.startsWith('letterboxd.')) {
@@ -1274,6 +1274,7 @@ async function getTraktCatalog(
 async function getAniListCatalog(
   type: string,
   catalogId: string,
+  genre: string | null,
   page: number,
   language: string,
   config: UserConfig,
@@ -1294,9 +1295,9 @@ async function getAniListCatalog(
       // Include sfw in cache key to prevent mixing SFW and non-SFW results
       const response = await cacheWrapAniListCatalog(
         'trending',
-        `trending:sfw:${sfw}`,
+        `trending:sfw:${sfw}:genre:${genre || 'all'}`,
         page,
-        async () => anilist.fetchTrending(page, pageSize, sfw),
+        async () => anilist.fetchTrending(page, pageSize, sfw, genre || undefined),
         customCacheTTL,
         { enableErrorCaching: true }
       );

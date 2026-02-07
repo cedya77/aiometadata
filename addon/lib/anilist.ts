@@ -937,15 +937,16 @@ class AniListAPI {
    * @param {boolean} sfw - If true, filter out adult content (isAdult: false)
    * @returns {Promise<{items: Array, hasMore: boolean, total: number}>}
    */
-  async fetchTrending(page = 1, pageSize = 50, sfw = false): Promise<any> {
+  async fetchTrending(page = 1, pageSize = 50, sfw = false, genre?: string): Promise<any> {
+    const genreFilter = genre && genre !== 'None' ? `, genre_in: $genres` : '';
     const query = `
-      query($page: Int, $perPage: Int) {
+      query($page: Int, $perPage: Int${genre && genre !== 'None' ? ', $genres: [String]' : ''}) {
         Page(page: $page, perPage: $perPage) {
           pageInfo {
             hasNextPage
             total
           }
-          media(type: ANIME, sort: TRENDING_DESC, format_not_in: [MUSIC, NOVEL]${sfw ? ', isAdult: false' : ''}) {
+          media(type: ANIME, sort: TRENDING_DESC, format_not_in: [MUSIC, NOVEL]${sfw ? ', isAdult: false' : ''}${genreFilter}) {
             id
             idMal
             title {
@@ -990,7 +991,7 @@ class AniListAPI {
       const response = await this.makeRateLimitedRequest(() => 
         httpPost(this.baseURL, {
           query,
-          variables: { page, perPage: pageSize }
+          variables: { page, perPage: pageSize, ...(genre && genre !== 'None' ? { genres: [genre] } : {}) }
         }, {
           headers: {
             'Content-Type': 'application/json',
