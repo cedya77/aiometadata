@@ -2642,6 +2642,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             break;
           }
+          case 'mal.genre_search': {
+            const { getSearch } = require('./lib/getSearch');
+            const searchResult = await getSearch(cleanId, actualType, language, extraArgs, config);
+            metas = searchResult.metas || [];
+            break;
+          }
+          case 'mal.va_search': {
+            const { getSearch } = require('./lib/getSearch');
+            const searchResult = await getSearch(cleanId, actualType, language, extraArgs, config);
+            metas = searchResult.metas || [];
+            break;
+          }
           default:
             const skipValue = skip ? parseInt(skip) : undefined;
             metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipValue)).metas;

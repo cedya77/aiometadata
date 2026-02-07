@@ -359,7 +359,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   logger.info(`Starting TMDB search for type "${type}" with query: "${query}"`);
 
   // Check if query is an IMDb ID
-  if (isImdbId(query)) {
+  if (isImdbId(query) && !peopleOnly) {
     logger.info(`Detected IMDb ID: ${query}, using TMDB find API`);
     try {
       const findResult = await moviedb.find({ id: query.trim(), external_source: 'imdb_id' }, config);
@@ -413,7 +413,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
               : moviedb.searchTv({ query, language, include_adult: config.includeAdult, page }, config)),
       
       shouldSearchPersons
-          ? moviedb.searchPerson({ query, language: 'en-US' }, config).then(async personRes => {
+          ? moviedb.searchPerson({ query, language: language }, config).then(async personRes => {
               if (personRes.results?.length > 0) {
                 const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
                 const topPerson = sortedPersons[0];
@@ -703,6 +703,208 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
 
   logger.success(`Completed TMDB search for "${query}" in ${Date.now() - startTime}ms. Returning ${filteredResults.length} results.`);
   return filteredResults;
+}
+
+async function performTmdbPeopleSearch(type, query, language, config, page = 1) {
+  const startTime = Date.now();
+  logger.info(`[People Search] Starting lightweight people search for type "${type}" with query: "${query}"`);
+
+  // Skip if query looks like a title, not a person name
+  const invalidNamePattern = /[:()[\]?!$#@&]|\b\d+\b/;
+  if (invalidNamePattern.test(query)) {
+    logger.debug(`[People Search] Skipping - query contains invalid characters for a person name: "${query}"`);
+    return [];
+  }
+
+  try {
+    // Step 1: Search for person (1 API call)
+    const personRes = await moviedb.searchPerson({ query, language: language }, config);
+
+    if (!personRes.results?.length) {
+      logger.info(`[People Search] No person found for query: "${query}"`);
+      return [];
+    }
+
+    const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    const topPerson = sortedPersons[0];
+    logger.debug(`[People Search] Top person: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
+
+    // ── Name validation (same logic as existing performTmdbSearch) ──
+    const MIN_QUALITY_WORK_VOTES = 4000;
+    const MIN_RECOGNIZED_WORK_VOTES = 100;
+    const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
+    const MIN_POPULARITY_PRIMARY_NAME = 2.5;
+
+    const personPopularity = topPerson.popularity || 0;
+    if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK || !topPerson.profile_path) {
+      logger.debug(`[People Search] Skipping ${topPerson.name} - too low popularity or missing profile`);
+      return [];
+    }
+
+    const knownFor = topPerson.known_for || [];
+    const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
+    if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES) {
+      logger.debug(`[People Search] Skipping ${topPerson.name} - no recognized work`);
+      return [];
+    }
+
+    const normalizeNameForMatching = (name) => {
+      return name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\./g, '')
+        .replace(/-/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const queryNorm = normalizeNameForMatching(query);
+    const personNameNorm = normalizeNameForMatching(topPerson.name);
+
+    if (!queryNorm || !personNameNorm) {
+      return [];
+    }
+
+    const queryWords = queryNorm.split(' ').filter(w => w);
+    const personWords = personNameNorm.split(' ').filter(w => w);
+    const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
+
+    const isExactMatch = queryNorm === personNameNorm;
+    const isMiddleNameMatch = personWords.length === 3 && queryWords.length === 2 &&
+      queryWords[0] === personWords[0] &&
+      queryWords[1] === personWords[2] &&
+      personWords[1].length === 1;
+    const suffixPattern = /^(jr|sr|ii|iii|iv|v)$/i;
+    const isSuffixMatch = personWords.length >= 3 &&
+      queryWords.length === personWords.length - 1 &&
+      suffixPattern.test(personWords[personWords.length - 1]) &&
+      queryWords.every((word, index) => word === personWords[index]);
+    const isSingleWordMatch = queryWords.length === 1 && personWords.length === 1 &&
+      queryWords[0] === personWords[0] &&
+      hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+
+    const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
+    if (!primaryNameMatches) {
+      logger.debug(`[People Search] Skipping ${topPerson.name} - query "${query}" doesn't match name`);
+      return [];
+    }
+
+    const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+    const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
+    if (!passesQualityCheck && !passesPopularityCheck) {
+      logger.debug(`[People Search] Skipping ${topPerson.name} - insufficient popularity`);
+      return [];
+    }
+
+    // Step 2: Fetch person credits (1 API call) — NO per-result hydration!
+    const credits = type === 'movie'
+      ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
+      : await moviedb.personTvCredits({ id: topPerson.id, language }, config);
+
+    const allCredits = [...(credits.cast || []), ...(credits.crew || [])];
+    logger.debug(`[People Search] Got ${allCredits.length} raw credits for ${topPerson.name}`);
+
+    if (allCredits.length === 0) {
+      return [];
+    }
+
+    // Deduplicate by TMDB ID
+    const seen = new Map();
+    for (const credit of allCredits) {
+      if (credit && credit.id && !seen.has(credit.id)) {
+        credit.media_type = type === 'movie' ? 'movie' : 'tv';
+        credit.matchType = 'person';
+        seen.set(credit.id, credit);
+      }
+    }
+
+    // Sort and paginate
+    const sorted = Utils.sortSearchResults(Array.from(seen.values()), query);
+    const pageSize = 25;
+    const startIndex = (page - 1) * pageSize;
+    let pageResults = sorted.slice(startIndex, startIndex + pageSize);
+
+    if (type === 'series') {
+      const excludedGenreIds = new Set([10767, 10763]); // Talk, News
+      const beforeCount = pageResults.length;
+      pageResults = pageResults.filter(media => {
+        if (!media.genre_ids || media.genre_ids.length === 0) return true;
+        // Exclude if the ONLY genres are talk/news
+        const nonExcluded = media.genre_ids.filter(id => !excludedGenreIds.has(id));
+        return nonExcluded.length > 0;
+      });
+      if (beforeCount !== pageResults.length) {
+        logger.debug(`[People Search] Filtered ${beforeCount - pageResults.length} talk/news shows`);
+      }
+    }
+
+    if (config.includeAdult === false) {
+      const beforeAdult = pageResults.length;
+      pageResults = pageResults.filter(media => !media.adult);
+      if (beforeAdult !== pageResults.length) {
+        logger.debug(`[People Search] Filtered ${beforeAdult - pageResults.length} adult results`);
+      }
+    }
+
+    // Build lightweight metas directly from credit data — NO hydration API calls
+    const fallbackImage = `${host}/missing_poster.png`;
+    const metas = (await Promise.all(
+      pageResults
+      .map(async media => {
+        const mediaType = media.media_type === 'movie' ? 'movie' : 'series';
+        if (mediaType !== type) return null;
+
+        const title = type === 'movie' ? media.title : media.name;
+        if (!title) return null;
+
+        const posterPath = media.poster_path
+          ? `https://image.tmdb.org/t/p/original${media.poster_path}`
+          : fallbackImage;
+        const backgroundPath = media.backdrop_path
+          ? `https://image.tmdb.org/t/p/original${media.backdrop_path}`
+          : null;
+
+        let stremioId = `tmdb:${media.id}`;
+        const allIds = await resolveAllIds(`tmdb:${media.id}`, mediaType, config, {}, ['imdb']);
+        if(allIds?.imdbId) stremioId = allIds.imdbId
+
+        const posterProxyUrl = Utils.buildPosterProxyUrl(
+          host, mediaType, stremioId, posterPath, language, config
+        );
+
+        return {
+          id: stremioId,
+          type: mediaType,
+          name: title,
+          poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : posterPath,
+          background: backgroundPath,
+          posterShape: 'regular',
+          imdbRating: allIds?.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null,
+          year: type === 'movie'
+            ? (media.release_date?.substring(0, 4) || '')
+            : (media.first_air_date?.substring(0, 4) || ''),
+          released: type === 'movie' ? new Date(media.release_date) : new Date(media.first_air_date),
+          description: media.overview
+            ? Utils.addMetaProviderAttribution(media.overview, 'TMDB', config)
+            : (media.character ? `As: ${media.character}` : ''),
+          popularity: media.popularity,
+          vote_average: media.vote_average || 0,
+          vote_count: media.vote_count || 0,
+        };
+      })
+    )).filter(Boolean);
+
+    // Apply age rating filter if configured
+    // (skip — person credits don't have certification data, would need hydration)
+
+    logger.success(`[People Search] Completed in ${Date.now() - startTime}ms. Returning ${metas.length} ${type} results (${allCredits.length} total credits).`);
+    return metas;
+
+  } catch (error) {
+    logger.error(`[People Search] Error: ${error.message}`);
+    return [];
+  }
 }
 
 
@@ -2258,7 +2460,7 @@ async function getSearch(id, type, language, extra, config) {
           
           switch (providerId) {
               case 'tmdb.people.search':
-                metas = await performTmdbSearch(type, query, language, config, true, page, true);
+                metas = await performTmdbPeopleSearch(type, query, language, config, page);
                 break;
               case 'tvdb.people.search':
                 metas = await performTvdbPeopleSearch(type, query, language, config);
