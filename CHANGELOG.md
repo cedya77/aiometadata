@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.26.2](https://github.com/cedya77/aiometadata/compare/v1.26.1...v1.26.2) (2026-02-07)
+
+
+### Bug Fixes
+
+* **anilist:** add genres filtering to anilist trending ([2e03ac2](https://github.com/cedya77/aiometadata/commit/2e03ac24e806c29d7c6369a18cbbc745c9b348a4))
+* **anilist:** prevent status lists from showing hidden entries ([8b3c679](https://github.com/cedya77/aiometadata/commit/8b3c6790e5f055bc0a8352bb3e155167813c5b61))
+* **simkl:** only showing series that have unwatched episodes remaining in user watchlists ([8b3c679](https://github.com/cedya77/aiometadata/commit/8b3c6790e5f055bc0a8352bb3e155167813c5b61))
+
+
+### Performance Improvements
+
+* **tmdb people search:** improve tmdb people search performance ([3a6e876](https://github.com/cedya77/aiometadata/commit/3a6e8760f0bc4269c181cd23a7e6b844ab7f277c))
+
 ## [1.26.1](https://github.com/cedya77/aiometadata/compare/v1.26.0...v1.26.1) (2026-02-06)
 
 
