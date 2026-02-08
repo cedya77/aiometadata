@@ -1249,7 +1249,7 @@ addon.post("/api/simkl/users/stats", async (req, res) => {
     }
 
     const { fetchSimklUserStats } = require('./utils/simklUtils');
-    const stats = await fetchSimklUserStats(token.access_token);
+    const stats = await fetchSimklUserStats(tokenId);
     res.json(stats);
   } catch (error) {
     consola.error("[Simkl] Error fetching user stats:", error.message);

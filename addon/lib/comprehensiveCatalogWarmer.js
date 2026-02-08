@@ -6,6 +6,7 @@ const jikan = require('./mal');
 const database = require('./database');
 const redis = require('./redisClient');
 const consola = require('consola');
+const { loadConfigFromDatabase } = require('./configApi.js');
 const packageJson = require('../../package.json');
 
 const logger = consola.create({

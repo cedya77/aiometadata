@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklAccessToken, fetchSimklCalendarItems } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
@@ -1671,7 +1671,8 @@ async function getSimklCatalog(
           return [];
         }
         
-        const accessToken = await getSimklAccessToken(tokenId);
+        const token = await getSimklToken(tokenId);
+        const accessToken = token?.access_token;
         if (!accessToken) {
           logger.error(`[Simkl] Failed to get Simkl access token for watchlist catalog`);
           return [];

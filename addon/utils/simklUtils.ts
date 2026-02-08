@@ -155,13 +155,13 @@ async function makeRateLimitedRequest<T>(
   throw new Error(`Simkl API request failed after ${retries} attempts: ${context}`);
 }
 
-async function getSimklAccessToken(tokenId: string): Promise<string | null> {
+async function getSimklToken(tokenId: any): Promise<any | null> {
   try {
     const token = await database.getOAuthToken(tokenId);
     if (!token || token.provider !== 'simkl') {
       return null;
     }
-    return token.access_token;
+    return token;
   } catch (error: any) {
     logger.error(`Error getting Simkl access token: ${error.message}`);
     return null;
@@ -206,18 +206,18 @@ async function makeRateLimitedSimklRequest(url: string, context: string = 'Simkl
   );
 }
 
-async function fetchSimklUserStats(accessToken: string): Promise<any> {
-  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+async function fetchSimklUserStats(tokenId: string): Promise<any> {
+  const tokenHash = crypto.createHash('sha256').update(tokenId).digest('hex').substring(0, 16);
   const cacheKey = `simkl-stats:${tokenHash}`;
   const statsTTL = 24 * 60 * 60; // 24 hours
-
+  const token = await getSimklToken(tokenId);
   return await cacheWrapGlobal(
     cacheKey,
     async () => {
-      const url = `${SIMKL_BASE_URL}/users/me/stats`;
+      const url = `${SIMKL_BASE_URL}/users/${token.user_id}/stats`;
       const response: any = await makeAuthenticatedSimklRequest(
         url,
-        accessToken,
+        token.access_token,
         'Simkl fetchUserStats',
         'POST'
       );
@@ -1017,7 +1017,7 @@ export {
   parseSimklItems,
   makeRateLimitedSimklRequest,
   makeAuthenticatedSimklRequest,
-  getSimklAccessToken,
+  getSimklToken,
   fetchSimklTrendingItems,
   fetchSimklCalendarItems,
   checkinMovie,

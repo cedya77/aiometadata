@@ -458,9 +458,10 @@ async function trackMdblistWatchStatus(parsedId, config) {
 async function checkinSimkl(parsedId, config) {
   try {
     // Import MDBList functions dynamically to avoid circular dependencies
-    const { checkinSeries, checkinMovie, getSimklAccessToken } = require('../utils/simklUtils');
+    const { checkinSeries, checkinMovie, getSimklToken } = require('../utils/simklUtils');
     const tokenId = config.apiKeys?.simklTokenId;
-    const accessToken = await getSimklAccessToken(tokenId);
+    const token = await getSimklToken(tokenId);
+    const accessToken = token.access_token;
 
     if (!tokenId) {
       logger.debug('[Simkl Checkin] Skipping checkin - missing token Id');
