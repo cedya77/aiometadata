@@ -169,7 +169,22 @@ async function httpPost(url, data, options = {}) {
  * Convenience method for HEAD requests
  */
 async function httpHead(url, options = {}) {
-  return httpRequest(url, { ...options, method: 'HEAD' });
+  let currentUrl = url;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await httpRequest(currentUrl, { ...options, method: 'HEAD' });
+    } catch (error) {
+      const status = error?.response?.status;
+      const locationHeader = error?.response?.headers?.location || error?.response?.headers?.Location;
+      const isRedirect = status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+      if (isRedirect && locationHeader) {
+        currentUrl = new URL(locationHeader, currentUrl).toString();
+        continue;
+      }
+      throw error;
+    }
+  }
+  return httpRequest(currentUrl, { ...options, method: 'HEAD' });
 }
 
 module.exports = {

@@ -1025,7 +1025,9 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) ? { ...c, enableRatingPosters: !c.enableRatingPosters } : c
+        (c.id === catalog.id && c.type === catalog.type) 
+          ? { ...c, enableRatingPosters: c.enableRatingPosters === false ? true : false } 
+          : c
       )
     }));
   };

@@ -12,7 +12,7 @@ const logger = consola.withTag('ID-Mapper');
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL ='https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
 const REMOTE_KITSU_TO_IMDB_MAPPING_URL = 'https://raw.githubusercontent.com/TheBeastLT/stremio-kitsu-anime/bbf149474f610885629b95b1b9ce4408c3c1353d/static/data/imdb_mapping.json';
-const REMOTE_TRAKT_ANIME_MOVIES_URL = 'https://raw.githubusercontent.com/rensetsu/db.trakt.extended-anitrakt/refs/heads/main/movies_ex.json';
+const REMOTE_TRAKT_ANIME_MOVIES_URL = 'https://github.com/rensetsu/db.trakt.extended-anitrakt/releases/download/latest/movies_ex.json';
 const LOCAL_CACHE_PATH = path.join(process.cwd(), 'addon', 'data', 'anime-list-full.json.cache');
 const LOCAL_KITSU_TO_IMDB_MAPPING_PATH = path.join(process.cwd(), 'addon', 'data', 'imdb_mapping.json.cache');
 const LOCAL_TRAKT_ANIME_MOVIES_PATH = path.join(process.cwd(), 'addon', 'data', 'trakt-anime-movies.json.cache');

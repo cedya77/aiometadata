@@ -3124,7 +3124,23 @@ function isReleasedDigitally(meta) {
 
   // Check if movie has a release date
   if (!meta.released) {
-    // No release date means it's unreleased or unknown - keep due to lack of data
+    if (meta.app_extras?.releaseDates?.results) {
+      const now = new Date();
+      const hasAnyPastRelease = meta.app_extras.releaseDates.results.some((country) =>
+        country.release_dates?.some((release) =>
+          new Date(release.release_date) <= now
+        )
+      );
+      if (!hasAnyPastRelease) {
+        return false; 
+      }
+      const hasDigitalRelease = meta.app_extras.releaseDates.results.some((country) =>
+        country.release_dates?.some((release) =>
+          release.type >= 4 && release.type <= 6 && new Date(release.release_date) <= now
+        )
+      );
+      return hasDigitalRelease;
+    }
     return true;
   }
 

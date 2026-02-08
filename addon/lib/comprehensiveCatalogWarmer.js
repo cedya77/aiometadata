@@ -732,7 +732,9 @@ class ComprehensiveCatalogWarmer {
           continue;
         }
 
-        const { config, enabledCatalogs } = userData;
+        const freshConfig = await loadConfigFromDatabase(uuid);
+        const enabledCatalogs = userData.enabledCatalogs;
+        const config = freshConfig;
 
         try {
           this.log('info', `Processing UUID: ${uuid} (${enabledCatalogs.length} catalogs)`);
