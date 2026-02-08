@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.26.3](https://github.com/cedya77/aiometadata/compare/v1.26.2...v1.26.3) (2026-02-08)
+
+
+### Bug Fixes
+
+* **filter:** fix digital release to check for tmdb release info even when movie release date is not available ([a7ae085](https://github.com/cedya77/aiometadata/commit/a7ae085a26198db2bee1caf9fabd151d9e09d1ea))
+* **mappings:** update mapping url following change by remote db ([a7ae085](https://github.com/cedya77/aiometadata/commit/a7ae085a26198db2bee1caf9fabd151d9e09d1ea))
+* **simkl:** fix stats not being displayed ([9253218](https://github.com/cedya77/aiometadata/commit/92532188ae890af3d13d8e473ebc9daa795591bc))
+* **ui:** fix ratings icon having to be double clicked sometimes to change the state/ catalog ([a7ae085](https://github.com/cedya77/aiometadata/commit/a7ae085a26198db2bee1caf9fabd151d9e09d1ea))
+
 ## [1.26.2](https://github.com/cedya77/aiometadata/compare/v1.26.1...v1.26.2) (2026-02-07)
 
 
