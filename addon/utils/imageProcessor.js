@@ -6,6 +6,7 @@ const url = require('url');
 const ALLOWED_DOMAINS = [
   'image.tmdb.org',
   'artworks.thetvdb.com',
+  'images.metahub.space',
   'cdn.myanimelist.net',
   'media.kitsu.io',
   'media.kitsu.app',
@@ -53,8 +54,11 @@ function validateImageUrl(imageUrl) {
     
     const pathname = parsedUrl.pathname.toLowerCase();
     const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => pathname.endsWith(ext));
+    // MetaHub serves images via extensionless endpoints like `/img`.
+    const isExtensionless =
+      domain === 'images.metahub.space' && pathname.endsWith('/img');
     
-    if (!hasValidExtension) {
+    if (!hasValidExtension && !isExtensionless) {
       console.warn(`[Security] Blocked request with unauthorized file extension: ${pathname}`);
       return false;
     }
