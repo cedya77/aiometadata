@@ -1038,14 +1038,14 @@ async function getManifest(config) {
       },
       {
         id: 'people_search_movie',
-        type: 'people',
+        type: 'movie',
         provider: config.search?.providers?.people_search_movie || 'tmdb.people.search',
         enabled: engineEnabled['people_search_movie'] !== false,
         suffix: 'People Search'
       },
       {
         id: 'people_search_series',
-        type: 'people',
+        type: 'series',
         provider: config.search?.providers?.people_search_series || 'tmdb.people.search',
         enabled: engineEnabled['people_search_series'] !== false,
         suffix: 'People Search'
@@ -1064,7 +1064,9 @@ async function getManifest(config) {
       .sort((a, b) => {
         const aIndex = searchOrder.indexOf(a.id);
         const bIndex = searchOrder.indexOf(b.id);
-        return aIndex - bIndex;
+        const aPos = aIndex === -1 ? Infinity : aIndex;
+        const bPos = bIndex === -1 ? Infinity : bIndex;
+        return aPos - bPos;
       })
       .filter(config => config.enabled)
       .forEach(config => {
