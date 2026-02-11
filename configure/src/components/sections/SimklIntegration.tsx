@@ -485,7 +485,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           onClick={() => handleAddTrendingCatalog('movies')} 
                           variant="outline" 
                           className="flex-1"
-                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.trending.movies')}
+                          disabled={config.catalogs.some(c => c.id === 'simkl.trending.movies')}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           Trending Movies
@@ -494,7 +494,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           onClick={() => handleAddTrendingCatalog('shows')} 
                           variant="outline" 
                           className="flex-1"
-                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.trending.shows')}
+                          disabled={config.catalogs.some(c => c.id === 'simkl.trending.shows')}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           Trending Shows
@@ -505,7 +505,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           onClick={() => handleAddTrendingCatalog('anime')} 
                           variant="outline" 
                           className="flex-1"
-                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.trending.anime')}
+                          disabled={config.catalogs.some(c => c.id === 'simkl.trending.anime')}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           Trending Anime
@@ -526,7 +526,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           }}
                           variant="outline"
                           className="flex-1"
-                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.calendar.anime')}
+                          disabled={config.catalogs.some(c => c.id === 'simkl.calendar.anime')}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           Airing Soon (Anime)
@@ -547,7 +547,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                           }}
                           variant="outline"
                           className="flex-1"
-                          disabled={!isConnected || config.catalogs.some(c => c.id === 'simkl.calendar.series')}
+                          disabled={config.catalogs.some(c => c.id === 'simkl.calendar.series')}
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           Airing Soon (Series)
