@@ -466,7 +466,7 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
     return 1;
   });
   
-  const minCacheTTL = 300; // 5 minutes minimum for Simkl catalogs
+  const minCacheTTL = isTrending ? 3600 : 300;
 
   const handleSave = () => {
     setConfig(prev => {

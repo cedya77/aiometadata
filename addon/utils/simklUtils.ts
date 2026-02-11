@@ -18,6 +18,7 @@ const SIMKL_CLIENT_ID = process.env.SIMKL_CLIENT_ID || '';
 const SIMKL_TRENDING_TTL = 12 * 60 * 60; // 12 hours
 const SIMKL_WATCHLIST_TTL = 24 * 60 * 60; // Cache in Redis for 24h, relies on activity check to invalidate
 const SIMKL_ACTIVITIES_TTL = parseInt(process.env.SIMKL_ACTIVITIES_TTL || '21600'); // Cache activity check for 6 hours (21600s) to prevent spamming on pagination
+const SIMKL_TRENDING_DATA_URL = 'https://data.simkl.in/discover/trending';
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -785,7 +786,9 @@ async function parseSimklItems(
         if (malId) {
           const year = item.release_date ? new Date(item.release_date).getFullYear() : null;
           const posterUrl = `https://wsrv.nl/?url=https://simkl.in/posters/${item.poster}_m.jpg`;
-          const airedFrom = item.release_date ? `${item.release_date}`.substring(0, 10) : (year ? `${year}-01-01` : null);
+          const airedFrom = item.release_date 
+              ? new Date(item.release_date).toISOString().substring(0, 10) 
+              : (year ? `${year}-01-01` : null);
           const years = typeof item.metadata === "string"
             ? item.metadata.match(/\b\d{4}\b/g)
             : null;
@@ -795,7 +798,7 @@ async function parseSimklItems(
           animeItems.push({
             mal_id: malId,
             type: itemType,
-            title: item.title,
+            title: (item.title || '').replace(/\\'/g, "'"),
             year,
             duration: item.runtime,
             synopsis: item.overview,
@@ -945,64 +948,62 @@ async function fetchSimklTrendingItems(
   type: 'movies' | 'shows' | 'anime',
   interval: 'today' | 'week' | 'month' = 'today',
   page: number = 1,
-  limit: number = 20
+  limit: number = 20,
+  cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
+    // Map type to the JSON file path segments
     const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'tv' : 'anime';
-    let url = `${SIMKL_BASE_URL}/${endpoint}/trending/`;
-    
-    if (interval !== 'today') {
-      url += `${interval}?`;
-    } else {
-      url += '?';
-    }
-    
-    url += `extended=overview,metadata,tmdb,genres,trailer&client_id=${SIMKL_CLIENT_ID}`;
-    const urlWithPagination = `${url}&page=${page}&limit=${limit}`;
-    
-    logger.debug(`Simkl trending ${type}: interval=${interval}, page=${page}, limit=${limit}`);
-    
-    const cacheKey = `simkl-trending:${type}:${interval}:${page}:${limit}`;
-    
+    const url = `${SIMKL_TRENDING_DATA_URL}/${endpoint}/${interval}_500.json`;
+
+    logger.debug(`Simkl trending ${type}: interval=${interval}, page=${page}, limit=${limit}, url=${url}`);
+
+    // Cache the FULL 500-item file, then paginate locally
+    const cacheKey = `simkl-trending-json:${type}:${interval}`;
+    const ttl = Math.max(cacheTTL || SIMKL_TRENDING_TTL, 3600);
     const response: any = await cacheWrapGlobal(
       cacheKey,
       async () => {
         return await makeRateLimitedRequest(
-          () => httpGet(urlWithPagination, { 
+          () => httpGet(url, {
             dispatcher: simklDispatcher,
             headers: {
-              'Content-Type': 'application/json',
-              'simkl-api-key': SIMKL_CLIENT_ID
+              'User-Agent': `AIOMetadata/${process.env.npm_package_version || '1.0'}`,
+              'Accept': 'application/json'
             }
           }),
-          `Simkl fetchTrendingItems (${type}, interval: ${interval}, page: ${page})`
+          `Simkl fetchTrendingItems JSON (${type}, interval: ${interval})`
         );
       },
-      SIMKL_TRENDING_TTL,
+      ttl,
       { skipVersion: true }
     );
-    
-    let rawItems: any[] = Array.isArray(response.data) ? response.data : [];
-    const hasMore = rawItems.length > 0; // Simkl API doesn't give total pages/items easily here, simple check
-    
-    logger.debug(`Simkl trending page ${page}: ${rawItems.length} items, hasMore: ${hasMore}`);
-    
-    const items = rawItems.map((entry: any) => {
+
+    const allItems: any[] = Array.isArray(response.data) ? response.data : [];
+
+    // Paginate locally from the cached full list
+    const startIndex = (page - 1) * limit;
+    const pageItems = allItems.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < allItems.length;
+    const totalItems = allItems.length;
+    const totalPages = Math.ceil(totalItems / limit);
+
+    logger.debug(`Simkl trending page ${page}: ${pageItems.length} items (of ${totalItems} total), hasMore: ${hasMore}`);
+
+    const items = pageItems.map((entry: any) => {
       let itemType: 'movie' | 'series';
-      
       if (type === 'anime' && entry.anime_type) {
         itemType = (entry.anime_type === 'movie' || entry.anime_type === 'ona') ? 'movie' : 'series';
       } else {
         itemType = type === 'movies' ? 'movie' : 'series';
       }
-      
       return {
         type: itemType,
         ...entry
       };
     });
-    
-    return { items, hasMore };
+
+    return { items, hasMore, totalItems, totalPages };
   } catch (err: any) {
     logger.error(`Error fetching Simkl trending ${type}, interval ${interval}, page ${page}:`, err.message);
     return { items: [], hasMore: false };

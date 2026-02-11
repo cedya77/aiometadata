@@ -1583,7 +1583,7 @@ async function getSimklCatalog(
         ? genre.toLowerCase() as 'today' | 'week' | 'month'
         : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
       logger.debug(`[Simkl] Fetching trending movies (interval: ${interval}, pageSize: ${pageSize})`);
-      const result = await fetchSimklTrendingItems('movies', interval, page, pageSize);
+      const result = await fetchSimklTrendingItems('movies', interval, page, pageSize, catalogConfig?.cacheTTL);
       const items = (result.items as any[]).filter((it: any) => {
         const ids = it.ids || {};
         const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.simkl || ids.simkl_id);
@@ -1596,7 +1596,7 @@ async function getSimklCatalog(
         ? genre.toLowerCase() as 'today' | 'week' | 'month'
         : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
       logger.debug(`[Simkl] Fetching trending shows (interval: ${interval}, pageSize: ${pageSize})`);
-      const result = await fetchSimklTrendingItems('shows', interval, page, pageSize);
+      const result = await fetchSimklTrendingItems('shows', interval, page, pageSize, catalogConfig?.cacheTTL);
       const items = (result.items as any[]).filter((it: any) => {
         const ids = it.ids || {};
         const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.simkl || ids.simkl_id);
@@ -1609,7 +1609,7 @@ async function getSimklCatalog(
         ? genre.toLowerCase() as 'today' | 'week' | 'month'
         : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
       logger.debug(`[Simkl] Fetching trending anime (interval: ${interval}, pageSize: ${pageSize})`);
-      const result = await fetchSimklTrendingItems('anime', interval, page, pageSize);
+      const result = await fetchSimklTrendingItems('anime', interval, page, pageSize, catalogConfig?.cacheTTL);
       const items = (result.items as any[]).filter((it: any) => {
         const ids = it.ids || {};
         const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb || ids.simkl || ids.simkl_id);

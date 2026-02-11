@@ -883,6 +883,12 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       cacheLogger.debug(`[Catalog] Using custom cache TTL for Trakt catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
+
+  if (idOnly.startsWith('simkl.trending.')) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    cacheTTL = Math.max(catalogConfig?.cacheTTL || CATALOG_TTL, 3600);
+    cacheLogger.debug(`[Catalog] Using cache TTL for Simkl trending catalog ${idOnly}: ${cacheTTL}s`);
+  }
   
   // Use custom cache TTL for Letterboxd catalogs if specified
   // StremThru returns cache-control headers suggesting 900s (15min), but allow user override
