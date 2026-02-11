@@ -1648,9 +1648,9 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
             } else {
               thumbnailUrl = null;
             }
-          } else {
-            thumbnailUrl = `${host}/missing_thumbnail.png`;
-          }
+          }  else {
+    thumbnailUrl = background || `${host}/missing_thumbnail.png`;
+}
         }
         
         // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
@@ -2199,7 +2199,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
                 thumbnailUrl = null;
               }
             } else {
-              thumbnailUrl = `${host}/missing_thumbnail.png`;
+              thumbnailUrl = background || `${host}/missing_thumbnail.png`;
             }
           }
           
@@ -2511,7 +2511,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
             thumbnailUrl = null;
           }
         } else {
-          thumbnailUrl = `${host}/missing_thumbnail.png`;
+          thumbnailUrl = background || `${host}/missing_thumbnail.png`;
         }
       }
       
@@ -2581,7 +2581,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
             thumbnailUrl = null;
           }
         } else {
-          thumbnailUrl = `${host}/missing_thumbnail.png`;
+          thumbnailUrl = background || `${host}/missing_thumbnail.png`;
         }
       }
       
@@ -2854,7 +2854,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
               thumbnailUrl = null;
             }
           } else {
-            thumbnailUrl = `${host}/missing_thumbnail.png`;
+            thumbnailUrl = background || `${host}/missing_thumbnail.png`;
           }
         }
         
@@ -3314,7 +3314,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
               thumbnailUrl = null;
             }
           } else {
-            thumbnailUrl = `${host}/missing_thumbnail.png`;
+              thumbnailUrl = bestBackgroundUrl || `${host}/missing_thumbnail.png`;
           }
         }
         
