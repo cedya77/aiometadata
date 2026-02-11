@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.26.4](https://github.com/cedya77/aiometadata/compare/v1.26.3...v1.26.4) (2026-02-11)
+
+
+### Bug Fixes
+
+* add metahub to trusted endpoints ([376abfd](https://github.com/cedya77/aiometadata/commit/376abfdd69017a712f532efd0cde3da74ec0f8f5))
+
+
+### Performance Improvements
+
+* switch Simkl trending fetch to JSON source ([48e7f37](https://github.com/cedya77/aiometadata/commit/48e7f37d5800652537182290db60ecf54f29ca13))
+
 ## [1.26.3](https://github.com/cedya77/aiometadata/compare/v1.26.2...v1.26.3) (2026-02-08)
 
 
