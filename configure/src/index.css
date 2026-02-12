@@ -141,3 +141,27 @@
     }
   }
 }
+/* --- FIX FOR TREMOR/RECHARTS GRAPH VISIBILITY --- */
+
+/* 1. Make the numbers on the X and Y axis light gray in dark mode */
+.dark .recharts-cartesian-axis-tick text {
+  fill: #94a3b8 !important; 
+  font-size: 12px;
+}
+
+/* 2. Make the legend text (tmdb, tvdb, etc.) visible */
+.dark .recharts-legend-item text {
+  fill: #e2e8f0 !important;
+}
+
+/* 3. Make the background grid lines subtle (dark gray) instead of invisible */
+.dark .recharts-cartesian-grid-horizontal line,
+.dark .recharts-cartesian-grid-vertical line {
+  stroke: #334155 !important;
+  stroke-opacity: 0.5;
+}
+
+/* 4. Ensure the Tooltip text is readable */
+.dark .recharts-tooltip-item-list {
+  color: #ffffff !important;
+}

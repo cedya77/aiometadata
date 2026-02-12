@@ -965,11 +965,13 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
     </Dialog>
   );
 };
-
+import { Layers } from 'lucide-react';
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
   const { setConfig, config } = useConfig();
-  const { toggleSelection, isSelected } = useSelection();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `${catalog.id}-${catalog.type}` });
+  const { toggleSelection, isSelected, selectionCount } = useSelection(); 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
+    id: `${catalog.id}-${catalog.type}` 
+  });
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
@@ -981,7 +983,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 10 : 'auto',
+    zIndex: isDragging ? 50 : 'auto',
   };
 
   const badgeSource = catalog.source || 'custom';
@@ -1116,11 +1118,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex flex-col md:flex-row md:items-center md:justify-between p-4",
+        "relative flex flex-col md:flex-row md:items-center md:justify-between p-4",
         // Smooth transitions for all properties
         "transition-all duration-200 ease-out",
         // Dragging state
-        isDragging && "opacity-50 scale-105 shadow-lg",
+        isDragging && "opacity-80 scale-[1.02] shadow-2xl ring-2 ring-primary/50",
         // Disabled state
         !catalog.enabled && "opacity-60",
         // Selected state with smooth background transition
@@ -1131,6 +1133,16 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         !selected && "hover:bg-accent/50"
       )}
     >
+      {/* --- Group Dragging Badge --- */}
+      {isDragging && selected && selectionCount > 1 && (
+        <div className="absolute -top-3 -right-3 z-[60] animate-in zoom-in duration-200">
+          <Badge className="bg-blue-600 text-white shadow-xl px-3 py-1 flex items-center gap-1.5 border-2 border-background">
+            <Layers className="h-3.5 w-3.5" />
+            <span className="font-bold">Moving {selectionCount} items</span>
+          </Badge>
+        </div>
+      )}
+
       {/* Row 1: Catalog info (checkbox, drag, name) */}
       <div className="flex items-center space-x-4 w-full md:w-auto">
         <div
@@ -1722,12 +1734,46 @@ function CatalogsSettingsContent({
     | 'disableRatingPosters'
     | 'enableRandomize'
     | 'disableRandomize'
+    | 'moveToTop'     
+    | 'moveToBottom' 
     | null
   >(null);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   // Check if TVDB key is available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
+
+  const handleBulkMoveToTop = () => {
+    setLoadingAction('moveToTop');
+    setIsLoading(true);
+    try {
+      setConfig(prev => {
+        const selected = prev.catalogs.filter(c => selectedIds.has(`${c.id}-${c.type}`));
+        const remaining = prev.catalogs.filter(c => !selectedIds.has(`${c.id}-${c.type}`));
+        return { ...prev, catalogs: [...selected, ...remaining] };
+      });
+      toast.success(`Moved ${selectedIds.size} catalogs to top of the list`);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleBulkMoveToBottom = () => {
+    setLoadingAction('moveToBottom');
+    setIsLoading(true);
+    try {
+      setConfig(prev => {
+        const selected = prev.catalogs.filter(c => selectedIds.has(`${c.id}-${c.type}`));
+        const remaining = prev.catalogs.filter(c => !selectedIds.has(`${c.id}-${c.type}`));
+        return { ...prev, catalogs: [...remaining, ...selected] };
+      });
+      toast.success(`Moved ${selectedIds.size} catalogs to bottom of the list`);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
 
   // Auto-disable TVDB catalogs when no TVDB key is available
   React.useEffect(() => {
@@ -1761,13 +1807,38 @@ function CatalogsSettingsContent({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setConfig(prev => {
-        const oldIndex = prev.catalogs.findIndex(c => `${c.id}-${c.type}` === active.id);
-        const newIndex = prev.catalogs.findIndex(c => `${c.id}-${c.type}` === over.id);
-        return { ...prev, catalogs: arrayMove(prev.catalogs, oldIndex, newIndex) };
-      });
-    }
+    if (!over || active.id === over.id) return;
+  
+    const activeKey = active.id as string;
+    const overKey = over.id as string;
+  
+    setConfig(prev => {
+      const currentCatalogs = [...prev.catalogs];
+      
+      const movingKeys = selectedIds.has(activeKey)
+        ? currentCatalogs
+            .map(c => `${c.id}-${c.type}`)
+            .filter(key => selectedIds.has(key))
+        : [activeKey];
+  
+      const movingItems = currentCatalogs.filter(c => movingKeys.includes(`${c.id}-${c.type}`));
+      const remainingItems = currentCatalogs.filter(c => !movingKeys.includes(`${c.id}-${c.type}`));
+  
+      const overIndexInRemaining = remainingItems.findIndex(
+        c => `${c.id}-${c.type}` === overKey
+      );
+  
+      const activeIndexTotal = currentCatalogs.findIndex(c => `${c.id}-${c.type}` === activeKey);
+      const overIndexTotal = currentCatalogs.findIndex(c => `${c.id}-${c.type}` === overKey);
+      const isMovingDown = activeIndexTotal < overIndexTotal;
+      
+      const insertIndex = isMovingDown ? overIndexInRemaining + 1 : overIndexInRemaining;
+  
+      const newCatalogs = [...remainingItems];
+      newCatalogs.splice(insertIndex, 0, ...movingItems);
+  
+      return { ...prev, catalogs: newCatalogs };
+    });
   };
 
   const catalogItemIds = filteredCatalogs.map(c => `${c.id}-${c.type}`);
@@ -2465,6 +2536,8 @@ function CatalogsSettingsContent({
           onDeleteSelected={handleBulkDelete}
           onInvertSelection={invertSelection}
           onClearSelection={deselectAll}
+          onMoveToTop={handleBulkMoveToTop}       
+          onMoveToBottom={handleBulkMoveToBottom}
           onEnableRatingPosters={handleBulkEnableRatingPosters}
           onDisableRatingPosters={handleBulkDisableRatingPosters}
           onEnableRandomize={handleBulkEnableRandomize}

@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move  } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +21,8 @@ type BulkActionType =
   | 'disableRatingPosters'
   | 'enableRandomize'
   | 'disableRandomize'
+  | 'moveToTop'     
+  | 'moveToBottom'   
   | null;
 
 interface BulkActionBarProps {
@@ -32,6 +34,8 @@ interface BulkActionBarProps {
   onDeleteSelected: () => void;
   onInvertSelection: () => void;
   onClearSelection: () => void;
+  onMoveToTop?: () => void;   
+  onMoveToBottom?: () => void; 
   onEnableRatingPosters?: () => void;
   onDisableRatingPosters?: () => void;
   onEnableRandomize?: () => void;
@@ -50,6 +54,8 @@ export function BulkActionBar({
   onDeleteSelected,
   onInvertSelection,
   onClearSelection,
+  onMoveToTop,
+  onMoveToBottom,
   onEnableRatingPosters,
   onDisableRatingPosters,
   onEnableRandomize,
@@ -123,6 +129,40 @@ export function BulkActionBar({
         {/* Action buttons */}
         <TooltipProvider>
           <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center gap-2">
+
+            {/* Move Grouping */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={onMoveToTop} 
+                  disabled={isLoading}
+                  className="hidden sm:flex border-blue-200 dark:border-blue-800"
+                >
+                  <ArrowUpToLine className="h-4 w-4 text-blue-500" />
+                  <span className="ml-2">To Top</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move selection to start of list</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={onMoveToBottom} 
+                  disabled={isLoading}
+                  className="hidden sm:flex border-blue-200 dark:border-blue-800"
+                >
+                  <ArrowDownToLine className="h-4 w-4 text-blue-500" />
+                  <span className="ml-2">To Bottom</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move selection to end of list</TooltipContent>
+            </Tooltip>
+
             {/* Enable Selected */}
             {hasDisabledCatalogs && (
               <Tooltip>

@@ -11,7 +11,7 @@ function AppContent() {
   const { config } = useConfig();
   
   return (
-    <div className="min-h-screen w-full bg-background text-foreground flex flex-col items-center p-4 sm:p-6">
+    <div className="dark min-h-screen w-full bg-background text-foreground flex flex-col items-center p-4 sm:p-6">
       <Header />
       
       {/* Custom Description Blurb - Outside main card */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { AreaChart, Card as TremorCard, Title, Text, Color, BarList, Flex, Bold } from "@tremor/react";
 import {
   Card,
   CardContent,
@@ -90,6 +91,68 @@ import { AnimatedNumber, FadeValue } from "./AnimatedNumber";
 const formatBytes = (bytes: number): string => {
   if (!bytes || bytes === 0) return "0 MB";
   return Math.round(bytes / 1024 / 1024) + " MB";
+};
+
+const transformToLocalSlidingWindow = (data: any[]) => {
+  if (!data || data.length === 0) return [];
+
+  const dataMap = new Map(data.map(item => [item.hour, item]));
+  const now = new Date();
+  const result = [];
+
+  for (let i = 23; i >= 0; i--) {
+    const targetTime = new Date(now.getTime() - i * 60 * 60 * 1000);
+    const serverHour = targetTime.getUTCHours(); 
+    const localHour = targetTime.getHours();  
+    
+    const match = dataMap.get(serverHour);
+    
+    result.push({
+      displayHour: `${localHour}:00`,
+      requests: match?.requests || 0,
+      responseTime: match?.responseTime || 0,
+    });
+  }
+
+  return result;
+};
+
+const normalizeHourlyData = (data: any[], providerKeys: string[]) => {
+  if (!data) return [];
+
+  const dataMap = new Map(data.map(item => [item.hour, item]));
+  const normalized = [];
+  
+  const now = new Date();
+  
+  let lastKnownValues: any = Object.fromEntries(providerKeys.map(k => [k, 0]));
+
+  for (let i = 23; i >= 0; i--) {
+    const targetTime = new Date(now.getTime() - i * 60 * 60 * 1000);
+    
+    const serverHour = targetTime.getUTCHours();
+    const localHour = targetTime.getHours();   
+    
+    const match = dataMap.get(serverHour);
+    const entry: any = { 
+      displayHour: `${localHour}:00`, 
+      hour: localHour 
+    };
+
+    providerKeys.forEach(key => {
+      if (match && match[key] !== undefined && match[key] !== null) {
+        entry[key] = match[key];
+        lastKnownValues[key] = match[key];
+      } else {
+        // Keep the line flat using the last recorded value
+        entry[key] = lastKnownValues[key];
+      }
+    });
+
+    normalized.push(entry);
+  }
+
+  return normalized;
 };
 
 const getMemoryContext = (memoryUsage: number, systemData: any): string => {
@@ -429,7 +492,7 @@ function DashboardOverview({ data, systemData, loading }) {
 }
 
 // Analytics & Performance Component
-function DashboardAnalytics({ data, loading }) {
+function DashboardAnalytics({ data, loading, isMobile }) {
   const [requestMetrics, setRequestMetrics] = useState(() => ({
     requestsPerHour: data?.hourlyData || [],
     responseTimes: data?.hourlyData || [],
@@ -455,16 +518,30 @@ function DashboardAnalytics({ data, loading }) {
     earlyReturnRate: 0,
   });
 
+  const providerColorMap: Record<string, string> = {
+    tmdb: "blue",
+    tvdb: "emerald",
+    mal: "rose",
+    anilist: "cyan",
+    kitsu: "orange",
+    fanart: "pink",
+    tvmaze: "amber",
+    trakt: "purple",
+    mdblist: "indigo",
+    letterboxd: "lime",
+  };
+
   useEffect(() => {
     if (data) {
+      const localSlidingMetrics = transformToLocalSlidingWindow(data.hourlyData || []);
       setProviderHourlyData(data.providerHourlyData || []);
 
       if (data.requestStats) {
         const successRate =
           data.requestStats.successRate || 100 - data.requestStats.errorRate;
         setRequestMetrics({
-          requestsPerHour: data.hourlyData || [],
-          responseTimes: data.hourlyData || [],
+          requestsPerHour: localSlidingMetrics,
+          responseTimes: localSlidingMetrics,
           successRate: successRate,
           failureRate: data.requestStats.errorRate,
         });
@@ -493,6 +570,8 @@ function DashboardAnalytics({ data, loading }) {
     });
     return acc;
   }, []);
+
+  const slidingData = normalizeHourlyData(providerHourlyData, providerKeys);
 
   return (
     <div className="space-y-6">
@@ -651,110 +730,103 @@ function DashboardAnalytics({ data, loading }) {
       </Card>
 
       {/* Provider Response Time Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider API Response Times</CardTitle>
-          <CardDescription>
-            Average response time (ms) per hour for each provider
-          </CardDescription>
+      <Card className="overflow-hidden border-none shadow-lg bg-background/50 backdrop-blur-sm">
+        <CardHeader className="pb-4">
+          <Flex justifyContent="between" alignItems="center">
+            <div>
+              <CardTitle className="text-xl font-bold tracking-tight">Provider Latency</CardTitle>
+              <CardDescription>Response times per hour (lower is better)</CardDescription>
+            </div>
+            <Badge variant="secondary" className="px-3 py-1 font-mono text-xs">
+              <Activity className="h-3 w-3 mr-2 text-emerald-500 animate-pulse" />
+              LIVE METRICS
+            </Badge>
+          </Flex>
         </CardHeader>
         <CardContent>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsLineChart data={providerHourlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="hour"
-                  tickFormatter={(hour) => `${hour}:00`}
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis
-                  label={{
-                    value: "ms",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 12,
-                  }}
-                  tick={{ fontSize: 12 }}
-                />
-                <Tooltip
-                  labelFormatter={(hour) => `Hour: ${hour}:00`}
-                  formatter={(value, name) => {
-                    const formattedValue =
-                      value === null || value === undefined
-                        ? "N/A"
-                        : `${value} ms`;
-                    const formattedName =
-                      typeof name === "string" ? name.toUpperCase() : name;
-                    return [formattedValue, formattedName];
-                  }}
-                />
-                <Legend />
-                {providerKeys.map((provider, index) => (
-                  <Line
-                    key={provider}
-                    type="monotone"
-                    dataKey={provider}
-                    stroke={
-                      [
-                        "#8884d8",
-                        "#82ca9d",
-                        "#ffc658",
-                        "#ff7300",
-                        "#00C49F",
-                        "#FFBB28",
-                        "#FF8042",
-                      ][index % 7]
-                    }
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 6 }}
-                    name={provider.toUpperCase()}
-                    connectNulls
-                  />
-                ))}
-              </RechartsLineChart>
-            </ResponsiveContainer>
-          </div>
+          <AreaChart
+            className="h-80 mt-8"
+            data={slidingData}
+            index="displayHour" // <-- Use the string label "19:00"
+            categories={providerKeys}
+            colors={providerKeys.map(key => providerColorMap[key.toLowerCase()] || "slate")}
+            curveType="monotone"
+            stack={false}
+            showXAxis={true}
+            showYAxis={true}
+            yAxisWidth={65}
+            // Force the chart to show fewer labels on mobile to prevent overlap
+            startEndOnly={isMobile} 
+            valueFormatter={(number) => `${Math.floor(number)}ms`}
+            // Custom Tooltip for that "Vercel" look
+            customTooltip={({ payload, active, label }) => {
+              if (!active || !payload) return null;
+              return (
+                <div className="rounded-xl border bg-background/95 backdrop-blur-md p-3 shadow-2xl ring-1 ring-black/5 min-w-[140px]">
+                  <p className="text-[10px] font-black text-muted-foreground mb-2 uppercase tracking-widest">{label}:00 HRS</p>
+                  <div className="space-y-2">
+                    {payload.map((category: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
+                          <span className="text-xs font-semibold text-foreground capitalize">{category.dataKey}</span>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-primary">{category.value}ms</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }}
+          />
         </CardContent>
       </Card>
 
-      {/* Performance Charts */}
+      {/* Performance Charts Section */}
       <Card>
         <CardHeader>
           <CardTitle>Performance Trends</CardTitle>
           <CardDescription>
-            Request volume and response times over time
+            Volume and latency patterns over the last 24 hours (Local Time)
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-6">
+          <div className="space-y-12">
             {/* Request Volume Chart */}
             <div>
-              <h4 className="text-sm font-medium mb-3">
-                Request Volume (Last 24 Hours)
+              <h4 className="text-sm font-medium mb-4 text-muted-foreground flex items-center gap-2">
+                <Activity className="h-4 w-4" /> Request Volume
               </h4>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <RechartsLineChart data={requestMetrics.requestsPerHour}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.2} />
                     <XAxis
-                      dataKey="hour"
-                      tickFormatter={(hour) => `${hour}:00`}
-                      tick={{ fontSize: 12 }}
+                      dataKey="displayHour" // Changed from "hour"
+                      tick={{ fontSize: 10, fill: '#94a3b8' }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval={isMobile ? 5 : 2}
                     />
-                    <YAxis tick={{ fontSize: 12 }} />
+                    <YAxis 
+                      tick={{ fontSize: 10, fill: '#94a3b8' }} 
+                      axisLine={false} 
+                      tickLine={false} 
+                    />
                     <Tooltip
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }}
+                      itemStyle={{ color: '#f1f5f9' }}
+                      labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
                       formatter={(value) => [value, "Requests"]}
-                      labelFormatter={(hour) => `${hour}:00`}
                     />
                     <Line
                       type="monotone"
                       dataKey="requests"
-                      stroke="#8884d8"
-                      strokeWidth={2}
-                      dot={{ fill: "#8884d8", strokeWidth: 2, r: 4 }}
-                      activeDot={{ r: 6, stroke: "#8884d8", strokeWidth: 2 }}
+                      stroke="#6366f1" // Indigo
+                      strokeWidth={3}
+                      dot={false}
+                      activeDot={{ r: 4, strokeWidth: 0, fill: '#818cf8' }}
+                      animationDuration={1500}
                     />
                   </RechartsLineChart>
                 </ResponsiveContainer>
@@ -763,27 +835,37 @@ function DashboardAnalytics({ data, loading }) {
 
             {/* Response Times Chart */}
             <div>
-              <h4 className="text-sm font-medium mb-3">
-                Response Times (Last 24 Hours)
+              <h4 className="text-sm font-medium mb-4 text-muted-foreground flex items-center gap-2">
+                <Clock className="h-4 w-4" /> Avg Response Latency
               </h4>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <RechartsBarChart data={requestMetrics.responseTimes}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.2} />
                     <XAxis
-                      dataKey="hour"
-                      tickFormatter={(hour) => `${hour}:00`}
-                      tick={{ fontSize: 12 }}
+                      dataKey="displayHour" // Changed from "hour"
+                      tick={{ fontSize: 10, fill: '#94a3b8' }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval={isMobile ? 5 : 2}
                     />
-                    <YAxis tick={{ fontSize: 12 }} />
+                    <YAxis 
+                      tick={{ fontSize: 10, fill: '#94a3b8' }} 
+                      axisLine={false} 
+                      tickLine={false}
+                      unit="ms"
+                    />
                     <Tooltip
-                      formatter={(value) => [value, "ms"]}
-                      labelFormatter={(hour) => `${hour}:00`}
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }}
+                      itemStyle={{ color: '#f1f5f9' }}
+                      labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
+                      formatter={(value) => [`${value}ms`, "Latency"]}
                     />
                     <Bar
                       dataKey="responseTime"
-                      fill="#82ca9d"
+                      fill="#10b981" // Emerald
                       radius={[4, 4, 0, 0]}
+                      animationDuration={1500}
                     />
                   </RechartsBarChart>
                 </ResponsiveContainer>
@@ -2107,25 +2189,28 @@ function DashboardSystem({ data, loading }) {
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
               {/* Watch Tracking */}
-              <div className="p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 mb-2">
-                  <Eye className="h-4 w-4 text-green-500" />
-                  <p className="text-xs font-medium">Watch Tracking</p>
+              <div className="p-4 rounded-xl bg-card border shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <Eye className="h-5 w-5 text-blue-500" />
+                  <p className="text-sm font-bold">Watch Tracking Adoption</p>
                 </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">MDBList</span>
-                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.mdblistWatchTracking || 0}%</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">AniList</span>
-                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0}%</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Simkl</span>
-                    <span className="font-semibold">{systemConfig.aggregatedStats?.features?.simklWatchTracking || 0}%</span>
-                  </div>
-                </div>
+                
+                <BarList 
+                  data={[
+                    { name: "AniList", value: systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-blue-500 mr-2" /> },
+                    { name: "MDBList", value: systemConfig.aggregatedStats?.features?.mdblistWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2" /> },
+                    { name: "Simkl", value: systemConfig.aggregatedStats?.features?.simklWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-red-500 mr-2" /> },
+                  ]}
+                  className="mt-2"
+                  valueFormatter={(number: number) => `${number}%`}
+                  color="blue"
+                />
+                
+                <Flex className="mt-6 pt-4 border-t border-border">
+                  <Text className="truncate">
+                    <Bold>AniList</Bold> is currently the most popular tracker
+                  </Text>
+                </Flex>
               </div>
 
               {/* Rating Posters */}
@@ -4031,6 +4116,7 @@ export function Dashboard() {
         <DashboardAnalytics
           data={dashboardData.analytics}
           loading={dashboardData.loading}
+          isMobile={isMobile}
         />
       ),
     },
@@ -4221,6 +4307,7 @@ export function Dashboard() {
           <DashboardAnalytics
             data={dashboardData.analytics}
             loading={dashboardData.loading}
+            isMobile={isMobile}
           />
         </TabsContent>
 
