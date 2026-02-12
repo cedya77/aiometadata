@@ -49,6 +49,12 @@ export interface CatalogConfig {
     // TMDB-specific metadata
     listId?: string;
     listDescription?: string;
+    discover?: {
+      version?: number;
+      mediaType?: 'movie' | 'tv';
+      params?: Record<string, string | number | boolean>;
+    };
+    discoverParams?: Record<string, string | number | boolean>;
     // Simkl-specific metadata
     interval?: 'today' | 'week' | 'month';
     pageSize?: number; // Results per page for Simkl trending and watchlist catalogs (default: 50)

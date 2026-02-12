@@ -332,6 +332,30 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
   }
 }
 
+function createTMDBDiscoverCatalog(userCatalog, showPrefix = false) {
+  try {
+    logger.info(`Creating TMDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
+
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+
+    logger.success(`TMDB Discover catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    logger.error(`Error creating TMDB Discover catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createLetterboxdCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -754,6 +778,9 @@ async function getManifest(config) {
       if (userCatalog.id.startsWith('tmdb.list.')) {
         return true;
       }
+      if (userCatalog.id.startsWith('tmdb.discover.')) {
+        return true;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
         return true;
       }
@@ -797,6 +824,12 @@ async function getManifest(config) {
           logger.debug(`Processing TMDB List catalog: ${userCatalog.id}`);
           const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix);
           logger.debug(`TMDB List catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('tmdb.discover.')) {
+          logger.debug(`Processing TMDB Discover catalog: ${userCatalog.id}`);
+          const result = createTMDBDiscoverCatalog(userCatalog, showPrefix);
+          logger.debug(`TMDB Discover catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {

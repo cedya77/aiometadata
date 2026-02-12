@@ -1088,6 +1088,33 @@ addon.get("/api/mdblist/lists/:listId", async (req, res) => {
 
 // --- TMDB Proxy Endpoints ---
 const moviedb = require('./lib/getTmdb.js');
+const TMDB_DISCOVER_CACHE_TTL = 24 * 60 * 60; // 24h for mostly static discover reference data
+
+function normalizeTmdbDiscoverType(type) {
+  return type === 'tv' ? 'tv' : 'movie';
+}
+
+async function resolveTmdbDiscoverApiKey(req) {
+  const requestApiKey = typeof req.query.apikey === 'string' ? req.query.apikey.trim() : '';
+  if (requestApiKey) {
+    return requestApiKey;
+  }
+
+  const userUUID = typeof req.query.userUUID === 'string' ? req.query.userUUID.trim() : '';
+  if (userUUID) {
+    try {
+      const userConfig = await loadConfigFromDatabase(userUUID);
+      const userConfigKey = userConfig?.apiKeys?.tmdb?.trim() || '';
+      if (userConfigKey) {
+        return userConfigKey;
+      }
+    } catch (error) {
+      consola.debug(`[TMDB Discover] Could not load config for user ${userUUID}: ${error.message}`);
+    }
+  }
+
+  return (process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '').trim();
+}
 
 // Proxy: Get TMDB list details
 addon.get("/api/tmdb/list/:listId", async (req, res) => {
@@ -1109,6 +1136,174 @@ addon.get("/api/tmdb/list/:listId", async (req, res) => {
     consola.error("[TMDB Proxy] Error fetching list details:", error.message);
     const status = error.response?.status || 500;
     res.status(status).json({ error: error.message || "Failed to fetch TMDB list details" });
+  }
+});
+
+// Proxy: Discover reference data (genres, languages, countries, certifications, watch regions)
+addon.get("/api/tmdb/discover/reference", async (req, res) => {
+  try {
+    const { type, language } = req.query;
+    const tmdbApiKey = await resolveTmdbDiscoverApiKey(req);
+
+    if (!tmdbApiKey) {
+      return res.status(400).json({
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+      });
+    }
+
+    const mediaType = normalizeTmdbDiscoverType(type);
+    const lang = typeof language === 'string' && language.trim() ? language.trim() : 'en-US';
+    const config = { apiKeys: { tmdb: tmdbApiKey } };
+    const cacheKey = `tmdb:discover:reference:${mediaType}:${lang}`;
+
+    const payload = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        const [genresData, languagesData, countriesData, certificationsData, watchRegionsData] = await Promise.all([
+          moviedb.makeTmdbRequest(`/genre/${mediaType}/list`, tmdbApiKey, { language: lang }, 'GET', null, config),
+          moviedb.makeTmdbRequest('/configuration/languages', tmdbApiKey, {}, 'GET', null, config),
+          moviedb.makeTmdbRequest('/configuration/countries', tmdbApiKey, {}, 'GET', null, config),
+          moviedb.makeTmdbRequest(`/certification/${mediaType}/list`, tmdbApiKey, {}, 'GET', null, config),
+          moviedb.makeTmdbRequest('/watch/providers/regions', tmdbApiKey, {}, 'GET', null, config),
+        ]);
+
+        const genres = Array.isArray(genresData?.genres) ? genresData.genres : [];
+        const languages = Array.isArray(languagesData)
+          ? languagesData.filter(langItem => !!langItem?.iso_639_1)
+          : [];
+        const countries = Array.isArray(countriesData)
+          ? countriesData.filter(countryItem => !!countryItem?.iso_3166_1)
+          : [];
+        const watchRegions = Array.isArray(watchRegionsData?.results)
+          ? watchRegionsData.results.filter(region => !!region?.iso_3166_1)
+          : [];
+        const certifications = certificationsData?.certifications || {};
+
+        return {
+          mediaType,
+          language: lang,
+          genres,
+          languages,
+          countries,
+          watchRegions,
+          certifications
+        };
+      },
+      TMDB_DISCOVER_CACHE_TTL
+    );
+
+    return res.json(payload);
+  } catch (error) {
+    consola.error("[TMDB Discover] Error fetching reference data:", error.message);
+    const status = error.response?.status || 500;
+    return res.status(status).json({ error: error.message || "Failed to fetch TMDB discover reference data" });
+  }
+});
+
+// Proxy: Discover providers for selected media type + region
+addon.get("/api/tmdb/discover/providers", async (req, res) => {
+  try {
+    const { type, watch_region } = req.query;
+    const tmdbApiKey = await resolveTmdbDiscoverApiKey(req);
+
+    if (!tmdbApiKey) {
+      return res.status(400).json({
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+      });
+    }
+
+    if (!watch_region) {
+      return res.status(400).json({ error: "watch_region is required" });
+    }
+
+    const mediaType = normalizeTmdbDiscoverType(type);
+    const region = String(watch_region).toUpperCase();
+    const cacheKey = `tmdb:discover:providers:${mediaType}:${region}`;
+    const config = { apiKeys: { tmdb: tmdbApiKey } };
+
+    const payload = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        const providersData = await moviedb.makeTmdbRequest(
+          `/watch/providers/${mediaType}`,
+          tmdbApiKey,
+          { watch_region: region },
+          'GET',
+          null,
+          config
+        );
+
+        const providers = Array.isArray(providersData?.results)
+          ? providersData.results
+              .filter(provider => !!provider?.provider_id)
+              .sort((a, b) => {
+                const priorityA = Number.isFinite(a.display_priority) ? a.display_priority : Number.MAX_SAFE_INTEGER;
+                const priorityB = Number.isFinite(b.display_priority) ? b.display_priority : Number.MAX_SAFE_INTEGER;
+                return priorityA - priorityB;
+              })
+          : [];
+
+        return { mediaType, watch_region: region, providers };
+      },
+      TMDB_DISCOVER_CACHE_TTL
+    );
+
+    return res.json(payload);
+  } catch (error) {
+    consola.error("[TMDB Discover] Error fetching providers:", error.message);
+    const status = error.response?.status || 500;
+    return res.status(status).json({ error: error.message || "Failed to fetch TMDB discover providers" });
+  }
+});
+
+// Proxy: Discover searchable entities (person/company/keyword) for ID-based filters
+addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
+  try {
+    const { query } = req.query;
+    const entity = String(req.params.entity || '').toLowerCase();
+    const tmdbApiKey = await resolveTmdbDiscoverApiKey(req);
+
+    if (!tmdbApiKey) {
+      return res.status(400).json({
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+      });
+    }
+
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({ error: "query is required" });
+    }
+
+    const endpointMap = {
+      person: '/search/person',
+      company: '/search/company',
+      keyword: '/search/keyword'
+    };
+
+    const endpoint = endpointMap[entity];
+    if (!endpoint) {
+      return res.status(400).json({ error: "entity must be one of: person, company, keyword" });
+    }
+
+    const config = { apiKeys: { tmdb: tmdbApiKey } };
+    const searchData = await moviedb.makeTmdbRequest(
+      endpoint,
+      tmdbApiKey,
+      {
+        query: String(query).trim(),
+        page: 1,
+        include_adult: false
+      },
+      'GET',
+      null,
+      config
+    );
+
+    const results = Array.isArray(searchData?.results) ? searchData.results.slice(0, 25) : [];
+    return res.json({ entity, results });
+  } catch (error) {
+    consola.error("[TMDB Discover] Error searching entity:", error.message);
+    const status = error.response?.status || 500;
+    return res.status(status).json({ error: error.message || "Failed to search TMDB discover entity" });
   }
 });
 
@@ -2246,6 +2441,21 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   else if (cleanId.startsWith('streaming.') || cleanId.startsWith('tmdb.year') || cleanId.startsWith('tmdb.language')) {
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+  }
+  // TMDB Discover custom catalogs use discover params (include hash for safe cache invalidation)
+  else if (cleanId.startsWith('tmdb.discover.')) {
+    const discoverParams =
+      catalogConfig?.metadata?.discover?.params ||
+      catalogConfig?.metadata?.discoverParams ||
+      null;
+    if (discoverParams && typeof discoverParams === 'object') {
+      const discoverSignature = crypto
+        .createHash('md5')
+        .update(stableStringify(discoverParams))
+        .digest('hex')
+        .substring(0, 8);
+      extraArgs.discoverSig = discoverSignature;
+    }
   }
   // AniList uses: sort, sortDirection
   else if (cleanId.startsWith('anilist.')) {

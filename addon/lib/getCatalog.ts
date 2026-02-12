@@ -517,12 +517,75 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     return metas;
   }
 
+  // Handle custom TMDB Discover catalogs (tmdb.discover.{customId})
+  if (id.startsWith('tmdb.discover.')) {
+    logger.info(`Fetching TMDB discover catalog: ${id}, Type: ${type}, Page: ${page}`);
+
+    const catalogConfig = config.catalogs?.find(c => c.id === id && c.type === type);
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
+    const isMovieCatalog = type === 'movie';
+    const isSeriesCatalog = type === 'series';
+
+    if (!tmdbApiKey) {
+      logger.warn('[TMDB Discover] Missing API key');
+      return [];
+    }
+
+    if (!isMovieCatalog && !isSeriesCatalog) {
+      logger.warn(`[TMDB Discover] Unsupported type for discover catalog: ${type}`);
+      return [];
+    }
+
+    const mediaType = isMovieCatalog ? 'movie' : 'tv';
+    const discoverMetadata = catalogConfig?.metadata?.discover || {};
+    const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+    const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+    const parameters = sanitizeTmdbDiscoverParams(rawParams, language, discoverPage, config.includeAdult, type as 'movie' | 'series');
+
+    try {
+      const response = mediaType === 'movie'
+        ? await moviedb.discoverMovie(parameters, config)
+        : await moviedb.discoverTv(parameters, config);
+
+      if (!response?.results || !Array.isArray(response.results) || response.results.length === 0) {
+        logger.info(`[TMDB Discover] No results for ${id} at page ${discoverPage}`);
+        return [];
+      }
+
+      const metaType = mediaType === 'movie' ? 'movie' : 'series';
+      const metas = await Promise.all(response.results.map(async (item: any) => {
+        const stremioId = `tmdb:${item.id}`;
+
+        try {
+          const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+            return await getMeta(metaType, language, stremioId, config, userUUID, includeVideos);
+          }, undefined, { enableErrorCaching: true, maxRetries: 2 }, metaType as any, includeVideos);
+
+          if (result && result.meta) {
+            return result.meta;
+          }
+        } catch (error: any) {
+          logger.warn(`[TMDB Discover] Failed to get meta for ${stremioId}: ${error.message}`);
+        }
+
+        return null;
+      }));
+
+      const validMetas = metas.filter(meta => meta !== null);
+      logger.success(`[TMDB Discover] Processed ${validMetas.length} items for ${id}`);
+      return validMetas;
+    } catch (error: any) {
+      logger.error(`[TMDB Discover] Error fetching catalog ${id}: ${error.message}`);
+      return [];
+    }
+  }
+
   // Handle TMDB List catalogs (tmdb.list.{listId} or tmdb.list.{listId}.movies/series)
   if (id.startsWith('tmdb.list.')) {
     logger.info(`Fetching TMDB list catalog: ${id}, Type: ${type}, Page: ${page}, Genre: ${genre}`);
     
     const catalogConfig = config.catalogs?.find(c => c.id === id);
-    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || '';
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
     
     if (!tmdbApiKey) {
       logger.warn('[TMDB List] Missing API key');
@@ -644,7 +707,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         queryParams.append(key, String(value));
       }
     });
-    queryParams.append('api_key', config.apiKeys?.tmdb || process.env.TMDB_API || '');
+    queryParams.append('api_key', config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '');
     const fullUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
     // Note: Full URL/params logging removed to avoid exposing API keys in logs
   }
@@ -854,6 +917,173 @@ function findGenreId(genreName: string, genreList: any[]): number | undefined {
 function findLanguageCode(genre: string, languages: any[]): string {
   const language = languages.find((lang) => lang.name === genre);
   return language ? language.iso_639_1.split("-")[0] : "";
+}
+
+function sanitizeTmdbDiscoverParams(
+  rawParams: any,
+  language: string,
+  page: number,
+  includeAdultFallback: boolean,
+  catalogType: 'movie' | 'series'
+): Record<string, any> {
+  const sanitized: Record<string, any> = {};
+  const isPlainObject = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams);
+
+  if (isPlainObject) {
+    for (const [key, rawValue] of Object.entries(rawParams)) {
+      if (!/^[a-zA-Z0-9._]+$/.test(key)) continue;
+      if (key === 'api_key') continue;
+
+      if (rawValue === null || rawValue === undefined) continue;
+
+      if (Array.isArray(rawValue)) {
+        const arrayValues = rawValue
+          .map(v => String(v).trim())
+          .filter(Boolean);
+        if (arrayValues.length > 0) {
+          sanitized[key] = arrayValues.join(',');
+        }
+        continue;
+      }
+
+      if (typeof rawValue === 'string') {
+        const value = rawValue.trim();
+        if (!value) continue;
+        if (value.toLowerCase() === 'true') {
+          sanitized[key] = true;
+        } else if (value.toLowerCase() === 'false') {
+          sanitized[key] = false;
+        } else {
+          sanitized[key] = value;
+        }
+        continue;
+      }
+
+      if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+        sanitized[key] = rawValue;
+        continue;
+      }
+
+      if (typeof rawValue === 'boolean') {
+        sanitized[key] = rawValue;
+      }
+    }
+  }
+
+  sanitized.page = Math.max(1, Number(page) || 1);
+  sanitized.language = sanitized.language || language;
+
+  if (typeof sanitized.include_adult !== 'boolean') {
+    sanitized.include_adult = !!includeAdultFallback;
+  }
+
+  if (!sanitized.sort_by) {
+    sanitized.sort_by = 'popularity.desc';
+  }
+
+  const commonAllowedParams = new Set([
+    'page',
+    'language',
+    'include_adult',
+    'sort_by',
+    'vote_average.gte',
+    'vote_average.lte',
+    'vote_count.gte',
+    'vote_count.lte',
+    'watch_region',
+    'with_watch_monetization_types',
+    'with_watch_providers',
+    'without_watch_providers',
+    'with_genres',
+    'without_genres',
+    'with_companies',
+    'without_companies',
+    'with_keywords',
+    'without_keywords',
+    'with_origin_country',
+    'with_original_language',
+    'with_runtime.gte',
+    'with_runtime.lte'
+  ]);
+
+  const movieOnlyAllowedParams = new Set([
+    'certification',
+    'certification.gte',
+    'certification.lte',
+    'certification_country',
+    'include_video',
+    'primary_release_year',
+    'primary_release_date.gte',
+    'primary_release_date.lte',
+    'release_date.gte',
+    'release_date.lte',
+    'region',
+    'with_cast',
+    'with_crew',
+    'with_people',
+    'with_release_type',
+    'year'
+  ]);
+
+  const tvOnlyAllowedParams = new Set([
+    'air_date.gte',
+    'air_date.lte',
+    'first_air_date_year',
+    'first_air_date.gte',
+    'first_air_date.lte',
+    'include_null_first_air_dates',
+    'screened_theatrically',
+    'timezone',
+    'with_networks',
+    'with_status',
+    'with_type'
+  ]);
+
+  const allowedParams = catalogType === 'movie'
+    ? new Set([...commonAllowedParams, ...movieOnlyAllowedParams])
+    : new Set([...commonAllowedParams, ...tvOnlyAllowedParams]);
+
+  for (const key of Object.keys(sanitized)) {
+    if (!allowedParams.has(key)) {
+      delete sanitized[key];
+    }
+  }
+
+  if (sanitized.sort_by === 'vote_average.desc' && sanitized['vote_count.gte'] === undefined) {
+    sanitized['vote_count.gte'] = 50;
+  }
+
+  // Certification filters should be sent as a pair
+  if (!!sanitized.certification && !sanitized.certification_country) {
+    delete sanitized.certification;
+  }
+  if (!!sanitized.certification_country && !sanitized.certification) {
+    delete sanitized.certification_country;
+  }
+
+  // Watch provider filter requires region
+  if (!!sanitized.with_watch_providers && !sanitized.watch_region) {
+    delete sanitized.with_watch_providers;
+    delete sanitized.with_watch_monetization_types;
+  } else if (!!sanitized.with_watch_providers && !sanitized.with_watch_monetization_types) {
+    sanitized.with_watch_monetization_types = 'flatrate|free|ads|rent|buy';
+  }
+
+  if (catalogType === 'movie') {
+    delete sanitized['air_date.gte'];
+    delete sanitized['air_date.lte'];
+    delete sanitized['first_air_date.gte'];
+    delete sanitized['first_air_date.lte'];
+    delete sanitized.first_air_date_year;
+    delete sanitized.with_type;
+  } else {
+    delete sanitized['primary_release_date.gte'];
+    delete sanitized['primary_release_date.lte'];
+    delete sanitized.primary_release_year;
+    delete sanitized.region;
+  }
+
+  return sanitized;
 }
 
 function findProvider(providerId: string): any {

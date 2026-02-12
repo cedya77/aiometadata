@@ -3,6 +3,7 @@ import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
 import { SimklIntegration } from './SimklIntegration';
 import { TMDBIntegration } from './TMDBIntegration';
+import { TMDBDiscoverBuilderDialog } from './TMDBDiscoverBuilderDialog';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
@@ -16,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -1497,7 +1498,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           )}
 
           {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
-            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.')))) && (
+            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.')))) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -1715,6 +1716,7 @@ function CatalogsSettingsContent({
   const [isTraktOpen, setIsTraktOpen] = useState(false);
   const [isSimklOpen, setIsSimklOpen] = useState(false);
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
+  const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
@@ -2264,17 +2266,30 @@ function CatalogsSettingsContent({
     setShowDeleteConfirmDialog(true);
   };
 
+  const isRemovableCatalog = (catalog: CatalogConfig) => {
+    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'];
+    if (removableSources.includes(catalog.source)) {
+      return true;
+    }
+    if (catalog.source === 'tmdb') {
+      return (
+        catalog.id === 'tmdb.watchlist' ||
+        catalog.id === 'tmdb.favorites' ||
+        catalog.id.startsWith('tmdb.list.') ||
+        catalog.id.startsWith('tmdb.discover.')
+      );
+    }
+    return false;
+  };
+
   const handleConfirmBulkDelete = async () => {
     setShowDeleteConfirmDialog(false);
     setIsLoading(true);
     setLoadingAction('delete');
 
     try {
-      // Filter selected catalogs to only removable ones (mdblist, streaming, stremthru, custom, trakt, simkl, anilist)
-      const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist'];
-      const catalogsToDelete = selectedCatalogs.filter(catalog =>
-        removableSources.includes(catalog.source)
-      );
+      // Filter selected catalogs to only removable ones
+      const catalogsToDelete = selectedCatalogs.filter(isRemovableCatalog);
 
       // Count skipped catalogs (non-removable ones)
       const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
@@ -2352,6 +2367,10 @@ function CatalogsSettingsContent({
             <Button onClick={() => setIsQuickAddOpen(true)} size="sm" variant="default">
               <Link className="h-4 w-4 mr-2" />
               Quick Add
+            </Button>
+            <Button onClick={() => setIsTmdbDiscoverBuilderOpen(true)} size="sm" variant="outline">
+              <Wand2 className="h-4 w-4 mr-2" />
+              Build Your Catalog
             </Button>
             
             <div className="hidden sm:block h-6 w-px bg-border" /> {/* Divider - hidden on mobile */}
@@ -2617,6 +2636,10 @@ function CatalogsSettingsContent({
         isOpen={isQuickAddOpen}
         onClose={() => setIsQuickAddOpen(false)}
       />
+      <TMDBDiscoverBuilderDialog
+        isOpen={isTmdbDiscoverBuilderOpen}
+        onClose={() => setIsTmdbDiscoverBuilderOpen(false)}
+      />
 
       {/* Bulk Delete Confirmation Dialog */}
       <ConfirmDialog
@@ -2625,10 +2648,7 @@ function CatalogsSettingsContent({
         onConfirm={handleConfirmBulkDelete}
         title="Delete Selected Catalogs"
         description={(() => {
-          const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist'];
-          const catalogsToDelete = selectedCatalogs.filter(catalog =>
-            removableSources.includes(catalog.source)
-          );
+          const catalogsToDelete = selectedCatalogs.filter(isRemovableCatalog);
           const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
 
           let message = `Are you sure you want to delete ${catalogsToDelete.length} catalog${catalogsToDelete.length === 1 ? '' : 's'}?`;

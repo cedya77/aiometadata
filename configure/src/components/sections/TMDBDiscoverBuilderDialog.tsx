@@ -1,0 +1,1899 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { AlertCircle, Loader2, Search, Trash2, Wand2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { apiCache } from '@/utils/apiCache';
+
+interface TMDBDiscoverBuilderDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+type CatalogMediaType = 'movie' | 'series';
+type TmdbMediaType = 'movie' | 'tv';
+type SearchEntity = 'person' | 'company' | 'keyword';
+type JoinMode = 'or' | 'and';
+type DatePresetKey =
+  | 'last_month'
+  | 'last_year'
+  | 'last_5_years'
+  | 'last_10_years'
+  | 'era_2010s'
+  | 'era_2000s'
+  | 'era_1990s'
+  | 'era_1980s'
+  | 'clear'
+  | 'custom';
+
+interface TmdbGenre {
+  id: number;
+  name: string;
+}
+
+interface TmdbLanguage {
+  iso_639_1: string;
+  english_name?: string;
+  name?: string;
+}
+
+interface TmdbCountry {
+  iso_3166_1: string;
+  english_name?: string;
+  native_name?: string;
+}
+
+interface TmdbCertification {
+  certification: string;
+  meaning?: string;
+  order?: number;
+}
+
+interface TmdbWatchRegion {
+  iso_3166_1: string;
+  english_name?: string;
+  native_name?: string;
+}
+
+interface TmdbProvider {
+  provider_id: number;
+  provider_name: string;
+  display_priority?: number;
+}
+
+interface TmdbDiscoverReferenceResponse {
+  mediaType: TmdbMediaType;
+  language: string;
+  genres: TmdbGenre[];
+  languages: TmdbLanguage[];
+  countries: TmdbCountry[];
+  watchRegions: TmdbWatchRegion[];
+  certifications: Record<string, TmdbCertification[]>;
+}
+
+interface TmdbEntityResult {
+  id: number;
+  name?: string;
+  title?: string;
+}
+
+interface TmdbEntitySearchResponse {
+  entity: SearchEntity;
+  results: TmdbEntityResult[];
+}
+
+interface SelectionItem {
+  id: number;
+  label: string;
+}
+
+const MOVIE_SORT_OPTIONS = [
+  { value: 'popularity.desc', label: 'Popularity (High to Low)' },
+  { value: 'popularity.asc', label: 'Popularity (Low to High)' },
+  { value: 'primary_release_date.desc', label: 'Release Date (Newest)' },
+  { value: 'primary_release_date.asc', label: 'Release Date (Oldest)' },
+  { value: 'vote_average.desc', label: 'User Score (Highest)' },
+  { value: 'vote_average.asc', label: 'User Score (Lowest)' },
+  { value: 'vote_count.desc', label: 'Vote Count (Highest)' },
+  { value: 'revenue.desc', label: 'Revenue (Highest)' },
+] as const;
+
+const TV_SORT_OPTIONS = [
+  { value: 'popularity.desc', label: 'Popularity (High to Low)' },
+  { value: 'popularity.asc', label: 'Popularity (Low to High)' },
+  { value: 'first_air_date.desc', label: 'First Air Date (Newest)' },
+  { value: 'first_air_date.asc', label: 'First Air Date (Oldest)' },
+  { value: 'vote_average.desc', label: 'User Score (Highest)' },
+  { value: 'vote_average.asc', label: 'User Score (Lowest)' },
+  { value: 'vote_count.desc', label: 'Vote Count (Highest)' },
+] as const;
+
+const JOIN_MODE_OPTIONS = [
+  { value: 'or' as JoinMode, label: 'OR (Any Match)' },
+  { value: 'and' as JoinMode, label: 'AND (All Match)' },
+];
+
+const DATE_PRESET_OPTIONS: Array<{ value: Exclude<DatePresetKey, 'custom'>; label: string }> = [
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'last_year', label: 'Last Year' },
+  { value: 'last_5_years', label: 'Last 5 Years' },
+  { value: 'last_10_years', label: 'Last 10 Years' },
+  { value: 'era_2010s', label: '2010s' },
+  { value: 'era_2000s', label: '2000s' },
+  { value: 'era_1990s', label: '1990s' },
+  { value: 'era_1980s', label: '1980s' },
+  { value: 'clear', label: 'Clear' },
+];
+
+const NONE_VALUE = '__none__';
+const MAX_VOTE_COUNT = 5000;
+const MAX_RUNTIME_MINUTES = 400;
+
+function toTmdbMediaType(type: CatalogMediaType): TmdbMediaType {
+  return type === 'movie' ? 'movie' : 'tv';
+}
+
+function getDisplayTypeOverride(
+  catalogType: CatalogMediaType,
+  overrides?: { movie?: string; series?: string }
+): string | undefined {
+  if (!overrides) return undefined;
+  if (catalogType === 'movie' && overrides.movie) return overrides.movie;
+  if (catalogType === 'series' && overrides.series) return overrides.series;
+  return undefined;
+}
+
+function joinSelectionValues(values: SelectionItem[], mode: JoinMode): string {
+  const separator = mode === 'and' ? ',' : '|';
+  return values.map(item => item.id).join(separator);
+}
+
+function addUniqueItem(current: SelectionItem[], item: SelectionItem): SelectionItem[] {
+  if (current.some(existing => existing.id === item.id)) return current;
+  return [...current, item];
+}
+
+function removeItemById(current: SelectionItem[], id: number): SelectionItem[] {
+  return current.filter(item => item.id !== id);
+}
+
+function getTodayLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatLocalDateForInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDateRangeFromPreset(preset: Exclude<DatePresetKey, 'custom'>): { from: string; to: string } {
+  const now = new Date();
+  const to = formatLocalDateForInput(now);
+  const fromDate = new Date(now);
+
+  switch (preset) {
+    case 'last_month':
+      fromDate.setDate(fromDate.getDate() - 30);
+      return { from: formatLocalDateForInput(fromDate), to };
+    case 'last_year':
+      fromDate.setFullYear(fromDate.getFullYear() - 1);
+      return { from: formatLocalDateForInput(fromDate), to };
+    case 'last_5_years':
+      fromDate.setFullYear(fromDate.getFullYear() - 5);
+      return { from: formatLocalDateForInput(fromDate), to };
+    case 'last_10_years':
+      fromDate.setFullYear(fromDate.getFullYear() - 10);
+      return { from: formatLocalDateForInput(fromDate), to };
+    case 'era_2010s':
+      return { from: '2010-01-01', to: '2019-12-31' };
+    case 'era_2000s':
+      return { from: '2000-01-01', to: '2009-12-31' };
+    case 'era_1990s':
+      return { from: '1990-01-01', to: '1999-12-31' };
+    case 'era_1980s':
+      return { from: '1980-01-01', to: '1989-12-31' };
+    case 'clear':
+    default:
+      return { from: '', to: '' };
+  }
+}
+
+function buildTmdbDiscoverWebUrl(
+  mediaType: TmdbMediaType,
+  params: Record<string, string | number | boolean | null | undefined>
+): string {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    search.append(key, String(value));
+  });
+  return `https://www.themoviedb.org/discover/${mediaType === 'movie' ? 'movie' : 'tv'}?${search.toString()}`;
+}
+
+export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuilderDialogProps) {
+  const { config, setConfig, catalogTTL, auth } = useConfig();
+  const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
+
+  const buildDiscoverRequestQuery = (params: Record<string, string>): string => {
+    const searchParams = new URLSearchParams(params);
+    if (tmdbApiKey) {
+      searchParams.set('apikey', tmdbApiKey);
+    }
+    if (auth.userUUID) {
+      searchParams.set('userUUID', auth.userUUID);
+    }
+    return searchParams.toString();
+  };
+
+  const [catalogName, setCatalogName] = useState('');
+  const [catalogType, setCatalogType] = useState<CatalogMediaType>('movie');
+  const [sortBy, setSortBy] = useState('popularity.desc');
+  const [includeAdult, setIncludeAdult] = useState<boolean>(config.includeAdult);
+  const [releasedOnly, setReleasedOnly] = useState<boolean>(false);
+  const [cacheTTL, setCacheTTL] = useState<number>(Math.max(catalogTTL, 300));
+
+  const [references, setReferences] = useState<TmdbDiscoverReferenceResponse | null>(null);
+  const [isLoadingReferences, setIsLoadingReferences] = useState(false);
+
+  const [includeGenres, setIncludeGenres] = useState<SelectionItem[]>([]);
+  const [excludeGenres, setExcludeGenres] = useState<SelectionItem[]>([]);
+  const [genreJoinMode, setGenreJoinMode] = useState<JoinMode>('or');
+  const [pendingIncludeGenreId, setPendingIncludeGenreId] = useState<string>('');
+  const [pendingExcludeGenreId, setPendingExcludeGenreId] = useState<string>('');
+
+  const [originalLanguage, setOriginalLanguage] = useState('');
+  const [originCountry, setOriginCountry] = useState('');
+  const [releaseRegion, setReleaseRegion] = useState('');
+  const [certificationCountry, setCertificationCountry] = useState('');
+  const [certificationValue, setCertificationValue] = useState('');
+
+  const [watchRegion, setWatchRegion] = useState('');
+  const [watchProviders, setWatchProviders] = useState<SelectionItem[]>([]);
+  const [providerJoinMode, setProviderJoinMode] = useState<JoinMode>('or');
+  const [providerFilter, setProviderFilter] = useState('');
+  const [availableProviders, setAvailableProviders] = useState<TmdbProvider[]>([]);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+
+  const [peopleQuery, setPeopleQuery] = useState('');
+  const [peopleResults, setPeopleResults] = useState<TmdbEntityResult[]>([]);
+  const [selectedPeople, setSelectedPeople] = useState<SelectionItem[]>([]);
+  const [peopleJoinMode, setPeopleJoinMode] = useState<JoinMode>('or');
+  const [isSearchingPeople, setIsSearchingPeople] = useState(false);
+
+  const [companyQuery, setCompanyQuery] = useState('');
+  const [companyResults, setCompanyResults] = useState<TmdbEntityResult[]>([]);
+  const [withCompanies, setWithCompanies] = useState<SelectionItem[]>([]);
+  const [withoutCompanies, setWithoutCompanies] = useState<SelectionItem[]>([]);
+  const [companyJoinMode, setCompanyJoinMode] = useState<JoinMode>('or');
+  const [isSearchingCompanies, setIsSearchingCompanies] = useState(false);
+
+  const [keywordQuery, setKeywordQuery] = useState('');
+  const [keywordResults, setKeywordResults] = useState<TmdbEntityResult[]>([]);
+  const [withKeywords, setWithKeywords] = useState<SelectionItem[]>([]);
+  const [withoutKeywords, setWithoutKeywords] = useState<SelectionItem[]>([]);
+  const [keywordJoinMode, setKeywordJoinMode] = useState<JoinMode>('or');
+  const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
+  const [activeSearchDropdown, setActiveSearchDropdown] = useState<SearchEntity | null>(null);
+
+  const peopleSearchRef = useRef<HTMLDivElement | null>(null);
+  const companySearchRef = useRef<HTMLDivElement | null>(null);
+  const keywordSearchRef = useRef<HTMLDivElement | null>(null);
+
+  const [voteAverageRange, setVoteAverageRange] = useState<[number, number]>([0, 10]);
+  const [voteCountMin, setVoteCountMin] = useState<number>(0);
+  const [runtimeRange, setRuntimeRange] = useState<[number, number]>([0, MAX_RUNTIME_MINUTES]);
+
+  const [primaryReleaseFrom, setPrimaryReleaseFrom] = useState('');
+  const [primaryReleaseTo, setPrimaryReleaseTo] = useState('');
+  const [movieDatePreset, setMovieDatePreset] = useState<DatePresetKey>('clear');
+  const [firstAirFrom, setFirstAirFrom] = useState('');
+  const [firstAirTo, setFirstAirTo] = useState('');
+  const [seriesDatePreset, setSeriesDatePreset] = useState<DatePresetKey>('clear');
+  const [airDateFrom, setAirDateFrom] = useState('');
+  const [airDateTo, setAirDateTo] = useState('');
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  const tmdbMediaType = toTmdbMediaType(catalogType);
+  const sortOptions = catalogType === 'movie' ? MOVIE_SORT_OPTIONS : TV_SORT_OPTIONS;
+
+  const sortedGenres = useMemo(
+    () => (references?.genres || []).slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [references]
+  );
+
+  const sortedLanguages = useMemo(
+    () => (references?.languages || []).slice().sort((a, b) => (a.english_name || a.name || a.iso_639_1).localeCompare(b.english_name || b.name || b.iso_639_1)),
+    [references]
+  );
+
+  const sortedCountries = useMemo(
+    () => (references?.countries || []).slice().sort((a, b) => (a.english_name || a.iso_3166_1).localeCompare(b.english_name || b.iso_3166_1)),
+    [references]
+  );
+
+  const sortedRegions = useMemo(
+    () => (references?.watchRegions || []).slice().sort((a, b) => (a.english_name || a.iso_3166_1).localeCompare(b.english_name || b.iso_3166_1)),
+    [references]
+  );
+
+  const certificationOptions = useMemo(() => {
+    if (!references || !certificationCountry) return [];
+    const values = references.certifications?.[certificationCountry] || [];
+    const deduped = new Map<string, TmdbCertification>();
+    values.forEach(value => {
+      if (!value?.certification) return;
+      if (!deduped.has(value.certification)) deduped.set(value.certification, value);
+    });
+    return Array.from(deduped.values()).sort((a, b) => {
+      const orderA = Number.isFinite(a.order) ? a.order : Number.MAX_SAFE_INTEGER;
+      const orderB = Number.isFinite(b.order) ? b.order : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.certification.localeCompare(b.certification);
+    });
+  }, [references, certificationCountry]);
+
+  const filteredProviders = useMemo(() => {
+    const normalizedFilter = providerFilter.trim().toLowerCase();
+    const ordered = availableProviders
+      .slice()
+      .sort((a, b) => {
+        const priorityA = Number.isFinite(a.display_priority) ? (a.display_priority as number) : Number.MAX_SAFE_INTEGER;
+        const priorityB = Number.isFinite(b.display_priority) ? (b.display_priority as number) : Number.MAX_SAFE_INTEGER;
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        return a.provider_name.localeCompare(b.provider_name);
+      });
+
+    if (!normalizedFilter) return ordered;
+    return ordered.filter(provider =>
+      provider.provider_name.toLowerCase().includes(normalizedFilter)
+    );
+  }, [availableProviders, providerFilter]);
+
+  const discoverParamsPreview = useMemo(() => {
+    const params = buildDiscoverParams();
+    return params;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sortBy,
+    includeAdult,
+    releasedOnly,
+    includeGenres,
+    excludeGenres,
+    genreJoinMode,
+    originalLanguage,
+    originCountry,
+    releaseRegion,
+    certificationCountry,
+    certificationValue,
+    selectedPeople,
+    peopleJoinMode,
+    withCompanies,
+    withoutCompanies,
+    companyJoinMode,
+    withKeywords,
+    withoutKeywords,
+    keywordJoinMode,
+    watchRegion,
+    watchProviders,
+    providerJoinMode,
+    voteAverageRange,
+    voteCountMin,
+    runtimeRange,
+    primaryReleaseFrom,
+    primaryReleaseTo,
+    firstAirFrom,
+    firstAirTo,
+    airDateFrom,
+    airDateTo,
+    catalogType
+  ]);
+
+  const activeFilterCount = useMemo(() => {
+    return Object.keys(discoverParamsPreview).filter(key => key !== 'sort_by' && key !== 'include_adult').length;
+  }, [discoverParamsPreview]);
+
+  const resetState = () => {
+    setCatalogName('');
+    setCatalogType('movie');
+    setSortBy('popularity.desc');
+    setIncludeAdult(config.includeAdult);
+    setReleasedOnly(false);
+    setCacheTTL(Math.max(catalogTTL, 300));
+
+    setReferences(null);
+    setIncludeGenres([]);
+    setExcludeGenres([]);
+    setGenreJoinMode('or');
+    setPendingIncludeGenreId('');
+    setPendingExcludeGenreId('');
+
+    setOriginalLanguage('');
+    setOriginCountry('');
+    setReleaseRegion('');
+    setCertificationCountry('');
+    setCertificationValue('');
+
+    setWatchRegion('');
+    setWatchProviders([]);
+    setProviderJoinMode('or');
+    setProviderFilter('');
+    setAvailableProviders([]);
+
+    setPeopleQuery('');
+    setPeopleResults([]);
+    setSelectedPeople([]);
+    setPeopleJoinMode('or');
+
+    setCompanyQuery('');
+    setCompanyResults([]);
+    setWithCompanies([]);
+    setWithoutCompanies([]);
+    setCompanyJoinMode('or');
+
+    setKeywordQuery('');
+    setKeywordResults([]);
+    setWithKeywords([]);
+    setWithoutKeywords([]);
+    setKeywordJoinMode('or');
+    setActiveSearchDropdown(null);
+
+    setVoteAverageRange([0, 10]);
+    setVoteCountMin(0);
+    setRuntimeRange([0, MAX_RUNTIME_MINUTES]);
+
+    setPrimaryReleaseFrom('');
+    setPrimaryReleaseTo('');
+    setMovieDatePreset('clear');
+    setFirstAirFrom('');
+    setFirstAirTo('');
+    setSeriesDatePreset('clear');
+    setAirDateFrom('');
+    setAirDateTo('');
+
+    setIsSaving(false);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    resetState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!sortOptions.some(option => option.value === sortBy)) {
+      setSortBy(sortOptions[0].value);
+    }
+  }, [sortBy, sortOptions]);
+
+  useEffect(() => {
+    setIncludeGenres([]);
+    setExcludeGenres([]);
+    setPendingIncludeGenreId('');
+    setPendingExcludeGenreId('');
+    setCertificationCountry('');
+    setCertificationValue('');
+    setPeopleQuery('');
+    setPeopleResults([]);
+    setSelectedPeople([]);
+    setPeopleJoinMode('or');
+    setCompanyJoinMode('or');
+    setKeywordJoinMode('or');
+    setActiveSearchDropdown(null);
+    setWatchProviders([]);
+    setAvailableProviders([]);
+  }, [catalogType]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleDocumentMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const clickedInsideSearch =
+        peopleSearchRef.current?.contains(target) ||
+        companySearchRef.current?.contains(target) ||
+        keywordSearchRef.current?.contains(target);
+
+      if (!clickedInsideSearch) {
+        setActiveSearchDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleDocumentMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentMouseDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+
+    const loadReferenceData = async () => {
+      setIsLoadingReferences(true);
+      try {
+        const cacheKey = `tmdb_discover_reference_${tmdbMediaType}_${config.language || 'en-US'}`;
+        const data = await apiCache.cachedFetch<TmdbDiscoverReferenceResponse>(
+          cacheKey,
+          async () => {
+            const response = await fetch(
+              `/api/tmdb/discover/reference?${buildDiscoverRequestQuery({
+                type: tmdbMediaType,
+                language: config.language || 'en-US'
+              })}`
+            );
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Failed to fetch discover references (${response.status})`);
+            }
+            return await response.json();
+          },
+          30 * 60 * 1000
+        );
+
+        if (cancelled) return;
+
+        setReferences(data);
+
+        const languageCountryCode = (config.language || 'en-US').split('-')[1];
+        if (languageCountryCode) {
+          const hasRegion = (data.watchRegions || []).some(
+            region => region.iso_3166_1?.toUpperCase() === languageCountryCode.toUpperCase()
+          );
+          if (hasRegion) {
+            setWatchRegion(languageCountryCode.toUpperCase());
+          }
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[TMDB Discover] Failed to load reference data:', error);
+        toast.error('Failed to load TMDB discover data', {
+          description: error instanceof Error ? error.message : 'Unknown error'
+        });
+      } finally {
+        if (!cancelled) {
+          setIsLoadingReferences(false);
+        }
+      }
+    };
+
+    loadReferenceData();
+
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, tmdbMediaType, config.language, tmdbApiKey, auth.userUUID]);
+
+  useEffect(() => {
+    if (!isOpen || !watchRegion) return;
+
+    let cancelled = false;
+
+    const loadProviders = async () => {
+      setIsLoadingProviders(true);
+      try {
+        const cacheKey = `tmdb_discover_providers_${tmdbMediaType}_${watchRegion}`;
+        const data = await apiCache.cachedFetch<{ providers: TmdbProvider[] }>(
+          cacheKey,
+          async () => {
+            const response = await fetch(
+              `/api/tmdb/discover/providers?${buildDiscoverRequestQuery({
+                type: tmdbMediaType,
+                watch_region: watchRegion
+              })}`
+            );
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Failed to load providers (${response.status})`);
+            }
+            return await response.json();
+          },
+          30 * 60 * 1000
+        );
+
+        if (cancelled) return;
+        setAvailableProviders(Array.isArray(data.providers) ? data.providers : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[TMDB Discover] Failed to load watch providers:', error);
+        toast.error('Failed to load watch providers', {
+          description: error instanceof Error ? error.message : 'Unknown error'
+        });
+      } finally {
+        if (!cancelled) setIsLoadingProviders(false);
+      }
+    };
+
+    loadProviders();
+
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, watchRegion, tmdbMediaType, tmdbApiKey, auth.userUUID]);
+
+  const searchEntity = async (
+    entity: SearchEntity,
+    query: string,
+    setLoading: React.Dispatch<React.SetStateAction<boolean>>,
+    setResults: React.Dispatch<React.SetStateAction<TmdbEntityResult[]>>
+  ) => {
+    if (!query.trim()) {
+      setResults([]);
+      setActiveSearchDropdown(prev => (prev === entity ? null : prev));
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const normalizedQuery = query.trim();
+      const cacheKey = `tmdb_discover_search_${entity}_${normalizedQuery.toLowerCase()}`;
+      const data = await apiCache.cachedFetch<TmdbEntitySearchResponse>(
+        cacheKey,
+        async () => {
+          const response = await fetch(
+            `/api/tmdb/discover/search/${entity}?${buildDiscoverRequestQuery({ query: normalizedQuery })}`
+          );
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Failed to search ${entity} (${response.status})`);
+          }
+          return await response.json();
+        },
+        10 * 60 * 1000
+      );
+      const normalizedResults = Array.isArray(data.results) ? data.results : [];
+      setResults(normalizedResults);
+      setActiveSearchDropdown(normalizedResults.length > 0 ? entity : null);
+    } catch (error) {
+      console.error(`[TMDB Discover] Failed to search ${entity}:`, error);
+      toast.error(`Failed to search ${entity}`, {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toSelectionItem = (item: TmdbEntityResult): SelectionItem => ({
+    id: item.id,
+    label: item.name || item.title || `ID ${item.id}`
+  });
+
+  function buildDiscoverParams(): Record<string, string | number | boolean> {
+    const params: Record<string, string | number | boolean> = {
+      sort_by: sortBy,
+      include_adult: includeAdult
+    };
+
+    if (includeGenres.length > 0) {
+      params.with_genres = joinSelectionValues(includeGenres, genreJoinMode);
+    }
+    if (excludeGenres.length > 0) {
+      params.without_genres = joinSelectionValues(excludeGenres, genreJoinMode);
+    }
+
+    if (originalLanguage) {
+      params.with_original_language = originalLanguage;
+    }
+    if (originCountry) {
+      params.with_origin_country = originCountry;
+    }
+
+    if (catalogType === 'movie' && certificationCountry && certificationValue) {
+      params.certification_country = certificationCountry;
+      params.certification = certificationValue;
+    }
+
+    if (catalogType === 'movie' && selectedPeople.length > 0) {
+      params.with_people = joinSelectionValues(selectedPeople, peopleJoinMode);
+    }
+
+    if (withCompanies.length > 0) {
+      params.with_companies = joinSelectionValues(withCompanies, companyJoinMode);
+    }
+    if (withoutCompanies.length > 0) {
+      params.without_companies = joinSelectionValues(withoutCompanies, companyJoinMode);
+    }
+
+    if (withKeywords.length > 0) {
+      params.with_keywords = joinSelectionValues(withKeywords, keywordJoinMode);
+    }
+    if (withoutKeywords.length > 0) {
+      params.without_keywords = joinSelectionValues(withoutKeywords, keywordJoinMode);
+    }
+
+    if (watchRegion) {
+      params.watch_region = watchRegion;
+    }
+    if (watchProviders.length > 0) {
+      params.with_watch_providers = joinSelectionValues(watchProviders, providerJoinMode);
+      params.with_watch_monetization_types = 'flatrate|free|ads|rent|buy';
+    }
+
+    if (catalogType === 'movie' && releaseRegion) {
+      params.region = releaseRegion;
+    }
+    if (catalogType === 'movie' && releasedOnly) {
+      // Home release channels only: digital, physical, or TV.
+      params.with_release_type = '4|5|6';
+      params['release_date.lte'] = getTodayLocalDateString();
+    } else if (catalogType === 'series' && releasedOnly) {
+      // Exclude planned/in-production series. Keep statuses that indicate released content.
+      params.with_status = '0|3|4|5';
+    }
+
+    const [voteAverageMin, voteAverageMax] = voteAverageRange;
+    const [runtimeMin, runtimeMax] = runtimeRange;
+
+    if (voteAverageMin > 0) {
+      params['vote_average.gte'] = Math.max(0, Math.min(10, voteAverageMin));
+    }
+    if (voteAverageMax < 10) {
+      params['vote_average.lte'] = Math.max(0, Math.min(10, voteAverageMax));
+    }
+    if (voteCountMin > 0) {
+      params['vote_count.gte'] = Math.max(0, Math.floor(voteCountMin));
+    }
+    if (runtimeMin > 0) {
+      params['with_runtime.gte'] = Math.max(0, Math.floor(runtimeMin));
+    }
+    if (runtimeMax < MAX_RUNTIME_MINUTES) {
+      params['with_runtime.lte'] = Math.max(0, Math.floor(runtimeMax));
+    }
+
+    if (catalogType === 'movie') {
+      if (primaryReleaseFrom) params['primary_release_date.gte'] = primaryReleaseFrom;
+      if (primaryReleaseTo) params['primary_release_date.lte'] = primaryReleaseTo;
+    } else {
+      if (firstAirFrom) params['first_air_date.gte'] = firstAirFrom;
+      if (firstAirTo) params['first_air_date.lte'] = firstAirTo;
+      if (airDateFrom) params['air_date.gte'] = airDateFrom;
+      if (airDateTo) params['air_date.lte'] = airDateTo;
+    }
+
+    return params;
+  }
+
+  const handleVoteAverageMinSliderChange = (value: number) => {
+    setVoteAverageRange(([_, currentMax]) => [Math.min(value, currentMax), currentMax]);
+  };
+
+  const handleVoteAverageMaxSliderChange = (value: number) => {
+    setVoteAverageRange(([currentMin]) => [currentMin, Math.max(value, currentMin)]);
+  };
+
+  const handleRuntimeMinSliderChange = (value: number) => {
+    setRuntimeRange(([_, currentMax]) => [Math.min(value, currentMax), currentMax]);
+  };
+
+  const handleRuntimeMaxSliderChange = (value: number) => {
+    setRuntimeRange(([currentMin]) => [currentMin, Math.max(value, currentMin)]);
+  };
+
+  const applyDatePreset = (target: 'movie' | 'series', preset: Exclude<DatePresetKey, 'custom'>) => {
+    const { from, to } = getDateRangeFromPreset(preset);
+
+    if (target === 'movie') {
+      setPrimaryReleaseFrom(from);
+      setPrimaryReleaseTo(to);
+      setMovieDatePreset(preset);
+      return;
+    }
+
+    setFirstAirFrom(from);
+    setFirstAirTo(to);
+    setSeriesDatePreset(preset);
+  };
+
+  const handleAddGenre = (mode: 'include' | 'exclude') => {
+    const genreId = mode === 'include' ? pendingIncludeGenreId : pendingExcludeGenreId;
+    if (!genreId) return;
+
+    const genre = sortedGenres.find(item => String(item.id) === genreId);
+    if (!genre) return;
+
+    const selection: SelectionItem = { id: genre.id, label: genre.name };
+    if (mode === 'include') {
+      setIncludeGenres(prev => addUniqueItem(prev, selection));
+      setExcludeGenres(prev => removeItemById(prev, selection.id));
+      setPendingIncludeGenreId('');
+    } else {
+      setExcludeGenres(prev => addUniqueItem(prev, selection));
+      setIncludeGenres(prev => removeItemById(prev, selection.id));
+      setPendingExcludeGenreId('');
+    }
+  };
+
+  const handleToggleProvider = (provider: TmdbProvider) => {
+    const selection: SelectionItem = { id: provider.provider_id, label: provider.provider_name };
+    setWatchProviders(prev => {
+      if (prev.some(item => item.id === provider.provider_id)) {
+        return prev.filter(item => item.id !== provider.provider_id);
+      }
+      return [...prev, selection];
+    });
+  };
+
+  const handleCreateCatalog = () => {
+    if (!catalogName.trim()) {
+      toast.error('Catalog name is required');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const params = buildDiscoverParams();
+      const sanitizedName = catalogName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40) || 'catalog';
+      const uniqueSuffix = Date.now().toString(36);
+      const catalogId = `tmdb.discover.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
+      const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
+      const tmdbDiscoverUrl = buildTmdbDiscoverWebUrl(tmdbMediaType, params);
+
+      const newCatalog: CatalogConfig = {
+        id: catalogId,
+        type: catalogType,
+        name: catalogName.trim(),
+        enabled: true,
+        showInHome: true,
+        source: 'tmdb',
+        cacheTTL: Math.max(cacheTTL, 300),
+        ...(displayType && { displayType }),
+        metadata: {
+          description: `TMDB Discover (${tmdbMediaType})`,
+          url: tmdbDiscoverUrl,
+          discover: {
+            version: 1,
+            mediaType: tmdbMediaType,
+            params
+          }
+        }
+      };
+
+      setConfig(prev => ({
+        ...prev,
+        catalogs: [...prev.catalogs, newCatalog]
+      }));
+
+      toast.success('Custom catalog created', {
+        description: `${catalogName.trim()} was added to your TMDB catalogs`
+      });
+      onClose();
+    } catch (error) {
+      console.error('[TMDB Discover] Failed to create custom catalog:', error);
+      toast.error('Failed to create catalog', {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const renderSelectedItems = (
+    items: SelectionItem[],
+    onRemove: (id: number) => void,
+    emptyLabel: string
+  ) => {
+    if (items.length === 0) {
+      return <p className="text-xs text-muted-foreground">{emptyLabel}</p>;
+    }
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        {items.map(item => (
+          <Badge key={item.id} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+            <span className="max-w-[180px] truncate">{item.label}</span>
+            <button
+              type="button"
+              onClick={() => onRemove(item.id)}
+              className="rounded-sm p-0.5 hover:bg-background/50"
+              aria-label={`Remove ${item.label}`}
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </Badge>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wand2 className="h-5 w-5" />
+            Build Your Catalog
+          </DialogTitle>
+          <DialogDescription>
+            Create custom TMDB Discover catalogs with filters and save them directly into your catalog list.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!tmdbApiKey && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+            <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 flex-shrink-0" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Using Server TMDB Key Fallback</p>
+              <p className="text-xs text-muted-foreground">
+                Your personal TMDB key is empty. Requests will use server fallbacks
+                ({' '}<code>TMDB_API</code>, then <code>BUILT_IN_TMDB_API_KEY</code>) when available.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                If your server has no TMDB fallback configured, discover requests will fail.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-5 py-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Catalog Setup</CardTitle>
+                <CardDescription>
+                  Configure the catalog identity, sorting, and cache behavior.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tmdb-discover-name">Catalog Name</Label>
+                    <Input
+                      id="tmdb-discover-name"
+                      placeholder="e.g. Cyberpunk Essentials"
+                      value={catalogName}
+                      onChange={(event) => setCatalogName(event.target.value)}
+                      maxLength={80}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Content Type</Label>
+                    <Select value={catalogType} onValueChange={(value: CatalogMediaType) => setCatalogType(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="movie">Movies</SelectItem>
+                        <SelectItem value="series">Series</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sort By</Label>
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sortOptions.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tmdb-discover-cache-ttl">Cache TTL (seconds)</Label>
+                    <Input
+                      id="tmdb-discover-cache-ttl"
+                      type="number"
+                      min={300}
+                      max={604800}
+                      value={cacheTTL}
+                      onChange={(event) => setCacheTTL(parseInt(event.target.value, 10) || catalogTTL)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Minimum: 300 seconds (5 minutes)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label className="text-sm">Released Only</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {catalogType === 'movie'
+                          ? 'Only include movies released to digital, physical, or TV.'
+                          : 'Exclude series that are planned or in production.'}
+                      </p>
+                    </div>
+                    <Switch checked={releasedOnly} onCheckedChange={setReleasedOnly} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <div>
+                      <Label className="text-sm">Include Adult</Label>
+                      <p className="text-xs text-muted-foreground">Control TMDB adult content filtering for this catalog.</p>
+                    </div>
+                    <Switch checked={includeAdult} onCheckedChange={setIncludeAdult} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Reference Filters</CardTitle>
+                <CardDescription>
+                  Select genres, languages, countries, and ratings from TMDB reference data.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isLoadingReferences && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading TMDB discover reference data...
+                  </div>
+                )}
+
+                {!isLoadingReferences && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Include Genres</Label>
+                        <div className="flex gap-2">
+                          <Select value={pendingIncludeGenreId || undefined} onValueChange={setPendingIncludeGenreId}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select genre" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sortedGenres.map(genre => (
+                                <SelectItem key={genre.id} value={String(genre.id)}>
+                                  {genre.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button type="button" variant="outline" onClick={() => handleAddGenre('include')} disabled={!pendingIncludeGenreId}>
+                            Add
+                          </Button>
+                        </div>
+                        {renderSelectedItems(includeGenres, (id) => setIncludeGenres(prev => removeItemById(prev, id)), 'No included genres')}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Exclude Genres</Label>
+                        <div className="flex gap-2">
+                          <Select value={pendingExcludeGenreId || undefined} onValueChange={setPendingExcludeGenreId}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select genre" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sortedGenres.map(genre => (
+                                <SelectItem key={genre.id} value={String(genre.id)}>
+                                  {genre.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button type="button" variant="outline" onClick={() => handleAddGenre('exclude')} disabled={!pendingExcludeGenreId}>
+                            Add
+                          </Button>
+                        </div>
+                        {renderSelectedItems(excludeGenres, (id) => setExcludeGenres(prev => removeItemById(prev, id)), 'No excluded genres')}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label>Genre Match Mode</Label>
+                        <Select value={genreJoinMode} onValueChange={(value: JoinMode) => setGenreJoinMode(value)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {JOIN_MODE_OPTIONS.map(option => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Original Language</Label>
+                        <Select value={originalLanguage || NONE_VALUE} onValueChange={(value) => setOriginalLanguage(value === NONE_VALUE ? '' : value)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {sortedLanguages.map(languageItem => (
+                              <SelectItem key={languageItem.iso_639_1} value={languageItem.iso_639_1}>
+                                {(languageItem.english_name || languageItem.name || languageItem.iso_639_1)} ({languageItem.iso_639_1})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Origin Country</Label>
+                        <Select value={originCountry || NONE_VALUE} onValueChange={(value) => setOriginCountry(value === NONE_VALUE ? '' : value)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {sortedCountries.map(country => (
+                              <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
+                                {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {catalogType === 'movie' && (
+                        <div className="space-y-2">
+                          <Label>Release Region (Movies)</Label>
+                          <Select value={releaseRegion || NONE_VALUE} onValueChange={(value) => setReleaseRegion(value === NONE_VALUE ? '' : value)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                              {sortedCountries.map(country => (
+                                <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
+                                  {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+
+                    {catalogType === 'movie' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Certification Country</Label>
+                          <Select
+                            value={certificationCountry || NONE_VALUE}
+                            onValueChange={(value) => {
+                              const next = value === NONE_VALUE ? '' : value;
+                              setCertificationCountry(next);
+                              setCertificationValue('');
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NONE_VALUE}>None</SelectItem>
+                              {sortedCountries.map(country => (
+                                <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
+                                  {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Certification</Label>
+                          <Select
+                            value={certificationValue || NONE_VALUE}
+                            onValueChange={(value) => setCertificationValue(value === NONE_VALUE ? '' : value)}
+                            disabled={!certificationCountry}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NONE_VALUE}>None</SelectItem>
+                              {certificationOptions.map(certificationItem => (
+                                <SelectItem key={certificationItem.certification} value={certificationItem.certification}>
+                                  {certificationItem.certification}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {catalogType === 'movie' ? 'People, Companies, and Keywords' : 'Companies and Keywords'}
+                </CardTitle>
+                <CardDescription>
+                  {catalogType === 'movie'
+                    ? 'Search TMDB and add IDs for cast/crew, studios, and keyword filters.'
+                    : 'Search TMDB and add IDs for studios and keyword filters.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {catalogType === 'movie' && (
+                  <div className="space-y-2" ref={peopleSearchRef}>
+                    <Label>People ({selectedPeople.length})</Label>
+                    <div className="space-y-2">
+                      <Label>People Match Mode</Label>
+                      <Select value={peopleJoinMode} onValueChange={(value: JoinMode) => setPeopleJoinMode(value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {JOIN_MODE_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Search person (e.g. Denis Villeneuve)"
+                        value={peopleQuery}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setPeopleQuery(value);
+                          setActiveSearchDropdown(prev => (prev === 'person' ? null : prev));
+                          if (!value.trim()) {
+                            setPeopleResults([]);
+                          }
+                        }}
+                        onFocus={() => {
+                          if (peopleResults.length > 0) {
+                            setActiveSearchDropdown('person');
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            searchEntity('person', peopleQuery, setIsSearchingPeople, setPeopleResults);
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setActiveSearchDropdown(null);
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => searchEntity('person', peopleQuery, setIsSearchingPeople, setPeopleResults)}
+                        disabled={isSearchingPeople || !peopleQuery.trim()}
+                      >
+                        {isSearchingPeople ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    {activeSearchDropdown === 'person' && peopleResults.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                        <div className="flex items-center justify-between pb-1 border-b">
+                          <p className="text-xs text-muted-foreground">{peopleResults.length} results</p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => setActiveSearchDropdown(null)}
+                          >
+                            Close
+                          </Button>
+                        </div>
+                        {peopleResults.map(person => (
+                          <div key={person.id} className="flex items-center justify-between gap-2 text-sm">
+                            <span className="truncate">{person.name || person.title || `ID ${person.id}`}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedPeople(prev => addUniqueItem(prev, toSelectionItem(person)));
+                                setActiveSearchDropdown(null);
+                              }}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {renderSelectedItems(selectedPeople, (id) => setSelectedPeople(prev => removeItemById(prev, id)), 'No people selected')}
+                  </div>
+                )}
+
+                <div className="space-y-2" ref={companySearchRef}>
+                  <Label>Companies ({withCompanies.length} include / {withoutCompanies.length} exclude)</Label>
+                  <div className="space-y-2">
+                    <Label>Company Match Mode</Label>
+                    <Select value={companyJoinMode} onValueChange={(value: JoinMode) => setCompanyJoinMode(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {JOIN_MODE_OPTIONS.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search company (e.g. Pixar)"
+                      value={companyQuery}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setCompanyQuery(value);
+                        setActiveSearchDropdown(prev => (prev === 'company' ? null : prev));
+                        if (!value.trim()) {
+                          setCompanyResults([]);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (companyResults.length > 0) {
+                          setActiveSearchDropdown('company');
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          searchEntity('company', companyQuery, setIsSearchingCompanies, setCompanyResults);
+                        } else if (event.key === 'Escape') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setActiveSearchDropdown(null);
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => searchEntity('company', companyQuery, setIsSearchingCompanies, setCompanyResults)}
+                      disabled={isSearchingCompanies || !companyQuery.trim()}
+                    >
+                      {isSearchingCompanies ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  {activeSearchDropdown === 'company' && companyResults.length > 0 && (
+                    <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                      <div className="flex items-center justify-between pb-1 border-b">
+                        <p className="text-xs text-muted-foreground">{companyResults.length} results</p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setActiveSearchDropdown(null)}
+                        >
+                          Close
+                        </Button>
+                      </div>
+                      {companyResults.map(company => (
+                        <div key={company.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="truncate">{company.name || company.title || `ID ${company.id}`}</span>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setWithCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
+                                setWithoutCompanies(prev => removeItemById(prev, company.id));
+                                setActiveSearchDropdown(null);
+                              }}
+                            >
+                              Include
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setWithoutCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
+                                setWithCompanies(prev => removeItemById(prev, company.id));
+                                setActiveSearchDropdown(null);
+                              }}
+                            >
+                              Exclude
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
+                      <p className="text-xs font-medium mb-2">Included companies</p>
+                      {renderSelectedItems(
+                        withCompanies,
+                        (id) => setWithCompanies(prev => removeItemById(prev, id)),
+                        'No included companies'
+                      )}
+                    </div>
+                    <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
+                      <p className="text-xs font-medium mb-2">Excluded companies</p>
+                      {renderSelectedItems(
+                        withoutCompanies,
+                        (id) => setWithoutCompanies(prev => removeItemById(prev, id)),
+                        'No excluded companies'
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2" ref={keywordSearchRef}>
+                  <Label>Keywords ({withKeywords.length} include / {withoutKeywords.length} exclude)</Label>
+                  <div className="space-y-2">
+                    <Label>Keyword Match Mode</Label>
+                    <Select value={keywordJoinMode} onValueChange={(value: JoinMode) => setKeywordJoinMode(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {JOIN_MODE_OPTIONS.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search keyword (e.g. time travel)"
+                      value={keywordQuery}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setKeywordQuery(value);
+                        setActiveSearchDropdown(prev => (prev === 'keyword' ? null : prev));
+                        if (!value.trim()) {
+                          setKeywordResults([]);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (keywordResults.length > 0) {
+                          setActiveSearchDropdown('keyword');
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          searchEntity('keyword', keywordQuery, setIsSearchingKeywords, setKeywordResults);
+                        } else if (event.key === 'Escape') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setActiveSearchDropdown(null);
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => searchEntity('keyword', keywordQuery, setIsSearchingKeywords, setKeywordResults)}
+                      disabled={isSearchingKeywords || !keywordQuery.trim()}
+                    >
+                      {isSearchingKeywords ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  {activeSearchDropdown === 'keyword' && keywordResults.length > 0 && (
+                    <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                      <div className="flex items-center justify-between pb-1 border-b">
+                        <p className="text-xs text-muted-foreground">{keywordResults.length} results</p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setActiveSearchDropdown(null)}
+                        >
+                          Close
+                        </Button>
+                      </div>
+                      {keywordResults.map(keyword => (
+                        <div key={keyword.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="truncate">{keyword.name || keyword.title || `ID ${keyword.id}`}</span>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setWithKeywords(prev => addUniqueItem(prev, toSelectionItem(keyword)));
+                                setWithoutKeywords(prev => removeItemById(prev, keyword.id));
+                                setActiveSearchDropdown(null);
+                              }}
+                            >
+                              Include
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setWithoutKeywords(prev => addUniqueItem(prev, toSelectionItem(keyword)));
+                                setWithKeywords(prev => removeItemById(prev, keyword.id));
+                                setActiveSearchDropdown(null);
+                              }}
+                            >
+                              Exclude
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
+                      <p className="text-xs font-medium mb-2">Included keywords</p>
+                      {renderSelectedItems(
+                        withKeywords,
+                        (id) => setWithKeywords(prev => removeItemById(prev, id)),
+                        'No included keywords'
+                      )}
+                    </div>
+                    <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
+                      <p className="text-xs font-medium mb-2">Excluded keywords</p>
+                      {renderSelectedItems(
+                        withoutKeywords,
+                        (id) => setWithoutKeywords(prev => removeItemById(prev, id)),
+                        'No excluded keywords'
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Streaming and Region</CardTitle>
+                <CardDescription>
+                  Filter by watch region and watch providers from TMDB.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Watch Region</Label>
+                    <Select value={watchRegion || NONE_VALUE} onValueChange={(value) => {
+                      const regionValue = value === NONE_VALUE ? '' : value;
+                      setWatchRegion(regionValue);
+                      setWatchProviders([]);
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                        {sortedRegions.map(region => (
+                          <SelectItem key={region.iso_3166_1} value={region.iso_3166_1}>
+                            {(region.english_name || region.iso_3166_1)} ({region.iso_3166_1})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Provider Match Mode</Label>
+                    <Select value={providerJoinMode} onValueChange={(value: JoinMode) => setProviderJoinMode(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {JOIN_MODE_OPTIONS.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tmdb-provider-filter">Provider Search</Label>
+                    <Input
+                      id="tmdb-provider-filter"
+                      placeholder="Filter providers..."
+                      value={providerFilter}
+                      onChange={(event) => setProviderFilter(event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {isLoadingProviders && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading providers for selected region...
+                  </div>
+                )}
+
+                {!isLoadingProviders && watchRegion && filteredProviders.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-52 overflow-y-auto border rounded-md p-2">
+                    {filteredProviders.map(provider => {
+                      const selected = watchProviders.some(item => item.id === provider.provider_id);
+                      return (
+                        <Button
+                          key={provider.provider_id}
+                          type="button"
+                          variant={selected ? 'default' : 'outline'}
+                          size="sm"
+                          className="justify-start"
+                          onClick={() => handleToggleProvider(provider)}
+                        >
+                          <span className="truncate">{provider.provider_name}</span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {watchRegion && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Selected providers</p>
+                    {renderSelectedItems(watchProviders, (id) => setWatchProviders(prev => removeItemById(prev, id)), 'No providers selected')}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Numeric and Date Ranges</CardTitle>
+                <CardDescription>
+                  Apply quality thresholds and date windows.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-3 rounded-md border p-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Vote Average</Label>
+                      <span className="text-xs text-muted-foreground">
+                        {voteAverageRange[0].toFixed(1)} - {voteAverageRange[1].toFixed(1)}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Minimum</p>
+                        <input
+                          type="range"
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={voteAverageRange[0]}
+                          onChange={(event) => handleVoteAverageMinSliderChange(Number(event.target.value))}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Maximum</p>
+                        <input
+                          type="range"
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={voteAverageRange[1]}
+                          onChange={(event) => handleVoteAverageMaxSliderChange(Number(event.target.value))}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-md border p-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Vote Count Min</Label>
+                      <span className="text-xs text-muted-foreground">
+                        {voteCountMin === 0 ? 'Any' : voteCountMin.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={MAX_VOTE_COUNT}
+                      step={1}
+                      value={voteCountMin}
+                      onChange={(event) => setVoteCountMin(Number(event.target.value))}
+                      className="w-full accent-primary"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Increase to exclude low-vote titles.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 rounded-md border p-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Runtime (Minutes)</Label>
+                      <span className="text-xs text-muted-foreground">
+                        {runtimeRange[0]} - {runtimeRange[1]}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Minimum</p>
+                        <input
+                          type="range"
+                          min={0}
+                          max={MAX_RUNTIME_MINUTES}
+                          step={5}
+                          value={runtimeRange[0]}
+                          onChange={(event) => handleRuntimeMinSliderChange(Number(event.target.value))}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Maximum</p>
+                        <input
+                          type="range"
+                          min={0}
+                          max={MAX_RUNTIME_MINUTES}
+                          step={5}
+                          value={runtimeRange[1]}
+                          onChange={(event) => handleRuntimeMaxSliderChange(Number(event.target.value))}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {catalogType === 'movie' ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Primary Release Presets</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {DATE_PRESET_OPTIONS.map(option => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            size="sm"
+                            variant={movieDatePreset === option.value ? 'default' : 'outline'}
+                            onClick={() => applyDatePreset('movie', option.value)}
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="primary-release-from">Primary Release From</Label>
+                        <Input
+                          id="primary-release-from"
+                          type="date"
+                          value={primaryReleaseFrom}
+                          onChange={(event) => {
+                            setPrimaryReleaseFrom(event.target.value);
+                            setMovieDatePreset('custom');
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="primary-release-to">Primary Release To</Label>
+                        <Input
+                          id="primary-release-to"
+                          type="date"
+                          value={primaryReleaseTo}
+                          onChange={(event) => {
+                            setPrimaryReleaseTo(event.target.value);
+                            setMovieDatePreset('custom');
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>First Air Date Presets</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {DATE_PRESET_OPTIONS.map(option => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            size="sm"
+                            variant={seriesDatePreset === option.value ? 'default' : 'outline'}
+                            onClick={() => applyDatePreset('series', option.value)}
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="first-air-from">First Air Date From</Label>
+                        <Input
+                          id="first-air-from"
+                          type="date"
+                          value={firstAirFrom}
+                          onChange={(event) => {
+                            setFirstAirFrom(event.target.value);
+                            setSeriesDatePreset('custom');
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="first-air-to">First Air Date To</Label>
+                        <Input
+                          id="first-air-to"
+                          type="date"
+                          value={firstAirTo}
+                          onChange={(event) => {
+                            setFirstAirTo(event.target.value);
+                            setSeriesDatePreset('custom');
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="air-date-from">Episode Air Date From</Label>
+                        <Input id="air-date-from" type="date" value={airDateFrom} onChange={(event) => setAirDateFrom(event.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="air-date-to">Episode Air Date To</Label>
+                        <Input id="air-date-to" type="date" value={airDateTo} onChange={(event) => setAirDateTo(event.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Preview</CardTitle>
+                <CardDescription>
+                  {activeFilterCount} active filter{activeFilterCount === 1 ? '' : 's'} plus sorting and adult-content rules.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground break-all">
+                    {JSON.stringify(discoverParamsPreview)}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreateCatalog}
+            disabled={!catalogName.trim() || isSaving}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Wand2 className="h-4 w-4 mr-2" />
+                Build Catalog
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -768,6 +768,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isTraktCatalog = idOnly.startsWith('trakt.');
   const isLetterboxdCatalog = idOnly.startsWith('letterboxd.');
   const isStreamingCatalog = idOnly.startsWith('streaming.');
+  const isTmdbDiscoverCatalog = idOnly.startsWith('tmdb.discover.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
   // Find the catalog config to get per-catalog settings (like enableRatingPosters)
@@ -926,6 +927,15 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       cacheLogger.debug(`[Catalog] Using custom cache TTL for SimKL catalog ${idOnly}: ${cacheTTL}s`);
     }
   }
+
+  // Use custom cache TTL for custom TMDB discover catalogs if specified
+  if (isTmdbDiscoverCatalog) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
+    if (catalogConfig?.cacheTTL) {
+      cacheTTL = catalogConfig.cacheTTL;
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for TMDB discover catalog ${idOnly}: ${cacheTTL}s`);
+    }
+  }
   
   // Include TTL in cache key to ensure proper cache invalidation when TTL changes
   // Auth catalogs (watchlist/favorites) use sessionId in cache key (since they're tied to TMDB account)
@@ -943,7 +953,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
     key = `catalog:${today}:${configHash}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.')) {
+  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isTmdbDiscoverCatalog) {
     key = `catalog:${userUUID}:${configHash}:${cacheTTL}:${catalogKey}`;
   } else if (idOnly.startsWith('simkl.') || idOnly.startsWith('anilist.')) {
     key = `catalog:${configHash}:${catalogKey}`;
@@ -953,7 +963,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
-  const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isAuthCatalog;
+  const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isTmdbDiscoverCatalog || isAuthCatalog;
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s`);
   
   // Set module-level context for this catalog request
