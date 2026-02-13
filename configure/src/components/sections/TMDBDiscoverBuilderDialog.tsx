@@ -442,7 +442,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
-  const simklClientId = (config.apiKeys as Record<string, string | undefined>).simkl?.trim() || '';
+  const [simklClientId, setSimklClientId] = useState<string>("");
+  
+  useEffect(() => {
+    fetch("/api/config")
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.simkl) setSimklClientId(data.simkl);
+      });
+  }, []);
   const hasSimklClientId = simklClientId.length > 0;
 
   const buildDiscoverRequestQuery = (source: DiscoverSource, params: Record<string, string>): string => {
