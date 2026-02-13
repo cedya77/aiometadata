@@ -132,6 +132,7 @@ const initialConfig: AppConfig = {
   ageRating: 'None',
   searchEnabled: true,
   sessionId: "",
+  catalogSetupComplete: false,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   catalogs: allCatalogDefinitions
     .map(c => ({
@@ -254,6 +255,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
       return {
         ...initialConfig,
         ...preloadedConfig,
+        catalogSetupComplete: true,
         apiKeys: { ...initialConfig.apiKeys, ...preloadedConfig.apiKeys },
         providers: { ...initialConfig.providers, ...preloadedConfig.providers },
         artProviders: (() => {
@@ -352,6 +354,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
       const envApiKeys = await envResponse.json();
       setConfig({
         ...initialConfig,
+        catalogSetupComplete: true,
         apiKeys: { ...initialConfig.apiKeys, ...envApiKeys },
       });
     } catch (e) {

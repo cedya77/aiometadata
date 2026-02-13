@@ -202,7 +202,7 @@ export function Header() {
       if (!result?.success || !result?.config) {
         throw new Error('Invalid response from server');
       }
-      setConfig(result.config);
+      setConfig({ ...result.config, catalogSetupComplete: true });
       setAuth({ authenticated: true, userUUID: uuidInput, password: passwordInput });
       toast.success('Configuration loaded');
       setIsLoginOpen(false);

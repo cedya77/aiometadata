@@ -31,6 +31,7 @@ import { BulkActionBar } from '@/components/BulkActionBar';
 import { SelectAllControl } from '@/components/SelectAllControl';
 import { SelectBySourceControl } from '@/components/SelectBySourceControl';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CatalogStarterChoice } from '@/components/CatalogStarterChoice';
 import {
   showBulkEnableSuccess,
   showBulkDisableSuccess,
@@ -968,6 +969,7 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
 };
 import { Layers } from 'lucide-react';
 const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
+  console.log('catalog:', catalog.id, catalog.source); 
   const { setConfig, config } = useConfig();
   const { toggleSelection, isSelected, selectionCount } = useSelection(); 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
@@ -1499,8 +1501,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
           {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
-            (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.'))) || 
-            (catalog.id.startsWith('mal.discover.')) && (
+            (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
+            catalog.id.includes('.discover.')) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -1743,6 +1745,39 @@ function CatalogsSettingsContent({
     | null
   >(null);
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+
+
+  const [hasChosenCatalogSetup, setHasChosenCatalogSetup] = useState(
+    () => config.catalogSetupComplete === true
+  );
+  
+  const handleLoadDefaults = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogSetupComplete: true,
+      catalogs: allCatalogDefinitions.map(c => ({
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        source: c.source,
+        enabled: c.isEnabledByDefault || false,
+        showInHome: c.showOnHomeByDefault || false,
+        enableRatingPosters: true,
+        randomizePerPage: false,
+      })),
+    }));
+    setHasChosenCatalogSetup(true);
+  };
+  
+  const handleStartBlank = () => {
+    setConfig(prev => ({
+      ...prev,
+      catalogSetupComplete: true,
+      catalogs: [],
+    }));
+    setHasChosenCatalogSetup(true);
+    setIsTmdbDiscoverBuilderOpen(true);
+  };
 
   // Check if TVDB key is available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
@@ -2273,16 +2308,15 @@ function CatalogsSettingsContent({
     if (removableSources.includes(catalog.source)) {
       return true;
     }
+    if (catalog.id.includes('.discover.')) {
+      return true;
+    }
     if (catalog.source === 'tmdb') {
       return (
         catalog.id === 'tmdb.watchlist' ||
         catalog.id === 'tmdb.favorites' ||
-        catalog.id.startsWith('tmdb.list.') ||
-        catalog.id.startsWith('tmdb.discover.')
+        catalog.id.startsWith('tmdb.list.')
       );
-    }
-    if (catalog.source === 'tvdb') {
-      return catalog.id.startsWith('tvdb.discover.');
     }
     return false;
   };
@@ -2328,6 +2362,15 @@ function CatalogsSettingsContent({
       setLoadingAction(null);
     }
   };
+
+  if (!hasChosenCatalogSetup) {
+    return (
+      <CatalogStarterChoice
+        onChooseDefaults={handleLoadDefaults}
+        onChooseBlank={handleStartBlank}
+      />
+    );
+  }
 
   return (
     <div className={cn(

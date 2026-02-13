@@ -145,6 +145,7 @@ export interface AppConfig {
   hideUnreleasedDigitalSearch: boolean;
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
+  catalogSetupComplete?: boolean;
   searchEnabled: boolean;
   sessionId: string;
   timezone?: string;
