@@ -426,6 +426,7 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('simkl.') ||
         catalogId.startsWith('tmdb.discover') ||
         catalogId.startsWith('tvdb.discover') ||
+        catalogId.startsWith('anilist.discover') ||
         catalogId === 'tmdb.top' ||
         catalogId === 'tvmaze.schedule' ||
         catalogId === 'tmdb.airing_today' ||

@@ -51,8 +51,8 @@ export interface CatalogConfig {
     listDescription?: string;
     discover?: {
       version?: number;
-      source?: 'tmdb' | 'tvdb';
-      mediaType?: 'movie' | 'tv' | 'series';
+      source?: 'tmdb' | 'tvdb' | 'anilist';
+      mediaType?: 'movie' | 'tv' | 'series' | 'anime';
       params?: Record<string, string | number | boolean>;
     };
     discoverParams?: Record<string, string | number | boolean>;

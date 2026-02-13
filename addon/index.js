@@ -1464,6 +1464,57 @@ addon.get("/api/tvdb/discover/reference", async (req, res) => {
   }
 });
 
+
+// GET /api/anilist/discover/reference - Get AniList tags for discover builder
+addon.get("/api/anilist/discover/reference", async (req, res) => {
+  try {
+    const { httpPost } = require('./utils/httpClient');
+
+    const query = `
+      query {
+        MediaTagCollection {
+          name
+          category
+          isAdult
+        }
+      }
+    `;
+
+    const response = await httpPost('https://graphql.anilist.co', { query }, {
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      timeout: 15000
+    });
+
+    const allTags = response.data?.data?.MediaTagCollection || [];
+    // Filter out adult-only tags by default; the builder has its own adult toggle
+    const tags = allTags
+      .filter((t) => !t.isAdult)
+      .map((t) => ({ name: t.name, category: t.category }));
+
+    res.json({ tags });
+  } catch (error) {
+    console.error('[AniList Discover] Failed to fetch reference data:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to fetch AniList reference data' });
+  }
+});
+
+// GET /api/anilist/discover/search/studio - Search AniList studios by name
+addon.get("/api/anilist/discover/search/studio", async (req, res) => {
+  try {
+    const query = req.query.query.trim();
+    if (!query) {
+      return res.json({ results: [] });
+    }
+
+    const anilist = require('./lib/anilist');
+    const results = await anilist.searchStudios(query);
+    res.json({ results });
+  } catch (error) {
+    console.error('[AniList Discover] Failed to search studios:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to search studios' });
+  }
+});
+
 // Proxy: TVDB discover searchable entities
 addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
   try {
@@ -2810,7 +2861,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         let pageSize;
         if (cleanId.includes(`mal.`)) {
           pageSize = 25;
-        } else if (cleanId === 'anilist.trending') {
+        } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
           pageSize = 50;
         } else if (cleanId.startsWith('simkl.trending.')) {
           pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 

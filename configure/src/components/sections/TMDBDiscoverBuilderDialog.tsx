@@ -19,7 +19,7 @@ interface TMDBDiscoverBuilderDialogProps {
 
 type CatalogMediaType = 'movie' | 'series';
 type TmdbMediaType = 'movie' | 'tv';
-type DiscoverSource = 'tmdb' | 'tvdb';
+type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
@@ -155,6 +155,57 @@ const DATE_PRESET_OPTIONS: Array<{ value: Exclude<DatePresetKey, 'custom'>; labe
   { value: 'era_1980s', label: '1980s' },
   { value: 'clear', label: 'Clear' },
 ];
+
+const ANILIST_SORT_OPTIONS = [
+  { value: 'TRENDING_DESC', label: 'Trending' },
+  { value: 'POPULARITY_DESC', label: 'Popularity (High to Low)' },
+  { value: 'POPULARITY', label: 'Popularity (Low to High)' },
+  { value: 'SCORE_DESC', label: 'Score (Highest)' },
+  { value: 'SCORE', label: 'Score (Lowest)' },
+  { value: 'FAVOURITES_DESC', label: 'Favourites (Most)' },
+  { value: 'START_DATE_DESC', label: 'Start Date (Newest)' },
+  { value: 'START_DATE', label: 'Start Date (Oldest)' },
+  { value: 'UPDATED_AT_DESC', label: 'Recently Updated' },
+  { value: 'TITLE_ROMAJI', label: 'Title (Romaji A-Z)' },
+  { value: 'TITLE_ENGLISH', label: 'Title (English A-Z)' },
+] as const;
+
+const ANILIST_FORMAT_OPTIONS = [
+  { value: 'TV', label: 'TV' },
+  { value: 'TV_SHORT', label: 'TV Short' },
+  { value: 'MOVIE', label: 'Movie' },
+  { value: 'SPECIAL', label: 'Special' },
+  { value: 'OVA', label: 'OVA' },
+  { value: 'ONA', label: 'ONA' },
+] as const;
+
+const ANILIST_STATUS_OPTIONS = [
+  { value: 'FINISHED', label: 'Finished' },
+  { value: 'RELEASING', label: 'Currently Releasing' },
+  { value: 'NOT_YET_RELEASED', label: 'Not Yet Released' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+  { value: 'HIATUS', label: 'Hiatus' },
+] as const;
+
+const ANILIST_SEASON_OPTIONS = [
+  { value: 'WINTER', label: 'Winter' },
+  { value: 'SPRING', label: 'Spring' },
+  { value: 'SUMMER', label: 'Summer' },
+  { value: 'FALL', label: 'Fall' },
+] as const;
+
+const ANILIST_COUNTRY_OPTIONS = [
+  { value: 'JP', label: 'Japan' },
+  { value: 'KR', label: 'South Korea' },
+  { value: 'CN', label: 'China' },
+  { value: 'TW', label: 'Taiwan' },
+] as const;
+
+const ANILIST_GENRES = [
+  'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy',
+  'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological',
+  'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller',
+] as const;
 
 const NONE_VALUE = '__none__';
 const MAX_VOTE_COUNT = 5000;
@@ -361,12 +412,38 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const [airDateFrom, setAirDateFrom] = useState('');
   const [airDateTo, setAirDateTo] = useState('');
 
+  // AniList-specific state
+const [anilistFormats, setAnilistFormats] = useState<string[]>([]); // multi-select
+const [anilistStatus, setAnilistStatus] = useState('');
+const [anilistSeason, setAnilistSeason] = useState('');
+const [anilistSeasonYear, setAnilistSeasonYear] = useState('');
+const [anilistCountry, setAnilistCountry] = useState('');
+const [anilistIncludeGenres, setAnilistIncludeGenres] = useState<string[]>([]);
+const [anilistExcludeGenres, setAnilistExcludeGenres] = useState<string[]>([]);
+const [anilistIncludeTags, setAnilistIncludeTags] = useState<string[]>([]);
+const [anilistExcludeTags, setAnilistExcludeTags] = useState<string[]>([]);
+const [anilistTagSearch, setAnilistTagSearch] = useState('');
+const [anilistAvailableTags, setAnilistAvailableTags] = useState<string[]>([]);
+const [anilistScoreRange, setAnilistScoreRange] = useState<[number, number]>([0, 100]);
+const [anilistPopularityMin, setAnilistPopularityMin] = useState<number>(0);
+const [anilistEpisodesRange, setAnilistEpisodesRange] = useState<[number, number]>([0, 200]);
+const [anilistDurationRange, setAnilistDurationRange] = useState<[number, number]>([0, 180]);
+const [anilistIsAdult, setAnilistIsAdult] = useState(false);
+const [anilistStartDateFrom, setAnilistStartDateFrom] = useState('');
+const [anilistStartDateTo, setAnilistStartDateTo] = useState('');
+// Studio search state
+const [anilistStudioQuery, setAnilistStudioQuery] = useState('');
+const [anilistStudioResults, setAnilistStudioResults] = useState<Array<{ id: number; name: string }>>([]);
+const [anilistSelectedStudios, setAnilistSelectedStudios] = useState<SelectionItem[]>([]);
+const [isSearchingStudios, setIsSearchingStudios] = useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
 
   const tmdbMediaType = toTmdbMediaType(catalogType);
-  const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
-  const activeSourceApiKey = discoverSource === 'tmdb' ? tmdbApiKey : tvdbApiKey;
+  const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : discoverSource === 'tvdb' ? 'TVDB' : 'AniList';
+  const activeSourceApiKey = discoverSource === 'tmdb' ? tmdbApiKey : discoverSource === 'tvdb' ? tvdbApiKey : 'anilist-public';
   const sortOptions = useMemo(() => {
+    if (discoverSource === 'anilist') return ANILIST_SORT_OPTIONS;
     if (discoverSource === 'tvdb') {
       return catalogType === 'movie' ? TVDB_MOVIE_SORT_OPTIONS : TVDB_SERIES_SORT_OPTIONS;
     }
@@ -479,7 +556,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const activeFilterCount = useMemo(() => {
     const baseKeys = discoverSource === 'tmdb'
       ? new Set(['sort_by', 'include_adult'])
-      : new Set(['sort', 'sortType', 'country', 'lang']);
+      : discoverSource === 'tvdb'
+           ? new Set(['sort', 'sortType', 'country', 'lang'])
+           : new Set(['sort', 'isAdult']);
     return Object.keys(discoverParamsPreview).filter(key => !baseKeys.has(key)).length;
   }, [discoverParamsPreview, discoverSource]);
 
@@ -544,6 +623,27 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     setSeriesDatePreset('clear');
     setAirDateFrom('');
     setAirDateTo('');
+    setAnilistFormats([]);
+    setAnilistStatus('');
+    setAnilistSeason('');
+    setAnilistSeasonYear('');
+    setAnilistCountry('');
+    setAnilistIncludeGenres([]);
+    setAnilistExcludeGenres([]);
+    setAnilistIncludeTags([]);
+    setAnilistExcludeTags([]);
+    setAnilistTagSearch('');
+    setAnilistAvailableTags([]);
+    setAnilistScoreRange([0, 100]);
+    setAnilistPopularityMin(0);
+    setAnilistEpisodesRange([0, 200]);
+    setAnilistDurationRange([0, 180]);
+    setAnilistIsAdult(false);
+    setAnilistStartDateFrom('');
+    setAnilistStartDateTo('');
+    setAnilistStudioQuery('');
+    setAnilistStudioResults([]);
+    setAnilistSelectedStudios([]);
 
     setIsSaving(false);
   };
@@ -609,6 +709,23 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     const loadReferenceData = async () => {
       setIsLoadingReferences(true);
       try {
+        if (discoverSource === 'anilist') {
+          const cacheKey = 'anilist_discover_reference';
+          const data = await apiCache.cachedFetch<any>(cacheKey, async () => {
+            const response = await fetch('/api/anilist/discover/reference');
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Failed to fetch AniList references (${response.status})`);
+            }
+            return await response.json();
+          }, 30 * 60 * 1000);
+          if (cancelled) return;
+          if (Array.isArray(data.tags)) {
+            setAnilistAvailableTags(data.tags.map((t: any) => typeof t === 'string' ? t : t.name));
+          }
+          setReferences(null);
+          return;
+        }
         if (discoverSource === 'tmdb') {
           const cacheKey = `tmdb_discover_reference_${tmdbMediaType}_${config.language || 'en-US'}`;
           const data = await apiCache.cachedFetch<TmdbDiscoverReferenceResponse>(
@@ -846,12 +963,70 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     }
   };
 
+  const searchAnilistStudios = async (query: string) => {
+    if (!query.trim()) {
+      setAnilistStudioResults([]);
+      return;
+    }
+    setIsSearchingStudios(true);
+    try {
+      const cacheKey = `anilist_studio_search_${query.toLowerCase().trim()}`;
+      const data = await apiCache.cachedFetch<any>(cacheKey, async () => {
+        const response = await fetch(`/api/anilist/discover/search/studio?query=${encodeURIComponent(query.trim())}`);
+        if (!response.ok) throw new Error('Failed to search studios');
+        return await response.json();
+      }, 10 * 60 * 1000);
+      setAnilistStudioResults(Array.isArray(data.results) ? data.results : []);
+    } catch (error) {
+      console.error('[AniList Discover] Studio search failed:', error);
+      toast.error('Failed to search studios');
+    } finally {
+      setIsSearchingStudios(false);
+    }
+  };
+
   const toSelectionItem = (item: TmdbEntityResult): SelectionItem => ({
     id: item.id,
     label: item.name || item.title || `ID ${item.id}`
   });
 
   function buildDiscoverParams(): Record<string, string | number | boolean> {
+
+    if (discoverSource === 'anilist') {
+      const anilistParams: Record<string, string | number | boolean> = {
+        sort: sortBy,
+      };
+      // Multi-format: join selected formats with comma
+      if (anilistFormats.length > 0) {
+        anilistParams.format_in = anilistFormats.join(',');
+      }
+      if (anilistStatus) anilistParams.status = anilistStatus;
+      if (anilistSeason) anilistParams.season = anilistSeason;
+      if (anilistSeasonYear) {
+        const year = Number(anilistSeasonYear);
+        if (Number.isFinite(year) && year > 0) anilistParams.seasonYear = year;
+      }
+      if (anilistCountry) anilistParams.countryOfOrigin = anilistCountry;
+      if (anilistSelectedStudios.length > 0) {
+        anilistParams.studios = anilistSelectedStudios.map(s => s.id).join(',');
+      }
+      if (anilistIncludeGenres.length > 0) anilistParams.genre_in = anilistIncludeGenres.join(',');
+      if (anilistExcludeGenres.length > 0) anilistParams.genre_not_in = anilistExcludeGenres.join(',');
+      if (anilistIncludeTags.length > 0) anilistParams.tag_in = anilistIncludeTags.join(',');
+      if (anilistExcludeTags.length > 0) anilistParams.tag_not_in = anilistExcludeTags.join(',');
+      if (anilistScoreRange[0] > 0) anilistParams.averageScore_greater = anilistScoreRange[0];
+      if (anilistScoreRange[1] < 100) anilistParams.averageScore_lesser = anilistScoreRange[1];
+      if (anilistPopularityMin > 0) anilistParams.popularity_greater = anilistPopularityMin;
+      if (anilistEpisodesRange[0] > 0) anilistParams.episodes_greater = anilistEpisodesRange[0];
+      if (anilistEpisodesRange[1] < 200) anilistParams.episodes_lesser = anilistEpisodesRange[1];
+      if (anilistDurationRange[0] > 0) anilistParams.duration_greater = anilistDurationRange[0];
+      if (anilistDurationRange[1] < 180) anilistParams.duration_lesser = anilistDurationRange[1];
+      if (!anilistIsAdult) anilistParams.isAdult = false;
+      if (anilistStartDateFrom) anilistParams.startDate_greater = anilistStartDateFrom.replace(/-/g, '');
+      if (anilistStartDateTo) anilistParams.startDate_lesser = anilistStartDateTo.replace(/-/g, '');
+      return anilistParams;
+    }
+
     if (discoverSource === 'tvdb') {
       const tvdbParams: Record<string, string | number | boolean> = {
         sort: sortBy,
@@ -1060,22 +1235,22 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
         .replace(/^_+|_+$/g, '')
         .slice(0, 40) || 'catalog';
       const uniqueSuffix = Date.now().toString(36);
-      const sourcePrefix = discoverSource === 'tmdb' ? 'tmdb.discover' : 'tvdb.discover';
+      const sourcePrefix = discoverSource === 'tmdb' ? 'tmdb.discover' : discoverSource === 'tvdb' ? 'tvdb.discover' : 'anilist.discover';
       const catalogId = `${sourcePrefix}.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
       const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
-      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
-      const discoverMediaType = discoverSource === 'tmdb' ? tmdbMediaType : catalogType;
+      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : discoverSource === 'tvdb' ? 'TVDB' : 'ANILIST';
+      const discoverMediaType = discoverSource === 'tmdb' ? tmdbMediaType : discoverSource === 'anilist' ? 'anime' : catalogType;
       const discoverUrl = discoverSource === 'tmdb'
         ? buildTmdbDiscoverWebUrl(tmdbMediaType, params)
-        : buildTvdbDiscoverApiUrl(catalogType, params);
+        : discoverSource === 'tvdb' ? buildTvdbDiscoverApiUrl(catalogType, params) : `https://anilist.co/search/anime`;
 
       const newCatalog: CatalogConfig = {
         id: catalogId,
-        type: catalogType,
+        type: discoverSource === 'anilist' ? 'anime' : catalogType,
         name: catalogName.trim(),
         enabled: true,
         showInHome: true,
-        source: discoverSource,
+        source: discoverSource === 'anilist' ? 'anilist' : discoverSource,
         cacheTTL: Math.max(cacheTTL, 300),
         ...(displayType && { displayType }),
         metadata: {
@@ -1084,7 +1259,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
           discover: {
             version: 1,
             source: discoverSource,
-            mediaType: discoverMediaType as 'movie' | 'tv' | 'series',
+            mediaType: discoverMediaType as 'movie' | 'tv' | 'series' | 'anime',
             params
           }
         }
@@ -1147,11 +1322,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
             Build Your Catalog
           </DialogTitle>
           <DialogDescription>
-            Create custom TMDB or TVDB discover catalogs with filters and save them directly into your catalog list.
+          Create custom TMDB, TVDB, or AniList discover catalogs with filters and save them directly into your catalog list.
           </DialogDescription>
         </DialogHeader>
 
-        {!activeSourceApiKey && (
+        {!activeSourceApiKey && discoverSource !== 'anilist' && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 flex-shrink-0" />
             <div className="space-y-1">
@@ -1199,20 +1374,25 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                       <SelectContent>
                         <SelectItem value="tmdb">TMDB</SelectItem>
                         <SelectItem value="tvdb">TVDB</SelectItem>
+                        <SelectItem value="anilist">AniList</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Content Type</Label>
-                    <Select value={catalogType} onValueChange={(value: CatalogMediaType) => setCatalogType(value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="movie">Movies</SelectItem>
-                        <SelectItem value="series">Series</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {discoverSource === 'anilist' ? (
+                    <div className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm">Anime</div>
+                    ) : (
+                      <Select value={catalogType} onValueChange={(value: CatalogMediaType) => setCatalogType(value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="movie">Movies</SelectItem>
+                          <SelectItem value="series">Series</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Sort By</Label>
@@ -1245,6 +1425,32 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                         </SelectContent>
                       </Select>
                     </div>
+                  )}
+                  {discoverSource === 'anilist' && (
+                    <div className="space-y-2">
+                    <Label>Format (select multiple)</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {ANILIST_FORMAT_OPTIONS.map(option => {
+                        const selected = anilistFormats.includes(option.value);
+                        return (
+                          <Button
+                            key={option.value} type="button" size="sm"
+                            variant={selected ? 'default' : 'outline'}
+                            onClick={() => setAnilistFormats(prev =>
+                              selected ? prev.filter(f => f !== option.value) : [...prev, option.value]
+                            )}
+                          >
+                            {option.label}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    {anilistFormats.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Selected: {anilistFormats.map(f => ANILIST_FORMAT_OPTIONS.find(o => o.value === f)?.label || f).join(', ')}
+                      </p>
+                    )}
+                  </div>
                   )}
                   <div className="space-y-2">
                     <Label htmlFor="discover-cache-ttl">Cache TTL (seconds)</Label>
@@ -1317,8 +1523,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 )}
               </CardContent>
             </Card>
-
-            <Card>
+            {discoverSource !== 'anilist' && (
+              <Card>
               <CardHeader>
                 <CardTitle className="text-base">Reference Filters</CardTitle>
                 <CardDescription>
@@ -1506,8 +1712,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 )}
               </CardContent>
             </Card>
-
-            <Card>
+            )}
+            {discoverSource !== 'anilist' && (
+              <Card>
               <CardHeader>
                 <CardTitle className="text-base">
                   {discoverSource === 'tmdb'
@@ -1882,6 +2089,474 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 )}
               </CardContent>
             </Card>
+            )}
+            
+            {discoverSource === 'anilist' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Genres &amp; Tags</CardTitle>
+                <CardDescription>
+                  Include or exclude AniList genres and tags to fine-tune results.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isLoadingReferences ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading AniList reference data...
+                  </div>
+                ) : (
+                  <>
+                    {/* ── Genre Include / Exclude ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                      {/* Include Genres */}
+                      <div className="space-y-2">
+                        <Label>Include Genres</Label>
+                        <Select
+                          value={undefined}
+                          onValueChange={(value) => {
+                            if (value && !anilistIncludeGenres.includes(value)) {
+                              setAnilistIncludeGenres(prev => [...prev, value]);
+                              setAnilistExcludeGenres(prev => prev.filter(g => g !== value));
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select genre to include" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ANILIST_GENRES.filter(g => !anilistIncludeGenres.includes(g)).map(genre => (
+                              <SelectItem key={genre} value={genre}>
+                                {genre}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {anilistIncludeGenres.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {anilistIncludeGenres.map(genre => (
+                              <Badge key={genre} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                <span className="max-w-[180px] truncate">{genre}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAnilistIncludeGenres(prev => prev.filter(g => g !== genre))}
+                                  className="rounded-sm p-0.5 hover:bg-background/50"
+                                  aria-label={`Remove ${genre}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No included genres</p>
+                        )}
+                      </div>
+
+                      {/* Exclude Genres */}
+                      <div className="space-y-2">
+                        <Label>Exclude Genres</Label>
+                        <Select
+                          value={undefined}
+                          onValueChange={(value) => {
+                            if (value && !anilistExcludeGenres.includes(value)) {
+                              setAnilistExcludeGenres(prev => [...prev, value]);
+                              setAnilistIncludeGenres(prev => prev.filter(g => g !== value));
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select genre to exclude" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ANILIST_GENRES.filter(g => !anilistExcludeGenres.includes(g)).map(genre => (
+                              <SelectItem key={genre} value={genre}>
+                                {genre}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {anilistExcludeGenres.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {anilistExcludeGenres.map(genre => (
+                              <Badge key={genre} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                <span className="max-w-[180px] truncate">{genre}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAnilistExcludeGenres(prev => prev.filter(g => g !== genre))}
+                                  className="rounded-sm p-0.5 hover:bg-background/50"
+                                  aria-label={`Remove ${genre}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No excluded genres</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Tag Include / Exclude ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                      {/* Include Tags */}
+                      <div className="space-y-2">
+                        <Label>Include Tags ({anilistIncludeTags.length})</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Search tag (e.g. Isekai, Time Travel)"
+                            value={anilistTagSearch}
+                            onChange={(event) => setAnilistTagSearch(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                const tag = anilistTagSearch.trim();
+                                if (!tag) return;
+                                const matched = anilistAvailableTags.find(
+                                  t => t.toLowerCase() === tag.toLowerCase()
+                                );
+                                const tagToAdd = matched || tag;
+                                if (!anilistIncludeTags.includes(tagToAdd)) {
+                                  setAnilistIncludeTags(prev => [...prev, tagToAdd]);
+                                  setAnilistExcludeTags(prev => prev.filter(t => t !== tagToAdd));
+                                }
+                                setAnilistTagSearch('');
+                              } else if (event.key === 'Escape') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setAnilistTagSearch('');
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!anilistTagSearch.trim()}
+                            onClick={() => {
+                              const tag = anilistTagSearch.trim();
+                              if (!tag) return;
+                              const matched = anilistAvailableTags.find(
+                                t => t.toLowerCase() === tag.toLowerCase()
+                              );
+                              const tagToAdd = matched || tag;
+                              if (!anilistIncludeTags.includes(tagToAdd)) {
+                                setAnilistIncludeTags(prev => [...prev, tagToAdd]);
+                                setAnilistExcludeTags(prev => prev.filter(t => t !== tagToAdd));
+                              }
+                              setAnilistTagSearch('');
+                            }}
+                          >
+                            Add
+                          </Button>
+                        </div>
+
+                        {/* Autocomplete dropdown — only visible while typing */}
+                        {anilistTagSearch.trim() && anilistAvailableTags.length > 0 && (
+                          <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
+                            <div className="flex items-center justify-between pb-1 border-b">
+                              <p className="text-xs text-muted-foreground">
+                                {anilistAvailableTags.filter(t =>
+                                  t.toLowerCase().includes(anilistTagSearch.toLowerCase())
+                                ).length} matching tags
+                              </p>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => setAnilistTagSearch('')}
+                              >
+                                Close
+                              </Button>
+                            </div>
+                            {anilistAvailableTags
+                              .filter(t => t.toLowerCase().includes(anilistTagSearch.toLowerCase()))
+                              .slice(0, 20)
+                              .map(tag => (
+                                <div
+                                  key={tag}
+                                  className="flex items-center justify-between gap-2 text-sm"
+                                >
+                                  <span className="truncate">{tag}</span>
+                                  <div className="flex gap-1 flex-shrink-0">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!anilistIncludeTags.includes(tag)) {
+                                          setAnilistIncludeTags(prev => [...prev, tag]);
+                                        }
+                                        setAnilistExcludeTags(prev => prev.filter(t => t !== tag));
+                                        setAnilistTagSearch('');
+                                      }}
+                                    >
+                                      Include
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!anilistExcludeTags.includes(tag)) {
+                                          setAnilistExcludeTags(prev => [...prev, tag]);
+                                        }
+                                        setAnilistIncludeTags(prev => prev.filter(t => t !== tag));
+                                        setAnilistTagSearch('');
+                                      }}
+                                    >
+                                      Exclude
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+
+                        {/* Selected include tags */}
+                        {anilistIncludeTags.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {anilistIncludeTags.map(tag => (
+                              <Badge key={tag} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                <span className="max-w-[180px] truncate">{tag}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAnilistIncludeTags(prev => prev.filter(t => t !== tag))}
+                                  className="rounded-sm p-0.5 hover:bg-background/50"
+                                  aria-label={`Remove ${tag}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No included tags</p>
+                        )}
+                      </div>
+
+                      {/* Exclude Tags */}
+                      <div className="space-y-2">
+                        <Label>Exclude Tags ({anilistExcludeTags.length})</Label>
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Use the tag search on the left and click "Exclude" to add tags here.
+                        </p>
+                        {anilistExcludeTags.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {anilistExcludeTags.map(tag => (
+                              <Badge key={tag} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                <span className="max-w-[180px] truncate">{tag}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAnilistExcludeTags(prev => prev.filter(t => t !== tag))}
+                                  className="rounded-sm p-0.5 hover:bg-background/50"
+                                  aria-label={`Remove ${tag}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No excluded tags</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            )}
+
+            {discoverSource === 'anilist' && (
+              <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Studio</CardTitle>
+                <CardDescription>Search and filter by animation studio.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Search studio (e.g. MAPPA, Bones, ufotable)"
+                    value={anilistStudioQuery}
+                    onChange={(e) => setAnilistStudioQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); searchAnilistStudios(anilistStudioQuery); }
+                    }}
+                  />
+                  <Button type="button" variant="outline"
+                    onClick={() => searchAnilistStudios(anilistStudioQuery)}
+                    disabled={isSearchingStudios || !anilistStudioQuery.trim()}>
+                    {isSearchingStudios ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  </Button>
+                </div>
+                {anilistStudioResults.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                    {anilistStudioResults.map(studio => (
+                      <div key={studio.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate">{studio.name}</span>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => {
+                          setAnilistSelectedStudios(prev => addUniqueItem(prev, { id: studio.id, label: studio.name }));
+                          setAnilistStudioResults([]);
+                          setAnilistStudioQuery('');
+                        }}>Add</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {renderSelectedItems(
+                  anilistSelectedStudios,
+                  (id) => setAnilistSelectedStudios(prev => removeItemById(prev, id)),
+                  'No studios selected'
+                )}
+              </CardContent>
+            </Card>
+            )}
+
+            {discoverSource === 'anilist' && (
+              <Card className="border-cyan-500/20 bg-cyan-500/5">
+                <CardHeader>
+                  <CardTitle className="text-base text-cyan-600 dark:text-cyan-400 flex items-center gap-2">
+                    <Wand2 className="h-4 w-4" />
+                    AniList Advanced Filters
+                  </CardTitle>
+                  <CardDescription>
+                    Apply granular thresholds for scores, length, and release windows.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Row 1: Score & Popularity */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3 rounded-md border bg-background p-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Average Score (%)</Label>
+                        <span className="font-mono text-xs font-bold text-cyan-600">{anilistScoreRange[0]}% - {anilistScoreRange[1]}%</span>
+                      </div>
+                      <div className="flex flex-col gap-4">
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">Minimum Score</p>
+                          <input
+                            type="range" min={0} max={100} step={1}
+                            value={anilistScoreRange[0]}
+                            onChange={(e) => setAnilistScoreRange([Number(e.target.value), anilistScoreRange[1]])}
+                            className="w-full accent-cyan-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">Maximum Score</p>
+                          <input
+                            type="range" min={0} max={100} step={1}
+                            value={anilistScoreRange[1]}
+                            onChange={(e) => setAnilistScoreRange([anilistScoreRange[0], Number(e.target.value)])}
+                            className="w-full accent-cyan-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-md border bg-background p-3 flex flex-col justify-center">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Min Popularity</Label>
+                        <span className="font-mono text-xs font-bold">{anilistPopularityMin.toLocaleString()}</span>
+                      </div>
+                      <input
+                        type="range" min={0} max={50000} step={500}
+                        value={anilistPopularityMin}
+                        onChange={(e) => setAnilistPopularityMin(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <p className="text-[10px] text-muted-foreground">Minimum number of users who have this in their list.</p>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Episodes & Duration */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3 rounded-md border bg-background p-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Episode Count</Label>
+                        <span className="font-mono text-xs font-bold">{anilistEpisodesRange[0]} - {anilistEpisodesRange[1] === 200 ? '200+' : anilistEpisodesRange[1]}</span>
+                      </div>
+                      <div className="flex flex-col gap-4">
+                        <input
+                          type="range" min={0} max={200} step={1}
+                          value={anilistEpisodesRange[0]}
+                          onChange={(e) => setAnilistEpisodesRange([Number(e.target.value), anilistEpisodesRange[1]])}
+                          className="w-full accent-primary"
+                        />
+                        <input
+                          type="range" min={0} max={200} step={1}
+                          value={anilistEpisodesRange[1]}
+                          onChange={(e) => setAnilistEpisodesRange([anilistEpisodesRange[0], Number(e.target.value)])}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-md border bg-background p-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Duration (Mins)</Label>
+                        <span className="font-mono text-xs font-bold">{anilistDurationRange[0]} - {anilistDurationRange[1]}m</span>
+                      </div>
+                      <div className="flex flex-col gap-4">
+                        <input
+                          type="range" min={0} max={180} step={5}
+                          value={anilistDurationRange[0]}
+                          onChange={(e) => setAnilistDurationRange([Number(e.target.value), anilistDurationRange[1]])}
+                          className="w-full accent-primary"
+                        />
+                        <input
+                          type="range" min={0} max={180} step={5}
+                          value={anilistDurationRange[1]}
+                          onChange={(e) => setAnilistDurationRange([anilistDurationRange[0], Number(e.target.value)])}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Row 3: Start Date Range */}
+                  <div className="space-y-3 rounded-md border bg-background p-4">
+                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Release Date Window</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground ml-1">From</p>
+                        <Input 
+                          type="date" 
+                          value={anilistStartDateFrom} 
+                          onChange={(e) => setAnilistStartDateFrom(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground ml-1">To</p>
+                        <Input 
+                          type="date" 
+                          value={anilistStartDateTo} 
+                          onChange={(e) => setAnilistStartDateTo(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Row 4: Toggles */}
+                  <div className="flex items-center justify-between p-3 rounded-md border bg-background">
+                    <div className="space-y-0.5">
+                      <Label>Include Adult Content</Label>
+                      <p className="text-[10px] text-muted-foreground">Toggle Hentai/18+ results in this catalog.</p>
+                    </div>
+                    <Switch 
+                      checked={anilistIsAdult} 
+                      onCheckedChange={setAnilistIsAdult}
+                      className="data-[state=checked]:bg-cyan-500"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {discoverSource === 'tmdb' && (
             <Card>

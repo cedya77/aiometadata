@@ -930,6 +930,297 @@ class AniListAPI {
     };
   }
 
+    /**
+   * Search for AniList studios by name.
+   * Used by the discover builder's studio search input.
+   */
+  async searchStudios(query: string): Promise<Array<{ id: number; name: string; isAnimationStudio: boolean }>> {
+    if (!query || !query.trim()) return [];
+
+    const gqlQuery = `
+      query($search: String, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          studios(search: $search, sort: SEARCH_MATCH) {
+            id
+            name
+            isAnimationStudio
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await this.makeRateLimitedRequest(() =>
+        httpPost(this.baseURL, {
+          query: gqlQuery,
+          variables: { search: query.trim(), page: 1, perPage: 20 }
+        }, {
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          timeout: 10000
+        })
+      );
+
+      const studios = response.data?.data?.Page?.studios || [];
+      return studios.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        isAnimationStudio: !!s.isAnimationStudio
+      }));
+    } catch (error: any) {
+      console.error('[AniList] Error searching studios:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch discover results from AniList with dynamic filters.
+   * Builds a GraphQL query from the params object saved by the builder dialog.
+   *
+   * Supported params:
+   *   sort            - MediaSort enum value (e.g. TRENDING_DESC)
+   *   format_in       - comma-separated MediaFormat values (e.g. "TV,ONA,MOVIE")
+   *   status          - MediaStatus enum value
+   *   season          - MediaSeason enum value
+   *   seasonYear      - integer year
+   *   countryOfOrigin - CountryCode (JP, KR, CN, TW)
+   *   studios         - comma-separated AniList studio IDs
+   *   genre_in        - comma-separated genre names
+   *   genre_not_in    - comma-separated genre names
+   *   tag_in          - comma-separated tag names
+   *   tag_not_in      - comma-separated tag names
+   *   averageScore_greater / averageScore_lesser - 0–100
+   *   popularity_greater   - minimum popularity
+   *   episodes_greater / episodes_lesser - episode count bounds
+   *   duration_greater / duration_lesser - minutes-per-episode bounds
+   *   isAdult         - boolean
+   *   startDate_greater / startDate_lesser - FuzzyDateInt (YYYYMMDD)
+   */
+  async fetchDiscover(params: Record<string, any>, page = 1, pageSize = 50): Promise<any> {
+    const variables: Record<string, any> = { page, perPage: pageSize };
+    const variableDeclarations: string[] = ['$page: Int', '$perPage: Int'];
+    const mediaFilters: string[] = ['type: ANIME'];
+
+    // Sort
+    if (params.sort) {
+      variableDeclarations.push('$sort: [MediaSort]');
+      variables.sort = [params.sort];
+      mediaFilters.push('sort: $sort');
+    }
+
+    // Format — multiple formats via format_in, single format via format
+    if (params.format_in) {
+      const formats = typeof params.format_in === 'string'
+        ? params.format_in.split(',').map((f: string) => f.trim()).filter(Boolean)
+        : Array.isArray(params.format_in) ? params.format_in : [];
+      if (formats.length === 1) {
+        variableDeclarations.push('$format: MediaFormat');
+        variables.format = formats[0];
+        mediaFilters.push('format: $format');
+      } else if (formats.length > 1) {
+        variableDeclarations.push('$format_in: [MediaFormat]');
+        variables.format_in = formats;
+        mediaFilters.push('format_in: $format_in');
+      }
+    }
+
+    // Status
+    if (params.status) {
+      variableDeclarations.push('$status: MediaStatus');
+      variables.status = params.status;
+      mediaFilters.push('status: $status');
+    }
+
+    // Season
+    if (params.season) {
+      variableDeclarations.push('$season: MediaSeason');
+      variables.season = params.season;
+      mediaFilters.push('season: $season');
+    }
+
+    // Season Year
+    if (params.seasonYear) {
+      variableDeclarations.push('$seasonYear: Int');
+      variables.seasonYear = Number(params.seasonYear);
+      mediaFilters.push('seasonYear: $seasonYear');
+    }
+
+    // Country of Origin
+    if (params.countryOfOrigin) {
+      variableDeclarations.push('$countryOfOrigin: CountryCode');
+      variables.countryOfOrigin = params.countryOfOrigin;
+      mediaFilters.push('countryOfOrigin: $countryOfOrigin');
+    }
+
+    // Genre include
+    if (params.genre_in) {
+      const genres = typeof params.genre_in === 'string' ? params.genre_in.split(',') : params.genre_in;
+      variableDeclarations.push('$genre_in: [String]');
+      variables.genre_in = genres;
+      mediaFilters.push('genre_in: $genre_in');
+    }
+
+    // Genre exclude
+    if (params.genre_not_in) {
+      const genres = typeof params.genre_not_in === 'string' ? params.genre_not_in.split(',') : params.genre_not_in;
+      variableDeclarations.push('$genre_not_in: [String]');
+      variables.genre_not_in = genres;
+      mediaFilters.push('genre_not_in: $genre_not_in');
+    }
+
+    // Tag include
+    if (params.tag_in) {
+      const tags = typeof params.tag_in === 'string' ? params.tag_in.split(',') : params.tag_in;
+      variableDeclarations.push('$tag_in: [String]');
+      variables.tag_in = tags;
+      mediaFilters.push('tag_in: $tag_in');
+    }
+
+    // Tag exclude
+    if (params.tag_not_in) {
+      const tags = typeof params.tag_not_in === 'string' ? params.tag_not_in.split(',') : params.tag_not_in;
+      variableDeclarations.push('$tag_not_in: [String]');
+      variables.tag_not_in = tags;
+      mediaFilters.push('tag_not_in: $tag_not_in');
+    }
+
+    // Average score range
+    if (params.averageScore_greater && Number(params.averageScore_greater) > 0) {
+      variableDeclarations.push('$averageScore_greater: Int');
+      variables.averageScore_greater = Number(params.averageScore_greater);
+      mediaFilters.push('averageScore_greater: $averageScore_greater');
+    }
+    if (params.averageScore_lesser && Number(params.averageScore_lesser) < 100) {
+      variableDeclarations.push('$averageScore_lesser: Int');
+      variables.averageScore_lesser = Number(params.averageScore_lesser);
+      mediaFilters.push('averageScore_lesser: $averageScore_lesser');
+    }
+
+    // Popularity minimum
+    if (params.popularity_greater && Number(params.popularity_greater) > 0) {
+      variableDeclarations.push('$popularity_greater: Int');
+      variables.popularity_greater = Number(params.popularity_greater);
+      mediaFilters.push('popularity_greater: $popularity_greater');
+    }
+
+    // Episode count range
+    if (params.episodes_greater && Number(params.episodes_greater) > 0) {
+      variableDeclarations.push('$episodes_greater: Int');
+      variables.episodes_greater = Number(params.episodes_greater);
+      mediaFilters.push('episodes_greater: $episodes_greater');
+    }
+    if (params.episodes_lesser && Number(params.episodes_lesser) < 200) {
+      variableDeclarations.push('$episodes_lesser: Int');
+      variables.episodes_lesser = Number(params.episodes_lesser);
+      mediaFilters.push('episodes_lesser: $episodes_lesser');
+    }
+
+    // Duration per episode range (minutes)
+    if (params.duration_greater && Number(params.duration_greater) > 0) {
+      variableDeclarations.push('$duration_greater: Int');
+      variables.duration_greater = Number(params.duration_greater);
+      mediaFilters.push('duration_greater: $duration_greater');
+    }
+    if (params.duration_lesser && Number(params.duration_lesser) < 180) {
+      variableDeclarations.push('$duration_lesser: Int');
+      variables.duration_lesser = Number(params.duration_lesser);
+      mediaFilters.push('duration_lesser: $duration_lesser');
+    }
+
+    // Adult content filter
+    if (params.isAdult === false || params.isAdult === 'false') {
+      mediaFilters.push('isAdult: false');
+    }
+
+    // Start date range (AniList FuzzyDateInt format: YYYYMMDD as integer)
+    if (params.startDate_greater) {
+      variableDeclarations.push('$startDate_greater: FuzzyDateInt');
+      variables.startDate_greater = Number(params.startDate_greater);
+      mediaFilters.push('startDate_greater: $startDate_greater');
+    }
+    if (params.startDate_lesser) {
+      variableDeclarations.push('$startDate_lesser: FuzzyDateInt');
+      variables.startDate_lesser = Number(params.startDate_lesser);
+      mediaFilters.push('startDate_lesser: $startDate_lesser');
+    }
+
+    // Always exclude Music and Novel formats (unless user explicitly selected formats)
+    if (!params.format_in) {
+      mediaFilters.push('format_not_in: [MUSIC, NOVEL]');
+    }
+
+    // --- Studio filter ---
+    // AniList's Page.media doesn't have a direct "studios" parameter.
+    // We query normally but include studios in the response, then filter client-side.
+    const studioIds = params.studios
+      ? (typeof params.studios === 'string'
+          ? params.studios.split(',').map((id: string) => Number(id.trim())).filter((id: number) => Number.isFinite(id) && id > 0)
+          : [])
+      : [];
+    const hasStudioFilter = studioIds.length > 0;
+
+    // If studio filtering, request more items so we have enough after filtering
+    if (hasStudioFilter) {
+      variables.perPage = Math.min(pageSize * 3, 50); // AniList max is 50
+    }
+
+    const query = `
+      query(${variableDeclarations.join(', ')}) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo { hasNextPage total }
+          media(${mediaFilters.join(', ')}) {
+            id idMal
+            title { english romaji native }
+            startDate { year month day }
+            endDate { year month day }
+            seasonYear duration episodes format description
+            coverImage { large medium color }
+            bannerImage genres averageScore meanScore
+            popularity trending status season
+            studios(isMain: true) { nodes { id name } }
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await this.makeRateLimitedRequest(() =>
+        httpPost(this.baseURL, { query, variables }, {
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          timeout: 15000
+        })
+      );
+
+      if (response.data?.data?.Page) {
+        const pageData = response.data.data.Page;
+        let mediaList = pageData.media || [];
+
+        // Apply studio filter client-side
+        if (hasStudioFilter) {
+          const studioIdSet = new Set(studioIds);
+          mediaList = mediaList.filter((media: any) => {
+            const mediaStudioIds = (media.studios?.nodes || []).map((s: any) => s.id);
+            return mediaStudioIds.some((id: number) => studioIdSet.has(id));
+          });
+        }
+
+        const items = mediaList.map((media: any) => ({
+          score: media.trending || media.popularity || 0,
+          media
+        }));
+
+        return {
+          items,
+          hasMore: pageData.pageInfo.hasNextPage || false,
+          total: hasStudioFilter ? items.length : (pageData.pageInfo.total || items.length)
+        };
+      }
+      return { items: [], hasMore: false, total: 0 };
+    } catch (error: any) {
+      console.error('[AniList] Error fetching discover:', error.message);
+      throw error;
+    }
+  }
+
   /**
    * Fetch trending anime from AniList
    * @param {number} page - Page number (1-indexed)

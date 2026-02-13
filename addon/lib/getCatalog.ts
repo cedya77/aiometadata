@@ -142,6 +142,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: traktResults };
     }
+    else if (id.startsWith('anilist.discover.')) {
+     logger.debug(`Routing to AniList discover catalog handler for id: ${id}`);
+     const anilistDiscoverResults = await getAniListDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+     return { metas: anilistDiscoverResults };
+    }
     else if (id.startsWith('anilist.')) {
       logger.debug(`Routing to AniList catalog handler for id: ${id}`);
       const anilistResults = await getAniListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
@@ -168,6 +173,67 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, error.stack);
     return { metas: [] };
+  }
+}
+
+/**
+ * Get AniList discover catalog items.
+ * Handles 'anilist.discover.*' catalog IDs created by the builder dialog.
+ * Reads the discover params from the catalog's metadata and calls anilist.fetchDiscover().
+ */
+async function getAniListDiscoverCatalog(
+  type: string,
+  catalogId: string,
+  genre: string | null,
+  page: number,
+  language: string,
+  config: any, // UserConfig
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    logger.info(`[AniList Discover] Fetching catalog: ${catalogId}, Page: ${page}`);
+
+    const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
+    const discoverMetadata = catalogConfig?.metadata?.discover || {};
+    const rawParams = discoverMetadata?.params || {};
+    const customCacheTTL = catalogConfig?.cacheTTL || null;
+    const pageSize = 50;
+
+    // Fetch from AniList API with caching
+    const response = await cacheWrapAniListCatalog(
+      'discover',
+      catalogId,
+      page,
+      async () => anilist.fetchDiscover(rawParams, page, pageSize),
+      customCacheTTL,
+      { enableErrorCaching: true }
+    );
+
+    // Handle cached error responses
+    if (response && (response as any).error) {
+      logger.warn(`[AniList Discover] Cached error for ${catalogId}: ${(response as any).message}`);
+      return [];
+    }
+
+    if (!response?.items || response.items.length === 0) {
+      logger.info(`[AniList Discover] No results for ${catalogId} at page ${page}`);
+      return [];
+    }
+
+    // Resolve AniList media IDs to Stremio meta objects
+    // (reuses the existing resolveAniListItemsToMetas function)
+    const metas = await resolveAniListItemsToMetas(
+      response.items, type, language, config, userUUID, includeVideos
+    );
+
+    logger.success(`[AniList Discover] Processed ${metas.length} items for ${catalogId} (page ${page})`);
+    return metas;
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[AniList Discover] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
+    return [];
   }
 }
 
@@ -627,7 +693,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
     const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
     const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
-    const parameters = sanitizeTmdbDiscoverParams(rawParams, language, discoverPage, config.includeAdult, type as 'movie' | 'series');
+    const parameters = sanitizeTmdbDiscoverParams(rawParams, language, discoverPage, config.includeAdult || false, type as 'movie' | 'series');
 
     try {
       const response = mediaType === 'movie'
