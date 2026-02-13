@@ -1498,7 +1498,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
           )}
 
           {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
-            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.')))) && (
+            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
+            (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.'))) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
@@ -2278,6 +2279,9 @@ function CatalogsSettingsContent({
         catalog.id.startsWith('tmdb.list.') ||
         catalog.id.startsWith('tmdb.discover.')
       );
+    }
+    if (catalog.source === 'tvdb') {
+      return catalog.id.startsWith('tvdb.discover.');
     }
     return false;
   };

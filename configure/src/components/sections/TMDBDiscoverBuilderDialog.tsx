@@ -19,6 +19,7 @@ interface TMDBDiscoverBuilderDialogProps {
 
 type CatalogMediaType = 'movie' | 'series';
 type TmdbMediaType = 'movie' | 'tv';
+type DiscoverSource = 'tmdb' | 'tvdb';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
@@ -51,6 +52,7 @@ interface TmdbCountry {
 }
 
 interface TmdbCertification {
+  id?: number;
   certification: string;
   meaning?: string;
   order?: number;
@@ -69,6 +71,7 @@ interface TmdbProvider {
 }
 
 interface TmdbDiscoverReferenceResponse {
+  source?: DiscoverSource;
   mediaType: TmdbMediaType;
   language: string;
   genres: TmdbGenre[];
@@ -76,6 +79,9 @@ interface TmdbDiscoverReferenceResponse {
   countries: TmdbCountry[];
   watchRegions: TmdbWatchRegion[];
   certifications: Record<string, TmdbCertification[]>;
+  statuses?: Array<{ id: number; name: string }>;
+  defaultLanguage?: string;
+  defaultCountry?: string;
 }
 
 interface TmdbEntityResult {
@@ -113,6 +119,24 @@ const TV_SORT_OPTIONS = [
   { value: 'vote_average.desc', label: 'User Score (Highest)' },
   { value: 'vote_average.asc', label: 'User Score (Lowest)' },
   { value: 'vote_count.desc', label: 'Vote Count (Highest)' },
+] as const;
+
+const TVDB_MOVIE_SORT_OPTIONS = [
+  { value: 'score', label: 'Score' },
+  { value: 'firstAired', label: 'First Aired' },
+  { value: 'name', label: 'Name' },
+] as const;
+
+const TVDB_SERIES_SORT_OPTIONS = [
+  { value: 'score', label: 'Score' },
+  { value: 'firstAired', label: 'First Aired' },
+  { value: 'lastAired', label: 'Last Aired' },
+  { value: 'name', label: 'Name' },
+] as const;
+
+const TVDB_SORT_DIRECTION_OPTIONS = [
+  { value: 'desc', label: 'Descending' },
+  { value: 'asc', label: 'Ascending' },
 ] as const;
 
 const JOIN_MODE_OPTIONS = [
@@ -223,14 +247,42 @@ function buildTmdbDiscoverWebUrl(
   return `https://www.themoviedb.org/discover/${mediaType === 'movie' ? 'movie' : 'tv'}?${search.toString()}`;
 }
 
+function buildTvdbDiscoverApiUrl(
+  catalogType: CatalogMediaType,
+  params: Record<string, string | number | boolean | null | undefined>
+): string {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    search.append(key, String(value));
+  });
+  const endpoint = catalogType === 'movie' ? 'movies' : 'series';
+  return `https://api4.thetvdb.com/v4/${endpoint}/filter?${search.toString()}`;
+}
+
+function normalizeTvdbCode(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function resolveTvdbLanguageCode(languageItem: any): string {
+  return normalizeTvdbCode(languageItem?.id) || normalizeTvdbCode(languageItem?.shortCode);
+}
+
+function resolveTvdbCountryCode(countryItem: any): string {
+  return normalizeTvdbCode(countryItem?.id) || normalizeTvdbCode(countryItem?.shortCode);
+}
+
 export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuilderDialogProps) {
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
+  const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
 
-  const buildDiscoverRequestQuery = (params: Record<string, string>): string => {
+  const buildDiscoverRequestQuery = (source: DiscoverSource, params: Record<string, string>): string => {
     const searchParams = new URLSearchParams(params);
-    if (tmdbApiKey) {
-      searchParams.set('apikey', tmdbApiKey);
+    const apiKey = source === 'tmdb' ? tmdbApiKey : tvdbApiKey;
+    if (apiKey) {
+      searchParams.set('apikey', apiKey);
     }
     if (auth.userUUID) {
       searchParams.set('userUUID', auth.userUUID);
@@ -238,9 +290,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     return searchParams.toString();
   };
 
+  const [discoverSource, setDiscoverSource] = useState<DiscoverSource>('tmdb');
   const [catalogName, setCatalogName] = useState('');
   const [catalogType, setCatalogType] = useState<CatalogMediaType>('movie');
   const [sortBy, setSortBy] = useState('popularity.desc');
+  const [tvdbSortDirection, setTvdbSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [tvdbStatus, setTvdbStatus] = useState('');
+  const [tvdbYear, setTvdbYear] = useState('');
   const [includeAdult, setIncludeAdult] = useState<boolean>(config.includeAdult);
   const [releasedOnly, setReleasedOnly] = useState<boolean>(false);
   const [cacheTTL, setCacheTTL] = useState<number>(Math.max(catalogTTL, 300));
@@ -308,7 +364,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const [isSaving, setIsSaving] = useState(false);
 
   const tmdbMediaType = toTmdbMediaType(catalogType);
-  const sortOptions = catalogType === 'movie' ? MOVIE_SORT_OPTIONS : TV_SORT_OPTIONS;
+  const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+  const activeSourceApiKey = discoverSource === 'tmdb' ? tmdbApiKey : tvdbApiKey;
+  const sortOptions = useMemo(() => {
+    if (discoverSource === 'tvdb') {
+      return catalogType === 'movie' ? TVDB_MOVIE_SORT_OPTIONS : TVDB_SERIES_SORT_OPTIONS;
+    }
+    return catalogType === 'movie' ? MOVIE_SORT_OPTIONS : TV_SORT_OPTIONS;
+  }, [discoverSource, catalogType]);
 
   const sortedGenres = useMemo(
     () => (references?.genres || []).slice().sort((a, b) => a.name.localeCompare(b.name)),
@@ -346,6 +409,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     });
   }, [references, certificationCountry]);
 
+  const tvdbStatuses = useMemo(() => {
+    return (references?.statuses || [])
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [references]);
+
   const filteredProviders = useMemo(() => {
     const normalizedFilter = providerFilter.trim().toLowerCase();
     const ordered = availableProviders
@@ -368,7 +437,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     return params;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    discoverSource,
     sortBy,
+    tvdbSortDirection,
+    tvdbStatus,
+    tvdbYear,
     includeAdult,
     releasedOnly,
     includeGenres,
@@ -399,17 +472,25 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     firstAirTo,
     airDateFrom,
     airDateTo,
-    catalogType
+    catalogType,
+    references
   ]);
 
   const activeFilterCount = useMemo(() => {
-    return Object.keys(discoverParamsPreview).filter(key => key !== 'sort_by' && key !== 'include_adult').length;
-  }, [discoverParamsPreview]);
+    const baseKeys = discoverSource === 'tmdb'
+      ? new Set(['sort_by', 'include_adult'])
+      : new Set(['sort', 'sortType', 'country', 'lang']);
+    return Object.keys(discoverParamsPreview).filter(key => !baseKeys.has(key)).length;
+  }, [discoverParamsPreview, discoverSource]);
 
   const resetState = () => {
+    setDiscoverSource('tmdb');
     setCatalogName('');
     setCatalogType('movie');
     setSortBy('popularity.desc');
+    setTvdbSortDirection('desc');
+    setTvdbStatus('');
+    setTvdbYear('');
     setIncludeAdult(config.includeAdult);
     setReleasedOnly(false);
     setCacheTTL(Math.max(catalogTTL, 300));
@@ -495,7 +576,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     setActiveSearchDropdown(null);
     setWatchProviders([]);
     setAvailableProviders([]);
-  }, [catalogType]);
+    setTvdbStatus('');
+    setTvdbYear('');
+  }, [catalogType, discoverSource]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -526,19 +609,55 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     const loadReferenceData = async () => {
       setIsLoadingReferences(true);
       try {
-        const cacheKey = `tmdb_discover_reference_${tmdbMediaType}_${config.language || 'en-US'}`;
-        const data = await apiCache.cachedFetch<TmdbDiscoverReferenceResponse>(
+        if (discoverSource === 'tmdb') {
+          const cacheKey = `tmdb_discover_reference_${tmdbMediaType}_${config.language || 'en-US'}`;
+          const data = await apiCache.cachedFetch<TmdbDiscoverReferenceResponse>(
+            cacheKey,
+            async () => {
+              const response = await fetch(
+                `/api/tmdb/discover/reference?${buildDiscoverRequestQuery('tmdb', {
+                  type: tmdbMediaType,
+                  language: config.language || 'en-US'
+                })}`
+              );
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Failed to fetch discover references (${response.status})`);
+              }
+              return await response.json();
+            },
+            30 * 60 * 1000
+          );
+
+          if (cancelled) return;
+
+          setReferences({ ...data, source: 'tmdb' });
+
+          const languageCountryCode = (config.language || 'en-US').split('-')[1];
+          if (languageCountryCode) {
+            const hasRegion = (data.watchRegions || []).some(
+              region => region.iso_3166_1?.toUpperCase() === languageCountryCode.toUpperCase()
+            );
+            if (hasRegion) {
+              setWatchRegion(languageCountryCode.toUpperCase());
+            }
+          }
+          return;
+        }
+
+        const cacheKey = `tvdb_discover_reference_v2_${catalogType}_${config.language || 'en-US'}`;
+        const data = await apiCache.cachedFetch<any>(
           cacheKey,
           async () => {
             const response = await fetch(
-              `/api/tmdb/discover/reference?${buildDiscoverRequestQuery({
-                type: tmdbMediaType,
+              `/api/tvdb/discover/reference?${buildDiscoverRequestQuery('tvdb', {
+                type: catalogType,
                 language: config.language || 'en-US'
               })}`
             );
             if (!response.ok) {
               const errorData = await response.json().catch(() => ({}));
-              throw new Error(errorData.error || `Failed to fetch discover references (${response.status})`);
+              throw new Error(errorData.error || `Failed to fetch TVDB references (${response.status})`);
             }
             return await response.json();
           },
@@ -547,21 +666,69 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
 
         if (cancelled) return;
 
-        setReferences(data);
-
-        const languageCountryCode = (config.language || 'en-US').split('-')[1];
-        if (languageCountryCode) {
-          const hasRegion = (data.watchRegions || []).some(
-            region => region.iso_3166_1?.toUpperCase() === languageCountryCode.toUpperCase()
-          );
-          if (hasRegion) {
-            setWatchRegion(languageCountryCode.toUpperCase());
+        const certificationMap: Record<string, TmdbCertification[]> = {};
+        (Array.isArray(data?.contentRatings) ? data.contentRatings : []).forEach((rating: any) => {
+          const ratingId = Number(rating?.id);
+          if (!Number.isFinite(ratingId)) return;
+          const country = String(rating?.country || data?.defaultCountry || 'usa').toLowerCase();
+          if (!certificationMap[country]) {
+            certificationMap[country] = [];
           }
-        }
+          certificationMap[country].push({
+            id: ratingId,
+            certification: String(ratingId),
+            meaning: rating?.fullName || rating?.name || `Rating ${ratingId}`,
+            order: Number.isFinite(rating?.order) ? rating.order : undefined
+          });
+        });
+
+        const mappedReferences: TmdbDiscoverReferenceResponse = {
+          source: 'tvdb',
+          mediaType: catalogType === 'movie' ? 'movie' : 'tv',
+          language: config.language || 'en-US',
+          genres: (Array.isArray(data?.genres) ? data.genres : []).map((genre: any) => ({
+            id: Number(genre.id),
+            name: genre.name || `Genre ${genre.id}`
+          })).filter((genre: TmdbGenre) => Number.isFinite(genre.id)),
+          languages: (Array.isArray(data?.languages) ? data.languages : []).map((languageItem: any) => {
+            const code = resolveTvdbLanguageCode(languageItem);
+            return {
+              iso_639_1: code,
+              english_name: languageItem.name || languageItem.shortCode || languageItem.id || '',
+              name: languageItem.nativeName || languageItem.name || languageItem.shortCode || languageItem.id || ''
+            };
+          }).filter((languageItem: TmdbLanguage) => !!languageItem.iso_639_1),
+          countries: (Array.isArray(data?.countries) ? data.countries : []).map((countryItem: any) => {
+            const code = resolveTvdbCountryCode(countryItem);
+            return {
+              iso_3166_1: code,
+              english_name: countryItem.name || countryItem.shortCode || countryItem.id || '',
+              native_name: countryItem.name || countryItem.shortCode || countryItem.id || ''
+            };
+          }).filter((countryItem: TmdbCountry) => !!countryItem.iso_3166_1),
+          watchRegions: [],
+          certifications: certificationMap,
+          statuses: (Array.isArray(data?.statuses) ? data.statuses : []).map((status: any) => ({
+            id: Number(status.id),
+            name: status.name || `Status ${status.id}`
+          })).filter((status: { id: number; name: string }) => Number.isFinite(status.id)),
+          defaultLanguage: String(data?.defaultLanguage || 'eng').toLowerCase(),
+          defaultCountry: String(data?.defaultCountry || 'usa').toLowerCase()
+        };
+
+        setReferences(mappedReferences);
+        setOriginalLanguage(prev => prev || mappedReferences.defaultLanguage || '');
+        setOriginCountry(prev => prev || mappedReferences.defaultCountry || '');
+        setCertificationCountry(prev => prev || mappedReferences.defaultCountry || '');
+        setCertificationValue('');
+        setWatchRegion('');
+        setWatchProviders([]);
+        setAvailableProviders([]);
       } catch (error) {
         if (cancelled) return;
-        console.error('[TMDB Discover] Failed to load reference data:', error);
-        toast.error('Failed to load TMDB discover data', {
+        const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+        console.error(`[${sourceLabel} Discover] Failed to load reference data:`, error);
+        toast.error(`Failed to load ${sourceLabel} discover data`, {
           description: error instanceof Error ? error.message : 'Unknown error'
         });
       } finally {
@@ -577,10 +744,10 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
       cancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, tmdbMediaType, config.language, tmdbApiKey, auth.userUUID]);
+  }, [isOpen, discoverSource, tmdbMediaType, catalogType, config.language, tmdbApiKey, tvdbApiKey, auth.userUUID]);
 
   useEffect(() => {
-    if (!isOpen || !watchRegion) return;
+    if (!isOpen || discoverSource !== 'tmdb' || !watchRegion) return;
 
     let cancelled = false;
 
@@ -592,7 +759,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
           cacheKey,
           async () => {
             const response = await fetch(
-              `/api/tmdb/discover/providers?${buildDiscoverRequestQuery({
+              `/api/tmdb/discover/providers?${buildDiscoverRequestQuery('tmdb', {
                 type: tmdbMediaType,
                 watch_region: watchRegion
               })}`
@@ -625,7 +792,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
       cancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, watchRegion, tmdbMediaType, tmdbApiKey, auth.userUUID]);
+  }, [isOpen, discoverSource, watchRegion, tmdbMediaType, tmdbApiKey, auth.userUUID]);
 
   const searchEntity = async (
     entity: SearchEntity,
@@ -642,12 +809,20 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     setLoading(true);
     try {
       const normalizedQuery = query.trim();
-      const cacheKey = `tmdb_discover_search_${entity}_${normalizedQuery.toLowerCase()}`;
+      if (discoverSource === 'tvdb' && entity !== 'company') {
+        setResults([]);
+        setActiveSearchDropdown(null);
+        setLoading(false);
+        return;
+      }
+
+      const endpointBase = discoverSource === 'tmdb' ? '/api/tmdb/discover/search' : '/api/tvdb/discover/search';
+      const cacheKey = `${discoverSource}_discover_search_${entity}_${normalizedQuery.toLowerCase()}`;
       const data = await apiCache.cachedFetch<TmdbEntitySearchResponse>(
         cacheKey,
         async () => {
           const response = await fetch(
-            `/api/tmdb/discover/search/${entity}?${buildDiscoverRequestQuery({ query: normalizedQuery })}`
+            `${endpointBase}/${entity}?${buildDiscoverRequestQuery(discoverSource, { query: normalizedQuery })}`
           );
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
@@ -661,7 +836,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
       setResults(normalizedResults);
       setActiveSearchDropdown(normalizedResults.length > 0 ? entity : null);
     } catch (error) {
-      console.error(`[TMDB Discover] Failed to search ${entity}:`, error);
+      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+      console.error(`[${sourceLabel} Discover] Failed to search ${entity}:`, error);
       toast.error(`Failed to search ${entity}`, {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -676,6 +852,45 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   });
 
   function buildDiscoverParams(): Record<string, string | number | boolean> {
+    if (discoverSource === 'tvdb') {
+      const tvdbParams: Record<string, string | number | boolean> = {
+        sort: sortBy,
+        country: (originCountry || references?.defaultCountry || 'usa').toLowerCase(),
+        lang: (originalLanguage || references?.defaultLanguage || 'eng').toLowerCase(),
+      };
+
+      if (catalogType === 'series') {
+        tvdbParams.sortType = tvdbSortDirection;
+      }
+
+      if (includeGenres.length > 0) {
+        tvdbParams.genre = includeGenres[0].id;
+      }
+      if (withCompanies.length > 0) {
+        tvdbParams.company = withCompanies[0].id;
+      }
+      if (certificationValue) {
+        const ratingId = Number(certificationValue);
+        if (Number.isFinite(ratingId)) {
+          tvdbParams.contentRating = Math.floor(ratingId);
+        }
+      }
+      if (tvdbStatus) {
+        const statusId = Number(tvdbStatus);
+        if (Number.isFinite(statusId)) {
+          tvdbParams.status = Math.floor(statusId);
+        }
+      }
+      if (tvdbYear) {
+        const parsedYear = Number(tvdbYear);
+        if (Number.isFinite(parsedYear) && parsedYear > 0) {
+          tvdbParams.year = Math.floor(parsedYear);
+        }
+      }
+
+      return tvdbParams;
+    }
+
     const params: Record<string, string | number | boolean> = {
       sort_by: sortBy,
       include_adult: includeAdult
@@ -845,9 +1060,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
         .replace(/^_+|_+$/g, '')
         .slice(0, 40) || 'catalog';
       const uniqueSuffix = Date.now().toString(36);
-      const catalogId = `tmdb.discover.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
+      const sourcePrefix = discoverSource === 'tmdb' ? 'tmdb.discover' : 'tvdb.discover';
+      const catalogId = `${sourcePrefix}.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
       const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
-      const tmdbDiscoverUrl = buildTmdbDiscoverWebUrl(tmdbMediaType, params);
+      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+      const discoverMediaType = discoverSource === 'tmdb' ? tmdbMediaType : catalogType;
+      const discoverUrl = discoverSource === 'tmdb'
+        ? buildTmdbDiscoverWebUrl(tmdbMediaType, params)
+        : buildTvdbDiscoverApiUrl(catalogType, params);
 
       const newCatalog: CatalogConfig = {
         id: catalogId,
@@ -855,15 +1075,16 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
         name: catalogName.trim(),
         enabled: true,
         showInHome: true,
-        source: 'tmdb',
+        source: discoverSource,
         cacheTTL: Math.max(cacheTTL, 300),
         ...(displayType && { displayType }),
         metadata: {
-          description: `TMDB Discover (${tmdbMediaType})`,
-          url: tmdbDiscoverUrl,
+          description: `${sourceLabel} Discover (${discoverMediaType})`,
+          url: discoverUrl,
           discover: {
             version: 1,
-            mediaType: tmdbMediaType,
+            source: discoverSource,
+            mediaType: discoverMediaType as 'movie' | 'tv' | 'series',
             params
           }
         }
@@ -875,11 +1096,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
       }));
 
       toast.success('Custom catalog created', {
-        description: `${catalogName.trim()} was added to your TMDB catalogs`
+        description: `${catalogName.trim()} was added to your ${sourceLabel} catalogs`
       });
       onClose();
     } catch (error) {
-      console.error('[TMDB Discover] Failed to create custom catalog:', error);
+      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+      console.error(`[${sourceLabel} Discover] Failed to create custom catalog:`, error);
       toast.error('Failed to create catalog', {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -925,21 +1147,24 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
             Build Your Catalog
           </DialogTitle>
           <DialogDescription>
-            Create custom TMDB Discover catalogs with filters and save them directly into your catalog list.
+            Create custom TMDB or TVDB discover catalogs with filters and save them directly into your catalog list.
           </DialogDescription>
         </DialogHeader>
 
-        {!tmdbApiKey && (
+        {!activeSourceApiKey && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 flex-shrink-0" />
             <div className="space-y-1">
-              <p className="text-sm font-medium">Using Server TMDB Key Fallback</p>
+              <p className="text-sm font-medium">Using Server {sourceLabel} Key Fallback</p>
               <p className="text-xs text-muted-foreground">
-                Your personal TMDB key is empty. Requests will use server fallbacks
-                ({' '}<code>TMDB_API</code>, then <code>BUILT_IN_TMDB_API_KEY</code>) when available.
+                Your personal {sourceLabel} key is empty. Requests will use server fallbacks
+                {discoverSource === 'tmdb'
+                  ? (<>{' '}(<code>TMDB_API</code>, then <code>BUILT_IN_TMDB_API_KEY</code>)</>)
+                  : (<>{' '}(<code>TVDB_API_KEY</code>, then <code>BUILT_IN_TVDB_API_KEY</code>)</>)}
+                {' '}when available.
               </p>
               <p className="text-xs text-muted-foreground">
-                If your server has no TMDB fallback configured, discover requests will fail.
+                If your server has no {sourceLabel} fallback configured, discover requests will fail.
               </p>
             </div>
           </div>
@@ -956,14 +1181,26 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="tmdb-discover-name">Catalog Name</Label>
+                    <Label htmlFor="discover-name">Catalog Name</Label>
                     <Input
-                      id="tmdb-discover-name"
+                      id="discover-name"
                       placeholder="e.g. Cyberpunk Essentials"
                       value={catalogName}
                       onChange={(event) => setCatalogName(event.target.value)}
                       maxLength={80}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Source</Label>
+                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tmdb">TMDB</SelectItem>
+                        <SelectItem value="tvdb">TVDB</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Content Type</Label>
@@ -992,10 +1229,27 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                       </SelectContent>
                     </Select>
                   </div>
+                  {discoverSource === 'tvdb' && catalogType === 'series' && (
+                    <div className="space-y-2">
+                      <Label>Sort Direction</Label>
+                      <Select value={tvdbSortDirection} onValueChange={(value: 'asc' | 'desc') => setTvdbSortDirection(value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TVDB_SORT_DIRECTION_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="space-y-2">
-                    <Label htmlFor="tmdb-discover-cache-ttl">Cache TTL (seconds)</Label>
+                    <Label htmlFor="discover-cache-ttl">Cache TTL (seconds)</Label>
                     <Input
-                      id="tmdb-discover-cache-ttl"
+                      id="discover-cache-ttl"
                       type="number"
                       min={300}
                       max={604800}
@@ -1008,26 +1262,59 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center justify-between rounded-md border p-3">
-                    <div>
-                      <Label className="text-sm">Released Only</Label>
-                      <p className="text-xs text-muted-foreground">
-                        {catalogType === 'movie'
-                          ? 'Only include movies released to digital, physical, or TV.'
-                          : 'Exclude series that are planned or in production.'}
-                      </p>
+                {discoverSource === 'tmdb' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <Label className="text-sm">Released Only</Label>
+                        <p className="text-xs text-muted-foreground">
+                          {catalogType === 'movie'
+                            ? 'Only include movies released to digital, physical, or TV.'
+                            : 'Exclude series that are planned or in production.'}
+                        </p>
+                      </div>
+                      <Switch checked={releasedOnly} onCheckedChange={setReleasedOnly} />
                     </div>
-                    <Switch checked={releasedOnly} onCheckedChange={setReleasedOnly} />
-                  </div>
-                  <div className="flex items-center justify-between rounded-md border p-3">
-                    <div>
-                      <Label className="text-sm">Include Adult</Label>
-                      <p className="text-xs text-muted-foreground">Control TMDB adult content filtering for this catalog.</p>
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <Label className="text-sm">Include Adult</Label>
+                        <p className="text-xs text-muted-foreground">Control TMDB adult content filtering for this catalog.</p>
+                      </div>
+                      <Switch checked={includeAdult} onCheckedChange={setIncludeAdult} />
                     </div>
-                    <Switch checked={includeAdult} onCheckedChange={setIncludeAdult} />
                   </div>
-                </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Release Status</Label>
+                      <Select value={tvdbStatus || NONE_VALUE} onValueChange={(value) => setTvdbStatus(value === NONE_VALUE ? '' : value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                          {tvdbStatuses.map(status => (
+                            <SelectItem key={status.id} value={String(status.id)}>
+                              {status.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tvdb-year-filter">Release Year</Label>
+                      <Input
+                        id="tvdb-year-filter"
+                        type="number"
+                        min={1800}
+                        max={3000}
+                        placeholder="Any"
+                        value={tvdbYear}
+                        onChange={(event) => setTvdbYear(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1035,20 +1322,22 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
               <CardHeader>
                 <CardTitle className="text-base">Reference Filters</CardTitle>
                 <CardDescription>
-                  Select genres, languages, countries, and ratings from TMDB reference data.
+                  {discoverSource === 'tmdb'
+                    ? 'Select genres, languages, countries, and ratings from TMDB reference data.'
+                    : 'Select genres, original language, country of origin, and content ratings from TVDB reference data.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {isLoadingReferences && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading TMDB discover reference data...
+                    {discoverSource === 'tmdb' ? 'Loading TMDB discover reference data...' : 'Loading TVDB discover reference data...'}
                   </div>
                 )}
 
                 {!isLoadingReferences && (
                   <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={discoverSource === 'tmdb' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'grid grid-cols-1 gap-4'}>
                       <div className="space-y-2">
                         <Label>Include Genres</Label>
                         <div className="flex gap-2">
@@ -1071,45 +1360,49 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                         {renderSelectedItems(includeGenres, (id) => setIncludeGenres(prev => removeItemById(prev, id)), 'No included genres')}
                       </div>
 
-                      <div className="space-y-2">
-                        <Label>Exclude Genres</Label>
-                        <div className="flex gap-2">
-                          <Select value={pendingExcludeGenreId || undefined} onValueChange={setPendingExcludeGenreId}>
+                      {discoverSource === 'tmdb' && (
+                        <div className="space-y-2">
+                          <Label>Exclude Genres</Label>
+                          <div className="flex gap-2">
+                            <Select value={pendingExcludeGenreId || undefined} onValueChange={setPendingExcludeGenreId}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select genre" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {sortedGenres.map(genre => (
+                                  <SelectItem key={genre.id} value={String(genre.id)}>
+                                    {genre.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button type="button" variant="outline" onClick={() => handleAddGenre('exclude')} disabled={!pendingExcludeGenreId}>
+                              Add
+                            </Button>
+                          </div>
+                          {renderSelectedItems(excludeGenres, (id) => setExcludeGenres(prev => removeItemById(prev, id)), 'No excluded genres')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      {discoverSource === 'tmdb' && (
+                        <div className="space-y-2">
+                          <Label>Genre Match Mode</Label>
+                          <Select value={genreJoinMode} onValueChange={(value: JoinMode) => setGenreJoinMode(value)}>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select genre" />
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {sortedGenres.map(genre => (
-                                <SelectItem key={genre.id} value={String(genre.id)}>
-                                  {genre.name}
+                              {JOIN_MODE_OPTIONS.map(option => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                          <Button type="button" variant="outline" onClick={() => handleAddGenre('exclude')} disabled={!pendingExcludeGenreId}>
-                            Add
-                          </Button>
                         </div>
-                        {renderSelectedItems(excludeGenres, (id) => setExcludeGenres(prev => removeItemById(prev, id)), 'No excluded genres')}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className="space-y-2">
-                        <Label>Genre Match Mode</Label>
-                        <Select value={genreJoinMode} onValueChange={(value: JoinMode) => setGenreJoinMode(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {JOIN_MODE_OPTIONS.map(option => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      )}
                       <div className="space-y-2">
                         <Label>Original Language</Label>
                         <Select value={originalLanguage || NONE_VALUE} onValueChange={(value) => setOriginalLanguage(value === NONE_VALUE ? '' : value)}>
@@ -1127,7 +1420,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Origin Country</Label>
+                        <Label>{discoverSource === 'tmdb' ? 'Origin Country' : 'Country of Origin'}</Label>
                         <Select value={originCountry || NONE_VALUE} onValueChange={(value) => setOriginCountry(value === NONE_VALUE ? '' : value)}>
                           <SelectTrigger>
                             <SelectValue />
@@ -1136,13 +1429,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                             <SelectItem value={NONE_VALUE}>Any</SelectItem>
                             {sortedCountries.map(country => (
                               <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
-                                {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1})
+                                {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1.toUpperCase()})
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
-                      {catalogType === 'movie' && (
+                      {catalogType === 'movie' && discoverSource === 'tmdb' && (
                         <div className="space-y-2">
                           <Label>Release Region (Movies)</Label>
                           <Select value={releaseRegion || NONE_VALUE} onValueChange={(value) => setReleaseRegion(value === NONE_VALUE ? '' : value)}>
@@ -1150,22 +1443,22 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value={NONE_VALUE}>Any</SelectItem>
-                              {sortedCountries.map(country => (
-                                <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
-                                  {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {sortedCountries.map(country => (
+                              <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
+                                {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1.toUpperCase()})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
                           </Select>
                         </div>
                       )}
                     </div>
 
-                    {catalogType === 'movie' && (
+                    {(discoverSource === 'tmdb' ? catalogType === 'movie' : true) && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>Certification Country</Label>
+                          <Label>{discoverSource === 'tmdb' ? 'Certification Country' : 'Rating Country'}</Label>
                           <Select
                             value={certificationCountry || NONE_VALUE}
                             onValueChange={(value) => {
@@ -1181,14 +1474,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                               <SelectItem value={NONE_VALUE}>None</SelectItem>
                               {sortedCountries.map(country => (
                                 <SelectItem key={country.iso_3166_1} value={country.iso_3166_1}>
-                                  {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1})
+                                  {(country.english_name || country.iso_3166_1)} ({country.iso_3166_1.toUpperCase()})
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label>Certification</Label>
+                          <Label>{discoverSource === 'tmdb' ? 'Certification' : 'Content Rating'}</Label>
                           <Select
                             value={certificationValue || NONE_VALUE}
                             onValueChange={(value) => setCertificationValue(value === NONE_VALUE ? '' : value)}
@@ -1201,7 +1494,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                               <SelectItem value={NONE_VALUE}>None</SelectItem>
                               {certificationOptions.map(certificationItem => (
                                 <SelectItem key={certificationItem.certification} value={certificationItem.certification}>
-                                  {certificationItem.certification}
+                                  {certificationItem.meaning || certificationItem.certification}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1217,16 +1510,20 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
-                  {catalogType === 'movie' ? 'People, Companies, and Keywords' : 'Companies and Keywords'}
+                  {discoverSource === 'tmdb'
+                    ? (catalogType === 'movie' ? 'People, Companies, and Keywords' : 'Companies and Keywords')
+                    : 'Production Company'}
                 </CardTitle>
                 <CardDescription>
-                  {catalogType === 'movie'
-                    ? 'Search TMDB and add IDs for cast/crew, studios, and keyword filters.'
-                    : 'Search TMDB and add IDs for studios and keyword filters.'}
+                  {discoverSource === 'tmdb'
+                    ? (catalogType === 'movie'
+                        ? 'Search TMDB and add IDs for cast/crew, studios, and keyword filters.'
+                        : 'Search TMDB and add IDs for studios and keyword filters.')
+                    : 'Search TVDB companies and add a production company filter.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                {catalogType === 'movie' && (
+                {discoverSource === 'tmdb' && catalogType === 'movie' && (
                   <div className="space-y-2" ref={peopleSearchRef}>
                     <Label>People ({selectedPeople.length})</Label>
                     <div className="space-y-2">
@@ -1318,25 +1615,31 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 )}
 
                 <div className="space-y-2" ref={companySearchRef}>
-                  <Label>Companies ({withCompanies.length} include / {withoutCompanies.length} exclude)</Label>
-                  <div className="space-y-2">
-                    <Label>Company Match Mode</Label>
-                    <Select value={companyJoinMode} onValueChange={(value: JoinMode) => setCompanyJoinMode(value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {JOIN_MODE_OPTIONS.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Label>
+                    {discoverSource === 'tmdb'
+                      ? `Companies (${withCompanies.length} include / ${withoutCompanies.length} exclude)`
+                      : `Production Company (${withCompanies.length} selected)`}
+                  </Label>
+                  {discoverSource === 'tmdb' && (
+                    <div className="space-y-2">
+                      <Label>Company Match Mode</Label>
+                      <Select value={companyJoinMode} onValueChange={(value: JoinMode) => setCompanyJoinMode(value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {JOIN_MODE_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Input
-                      placeholder="Search company (e.g. Pixar)"
+                      placeholder={discoverSource === 'tmdb' ? 'Search company (e.g. Pixar)' : 'Search production company (e.g. Pixar)'}
                       value={companyQuery}
                       onChange={(event) => {
                         const value = event.target.value;
@@ -1388,56 +1691,74 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                       {companyResults.map(company => (
                         <div key={company.id} className="flex items-center justify-between gap-2 text-sm">
                           <span className="truncate">{company.name || company.title || `ID ${company.id}`}</span>
-                          <div className="flex gap-1">
+                          {discoverSource === 'tmdb' ? (
+                            <div className="flex gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setWithCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
+                                  setWithoutCompanies(prev => removeItemById(prev, company.id));
+                                  setActiveSearchDropdown(null);
+                                }}
+                              >
+                                Include
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setWithoutCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
+                                  setWithCompanies(prev => removeItemById(prev, company.id));
+                                  setActiveSearchDropdown(null);
+                                }}
+                              >
+                                Exclude
+                              </Button>
+                            </div>
+                          ) : (
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                setWithCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
-                                setWithoutCompanies(prev => removeItemById(prev, company.id));
+                                setWithCompanies([toSelectionItem(company)]);
+                                setWithoutCompanies([]);
                                 setActiveSearchDropdown(null);
                               }}
                             >
-                              Include
+                              Select
                             </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setWithoutCompanies(prev => addUniqueItem(prev, toSelectionItem(company)));
-                                setWithCompanies(prev => removeItemById(prev, company.id));
-                                setActiveSearchDropdown(null);
-                              }}
-                            >
-                              Exclude
-                            </Button>
-                          </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className={discoverSource === 'tmdb' ? 'grid grid-cols-1 md:grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'}>
                     <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
-                      <p className="text-xs font-medium mb-2">Included companies</p>
+                      <p className="text-xs font-medium mb-2">{discoverSource === 'tmdb' ? 'Included companies' : 'Selected production company'}</p>
                       {renderSelectedItems(
                         withCompanies,
                         (id) => setWithCompanies(prev => removeItemById(prev, id)),
-                        'No included companies'
+                        discoverSource === 'tmdb' ? 'No included companies' : 'No production company selected'
                       )}
                     </div>
-                    <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
-                      <p className="text-xs font-medium mb-2">Excluded companies</p>
-                      {renderSelectedItems(
-                        withoutCompanies,
-                        (id) => setWithoutCompanies(prev => removeItemById(prev, id)),
-                        'No excluded companies'
-                      )}
-                    </div>
+                    {discoverSource === 'tmdb' && (
+                      <div className="rounded-md border bg-muted/20 p-3 min-h-[72px]">
+                        <p className="text-xs font-medium mb-2">Excluded companies</p>
+                        {renderSelectedItems(
+                          withoutCompanies,
+                          (id) => setWithoutCompanies(prev => removeItemById(prev, id)),
+                          'No excluded companies'
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
+                {discoverSource === 'tmdb' && (
                 <div className="space-y-2" ref={keywordSearchRef}>
                   <Label>Keywords ({withKeywords.length} include / {withoutKeywords.length} exclude)</Label>
                   <div className="space-y-2">
@@ -1558,9 +1879,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                     </div>
                   </div>
                 </div>
+                )}
               </CardContent>
             </Card>
 
+            {discoverSource === 'tmdb' && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Streaming and Region</CardTitle>
@@ -1651,7 +1974,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 )}
               </CardContent>
             </Card>
+            )}
 
+            {discoverSource === 'tmdb' && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Numeric and Date Ranges</CardTitle>
@@ -1854,12 +2179,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 )}
               </CardContent>
             </Card>
+            )}
 
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Preview</CardTitle>
                 <CardDescription>
-                  {activeFilterCount} active filter{activeFilterCount === 1 ? '' : 's'} plus sorting and adult-content rules.
+                  {activeFilterCount} active filter{activeFilterCount === 1 ? '' : 's'} plus sorting
+                  {discoverSource === 'tmdb' ? ' and adult-content rules.' : '.'}
                 </CardDescription>
               </CardHeader>
               <CardContent>

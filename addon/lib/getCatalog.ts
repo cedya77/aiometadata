@@ -112,6 +112,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
       return { metas };
     }
+    if (id.startsWith('tvdb.discover.')) {
+      logger.debug(`Routing to TVDB discover catalog handler for id: ${id}`);
+      const tvdbDiscoverResults = await getTvdbDiscoverCatalog(type, id, page, language, config, userUUID, includeVideos);
+      return { metas: tvdbDiscoverResults };
+    }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
       logger.debug(`Routing to TVDB catalog handler for id: ${id}`);
       const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
@@ -348,6 +353,88 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
     return metas.filter(Boolean);
   }
   return [];
+}
+
+async function getTvdbDiscoverCatalog(
+  type: string,
+  id: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  logger.info(`[TVDB Discover] Fetching custom catalog: ${id}, Type: ${type}, Page: ${page}`);
+
+  const catalogConfig = config.catalogs?.find(c => c.id === id && c.type === type)
+    || config.catalogs?.find(c => c.id === id);
+
+  if (!catalogConfig) {
+    logger.warn(`[TVDB Discover] Catalog configuration not found for ${id}`);
+    return [];
+  }
+
+  const isMovieCatalog = type === 'movie';
+  const isSeriesCatalog = type === 'series';
+
+  if (!isMovieCatalog && !isSeriesCatalog) {
+    logger.warn(`[TVDB Discover] Unsupported type for discover catalog: ${type}`);
+    return [];
+  }
+
+  const discoverMetadata = catalogConfig?.metadata?.discover || {};
+  const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+  const parameters = await sanitizeTvdbDiscoverParams(
+    rawParams,
+    language,
+    type as 'movie' | 'series',
+    config
+  );
+
+  const tvdbType = isMovieCatalog ? 'movies' : 'series';
+  const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+
+  try {
+    const response = await tvdb.filter(tvdbType, parameters, config);
+    if (!Array.isArray(response) || response.length === 0) {
+      logger.info(`[TVDB Discover] No results for ${id} at page ${discoverPage}`);
+      return [];
+    }
+
+    const startIndex = Math.max(0, (discoverPage - 1) * pageSize);
+    const endIndex = startIndex + pageSize;
+    const paginatedResults = response.slice(startIndex, endIndex);
+
+    const metas = await Promise.all(paginatedResults.map(async (item: any) => {
+      const tvdbId = item?.id;
+      if (!tvdbId) return null;
+
+      const stremioId = `tvdb:${tvdbId}`;
+      const metaType = isMovieCatalog ? 'movie' : 'series';
+
+      try {
+        const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
+          return await getMeta(metaType, language, stremioId, config, userUUID, includeVideos);
+        }, undefined, { enableErrorCaching: true, maxRetries: 2 }, metaType as any, includeVideos);
+
+        if (result && result.meta) {
+          return result.meta;
+        }
+      } catch (error: any) {
+        logger.warn(`[TVDB Discover] Failed to get meta for ${stremioId}: ${error.message}`);
+      }
+
+      return null;
+    }));
+
+    const validMetas = metas.filter(meta => meta !== null);
+    logger.success(`[TVDB Discover] Processed ${validMetas.length} items for ${id}`);
+    return validMetas;
+  } catch (error: any) {
+    logger.error(`[TVDB Discover] Error fetching catalog ${id}: ${error.message}`);
+    return [];
+  }
 }
 
 async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
@@ -917,6 +1004,82 @@ function findGenreId(genreName: string, genreList: any[]): number | undefined {
 function findLanguageCode(genre: string, languages: any[]): string {
   const language = languages.find((lang) => lang.name === genre);
   return language ? language.iso_639_1.split("-")[0] : "";
+}
+
+async function sanitizeTvdbDiscoverParams(
+  rawParams: any,
+  language: string,
+  catalogType: 'movie' | 'series',
+  config: UserConfig
+): Promise<Record<string, any>> {
+  const sanitized: Record<string, any> = {};
+  const isPlainObject = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams);
+
+  if (isPlainObject) {
+    for (const [key, rawValue] of Object.entries(rawParams)) {
+      if (!/^[a-zA-Z0-9._]+$/.test(key)) continue;
+      if (rawValue === null || rawValue === undefined) continue;
+
+      if (typeof rawValue === 'string') {
+        const value = rawValue.trim();
+        if (!value) continue;
+        sanitized[key] = value;
+        continue;
+      }
+
+      if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+        sanitized[key] = rawValue;
+      }
+    }
+  }
+
+  const langParts = language.split('-');
+  const countryCode2 = langParts[1] || 'US';
+  const defaultLang = 'eng';
+  const defaultCountry = to3LetterCountryCode(countryCode2).toLowerCase();
+
+  const allowedSorts = catalogType === 'movie'
+    ? new Set(['score', 'firstAired', 'name'])
+    : new Set(['score', 'firstAired', 'lastAired', 'name']);
+
+  const numericFields = new Set(['company', 'contentRating', 'genre', 'status', 'year']);
+  for (const field of numericFields) {
+    if (sanitized[field] === undefined) continue;
+    const numericValue = Number(sanitized[field]);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      delete sanitized[field];
+      continue;
+    }
+    sanitized[field] = Math.floor(numericValue);
+  }
+
+  sanitized.lang = typeof sanitized.lang === 'string' && sanitized.lang.trim()
+    ? sanitized.lang.trim().toLowerCase()
+    : defaultLang;
+
+  sanitized.country = typeof sanitized.country === 'string' && sanitized.country.trim()
+    ? sanitized.country.trim().toLowerCase()
+    : defaultCountry;
+
+  if (!allowedSorts.has(String(sanitized.sort || '').trim())) {
+    sanitized.sort = 'score';
+  }
+
+  if (catalogType === 'series') {
+    const sortType = String(sanitized.sortType || 'desc').toLowerCase();
+    sanitized.sortType = sortType === 'asc' ? 'asc' : 'desc';
+  } else {
+    delete sanitized.sortType;
+  }
+
+  const allowedParams = new Set(['company', 'contentRating', 'country', 'genre', 'lang', 'sort', 'sortType', 'status', 'year']);
+  for (const key of Object.keys(sanitized)) {
+    if (!allowedParams.has(key)) {
+      delete sanitized[key];
+    }
+  }
+
+  return sanitized;
 }
 
 function sanitizeTmdbDiscoverParams(

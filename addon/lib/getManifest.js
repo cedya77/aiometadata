@@ -356,6 +356,30 @@ function createTMDBDiscoverCatalog(userCatalog, showPrefix = false) {
   }
 }
 
+function createTVDBDiscoverCatalog(userCatalog, showPrefix = false) {
+  try {
+    logger.info(`Creating TVDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
+
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    const catalog = {
+      id: userCatalog.id,
+      type: catalogType,
+      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra: [
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome
+    };
+
+    logger.success(`TVDB Discover catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    logger.error(`Error creating TVDB Discover catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createLetterboxdCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -781,6 +805,9 @@ async function getManifest(config) {
       if (userCatalog.id.startsWith('tmdb.discover.')) {
         return true;
       }
+      if (userCatalog.id.startsWith('tvdb.discover.')) {
+        return true;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
         return true;
       }
@@ -830,6 +857,12 @@ async function getManifest(config) {
           logger.debug(`Processing TMDB Discover catalog: ${userCatalog.id}`);
           const result = createTMDBDiscoverCatalog(userCatalog, showPrefix);
           logger.debug(`TMDB Discover catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (userCatalog.id.startsWith('tvdb.discover.')) {
+          logger.debug(`Processing TVDB Discover catalog: ${userCatalog.id}`);
+          const result = createTVDBDiscoverCatalog(userCatalog, showPrefix);
+          logger.debug(`TVDB Discover catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {

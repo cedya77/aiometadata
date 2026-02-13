@@ -51,6 +51,7 @@ const { blurImage } = require('./utils/imageProcessor');
 const { TraktClient } = require('./lib/trakt');
 const { SimklClient } = require('./lib/simkl');
 const axios = require('axios');
+const getCountryISO3 = require('country-iso-2-to-3');
 const jikan = require('./lib/mal');
 const tvmaze = require('./lib/tvmaze');
 const packageJson = require('../package.json');
@@ -1088,10 +1089,24 @@ addon.get("/api/mdblist/lists/:listId", async (req, res) => {
 
 // --- TMDB Proxy Endpoints ---
 const moviedb = require('./lib/getTmdb.js');
+const tvdbApi = require('./lib/tvdb');
 const TMDB_DISCOVER_CACHE_TTL = 24 * 60 * 60; // 24h for mostly static discover reference data
+const TVDB_DISCOVER_CACHE_TTL = 24 * 60 * 60; // 24h for mostly static discover reference data
 
 function normalizeTmdbDiscoverType(type) {
   return type === 'tv' ? 'tv' : 'movie';
+}
+
+function normalizeTvdbDiscoverType(type) {
+  return type === 'series' ? 'series' : 'movies';
+}
+
+function toTvdbCountryCode(regionCode) {
+  const normalized = typeof regionCode === 'string' ? regionCode.trim().toUpperCase() : '';
+  if (!normalized) return 'usa';
+  const countryData = getCountryISO3(normalized);
+  if (!countryData) return 'usa';
+  return String(countryData).toLowerCase();
 }
 
 async function resolveTmdbDiscoverApiKey(req) {
@@ -1114,6 +1129,28 @@ async function resolveTmdbDiscoverApiKey(req) {
   }
 
   return (process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '').trim();
+}
+
+async function resolveTvdbDiscoverApiKey(req) {
+  const requestApiKey = typeof req.query.apikey === 'string' ? req.query.apikey.trim() : '';
+  if (requestApiKey) {
+    return requestApiKey;
+  }
+
+  const userUUID = typeof req.query.userUUID === 'string' ? req.query.userUUID.trim() : '';
+  if (userUUID) {
+    try {
+      const userConfig = await loadConfigFromDatabase(userUUID);
+      const userConfigKey = userConfig?.apiKeys?.tvdb?.trim() || '';
+      if (userConfigKey) {
+        return userConfigKey;
+      }
+    } catch (error) {
+      consola.debug(`[TVDB Discover] Could not load config for user ${userUUID}: ${error.message}`);
+    }
+  }
+
+  return (process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '').trim();
 }
 
 // Proxy: Get TMDB list details
@@ -1304,6 +1341,184 @@ addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
     consola.error("[TMDB Discover] Error searching entity:", error.message);
     const status = error.response?.status || 500;
     return res.status(status).json({ error: error.message || "Failed to search TMDB discover entity" });
+  }
+});
+
+// Proxy: TVDB discover reference data (genres, languages, countries, content ratings, statuses, company types)
+addon.get("/api/tvdb/discover/reference", async (req, res) => {
+  try {
+    const { type, language } = req.query;
+    const tvdbApiKey = await resolveTvdbDiscoverApiKey(req);
+
+    if (!tvdbApiKey) {
+      return res.status(400).json({
+        error: "TVDB API key is required (config.apiKeys.tvdb, TVDB_API_KEY, or BUILT_IN_TVDB_API_KEY)"
+      });
+    }
+
+    const mediaType = normalizeTvdbDiscoverType(type);
+    const languageTag = typeof language === 'string' && language.trim() ? language.trim() : 'en-US';
+    const languageParts = languageTag.split('-');
+    const defaultLanguage = 'eng';
+    const defaultCountry = toTvdbCountryCode(languageParts[1] || 'US');
+    const userUUID = typeof req.query.userUUID === 'string' && req.query.userUUID.trim()
+      ? req.query.userUUID.trim()
+      : undefined;
+
+    const tvdbConfig = {
+      apiKeys: { tvdb: tvdbApiKey },
+      ...(userUUID ? { userUUID } : {})
+    };
+
+    const cacheKey = `tvdb:discover:reference:v2:${mediaType}:${languageTag}`;
+    const payload = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        const [genres, languages, countries, contentRatings, statuses, companyTypes] = await Promise.all([
+          tvdbApi.getAllGenres(tvdbConfig),
+          tvdbApi.getAllLanguages(tvdbConfig),
+          tvdbApi.getAllCountries(tvdbConfig),
+          tvdbApi.getAllContentRatings(tvdbConfig),
+          tvdbApi.getStatuses(mediaType, tvdbConfig),
+          tvdbApi.getCompanyTypes(tvdbConfig),
+        ]);
+
+        const normalizeCode = (value) => {
+          if (typeof value !== 'string') return '';
+          return value.trim().toLowerCase();
+        };
+
+        const normalizedGenres = Array.isArray(genres)
+          ? genres.filter(item => item && Number.isFinite(Number(item.id)))
+          : [];
+        const normalizedLanguages = Array.isArray(languages)
+          ? Array.from(
+              languages.reduce((acc, item) => {
+                if (!item || typeof item !== 'object') return acc;
+                const code = normalizeCode(item.id) || normalizeCode(item.shortCode);
+                if (!code || acc.seen.has(code)) return acc;
+                acc.seen.add(code);
+                acc.items.push({
+                  ...item,
+                  id: code,
+                  shortCode: normalizeCode(item.shortCode) || code
+                });
+                return acc;
+              }, { seen: new Set(), items: [] }).items
+            )
+          : [];
+        const normalizedCountries = Array.isArray(countries)
+          ? Array.from(
+              countries.reduce((acc, item) => {
+                if (!item || typeof item !== 'object') return acc;
+                const code = normalizeCode(item.id) || normalizeCode(item.shortCode);
+                if (!code || acc.seen.has(code)) return acc;
+                acc.seen.add(code);
+                acc.items.push({
+                  ...item,
+                  id: code,
+                  shortCode: normalizeCode(item.shortCode) || code
+                });
+                return acc;
+              }, { seen: new Set(), items: [] }).items
+            )
+          : [];
+        const normalizedStatuses = Array.isArray(statuses)
+          ? statuses.filter(item => item && Number.isFinite(Number(item.id)))
+          : [];
+        const normalizedCompanyTypes = Array.isArray(companyTypes)
+          ? companyTypes.filter(item => item && Number.isFinite(Number(item.companyTypeId)))
+          : [];
+
+        const normalizedRatings = Array.isArray(contentRatings)
+          ? contentRatings.filter(item => item && Number.isFinite(Number(item.id)))
+          : [];
+        const filteredRatings = normalizedRatings.filter(rating => {
+          const contentType = String(rating.contentType || '').toLowerCase();
+          if (!contentType) return true;
+          if (mediaType === 'movies') return contentType.includes('movie');
+          return contentType.includes('series') || contentType.includes('episode') || contentType.includes('tv');
+        });
+
+        return {
+          mediaType,
+          language: languageTag,
+          defaultLanguage,
+          defaultCountry,
+          genres: normalizedGenres,
+          languages: normalizedLanguages,
+          countries: normalizedCountries,
+          contentRatings: filteredRatings,
+          statuses: normalizedStatuses,
+          companyTypes: normalizedCompanyTypes,
+        };
+      },
+      TVDB_DISCOVER_CACHE_TTL
+    );
+
+    return res.json(payload);
+  } catch (error) {
+    consola.error("[TVDB Discover] Error fetching reference data:", error.message);
+    const status = error.response?.status || 500;
+    return res.status(status).json({ error: error.message || "Failed to fetch TVDB discover reference data" });
+  }
+});
+
+// Proxy: TVDB discover searchable entities
+addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
+  try {
+    const { query } = req.query;
+    const entity = String(req.params.entity || '').toLowerCase();
+    const tvdbApiKey = await resolveTvdbDiscoverApiKey(req);
+
+    if (!tvdbApiKey) {
+      return res.status(400).json({
+        error: "TVDB API key is required (config.apiKeys.tvdb, TVDB_API_KEY, or BUILT_IN_TVDB_API_KEY)"
+      });
+    }
+
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({ error: "query is required" });
+    }
+
+    if (entity !== 'company') {
+      return res.status(400).json({ error: "entity must be: company" });
+    }
+
+    const userUUID = typeof req.query.userUUID === 'string' && req.query.userUUID.trim()
+      ? req.query.userUUID.trim()
+      : undefined;
+
+    const tvdbConfig = {
+      apiKeys: { tvdb: tvdbApiKey },
+      ...(userUUID ? { userUUID } : {})
+    };
+
+    const searchData = await tvdbApi.searchCompanies(String(query).trim(), tvdbConfig);
+    const seen = new Set();
+    const normalizedResults = (Array.isArray(searchData) ? searchData : [])
+      .map(item => {
+        const idCandidate = item?.id ?? item?.tvdb_id ?? item?.companyId ?? item?.objectID;
+        const numericId = Number(String(idCandidate || '').replace(/[^0-9]/g, ''));
+        if (!Number.isFinite(numericId) || numericId <= 0) return null;
+        if (seen.has(numericId)) return null;
+        seen.add(numericId);
+
+        return {
+          id: numericId,
+          name: item?.name || item?.company || `ID ${numericId}`,
+          country: item?.country || '',
+          companyType: item?.companyType || item?.primaryType || ''
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 25);
+
+    return res.json({ entity, results: normalizedResults });
+  } catch (error) {
+    consola.error("[TVDB Discover] Error searching entity:", error.message);
+    const status = error.response?.status || 500;
+    return res.status(status).json({ error: error.message || "Failed to search TVDB discover entity" });
   }
 });
 
@@ -2442,8 +2657,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     if (catalogConfig?.sort) extraArgs.sort = catalogConfig.sort;
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
-  // TMDB Discover custom catalogs use discover params (include hash for safe cache invalidation)
-  else if (cleanId.startsWith('tmdb.discover.')) {
+  // Discover custom catalogs use discover params (include hash for safe cache invalidation)
+  else if (cleanId.startsWith('tmdb.discover.') || cleanId.startsWith('tvdb.discover.')) {
     const discoverParams =
       catalogConfig?.metadata?.discover?.params ||
       catalogConfig?.metadata?.discoverParams ||
