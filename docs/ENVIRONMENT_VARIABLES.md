@@ -77,7 +77,7 @@ cp .env.example .env
 
 ## API Keys
 
-### `TMDB_API_KEY`
+### `TMDB_API`
 - **Required**: Yes
 - **Description**: The Movie Database (TMDB) API key
 - **Get it**: https://www.themoviedb.org/settings/api
