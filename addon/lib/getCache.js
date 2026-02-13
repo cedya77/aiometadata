@@ -772,7 +772,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isTvdbDiscoverCatalog = idOnly.startsWith('tvdb.discover.');
   const isAniListDiscoverCatalog = idOnly.startsWith('anilist.discover.');
   const isSimklDiscoverCatalog = idOnly.startsWith('simkl.discover.');
-  const isDiscoverCatalog = isTmdbDiscoverCatalog || isTvdbDiscoverCatalog || isAniListDiscoverCatalog || isSimklDiscoverCatalog;
+  const isMalDiscoverCatalog = idOnly.startsWith('mal.discover.');
+  const isDiscoverCatalog = isTmdbDiscoverCatalog || isTvdbDiscoverCatalog || isAniListDiscoverCatalog || isSimklDiscoverCatalog || isMalDiscoverCatalog;
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
   
   // Find the catalog config to get per-catalog settings (like enableRatingPosters)

@@ -567,6 +567,35 @@ function createAniListCatalog(userCatalog, showPrefix = false) {
   }
 }
 
+async function createMalCatalog(userCatalog, showPrefix = false){
+  try {
+    logger.info(`Creating MAL discover catalog: ${userCatalog.id} (${userCatalog.type})`);
+    
+
+    const catalog = {
+      id: userCatalog.id,
+      type: 'anime',
+      name: showPrefix ? `${userCatalog.name}` : userCatalog.name,
+      extra: [{ name: 'skip' }],
+    };
+
+    if (!userCatalog.showInHome) {
+      catalog.extra.unshift({
+        name: "genre",
+        options: ["None"],
+        isRequired: true,
+        default: "None"
+      });
+    }
+    
+    logger.success(`Creating MAL discover catalog created successfully: ${catalog.id}`);
+    return catalog;
+  } catch (error) {
+    logger.error(`Error creating Creating MAL discover catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createSimklCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -812,6 +841,9 @@ async function getManifest(config) {
       if (userCatalog.id.startsWith('tvdb.discover.')) {
         return true;
       }
+      if (userCatalog.id.startsWith('mal.discover.')) {
+        return true;
+      }
       if (userCatalog.id.startsWith('stremthru.')) {
         return true;
       }
@@ -884,6 +916,12 @@ async function getManifest(config) {
           const result = createAniListCatalog(userCatalog);
           logger.debug(`AniList catalog result:`, result ? 'success' : 'failed');
           return result;
+      }
+      if(userCatalog.id.startsWith('mal.discover')){
+        logger.debug(`Processing mal discover catalog: ${userCatalog.id}`);
+        const result = createMalCatalog(userCatalog);
+        logger.debug(`Mal discover catalog result:`, result ? 'success' : 'failed');
+        return result;
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
           logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);

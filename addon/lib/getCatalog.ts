@@ -7,13 +7,14 @@ import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommend
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
+import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
 import * as CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 
@@ -142,6 +143,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: traktResults };
     }
+    else if (id.startsWith('mal.discover.')) {
+      logger.debug(`Routing to MAL discover catalog handler for id: ${id}`);
+      const malDiscoverResults = await getMalDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      return { metas: malDiscoverResults };
+    }
     else if (id.startsWith('anilist.discover.')) {
      logger.debug(`Routing to AniList discover catalog handler for id: ${id}`);
      const anilistDiscoverResults = await getAniListDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
@@ -173,6 +179,56 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, error.stack);
     return { metas: [] };
+  }
+}
+
+
+/**
+ * Get MAL discover catalog items.
+ * Handles 'mal.discover.*' catalog IDs created by the builder dialog.
+ * Reads the discover params from the catalog's metadata and calls jikan.fetchDiscover().
+ */
+async function getMalDiscoverCatalog(
+  type: string,
+  catalogId: string,
+  genre: string | null,
+  page: number,
+  language: string,
+  config: any, // UserConfig
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    logger.info(`[MAL Discover] Fetching catalog: ${catalogId}, Page: ${page}`);
+
+    const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
+    const discoverMetadata = catalogConfig?.metadata?.discover || {};
+    const rawParams = discoverMetadata?.params || {};
+    const customCacheTTL = catalogConfig?.cacheTTL || null;
+
+    const response = await cacheWrapJikanApi(
+      `mal-discover-${catalogId}-page${page}`,
+      async () => jikan.fetchDiscover(rawParams, page),
+      customCacheTTL || 30 * 60
+    );
+
+    if (!response?.items || response.items.length === 0) {
+      logger.info(`[MAL Discover] No results for ${catalogId} at page ${page}`);
+      return [];
+    }
+
+    // Convert Jikan anime objects to the format expected by resolveMALItemsToMetas
+    // Jikan returns full anime objects with mal_id, title, images, etc.
+    // We need to map them through the existing MAL-to-Stremio meta resolver.
+    const metas = await Utils.parseAnimeCatalogMetaBatch(
+      response.items, config, language
+    );
+
+    logger.success(`[MAL Discover] Processed ${metas.length} items for ${catalogId} (page ${page})`);
+    return metas;
+  } catch (err: any) {
+    logger.error(`[MAL Discover] Error processing catalog ${catalogId}: ${err.message}`);
+    return [];
   }
 }
 

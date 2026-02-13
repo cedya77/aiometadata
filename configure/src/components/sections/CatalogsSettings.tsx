@@ -1499,7 +1499,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
           {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
-            (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.'))) && (
+            (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.'))) || 
+            (catalog.id.startsWith('mal.discover.')) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">

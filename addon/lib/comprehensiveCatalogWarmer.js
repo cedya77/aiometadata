@@ -426,6 +426,7 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('simkl.') ||
         catalogId.startsWith('tmdb.discover') ||
         catalogId.startsWith('tvdb.discover') ||
+        catalogId.startsWith('mal.discover')  ||
         catalogId.startsWith('anilist.discover') ||
         catalogId === 'tmdb.top' ||
         catalogId === 'tvmaze.schedule' ||
@@ -528,7 +529,7 @@ class ComprehensiveCatalogWarmer {
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
           }
         }
-        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.') || catalogId.startsWith('simkl.discover.')) {
+        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.') || catalogId.startsWith('simkl.discover.') || cleanId.startsWith('anilist.discover.') || cleanId.startsWith('mal.discover.')) {
           const discoverParams =
             catalogConfig?.metadata?.discover?.params ||
             catalogConfig?.metadata?.discoverParams ||

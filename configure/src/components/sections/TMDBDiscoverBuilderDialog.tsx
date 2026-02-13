@@ -19,7 +19,7 @@ interface TMDBDiscoverBuilderDialogProps {
 
 type CatalogMediaType = 'movie' | 'series';
 type TmdbMediaType = 'movie' | 'tv';
-type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl';
+type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
 type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
@@ -280,6 +280,47 @@ const SIMKL_TV_ANIME_SORT_OPTIONS = [
   { value: 'last-air-date', label: 'Last Air Date' },
   { value: 'a-z', label: 'A-Z' },
   { value: 'z-a', label: 'Z-A' },
+] as const;
+
+
+const MAL_SORT_OPTIONS = [
+  { value: 'score', label: 'Score (Highest)' },
+  { value: 'popularity', label: 'Popularity' },
+  { value: 'rank', label: 'Rank' },
+  { value: 'members', label: 'Members (Most)' },
+  { value: 'favorites', label: 'Favourites (Most)' },
+  { value: 'start_date', label: 'Start Date' },
+  { value: 'end_date', label: 'End Date' },
+  { value: 'episodes', label: 'Episode Count' },
+  { value: 'title', label: 'Title (A–Z)' },
+] as const;
+
+const MAL_TYPE_OPTIONS = [
+  { value: 'tv', label: 'TV' },
+  { value: 'movie', label: 'Movie' },
+  { value: 'ova', label: 'OVA' },
+  { value: 'special', label: 'Special' },
+  { value: 'ona', label: 'ONA' },
+] as const;
+
+const MAL_STATUS_OPTIONS = [
+  { value: 'airing', label: 'Currently Airing' },
+  { value: 'complete', label: 'Finished Airing' },
+  { value: 'upcoming', label: 'Upcoming' },
+] as const;
+
+const MAL_RATING_OPTIONS = [
+  { value: 'g', label: 'G - All Ages' },
+  { value: 'pg', label: 'PG - Children' },
+  { value: 'pg13', label: 'PG-13 - Teens 13+' },
+  { value: 'r17', label: 'R - 17+' },
+  { value: 'r', label: 'R+ - Mild Nudity' },
+  { value: 'rx', label: 'Rx - Hentai' },
+] as const;
+
+const MAL_SORT_DIRECTION_OPTIONS = [
+  { value: 'desc', label: 'Descending' },
+  { value: 'asc', label: 'Ascending' },
 ] as const;
 
 const NONE_VALUE = '__none__';
@@ -543,48 +584,74 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const [airDateTo, setAirDateTo] = useState('');
 
   // AniList-specific state
-const [anilistFormats, setAnilistFormats] = useState<string[]>([]); // multi-select
-const [anilistStatus, setAnilistStatus] = useState('');
-const [anilistSeason, setAnilistSeason] = useState('');
-const [anilistSeasonYear, setAnilistSeasonYear] = useState('');
-const [anilistCountry, setAnilistCountry] = useState('');
-const [anilistIncludeGenres, setAnilistIncludeGenres] = useState<string[]>([]);
-const [anilistExcludeGenres, setAnilistExcludeGenres] = useState<string[]>([]);
-const [anilistIncludeTags, setAnilistIncludeTags] = useState<string[]>([]);
-const [anilistExcludeTags, setAnilistExcludeTags] = useState<string[]>([]);
-const [anilistTagSearch, setAnilistTagSearch] = useState('');
-const [anilistAvailableTags, setAnilistAvailableTags] = useState<string[]>([]);
-const [anilistScoreRange, setAnilistScoreRange] = useState<[number, number]>([0, 100]);
-const [anilistPopularityMin, setAnilistPopularityMin] = useState<number>(0);
-const [anilistEpisodesRange, setAnilistEpisodesRange] = useState<[number, number]>([0, 200]);
-const [anilistDurationRange, setAnilistDurationRange] = useState<[number, number]>([0, 180]);
-const [anilistIsAdult, setAnilistIsAdult] = useState(false);
-const [anilistStartDateFrom, setAnilistStartDateFrom] = useState('');
-const [anilistStartDateTo, setAnilistStartDateTo] = useState('');
-// Studio search state
-const [anilistStudioQuery, setAnilistStudioQuery] = useState('');
-const [anilistStudioResults, setAnilistStudioResults] = useState<Array<{ id: number; name: string }>>([]);
-const [anilistSelectedStudios, setAnilistSelectedStudios] = useState<SelectionItem[]>([]);
-const [isSearchingStudios, setIsSearchingStudios] = useState(false);
+  const [anilistFormats, setAnilistFormats] = useState<string[]>([]); // multi-select
+  const [anilistStatus, setAnilistStatus] = useState('');
+  const [anilistSeason, setAnilistSeason] = useState('');
+  const [anilistSeasonYear, setAnilistSeasonYear] = useState('');
+  const [anilistCountry, setAnilistCountry] = useState('');
+  const [anilistIncludeGenres, setAnilistIncludeGenres] = useState<string[]>([]);
+  const [anilistExcludeGenres, setAnilistExcludeGenres] = useState<string[]>([]);
+  const [anilistIncludeTags, setAnilistIncludeTags] = useState<string[]>([]);
+  const [anilistExcludeTags, setAnilistExcludeTags] = useState<string[]>([]);
+  const [anilistTagSearch, setAnilistTagSearch] = useState('');
+  const [anilistAvailableTags, setAnilistAvailableTags] = useState<string[]>([]);
+  const [anilistScoreRange, setAnilistScoreRange] = useState<[number, number]>([0, 100]);
+  const [anilistPopularityMin, setAnilistPopularityMin] = useState<number>(0);
+  const [anilistEpisodesRange, setAnilistEpisodesRange] = useState<[number, number]>([0, 200]);
+  const [anilistDurationRange, setAnilistDurationRange] = useState<[number, number]>([0, 180]);
+  const [anilistIsAdult, setAnilistIsAdult] = useState(false);
+  const [anilistStartDateFrom, setAnilistStartDateFrom] = useState('');
+  const [anilistStartDateTo, setAnilistStartDateTo] = useState('');
+  // Studio search state
+  const [anilistStudioQuery, setAnilistStudioQuery] = useState('');
+  const [anilistStudioResults, setAnilistStudioResults] = useState<Array<{ id: number; name: string }>>([]);
+  const [anilistSelectedStudios, setAnilistSelectedStudios] = useState<SelectionItem[]>([]);
+  const [isSearchingStudios, setIsSearchingStudios] = useState(false);
+
+  // MAL-specific state
+  const [malType, setMalType] = useState(''); 
+  const [malStatus, setMalStatus] = useState('');
+  const [malRating, setMalRating] = useState('');
+  const [malSortDirection, setMalSortDirection] = useState('desc');
+  const [malIncludeGenreIds, setMalIncludeGenreIds] = useState<SelectionItem[]>([]);
+  const [malExcludeGenreIds, setMalExcludeGenreIds] = useState<SelectionItem[]>([]);
+  const [malAvailableGenres, setMalAvailableGenres] = useState<Array<{ id: number; name: string }>>([]);
+  const [malProducers, setMalProducers] = useState<SelectionItem[]>([]);
+  const [malAvailableStudios, setMalAvailableStudios] = useState<Array<{ id: number; name: string }>>([]);
+  const [malStudioQuery, setMalStudioQuery] = useState('');
+  const [malStudioResults, setMalStudioResults] = useState<Array<{ id: number; name: string }>>([]);
+  const [isSearchingMalStudios, setIsSearchingMalStudios] = useState(false);
+  const [malMinScore, setMalMinScore] = useState<number>(0);
+  const [malMaxScore, setMalMaxScore] = useState<number>(10);
+  const [malStartDate, setMalStartDate] = useState('');
+  const [malEndDate, setMalEndDate] = useState('');
+  const [malSfw, setMalSfw] = useState(true);
 
   const [isSaving, setIsSaving] = useState(false);
 
   const tmdbMediaType = toTmdbMediaType(catalogType);
-  const sourceLabel = discoverSource === 'tmdb'
-    ? 'TMDB'
-    : discoverSource === 'tvdb'
-      ? 'TVDB'
-      : discoverSource === 'simkl'
-        ? 'Simkl'
-        : 'AniList';
-  const activeSourceApiKey = discoverSource === 'tmdb'
-    ? tmdbApiKey
-    : discoverSource === 'tvdb'
-      ? tvdbApiKey
-      : discoverSource === 'simkl'
-        ? simklClientId
-        : 'anilist-public';
+
+  const SOURCE_LABELS: Record<string, string> = {
+    anilist: 'Anilist',
+    tvdb: 'TVDB',
+    simkl: 'Simkl',
+    mal: 'MAL'
+  };
+  
+  const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
+
+  const SOURCE_API_KEYS: Record<string, string> = {
+    tmdb: tmdbApiKey,
+    tvdb: tvdbApiKey,
+    simkl: simklClientId,
+    mal: 'public-api',
+    anilist: 'public-api',
+  };
+  
+  const activeSourceApiKey = SOURCE_API_KEYS[discoverSource] ?? 'public-api';
+  
   const sortOptions = useMemo(() => {
+    if (discoverSource === 'mal') return MAL_SORT_OPTIONS;
     if (discoverSource === 'anilist') return ANILIST_SORT_OPTIONS;
     if (discoverSource === 'simkl') {
       return simklMediaType === 'movies' ? SIMKL_MOVIE_SORT_OPTIONS : SIMKL_TV_ANIME_SORT_OPTIONS;
@@ -742,7 +809,19 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     anilistDurationRange,
     anilistIsAdult,
     anilistStartDateFrom,
-    anilistStartDateTo
+    anilistStartDateTo,
+    malType,
+    malStatus,
+    malRating,
+    malSortDirection,
+    malIncludeGenreIds,
+    malExcludeGenreIds,
+    malProducers,
+    malMinScore,
+    malMaxScore,
+    malStartDate,
+    malEndDate,
+    malSfw,
   ]);
 
   const activeFilterCount = useMemo(() => {
@@ -752,7 +831,9 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
            ? new Set(['sort', 'sortType', 'country', 'lang'])
            : discoverSource === 'simkl'
              ? new Set(['media', 'sort'])
-           : new Set(['sort', 'isAdult']);
+           : discoverSource === 'anilist'
+                  ? new Set(['sort', 'isAdult'])
+                  : new Set(['order_by', 'sort', 'sfw']);
     return Object.keys(discoverParamsPreview).filter(key => !baseKeys.has(key)).length;
   }, [discoverParamsPreview, discoverSource]);
 
@@ -845,6 +926,23 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     setAnilistStudioResults([]);
     setAnilistSelectedStudios([]);
 
+    setMalType('');
+    setMalStatus('');
+    setMalRating('');
+    setMalSortDirection('desc');
+    setMalIncludeGenreIds([]);
+    setMalExcludeGenreIds([]);
+    setMalAvailableGenres([]);
+    setMalProducers([]);
+    setMalAvailableStudios([]);
+    setMalStudioQuery('');
+    setMalStudioResults([]);
+    setMalMinScore(0);
+    setMalMaxScore(10);
+    setMalStartDate('');
+    setMalEndDate('');
+    setMalSfw(true);
+
     setIsSaving(false);
   };
 
@@ -914,6 +1012,29 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     const loadReferenceData = async () => {
       setIsLoadingReferences(true);
       try {
+        if (discoverSource === 'mal') {
+          const cacheKey = 'mal_discover_reference';
+          const data = await apiCache.cachedFetch<any>(cacheKey, async () => {
+            const response = await fetch('/api/mal/discover/reference');
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `Failed to fetch MAL references (${response.status})`);
+            }
+            return await response.json();
+          }, 30 * 60 * 1000);
+          if (cancelled) return;
+          if (Array.isArray(data.genres)) {
+            setMalAvailableGenres(data.genres.map((g: any) => ({ id: g.mal_id, name: g.name })));
+          }
+          if (Array.isArray(data.studios)) {
+            setMalAvailableStudios(data.studios.map((s: any) => ({
+              id: typeof s.mal_id === 'number' ? s.mal_id : s.id,
+              name: s.titles?.find((t: any) => t.type === 'Default')?.title || s.name || `Studio ${s.mal_id || s.id}`
+            })));
+          }
+          setReferences(null);
+          return;
+        }
         if (discoverSource === 'anilist') {
           const cacheKey = 'anilist_discover_reference';
           const data = await apiCache.cachedFetch<any>(cacheKey, async () => {
@@ -1205,6 +1326,28 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     }
   };
 
+  const searchMalStudios = async (query: string) => {
+    if (!query.trim()) {
+      setMalStudioResults([]);
+      return;
+    }
+    setIsSearchingMalStudios(true);
+    try {
+      const cacheKey = `mal_studio_search_${query.toLowerCase().trim()}`;
+      const data = await apiCache.cachedFetch<any>(cacheKey, async () => {
+        const response = await fetch(`/api/mal/discover/search/producer?query=${encodeURIComponent(query.trim())}`);
+        if (!response.ok) throw new Error('Failed to search MAL producers');
+        return await response.json();
+      }, 10 * 60 * 1000);
+      setMalStudioResults(Array.isArray(data.results) ? data.results : []);
+    } catch (error) {
+      console.error('[MAL Discover] Studio search failed:', error);
+      toast.error('Failed to search studios');
+    } finally {
+      setIsSearchingMalStudios(false);
+    }
+  };
+
   const toSelectionItem = (item: TmdbEntityResult): SelectionItem => ({
     id: item.id,
     label: item.name || item.title || `ID ${item.id}`
@@ -1239,6 +1382,32 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
       }
 
       return simklParams;
+    }
+
+    if (discoverSource === 'mal') {
+      const malParams: Record<string, string | number | boolean> = {
+        order_by: sortBy,
+        sort: malSortDirection,
+      };
+      if (malType) malParams.type = malType;
+
+      if (malStatus) malParams.status = malStatus;
+      if (malRating) malParams.rating = malRating;
+      if (malIncludeGenreIds.length > 0) {
+        malParams.genres = malIncludeGenreIds.map(g => g.id).join(',');
+      }
+      if (malExcludeGenreIds.length > 0) {
+        malParams.genres_exclude = malExcludeGenreIds.map(g => g.id).join(',');
+      }
+      if (malProducers.length > 0) {
+        malParams.producers = malProducers.map(p => p.id).join(',');
+      }
+      if (malMinScore > 0) malParams.min_score = malMinScore;
+      if (malMaxScore < 10) malParams.max_score = malMaxScore;
+      if (malStartDate) malParams.start_date = malStartDate;
+      if (malEndDate) malParams.end_date = malEndDate;
+      if (malSfw) malParams.sfw = true;
+      return malParams;
     }
 
     if (discoverSource === 'anilist') {
@@ -1485,16 +1654,20 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
         .slice(0, 40) || 'catalog';
       const uniqueSuffix = Date.now().toString(36);
       const simklCatalogType = simklMediaType === 'movies' ? 'movie' : simklMediaType === 'shows' ? 'series' : 'anime';
-      const sourcePrefix = discoverSource === 'tmdb'
-        ? 'tmdb.discover'
-        : discoverSource === 'tvdb'
-          ? 'tvdb.discover'
-          : discoverSource === 'simkl'
-            ? 'simkl.discover'
-            : 'anilist.discover';
+      const SOURCE_PREFIXES: Record<string, string> = {
+        tmdb: 'tmdb.discover',
+        tvdb: 'tvdb.discover',
+        simkl: 'simkl.discover',
+        mal: 'mal.discover',
+        anilist: 'anilist.discover',
+      };
+      
+      const sourcePrefix = SOURCE_PREFIXES[discoverSource] ?? 'tmdb.discover';
+      
+
       const catalogTypeSegment = discoverSource === 'simkl'
         ? simklMediaType
-        : discoverSource === 'anilist'
+        : discoverSource === 'anilist' || discoverSource === 'mal'
           ? 'anime'
           : catalogType;
       const catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
@@ -1506,16 +1679,19 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
               : catalogType,
             config.displayTypeOverrides
           );
-      const sourceLabel = discoverSource === 'tmdb'
-        ? 'TMDB'
-        : discoverSource === 'tvdb'
-          ? 'TVDB'
-          : discoverSource === 'simkl'
-            ? 'SIMKL'
-            : 'ANILIST';
+          const SOURCE_LABELS: Record<string, string> = {
+            tmdb: 'TMDB',
+            tvdb: 'TVDB',
+            simkl: 'SIMKL',
+            mal: 'MAL',
+            anilist: 'ANILIST',
+          };
+          
+          const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
+          
       const discoverMediaType = discoverSource === 'tmdb'
         ? tmdbMediaType
-        : discoverSource === 'anilist'
+        : (discoverSource === 'anilist' || discoverSource === 'mal')
           ? 'anime'
           : discoverSource === 'simkl'
             ? simklCatalogType
@@ -1526,15 +1702,16 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
           ? buildTvdbDiscoverApiUrl(catalogType, params)
           : discoverSource === 'simkl'
             ? buildSimklDiscoverApiUrl(simklMediaType, params)
+            : discoverSource === 'mal' ? `https://myanimelist.net/anime.php`
             : `https://anilist.co/search/anime`;
 
       const newCatalog: CatalogConfig = {
         id: catalogId,
-        type: discoverSource === 'anilist' ? 'anime' : discoverSource === 'simkl' ? simklCatalogType : catalogType,
+        type: (discoverSource === 'anilist' || discoverSource === 'mal') ? 'anime' : discoverSource === 'simkl' ? simklCatalogType : catalogType,
         name: catalogName.trim(),
         enabled: true,
         showInHome: true,
-        source: discoverSource === 'anilist' ? 'anilist' : discoverSource,
+        source: discoverSource,
         cacheTTL: Math.max(cacheTTL, 300),
         ...(displayType && { displayType }),
         metadata: {
@@ -1616,7 +1793,7 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
           </DialogDescription>
         </DialogHeader>
 
-        {!activeSourceApiKey && discoverSource !== 'anilist' && discoverSource !== 'simkl' && (
+        {!activeSourceApiKey && discoverSource !== 'anilist' && discoverSource !== 'mal' && discoverSource !== 'simkl' && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 flex-shrink-0" />
             <div className="space-y-1">
@@ -1670,12 +1847,13 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                           {hasSimklClientId ? 'Simkl' : 'Simkl (Disabled)'}
                         </SelectItem>
                         <SelectItem value="anilist">AniList</SelectItem>
+                        <SelectItem value="mal">MAL</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Content Type</Label>
-                    {discoverSource === 'anilist' ? (
+                    {(discoverSource === 'anilist' || discoverSource === 'mal') ? (
                     <div className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm">Anime</div>
                     ) : discoverSource === 'simkl' ? (
                       <Select value={simklMediaType} onValueChange={(value: SimklDiscoverMediaType) => setSimklMediaType(value)}>
@@ -1735,30 +1913,368 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                     </div>
                   )}
                   {discoverSource === 'anilist' && (
+                    <>
                     <div className="space-y-2">
-                    <Label>Format (select multiple)</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {ANILIST_FORMAT_OPTIONS.map(option => {
-                        const selected = anilistFormats.includes(option.value);
-                        return (
-                          <Button
-                            key={option.value} type="button" size="sm"
-                            variant={selected ? 'default' : 'outline'}
-                            onClick={() => setAnilistFormats(prev =>
-                              selected ? prev.filter(f => f !== option.value) : [...prev, option.value]
-                            )}
-                          >
-                            {option.label}
-                          </Button>
-                        );
-                      })}
+                      <Label>Format (select multiple)</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {ANILIST_FORMAT_OPTIONS.map(option => {
+                          const selected = anilistFormats.includes(option.value);
+                          return (
+                            <Button
+                              key={option.value} type="button" size="sm"
+                              variant={selected ? 'default' : 'outline'}
+                              onClick={() => setAnilistFormats(prev =>
+                                selected ? prev.filter(f => f !== option.value) : [...prev, option.value]
+                              )}
+                            >
+                              {option.label}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      {anilistFormats.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Selected: {anilistFormats.map(f => ANILIST_FORMAT_OPTIONS.find(o => o.value === f)?.label || f).join(', ')}
+                        </p>
+                      )}
                     </div>
-                    {anilistFormats.length > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Selected: {anilistFormats.map(f => ANILIST_FORMAT_OPTIONS.find(o => o.value === f)?.label || f).join(', ')}
-                      </p>
-                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Airing Status</Label>
+                        <Select value={anilistStatus || NONE_VALUE} onValueChange={(v) => setAnilistStatus(v === NONE_VALUE ? '' : v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {ANILIST_STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Season</Label>
+                        <Select value={anilistSeason || NONE_VALUE} onValueChange={(v) => setAnilistSeason(v === NONE_VALUE ? '' : v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {ANILIST_SEASON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="anilist-season-year">Season Year</Label>
+                        <Input id="anilist-season-year" type="number" min={1900} max={2100} placeholder="Any" value={anilistSeasonYear} onChange={(e) => setAnilistSeasonYear(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Country of Origin</Label>
+                        <Select value={anilistCountry || NONE_VALUE} onValueChange={(v) => setAnilistCountry(v === NONE_VALUE ? '' : v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {ANILIST_COUNTRY_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </>
+                  )}
+                  {discoverSource === 'mal' && (
+                  <div className="space-y-4">
+                    {/* Sort Direction */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Sort Direction</Label>
+                        <Select value={malSortDirection} onValueChange={setMalSortDirection}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {MAL_SORT_DIRECTION_OPTIONS.map(o => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Airing Status */}
+                      <div className="space-y-2">
+                        <Label>Airing Status</Label>
+                        <Select value={malStatus || NONE_VALUE} onValueChange={(v) => setMalStatus(v === NONE_VALUE ? '' : v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {MAL_STATUS_OPTIONS.map(o => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Type (multi-select toggle buttons) */}
+                    <div className="space-y-2">
+                      <Label>Type</Label>
+                      <Select value={malType || NONE_VALUE} onValueChange={(v) => setMalType(v === NONE_VALUE ? '' : v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                          {MAL_TYPE_OPTIONS.map(o => (
+                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Rating */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Content Rating</Label>
+                        <Select value={malRating || NONE_VALUE} onValueChange={(v) => setMalRating(v === NONE_VALUE ? '' : v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                            {MAL_RATING_OPTIONS.map(o => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* SFW toggle */}
+                      <div className="flex items-center justify-between rounded-md border p-3">
+                        <div>
+                          <Label className="text-sm">Safe for Work</Label>
+                          <p className="text-xs text-muted-foreground">Filter NSFW results.</p>
+                        </div>
+                        <Switch checked={malSfw} onCheckedChange={setMalSfw} />
+                      </div>
+                    </div>
                   </div>
+                  )}
+                  {discoverSource === 'mal' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Genres</CardTitle>
+                      <CardDescription>Include or exclude MAL genre categories.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {malAvailableGenres.length === 0 ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading MAL genres...
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Include Genres */}
+                          <div className="space-y-2">
+                            <Label>Include Genres</Label>
+                            <Select
+                              value={undefined}
+                              onValueChange={(value) => {
+                                const genre = malAvailableGenres.find(g => String(g.id) === value);
+                                if (genre && !malIncludeGenreIds.find(g => g.id === genre.id)) {
+                                  setMalIncludeGenreIds(prev => [...prev, { id: genre.id, label: genre.name }]);
+                                  setMalExcludeGenreIds(prev => prev.filter(g => g.id !== genre.id));
+                                }
+                              }}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Select genre to include" /></SelectTrigger>
+                              <SelectContent>
+                                {malAvailableGenres
+                                  .filter(g => !malIncludeGenreIds.find(ig => ig.id === g.id))
+                                  .map(genre => (
+                                    <SelectItem key={genre.id} value={String(genre.id)}>{genre.name}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            {malIncludeGenreIds.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {malIncludeGenreIds.map(genre => (
+                                  <Badge key={genre.id} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                    <span className="max-w-[180px] truncate">{genre.label}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMalIncludeGenreIds(prev => prev.filter(g => g.id !== genre.id))}
+                                      className="rounded-sm p-0.5 hover:bg-background/50"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No included genres</p>
+                            )}
+                          </div>
+
+                          {/* Exclude Genres */}
+                          <div className="space-y-2">
+                            <Label>Exclude Genres</Label>
+                            <Select
+                              value={undefined}
+                              onValueChange={(value) => {
+                                const genre = malAvailableGenres.find(g => String(g.id) === value);
+                                if (genre && !malExcludeGenreIds.find(g => g.id === genre.id)) {
+                                  setMalExcludeGenreIds(prev => [...prev, { id: genre.id, label: genre.name }]);
+                                  setMalIncludeGenreIds(prev => prev.filter(g => g.id !== genre.id));
+                                }
+                              }}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Select genre to exclude" /></SelectTrigger>
+                              <SelectContent>
+                                {malAvailableGenres
+                                  .filter(g => !malExcludeGenreIds.find(eg => eg.id === g.id))
+                                  .map(genre => (
+                                    <SelectItem key={genre.id} value={String(genre.id)}>{genre.name}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            {malExcludeGenreIds.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {malExcludeGenreIds.map(genre => (
+                                  <Badge key={genre.id} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                    <span className="max-w-[180px] truncate">{genre.label}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMalExcludeGenreIds(prev => prev.filter(g => g.id !== genre.id))}
+                                      className="rounded-sm p-0.5 hover:bg-background/50"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No excluded genres</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                  )}
+                  {discoverSource === 'mal' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Studio / Producer</CardTitle>
+                      <CardDescription>Filter by anime studio or production company.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Search studio (e.g. MAPPA, Bones, ufotable)"
+                          value={malStudioQuery}
+                          onChange={(e) => setMalStudioQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); searchMalStudios(malStudioQuery); }
+                          }}
+                        />
+                        <Button type="button" variant="outline"
+                          onClick={() => searchMalStudios(malStudioQuery)}
+                          disabled={isSearchingMalStudios || !malStudioQuery.trim()}>
+                          {isSearchingMalStudios ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                        </Button>
+                      </div>
+
+                      {/* Search results */}
+                      {malStudioResults.length > 0 && (
+                        <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                          {malStudioResults.map(studio => (
+                            <div key={studio.id} className="flex items-center justify-between gap-2 text-sm">
+                              <span className="truncate">{studio.name}</span>
+                              <Button type="button" variant="ghost" size="sm"
+                                disabled={malProducers.some(p => p.id === studio.id)}
+                                onClick={() => {
+                                  if (!malProducers.find(p => p.id === studio.id)) {
+                                    setMalProducers(prev => [...prev, { id: studio.id, label: studio.name }]);
+                                  }
+                                  setMalStudioResults([]);
+                                  setMalStudioQuery('');
+                                }}
+                              >
+                                {malProducers.some(p => p.id === studio.id) ? 'Added' : 'Add'}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Selected studios */}
+                      {malProducers.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {malProducers.map(producer => (
+                            <Badge key={producer.id} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                              <span className="max-w-[180px] truncate">{producer.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => setMalProducers(prev => prev.filter(p => p.id !== producer.id))}
+                                className="rounded-sm p-0.5 hover:bg-background/50"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No studios selected</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                  )}
+                  {discoverSource === 'mal' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Score &amp; Date Range</CardTitle>
+                      <CardDescription>Filter by MAL score and air dates.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Score range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Min Score: {malMinScore}</Label>
+                          <input
+                            type="range" min={0} max={10} step={0.5}
+                            value={malMinScore}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMalMinScore(val);
+                              if (val > malMaxScore) setMalMaxScore(val);
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Max Score: {malMaxScore}</Label>
+                          <input
+                            type="range" min={0} max={10} step={0.5}
+                            value={malMaxScore}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMalMaxScore(val);
+                              if (val < malMinScore) setMalMinScore(val);
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Date range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="mal-start-date">Aired After</Label>
+                          <Input
+                            id="mal-start-date" type="date"
+                            value={malStartDate}
+                            onChange={(e) => setMalStartDate(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mal-end-date">Aired Before</Label>
+                          <Input
+                            id="mal-end-date" type="date"
+                            value={malEndDate}
+                            onChange={(e) => setMalEndDate(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                   )}
                   <div className="space-y-2">
                     <Label htmlFor="discover-cache-ttl">Cache TTL (seconds)</Label>

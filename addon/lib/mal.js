@@ -761,6 +761,98 @@ async function getAvailableSeasons() {
     });
 }
 
+async function fetchDiscover(params = {}, page = 1) {
+  const JIKAN_PAGE_LIMIT = 25;
+  const queryParams = {
+    page: page,
+    limit: JIKAN_PAGE_LIMIT,
+  };
+
+  // order_by: score, popularity, rank, members, favorites, start_date, end_date, episodes, title
+  if (params.order_by) {
+    queryParams.order_by = params.order_by;
+  }
+
+  // sort: asc, desc
+  if (params.sort) {
+    queryParams.sort = params.sort;
+  }
+
+  // type: tv, movie, ova, special, ona
+  if (params.type) {
+      queryParams.type = params.type;
+  }
+
+  // status: airing, complete, upcoming
+  if (params.status) {
+    queryParams.status = params.status;
+  }
+
+  // rating: g, pg, pg13, r17, r, rx
+  if (params.rating) {
+    queryParams.rating = params.rating;
+  }
+
+  // genres: comma-separated MAL genre IDs (include)
+  if (params.genres) {
+    queryParams.genres = String(params.genres);
+  }
+
+  // genres_exclude: comma-separated MAL genre IDs (exclude)
+  if (params.genres_exclude) {
+    queryParams.genres_exclude = String(params.genres_exclude);
+  }
+
+  // producers: comma-separated MAL producer/studio IDs
+  if (params.producers) {
+    queryParams.producers = String(params.producers);
+  }
+
+  // min_score: 0-10
+  if (params.min_score && Number(params.min_score) > 0) {
+    queryParams.min_score = Number(params.min_score);
+  }
+
+  // max_score: 0-10
+  if (params.max_score && Number(params.max_score) < 10) {
+    queryParams.max_score = Number(params.max_score);
+  }
+
+  // start_date: YYYY-MM-DD (aired after)
+  if (params.start_date) {
+    queryParams.start_date = params.start_date;
+  }
+
+  // end_date: YYYY-MM-DD (aired before)
+  if (params.end_date) {
+    queryParams.end_date = params.end_date;
+  }
+
+  // sfw filter
+  if (params.sfw === true || params.sfw === 'true') {
+    queryParams.sfw = true;
+  }
+
+  const urlParams = new URLSearchParams(queryParams);
+  const url = `${JIKAN_API_BASE}/anime?${urlParams.toString()}`;
+
+  try {
+    const response = await enqueueRequest(() => _makeJikanRequest(url), url);
+    let animeList = response.data?.data || [];
+    const pagination = response.data?.pagination || {};
+
+    return {
+      items: animeList,
+      hasMore: pagination.has_next_page || false,
+      total: pagination.items?.total || animeList.length,
+      currentPage: pagination.current_page || page,
+    };
+  } catch (error) {
+    logger.error(`[MAL Discover] Error fetching discover: ${error.message}`);
+    throw error;
+  }
+}
+
 
 module.exports = {
   searchAnime,
@@ -781,4 +873,5 @@ module.exports = {
   getAnimeByStudio,
   getAnimeBySeason,
   getAvailableSeasons,
+  fetchDiscover
 };

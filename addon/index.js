@@ -1515,6 +1515,56 @@ addon.get("/api/anilist/discover/search/studio", async (req, res) => {
   }
 });
 
+// GET /api/mal/discover/reference - Get MAL genres and top studios for discover builder
+addon.get("/api/mal/discover/reference", async (req, res) => {
+  try {
+    const jikan = require('./lib/mal');
+    const { cacheWrapJikanApi } = require('./lib/getCache');
+
+    const genres = await cacheWrapJikanApi('anime-genres', async () => {
+      return await jikan.getAnimeGenres();
+    }, 24 * 60 * 60);
+
+    const studios = await cacheWrapJikanApi('mal-studios', async () => {
+      return await jikan.getStudios(100);
+    }, 24 * 60 * 60);
+
+    res.json({ genres: genres || [], studios: studios || [] });
+  } catch (error) {
+    console.error('[MAL Discover] Failed to fetch reference data:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to fetch MAL reference data' });
+  }
+});
+
+// GET /api/mal/discover/search/producer - Search MAL studios/producers by name
+addon.get("/api/mal/discover/search/producer", async (req, res) => {
+  try {
+    const query = req.query.query.trim();
+    if (!query) {
+      return res.json({ results: [] });
+    }
+
+    const { httpGet } = require('./utils/httpClient');
+    const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
+
+    const url = `${JIKAN_API_BASE}/producers?q=${encodeURIComponent(query)}&limit=20&order_by=favorites&sort=desc`;
+    const response = await httpGet(url, { timeout: 15000 });
+
+    const producers = (response.data?.data || []).map((p) => {
+      const defaultTitle = p.titles?.find((t) => t.type === 'Default');
+      return {
+        id: p.mal_id,
+        name: defaultTitle?.title || p.name || `Producer ${p.mal_id}`,
+      };
+    });
+
+    res.json({ results: producers });
+  } catch (error) {
+    console.error('[MAL Discover] Failed to search producers:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to search MAL producers' });
+  }
+});
+
 // Proxy: TVDB discover searchable entities
 addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
   try {
@@ -2709,7 +2759,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
   // Discover custom catalogs use discover params (include hash for safe cache invalidation)
-  else if (cleanId.startsWith('tmdb.discover.') || cleanId.startsWith('tvdb.discover.') || cleanId.startsWith('simkl.discover.')) {
+  else if (cleanId.startsWith('tmdb.discover.') || cleanId.startsWith('tvdb.discover.') || cleanId.startsWith('simkl.discover.') || cleanId.startsWith('anilist.discover.') || cleanId.startsWith('mal.discover.')) {
     const discoverParams =
       catalogConfig?.metadata?.discover?.params ||
       catalogConfig?.metadata?.discoverParams ||
