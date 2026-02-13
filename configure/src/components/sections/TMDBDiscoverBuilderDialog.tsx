@@ -550,7 +550,24 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     airDateFrom,
     airDateTo,
     catalogType,
-    references
+    references,
+    anilistFormats,
+    anilistStatus,
+    anilistSeason,
+    anilistSeasonYear,
+    anilistCountry,
+    anilistSelectedStudios,
+    anilistIncludeGenres,
+    anilistExcludeGenres,
+    anilistIncludeTags,
+    anilistExcludeTags,
+    anilistScoreRange,
+    anilistPopularityMin,
+    anilistEpisodesRange,
+    anilistDurationRange,
+    anilistIsAdult,
+    anilistStartDateFrom,
+    anilistStartDateTo
   ]);
 
   const activeFilterCount = useMemo(() => {
