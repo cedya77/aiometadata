@@ -918,166 +918,179 @@ async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {
 }
 
 async function getAllLanguages(config: UserConfig): Promise<TvdbLanguageRecord[]> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return [];
+  return cacheWrapTvdbApi(`tvdb-languages`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return [];
 
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/languages`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/languages`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
 
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
 
-    return (response.data as any)?.data || [];
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return (response.data as any)?.data || [];
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
 
-    logger.error(`[getAllLanguages] Error getting TVDB languages:`, (error as Error).message);
-    return [];
-  }
+      logger.error(`[getAllLanguages] Error getting TVDB languages:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function getAllCountries(config: UserConfig): Promise<TvdbCountryRecord[]> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return [];
+  return cacheWrapTvdbApi(`tvdb-countries`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return [];
 
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/countries`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/countries`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
 
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
 
-    return (response.data as any)?.data || [];
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return (response.data as any)?.data || [];
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
 
-    logger.error(`[getAllCountries] Error getting TVDB countries:`, (error as Error).message);
-    return [];
-  }
+      logger.error(`[getAllCountries] Error getting TVDB countries:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function getAllContentRatings(config: UserConfig): Promise<TvdbContentRatingRecord[]> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return [];
+  return cacheWrapTvdbApi(`tvdb-content-ratings`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return [];
 
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/content/ratings`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/content/ratings`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
 
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
 
-    return (response.data as any)?.data || [];
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return (response.data as any)?.data || [];
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
 
-    logger.error(`[getAllContentRatings] Error getting TVDB content ratings:`, (error as Error).message);
-    return [];
-  }
+      logger.error(`[getAllContentRatings] Error getting TVDB content ratings:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function getCompanyTypes(config: UserConfig): Promise<TvdbCompanyTypeRecord[]> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return [];
+  return cacheWrapTvdbApi(`tvdb-company-types`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return [];
 
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/companies/types`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/companies/types`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
 
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
 
-    return (response.data as any)?.data || [];
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return (response.data as any)?.data || [];
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
 
-    logger.error(`[getCompanyTypes] Error getting TVDB company types:`, (error as Error).message);
-    return [];
-  }
+      logger.error(`[getCompanyTypes] Error getting TVDB company types:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function getStatuses(type: 'movies' | 'series', config: UserConfig): Promise<TvdbStatusRecord[]> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return [];
+  const cacheKey = `tvdb-statuses:${type}`
+  return cacheWrapTvdbApi(cacheKey, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return [];
 
-  const startTime = Date.now();
-  try {
-    const endpoint = type === 'movies' ? '/movies/statuses' : '/series/statuses';
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}${endpoint}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const startTime = Date.now();
+    try {
+      const endpoint = type === 'movies' ? '/movies/statuses' : '/series/statuses';
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}${endpoint}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
 
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
 
-    return (response.data as any)?.data || [];
-  } catch (error) {
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
+      return (response.data as any)?.data || [];
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
 
-    logger.error(`[getStatuses] Error getting TVDB ${type} statuses:`, (error as Error).message);
-    return [];
-  }
+      logger.error(`[getStatuses] Error getting TVDB ${type} statuses:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function filter(type: 'movies' | 'series', params: any, config: UserConfig): Promise<TvdbFilterResult[]> {
-  const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
-  if (!token) return [];
-  
-  const startTime = Date.now();
-  try {
-    const queryParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        queryParams.append(key, String(value));
-      }
-    });
+  return cacheWrapTvdbApi(`tvdb-filter:${type}`, async () => {
+    const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
+    if (!token) return [];
     
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    
-    const responseTime = Date.now() - startTime;
-    
-    // Track successful request
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
-    
-    const results = (response.data as any)?.data || [];
-    
-    return results;
-  } catch (error) {
-    // Track failed request
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
-    
-    logger.error(`[filter] Error filtering TVDB ${type}:`, (error as Error).message);
-    return [];
-  }
+    const startTime = Date.now();
+    try {
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, String(value));
+        }
+      });
+      
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+      
+      const results = (response.data as any)?.data || [];
+      
+      return results;
+    } catch (error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+      
+      logger.error(`[filter] Error filtering TVDB ${type}:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function getSeasonExtended(seasonId: string, config: UserConfig): Promise<TvdbSeasonExtended | null> {

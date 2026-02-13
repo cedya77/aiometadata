@@ -855,7 +855,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     if (discoverSource === 'tvdb') {
       const tvdbParams: Record<string, string | number | boolean> = {
         sort: sortBy,
-        country: (originCountry || references?.defaultCountry || 'usa').toLowerCase(),
+        country: (originCountry || 'usa' || references?.defaultCountry || 'usa').toLowerCase(),
         lang: (originalLanguage || references?.defaultLanguage || 'eng').toLowerCase(),
       };
 

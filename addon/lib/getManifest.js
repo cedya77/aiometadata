@@ -337,12 +337,14 @@ function createTMDBDiscoverCatalog(userCatalog, showPrefix = false) {
     logger.info(`Creating TMDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
 
     const catalogType = userCatalog.displayType || userCatalog.type;
+    const genreOptions = ['None'];
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
       name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
       showInHome: userCatalog.showInHome
@@ -361,12 +363,14 @@ function createTVDBDiscoverCatalog(userCatalog, showPrefix = false) {
     logger.info(`Creating TVDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
 
     const catalogType = userCatalog.displayType || userCatalog.type;
+    const genreOptions = ['None'];
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
       name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
       showInHome: userCatalog.showInHome

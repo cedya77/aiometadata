@@ -424,6 +424,8 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
         catalogId.startsWith('simkl.') ||
+        catalogId.startsWith('tmdb.discover') ||
+        catalogId.startsWith('tvdb.discover') ||
         catalogId === 'tmdb.top' ||
         catalogId === 'tvmaze.schedule' ||
         catalogId === 'tmdb.airing_today' ||
@@ -523,6 +525,20 @@ class ComprehensiveCatalogWarmer {
           if (catalogConfig) {
             if (catalogConfig.sort) extraArgs.sort = catalogConfig.sort;
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
+          }
+        }
+        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.')) {
+          const discoverParams =
+            catalogConfig?.metadata?.discover?.params ||
+            catalogConfig?.metadata?.discoverParams ||
+            null;
+          if (discoverParams && typeof discoverParams === 'object') {
+            const discoverSignature = crypto
+              .createHash('md5')
+              .update(stableStringify(discoverParams))
+              .digest('hex')
+              .substring(0, 8);
+            extraArgs.discoverSig = discoverSignature;
           }
         }
         else if (catalogId.startsWith('mdblist.')) {
