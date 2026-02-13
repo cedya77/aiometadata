@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as Utils from '../utils/parseProps.js';
@@ -2009,6 +2009,132 @@ async function getLetterboxdCatalog(
   }
 }
 
+type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
+
+function sanitizeSimklDiscoverParams(
+  rawParams: any,
+  catalogType: string
+): {
+  media: SimklDiscoverMediaType;
+  genre: string;
+  type: string;
+  country?: string;
+  network?: string;
+  year: string;
+  sort: string;
+} {
+  const normalize = (value: any): string => {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase();
+  };
+
+  const rawMedia = normalize(rawParams?.media);
+  const defaultMedia: SimklDiscoverMediaType = catalogType === 'movie'
+    ? 'movies'
+    : catalogType === 'anime'
+      ? 'anime'
+      : 'shows';
+  const media: SimklDiscoverMediaType = rawMedia === 'movies' || rawMedia === 'shows' || rawMedia === 'anime'
+    ? rawMedia
+    : defaultMedia;
+
+  const movieGenres = new Set([
+    'all', 'action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 'drama', 'family', 'fantasy',
+    'history', 'horror', 'music', 'mystery', 'romance', 'science-fiction', 'thriller', 'tv-movie', 'war', 'western'
+  ]);
+  const tvGenres = new Set([
+    'all', 'action', 'adventure', 'animation', 'awards-show', 'children', 'comedy', 'crime', 'documentary', 'drama',
+    'family', 'fantasy', 'food', 'game-show', 'history', 'home-and-garden', 'horror', 'indie', 'korean-drama',
+    'martial-arts', 'mini-series', 'musical', 'mystery', 'news', 'podcast', 'reality', 'romance', 'science-fiction',
+    'soap', 'special-interest', 'sport', 'suspense', 'talk-show', 'thriller', 'travel', 'video-game-play', 'war', 'western'
+  ]);
+  const animeGenres = new Set([
+    'all', 'action', 'adventure', 'comedy', 'drama', 'ecchi', 'educational', 'fantasy', 'gag-humor', 'gore', 'harem',
+    'historical', 'horror', 'idol', 'isekai', 'josei', 'kids', 'magic', 'martial-arts', 'mecha', 'military', 'music',
+    'mystery', 'mythology', 'parody', 'psychological', 'racing', 'reincarnation', 'romance', 'samurai', 'school',
+    'sci-fi', 'seinen', 'shoujo', 'shoujo-ai', 'shounen', 'shounen-ai', 'slice-of-life', 'space', 'sports',
+    'strategy-game', 'super-power', 'supernatural', 'thriller', 'vampire', 'yaoi', 'yuri'
+  ]);
+
+  const movieSorts = new Set(['popular-this-week', 'popular-this-month', 'rank', 'votes', 'budget', 'revenue', 'release-date', 'most-anticipated', 'a-z', 'z-a']);
+  const tvAnimeSorts = new Set(['popular-today', 'popular-this-week', 'popular-this-month', 'rank', 'votes', 'release-date', 'last-air-date', 'a-z', 'z-a']);
+
+  const movieYears = new Set(['this-week', 'this-month', 'this-year', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012', '2011', '2010s', '2000s', '1990s', '1980s', '1970s', '1960s']);
+  const tvAnimeYears = new Set(['all-years', 'today', 'this-week', 'this-month', 'this-year', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012', '2011', '2010s', '2000s', '1990s', '1980s', '1970s', '1960s']);
+
+  const tvTypes = new Set(['all-types', 'tv-shows', 'entertainment', 'documentaries', 'animation-filter']);
+  const animeTypes = new Set(['all-types', 'series', 'movies', 'ovas', 'onas']);
+
+  const movieCountries = new Set(['all', 'us', 'uk', 'ca', 'kr']);
+  const tvCountries = new Set(['all', 'us', 'uk', 'ca', 'kr', 'jp']);
+
+  const tvNetworks = new Set([
+    'all-networks', 'netflix', 'disney', 'peacock', 'appletv', 'quibi', 'cbs', 'abc', 'fox', 'cw', 'hbo', 'showtime',
+    'usa', 'syfy', 'tnt', 'fx', 'amc', 'abcfam', 'showcase', 'starz', 'mtv', 'lifetime', 'ae', 'tvland'
+  ]);
+  const animeNetworks = new Set([
+    'all-networks', 'tvtokyo', 'tokyomx', 'fujitv', 'tokyobroadcastingsystem', 'tvasahi', 'wowow', 'ntv', 'atx',
+    'ctc', 'nhk', 'mbs', 'animax', 'cartoonnetwork', 'abc'
+  ]);
+
+  const pick = (value: string, allowed: Set<string>, fallback: string): string => {
+    if (!value) return fallback;
+    return allowed.has(value) ? value : fallback;
+  };
+
+  const genre = media === 'movies'
+    ? pick(normalize(rawParams?.genre), movieGenres, 'all')
+    : media === 'shows'
+      ? pick(normalize(rawParams?.genre), tvGenres, 'all')
+      : pick(normalize(rawParams?.genre), animeGenres, 'all');
+
+  const type = media === 'movies'
+    ? 'all-types'
+    : media === 'shows'
+      ? pick(normalize(rawParams?.type), tvTypes, 'all-types')
+      : pick(normalize(rawParams?.type), animeTypes, 'all-types');
+
+  const year = media === 'movies'
+    ? pick(normalize(rawParams?.year), movieYears, 'this-year')
+    : pick(normalize(rawParams?.year), tvAnimeYears, 'all-years');
+
+  const sort = media === 'movies'
+    ? pick(normalize(rawParams?.sort), movieSorts, 'popular-this-week')
+    : pick(normalize(rawParams?.sort), tvAnimeSorts, 'popular-today');
+
+  if (media === 'movies') {
+    return {
+      media,
+      genre,
+      type,
+      country: pick(normalize(rawParams?.country), movieCountries, 'all'),
+      year,
+      sort,
+    };
+  }
+
+  if (media === 'shows') {
+    return {
+      media,
+      genre,
+      type,
+      country: pick(normalize(rawParams?.country), tvCountries, 'all'),
+      network: pick(normalize(rawParams?.network), tvNetworks, 'all-networks'),
+      year,
+      sort,
+    };
+  }
+
+  return {
+    media,
+    genre,
+    type,
+    network: pick(normalize(rawParams?.network), animeNetworks, 'all-networks'),
+    year,
+    sort,
+  };
+}
+
 /**
  * Get Simkl catalog items
  * Handles 'simkl.*' catalog IDs (e.g., simkl.trending.movies, simkl.trending.shows, simkl.trending.anime)
@@ -2034,10 +2160,26 @@ async function getSimklCatalog(
     const pageSize = catalogId.startsWith('simkl.watchlist.')
       ? parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20')
       : (catalogConfig?.metadata?.pageSize || 50);
+    const discoverPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
     
     let response: any;
     
-    if (catalogId === 'simkl.trending.movies') {
+    if (catalogId.startsWith('simkl.discover.')) {
+      const discoverMetadata = catalogConfig?.metadata?.discover || {};
+      const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+      const discoverParams = sanitizeSimklDiscoverParams(rawParams, type);
+      logger.debug(`[Simkl Discover] Fetching with params: ${JSON.stringify(discoverParams)}`);
+
+      const result = await fetchSimklGenreItems(
+        discoverParams.media,
+        discoverParams,
+        page,
+        discoverPageSize,
+        catalogConfig?.cacheTTL
+      );
+
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else if (catalogId === 'simkl.trending.movies') {
       const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase()) 
         ? genre.toLowerCase() as 'today' | 'week' | 'month'
         : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'today';
@@ -2221,7 +2363,11 @@ async function getSimklCatalog(
       return [];
     }
     
-    const isAnimeCatalog = catalogId === 'simkl.trending.anime' || catalogId.startsWith('simkl.watchlist.anime.') || catalogId === 'simkl.calendar' || catalogId === 'simkl.calendar.anime';
+    const isAnimeCatalog = catalogId === 'simkl.trending.anime'
+      || catalogId.startsWith('simkl.watchlist.anime.')
+      || catalogId === 'simkl.calendar'
+      || catalogId === 'simkl.calendar.anime'
+      || catalogId.startsWith('simkl.discover.anime.');
     const parseStart = Date.now();
     let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID, includeVideos, isAnimeCatalog);
     const parseTime = Date.now() - parseStart;

@@ -19,7 +19,8 @@ interface TMDBDiscoverBuilderDialogProps {
 
 type CatalogMediaType = 'movie' | 'series';
 type TmdbMediaType = 'movie' | 'tv';
-type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist';
+type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl';
+type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
@@ -207,6 +208,80 @@ const ANILIST_GENRES = [
   'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller',
 ] as const;
 
+const SIMKL_MEDIA_OPTIONS: Array<{ value: SimklDiscoverMediaType; label: string }> = [
+  { value: 'movies', label: 'Movies' },
+  { value: 'shows', label: 'Series' },
+  { value: 'anime', label: 'Anime' },
+];
+
+const SIMKL_MOVIE_GENRE_OPTIONS = [
+  'all', 'action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 'drama', 'family',
+  'fantasy', 'history', 'horror', 'music', 'mystery', 'romance', 'science-fiction', 'thriller',
+  'tv-movie', 'war', 'western'
+] as const;
+
+const SIMKL_TV_GENRE_OPTIONS = [
+  'all', 'action', 'adventure', 'animation', 'awards-show', 'children', 'comedy', 'crime',
+  'documentary', 'drama', 'family', 'fantasy', 'food', 'game-show', 'history', 'home-and-garden',
+  'horror', 'indie', 'korean-drama', 'martial-arts', 'mini-series', 'musical', 'mystery', 'news',
+  'podcast', 'reality', 'romance', 'science-fiction', 'soap', 'special-interest', 'sport', 'suspense',
+  'talk-show', 'thriller', 'travel', 'video-game-play', 'war', 'western'
+] as const;
+
+const SIMKL_ANIME_GENRE_OPTIONS = [
+  'all', 'action', 'adventure', 'comedy', 'drama', 'ecchi', 'educational', 'fantasy', 'gag-humor',
+  'gore', 'harem', 'historical', 'horror', 'idol', 'isekai', 'josei', 'kids', 'magic',
+  'martial-arts', 'mecha', 'military', 'music', 'mystery', 'mythology', 'parody', 'psychological',
+  'racing', 'reincarnation', 'romance', 'samurai', 'school', 'sci-fi', 'seinen', 'shoujo',
+  'shoujo-ai', 'shounen', 'shounen-ai', 'slice-of-life', 'space', 'sports', 'strategy-game',
+  'super-power', 'supernatural', 'thriller', 'vampire', 'yaoi', 'yuri'
+] as const;
+
+const SIMKL_TV_TYPE_OPTIONS = ['all-types', 'tv-shows', 'entertainment', 'documentaries', 'animation-filter'] as const;
+const SIMKL_ANIME_TYPE_OPTIONS = ['all-types', 'series', 'movies', 'ovas', 'onas'] as const;
+const SIMKL_MOVIE_COUNTRY_OPTIONS = ['all', 'us', 'uk', 'ca', 'kr'] as const;
+const SIMKL_TV_COUNTRY_OPTIONS = ['all', 'us', 'uk', 'ca', 'kr', 'jp'] as const;
+const SIMKL_TV_NETWORK_OPTIONS = [
+  'all-networks', 'netflix', 'disney', 'peacock', 'appletv', 'quibi', 'cbs', 'abc', 'fox', 'cw', 'hbo',
+  'showtime', 'usa', 'syfy', 'tnt', 'fx', 'amc', 'abcfam', 'showcase', 'starz', 'mtv', 'lifetime',
+  'ae', 'tvland'
+] as const;
+const SIMKL_ANIME_NETWORK_OPTIONS = [
+  'all-networks', 'tvtokyo', 'tokyomx', 'fujitv', 'tokyobroadcastingsystem', 'tvasahi', 'wowow',
+  'ntv', 'atx', 'ctc', 'nhk', 'mbs', 'animax', 'cartoonnetwork', 'abc'
+] as const;
+const SIMKL_MOVIE_YEAR_OPTIONS = [
+  'this-week', 'this-month', 'this-year', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012',
+  '2011', '2010s', '2000s', '1990s', '1980s', '1970s', '1960s'
+] as const;
+const SIMKL_TV_ANIME_YEAR_OPTIONS = [
+  'all-years', 'today', 'this-week', 'this-month', 'this-year', '2019', '2018', '2017', '2016',
+  '2015', '2014', '2013', '2012', '2011', '2010s', '2000s', '1990s', '1980s', '1970s', '1960s'
+] as const;
+const SIMKL_MOVIE_SORT_OPTIONS = [
+  { value: 'popular-this-week', label: 'Popular This Week' },
+  { value: 'popular-this-month', label: 'Popular This Month' },
+  { value: 'rank', label: 'Rank' },
+  { value: 'votes', label: 'Votes' },
+  { value: 'budget', label: 'Budget' },
+  { value: 'revenue', label: 'Revenue' },
+  { value: 'release-date', label: 'Release Date' },
+  { value: 'most-anticipated', label: 'Most Anticipated' },
+  { value: 'a-z', label: 'A-Z' },
+  { value: 'z-a', label: 'Z-A' },
+] as const;
+const SIMKL_TV_ANIME_SORT_OPTIONS = [
+  { value: 'popular-today', label: 'Popular Today' },
+  { value: 'popular-this-week', label: 'Popular This Week' },
+  { value: 'popular-this-month', label: 'Popular This Month' },
+  { value: 'rank', label: 'Rank' },
+  { value: 'votes', label: 'Votes' },
+  { value: 'release-date', label: 'Release Date' },
+  { value: 'last-air-date', label: 'Last Air Date' },
+  { value: 'a-z', label: 'A-Z' },
+  { value: 'z-a', label: 'Z-A' },
+] as const;
+
 const NONE_VALUE = '__none__';
 const MAX_VOTE_COUNT = 5000;
 const MAX_RUNTIME_MINUTES = 400;
@@ -311,6 +386,45 @@ function buildTvdbDiscoverApiUrl(
   return `https://api4.thetvdb.com/v4/${endpoint}/filter?${search.toString()}`;
 }
 
+function buildSimklDiscoverApiUrl(
+  mediaType: SimklDiscoverMediaType,
+  params: Record<string, string | number | boolean | null | undefined>
+): string {
+  const normalizedMedia = mediaType === 'movies' ? 'movies' : mediaType === 'shows' ? 'tv' : 'anime';
+  const genre = String(params.genre || 'all');
+  const type = String(params.type || 'all-types');
+  const country = String(params.country || 'all');
+  const network = String(params.network || 'all-networks');
+  const year = String(params.year || (mediaType === 'movies' ? 'this-year' : 'all-years'));
+  const sort = String(params.sort || 'popular-this-week');
+
+  const pathSegments = mediaType === 'movies'
+    ? [genre, type, country, year, sort]
+    : mediaType === 'shows'
+      ? [genre, type, country, network, year, sort]
+      : [genre, type, network, year, sort];
+
+  return `https://api.simkl.com/${normalizedMedia}/genres/${pathSegments.map(encodeURIComponent).join('/')}`;
+}
+
+function formatSimklOptionLabel(value: string): string {
+  if (value === 'animation-filter') return 'Animation';
+  const normalized = value.replace(/-/g, ' ');
+  return normalized.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getSimklDefaultType(mediaType: SimklDiscoverMediaType): string {
+  return 'all-types';
+}
+
+function getSimklDefaultYear(mediaType: SimklDiscoverMediaType): string {
+  return mediaType === 'movies' ? 'this-year' : 'all-years';
+}
+
+function getSimklDefaultSort(mediaType: SimklDiscoverMediaType): string {
+  return mediaType === 'movies' ? 'popular-this-week' : 'popular-today';
+}
+
 function normalizeTvdbCode(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
@@ -328,10 +442,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
+  const simklClientId = (config.apiKeys as Record<string, string | undefined>).simkl?.trim() || '';
+  const hasSimklClientId = simklClientId.length > 0;
 
   const buildDiscoverRequestQuery = (source: DiscoverSource, params: Record<string, string>): string => {
     const searchParams = new URLSearchParams(params);
-    const apiKey = source === 'tmdb' ? tmdbApiKey : tvdbApiKey;
+    const apiKey = source === 'tmdb' ? tmdbApiKey : source === 'tvdb' ? tvdbApiKey : '';
     if (apiKey) {
       searchParams.set('apikey', apiKey);
     }
@@ -344,10 +460,16 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const [discoverSource, setDiscoverSource] = useState<DiscoverSource>('tmdb');
   const [catalogName, setCatalogName] = useState('');
   const [catalogType, setCatalogType] = useState<CatalogMediaType>('movie');
+  const [simklMediaType, setSimklMediaType] = useState<SimklDiscoverMediaType>('movies');
   const [sortBy, setSortBy] = useState('popularity.desc');
   const [tvdbSortDirection, setTvdbSortDirection] = useState<'asc' | 'desc'>('desc');
   const [tvdbStatus, setTvdbStatus] = useState('');
   const [tvdbYear, setTvdbYear] = useState('');
+  const [simklGenre, setSimklGenre] = useState('all');
+  const [simklType, setSimklType] = useState(getSimklDefaultType('movies'));
+  const [simklCountry, setSimklCountry] = useState('all');
+  const [simklNetwork, setSimklNetwork] = useState('all-networks');
+  const [simklYear, setSimklYear] = useState(getSimklDefaultYear('movies'));
   const [includeAdult, setIncludeAdult] = useState<boolean>(config.includeAdult);
   const [releasedOnly, setReleasedOnly] = useState<boolean>(false);
   const [cacheTTL, setCacheTTL] = useState<number>(Math.max(catalogTTL, 300));
@@ -440,15 +562,54 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const tmdbMediaType = toTmdbMediaType(catalogType);
-  const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : discoverSource === 'tvdb' ? 'TVDB' : 'AniList';
-  const activeSourceApiKey = discoverSource === 'tmdb' ? tmdbApiKey : discoverSource === 'tvdb' ? tvdbApiKey : 'anilist-public';
+  const sourceLabel = discoverSource === 'tmdb'
+    ? 'TMDB'
+    : discoverSource === 'tvdb'
+      ? 'TVDB'
+      : discoverSource === 'simkl'
+        ? 'Simkl'
+        : 'AniList';
+  const activeSourceApiKey = discoverSource === 'tmdb'
+    ? tmdbApiKey
+    : discoverSource === 'tvdb'
+      ? tvdbApiKey
+      : discoverSource === 'simkl'
+        ? simklClientId
+        : 'anilist-public';
   const sortOptions = useMemo(() => {
     if (discoverSource === 'anilist') return ANILIST_SORT_OPTIONS;
+    if (discoverSource === 'simkl') {
+      return simklMediaType === 'movies' ? SIMKL_MOVIE_SORT_OPTIONS : SIMKL_TV_ANIME_SORT_OPTIONS;
+    }
     if (discoverSource === 'tvdb') {
       return catalogType === 'movie' ? TVDB_MOVIE_SORT_OPTIONS : TVDB_SERIES_SORT_OPTIONS;
     }
     return catalogType === 'movie' ? MOVIE_SORT_OPTIONS : TV_SORT_OPTIONS;
-  }, [discoverSource, catalogType]);
+  }, [discoverSource, catalogType, simklMediaType]);
+
+  const simklGenreOptions = useMemo(() => {
+    return simklMediaType === 'movies'
+      ? SIMKL_MOVIE_GENRE_OPTIONS
+      : simklMediaType === 'shows'
+        ? SIMKL_TV_GENRE_OPTIONS
+        : SIMKL_ANIME_GENRE_OPTIONS;
+  }, [simklMediaType]);
+
+  const simklTypeOptions = useMemo(() => {
+    return simklMediaType === 'anime' ? SIMKL_ANIME_TYPE_OPTIONS : SIMKL_TV_TYPE_OPTIONS;
+  }, [simklMediaType]);
+
+  const simklCountryOptions = useMemo(() => {
+    return simklMediaType === 'movies' ? SIMKL_MOVIE_COUNTRY_OPTIONS : SIMKL_TV_COUNTRY_OPTIONS;
+  }, [simklMediaType]);
+
+  const simklNetworkOptions = useMemo(() => {
+    return simklMediaType === 'anime' ? SIMKL_ANIME_NETWORK_OPTIONS : SIMKL_TV_NETWORK_OPTIONS;
+  }, [simklMediaType]);
+
+  const simklYearOptions = useMemo(() => {
+    return simklMediaType === 'movies' ? SIMKL_MOVIE_YEAR_OPTIONS : SIMKL_TV_ANIME_YEAR_OPTIONS;
+  }, [simklMediaType]);
 
   const sortedGenres = useMemo(
     () => (references?.genres || []).slice().sort((a, b) => a.name.localeCompare(b.name)),
@@ -515,10 +676,16 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     discoverSource,
+    simklMediaType,
     sortBy,
     tvdbSortDirection,
     tvdbStatus,
     tvdbYear,
+    simklGenre,
+    simklType,
+    simklCountry,
+    simklNetwork,
+    simklYear,
     includeAdult,
     releasedOnly,
     includeGenres,
@@ -575,6 +742,8 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
       ? new Set(['sort_by', 'include_adult'])
       : discoverSource === 'tvdb'
            ? new Set(['sort', 'sortType', 'country', 'lang'])
+           : discoverSource === 'simkl'
+             ? new Set(['media', 'sort'])
            : new Set(['sort', 'isAdult']);
     return Object.keys(discoverParamsPreview).filter(key => !baseKeys.has(key)).length;
   }, [discoverParamsPreview, discoverSource]);
@@ -583,10 +752,16 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     setDiscoverSource('tmdb');
     setCatalogName('');
     setCatalogType('movie');
+    setSimklMediaType('movies');
     setSortBy('popularity.desc');
     setTvdbSortDirection('desc');
     setTvdbStatus('');
     setTvdbYear('');
+    setSimklGenre('all');
+    setSimklType(getSimklDefaultType('movies'));
+    setSimklCountry('all');
+    setSimklNetwork('all-networks');
+    setSimklYear(getSimklDefaultYear('movies'));
     setIncludeAdult(config.includeAdult);
     setReleasedOnly(false);
     setCacheTTL(Math.max(catalogTTL, 300));
@@ -695,7 +870,12 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     setAvailableProviders([]);
     setTvdbStatus('');
     setTvdbYear('');
-  }, [catalogType, discoverSource]);
+    setSimklGenre('all');
+    setSimklType(getSimklDefaultType(simklMediaType));
+    setSimklCountry('all');
+    setSimklNetwork('all-networks');
+    setSimklYear(getSimklDefaultYear(simklMediaType));
+  }, [catalogType, discoverSource, simklMediaType]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -740,6 +920,10 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
           if (Array.isArray(data.tags)) {
             setAnilistAvailableTags(data.tags.map((t: any) => typeof t === 'string' ? t : t.name));
           }
+          setReferences(null);
+          return;
+        }
+        if (discoverSource === 'simkl') {
           setReferences(null);
           return;
         }
@@ -860,7 +1044,13 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
         setAvailableProviders([]);
       } catch (error) {
         if (cancelled) return;
-        const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+        const sourceLabel = discoverSource === 'tmdb'
+          ? 'TMDB'
+          : discoverSource === 'tvdb'
+            ? 'TVDB'
+            : discoverSource === 'simkl'
+              ? 'Simkl'
+              : 'AniList';
         console.error(`[${sourceLabel} Discover] Failed to load reference data:`, error);
         toast.error(`Failed to load ${sourceLabel} discover data`, {
           description: error instanceof Error ? error.message : 'Unknown error'
@@ -943,6 +1133,11 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
     setLoading(true);
     try {
       const normalizedQuery = query.trim();
+      if (discoverSource === 'simkl' || discoverSource === 'anilist') {
+        setResults([]);
+        setActiveSearchDropdown(null);
+        return;
+      }
       if (discoverSource === 'tvdb' && entity !== 'company') {
         setResults([]);
         setActiveSearchDropdown(null);
@@ -970,7 +1165,7 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
       setResults(normalizedResults);
       setActiveSearchDropdown(normalizedResults.length > 0 ? entity : null);
     } catch (error) {
-      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : discoverSource === 'tvdb' ? 'TVDB' : 'Simkl';
       console.error(`[${sourceLabel} Discover] Failed to search ${entity}:`, error);
       toast.error(`Failed to search ${entity}`, {
         description: error instanceof Error ? error.message : 'Unknown error'
@@ -1008,6 +1203,35 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
   });
 
   function buildDiscoverParams(): Record<string, string | number | boolean> {
+
+    if (discoverSource === 'simkl') {
+      const simklParams: Record<string, string | number | boolean> = {
+        media: simklMediaType,
+        sort: sortBy,
+      };
+
+      if (simklGenre && simklGenre !== 'all') {
+        simklParams.genre = simklGenre;
+      }
+
+      if (simklMediaType !== 'movies' && simklType && simklType !== getSimklDefaultType(simklMediaType)) {
+        simklParams.type = simklType;
+      }
+
+      if (simklMediaType !== 'anime' && simklCountry && simklCountry !== 'all') {
+        simklParams.country = simklCountry;
+      }
+
+      if (simklMediaType !== 'movies' && simklNetwork && simklNetwork !== 'all-networks') {
+        simklParams.network = simklNetwork;
+      }
+
+      if (simklYear && simklYear !== getSimklDefaultYear(simklMediaType)) {
+        simklParams.year = simklYear;
+      }
+
+      return simklParams;
+    }
 
     if (discoverSource === 'anilist') {
       const anilistParams: Record<string, string | number | boolean> = {
@@ -1252,18 +1476,53 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
         .replace(/^_+|_+$/g, '')
         .slice(0, 40) || 'catalog';
       const uniqueSuffix = Date.now().toString(36);
-      const sourcePrefix = discoverSource === 'tmdb' ? 'tmdb.discover' : discoverSource === 'tvdb' ? 'tvdb.discover' : 'anilist.discover';
-      const catalogId = `${sourcePrefix}.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
-      const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
-      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : discoverSource === 'tvdb' ? 'TVDB' : 'ANILIST';
-      const discoverMediaType = discoverSource === 'tmdb' ? tmdbMediaType : discoverSource === 'anilist' ? 'anime' : catalogType;
+      const simklCatalogType = simklMediaType === 'movies' ? 'movie' : simklMediaType === 'shows' ? 'series' : 'anime';
+      const sourcePrefix = discoverSource === 'tmdb'
+        ? 'tmdb.discover'
+        : discoverSource === 'tvdb'
+          ? 'tvdb.discover'
+          : discoverSource === 'simkl'
+            ? 'simkl.discover'
+            : 'anilist.discover';
+      const catalogTypeSegment = discoverSource === 'simkl'
+        ? simklMediaType
+        : discoverSource === 'anilist'
+          ? 'anime'
+          : catalogType;
+      const catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
+      const displayType = discoverSource === 'simkl' && simklCatalogType === 'anime'
+        ? undefined
+        : getDisplayTypeOverride(
+            discoverSource === 'simkl'
+              ? (simklCatalogType === 'movie' ? 'movie' : 'series')
+              : catalogType,
+            config.displayTypeOverrides
+          );
+      const sourceLabel = discoverSource === 'tmdb'
+        ? 'TMDB'
+        : discoverSource === 'tvdb'
+          ? 'TVDB'
+          : discoverSource === 'simkl'
+            ? 'SIMKL'
+            : 'ANILIST';
+      const discoverMediaType = discoverSource === 'tmdb'
+        ? tmdbMediaType
+        : discoverSource === 'anilist'
+          ? 'anime'
+          : discoverSource === 'simkl'
+            ? simklCatalogType
+            : catalogType;
       const discoverUrl = discoverSource === 'tmdb'
         ? buildTmdbDiscoverWebUrl(tmdbMediaType, params)
-        : discoverSource === 'tvdb' ? buildTvdbDiscoverApiUrl(catalogType, params) : `https://anilist.co/search/anime`;
+        : discoverSource === 'tvdb'
+          ? buildTvdbDiscoverApiUrl(catalogType, params)
+          : discoverSource === 'simkl'
+            ? buildSimklDiscoverApiUrl(simklMediaType, params)
+            : `https://anilist.co/search/anime`;
 
       const newCatalog: CatalogConfig = {
         id: catalogId,
-        type: discoverSource === 'anilist' ? 'anime' : catalogType,
+        type: discoverSource === 'anilist' ? 'anime' : discoverSource === 'simkl' ? simklCatalogType : catalogType,
         name: catalogName.trim(),
         enabled: true,
         showInHome: true,
@@ -1292,7 +1551,13 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
       });
       onClose();
     } catch (error) {
-      const sourceLabel = discoverSource === 'tmdb' ? 'TMDB' : 'TVDB';
+      const sourceLabel = discoverSource === 'tmdb'
+        ? 'TMDB'
+        : discoverSource === 'tvdb'
+          ? 'TVDB'
+          : discoverSource === 'simkl'
+            ? 'Simkl'
+            : 'AniList';
       console.error(`[${sourceLabel} Discover] Failed to create custom catalog:`, error);
       toast.error('Failed to create catalog', {
         description: error instanceof Error ? error.message : 'Unknown error'
@@ -1339,11 +1604,11 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
             Build Your Catalog
           </DialogTitle>
           <DialogDescription>
-          Create custom TMDB, TVDB, or AniList discover catalogs with filters and save them directly into your catalog list.
+          Create custom TMDB, TVDB, Simkl, or AniList discover catalogs with filters and save them directly into your catalog list.
           </DialogDescription>
         </DialogHeader>
 
-        {!activeSourceApiKey && discoverSource !== 'anilist' && (
+        {!activeSourceApiKey && discoverSource !== 'anilist' && discoverSource !== 'simkl' && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 flex-shrink-0" />
             <div className="space-y-1">
@@ -1352,7 +1617,9 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                 Your personal {sourceLabel} key is empty. Requests will use server fallbacks
                 {discoverSource === 'tmdb'
                   ? (<>{' '}(<code>TMDB_API</code>, then <code>BUILT_IN_TMDB_API_KEY</code>)</>)
-                  : (<>{' '}(<code>TVDB_API_KEY</code>, then <code>BUILT_IN_TVDB_API_KEY</code>)</>)}
+                  : discoverSource === 'tvdb'
+                    ? (<>{' '}(<code>TVDB_API_KEY</code>, then <code>BUILT_IN_TVDB_API_KEY</code>)</>)
+                    : (<>{' '}(<code>SIMKL_CLIENT_ID</code>)</>)}
                 {' '}when available.
               </p>
               <p className="text-xs text-muted-foreground">
@@ -1391,6 +1658,9 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                       <SelectContent>
                         <SelectItem value="tmdb">TMDB</SelectItem>
                         <SelectItem value="tvdb">TVDB</SelectItem>
+                        <SelectItem value="simkl" disabled={!hasSimklClientId}>
+                          {hasSimklClientId ? 'Simkl' : 'Simkl (Disabled)'}
+                        </SelectItem>
                         <SelectItem value="anilist">AniList</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1399,6 +1669,19 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                     <Label>Content Type</Label>
                     {discoverSource === 'anilist' ? (
                     <div className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm">Anime</div>
+                    ) : discoverSource === 'simkl' ? (
+                      <Select value={simklMediaType} onValueChange={(value: SimklDiscoverMediaType) => setSimklMediaType(value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SIMKL_MEDIA_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Select value={catalogType} onValueChange={(value: CatalogMediaType) => setCatalogType(value)}>
                         <SelectTrigger>
@@ -1506,7 +1789,7 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                       <Switch checked={includeAdult} onCheckedChange={setIncludeAdult} />
                     </div>
                   </div>
-                ) : (
+                ) : discoverSource === 'tvdb' ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Release Status</Label>
@@ -1537,10 +1820,94 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
                       />
                     </div>
                   </div>
-                )}
+                ) : discoverSource === 'simkl' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Genre</Label>
+                      <Select value={simklGenre} onValueChange={setSimklGenre}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {simklGenreOptions.map(value => (
+                            <SelectItem key={value} value={value}>
+                              {formatSimklOptionLabel(value)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {simklMediaType !== 'movies' && (
+                      <div className="space-y-2">
+                        <Label>Type</Label>
+                        <Select value={simklType} onValueChange={setSimklType}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {simklTypeOptions.map(value => (
+                              <SelectItem key={value} value={value}>
+                                {formatSimklOptionLabel(value)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {simklMediaType !== 'anime' && (
+                      <div className="space-y-2">
+                        <Label>Country</Label>
+                        <Select value={simklCountry} onValueChange={setSimklCountry}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {simklCountryOptions.map(value => (
+                              <SelectItem key={value} value={value}>
+                                {value === 'all' ? 'All Countries' : value.toUpperCase()}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {simklMediaType !== 'movies' && (
+                      <div className="space-y-2">
+                        <Label>Network</Label>
+                        <Select value={simklNetwork} onValueChange={setSimklNetwork}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {simklNetworkOptions.map(value => (
+                              <SelectItem key={value} value={value}>
+                                {formatSimklOptionLabel(value)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label>Year</Label>
+                      <Select value={simklYear} onValueChange={setSimklYear}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {simklYearOptions.map(value => (
+                            <SelectItem key={value} value={value}>
+                              {formatSimklOptionLabel(value)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
-            {discoverSource !== 'anilist' && (
+            {(discoverSource === 'tmdb' || discoverSource === 'tvdb') && (
               <Card>
               <CardHeader>
                 <CardTitle className="text-base">Reference Filters</CardTitle>
@@ -1730,7 +2097,7 @@ const [isSearchingStudios, setIsSearchingStudios] = useState(false);
               </CardContent>
             </Card>
             )}
-            {discoverSource !== 'anilist' && (
+            {(discoverSource === 'tmdb' || discoverSource === 'tvdb') && (
               <Card>
               <CardHeader>
                 <CardTitle className="text-base">

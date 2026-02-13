@@ -2709,7 +2709,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     if (catalogConfig?.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
   }
   // Discover custom catalogs use discover params (include hash for safe cache invalidation)
-  else if (cleanId.startsWith('tmdb.discover.') || cleanId.startsWith('tvdb.discover.')) {
+  else if (cleanId.startsWith('tmdb.discover.') || cleanId.startsWith('tvdb.discover.') || cleanId.startsWith('simkl.discover.')) {
     const discoverParams =
       catalogConfig?.metadata?.discover?.params ||
       catalogConfig?.metadata?.discoverParams ||

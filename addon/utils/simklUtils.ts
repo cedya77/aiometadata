@@ -1010,6 +1010,96 @@ async function fetchSimklTrendingItems(
   }
 }
 
+interface SimklDiscoverQuery {
+  genre?: string;
+  type?: string;
+  country?: string;
+  network?: string;
+  year?: string;
+  sort?: string;
+}
+
+async function fetchSimklGenreItems(
+  mediaType: 'movies' | 'shows' | 'anime',
+  query: SimklDiscoverQuery,
+  page: number = 1,
+  limit: number = 20,
+  cacheTTL?: number
+): Promise<{ items: any[]; totalItems?: number; hasMore: boolean; totalPages?: number }> {
+  try {
+    const clientId = SIMKL_CLIENT_ID;
+    if (!clientId) {
+      logger.warn('[Simkl] Missing SIMKL_CLIENT_ID, cannot fetch discover genre items');
+      return { items: [], hasMore: false };
+    }
+
+    const normalizedMedia = mediaType === 'shows' ? 'tv' : mediaType;
+    const genre = String(query.genre || 'all').trim().toLowerCase();
+    const type = String(query.type || 'all-types').trim().toLowerCase();
+    const country = String(query.country || 'all').trim().toLowerCase();
+    const network = String(query.network || 'all-networks').trim().toLowerCase();
+    const year = String(query.year || (mediaType === 'movies' ? 'this-year' : 'all-years')).trim().toLowerCase();
+    const sort = String(query.sort || (mediaType === 'movies' ? 'popular-this-week' : 'popular-today')).trim().toLowerCase();
+
+    const pathSegments = mediaType === 'movies'
+      ? [genre, type, country, year, sort]
+      : mediaType === 'shows'
+        ? [genre, type, country, network, year, sort]
+        : [genre, type, network, year, sort];
+
+    const encodedSegments = pathSegments.map(segment => encodeURIComponent(segment)).join('/');
+    const endpointUrl = `${SIMKL_BASE_URL}/${normalizedMedia}/genres/${encodedSegments}?client_id=${encodeURIComponent(clientId)}`;
+    logger.debug(`[Simkl Discover] Fetching ${mediaType} genres endpoint: ${sanitizeUrlForLogging(endpointUrl)}`);
+
+    const ttl = Math.max(cacheTTL || SIMKL_TRENDING_TTL, 3600);
+    const cacheKey = `simkl-discover:${mediaType}:${pathSegments.join(':')}`;
+    const response: any = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        return await makeRateLimitedRequest(
+          () => httpGet(endpointUrl, {
+            dispatcher: simklDispatcher,
+            headers: {
+              'User-Agent': `AIOMetadata/${process.env.npm_package_version || '1.0'}`,
+              'Accept': 'application/json',
+              'simkl-api-key': clientId
+            }
+          }),
+          `Simkl fetchGenreItems (${mediaType})`
+        );
+      },
+      ttl,
+      { skipVersion: true }
+    );
+
+    const allItems: any[] = Array.isArray(response?.data) ? response.data : [];
+    const safeLimit = Math.max(1, Math.floor(limit || 20));
+    const safePage = Math.max(1, Math.floor(page || 1));
+    const startIndex = (safePage - 1) * safeLimit;
+    const pageItems = allItems.slice(startIndex, startIndex + safeLimit);
+    const hasMore = startIndex + safeLimit < allItems.length;
+    const totalItems = allItems.length;
+    const totalPages = Math.ceil(totalItems / safeLimit);
+
+    const items = pageItems.map((entry: any) => {
+      let itemType: 'movie' | 'series';
+      if (mediaType === 'movies') {
+        itemType = 'movie';
+      } else if (mediaType === 'shows') {
+        itemType = 'series';
+      } else {
+        itemType = (entry?.anime_type === 'movie' || entry?.anime_type === 'ona') ? 'movie' : 'series';
+      }
+      return { type: itemType, ...entry };
+    });
+
+    return { items, hasMore, totalItems, totalPages };
+  } catch (err: any) {
+    logger.error(`Error fetching Simkl discover ${mediaType} items:`, err.message);
+    return { items: [], hasMore: false };
+  }
+}
+
 export {
   fetchSimklUserStats,
   fetchSimklWatchlistItems,
@@ -1020,6 +1110,7 @@ export {
   makeAuthenticatedSimklRequest,
   getSimklToken,
   fetchSimklTrendingItems,
+  fetchSimklGenreItems,
   fetchSimklCalendarItems,
   checkinMovie,
   checkinSeries

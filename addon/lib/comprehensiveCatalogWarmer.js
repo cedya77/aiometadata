@@ -528,7 +528,7 @@ class ComprehensiveCatalogWarmer {
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
           }
         }
-        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.')) {
+        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.') || catalogId.startsWith('simkl.discover.')) {
           const discoverParams =
             catalogConfig?.metadata?.discover?.params ||
             catalogConfig?.metadata?.discoverParams ||
