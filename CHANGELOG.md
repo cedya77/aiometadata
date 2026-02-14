@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.27.1](https://github.com/cedya77/aiometadata/compare/v1.27.0...v1.27.1) (2026-02-14)
+
+
+### Bug Fixes
+
+* **import:** fix import showing new catalogs instead of imported config ([199aebc](https://github.com/cedya77/aiometadata/commit/199aebc5588e63fb05a85074fa38d3a0bb27ca69))
+
 ## [1.27.0](https://github.com/cedya77/aiometadata/compare/v1.26.4...v1.27.0) (2026-02-14)
 
 
