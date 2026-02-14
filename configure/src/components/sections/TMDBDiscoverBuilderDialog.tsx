@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Loader2, Search, Trash2, Wand2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { AlertCircle, CircleHelp, Loader2, Search, Trash2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiCache } from '@/utils/apiCache';
 
@@ -477,6 +478,36 @@ function resolveTvdbLanguageCode(languageItem: any): string {
 
 function resolveTvdbCountryCode(countryItem: any): string {
   return normalizeTvdbCode(countryItem?.id) || normalizeTvdbCode(countryItem?.shortCode);
+}
+
+function LabelWithTooltip({
+  children,
+  tooltip,
+  htmlFor,
+}: {
+  children: React.ReactNode;
+  tooltip: string;
+  htmlFor?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label htmlFor={htmlFor}>{children}</Label>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground hover:text-foreground"
+            aria-label="Field help"
+          >
+            <CircleHelp className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs whitespace-normal">
+          <p>{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
 }
 
 export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuilderDialogProps) {
@@ -1609,8 +1640,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     setSeriesDatePreset(preset);
   };
 
-  const handleAddGenre = (mode: 'include' | 'exclude') => {
-    const genreId = mode === 'include' ? pendingIncludeGenreId : pendingExcludeGenreId;
+  const handleAddGenre = (mode: 'include' | 'exclude', selectedGenreId?: string) => {
+    const genreId = selectedGenreId ?? (mode === 'include' ? pendingIncludeGenreId : pendingExcludeGenreId);
     if (!genreId) return;
 
     const genre = sortedGenres.find(item => String(item.id) === genreId);
@@ -1781,7 +1812,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <TooltipProvider delayDuration={200}>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -2454,46 +2486,40 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                     <div className={discoverSource === 'tmdb' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'grid grid-cols-1 gap-4'}>
                       <div className="space-y-2">
                         <Label>Include Genres</Label>
-                        <div className="flex gap-2">
-                          <Select value={pendingIncludeGenreId || undefined} onValueChange={setPendingIncludeGenreId}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select genre" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {sortedGenres.map(genre => (
+                        <Select value={undefined} onValueChange={(value) => handleAddGenre('include', value)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select genre" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sortedGenres
+                              .filter(genre => !includeGenres.some(item => item.id === genre.id))
+                              .map(genre => (
                                 <SelectItem key={genre.id} value={String(genre.id)}>
                                   {genre.name}
                                 </SelectItem>
                               ))}
-                            </SelectContent>
-                          </Select>
-                          <Button type="button" variant="outline" onClick={() => handleAddGenre('include')} disabled={!pendingIncludeGenreId}>
-                            Add
-                          </Button>
-                        </div>
+                          </SelectContent>
+                        </Select>
                         {renderSelectedItems(includeGenres, (id) => setIncludeGenres(prev => removeItemById(prev, id)), 'No included genres')}
                       </div>
 
                       {discoverSource === 'tmdb' && (
                         <div className="space-y-2">
                           <Label>Exclude Genres</Label>
-                          <div className="flex gap-2">
-                            <Select value={pendingExcludeGenreId || undefined} onValueChange={setPendingExcludeGenreId}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select genre" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {sortedGenres.map(genre => (
+                          <Select value={undefined} onValueChange={(value) => handleAddGenre('exclude', value)}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select genre" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sortedGenres
+                                .filter(genre => !excludeGenres.some(item => item.id === genre.id))
+                                .map(genre => (
                                   <SelectItem key={genre.id} value={String(genre.id)}>
                                     {genre.name}
                                   </SelectItem>
                                 ))}
-                              </SelectContent>
-                            </Select>
-                            <Button type="button" variant="outline" onClick={() => handleAddGenre('exclude')} disabled={!pendingExcludeGenreId}>
-                              Add
-                            </Button>
-                          </div>
+                            </SelectContent>
+                          </Select>
                           {renderSelectedItems(excludeGenres, (id) => setExcludeGenres(prev => removeItemById(prev, id)), 'No excluded genres')}
                         </div>
                       )}
@@ -2502,7 +2528,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       {discoverSource === 'tmdb' && (
                         <div className="space-y-2">
-                          <Label>Genre Match Mode</Label>
+                          <LabelWithTooltip tooltip="OR returns titles with any selected genre. AND narrows results to titles containing all selected genres.">
+                            Genre Match Mode
+                          </LabelWithTooltip>
                           <Select value={genreJoinMode} onValueChange={(value: JoinMode) => setGenreJoinMode(value)}>
                             <SelectTrigger>
                               <SelectValue />
@@ -2572,7 +2600,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                     {(discoverSource === 'tmdb' ? catalogType === 'movie' : true) && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>{discoverSource === 'tmdb' ? 'Certification Country' : 'Rating Country'}</Label>
+                          {discoverSource === 'tmdb' ? (
+                            <LabelWithTooltip tooltip="Pick the country first. Certification values depend on this country and can differ between regions.">
+                              Certification Country
+                            </LabelWithTooltip>
+                          ) : (
+                            <Label>Rating Country</Label>
+                          )}
                           <Select
                             value={certificationCountry || NONE_VALUE}
                             onValueChange={(value) => {
@@ -2595,7 +2629,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label>{discoverSource === 'tmdb' ? 'Certification' : 'Content Rating'}</Label>
+                          {discoverSource === 'tmdb' ? (
+                            <LabelWithTooltip tooltip="Applies the age/content rating for the selected certification country (for example PG-13, R, 15).">
+                              Certification
+                            </LabelWithTooltip>
+                          ) : (
+                            <Label>Content Rating</Label>
+                          )}
                           <Select
                             value={certificationValue || NONE_VALUE}
                             onValueChange={(value) => setCertificationValue(value === NONE_VALUE ? '' : value)}
@@ -2642,7 +2682,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                   <div className="space-y-2" ref={peopleSearchRef}>
                     <Label>People ({selectedPeople.length})</Label>
                     <div className="space-y-2">
-                      <Label>People Match Mode</Label>
+                      <LabelWithTooltip tooltip="OR matches titles with any selected person. AND requires all selected people to be attached as cast or crew.">
+                        People Match Mode
+                      </LabelWithTooltip>
                       <Select value={peopleJoinMode} onValueChange={(value: JoinMode) => setPeopleJoinMode(value)}>
                         <SelectTrigger>
                           <SelectValue />
@@ -2737,7 +2779,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                   </Label>
                   {discoverSource === 'tmdb' && (
                     <div className="space-y-2">
-                      <Label>Company Match Mode</Label>
+                      <LabelWithTooltip tooltip="OR matches titles from any selected company. AND requires all selected companies to match.">
+                        Company Match Mode
+                      </LabelWithTooltip>
                       <Select value={companyJoinMode} onValueChange={(value: JoinMode) => setCompanyJoinMode(value)}>
                         <SelectTrigger>
                           <SelectValue />
@@ -2877,7 +2921,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                 <div className="space-y-2" ref={keywordSearchRef}>
                   <Label>Keywords ({withKeywords.length} include / {withoutKeywords.length} exclude)</Label>
                   <div className="space-y-2">
-                    <Label>Keyword Match Mode</Label>
+                    <LabelWithTooltip tooltip="OR returns titles with any selected keyword. AND narrows results to titles containing all selected keywords.">
+                      Keyword Match Mode
+                    </LabelWithTooltip>
                     <Select value={keywordJoinMode} onValueChange={(value: JoinMode) => setKeywordJoinMode(value)}>
                       <SelectTrigger>
                         <SelectValue />
@@ -3497,7 +3543,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Provider Match Mode</Label>
+                    <LabelWithTooltip tooltip="OR matches titles available on any selected provider. AND requires availability across all selected providers.">
+                      Provider Match Mode
+                    </LabelWithTooltip>
                     <Select value={providerJoinMode} onValueChange={(value: JoinMode) => setProviderJoinMode(value)}>
                       <SelectTrigger>
                         <SelectValue />
@@ -3804,6 +3852,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </TooltipProvider>
   );
 }
