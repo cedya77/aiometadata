@@ -143,7 +143,7 @@ export function ConfigImportExport() {
         };
 
         // Update the configuration
-        setConfig(mergedConfig);
+        setConfig({ ...mergedConfig, catalogSetupComplete: true });
 
         toast.success("Configuration imported successfully!", {
           description: `Imported ${importData.metadata?.enabledCatalogs || 0} enabled catalogs`
