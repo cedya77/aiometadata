@@ -1876,25 +1876,30 @@ function CatalogsSettingsContent({
   
     setConfig(prev => {
       const currentCatalogs = [...prev.catalogs];
+      const getCatalogKey = (catalog: CatalogConfig) => `${catalog.id}-${catalog.type}`;
       
       const movingKeys = selectedIds.has(activeKey)
         ? currentCatalogs
-            .map(c => `${c.id}-${c.type}`)
+            .map(getCatalogKey)
             .filter(key => selectedIds.has(key))
         : [activeKey];
+
+      const movingKeySet = new Set(movingKeys);
+      const movingItems = currentCatalogs.filter(c => movingKeySet.has(getCatalogKey(c)));
+      const remainingItems = currentCatalogs.filter(c => !movingKeySet.has(getCatalogKey(c)));
   
-      const movingItems = currentCatalogs.filter(c => movingKeys.includes(`${c.id}-${c.type}`));
-      const remainingItems = currentCatalogs.filter(c => !movingKeys.includes(`${c.id}-${c.type}`));
-  
-      const overIndexInRemaining = remainingItems.findIndex(
-        c => `${c.id}-${c.type}` === overKey
-      );
-  
-      const activeIndexTotal = currentCatalogs.findIndex(c => `${c.id}-${c.type}` === activeKey);
-      const overIndexTotal = currentCatalogs.findIndex(c => `${c.id}-${c.type}` === overKey);
+      const activeIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === activeKey);
+      const overIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === overKey);
+      if (activeIndexTotal === -1 || overIndexTotal === -1) return prev;
+
       const isMovingDown = activeIndexTotal < overIndexTotal;
-      
-      const insertIndex = isMovingDown ? overIndexInRemaining + 1 : overIndexInRemaining;
+      const remainingBeforeOver = currentCatalogs
+        .slice(0, overIndexTotal)
+        .filter(c => !movingKeySet.has(getCatalogKey(c))).length;
+
+      const insertIndex = isMovingDown
+        ? remainingBeforeOver + (movingKeySet.has(overKey) ? 0 : 1)
+        : remainingBeforeOver;
   
       const newCatalogs = [...remainingItems];
       newCatalogs.splice(insertIndex, 0, ...movingItems);

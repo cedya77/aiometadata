@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.27.1](https://github.com/cedya77/aiometadata/compare/v1.27.0...v1.27.1) (2026-02-14)
+
+
+### Bug Fixes
+
+* **import:** fix import showing new catalogs instead of imported config ([199aebc](https://github.com/cedya77/aiometadata/commit/199aebc5588e63fb05a85074fa38d3a0bb27ca69))
+
+## [1.27.0](https://github.com/cedya77/aiometadata/compare/v1.26.4...v1.27.0) (2026-02-14)
+
+
+### Features
+
+* add anilist to catalog builder ([f62bde8](https://github.com/cedya77/aiometadata/commit/f62bde8df1dbf8833e5091cfad034dec97697fe3))
+* Add Catalog setup selector ([0a7bf2b](https://github.com/cedya77/aiometadata/commit/0a7bf2bb4a53c78964f6a41eb6239dab677bf5dc))
+* add MAL to catalog builder ([9ee2a53](https://github.com/cedya77/aiometadata/commit/9ee2a5383723880c49ee36603f5e83a0c4bcf21d))
+* add simkl builder ([0e4f16c](https://github.com/cedya77/aiometadata/commit/0e4f16cd0bc92eefd72e20ab08dac13184d8f7e0))
+* build your catalog ([1ef43a2](https://github.com/cedya77/aiometadata/commit/1ef43a268b481f2b5e72e6cb5559ab94716e1722))
+* **dashboard analytics:** revamp charts ui ([c19ad10](https://github.com/cedya77/aiometadata/commit/c19ad10b153097e49199df4e23d5129c261549da))
+* **ui:** add ability to move items in group ([c19ad10](https://github.com/cedya77/aiometadata/commit/c19ad10b153097e49199df4e23d5129c261549da))
+
+
+### Bug Fixes
+
+* multi dragging ([45f0377](https://github.com/cedya77/aiometadata/commit/45f0377dfc618e34b2891d37b60f3d1f6ca08e82))
+* multi dragging ([d6a67b5](https://github.com/cedya77/aiometadata/commit/d6a67b5782f7a67bf1745cda81d7a3bdb054d442))
+
 ## [1.26.4](https://github.com/cedya77/aiometadata/compare/v1.26.3...v1.26.4) (2026-02-11)
 
 
