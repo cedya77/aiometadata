@@ -16,6 +16,7 @@ import { apiCache } from '@/utils/apiCache';
 interface TMDBDiscoverBuilderDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  editingCatalog?: CatalogConfig | null;
 }
 
 type CatalogMediaType = 'movie' | 'series';
@@ -510,7 +511,7 @@ function LabelWithTooltip({
   );
 }
 
-export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuilderDialogProps) {
+export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: TMDBDiscoverBuilderDialogProps) {
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
@@ -978,10 +979,98 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   };
 
   useEffect(() => {
-    if (!isOpen) return;
-    resetState();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+    if (!isOpen || !editingCatalog) return;
+  
+    const fs = editingCatalog.metadata?.discover?.formState;
+    if (!fs) return;
+  
+    // Shared
+    if (fs.catalogName) setCatalogName(fs.catalogName);
+    if (fs.discoverSource) setDiscoverSource(fs.discoverSource);
+    if (fs.sortBy) setSortBy(fs.sortBy);
+    if (fs.cacheTTL) setCacheTTL(fs.cacheTTL);
+    if (fs.catalogType) setCatalogType(fs.catalogType);
+  
+    // TMDB / TVDB shared
+    if (fs.includeGenres) setIncludeGenres(fs.includeGenres);
+    if (fs.excludeGenres) setExcludeGenres(fs.excludeGenres);
+    if (fs.genreJoinMode) setGenreJoinMode(fs.genreJoinMode);
+    if (fs.originalLanguage) setOriginalLanguage(fs.originalLanguage);
+    if (fs.originCountry) setOriginCountry(fs.originCountry);
+    if (fs.certificationCountry) setCertificationCountry(fs.certificationCountry);
+    if (fs.certificationValue) setCertificationValue(fs.certificationValue);
+  
+    // TMDB-only
+    if (typeof fs.includeAdult === 'boolean') setIncludeAdult(fs.includeAdult);
+    if (typeof fs.releasedOnly === 'boolean') setReleasedOnly(fs.releasedOnly);
+    if (fs.selectedPeople) setSelectedPeople(fs.selectedPeople);
+    if (fs.peopleJoinMode) setPeopleJoinMode(fs.peopleJoinMode);
+    if (fs.withCompanies) setWithCompanies(fs.withCompanies);
+    if (fs.withoutCompanies) setWithoutCompanies(fs.withoutCompanies);
+    if (fs.companyJoinMode) setCompanyJoinMode(fs.companyJoinMode);
+    if (fs.withKeywords) setWithKeywords(fs.withKeywords);
+    if (fs.withoutKeywords) setWithoutKeywords(fs.withoutKeywords);
+    if (fs.keywordJoinMode) setKeywordJoinMode(fs.keywordJoinMode);
+    if (fs.watchRegion) setWatchRegion(fs.watchRegion);
+    if (fs.watchProviders) setWatchProviders(fs.watchProviders);
+    if (fs.providerJoinMode) setProviderJoinMode(fs.providerJoinMode);
+    if (fs.voteAverageRange) setVoteAverageRange(fs.voteAverageRange);
+    if (typeof fs.voteCountMin === 'number') setVoteCountMin(fs.voteCountMin);
+    if (fs.runtimeRange) setRuntimeRange(fs.runtimeRange);
+    if (fs.primaryReleaseFrom) setPrimaryReleaseFrom(fs.primaryReleaseFrom);
+    if (fs.primaryReleaseTo) setPrimaryReleaseTo(fs.primaryReleaseTo);
+    if (fs.firstAirFrom) setFirstAirFrom(fs.firstAirFrom);
+    if (fs.firstAirTo) setFirstAirTo(fs.firstAirTo);
+    if (fs.airDateFrom) setAirDateFrom(fs.airDateFrom);
+    if (fs.airDateTo) setAirDateTo(fs.airDateTo);
+    if (fs.releaseRegion) setReleaseRegion(fs.releaseRegion);
+  
+    // TVDB-only
+    if (fs.tvdbSortDirection) setTvdbSortDirection(fs.tvdbSortDirection);
+    if (fs.tvdbStatus) setTvdbStatus(fs.tvdbStatus);
+    if (fs.tvdbYear) setTvdbYear(fs.tvdbYear);
+  
+    // Simkl
+    if (fs.simklMediaType) setSimklMediaType(fs.simklMediaType);
+    if (fs.simklGenre) setSimklGenre(fs.simklGenre);
+    if (fs.simklType) setSimklType(fs.simklType);
+    if (fs.simklCountry) setSimklCountry(fs.simklCountry);
+    if (fs.simklNetwork) setSimklNetwork(fs.simklNetwork);
+    if (fs.simklYear) setSimklYear(fs.simklYear);
+  
+    // AniList
+    if (fs.anilistFormats) setAnilistFormats(fs.anilistFormats);
+    if (fs.anilistStatus) setAnilistStatus(fs.anilistStatus);
+    if (fs.anilistSeason) setAnilistSeason(fs.anilistSeason);
+    if (fs.anilistSeasonYear) setAnilistSeasonYear(fs.anilistSeasonYear);
+    if (fs.anilistCountry) setAnilistCountry(fs.anilistCountry);
+    if (fs.anilistSelectedStudios) setAnilistSelectedStudios(fs.anilistSelectedStudios);
+    if (fs.anilistIncludeGenres) setAnilistIncludeGenres(fs.anilistIncludeGenres);
+    if (fs.anilistExcludeGenres) setAnilistExcludeGenres(fs.anilistExcludeGenres);
+    if (fs.anilistIncludeTags) setAnilistIncludeTags(fs.anilistIncludeTags);
+    if (fs.anilistExcludeTags) setAnilistExcludeTags(fs.anilistExcludeTags);
+    if (fs.anilistScoreRange) setAnilistScoreRange(fs.anilistScoreRange);
+    if (typeof fs.anilistPopularityMin === 'number') setAnilistPopularityMin(fs.anilistPopularityMin);
+    if (fs.anilistEpisodesRange) setAnilistEpisodesRange(fs.anilistEpisodesRange);
+    if (fs.anilistDurationRange) setAnilistDurationRange(fs.anilistDurationRange);
+    if (typeof fs.anilistIsAdult === 'boolean') setAnilistIsAdult(fs.anilistIsAdult);
+    if (fs.anilistStartDateFrom) setAnilistStartDateFrom(fs.anilistStartDateFrom);
+    if (fs.anilistStartDateTo) setAnilistStartDateTo(fs.anilistStartDateTo);
+  
+    // MAL
+    if (fs.malType) setMalType(fs.malType);
+    if (fs.malStatus) setMalStatus(fs.malStatus);
+    if (fs.malRating) setMalRating(fs.malRating);
+    if (fs.malSortDirection) setMalSortDirection(fs.malSortDirection);
+    if (fs.malIncludeGenreIds) setMalIncludeGenreIds(fs.malIncludeGenreIds);
+    if (fs.malExcludeGenreIds) setMalExcludeGenreIds(fs.malExcludeGenreIds);
+    if (fs.malProducers) setMalProducers(fs.malProducers);
+    if (typeof fs.malMinScore === 'number') setMalMinScore(fs.malMinScore);
+    if (typeof fs.malMaxScore === 'number') setMalMaxScore(fs.malMaxScore);
+    if (fs.malStartDate) setMalStartDate(fs.malStartDate);
+    if (fs.malEndDate) setMalEndDate(fs.malEndDate);
+    if (typeof fs.malSfw === 'boolean') setMalSfw(fs.malSfw);
+  }, [isOpen, editingCatalog]);
 
   useEffect(() => {
     if (!sortOptions.some(option => option.value === sortBy)) {
@@ -1609,6 +1698,123 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     return params;
   }
 
+  function buildFormState(): Record<string, any> {
+    const state: Record<string, any> = {
+      // Shared
+      catalogName: catalogName.trim(),
+      discoverSource,
+      sortBy,
+      cacheTTL,
+      catalogType,
+    };
+  
+    // TMDB / TVDB shared
+    if (discoverSource === 'tmdb' || discoverSource === 'tvdb') {
+      Object.assign(state, {
+        includeGenres,
+        excludeGenres,
+        genreJoinMode,
+        originalLanguage,
+        originCountry,
+        certificationCountry,
+        certificationValue,
+      });
+    }
+  
+    // TMDB-only
+    if (discoverSource === 'tmdb') {
+      Object.assign(state, {
+        includeAdult,
+        releasedOnly,
+        selectedPeople,
+        peopleJoinMode,
+        withCompanies,
+        withoutCompanies,
+        companyJoinMode,
+        withKeywords,
+        withoutKeywords,
+        keywordJoinMode,
+        watchRegion,
+        watchProviders,
+        providerJoinMode,
+        voteAverageRange,
+        voteCountMin,
+        runtimeRange,
+        primaryReleaseFrom,
+        primaryReleaseTo,
+        firstAirFrom,
+        firstAirTo,
+        airDateFrom,
+        airDateTo,
+        releaseRegion,
+      });
+    }
+  
+    // TVDB-only
+    if (discoverSource === 'tvdb') {
+      Object.assign(state, {
+        tvdbSortDirection,
+        tvdbStatus,
+        tvdbYear,
+      });
+    }
+  
+    // Simkl
+    if (discoverSource === 'simkl') {
+      Object.assign(state, {
+        simklMediaType,
+        simklGenre,
+        simklType,
+        simklCountry,
+        simklNetwork,
+        simklYear,
+      });
+    }
+  
+    // AniList
+    if (discoverSource === 'anilist') {
+      Object.assign(state, {
+        anilistFormats,
+        anilistStatus,
+        anilistSeason,
+        anilistSeasonYear,
+        anilistCountry,
+        anilistSelectedStudios,
+        anilistIncludeGenres,
+        anilistExcludeGenres,
+        anilistIncludeTags,
+        anilistExcludeTags,
+        anilistScoreRange,
+        anilistPopularityMin,
+        anilistEpisodesRange,
+        anilistDurationRange,
+        anilistIsAdult,
+        anilistStartDateFrom,
+        anilistStartDateTo,
+      });
+    }
+  
+    // MAL
+    if (discoverSource === 'mal') {
+      Object.assign(state, {
+        malType,
+        malStatus,
+        malRating,
+        malSortDirection,
+        malIncludeGenreIds,
+        malExcludeGenreIds,
+        malProducers,
+        malMinScore,
+        malMaxScore,
+        malStartDate,
+        malEndDate,
+        malSfw,
+      });
+    }
+  
+    return state;
+  }
+
   const handleVoteAverageMinSliderChange = (value: number) => {
     setVoteAverageRange(([_, currentMax]) => [Math.min(value, currentMax), currentMax]);
   };
@@ -1674,34 +1880,42 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
       toast.error('Catalog name is required');
       return;
     }
-
+  
     setIsSaving(true);
     try {
       const params = buildDiscoverParams();
-      const sanitizedName = catalogName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 40) || 'catalog';
-      const uniqueSuffix = Date.now().toString(36);
-      const simklCatalogType = simklMediaType === 'movies' ? 'movie' : simklMediaType === 'shows' ? 'series' : 'anime';
-      const SOURCE_PREFIXES: Record<string, string> = {
-        tmdb: 'tmdb.discover',
-        tvdb: 'tvdb.discover',
-        simkl: 'simkl.discover',
-        mal: 'mal.discover',
-        anilist: 'anilist.discover',
-      };
-      
-      const sourcePrefix = SOURCE_PREFIXES[discoverSource] ?? 'tmdb.discover';
-      
-
-      const catalogTypeSegment = discoverSource === 'simkl'
-        ? simklMediaType
-        : discoverSource === 'anilist' || discoverSource === 'mal'
-          ? 'anime'
-          : catalogType;
-      const catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
+      const formState = buildFormState();
+  
+      // Reuse existing ID when editing, generate new one when creating
+      let catalogId: string;
+      if (editingCatalog) {
+        catalogId = editingCatalog.id;
+      } else {
+        const sanitizedName = catalogName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 40) || 'catalog';
+        const uniqueSuffix = Date.now().toString(36);
+        const SOURCE_PREFIXES: Record<string, string> = {
+          tmdb: 'tmdb.discover',
+          tvdb: 'tvdb.discover',
+          simkl: 'simkl.discover',
+          mal: 'mal.discover',
+          anilist: 'anilist.discover',
+        };
+        const sourcePrefix = SOURCE_PREFIXES[discoverSource] ?? 'tmdb.discover';
+        const catalogTypeSegment = discoverSource === 'simkl'
+          ? simklMediaType
+          : discoverSource === 'anilist' || discoverSource === 'mal'
+            ? 'anime'
+            : catalogType;
+        catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
+      }
+  
+      const simklCatalogType = simklMediaType === 'movies' ? 'movie'
+        : simklMediaType === 'shows' ? 'series' : 'anime';
+  
       const displayType = discoverSource === 'simkl' && simklCatalogType === 'anime'
         ? undefined
         : getDisplayTypeOverride(
@@ -1710,16 +1924,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
               : catalogType,
             config.displayTypeOverrides
           );
-          const SOURCE_LABELS: Record<string, string> = {
-            tmdb: 'TMDB',
-            tvdb: 'TVDB',
-            simkl: 'SIMKL',
-            mal: 'MAL',
-            anilist: 'ANILIST',
-          };
-          
-          const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
-          
+  
+      const SOURCE_LABELS: Record<string, string> = {
+        tmdb: 'TMDB', tvdb: 'TVDB', simkl: 'SIMKL', mal: 'MAL', anilist: 'ANILIST',
+      };
+      const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
+  
       const discoverMediaType = discoverSource === 'tmdb'
         ? tmdbMediaType
         : (discoverSource === 'anilist' || discoverSource === 'mal')
@@ -1727,55 +1937,73 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
           : discoverSource === 'simkl'
             ? simklCatalogType
             : catalogType;
+  
       const discoverUrl = discoverSource === 'tmdb'
         ? buildTmdbDiscoverWebUrl(tmdbMediaType, params)
         : discoverSource === 'tvdb'
           ? buildTvdbDiscoverApiUrl(catalogType, params)
           : discoverSource === 'simkl'
             ? buildSimklDiscoverApiUrl(simklMediaType, params)
-            : discoverSource === 'mal' ? `https://myanimelist.net/anime.php`
-            : `https://anilist.co/search/anime`;
-
+            : discoverSource === 'mal'
+              ? `https://myanimelist.net/anime.php`
+              : `https://anilist.co/search/anime`;
+  
       const newCatalog: CatalogConfig = {
         id: catalogId,
-        type: (discoverSource === 'anilist' || discoverSource === 'mal') ? 'anime' : discoverSource === 'simkl' ? simklCatalogType : catalogType,
+        type: (discoverSource === 'anilist' || discoverSource === 'mal')
+          ? 'anime'
+          : discoverSource === 'simkl' ? simklCatalogType : catalogType,
         name: catalogName.trim(),
-        enabled: true,
-        showInHome: true,
+        enabled: editingCatalog?.enabled ?? true,
+        showInHome: editingCatalog?.showInHome ?? true,
         source: discoverSource,
         cacheTTL: Math.max(cacheTTL, 300),
+        // Preserve existing settings when editing
+        ...(editingCatalog?.enableRatingPosters !== undefined && {
+          enableRatingPosters: editingCatalog.enableRatingPosters
+        }),
         ...(displayType && { displayType }),
         metadata: {
           description: `${sourceLabel} Discover (${discoverMediaType})`,
           url: discoverUrl,
           discover: {
-            version: 1,
+            version: 2,
             source: discoverSource,
             mediaType: discoverMediaType as 'movie' | 'tv' | 'series' | 'anime',
-            params
+            params,
+            formState,
           }
         }
       };
-
-      setConfig(prev => ({
-        ...prev,
-        catalogs: [...prev.catalogs, newCatalog]
-      }));
-
-      toast.success('Custom catalog created', {
-        description: `${catalogName.trim()} was added to your ${sourceLabel} catalogs`
-      });
+  
+      if (editingCatalog) {
+        // Update in-place
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c =>
+            c.id === editingCatalog.id && c.type === editingCatalog.type
+              ? newCatalog
+              : c
+          ),
+        }));
+        toast.success('Catalog updated', {
+          description: `${catalogName.trim()} has been updated`
+        });
+      } else {
+        // Create new
+        setConfig(prev => ({
+          ...prev,
+          catalogs: [...prev.catalogs, newCatalog]
+        }));
+        toast.success('Custom catalog created', {
+          description: `${catalogName.trim()} was added to your ${sourceLabel} catalogs`
+        });
+      }
+  
       onClose();
     } catch (error) {
-      const sourceLabel = discoverSource === 'tmdb'
-        ? 'TMDB'
-        : discoverSource === 'tvdb'
-          ? 'TVDB'
-          : discoverSource === 'simkl'
-            ? 'Simkl'
-            : 'AniList';
-      console.error(`[${sourceLabel} Discover] Failed to create custom catalog:`, error);
-      toast.error('Failed to create catalog', {
+      console.error(`[Discover] Failed to save catalog:`, error);
+      toast.error('Failed to save catalog', {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
     } finally {
@@ -1816,10 +2044,10 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Wand2 className="h-5 w-5" />
-            Build Your Catalog
-          </DialogTitle>
+        <DialogTitle className="flex items-center gap-2">
+          <Wand2 className="h-5 w-5" />
+          {editingCatalog ? 'Edit Catalog' : 'Build Your Catalog'}
+        </DialogTitle>
           <DialogDescription>
           Create custom TMDB, TVDB, Simkl, or AniList discover catalogs with filters and save them directly into your catalog list.
           </DialogDescription>
@@ -1868,7 +2096,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                   </div>
                   <div className="space-y-2">
                     <Label>Source</Label>
-                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)}>
+                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)} disabled={!!editingCatalog}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -3841,12 +4069,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
             {isSaving ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Creating...
+                {editingCatalog ? 'Saving...' : 'Creating...'}
               </>
             ) : (
               <>
                 <Wand2 className="h-4 w-4 mr-2" />
-                Build Catalog
+                {editingCatalog ? 'Save Changes' : 'Build Catalog'}
               </>
             )}
           </Button>

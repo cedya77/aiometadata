@@ -54,6 +54,7 @@ export interface CatalogConfig {
       source?: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
       mediaType?: 'movie' | 'tv' | 'series' | 'anime';
       params?: Record<string, string | number | boolean>;
+      formState?: Record<string, any>;
     };
     discoverParams?: Record<string, string | number | boolean>;
     // Simkl-specific metadata

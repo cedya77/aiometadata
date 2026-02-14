@@ -968,7 +968,10 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
   );
 };
 import { Layers } from 'lucide-react';
-const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
+const SortableCatalogItem = ({ catalog, onEditDiscover }: { 
+  catalog: CatalogConfig & { source?: string };
+  onEditDiscover?: (catalog: CatalogConfig) => void;
+}) => {
   console.log('catalog:', catalog.id, catalog.source); 
   const { setConfig, config } = useConfig();
   const { toggleSelection, isSelected, selectionCount } = useSelection(); 
@@ -1499,6 +1502,24 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
+          {/* Edit button for discover catalogs with formState */}
+          {catalog.id.includes('.discover.') &&
+            catalog.metadata?.discover?.formState && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onEditDiscover?.(catalog)}
+                  aria-label="Edit Catalog"
+                >
+                  <Wand2 className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit catalog filters</TooltipContent>
+            </Tooltip>
+          )}
+
           {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
             (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
@@ -1721,6 +1742,7 @@ function CatalogsSettingsContent({
   const [isSimklOpen, setIsSimklOpen] = useState(false);
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
+  const [editingDiscoverCatalog, setEditingDiscoverCatalog] = useState<CatalogConfig | null>(null);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
@@ -1778,6 +1800,7 @@ function CatalogsSettingsContent({
     setHasChosenCatalogSetup(true);
     setIsTmdbDiscoverBuilderOpen(true);
   };
+
 
   // Check if TVDB key is available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
@@ -2642,9 +2665,16 @@ function CatalogsSettingsContent({
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
-              {filteredCatalogs.map((catalog) => (
-                <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
-              ))}
+            {filteredCatalogs.map((catalog) => (
+              <SortableCatalogItem 
+                key={`${catalog.id}-${catalog.type}`} 
+                catalog={catalog}
+                onEditDiscover={(cat) => {
+                  setEditingDiscoverCatalog(cat);
+                  setIsTmdbDiscoverBuilderOpen(true);
+                }}
+              />
+            ))}
             </div>
           </SortableContext>
         </DndContext>
@@ -2686,7 +2716,11 @@ function CatalogsSettingsContent({
       />
       <TMDBDiscoverBuilderDialog
         isOpen={isTmdbDiscoverBuilderOpen}
-        onClose={() => setIsTmdbDiscoverBuilderOpen(false)}
+        onClose={() => {
+          setIsTmdbDiscoverBuilderOpen(false);
+          setEditingDiscoverCatalog(null);
+        }}
+        editingCatalog={editingDiscoverCatalog}
       />
 
       {/* Bulk Delete Confirmation Dialog */}
