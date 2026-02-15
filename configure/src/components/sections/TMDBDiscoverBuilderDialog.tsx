@@ -2498,6 +2498,16 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             }}
                             className="w-full"
                           />
+                          <input
+                            type="number" min={0} max={10} step={0.5}
+                            value={malMinScore}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMalMinScore(val);
+                              if (val > malMaxScore) setMalMaxScore(val);
+                            }}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Max Score: {malMaxScore}</Label>
@@ -2510,6 +2520,16 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                               if (val < malMinScore) setMalMinScore(val);
                             }}
                             className="w-full"
+                          />
+                          <input
+                            type="number" min={0} max={10} step={0.5}
+                            value={malMaxScore}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMalMaxScore(val);
+                              if (val < malMinScore) setMalMinScore(val);
+                            }}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                           />
                         </div>
                       </div>
@@ -3626,6 +3646,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             onChange={(e) => setAnilistScoreRange([Number(e.target.value), anilistScoreRange[1]])}
                             className="w-full accent-cyan-500"
                           />
+                          <input
+                            type="number" min={0} max={100} step={1}
+                            value={anilistScoreRange[0]}
+                            onChange={(e) => setAnilistScoreRange([Number(e.target.value), anilistScoreRange[1]])}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
+                          />
                         </div>
                         <div className="space-y-1">
                           <p className="text-[10px] text-muted-foreground">Maximum Score</p>
@@ -3634,6 +3660,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             value={anilistScoreRange[1]}
                             onChange={(e) => setAnilistScoreRange([anilistScoreRange[0], Number(e.target.value)])}
                             className="w-full accent-cyan-500"
+                          />
+                          <input
+                            type="number" min={0} max={100} step={1}
+                            value={anilistScoreRange[1]}
+                            onChange={(e) => setAnilistScoreRange([anilistScoreRange[0], Number(e.target.value)])}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                           />
                         </div>
                       </div>
@@ -3864,6 +3896,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                           onChange={(event) => handleVoteAverageMinSliderChange(Number(event.target.value))}
                           className="w-full accent-primary"
                         />
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={voteAverageRange[0]}
+                          onChange={(event) => handleVoteAverageMinSliderChange(Number(event.target.value))}
+                          className="w-16 h-7 text-xs text-center rounded-md border bg-background"
+                        />
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Maximum</p>
@@ -3875,6 +3916,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                           value={voteAverageRange[1]}
                           onChange={(event) => handleVoteAverageMaxSliderChange(Number(event.target.value))}
                           className="w-full accent-primary"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={voteAverageRange[1]}
+                          onChange={(event) => handleVoteAverageMaxSliderChange(Number(event.target.value))}
+                          className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                         />
                       </div>
                     </div>
@@ -3895,6 +3945,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                       value={voteCountMin}
                       onChange={(event) => setVoteCountMin(Number(event.target.value))}
                       className="w-full accent-primary"
+                    /><input
+                      type="number"
+                      min={0}
+                      max={MAX_VOTE_COUNT}
+                      step={1}
+                      value={voteCountMin}
+                      onChange={(event) => setVoteCountMin(Number(event.target.value))}
+                      className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                     />
                     <p className="text-xs text-muted-foreground">
                       Increase to exclude low-vote titles.
