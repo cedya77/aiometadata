@@ -15,7 +15,7 @@ import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import redis from './redisClient.js';

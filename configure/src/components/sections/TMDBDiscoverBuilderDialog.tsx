@@ -1898,7 +1898,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
       toast.error('Catalog name is required');
       return;
     }
-
+  
     setIsSaving(true);
     try {
       const params = buildDiscoverParams();
@@ -1940,16 +1940,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
               : catalogType,
             config.displayTypeOverrides
           );
-
+  
       const SOURCE_LABELS: Record<string, string> = {
-        tmdb: 'TMDB',
-        tvdb: 'TVDB',
-        simkl: 'SIMKL',
-        mal: 'MAL',
-        anilist: 'ANILIST',
+        tmdb: 'TMDB', tvdb: 'TVDB', simkl: 'SIMKL', mal: 'MAL', anilist: 'ANILIST',
       };
       const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
-
+  
       const discoverMediaType = discoverSource === 'tmdb'
         ? tmdbMediaType
         : (discoverSource === 'anilist' || discoverSource === 'mal')
@@ -1957,6 +1953,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
           : discoverSource === 'simkl'
             ? simklCatalogType
             : catalogType;
+  
       const discoverUrl = discoverSource === 'tmdb'
         ? buildTmdbDiscoverWebUrl(tmdbMediaType, params)
         : discoverSource === 'tvdb'
@@ -1970,7 +1967,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
       const newCatalog: CatalogConfig = {
         ...(editingCatalog ? editingCatalog : ({} as CatalogConfig)),
         id: catalogId,
-        type: (discoverSource === 'anilist' || discoverSource === 'mal') ? 'anime' : discoverSource === 'simkl' ? simklCatalogType : catalogType,
+        type: (discoverSource === 'anilist' || discoverSource === 'mal')
+          ? 'anime'
+          : discoverSource === 'simkl' ? simklCatalogType : catalogType,
         name: catalogName.trim(),
         enabled: editingCatalog?.enabled ?? true,
         showInHome: editingCatalog?.showInHome ?? true,
@@ -2116,11 +2115,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                   </div>
                   <div className="space-y-2">
                     <Label>Source</Label>
-                    <Select
-                      value={discoverSource}
-                      onValueChange={(value: DiscoverSource) => setDiscoverSource(value)}
-                      disabled={!!editingCatalog}
-                    >
+                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)} disabled={!!editingCatalog}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -2523,10 +2518,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             className="w-full"
                           />
                           <input
-                            type="number"
-                            min={0}
-                            max={10}
-                            step={0.5}
+                            type="number" min={0} max={10} step={0.5}
                             value={malMinScore}
                             onChange={(e) => {
                               const val = Number(e.target.value);
@@ -2549,10 +2541,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             className="w-full"
                           />
                           <input
-                            type="number"
-                            min={0}
-                            max={10}
-                            step={0.5}
+                            type="number" min={0} max={10} step={0.5}
                             value={malMaxScore}
                             onChange={(e) => {
                               const val = Number(e.target.value);
@@ -3677,10 +3666,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             className="w-full accent-cyan-500"
                           />
                           <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={1}
+                            type="number" min={0} max={100} step={1}
                             value={anilistScoreRange[0]}
                             onChange={(e) => setAnilistScoreRange([Number(e.target.value), anilistScoreRange[1]])}
                             className="w-16 h-7 text-xs text-center rounded-md border bg-background"
@@ -3695,10 +3681,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                             className="w-full accent-cyan-500"
                           />
                           <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={1}
+                            type="number" min={0} max={100} step={1}
                             value={anilistScoreRange[1]}
                             onChange={(e) => setAnilistScoreRange([anilistScoreRange[0], Number(e.target.value)])}
                             className="w-16 h-7 text-xs text-center rounded-md border bg-background"
@@ -3981,6 +3964,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                       value={voteCountMin}
                       onChange={(event) => setVoteCountMin(Number(event.target.value))}
                       className="w-full accent-primary"
+                    /><input
+                      type="number"
+                      min={0}
+                      max={MAX_VOTE_COUNT}
+                      step={1}
+                      value={voteCountMin}
+                      onChange={(event) => setVoteCountMin(Number(event.target.value))}
+                      className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                     />
                     <input
                       type="number"

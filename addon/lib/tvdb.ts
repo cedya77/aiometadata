@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 config();
-import { cacheWrapTvdbApi } from './getCache.js';
+import { cacheWrapTvdbApi, stableStringify } from './getCache.js';
 import { to3LetterCode } from './language-map.js';
 import { httpPost, httpGet } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
