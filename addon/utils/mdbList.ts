@@ -793,7 +793,7 @@ async function fetchMdbListSearchItems(query: string, type: string, apiKey: stri
 // Convert genre title to slug using the mapping from the API
 function convertGenreToSlug(genre: string): string {
   if (!genre || genre.toLowerCase() === 'none') {
-    return genre.toLowerCase();
+    return genre;
   }
   
   // If we have the mapping, use it
