@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 config();
-import { cacheWrapTvdbApi } from './getCache.js';
+import { cacheWrapTvdbApi, stableStringify } from './getCache.js';
 import { to3LetterCode } from './language-map.js';
 import { httpPost, httpGet } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
@@ -1055,7 +1055,7 @@ async function getStatuses(type: 'movies' | 'series', config: UserConfig): Promi
 }
 
 async function filter(type: 'movies' | 'series', params: any, config: UserConfig): Promise<TvdbFilterResult[]> {
-  return cacheWrapTvdbApi(`tvdb-filter:${type}`, async () => {
+  return cacheWrapTvdbApi(`tvdb-filter:${type}:${stableStringify(params)}`, async () => {
     const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return [];
     

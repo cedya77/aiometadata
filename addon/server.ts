@@ -37,6 +37,13 @@ async function startServer(): Promise<void> {
   consola.info('Initializing Database...');
   await database.initialize();
   consola.success('Database initialization complete.');
+
+  const redis = require('./lib/redisClient');
+  if (redis && redis.status === 'end') {
+    consola.info('Connecting Redis...');
+    await redis.connect();
+    consola.success('Redis connected.');
+  }
   
   // Cache path migration
   consola.info('Running cache path migration...');

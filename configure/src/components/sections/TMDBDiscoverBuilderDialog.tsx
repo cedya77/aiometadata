@@ -2876,7 +2876,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                               <SelectItem value={NONE_VALUE}>None</SelectItem>
                               {certificationOptions.map(certificationItem => (
                                 <SelectItem key={certificationItem.certification} value={certificationItem.certification}>
-                                  {certificationItem.meaning || certificationItem.certification}
+                                  {certificationItem.certification || certificationItem.meaning}
                                 </SelectItem>
                               ))}
                             </SelectContent>

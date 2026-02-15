@@ -332,12 +332,22 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
   }
 }
 
-function createTMDBDiscoverCatalog(userCatalog, showPrefix = false) {
+function createTMDBDiscoverCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false) {
   try {
     logger.info(`Creating TMDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
+    let genres = ['None'];
+    if (userCatalog.type === 'movie' && movieGenres.length > 0) {
+      genres = movieGenres;
+      logger.debug(`TMDB List using ${genres.length} movie genres`);
+    } else if (userCatalog.type === 'series' && seriesGenres.length > 0) {
+      genres = seriesGenres;
+      logger.debug(`TMDB List using ${genres.length} series genres`);
+    }
 
     const catalogType = userCatalog.displayType || userCatalog.type;
-    const genreOptions = ['None'];
+    const genreOptions = genres.length > 0 
+    ? (userCatalog.showInHome ? genres : ['None', ...genres])
+    : ['None'];
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -358,12 +368,14 @@ function createTMDBDiscoverCatalog(userCatalog, showPrefix = false) {
   }
 }
 
-function createTVDBDiscoverCatalog(userCatalog, showPrefix = false) {
+function createTVDBDiscoverCatalog(userCatalog, genres=[], showPrefix = false) {
   try {
     logger.info(`Creating TVDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
 
     const catalogType = userCatalog.displayType || userCatalog.type;
-    const genreOptions = ['None'];
+    const genreOptions = genres.length > 0 
+    ? (userCatalog.showInHome ? genres : ['None', ...genres])
+    : ['None'];
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
@@ -541,7 +553,7 @@ function createAniListCatalog(userCatalog, showPrefix = false) {
     ];
 
     let genreOptions;
-    if (userCatalog.id === 'anilist.trending') {
+    if (userCatalog.id === 'anilist.trending' || userCatalog.id.startsWith('anilist.discover')) {
       genreOptions = userCatalog.showInHome ? anilistGenres : ['None', ...anilistGenres];
     } else {
       genreOptions = ['None'];
@@ -567,16 +579,22 @@ function createAniListCatalog(userCatalog, showPrefix = false) {
   }
 }
 
-async function createMalCatalog(userCatalog, showPrefix = false){
+async function createMalCatalog(userCatalog, genres, showPrefix = false){
   try {
     logger.info(`Creating MAL discover catalog: ${userCatalog.id} (${userCatalog.type})`);
     
 
+    const genreOptions = genres.length > 0 
+    ? (userCatalog.showInHome ? genres : ['None', ...genres])
+    : ['None'];
     const catalog = {
       id: userCatalog.id,
       type: 'anime',
       name: showPrefix ? `${userCatalog.name}` : userCatalog.name,
-      extra: [{ name: 'skip' }],
+      extra: [
+        { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
+        { name: 'skip' }
+      ],
     };
 
     if (!userCatalog.showInHome) {
@@ -599,6 +617,38 @@ async function createMalCatalog(userCatalog, showPrefix = false){
 async function createSimklCatalog(userCatalog, showPrefix = false) {
   try {
     logger.info(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
+
+    const SIMKL_MOVIE_GENRE_OPTIONS = [
+      'all', 'action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 'drama', 'family',
+      'fantasy', 'history', 'horror', 'music', 'mystery', 'romance', 'science-fiction', 'thriller',
+      'tv-movie', 'war', 'western'
+    ];
+    
+    const SIMKL_TV_GENRE_OPTIONS = [
+      'all', 'action', 'adventure', 'animation', 'awards-show', 'children', 'comedy', 'crime',
+      'documentary', 'drama', 'family', 'fantasy', 'food', 'game-show', 'history', 'home-and-garden',
+      'horror', 'indie', 'korean-drama', 'martial-arts', 'mini-series', 'musical', 'mystery', 'news',
+      'podcast', 'reality', 'romance', 'science-fiction', 'soap', 'special-interest', 'sport', 'suspense',
+      'talk-show', 'thriller', 'travel', 'video-game-play', 'war', 'western'
+    ];
+    
+    const SIMKL_ANIME_GENRE_OPTIONS = [
+      'all', 'action', 'adventure', 'comedy', 'drama', 'ecchi', 'educational', 'fantasy', 'gag-humor',
+      'gore', 'harem', 'historical', 'horror', 'idol', 'isekai', 'josei', 'kids', 'magic',
+      'martial-arts', 'mecha', 'military', 'music', 'mystery', 'mythology', 'parody', 'psychological',
+      'racing', 'reincarnation', 'romance', 'samurai', 'school', 'sci-fi', 'seinen', 'shoujo',
+      'shoujo-ai', 'shounen', 'shounen-ai', 'slice-of-life', 'space', 'sports', 'strategy-game',
+      'super-power', 'supernatural', 'thriller', 'vampire', 'yaoi', 'yuri'
+    ];
+
+    const SOURCE_LABELS = {
+      movie: SIMKL_MOVIE_GENRE_OPTIONS,
+      series: SIMKL_TV_GENRE_OPTIONS,
+      anime: SIMKL_ANIME_GENRE_OPTIONS
+    };
+    
+
+    
     
     // Use displayType if defined, otherwise use original type
     const catalogType = userCatalog.displayType || userCatalog.type;
@@ -609,6 +659,7 @@ async function createSimklCatalog(userCatalog, showPrefix = false) {
       name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
+        { name: "genre", options: SOURCE_LABELS[userCatalog.type], isRequired: userCatalog.showInHome ? false : true },
         { name: "skip" },
       ],
       showInHome: userCatalog.showInHome
@@ -891,13 +942,13 @@ async function getManifest(config) {
       }
       if (userCatalog.id.startsWith('tmdb.discover.')) {
           logger.debug(`Processing TMDB Discover catalog: ${userCatalog.id}`);
-          const result = createTMDBDiscoverCatalog(userCatalog, showPrefix);
+          const result = createTMDBDiscoverCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix);
           logger.debug(`TMDB Discover catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tvdb.discover.')) {
           logger.debug(`Processing TVDB Discover catalog: ${userCatalog.id}`);
-          const result = createTVDBDiscoverCatalog(userCatalog, showPrefix);
+          const result = createTVDBDiscoverCatalog(userCatalog, genres_tvdb_all_names, showPrefix);
           logger.debug(`TVDB Discover catalog result:`, result ? 'success' : 'failed');
           return result;
       }
@@ -919,7 +970,7 @@ async function getManifest(config) {
       }
       if(userCatalog.id.startsWith('mal.discover')){
         logger.debug(`Processing mal discover catalog: ${userCatalog.id}`);
-        const result = createMalCatalog(userCatalog);
+        const result = createMalCatalog(userCatalog, animeGenreNames);
         logger.debug(`Mal discover catalog result:`, result ? 'success' : 'failed');
         return result;
       }

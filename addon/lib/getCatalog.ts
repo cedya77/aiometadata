@@ -14,7 +14,7 @@ import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 
@@ -115,7 +115,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     if (id.startsWith('tvdb.discover.')) {
       logger.debug(`Routing to TVDB discover catalog handler for id: ${id}`);
-      const tvdbDiscoverResults = await getTvdbDiscoverCatalog(type, id, page, language, config, userUUID, includeVideos);
+      const tvdbDiscoverResults = await getTvdbDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: tvdbDiscoverResults };
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
@@ -191,7 +191,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
 async function getMalDiscoverCatalog(
   type: string,
   catalogId: string,
-  genre: string | null,
+  genreName: string | null,
   page: number,
   language: string,
   config: any, // UserConfig
@@ -206,8 +206,22 @@ async function getMalDiscoverCatalog(
     const rawParams = discoverMetadata?.params || {};
     const customCacheTTL = catalogConfig?.cacheTTL || null;
 
+    if(genreName && genreName.toLowerCase() !== 'none'){
+      const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+        return await jikan.getAnimeGenres();
+      }, null, { skipVersion: true });
+      const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
+      if (genreNameToFetch) {
+        const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
+        if (selectedGenre) {
+          const genreId = selectedGenre.mal_id;
+          rawParams.genres = genreId;
+        }
+      }
+    }
+
     const response = await cacheWrapJikanApi(
-      `mal-discover-${catalogId}-page${page}`,
+      `mal-discover-${catalogId}-page${page}-genre${genreName || 'All'}`,
       async () => jikan.fetchDiscover(rawParams, page),
       customCacheTTL || 30 * 60
     );
@@ -256,10 +270,25 @@ async function getAniListDiscoverCatalog(
     const customCacheTTL = catalogConfig?.cacheTTL || null;
     const pageSize = 50;
 
+    if (genre && genre.toLowerCase() !== 'none') {
+      if (rawParams.genre_in) {
+        const existing = typeof rawParams.genre_in === 'string'
+          ? rawParams.genre_in.split(',').map((g: string) => g.trim())
+          : Array.isArray(rawParams.genre_in) ? [...rawParams.genre_in] : [];
+        if (!existing.some((g: string) => g.toLowerCase() === genre.toLowerCase())) {
+          existing.push(genre);
+        }
+        rawParams.genre_in = existing.join(',');
+      } else {
+        rawParams.genre_in = genre;
+      }
+    }
+
     // Fetch from AniList API with caching
+    const cacheKeySuffix = `${catalogId}:${stableStringify(rawParams)}`;
     const response = await cacheWrapAniListCatalog(
       'discover',
-      catalogId,
+      cacheKeySuffix,
       page,
       async () => anilist.fetchDiscover(rawParams, page, pageSize),
       customCacheTTL,
@@ -480,6 +509,7 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
 async function getTvdbDiscoverCatalog(
   type: string,
   id: string,
+  genreName: string,
   page: number,
   language: string,
   config: UserConfig,
@@ -506,12 +536,23 @@ async function getTvdbDiscoverCatalog(
 
   const discoverMetadata = catalogConfig?.metadata?.discover || {};
   const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+  let genre;
+  if(genreName && genreName.toLowerCase() !== 'none'){
+    const allTvdbGenres = await getGenreList('tvdb', language, type as "movie" | "series", config);
+    logger.debug(`TVDB genres fetched: ${allTvdbGenres.length} genres available`);
+    
+    genre = allTvdbGenres.find(g => g.name === genreName);
+    logger.debug(`Genre lookup for "${genreName}":`, genre ? `Found ID ${genre.id}` : 'NOT FOUND');
+  }
   const parameters = await sanitizeTvdbDiscoverParams(
     rawParams,
     language,
     type as 'movie' | 'series',
     config
   );
+  if(genre){
+    parameters.genre = genre.id
+  }
 
   const tvdbType = isMovieCatalog ? 'movies' : 'series';
   const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
@@ -748,6 +789,18 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const mediaType = isMovieCatalog ? 'movie' : 'tv';
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
     const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+    if (genre && genre.toLowerCase() !== 'none') {
+      const genreList = await getGenreList('tmdb', language, type === 'movie' ? 'movie' : 'series', config);
+      const genreId = genreList.find((g: any) => g.name.toLowerCase() === genre.toLowerCase())?.id;
+      if (genreId) {
+        const existing = rawParams.with_genres ? String(rawParams.with_genres) : '';
+        const existingIds = existing ? existing.split(',').map(s => s.trim()) : [];
+        if (!existingIds.includes(String(genreId))) {
+          existingIds.push(String(genreId));
+        }
+        rawParams.with_genres = existingIds.join(',');
+      }
+    }
     const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
     const parameters = sanitizeTmdbDiscoverParams(rawParams, language, discoverPage, config.includeAdult || false, type as 'movie' | 'series');
 
@@ -2223,7 +2276,12 @@ async function getSimklCatalog(
     if (catalogId.startsWith('simkl.discover.')) {
       const discoverMetadata = catalogConfig?.metadata?.discover || {};
       const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+      let genreName = genre;
       const discoverParams = sanitizeSimklDiscoverParams(rawParams, type);
+      if(!genreName || genreName.toLowerCase() === 'none') genreName = 'all';
+      if(genreName !=discoverParams.genre){
+        discoverParams.genre = genreName;
+      }
       logger.debug(`[Simkl Discover] Fetching with params: ${JSON.stringify(discoverParams)}`);
 
       const result = await fetchSimklGenreItems(
