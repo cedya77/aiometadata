@@ -818,9 +818,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
-    // Bump to invalidate stale catalog responses after poster reconstruction fixes.
-    catalogResponseVersion: 3,
-
     // Language (affects all catalogs except MAL when MAL is the anime provider)
     // MAL/Jikan doesn't return multilingual data, so language doesn't affect results
     ...(shouldExcludeLanguageForMAL ? {} : { language: config.language || 'en-US' }),
