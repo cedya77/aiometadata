@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.28.0](https://github.com/cedya77/aiometadata/compare/v1.27.1...v1.28.0) (2026-02-15)
+
+
+### Features
+
+* **BYOC:** Add genres dropdown for built catalogs ([5f7fc56](https://github.com/cedya77/aiometadata/commit/5f7fc5636f2d1b7e9662225c9653c68662c19e24))
+* **BYOC:** add option to preview catalogs ([ea2c5ea](https://github.com/cedya77/aiometadata/commit/ea2c5ea8cfb2ce85eaca627f95ee61a2b45d8710))
+* **BYOC:** Make built catalog settings editable ([9472ca6](https://github.com/cedya77/aiometadata/commit/9472ca621dfaf43301ea139608450573b92102bc))
+
+
+### Bug Fixes
+
+* **warming:** fix undefined var breaking warming ([9472ca6](https://github.com/cedya77/aiometadata/commit/9472ca621dfaf43301ea139608450573b92102bc))
+
 ## [1.27.1](https://github.com/cedya77/aiometadata/compare/v1.27.0...v1.27.1) (2026-02-14)
 
 
