@@ -2805,18 +2805,36 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                     )}
                     <div className="space-y-2">
                       <Label>Year</Label>
-                      <Select value={simklYear} onValueChange={setSimklYear}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {simklYearOptions.map(value => (
-                            <SelectItem key={value} value={value}>
-                              {formatSimklOptionLabel(value)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex gap-2">
+                        <Select value={simklYear} onValueChange={setSimklYear}>
+                          <SelectTrigger className="flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {simklYearOptions.map(value => (
+                              <SelectItem key={value} value={value}>
+                                {formatSimklOptionLabel(value)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          min={1950}
+                          max={2030}
+                          placeholder="Year"
+                          className="w-24"
+                          value={/^\d+$/.test(simklYear) ? simklYear : ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '') {
+                              setSimklYear(getSimklDefaultYear(simklMediaType));
+                            } else {
+                              setSimklYear(val);
+                            }
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 ) : null}
