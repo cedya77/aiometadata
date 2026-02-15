@@ -1716,6 +1716,151 @@ addon.get("/api/mdblist/external/lists/user", async (req, res) => {
   }
 });
 
+// ── TMDB Discover Preview ──
+addon.get("/api/tmdb/discover/preview", async (req, res) => {
+  try {
+    const { type, ...queryParams } = req.query;
+    const tmdbApiKey = await resolveTmdbDiscoverApiKey(req);
+    if (!tmdbApiKey) {
+      return res.status(400).json({ error: "TMDB API key is required" });
+    }
+    const mediaType = normalizeTmdbDiscoverType(type);
+    const config = { apiKeys: { tmdb: tmdbApiKey } };
+
+    // Pass through all query params except internal ones
+    const params = {};
+    const skipKeys = new Set(['type', 'apikey', 'userUUID']);
+    for (const [key, value] of Object.entries(queryParams)) {
+      if (!skipKeys.has(key) && value !== undefined && value !== '') {
+        params[key] = value;
+      }
+    }
+    params.page = 1;
+
+    const response = mediaType === 'movie'
+      ? await moviedb.discoverMovie(params, config)
+      : await moviedb.discoverTv(params, config);
+
+    const results = (response?.results || []).map(item => ({
+      id: item.id,
+      title: item.title || item.name,
+      poster_path: item.poster_path,
+      vote_average: item.vote_average,
+      release_date: item.release_date || item.first_air_date,
+    }));
+
+    return res.json({ results, total_results: response?.total_results || 0 });
+  } catch (error) {
+    consola.error("[TMDB Discover Preview] Error:", error.message);
+    return res.status(error.response?.status || 500).json({ error: error.message });
+  }
+});
+
+// ── TVDB Discover Preview ──
+addon.get("/api/tvdb/discover/preview", async (req, res) => {
+  try {
+    const { type, ...queryParams } = req.query;
+    const tvdbApiKey = await resolveTvdbDiscoverApiKey(req);
+    if (!tvdbApiKey) {
+      return res.status(400).json({ error: "TVDB API key is required" });
+    }
+    const tvdbType = type === 'movie' ? 'movies' : 'series';
+    const config = { apiKeys: { tvdb: tvdbApiKey } };
+
+    const params = {};
+    const skipKeys = new Set(['type', 'apikey', 'userUUID']);
+    for (const [key, value] of Object.entries(queryParams)) {
+      if (!skipKeys.has(key) && value !== undefined && value !== '') {
+        params[key] = value;
+      }
+    }
+
+    const response = await tvdbApi.filter(tvdbType, params, config);
+    const results = (response || []).slice(0, 20).map(item => ({
+      id: item.id,
+      title: item.name,
+      poster_path: item.image,
+      year: item.year,
+    }));
+
+    return res.json({ results, total_results: response?.length || 0 });
+  } catch (error) {
+    consola.error("[TVDB Discover Preview] Error:", error.message);
+    return res.status(error.response?.status || 500).json({ error: error.message });
+  }
+});
+
+// ── AniList Discover Preview ──
+addon.post("/api/anilist/discover/preview", async (req, res) => {
+  try {
+    const params = req.body?.params || {};
+    const anilist = require('./lib/anilist');
+    const response = await anilist.fetchDiscover(params, 1, 20);
+    const results = (response?.items || []).map(item => ({
+      id: item.media.id,
+      title: item.media.title?.english || item.media.title?.romaji || '',
+      poster_path: item.media.coverImage?.large || item.media.coverImage?.medium,
+      score: item.media.averageScore,
+    }));
+
+    return res.json({ results, total_results: response?.total || 0 });
+  } catch (error) {
+    consola.error("[AniList Discover Preview] Error:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Simkl Discover Preview ──
+addon.get("/api/simkl/discover/preview", async (req, res) => {
+  try {
+    const { media, ...queryParams } = req.query;
+    const mediaType = media === 'movies' ? 'movies' : media === 'shows' ? 'shows' : 'anime';
+
+    const simklUtils = require('./utils/simklUtils');
+    const response = await simklUtils.fetchSimklGenreItems(mediaType, queryParams, 1, 20);
+    const items = Array.isArray(response?.items) ? response.items : [];
+
+    const results = items.map(item => ({
+      id: item.ids?.simkl || item.ids?.tmdb || 0,
+      title: item.title || '',
+      poster_path: item.poster
+        ? `https://wsrv.nl/?url=https://simkl.in/posters/${item.poster}_ca.webp`
+        : null,
+      year: item.year,
+    }));
+
+    return res.json({ results, total_results: response?.totalItems || items.length });
+  } catch (error) {
+    consola.error("[Simkl Discover Preview] Error:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ── MAL Discover Preview ──
+addon.get("/api/mal/discover/preview", async (req, res) => {
+  try {
+    const params = { ...req.query };
+    delete params.apikey;
+    delete params.userUUID;
+
+    const jikan = require('./lib/mal');
+    const response = await jikan.fetchDiscover(params, 1);
+    const items = Array.isArray(response?.items) ? response.items : [];
+    const results = items.slice(0, 20).map(item => ({
+      id: item.mal_id,
+      title: item.title || item.title_english || '',
+      poster_path: item.images?.webp?.image_url || item.images?.jpg?.image_url || null,
+      score: item.score,
+      year: item.year,
+    }));
+
+    return res.json({ results, total_results: response?.total || items.length });
+  } catch (error) {
+    consola.error("[MAL Discover Preview] Error:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Trakt Proxy Endpoints ---
 // These proxy frontend Trakt calls through the backend rate limiter
 

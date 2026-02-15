@@ -206,17 +206,22 @@ async function getMalDiscoverCatalog(
     const rawParams = discoverMetadata?.params || {};
     const customCacheTTL = catalogConfig?.cacheTTL || null;
 
-    if(genreName && genreName.toLowerCase() !== 'none'){
+    if (genreName && genreName.toLowerCase() !== 'none') {
       const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
         return await jikan.getAnimeGenres();
       }, null, { skipVersion: true });
-      const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
-      if (genreNameToFetch) {
-        const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-        if (selectedGenre) {
-          const genreId = selectedGenre.mal_id;
-          rawParams.genres = genreId;
+    
+      const selectedGenre = allAnimeGenres.find(
+        (g: any) => g.name.toLowerCase() === genreName.toLowerCase()
+      );
+    
+      if (selectedGenre) {
+        const genreId = String(selectedGenre.mal_id);
+        const existing = rawParams.genres ? String(rawParams.genres).split(',').map((s: string) => s.trim()) : [];
+        if (!existing.includes(genreId)) {
+          existing.push(genreId);
         }
+        rawParams.genres = existing.join(',');
       }
     }
 

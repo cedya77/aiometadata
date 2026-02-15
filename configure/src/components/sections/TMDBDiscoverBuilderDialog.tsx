@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { AlertCircle, CircleHelp, Loader2, Search, Trash2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiCache } from '@/utils/apiCache';
+import { X } from 'lucide-react';
 
 interface TMDBDiscoverBuilderDialogProps {
   isOpen: boolean;
@@ -659,6 +660,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
   const [malEndDate, setMalEndDate] = useState('');
   const [malSfw, setMalSfw] = useState(true);
 
+  const [previewResults, setPreviewResults] = useState<any[]>([]);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewTotalResults, setPreviewTotalResults] = useState(0);
+
   const [isSaving, setIsSaving] = useState(false);
 
   const tmdbMediaType = toTmdbMediaType(catalogType);
@@ -975,6 +981,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
     setMalEndDate('');
     setMalSfw(true);
 
+    setPreviewResults([]);
+    setShowPreview(false);
+    setPreviewTotalResults(0);
+    setIsPreviewLoading(false);
+
     setIsSaving(false);
   };
 
@@ -1104,6 +1115,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
   }, [catalogType, discoverSource, simklMediaType]);
 
   useEffect(() => {
+    setShowPreview(false);
+    setPreviewResults([]);
+  }, [discoverParamsPreview]);
+
+  useEffect(() => {
     if (!isOpen) return;
 
     const handleDocumentMouseDown = (event: MouseEvent) => {
@@ -1122,6 +1138,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
     return () => {
       document.removeEventListener('mousedown', handleDocumentMouseDown);
     };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!editingCatalog) {
+      resetState();
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -1472,6 +1495,86 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
     id: item.id,
     label: item.name || item.title || `ID ${item.id}`
   });
+
+  const handlePreview = async () => {
+    setIsPreviewLoading(true);
+    setShowPreview(true);
+    try {
+      const params = buildDiscoverParams();
+      let results: any[] = [];
+      let totalResults = 0;
+  
+      if (discoverSource === 'tmdb') {
+        const mediaType = catalogType === 'movie' ? 'movie' : 'tv';
+        const queryParams = new URLSearchParams();
+        queryParams.set('type', mediaType);
+        for (const [key, value] of Object.entries(params)) {
+          queryParams.set(key, String(value));
+        }
+        if (config.apiKeys?.tmdb) queryParams.set('apikey', config.apiKeys.tmdb);
+        if (auth.userUUID) queryParams.set('userUUID', auth.userUUID);
+  
+        const res = await fetch(`/api/tmdb/discover/preview?${queryParams.toString()}`);
+        const data = await res.json();
+        results = data.results || [];
+        totalResults = data.total_results || 0;
+  
+      } else if (discoverSource === 'tvdb') {
+        const queryParams = new URLSearchParams();
+        queryParams.set('type', catalogType);
+        for (const [key, value] of Object.entries(params)) {
+          queryParams.set(key, String(value));
+        }
+        if (config.apiKeys?.tvdb) queryParams.set('apikey', config.apiKeys.tvdb);
+        if (auth.userUUID) queryParams.set('userUUID', auth.userUUID);
+        const res = await fetch(`/api/tvdb/discover/preview?${queryParams.toString()}`);
+        const data = await res.json();
+        results = data.results || [];
+        totalResults = data.total_results || 0;
+  
+      } else if (discoverSource === 'anilist') {
+        const res = await fetch('/api/anilist/discover/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ params }),
+        });
+        const data = await res.json();
+        results = data.results || [];
+        totalResults = data.total_results || 0;
+      } else if (discoverSource === 'simkl') {
+        const queryParams = new URLSearchParams();
+        for (const [key, value] of Object.entries(params)) {
+          queryParams.set(key, String(value));
+        }
+        const res = await fetch(`/api/simkl/discover/preview?${queryParams.toString()}`);
+        const data = await res.json();
+        results = data.results || [];
+        totalResults = data.total_results || 0;
+      
+      } else if (discoverSource === 'mal') {
+        const queryParams = new URLSearchParams();
+        for (const [key, value] of Object.entries(params)) {
+          queryParams.set(key, String(value));
+        }
+        const res = await fetch(`/api/mal/discover/preview?${queryParams.toString()}`);
+        const data = await res.json();
+        results = data.results || [];
+        totalResults = data.total_results || 0;
+      }
+  
+      setPreviewResults(results);
+      setPreviewTotalResults(totalResults);
+    } catch (error) {
+      console.error('Preview failed:', error);
+      toast.error('Preview failed', {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+      setPreviewResults([]);
+      setPreviewTotalResults(0);
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
 
   function buildDiscoverParams(): Record<string, string | number | boolean> {
 
@@ -2011,6 +2114,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
     }
   };
 
+  const handleClose = () => {
+    resetState();
+    onClose();
+  };
+
   const renderSelectedItems = (
     items: SelectionItem[],
     onRemove: (id: number) => void,
@@ -2042,16 +2150,19 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
   return (
     <TooltipProvider delayDuration={200}>
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Wand2 className="h-5 w-5" />
-          {editingCatalog ? 'Edit Catalog' : 'Build Your Catalog'}
-        </DialogTitle>
-          <DialogDescription>
-          Create custom TMDB, TVDB, Simkl, or AniList discover catalogs with filters and save them directly into your catalog list.
-          </DialogDescription>
-        </DialogHeader>
+        <DialogContent
+          className="max-w-5xl max-h-[90vh] overflow-y-auto"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5" />
+              {editingCatalog ? 'Edit Catalog' : 'Build Your Catalog'}
+            </DialogTitle>
+              <DialogDescription>
+              Create custom TMDB, TVDB, Simkl, or AniList discover catalogs with filters and save them directly into your catalog list.
+              </DialogDescription>
+          </DialogHeader>
 
         {!activeSourceApiKey && discoverSource !== 'anilist' && discoverSource !== 'mal' && discoverSource !== 'simkl' && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
@@ -2325,7 +2436,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                           <div className="space-y-2">
                             <Label>Include Genres</Label>
                             <Select
-                              value={undefined}
+                              value=""
                               onValueChange={(value) => {
                                 const genre = malAvailableGenres.find(g => String(g.id) === value);
                                 if (genre && !malIncludeGenreIds.find(g => g.id === genre.id)) {
@@ -2367,7 +2478,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                           <div className="space-y-2">
                             <Label>Exclude Genres</Label>
                             <Select
-                              value={undefined}
+                              value=""
                               onValueChange={(value) => {
                                 const genre = malAvailableGenres.find(g => String(g.id) === value);
                                 if (genre && !malExcludeGenreIds.find(g => g.id === genre.id)) {
@@ -3316,7 +3427,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                       <div className="space-y-2">
                         <Label>Include Genres</Label>
                         <Select
-                          value={undefined}
+                          value=""
                           onValueChange={(value) => {
                             if (value && !anilistIncludeGenres.includes(value)) {
                               setAnilistIncludeGenres(prev => [...prev, value]);
@@ -3360,7 +3471,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                       <div className="space-y-2">
                         <Label>Exclude Genres</Label>
                         <Select
-                          value={undefined}
+                          value=""
                           onValueChange={(value) => {
                             if (value && !anilistExcludeGenres.includes(value)) {
                               setAnilistExcludeGenres(prev => [...prev, value]);
@@ -4116,9 +4227,69 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
             </Card>
           </div>
 
+          {showPreview && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">
+                    Preview {previewTotalResults > 0 && `(${previewTotalResults.toLocaleString()} total results)`}
+                  </CardTitle>
+                  <Button variant="ghost" size="icon" onClick={() => setShowPreview(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isPreviewLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : previewResults.length > 0 ? (
+                  <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
+                    {previewResults.map((item) => (
+                      <div key={item.id} className="space-y-1">
+                        {item.poster_path ? (
+                          <img
+                            src={
+                              discoverSource === 'tmdb' && item.poster_path
+                                ? `https://image.tmdb.org/t/p/w185${item.poster_path}`
+                                : discoverSource === 'tvdb' && item.poster_path && !item.poster_path.startsWith('http')
+                                  ? `https://artworks.thetvdb.com${item.poster_path}`
+                                  : item.poster_path || ''
+                            }
+                            alt={item.title}
+                            className="w-full aspect-[2/3] object-cover rounded-md bg-muted"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full aspect-[2/3] rounded-md bg-muted flex items-center justify-center">
+                            <span className="text-xs text-muted-foreground">No poster</span>
+                          </div>
+                        )}
+                        <p className="text-xs truncate" title={item.title}>{item.title}</p>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          {item.vote_average && <span>⭐ {item.vote_average.toFixed(1)}</span>}
+                          {item.score && <span>⭐ {item.score}%</span>}
+                          {item.release_date && <span>{item.release_date.substring(0, 4)}</span>}
+                          {item.year && !item.release_date && <span>{item.year}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No results found with current filters. Try broadening your criteria.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button variant="outline" onClick={handlePreview} disabled={isPreviewLoading}>
+            {isPreviewLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Preview
           </Button>
           <Button
             onClick={handleCreateCatalog}

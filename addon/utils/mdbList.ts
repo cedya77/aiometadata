@@ -766,7 +766,7 @@ async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Pro
         });
 
         // Extract slugs from the genre objects (MDBList API uses slugs for filtering)
-        const genres = genresData.map(g => g.slug).filter(Boolean);
+        const genres = genresData.map(g => g.title).filter(Boolean);
 
         logger.info(`Successfully fetched ${genres.length} ${isAnime ? 'anime' : 'standard'} genres from MDBList API`);
         return genres;
@@ -793,7 +793,7 @@ async function fetchMdbListSearchItems(query: string, type: string, apiKey: stri
 // Convert genre title to slug using the mapping from the API
 function convertGenreToSlug(genre: string): string {
   if (!genre || genre.toLowerCase() === 'none') {
-    return genre;
+    return genre.toLowerCase();
   }
   
   // If we have the mapping, use it
@@ -805,7 +805,7 @@ function convertGenreToSlug(genre: string): string {
   }
   
   // Fallback: genre is already in slug format or direct conversion
-  return genre;
+  return genre.toLowerCase();
 }
 
 type MovieIdInput =
