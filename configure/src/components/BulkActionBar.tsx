@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move  } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, GitMerge } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +15,7 @@ type BulkActionType =
   | 'disable'
   | 'addToHome'
   | 'removeFromHome'
+  | 'merge'
   | 'delete'
   | 'invert'
   | 'enableRatingPosters'
@@ -31,6 +32,9 @@ interface BulkActionBarProps {
   onDisableSelected: () => void;
   onAddToHome: () => void;
   onRemoveFromHome: () => void;
+  onMergeSelected?: () => void;
+  canMergeSelected?: boolean;
+  mergeDisabledReason?: string;
   onDeleteSelected: () => void;
   onInvertSelection: () => void;
   onClearSelection: () => void;
@@ -51,6 +55,9 @@ export function BulkActionBar({
   onDisableSelected,
   onAddToHome,
   onRemoveFromHome,
+  onMergeSelected,
+  canMergeSelected = false,
+  mergeDisabledReason,
   onDeleteSelected,
   onInvertSelection,
   onClearSelection,
@@ -72,16 +79,19 @@ export function BulkActionBar({
   const hasNotInHome = selectedCatalogs.some(c => !c.showInHome);
   const hasInHome = selectedCatalogs.some(c => c.showInHome);
   const hasRemovableCatalogs = selectedCatalogs.some(c => 
-    ['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
+    ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'merged'].includes(c.source)
   );
   const hasRatingPostersDisabled = selectedCatalogs.some(c => c.enableRatingPosters === false);
   const hasRatingPostersEnabled = selectedCatalogs.some(c => c.enableRatingPosters !== false);
   const hasRandomizeDisabled = selectedCatalogs.some(c => !c.randomizePerPage);
   const hasRandomizeEnabled = selectedCatalogs.some(c => c.randomizePerPage);
+  const hasMergedParentsSelected = selectedCatalogs.some(
+    c => c.source === 'merged' || c.id.startsWith('merge.')
+  );
   
   // Count non-removable catalogs for tooltip
   const nonRemovableCount = selectedCatalogs.filter(c => 
-    !['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
+    !['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'merged'].includes(c.source)
   ).length;
 
   // Don't render if no items selected
@@ -306,7 +316,7 @@ export function BulkActionBar({
                     size="sm"
                     variant="outline"
                     onClick={onEnableRandomize}
-                    disabled={isLoading}
+                    disabled={isLoading || hasMergedParentsSelected}
                     aria-label="Enable random order for selected catalogs"
                     className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
                   >
@@ -319,7 +329,11 @@ export function BulkActionBar({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Randomize items within each page for selected catalogs</p>
+                  <p>
+                    {hasMergedParentsSelected
+                      ? 'Unavailable when merged catalogs are selected'
+                      : 'Randomize items within each page for selected catalogs'}
+                  </p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -332,7 +346,7 @@ export function BulkActionBar({
                     size="sm"
                     variant="outline"
                     onClick={onDisableRandomize}
-                    disabled={isLoading}
+                    disabled={isLoading || hasMergedParentsSelected}
                     aria-label="Disable random order for selected catalogs"
                     className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
                   >
@@ -345,7 +359,11 @@ export function BulkActionBar({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Restore original ordering for selected catalogs</p>
+                  <p>
+                    {hasMergedParentsSelected
+                      ? 'Unavailable when merged catalogs are selected'
+                      : 'Restore original ordering for selected catalogs'}
+                  </p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -403,6 +421,32 @@ export function BulkActionBar({
                       ({nonRemovableCount} non-removable catalog{nonRemovableCount === 1 ? '' : 's'} will be skipped)
                     </p>
                   )}
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Merge Selected */}
+            {onMergeSelected && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onMergeSelected}
+                    disabled={isLoading || !canMergeSelected}
+                    aria-label="Merge selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0 border-indigo-200 dark:border-indigo-800"
+                  >
+                    {loadingAction === 'merge' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <GitMerge className="h-4 w-4 text-indigo-500" />
+                    )}
+                    <span className="ml-2">Merge Selected</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{canMergeSelected ? 'Merge selected catalogs into one feed' : (mergeDisabledReason || 'Select at least two compatible catalogs')}</p>
                 </TooltipContent>
               </Tooltip>
             )}

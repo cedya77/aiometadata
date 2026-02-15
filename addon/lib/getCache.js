@@ -6,6 +6,7 @@ const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
 const idMapper = require('./id-mapper');
 const crypto = require('crypto');
+const { getMergedChildAuthFingerprint } = require('./mergedAuthFingerprint');
 
 // Helper to hash config
 function hashConfig(configObj) {
@@ -144,6 +145,39 @@ function stableStringify(value) {
   if (Array.isArray(value)) return '[' + value.map(v => stableStringify(v)).join(',') + ']';
   const keys = Object.keys(value).sort();
   return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+}
+
+function normalizeMergedCacheTtl(ttlValue, fallback) {
+  const ttl = Number(ttlValue);
+  if (Number.isFinite(ttl) && ttl > 0) return Math.floor(ttl);
+  const fallbackTtl = Number(fallback);
+  if (Number.isFinite(fallbackTtl) && fallbackTtl > 0) return Math.floor(fallbackTtl);
+  return CATALOG_TTL;
+}
+
+function getTtlEpoch(ttlSeconds, nowMs = Date.now()) {
+  const safeTtl = Math.max(1, Math.floor(ttlSeconds));
+  return Math.floor(nowMs / (safeTtl * 1000));
+}
+
+function buildMergedChildEpochSnapshot(mergedMetadata, catalogs, parentTtl, nowMs = Date.now()) {
+  const childEpochs = {
+    __parent: getTtlEpoch(parentTtl, nowMs)
+  };
+  const childTtls = [];
+
+  if (!mergedMetadata || !Array.isArray(mergedMetadata.children)) {
+    return { childEpochs, childTtls };
+  }
+
+  for (const child of mergedMetadata.children) {
+    const childCatalog = catalogs?.find(c => c.id === child.id && c.type === child.type);
+    const childTtl = normalizeMergedCacheTtl(childCatalog?.cacheTTL, parentTtl);
+    childTtls.push(childTtl);
+    childEpochs[`${child.id}-${child.type}`] = getTtlEpoch(childTtl, nowMs);
+  }
+
+  return { childEpochs, childTtls };
 }
 
 // Lightweight stable hash for short log signatures
@@ -768,6 +802,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isTraktCatalog = idOnly.startsWith('trakt.');
   const isLetterboxdCatalog = idOnly.startsWith('letterboxd.');
   const isStreamingCatalog = idOnly.startsWith('streaming.');
+  const isMergedCatalog = idOnly.startsWith('merge.');
   const isTmdbDiscoverCatalog = idOnly.startsWith('tmdb.discover.');
   const isTvdbDiscoverCatalog = idOnly.startsWith('tvdb.discover.');
   const isAniListDiscoverCatalog = idOnly.startsWith('anilist.discover.');
@@ -783,6 +818,9 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
+    // Bump to invalidate stale catalog responses after poster reconstruction fixes.
+    catalogResponseVersion: 3,
+
     // Language (affects all catalogs except MAL when MAL is the anime provider)
     // MAL/Jikan doesn't return multilingual data, so language doesn't affect results
     ...(shouldExcludeLanguageForMAL ? {} : { language: config.language || 'en-US' }),
@@ -809,6 +847,49 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       : (config.apiKeys?.rpdb || '')) : '',
     usePosterProxy: !!config.usePosterProxy,
   };
+
+  if (isMergedCatalog && catalogFromConfig?.metadata?.merged) {
+    const mergedMetadata = catalogFromConfig.metadata.merged;
+    const mergedParentTtl = normalizeMergedCacheTtl(catalogFromConfig?.cacheTTL, CATALOG_TTL);
+    const { childEpochs } = buildMergedChildEpochSnapshot(mergedMetadata, config.catalogs || [], mergedParentTtl);
+    const childSnapshots = Array.isArray(mergedMetadata.children)
+      ? mergedMetadata.children.map(child => {
+          const childCatalog = config.catalogs?.find(
+            c => c.id === child.id && c.type === child.type
+          );
+          const authFingerprint = getMergedChildAuthFingerprint(childCatalog || child, config);
+          if (!childCatalog) {
+            return { id: child.id, type: child.type, missing: true, authFingerprint };
+          }
+          return {
+            id: childCatalog.id,
+            type: childCatalog.type,
+            source: childCatalog.source || null,
+            sourceUrl: childCatalog.sourceUrl || null,
+            pageSize: childCatalog.pageSize || null,
+            cacheTTL: childCatalog.cacheTTL || null,
+            sort: childCatalog.sort || null,
+            order: childCatalog.order || null,
+            sortDirection: childCatalog.sortDirection || null,
+            metadata: childCatalog.metadata || null,
+            enableRatingPosters: childCatalog.enableRatingPosters !== false,
+            randomizePerPage: !!childCatalog.randomizePerPage,
+            mergedInto: childCatalog.mergedInto || null,
+            displayType: childCatalog.displayType || null,
+            authFingerprint,
+          };
+        })
+      : [];
+
+    catalogConfig.merged = {
+      strategy: mergedMetadata.strategy || 'sequential',
+      genreMode: 'strict',
+      dedupe: mergedMetadata.dedupe !== false,
+      pageSize: mergedMetadata.pageSize || null,
+      children: childSnapshots,
+      childEpochs,
+    };
+  }
   
   // Only include MDBList API key for MDBList catalogs
   if (isMDBListCatalog) {
@@ -933,6 +1014,21 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     }
   }
 
+  if (isMergedCatalog) {
+    const catalogConfig = config.catalogs?.find(c => c.id === idOnly && c.type === catalogType);
+    const mergedMeta = catalogConfig?.metadata?.merged;
+    const parentTtl = normalizeMergedCacheTtl(catalogConfig?.cacheTTL, cacheTTL);
+    let effectiveMergedTtl = parentTtl;
+    if (mergedMeta?.children && Array.isArray(mergedMeta.children)) {
+      const { childTtls } = buildMergedChildEpochSnapshot(mergedMeta, config.catalogs || [], parentTtl);
+      if (childTtls.length > 0) {
+        effectiveMergedTtl = Math.min(parentTtl, Math.min(...childTtls));
+      }
+    }
+    cacheTTL = Math.max(300, effectiveMergedTtl);
+    cacheLogger.debug(`[Catalog] Using effective cache TTL for merged catalog ${idOnly}: ${cacheTTL}s`);
+  }
+
   // Use custom cache TTL for custom TMDB discover catalogs if specified
   if (isDiscoverCatalog) {
     const catalogConfig = config.catalogs?.find(c => c.id === idOnly);
@@ -958,7 +1054,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
     key = `catalog:${today}:${configHash}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog) {
+  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog || isMergedCatalog) {
     key = `catalog:${userUUID}:${configHash}:${cacheTTL}:${catalogKey}`;
   } else if (idOnly.startsWith('simkl.') || idOnly.startsWith('anilist.')) {
     key = `catalog:${configHash}:${catalogKey}`;
@@ -968,12 +1064,18 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
-  const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog || isAuthCatalog;
+  const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog || isAuthCatalog || isMergedCatalog;
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state
-  currentRequestContext.catalogConfig = catalogFromConfig;
+  const contextCatalogConfig =
+    config?._currentCatalogConfig &&
+    config._currentCatalogConfig.id === idOnly &&
+    config._currentCatalogConfig.type === catalogType
+      ? config._currentCatalogConfig
+      : catalogFromConfig;
+  currentRequestContext.catalogConfig = contextCatalogConfig;
   
   try {
     return await cacheWrap(key, method, cacheTTL, options);
@@ -1646,6 +1748,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   }
 
   
+   const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRatingPosters !== false;
+
    // Add other components
    availableComponents.forEach(({ componentName, data }) => {
      if (componentName === 'basic') return; // Already handled
@@ -1653,7 +1757,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      if (componentName === 'poster') {
        // Apply poster rating logic during reconstruction if enabled
        // Use module-level context to get accurate enablement state
-       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRatingPosters !== false;
        const host = process.env.HOST_NAME.startsWith('http')
          ? process.env.HOST_NAME
          : `https://${process.env.HOST_NAME}`;
@@ -1676,10 +1779,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          if (isUpNextWithEpisodeThumbnail || hasEpisodeThumbnailShape) {
            cacheLogger.debug(`[Reconstruct] Preserving cached episode thumbnail for ${metaId} (useShowPoster=${useShowPoster}, posterShape=${reconstructedMeta.posterShape}), poster: ${data.poster?.substring(0, 100)}...`);
          }
-         reconstructedMeta.poster = data.poster;
+         // If rating posters are disabled, prefer the raw poster URL when available.
+         reconstructedMeta.poster = reconstructedMeta._rawPosterUrl || data.poster;
        }
      } else if (componentName === 'rawPoster') {
        reconstructedMeta._rawPosterUrl = data._rawPosterUrl;
+       if (!posterRatingEnabled && data._rawPosterUrl) {
+         reconstructedMeta.poster = data._rawPosterUrl;
+       }
      } else if (componentName === 'background') {
        reconstructedMeta.background = data.background;
      } else if (componentName === 'landscapePoster') {

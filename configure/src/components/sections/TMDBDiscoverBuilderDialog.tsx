@@ -16,6 +16,7 @@ import { apiCache } from '@/utils/apiCache';
 interface TMDBDiscoverBuilderDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  editingCatalog?: CatalogConfig | null;
 }
 
 type CatalogMediaType = 'movie' | 'series';
@@ -510,7 +511,7 @@ function LabelWithTooltip({
   );
 }
 
-export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuilderDialogProps) {
+export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: TMDBDiscoverBuilderDialogProps) {
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
@@ -600,6 +601,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   const peopleSearchRef = useRef<HTMLDivElement | null>(null);
   const companySearchRef = useRef<HTMLDivElement | null>(null);
   const keywordSearchRef = useRef<HTMLDivElement | null>(null);
+  const isHydratingEditRef = useRef(false);
 
   const [voteAverageRange, setVoteAverageRange] = useState<[number, number]>([0, 10]);
   const [voteCountMin, setVoteCountMin] = useState<number>(0);
@@ -979,9 +981,109 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
 
   useEffect(() => {
     if (!isOpen) return;
-    resetState();
+
+    if (!editingCatalog) {
+      isHydratingEditRef.current = false;
+      resetState();
+      return;
+    }
+
+    const formState = editingCatalog.metadata?.discover?.formState;
+    if (!formState) {
+      isHydratingEditRef.current = false;
+      return;
+    }
+
+    isHydratingEditRef.current = true;
+
+    // Shared
+    if (formState.catalogName) setCatalogName(formState.catalogName);
+    if (formState.discoverSource) setDiscoverSource(formState.discoverSource);
+    if (formState.sortBy) setSortBy(formState.sortBy);
+    if (typeof formState.cacheTTL === 'number') setCacheTTL(formState.cacheTTL);
+    if (formState.catalogType) setCatalogType(formState.catalogType);
+
+    // TMDB / TVDB shared
+    if (formState.includeGenres) setIncludeGenres(formState.includeGenres);
+    if (formState.excludeGenres) setExcludeGenres(formState.excludeGenres);
+    if (formState.genreJoinMode) setGenreJoinMode(formState.genreJoinMode);
+    if (formState.originalLanguage) setOriginalLanguage(formState.originalLanguage);
+    if (formState.originCountry) setOriginCountry(formState.originCountry);
+    if (formState.certificationCountry) setCertificationCountry(formState.certificationCountry);
+    if (formState.certificationValue) setCertificationValue(formState.certificationValue);
+
+    // TMDB-only
+    if (typeof formState.includeAdult === 'boolean') setIncludeAdult(formState.includeAdult);
+    if (typeof formState.releasedOnly === 'boolean') setReleasedOnly(formState.releasedOnly);
+    if (formState.selectedPeople) setSelectedPeople(formState.selectedPeople);
+    if (formState.peopleJoinMode) setPeopleJoinMode(formState.peopleJoinMode);
+    if (formState.withCompanies) setWithCompanies(formState.withCompanies);
+    if (formState.withoutCompanies) setWithoutCompanies(formState.withoutCompanies);
+    if (formState.companyJoinMode) setCompanyJoinMode(formState.companyJoinMode);
+    if (formState.withKeywords) setWithKeywords(formState.withKeywords);
+    if (formState.withoutKeywords) setWithoutKeywords(formState.withoutKeywords);
+    if (formState.keywordJoinMode) setKeywordJoinMode(formState.keywordJoinMode);
+    if (formState.watchRegion) setWatchRegion(formState.watchRegion);
+    if (formState.watchProviders) setWatchProviders(formState.watchProviders);
+    if (formState.providerJoinMode) setProviderJoinMode(formState.providerJoinMode);
+    if (formState.voteAverageRange) setVoteAverageRange(formState.voteAverageRange);
+    if (typeof formState.voteCountMin === 'number') setVoteCountMin(formState.voteCountMin);
+    if (formState.runtimeRange) setRuntimeRange(formState.runtimeRange);
+    if (formState.primaryReleaseFrom) setPrimaryReleaseFrom(formState.primaryReleaseFrom);
+    if (formState.primaryReleaseTo) setPrimaryReleaseTo(formState.primaryReleaseTo);
+    if (formState.firstAirFrom) setFirstAirFrom(formState.firstAirFrom);
+    if (formState.firstAirTo) setFirstAirTo(formState.firstAirTo);
+    if (formState.airDateFrom) setAirDateFrom(formState.airDateFrom);
+    if (formState.airDateTo) setAirDateTo(formState.airDateTo);
+    if (formState.releaseRegion) setReleaseRegion(formState.releaseRegion);
+
+    // TVDB-only
+    if (formState.tvdbSortDirection) setTvdbSortDirection(formState.tvdbSortDirection);
+    if (formState.tvdbStatus) setTvdbStatus(formState.tvdbStatus);
+    if (formState.tvdbYear) setTvdbYear(formState.tvdbYear);
+
+    // Simkl
+    if (formState.simklMediaType) setSimklMediaType(formState.simklMediaType);
+    if (formState.simklGenre) setSimklGenre(formState.simklGenre);
+    if (formState.simklType) setSimklType(formState.simklType);
+    if (formState.simklCountry) setSimklCountry(formState.simklCountry);
+    if (formState.simklNetwork) setSimklNetwork(formState.simklNetwork);
+    if (formState.simklYear) setSimklYear(formState.simklYear);
+
+    // AniList
+    if (formState.anilistFormats) setAnilistFormats(formState.anilistFormats);
+    if (formState.anilistStatus) setAnilistStatus(formState.anilistStatus);
+    if (formState.anilistSeason) setAnilistSeason(formState.anilistSeason);
+    if (formState.anilistSeasonYear) setAnilistSeasonYear(formState.anilistSeasonYear);
+    if (formState.anilistCountry) setAnilistCountry(formState.anilistCountry);
+    if (formState.anilistSelectedStudios) setAnilistSelectedStudios(formState.anilistSelectedStudios);
+    if (formState.anilistIncludeGenres) setAnilistIncludeGenres(formState.anilistIncludeGenres);
+    if (formState.anilistExcludeGenres) setAnilistExcludeGenres(formState.anilistExcludeGenres);
+    if (formState.anilistIncludeTags) setAnilistIncludeTags(formState.anilistIncludeTags);
+    if (formState.anilistExcludeTags) setAnilistExcludeTags(formState.anilistExcludeTags);
+    if (formState.anilistScoreRange) setAnilistScoreRange(formState.anilistScoreRange);
+    if (typeof formState.anilistPopularityMin === 'number') setAnilistPopularityMin(formState.anilistPopularityMin);
+    if (formState.anilistEpisodesRange) setAnilistEpisodesRange(formState.anilistEpisodesRange);
+    if (formState.anilistDurationRange) setAnilistDurationRange(formState.anilistDurationRange);
+    if (typeof formState.anilistIsAdult === 'boolean') setAnilistIsAdult(formState.anilistIsAdult);
+    if (formState.anilistStartDateFrom) setAnilistStartDateFrom(formState.anilistStartDateFrom);
+    if (formState.anilistStartDateTo) setAnilistStartDateTo(formState.anilistStartDateTo);
+
+    // MAL
+    if (formState.malType) setMalType(formState.malType);
+    if (formState.malStatus) setMalStatus(formState.malStatus);
+    if (formState.malRating) setMalRating(formState.malRating);
+    if (formState.malSortDirection) setMalSortDirection(formState.malSortDirection);
+    if (formState.malIncludeGenreIds) setMalIncludeGenreIds(formState.malIncludeGenreIds);
+    if (formState.malExcludeGenreIds) setMalExcludeGenreIds(formState.malExcludeGenreIds);
+    if (formState.malProducers) setMalProducers(formState.malProducers);
+    if (typeof formState.malMinScore === 'number') setMalMinScore(formState.malMinScore);
+    if (typeof formState.malMaxScore === 'number') setMalMaxScore(formState.malMaxScore);
+    if (formState.malStartDate) setMalStartDate(formState.malStartDate);
+    if (formState.malEndDate) setMalEndDate(formState.malEndDate);
+    if (typeof formState.malSfw === 'boolean') setMalSfw(formState.malSfw);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, editingCatalog]);
 
   useEffect(() => {
     if (!sortOptions.some(option => option.value === sortBy)) {
@@ -990,6 +1092,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
   }, [sortBy, sortOptions]);
 
   useEffect(() => {
+    if (isHydratingEditRef.current) {
+      isHydratingEditRef.current = false;
+      return;
+    }
+
     setIncludeGenres([]);
     setExcludeGenres([]);
     setPendingIncludeGenreId('');
@@ -1609,6 +1716,123 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     return params;
   }
 
+  function buildFormState(): Record<string, any> {
+    const state: Record<string, any> = {
+      // Shared
+      catalogName: catalogName.trim(),
+      discoverSource,
+      sortBy,
+      cacheTTL,
+      catalogType,
+    };
+
+    // TMDB / TVDB shared
+    if (discoverSource === 'tmdb' || discoverSource === 'tvdb') {
+      Object.assign(state, {
+        includeGenres,
+        excludeGenres,
+        genreJoinMode,
+        originalLanguage,
+        originCountry,
+        certificationCountry,
+        certificationValue,
+      });
+    }
+
+    // TMDB-only
+    if (discoverSource === 'tmdb') {
+      Object.assign(state, {
+        includeAdult,
+        releasedOnly,
+        selectedPeople,
+        peopleJoinMode,
+        withCompanies,
+        withoutCompanies,
+        companyJoinMode,
+        withKeywords,
+        withoutKeywords,
+        keywordJoinMode,
+        watchRegion,
+        watchProviders,
+        providerJoinMode,
+        voteAverageRange,
+        voteCountMin,
+        runtimeRange,
+        primaryReleaseFrom,
+        primaryReleaseTo,
+        firstAirFrom,
+        firstAirTo,
+        airDateFrom,
+        airDateTo,
+        releaseRegion,
+      });
+    }
+
+    // TVDB-only
+    if (discoverSource === 'tvdb') {
+      Object.assign(state, {
+        tvdbSortDirection,
+        tvdbStatus,
+        tvdbYear,
+      });
+    }
+
+    // Simkl
+    if (discoverSource === 'simkl') {
+      Object.assign(state, {
+        simklMediaType,
+        simklGenre,
+        simklType,
+        simklCountry,
+        simklNetwork,
+        simklYear,
+      });
+    }
+
+    // AniList
+    if (discoverSource === 'anilist') {
+      Object.assign(state, {
+        anilistFormats,
+        anilistStatus,
+        anilistSeason,
+        anilistSeasonYear,
+        anilistCountry,
+        anilistSelectedStudios,
+        anilistIncludeGenres,
+        anilistExcludeGenres,
+        anilistIncludeTags,
+        anilistExcludeTags,
+        anilistScoreRange,
+        anilistPopularityMin,
+        anilistEpisodesRange,
+        anilistDurationRange,
+        anilistIsAdult,
+        anilistStartDateFrom,
+        anilistStartDateTo,
+      });
+    }
+
+    // MAL
+    if (discoverSource === 'mal') {
+      Object.assign(state, {
+        malType,
+        malStatus,
+        malRating,
+        malSortDirection,
+        malIncludeGenreIds,
+        malExcludeGenreIds,
+        malProducers,
+        malMinScore,
+        malMaxScore,
+        malStartDate,
+        malEndDate,
+        malSfw,
+      });
+    }
+
+    return state;
+  }
+
   const handleVoteAverageMinSliderChange = (value: number) => {
     setVoteAverageRange(([_, currentMax]) => [Math.min(value, currentMax), currentMax]);
   };
@@ -1678,12 +1902,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
     setIsSaving(true);
     try {
       const params = buildDiscoverParams();
-      const sanitizedName = catalogName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 40) || 'catalog';
-      const uniqueSuffix = Date.now().toString(36);
+      const formState = buildFormState();
       const simklCatalogType = simklMediaType === 'movies' ? 'movie' : simklMediaType === 'shows' ? 'series' : 'anime';
       const SOURCE_PREFIXES: Record<string, string> = {
         tmdb: 'tmdb.discover',
@@ -1692,16 +1911,27 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
         mal: 'mal.discover',
         anilist: 'anilist.discover',
       };
-      
-      const sourcePrefix = SOURCE_PREFIXES[discoverSource] ?? 'tmdb.discover';
-      
 
-      const catalogTypeSegment = discoverSource === 'simkl'
-        ? simklMediaType
-        : discoverSource === 'anilist' || discoverSource === 'mal'
-          ? 'anime'
-          : catalogType;
-      const catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
+      // Reuse existing ID when editing, generate new one when creating
+      let catalogId: string;
+      if (editingCatalog) {
+        catalogId = editingCatalog.id;
+      } else {
+        const sanitizedName = catalogName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 40) || 'catalog';
+        const uniqueSuffix = Date.now().toString(36);
+        const sourcePrefix = SOURCE_PREFIXES[discoverSource] ?? 'tmdb.discover';
+        const catalogTypeSegment = discoverSource === 'simkl'
+          ? simklMediaType
+          : discoverSource === 'anilist' || discoverSource === 'mal'
+            ? 'anime'
+            : catalogType;
+        catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
+      }
+
       const displayType = discoverSource === 'simkl' && simklCatalogType === 'anime'
         ? undefined
         : getDisplayTypeOverride(
@@ -1710,16 +1940,16 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
               : catalogType,
             config.displayTypeOverrides
           );
-          const SOURCE_LABELS: Record<string, string> = {
-            tmdb: 'TMDB',
-            tvdb: 'TVDB',
-            simkl: 'SIMKL',
-            mal: 'MAL',
-            anilist: 'ANILIST',
-          };
-          
-          const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
-          
+
+      const SOURCE_LABELS: Record<string, string> = {
+        tmdb: 'TMDB',
+        tvdb: 'TVDB',
+        simkl: 'SIMKL',
+        mal: 'MAL',
+        anilist: 'ANILIST',
+      };
+      const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
+
       const discoverMediaType = discoverSource === 'tmdb'
         ? tmdbMediaType
         : (discoverSource === 'anilist' || discoverSource === 'mal')
@@ -1733,49 +1963,67 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
           ? buildTvdbDiscoverApiUrl(catalogType, params)
           : discoverSource === 'simkl'
             ? buildSimklDiscoverApiUrl(simklMediaType, params)
-            : discoverSource === 'mal' ? `https://myanimelist.net/anime.php`
-            : `https://anilist.co/search/anime`;
+            : discoverSource === 'mal'
+              ? `https://myanimelist.net/anime.php`
+              : `https://anilist.co/search/anime`;
 
       const newCatalog: CatalogConfig = {
+        ...(editingCatalog ? editingCatalog : ({} as CatalogConfig)),
         id: catalogId,
         type: (discoverSource === 'anilist' || discoverSource === 'mal') ? 'anime' : discoverSource === 'simkl' ? simklCatalogType : catalogType,
         name: catalogName.trim(),
-        enabled: true,
-        showInHome: true,
+        enabled: editingCatalog?.enabled ?? true,
+        showInHome: editingCatalog?.showInHome ?? true,
         source: discoverSource,
         cacheTTL: Math.max(cacheTTL, 300),
+        ...(editingCatalog?.enableRatingPosters !== undefined && {
+          enableRatingPosters: editingCatalog.enableRatingPosters
+        }),
         ...(displayType && { displayType }),
         metadata: {
+          ...(editingCatalog?.metadata || {}),
           description: `${sourceLabel} Discover (${discoverMediaType})`,
           url: discoverUrl,
           discover: {
-            version: 1,
+            version: 2,
             source: discoverSource,
             mediaType: discoverMediaType as 'movie' | 'tv' | 'series' | 'anime',
-            params
+            params,
+            formState,
           }
         }
       };
 
-      setConfig(prev => ({
-        ...prev,
-        catalogs: [...prev.catalogs, newCatalog]
-      }));
+      if (!displayType && 'displayType' in newCatalog) {
+        delete (newCatalog as any).displayType;
+      }
 
-      toast.success('Custom catalog created', {
-        description: `${catalogName.trim()} was added to your ${sourceLabel} catalogs`
-      });
+      if (editingCatalog) {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: prev.catalogs.map(c =>
+            c.id === editingCatalog.id && c.type === editingCatalog.type
+              ? newCatalog
+              : c
+          )
+        }));
+        toast.success('Catalog updated', {
+          description: `${catalogName.trim()} has been updated`
+        });
+      } else {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: [...prev.catalogs, newCatalog]
+        }));
+        toast.success('Custom catalog created', {
+          description: `${catalogName.trim()} was added to your ${sourceLabel} catalogs`
+        });
+      }
+
       onClose();
     } catch (error) {
-      const sourceLabel = discoverSource === 'tmdb'
-        ? 'TMDB'
-        : discoverSource === 'tvdb'
-          ? 'TVDB'
-          : discoverSource === 'simkl'
-            ? 'Simkl'
-            : 'AniList';
-      console.error(`[${sourceLabel} Discover] Failed to create custom catalog:`, error);
-      toast.error('Failed to create catalog', {
+      console.error(`[Discover] Failed to save catalog:`, error);
+      toast.error('Failed to save catalog', {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
     } finally {
@@ -1818,7 +2066,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="h-5 w-5" />
-            Build Your Catalog
+            {editingCatalog ? 'Edit Catalog' : 'Build Your Catalog'}
           </DialogTitle>
           <DialogDescription>
           Create custom TMDB, TVDB, Simkl, or AniList discover catalogs with filters and save them directly into your catalog list.
@@ -1868,7 +2116,11 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                   </div>
                   <div className="space-y-2">
                     <Label>Source</Label>
-                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)}>
+                    <Select
+                      value={discoverSource}
+                      onValueChange={(value: DiscoverSource) => setDiscoverSource(value)}
+                      disabled={!!editingCatalog}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -2270,6 +2522,19 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                             }}
                             className="w-full"
                           />
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step={0.5}
+                            value={malMinScore}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMalMinScore(val);
+                              if (val > malMaxScore) setMalMaxScore(val);
+                            }}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Max Score: {malMaxScore}</Label>
@@ -2282,6 +2547,19 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                               if (val < malMinScore) setMalMinScore(val);
                             }}
                             className="w-full"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step={0.5}
+                            value={malMaxScore}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMalMaxScore(val);
+                              if (val < malMinScore) setMalMinScore(val);
+                            }}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                           />
                         </div>
                       </div>
@@ -2648,7 +2926,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                               <SelectItem value={NONE_VALUE}>None</SelectItem>
                               {certificationOptions.map(certificationItem => (
                                 <SelectItem key={certificationItem.certification} value={certificationItem.certification}>
-                                  {certificationItem.meaning || certificationItem.certification}
+                                  {certificationItem.certification || certificationItem.meaning}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -3398,6 +3676,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                             onChange={(e) => setAnilistScoreRange([Number(e.target.value), anilistScoreRange[1]])}
                             className="w-full accent-cyan-500"
                           />
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={anilistScoreRange[0]}
+                            onChange={(e) => setAnilistScoreRange([Number(e.target.value), anilistScoreRange[1]])}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
+                          />
                         </div>
                         <div className="space-y-1">
                           <p className="text-[10px] text-muted-foreground">Maximum Score</p>
@@ -3406,6 +3693,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                             value={anilistScoreRange[1]}
                             onChange={(e) => setAnilistScoreRange([anilistScoreRange[0], Number(e.target.value)])}
                             className="w-full accent-cyan-500"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={anilistScoreRange[1]}
+                            onChange={(e) => setAnilistScoreRange([anilistScoreRange[0], Number(e.target.value)])}
+                            className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                           />
                         </div>
                       </div>
@@ -3636,6 +3932,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                           onChange={(event) => handleVoteAverageMinSliderChange(Number(event.target.value))}
                           className="w-full accent-primary"
                         />
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={voteAverageRange[0]}
+                          onChange={(event) => handleVoteAverageMinSliderChange(Number(event.target.value))}
+                          className="w-16 h-7 text-xs text-center rounded-md border bg-background"
+                        />
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Maximum</p>
@@ -3647,6 +3952,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                           value={voteAverageRange[1]}
                           onChange={(event) => handleVoteAverageMaxSliderChange(Number(event.target.value))}
                           className="w-full accent-primary"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          step={0.1}
+                          value={voteAverageRange[1]}
+                          onChange={(event) => handleVoteAverageMaxSliderChange(Number(event.target.value))}
+                          className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                         />
                       </div>
                     </div>
@@ -3667,6 +3981,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
                       value={voteCountMin}
                       onChange={(event) => setVoteCountMin(Number(event.target.value))}
                       className="w-full accent-primary"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={MAX_VOTE_COUNT}
+                      step={1}
+                      value={voteCountMin}
+                      onChange={(event) => setVoteCountMin(Number(event.target.value))}
+                      className="w-16 h-7 text-xs text-center rounded-md border bg-background"
                     />
                     <p className="text-xs text-muted-foreground">
                       Increase to exclude low-vote titles.
@@ -3841,12 +4164,12 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose }: TMDBDiscoverBuild
             {isSaving ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Creating...
+                {editingCatalog ? 'Saving...' : 'Creating...'}
               </>
             ) : (
               <>
                 <Wand2 className="h-4 w-4 mr-2" />
-                Build Catalog
+                {editingCatalog ? 'Save Changes' : 'Build Catalog'}
               </>
             )}
           </Button>

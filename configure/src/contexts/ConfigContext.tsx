@@ -207,6 +207,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
                 };
                 if (c.enableRatingPosters !== undefined) settings.enableRatingPosters = c.enableRatingPosters;
                 if (c.randomizePerPage !== undefined) settings.randomizePerPage = c.randomizePerPage;
+                if (c.mergedInto !== undefined) settings.mergedInto = c.mergedInto;
                 if (c.displayType !== undefined) settings.displayType = c.displayType;
                 if (c.cacheTTL !== undefined) settings.cacheTTL = c.cacheTTL;
                 if (c.genreSelection !== undefined) settings.genreSelection = c.genreSelection;

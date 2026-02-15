@@ -3,9 +3,11 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'merged'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
+  // If set, this catalog is hidden from manifest while represented by the merged parent.
+  mergedInto?: string;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
   manifestData?: any; // Store original manifest data for advanced features like skip support
   // MDBList, Trakt, and AniList sorting options
@@ -54,12 +56,33 @@ export interface CatalogConfig {
       source?: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
       mediaType?: 'movie' | 'tv' | 'series' | 'anime';
       params?: Record<string, string | number | boolean>;
+      formState?: Record<string, any>;
     };
     discoverParams?: Record<string, string | number | boolean>;
     // Simkl-specific metadata
     interval?: 'today' | 'week' | 'month';
     pageSize?: number; // Results per page for Simkl trending and watchlist catalogs (default: 50)
     status?: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped'; // Status for Simkl watchlist catalogs
+    // Restored when a merged parent is deleted/unmerged.
+    mergedChildState?: {
+      showInHome?: boolean;
+      randomizePerPage?: boolean;
+    };
+    // Merged-catalog metadata (for source === 'merged')
+    merged?: {
+      version: 1;
+      children: Array<{
+        id: string;
+        type: 'movie' | 'series' | 'anime' | 'all';
+        weight?: number;
+      }>;
+      strategy?: 'sequential' | 'interleaved';
+      genreMode?: 'strict';
+      dedupe?: boolean;
+      pageSize?: number;
+      // If true, merged parent (type "movie", "series", "anime", or "all") may contain movie/series/anime/all children.
+      allowMixedTypes?: boolean;
+    };
   };
 }
 

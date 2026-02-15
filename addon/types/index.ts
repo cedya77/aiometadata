@@ -62,6 +62,27 @@ export interface Catalog {
   enabled: boolean;
   showInHome: boolean;
   source?: string;
+  mergedInto?: string;
+  metadata?: {
+    mergedChildState?: {
+      showInHome?: boolean;
+      randomizePerPage?: boolean;
+    };
+    merged?: {
+      version: 1;
+      children: Array<{
+        id: string;
+        type: string;
+        weight?: number;
+      }>;
+      strategy?: 'sequential' | 'interleaved';
+      genreMode?: 'strict';
+      dedupe?: boolean;
+      pageSize?: number;
+      allowMixedTypes?: boolean;
+    };
+    [key: string]: any;
+  };
   randomizePerPage?: boolean;
   [key: string]: any;
 }

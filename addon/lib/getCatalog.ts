@@ -6,6 +6,7 @@ import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.j
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
+import { resolveCatalog, getCatalogPageSize } from './catalogResolver.js';
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
@@ -17,13 +18,20 @@ import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
+import redis from './redisClient.js';
+import { getMergedChildAuthFingerprint } from './mergedAuthFingerprint.js';
+import { buildMergedGenreRoutingContext } from './mergedGenreContext.js';
+const { buildMergedGenreRouting, normalizeMergedGenreValue, resolveMergedGenreSelection } = require('./mergedGenreRouting.js');
 
 const consola = require('consola');
 const database = require('./database.js');
+const crypto = require('crypto');
 
 const logger = consola.withTag('Catalog');
 import { cacheWrapMetaSmart } from './getCache.js';
 import { UserConfig } from '../types/index.js';
+const packageJson = require('../../package.json');
+const ADDON_VERSION = packageJson.version;
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const TVDB_IMAGE_BASE = 'https://artworks.thetvdb.com';
@@ -105,9 +113,251 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
   return filteredMetas;
 }
 
+const MERGED_STATE_TTL_SECONDS = parseInt(process.env.MERGED_CATALOG_STATE_TTL || String(24 * 60 * 60), 10);
+const MERGED_LOCK_TTL_SECONDS = parseInt(process.env.MERGED_CATALOG_LOCK_TTL || '20', 10);
+const MERGED_MAX_EMITTED_IDS = parseInt(process.env.MERGED_MAX_EMITTED_IDS || '5000', 10);
+const MERGED_MAX_BUILD_LOOPS = parseInt(process.env.MERGED_MAX_BUILD_LOOPS || '2000', 10);
+const MERGED_CHILD_ERROR_COOLDOWN_MS = parseInt(process.env.MERGED_CHILD_ERROR_COOLDOWN_MS || '30000', 10);
+
+function stableStringify(value: any): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(v => stableStringify(v)).join(',')}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys.map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+}
+
+function mergedCatalogKey(catalog: any): string {
+  return `${catalog.id}-${catalog.type}`;
+}
+
+function getMergedChildPageSize(catalog: any): number {
+  return getCatalogPageSize(catalog?.id || '', catalog);
+}
+
+function normalizeMergedGenre(genre: string): string | undefined {
+  return normalizeMergedGenreValue(genre);
+}
+
+function buildMergedSignature(
+  parentCatalog: any,
+  childCatalogs: any[],
+  type: string,
+  language: string,
+  genre: string,
+  fullConfig: any,
+  genreRoutingHash?: string
+) {
+  const payload = {
+    parent: {
+      id: parentCatalog.id,
+      type: parentCatalog.type,
+      cacheTTL: parentCatalog.cacheTTL || null,
+      enableRatingPosters: parentCatalog.enableRatingPosters !== false,
+      merged: parentCatalog?.metadata?.merged || null,
+    },
+    children: childCatalogs.map(c => ({
+      id: c.id,
+      type: c.type,
+      source: c.source,
+      sourceUrl: c.sourceUrl || null,
+      pageSize: c.pageSize || null,
+      sort: c.sort || null,
+      order: c.order || null,
+      sortDirection: c.sortDirection || null,
+      cacheTTL: c.cacheTTL || null,
+      metadata: c.metadata || null,
+      enableRatingPosters: c.enableRatingPosters !== false,
+      randomizePerPage: !!c.randomizePerPage,
+      mergedInto: c.mergedInto || null,
+      displayType: c.displayType || null,
+      authFingerprint: getMergedChildAuthFingerprint(c, fullConfig),
+    })),
+    request: {
+      type,
+      language,
+      genre: genre || 'all',
+      genreRoutingHash: genreRoutingHash || null,
+    },
+  };
+  return crypto.createHash('sha1').update(stableStringify(payload)).digest('hex');
+}
+
+function createMergedStateKey(userUUID: string, parentId: string, type: string, language: string, genre: string, signature: string): string {
+  return `v${ADDON_VERSION}:merged-state:${userUUID}:${parentId}:${type}:${language}:${(genre || 'all').toLowerCase()}:${signature}`;
+}
+
+function createMergedLockKey(stateKey: string): string {
+  return `${stateKey}:lock`;
+}
+
+function normalizeMergedTtl(ttlValue: any, fallback: number): number {
+  const ttl = Number(ttlValue);
+  if (Number.isFinite(ttl) && ttl > 0) return Math.floor(ttl);
+  return Math.max(1, Math.floor(fallback || MERGED_STATE_TTL_SECONDS));
+}
+
+function getMergedEpoch(ttlSeconds: number, nowMs: number = Date.now()): number {
+  const safeTtlSeconds = Math.max(1, Math.floor(ttlSeconds));
+  return Math.floor(nowMs / (safeTtlSeconds * 1000));
+}
+
+function buildMergedEpochVector(children: any[], childTtlByKey: Record<string, number>, parentTtl: number, nowMs: number = Date.now()): Record<string, number> {
+  const epochVector: Record<string, number> = {
+    __parent: getMergedEpoch(parentTtl, nowMs),
+  };
+
+  children.forEach((child) => {
+    const childKey = mergedCatalogKey(child);
+    const childTtl = childTtlByKey[childKey] || parentTtl;
+    epochVector[childKey] = getMergedEpoch(childTtl, nowMs);
+  });
+
+  return epochVector;
+}
+
+function mergedEpochVectorsEqual(current: Record<string, any> | undefined, next: Record<string, number>): boolean {
+  const currentVector = current || {};
+  const currentKeys = Object.keys(currentVector).sort();
+  const nextKeys = Object.keys(next).sort();
+  if (currentKeys.length !== nextKeys.length) return false;
+
+  for (let i = 0; i < nextKeys.length; i++) {
+    const key = nextKeys[i];
+    if (currentKeys[i] !== key) return false;
+    if (Number(currentVector[key]) !== Number(next[key])) return false;
+  }
+
+  return true;
+}
+
+function createMergedChildBatchKey(
+  userUUID: string,
+  parentId: string,
+  signature: string,
+  childKey: string,
+  childGenre: string,
+  childSkip: number,
+  childEpoch: number,
+  parentRatingPostersEnabled: boolean,
+  includeVideos: boolean
+): string {
+  return [
+    `v${ADDON_VERSION}`,
+    'merged-child',
+    userUUID,
+    parentId,
+    signature,
+    childKey,
+    (childGenre || 'none').toLowerCase(),
+    String(childSkip),
+    `epoch:${childEpoch}`,
+    `rp:${parentRatingPostersEnabled ? '1' : '0'}`,
+    `videos:${includeVideos ? '1' : '0'}`,
+  ].join(':');
+}
+
+function createInitialMergedState(
+  signature: string,
+  pageSize: number,
+  children: any[],
+  strategy: 'sequential' | 'interleaved',
+  dedupe: boolean,
+  childEpochs: Record<string, number> = {}
+) {
+  const childStates: Record<string, any> = {};
+  children.forEach(child => {
+    childStates[mergedCatalogKey(child)] = {
+      nextSkip: 0,
+      exhausted: false,
+      buffer: [],
+      skipForGenre: false,
+      errorUntil: 0,
+      lastError: null,
+    };
+  });
+  return {
+    signature,
+    pageSize,
+    strategy,
+    dedupe,
+    nextChildIndex: 0,
+    pages: {},
+    emittedIds: [],
+    childStates,
+    childEpochs,
+    updatedAt: Date.now(),
+  };
+}
+
+function getMergedDedupeKey(meta: any): string {
+  if (meta?.id) return `${meta?.type || 'unknown'}:${String(meta.id)}`;
+  return `${meta?.type || 'unknown'}:${meta?.name || 'unknown'}:${meta?.releaseInfo || ''}`;
+}
+
+async function acquireMergedLock(lockKey: string): Promise<string | null> {
+  if (!redis) return null;
+  const lockToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const acquired = await redis.set(lockKey, lockToken, 'EX', MERGED_LOCK_TTL_SECONDS, 'NX');
+    if (acquired) return lockToken;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return null;
+}
+
+async function releaseMergedLock(lockKey: string, token: string | null) {
+  if (!redis || !token) return;
+  try {
+    const currentToken = await redis.get(lockKey);
+    if (currentToken === token) {
+      await redis.del(lockKey);
+    }
+  } catch (error: any) {
+    logger.warn(`[Merged] Failed to release lock ${lockKey}: ${error.message}`);
+  }
+}
+
+async function readMergedState(stateKey: string): Promise<any | null> {
+  if (!redis) return null;
+  const raw = await redis.get(stateKey);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function writeMergedState(stateKey: string, state: any, ttlSeconds: number) {
+  if (!redis) return;
+  await redis.set(stateKey, JSON.stringify(state), 'EX', ttlSeconds);
+}
+
+async function readMergedChildBatch(cacheKey: string): Promise<any[] | null> {
+  if (!redis) return null;
+  const raw = await redis.get(cacheKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeMergedChildBatch(cacheKey: string, metas: any[], ttlSeconds: number) {
+  if (!redis || !Array.isArray(metas) || metas.length === 0) return;
+  await redis.set(cacheKey, JSON.stringify(metas), 'EX', ttlSeconds);
+}
+
 
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
+    if (id.startsWith('merge.')) {
+      logger.debug(`Routing to merged catalog handler for id: ${id}`);
+      const mergedResults = await getMergedCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
+      return { metas: mergedResults };
+    }
     if (id === 'tvdb.collections') {
       logger.debug(`Fetching TVDB collections catalog: ${id}`);
       const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
@@ -115,7 +365,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     if (id.startsWith('tvdb.discover.')) {
       logger.debug(`Routing to TVDB discover catalog handler for id: ${id}`);
-      const tvdbDiscoverResults = await getTvdbDiscoverCatalog(type, id, page, language, config, userUUID, includeVideos);
+      const tvdbDiscoverResults = await getTvdbDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: tvdbDiscoverResults };
     }
     if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
@@ -182,6 +432,371 @@ async function getCatalog(type: string, language: string, page: number, id: stri
   }
 }
 
+async function getMergedCatalog(
+  type: string,
+  catalogId: string,
+  genre: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false,
+  skip?: number
+): Promise<any[]> {
+  try {
+    const mergedCatalog = config.catalogs?.find(c => c.id === catalogId && c.type === type);
+    if (!mergedCatalog) {
+      logger.warn(`[Merged] Missing merged catalog config for ${catalogId}:${type}`);
+      return [];
+    }
+
+    const mergedMeta = mergedCatalog?.metadata?.merged;
+    if (!mergedMeta || !Array.isArray(mergedMeta.children) || mergedMeta.children.length < 2) {
+      logger.warn(`[Merged] Invalid merged metadata for ${catalogId}`);
+      return [];
+    }
+    const parentRatingPostersEnabled = mergedCatalog.enableRatingPosters !== false;
+
+    const parentType = mergedCatalog.type;
+    const allowMixedTypes = (parentType === 'series' || parentType === 'movie' || parentType === 'anime' || parentType === 'all') && mergedMeta.allowMixedTypes === true;
+    const childCatalogMap = new Map((config.catalogs || []).map(c => [mergedCatalogKey(c), c]));
+    const resolvedChildren = mergedMeta.children
+      .map(child => childCatalogMap.get(`${child.id}-${child.type}`))
+      .filter(Boolean)
+      .filter(child => child.id !== catalogId)
+      .filter(child => {
+        if (allowMixedTypes) {
+          return child.type === 'movie' || child.type === 'series' || child.type === 'anime' || child.type === 'all';
+        }
+        return child.type === parentType;
+      });
+
+    if (resolvedChildren.length < 2) {
+      logger.warn(`[Merged] ${catalogId} resolved fewer than two children`);
+      return [];
+    }
+
+    const strategy: 'sequential' | 'interleaved' = mergedMeta.strategy === 'interleaved' ? 'interleaved' : 'sequential';
+    const dedupe = mergedMeta.dedupe !== false;
+    const configuredPageSize = Number(mergedMeta.pageSize);
+    const pageSize = Number.isFinite(configuredPageSize) && configuredPageSize > 0
+      ? Math.floor(configuredPageSize)
+      : parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+    const requestedGenre = normalizeMergedGenre(genre);
+    const mergedGenreContext = await buildMergedGenreRoutingContext(resolvedChildren, config, language);
+    const mergedGenreRouting = buildMergedGenreRouting(mergedCatalog, resolvedChildren, mergedGenreContext);
+    const genreSelection = resolveMergedGenreSelection(mergedGenreRouting, requestedGenre);
+    const normalizedGenre = requestedGenre || 'all';
+    const signature = buildMergedSignature(
+      mergedCatalog,
+      resolvedChildren,
+      type,
+      language,
+      normalizedGenre,
+      config,
+      mergedGenreRouting?.hash
+    );
+    const stateKey = createMergedStateKey(userUUID, catalogId, type, language, normalizedGenre, signature);
+    const lockKey = createMergedLockKey(stateKey);
+    const parentTtl = normalizeMergedTtl(mergedCatalog.cacheTTL, MERGED_STATE_TTL_SECONDS);
+    const childTtlByKey: Record<string, number> = {};
+    resolvedChildren.forEach((child) => {
+      const childKey = mergedCatalogKey(child);
+      childTtlByKey[childKey] = normalizeMergedTtl(child?.cacheTTL, parentTtl);
+    });
+    const childTtls = Object.values(childTtlByKey);
+    const maxChildTtl = childTtls.length > 0 ? Math.max(...childTtls) : parentTtl;
+    // Keep merged state alive long enough for pagination continuity; freshness is governed by epoch resets.
+    const stateTtl = Math.max(300, parentTtl, maxChildTtl);
+    const epochVector = buildMergedEpochVector(resolvedChildren, childTtlByKey, parentTtl);
+
+    const lockToken = redis ? await acquireMergedLock(lockKey) : null;
+    const canPersistState = !!redis && !!lockToken;
+    if (redis && !lockToken) {
+      logger.warn(`[Merged] Failed to acquire lock for ${catalogId}, using stateless fallback`);
+    }
+
+    if (genreSelection.hasGenreFilter && genreSelection.childGenreByKey.size === 0) {
+      logger.debug(`[Merged] No eligible children for genre "${genreSelection.requestedGenre}" in strict mode (${catalogId})`);
+      return [];
+    }
+
+    try {
+      let state = canPersistState ? await readMergedState(stateKey) : null;
+      if (!state || state.signature !== signature) {
+        state = createInitialMergedState(signature, pageSize, resolvedChildren, strategy, dedupe, epochVector);
+      }
+
+      if (!mergedEpochVectorsEqual(state.childEpochs, epochVector)) {
+        const previousPagesCount = Object.keys(state.pages || {}).length;
+        state = createInitialMergedState(signature, pageSize, resolvedChildren, strategy, dedupe, epochVector);
+        if (previousPagesCount > 0) {
+          logger.debug(`[Merged] Resetting ${catalogId} state due to parent/child TTL epoch change`);
+        }
+      }
+
+      state.strategy = strategy;
+      state.dedupe = dedupe;
+      state.pageSize = pageSize;
+      state.childStates = state.childStates || {};
+      state.pages = state.pages || {};
+      state.childEpochs = epochVector;
+
+      const childKeySet = new Set(resolvedChildren.map(child => mergedCatalogKey(child)));
+      Object.keys(state.childStates).forEach(childKey => {
+        if (!childKeySet.has(childKey)) {
+          delete state.childStates[childKey];
+        }
+      });
+
+      resolvedChildren.forEach(child => {
+        const childKey = mergedCatalogKey(child);
+        if (!state.childStates[childKey]) {
+          state.childStates[childKey] = {
+            nextSkip: 0,
+            exhausted: false,
+            buffer: [],
+            skipForGenre: false,
+            errorUntil: 0,
+            lastError: null,
+          };
+        }
+      });
+
+      const requestedPage = Math.max(1, Number(page) || 1);
+      if (Array.isArray(state.pages[String(requestedPage)])) {
+        state.updatedAt = Date.now();
+        if (canPersistState) {
+          await writeMergedState(stateKey, state, stateTtl);
+        }
+        return state.pages[String(requestedPage)];
+      }
+
+      const emittedSet = new Set((state.emittedIds || []).map((id: string) => String(id)));
+      const childrenCount = resolvedChildren.length;
+
+      const fetchChildBatch = async (child: any, childState: any) => {
+        if (!child || !childState || childState.exhausted) return;
+        const now = Date.now();
+        if (Number(childState.errorUntil || 0) > now && (!Array.isArray(childState.buffer) || childState.buffer.length === 0)) {
+          return;
+        }
+        if (child.id.startsWith('merge.')) {
+          childState.exhausted = true;
+          return;
+        }
+        const childKey = mergedCatalogKey(child);
+        const childTtl = childTtlByKey[childKey] || parentTtl;
+
+        let childGenre = 'None';
+        if (genreSelection.hasGenreFilter) {
+          const routedGenre = genreSelection.childGenreByKey.get(childKey);
+          if (!routedGenre) {
+            childState.skipForGenre = true;
+            childState.exhausted = true;
+            return;
+          }
+          childGenre = routedGenre;
+        }
+
+        const childPageSize = getMergedChildPageSize(child);
+        const childSkip = Number(childState.nextSkip || 0);
+        let metas: any[] = [];
+        const childEpoch = Number(epochVector[childKey] || getMergedEpoch(childTtl));
+        const childBatchCacheKey = createMergedChildBatchKey(
+          userUUID,
+          catalogId,
+          signature,
+          childKey,
+          childGenre,
+          childSkip,
+          childEpoch,
+          parentRatingPostersEnabled,
+          includeVideos
+        );
+
+        if (redis) {
+          const cachedBatch = await readMergedChildBatch(childBatchCacheKey);
+          if (Array.isArray(cachedBatch) && cachedBatch.length > 0) {
+            metas = cachedBatch;
+            childState.errorUntil = 0;
+            childState.lastError = null;
+          }
+        }
+
+        if (metas.length === 0) {
+          try {
+            const mergedChildCatalogConfig = {
+              ...child,
+              enableRatingPosters: parentRatingPostersEnabled,
+            };
+            const mutableConfig = config as any;
+            const previousCatalogConfig = mutableConfig._currentCatalogConfig;
+            mutableConfig._currentCatalogConfig = mergedChildCatalogConfig;
+
+            try {
+              metas = await resolveCatalog({
+                cleanId: child.id,
+                actualType: child.type,
+                language,
+                extraArgs: {
+                  genre: childGenre,
+                  skip: String(childSkip),
+                },
+                config,
+                userUUID,
+                includeVideos,
+                sessionId: config?.sessionId,
+                catalogConfig: mergedChildCatalogConfig,
+                fallbackGetCatalog: getCatalog,
+              });
+            } finally {
+              mutableConfig._currentCatalogConfig = previousCatalogConfig;
+            }
+            childState.errorUntil = 0;
+            childState.lastError = null;
+            if (metas.length > 0 && redis) {
+              await writeMergedChildBatch(childBatchCacheKey, metas, childTtl);
+            }
+          } catch (error: any) {
+            childState.errorUntil = Date.now() + MERGED_CHILD_ERROR_COOLDOWN_MS;
+            childState.lastError = error?.message || 'child-fetch-failed';
+            logger.warn(`[Merged] Child fetch failed for ${child.id}:${child.type} in ${catalogId}: ${childState.lastError}`);
+            return;
+          }
+        }
+
+        if (metas.length === 0) {
+          childState.exhausted = true;
+          return;
+        }
+
+        childState.buffer = Array.isArray(childState.buffer) ? childState.buffer : [];
+        childState.buffer.push(...metas);
+        childState.nextSkip = childSkip + childPageSize;
+      };
+
+      const getNextChildIndex = (): number => {
+        if (childrenCount === 0) return -1;
+
+        const start = Number(state.nextChildIndex || 0) % childrenCount;
+        const now = Date.now();
+        for (let offset = 0; offset < childrenCount; offset++) {
+          const idx = (start + offset) % childrenCount;
+          const child = resolvedChildren[idx];
+          const childState = state.childStates[mergedCatalogKey(child)];
+          const hasBufferedItems = Array.isArray(childState?.buffer) && childState.buffer.length > 0;
+          const inErrorCooldown = Number(childState?.errorUntil || 0) > now;
+          const canFetchMore = !childState?.exhausted && !inErrorCooldown;
+          if (hasBufferedItems || canFetchMore) {
+            if (strategy === 'interleaved') {
+              state.nextChildIndex = (idx + 1) % childrenCount;
+            } else {
+              state.nextChildIndex = idx;
+            }
+            return idx;
+          }
+        }
+
+        return -1;
+      };
+
+      let nextPageToBuild = 1;
+      const existingPageNumbers = Object.keys(state.pages)
+        .map(p => parseInt(p, 10))
+        .filter(n => !Number.isNaN(n) && n >= 1);
+      if (existingPageNumbers.length > 0) {
+        nextPageToBuild = Math.max(...existingPageNumbers) + 1;
+      }
+
+      while (!Array.isArray(state.pages[String(requestedPage)]) && nextPageToBuild <= requestedPage) {
+        const pageMetas: any[] = [];
+        let loopGuard = 0;
+
+        while (pageMetas.length < pageSize && loopGuard < MERGED_MAX_BUILD_LOOPS) {
+          loopGuard++;
+          const childIndex = getNextChildIndex();
+          if (childIndex < 0) break;
+
+          const child = resolvedChildren[childIndex];
+          const childKey = mergedCatalogKey(child);
+          const childState = state.childStates[childKey];
+          if (!childState) continue;
+          if (!Array.isArray(childState.buffer)) childState.buffer = [];
+
+          if (childState.buffer.length === 0 && !childState.exhausted) {
+            await fetchChildBatch(child, childState);
+          }
+
+          if (childState.buffer.length === 0) {
+            if (strategy === 'sequential' && childState.exhausted) {
+              state.nextChildIndex = (childIndex + 1) % childrenCount;
+            }
+            continue;
+          }
+
+          const candidate = childState.buffer.shift();
+          if (!candidate) continue;
+          if (!candidate.type) {
+            candidate.type = child.type;
+          }
+
+          if (dedupe) {
+            const dedupeKey = getMergedDedupeKey(candidate);
+            if (emittedSet.has(dedupeKey)) {
+              continue;
+            }
+            emittedSet.add(dedupeKey);
+            if (emittedSet.size > MERGED_MAX_EMITTED_IDS) {
+              const recent = Array.from(emittedSet).slice(-MERGED_MAX_EMITTED_IDS);
+              emittedSet.clear();
+              recent.forEach(id => emittedSet.add(id));
+            }
+          }
+
+          pageMetas.push(candidate);
+
+          if (strategy === 'sequential' && childState.exhausted && childState.buffer.length === 0) {
+            state.nextChildIndex = (childIndex + 1) % childrenCount;
+          }
+        }
+
+        state.pages[String(nextPageToBuild)] = pageMetas;
+        nextPageToBuild++;
+
+        const hasRemainingSources = resolvedChildren.some(child => {
+          const childState = state.childStates[mergedCatalogKey(child)];
+          if (!childState) return false;
+          const hasBuffer = Array.isArray(childState.buffer) && childState.buffer.length > 0;
+          const canFetchMore = !childState.exhausted && Number(childState.errorUntil || 0) <= Date.now();
+          return hasBuffer || canFetchMore;
+        });
+
+        if (!hasRemainingSources && pageMetas.length === 0) {
+          while (nextPageToBuild <= requestedPage) {
+            state.pages[String(nextPageToBuild)] = [];
+            nextPageToBuild++;
+          }
+          break;
+        }
+      }
+
+      state.emittedIds = Array.from(emittedSet).slice(-MERGED_MAX_EMITTED_IDS);
+      state.updatedAt = Date.now();
+      if (canPersistState) {
+        await writeMergedState(stateKey, state, stateTtl);
+      }
+
+      return state.pages[String(requestedPage)] || [];
+    } finally {
+      await releaseMergedLock(lockKey, lockToken);
+    }
+  } catch (error: any) {
+    logger.error(`[Merged] Error processing merged catalog ${catalogId}: ${error.message}`);
+    return [];
+  }
+}
+
 
 /**
  * Get MAL discover catalog items.
@@ -191,7 +806,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
 async function getMalDiscoverCatalog(
   type: string,
   catalogId: string,
-  genre: string | null,
+  genreName: string | null,
   page: number,
   language: string,
   config: any, // UserConfig
@@ -204,11 +819,22 @@ async function getMalDiscoverCatalog(
     const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
     const rawParams = discoverMetadata?.params || {};
+    const requestParams: any = { ...(rawParams || {}) };
     const customCacheTTL = catalogConfig?.cacheTTL || null;
 
+    if (genreName && genreName.toLowerCase() !== 'none') {
+      const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+        return await jikan.getAnimeGenres();
+      }, null, { skipVersion: true });
+      const selectedGenre = allAnimeGenres?.find((g: any) => g?.name === genreName);
+      if (selectedGenre?.mal_id !== undefined && selectedGenre?.mal_id !== null) {
+        requestParams.genres = selectedGenre.mal_id;
+      }
+    }
+
     const response = await cacheWrapJikanApi(
-      `mal-discover-${catalogId}-page${page}`,
-      async () => jikan.fetchDiscover(rawParams, page),
+      `mal-discover-${catalogId}-page${page}-genre${genreName || 'All'}`,
+      async () => jikan.fetchDiscover(requestParams, page),
       customCacheTTL || 30 * 60
     );
 
@@ -253,15 +879,35 @@ async function getAniListDiscoverCatalog(
     const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
     const rawParams = discoverMetadata?.params || {};
+    const requestParams: any = { ...(rawParams || {}) };
     const customCacheTTL = catalogConfig?.cacheTTL || null;
     const pageSize = 50;
 
+    if (genre && genre.toLowerCase() !== 'none') {
+      const requestedGenre = String(genre).trim();
+      if (requestParams.genre_in) {
+        const existing = typeof requestParams.genre_in === 'string'
+          ? requestParams.genre_in.split(',').map((g: string) => g.trim()).filter(Boolean)
+          : Array.isArray(requestParams.genre_in)
+            ? requestParams.genre_in.map((g: any) => String(g).trim()).filter(Boolean)
+            : [];
+
+        if (!existing.some((g: string) => g.toLowerCase() === requestedGenre.toLowerCase())) {
+          existing.push(requestedGenre);
+        }
+        requestParams.genre_in = existing.join(',');
+      } else {
+        requestParams.genre_in = requestedGenre;
+      }
+    }
+
     // Fetch from AniList API with caching
+    const cacheKeySuffix = `${catalogId}:${stableStringify(requestParams)}`;
     const response = await cacheWrapAniListCatalog(
       'discover',
-      catalogId,
+      cacheKeySuffix,
       page,
-      async () => anilist.fetchDiscover(rawParams, page, pageSize),
+      async () => anilist.fetchDiscover(requestParams, page, pageSize),
       customCacheTTL,
       { enableErrorCaching: true }
     );
@@ -480,6 +1126,7 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
 async function getTvdbDiscoverCatalog(
   type: string,
   id: string,
+  genreName: string,
   page: number,
   language: string,
   config: UserConfig,
@@ -506,12 +1153,25 @@ async function getTvdbDiscoverCatalog(
 
   const discoverMetadata = catalogConfig?.metadata?.discover || {};
   const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+  let selectedGenre;
+  if (genreName && genreName.toLowerCase() !== 'none') {
+    const allTvdbGenres = await getGenreList('tvdb', language, type as "movie" | "series", config);
+    logger.debug(`[TVDB Discover] TVDB genres fetched: ${allTvdbGenres.length} genres available`);
+    selectedGenre = allTvdbGenres.find(g => g.name === genreName);
+    logger.debug(
+      `[TVDB Discover] Genre lookup for "${genreName}":`,
+      selectedGenre ? `Found ID ${selectedGenre.id}` : 'NOT FOUND'
+    );
+  }
   const parameters = await sanitizeTvdbDiscoverParams(
     rawParams,
     language,
     type as 'movie' | 'series',
     config
   );
+  if (selectedGenre?.id !== undefined && selectedGenre?.id !== null) {
+    parameters.genre = selectedGenre.id;
+  }
 
   const tvdbType = isMovieCatalog ? 'movies' : 'series';
   const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
@@ -748,8 +1408,22 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const mediaType = isMovieCatalog ? 'movie' : 'tv';
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
     const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+    const requestParams: any = { ...(rawParams || {}) };
+    if (genre && genre.toLowerCase() !== 'none') {
+      const typeForGenres: 'movie' | 'series' = type === 'movie' ? 'movie' : 'series';
+      const genreList = await getGenreList('tmdb', language, typeForGenres, config);
+      const genreId = genreList.find((g: any) => g?.name?.toLowerCase() === genre.toLowerCase())?.id;
+      if (genreId) {
+        const existing = requestParams.with_genres ? String(requestParams.with_genres) : '';
+        const existingIds = existing ? existing.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+        if (!existingIds.includes(String(genreId))) {
+          existingIds.push(String(genreId));
+        }
+        requestParams.with_genres = existingIds.join(',');
+      }
+    }
     const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
-    const parameters = sanitizeTmdbDiscoverParams(rawParams, language, discoverPage, config.includeAdult || false, type as 'movie' | 'series');
+    const parameters = sanitizeTmdbDiscoverParams(requestParams, language, discoverPage, config.includeAdult || false, type as 'movie' | 'series');
 
     try {
       const response = mediaType === 'movie'
@@ -2223,7 +2897,14 @@ async function getSimklCatalog(
     if (catalogId.startsWith('simkl.discover.')) {
       const discoverMetadata = catalogConfig?.metadata?.discover || {};
       const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+      let genreName = genre;
       const discoverParams = sanitizeSimklDiscoverParams(rawParams, type);
+      if (!genreName || genreName.toLowerCase() === 'none') {
+        genreName = 'all';
+      }
+      if (String(genreName).toLowerCase() !== String(discoverParams.genre).toLowerCase()) {
+        discoverParams.genre = String(genreName).toLowerCase();
+      }
       logger.debug(`[Simkl Discover] Fetching with params: ${JSON.stringify(discoverParams)}`);
 
       const result = await fetchSimklGenreItems(

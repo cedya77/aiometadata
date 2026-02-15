@@ -1055,17 +1055,24 @@ async function getStatuses(type: 'movies' | 'series', config: UserConfig): Promi
 }
 
 async function filter(type: 'movies' | 'series', params: any, config: UserConfig): Promise<TvdbFilterResult[]> {
-  return cacheWrapTvdbApi(`tvdb-filter:${type}`, async () => {
+  const normalizedParams = Object.fromEntries(
+    Object.entries(params || {})
+      .filter(([, value]) => value !== undefined && value !== null)
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
+  const paramsKey = Object.entries(normalizedParams)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join('&');
+
+  return cacheWrapTvdbApi(`tvdb-filter:${type}:${paramsKey}`, async () => {
     const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
     if (!token) return [];
     
     const startTime = Date.now();
     try {
       const queryParams = new URLSearchParams();
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          queryParams.append(key, String(value));
-        }
+      Object.entries(normalizedParams).forEach(([key, value]) => {
+        queryParams.append(key, String(value));
       });
       
       const response = await tvdbHttpRequest(`${TVDB_API_URL}/${type}/filter?${queryParams.toString()}`, {

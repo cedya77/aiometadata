@@ -17,8 +17,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Layers, GitMerge, CornerDownRight } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -110,6 +110,266 @@ const sourceBadgeStyles = {
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
   trakt: "bg-red-800/80 text-red-200 border-red-600/50 hover:bg-red-800",
   anilist: "bg-cyan-800/80 text-cyan-200 border-cyan-600/50 hover:bg-cyan-800",
+  merged: "bg-slate-800/80 text-slate-100 border-slate-500/50 hover:bg-slate-800",
+};
+
+function getCatalogKey(catalog: Pick<CatalogConfig, 'id' | 'type'>): string {
+  return `${catalog.id}-${catalog.type}`;
+}
+
+function isMergedParentCatalog(catalog: Pick<CatalogConfig, 'id' | 'source'>): boolean {
+  return catalog.source === 'merged' || catalog.id.startsWith('merge.');
+}
+
+function hasActiveMergedParent(catalog: CatalogConfig, catalogs: CatalogConfig[]): boolean {
+  if (!catalog.mergedInto) return false;
+  return catalogs.some(c => c.id === catalog.mergedInto && isMergedParentCatalog(c));
+}
+
+function getSelectableCatalogs(catalogs: CatalogConfig[]): CatalogConfig[] {
+  const mergedParentIds = new Set(
+    catalogs
+      .filter(isMergedParentCatalog)
+      .map(catalog => catalog.id)
+  );
+
+  return catalogs.filter(catalog => !(catalog.mergedInto && mergedParentIds.has(catalog.mergedInto)));
+}
+
+function getActionableCatalogKey(catalogs: CatalogConfig[], catalog: CatalogConfig): string {
+  const ownKey = getCatalogKey(catalog);
+  if (!catalog.mergedInto) return ownKey;
+
+  const parent = catalogs.find(c => c.id === catalog.mergedInto && isMergedParentCatalog(c));
+  return parent ? getCatalogKey(parent) : ownKey;
+}
+
+function resolveActionableCatalogKeys(catalogs: CatalogConfig[], initialKeys: Iterable<string>): string[] {
+  const rawKeySet = new Set(initialKeys);
+  if (rawKeySet.size === 0) return [];
+
+  const parentKeyById = new Map(
+    catalogs
+      .filter(isMergedParentCatalog)
+      .map(catalog => [catalog.id, getCatalogKey(catalog)] as const)
+  );
+
+  const actionableKeys = new Set<string>();
+  catalogs.forEach(catalog => {
+    const key = getCatalogKey(catalog);
+    if (!rawKeySet.has(key)) return;
+
+    if (catalog.mergedInto) {
+      actionableKeys.add(parentKeyById.get(catalog.mergedInto) || key);
+      return;
+    }
+
+    actionableKeys.add(key);
+  });
+
+  return catalogs
+    .map(getCatalogKey)
+    .filter(key => actionableKeys.has(key));
+}
+
+type MergedChildRestoreState = {
+  showInHome?: boolean;
+  randomizePerPage?: boolean;
+  enableRatingPosters?: boolean;
+};
+
+function ensureMergedChildRestoreState(catalog: CatalogConfig): CatalogConfig {
+  const existingState = catalog.metadata?.mergedChildState;
+  if (
+    existingState &&
+    typeof existingState.showInHome === 'boolean' &&
+    typeof existingState.randomizePerPage === 'boolean' &&
+    typeof existingState.enableRatingPosters === 'boolean'
+  ) {
+    return catalog;
+  }
+
+  return {
+    ...catalog,
+    metadata: {
+      ...catalog.metadata,
+      mergedChildState: {
+        showInHome: catalog.showInHome,
+        randomizePerPage: !!catalog.randomizePerPage,
+        enableRatingPosters: catalog.enableRatingPosters !== false,
+      },
+    },
+  };
+}
+
+function restoreMergedChildState(catalog: CatalogConfig): CatalogConfig {
+  const restoreState = catalog.metadata?.mergedChildState as MergedChildRestoreState | undefined;
+  const { mergedChildState: _mergedChildState, ...metadataWithoutMergedChildState } = (catalog.metadata || {}) as CatalogConfig['metadata'] & {
+    mergedChildState?: MergedChildRestoreState;
+  };
+
+  const hasMetadata = Object.keys(metadataWithoutMergedChildState).length > 0;
+
+  return {
+    ...catalog,
+    mergedInto: undefined,
+    showInHome:
+      typeof restoreState?.showInHome === 'boolean'
+        ? restoreState.showInHome
+        : catalog.showInHome,
+    randomizePerPage:
+      typeof restoreState?.randomizePerPage === 'boolean'
+        ? restoreState.randomizePerPage
+        : catalog.randomizePerPage,
+    enableRatingPosters:
+      typeof restoreState?.enableRatingPosters === 'boolean'
+        ? restoreState.enableRatingPosters
+        : catalog.enableRatingPosters,
+    metadata: hasMetadata ? (metadataWithoutMergedChildState as CatalogConfig['metadata']) : undefined,
+  };
+}
+
+function normalizeMergedParentChildOrder(catalogs: CatalogConfig[]): CatalogConfig[] {
+  const mergedParentIds = new Set(
+    catalogs
+      .filter(isMergedParentCatalog)
+      .map(catalog => catalog.id)
+  );
+
+  const childrenByParent = new Map<string, CatalogConfig[]>();
+  catalogs.forEach(catalog => {
+    if (!catalog.mergedInto || !mergedParentIds.has(catalog.mergedInto)) return;
+    const existing = childrenByParent.get(catalog.mergedInto) || [];
+    existing.push(catalog);
+    childrenByParent.set(catalog.mergedInto, existing);
+  });
+
+  const normalized: CatalogConfig[] = [];
+  const addedChildKeys = new Set<string>();
+  catalogs.forEach(catalog => {
+    if (catalog.mergedInto && mergedParentIds.has(catalog.mergedInto)) {
+      return;
+    }
+
+    normalized.push(catalog);
+    if (!mergedParentIds.has(catalog.id)) {
+      return;
+    }
+
+    const children = childrenByParent.get(catalog.id) || [];
+    children.forEach(child => {
+      normalized.push(child);
+      addedChildKeys.add(getCatalogKey(child));
+    });
+  });
+
+  // Preserve orphan children (if parent no longer exists) to avoid accidental data loss.
+  catalogs.forEach(catalog => {
+    if (!catalog.mergedInto || mergedParentIds.has(catalog.mergedInto)) return;
+    const childKey = getCatalogKey(catalog);
+    if (addedChildKeys.has(childKey)) return;
+    normalized.push(catalog);
+  });
+
+  return normalized;
+}
+
+function expandKeysWithMergedChildren(
+  catalogs: CatalogConfig[],
+  initialKeys: Iterable<string>
+): string[] {
+  const expanded = new Set(resolveActionableCatalogKeys(catalogs, initialKeys));
+  const parentIds = new Set(
+    catalogs
+      .filter(c => expanded.has(getCatalogKey(c)) && isMergedParentCatalog(c))
+      .map(c => c.id)
+  );
+
+  const childKeysByParent = new Map<string, string[]>();
+  catalogs.forEach(catalog => {
+    if (!catalog.mergedInto || !parentIds.has(catalog.mergedInto)) return;
+    const existing = childKeysByParent.get(catalog.mergedInto) || [];
+    existing.push(getCatalogKey(catalog));
+    childKeysByParent.set(catalog.mergedInto, existing);
+  });
+
+  const orderedKeys: string[] = [];
+  const seen = new Set<string>();
+  catalogs.forEach(catalog => {
+    const key = getCatalogKey(catalog);
+    if (!expanded.has(key) || seen.has(key)) return;
+
+    orderedKeys.push(key);
+    seen.add(key);
+
+    if (!isMergedParentCatalog(catalog)) return;
+    const childKeys = childKeysByParent.get(catalog.id) || [];
+    childKeys.forEach(childKey => {
+      if (seen.has(childKey)) return;
+      orderedKeys.push(childKey);
+      seen.add(childKey);
+    });
+  });
+
+  return orderedKeys;
+}
+
+function moveCatalogKeysToTop(catalogs: CatalogConfig[], keys: string[]): CatalogConfig[] {
+  const keySet = new Set(keys);
+  const moving = catalogs.filter(c => keySet.has(getCatalogKey(c)));
+  const remaining = catalogs.filter(c => !keySet.has(getCatalogKey(c)));
+  return normalizeMergedParentChildOrder([...moving, ...remaining]);
+}
+
+function moveCatalogKeysToBottom(catalogs: CatalogConfig[], keys: string[]): CatalogConfig[] {
+  const keySet = new Set(keys);
+  const moving = catalogs.filter(c => keySet.has(getCatalogKey(c)));
+  const remaining = catalogs.filter(c => !keySet.has(getCatalogKey(c)));
+  return normalizeMergedParentChildOrder([...remaining, ...moving]);
+}
+
+const SortableMergeChildRow = ({ catalog }: { catalog: CatalogConfig }) => {
+  const itemId = getCatalogKey(catalog);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: itemId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'flex items-center justify-between rounded-md border bg-card px-3 py-2',
+        isDragging && 'opacity-80 shadow-md'
+      )}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium">{catalog.name}</p>
+        <p className="text-xs text-muted-foreground">
+          {catalog.type.toUpperCase()} | {catalog.source.toUpperCase()}
+        </p>
+      </div>
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${catalog.name}`}
+        className="ml-3 cursor-grab rounded p-1 text-muted-foreground hover:text-foreground"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+    </div>
+  );
 };
 
 
@@ -967,21 +1227,31 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
     </Dialog>
   );
 };
-import { Layers } from 'lucide-react';
-const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: string }; }) => {
+const SortableCatalogItem = ({
+  catalog,
+  effectiveSelectionCount,
+  onEditDiscover,
+}: {
+  catalog: CatalogConfig & { source?: string };
+  effectiveSelectionCount: number;
+  onEditDiscover?: (catalog: CatalogConfig) => void;
+}) => {
   console.log('catalog:', catalog.id, catalog.source); 
   const { setConfig, config } = useConfig();
-  const { toggleSelection, isSelected, selectionCount } = useSelection(); 
+  const { toggleSelection, isSelected } = useSelection(); 
+  const catalogKey = `${catalog.id}-${catalog.type}`;
+  const isMergedChild = Boolean(catalog.mergedInto);
+  const isMergedParentCatalogEntry = isMergedParentCatalog(catalog);
+  const actionableCatalogKey = getActionableCatalogKey(config.catalogs, catalog);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
-    id: `${catalog.id}-${catalog.type}` 
+    id: catalogKey,
+    disabled: isMergedChild,
   });
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
-
-  const catalogKey = `${catalog.id}-${catalog.type}`;
-  const selected = isSelected(catalogKey);
+  const selected = isSelected(actionableCatalogKey);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -991,12 +1261,20 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
 
   const badgeSource = catalog.source || 'custom';
   const badgeStyle = sourceBadgeStyles[badgeSource as keyof typeof sourceBadgeStyles] || "bg-gray-700";
+  const mergedParentCatalog = catalog.mergedInto
+    ? config.catalogs.find(c => c.id === catalog.mergedInto && isMergedParentCatalog(c))
+    : undefined;
+  const hasActiveMergedParentCatalog = !!mergedParentCatalog;
+  const isEffectivelyEnabled =
+    catalog.enabled && (!hasActiveMergedParentCatalog || !!mergedParentCatalog?.enabled);
+  const isInheritedDisabled = hasActiveMergedParentCatalog && !mergedParentCatalog?.enabled;
+  const isChildDeleteBlocked = hasActiveMergedParent(catalog, config.catalogs);
 
   const [isRippling, setIsRippling] = useState(false);
 
   const handleCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    toggleSelection(catalogKey);
+    toggleSelection(actionableCatalogKey);
     
     // Trigger ripple effect
     setIsRippling(true);
@@ -1004,6 +1282,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   };
 
   const handleToggleEnabled = () => {
+    if (isMergedChild) return;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c => {
@@ -1017,7 +1296,8 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   };
 
   const handleToggleShowInHome = () => {
-    if (!catalog.enabled) return;
+    if (isMergedChild) return;
+    if (!isEffectivelyEnabled) return;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
@@ -1027,17 +1307,26 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   };
 
   const handleToggleRatingPosters = () => {
-    setConfig(prev => ({
-      ...prev,
-      catalogs: prev.catalogs.map(c =>
-        (c.id === catalog.id && c.type === catalog.type) 
-          ? { ...c, enableRatingPosters: c.enableRatingPosters === false ? true : false } 
-          : c
-      )
-    }));
+    setConfig(prev => {
+      const isMergedParent = isMergedParentCatalog(catalog);
+      const nextValue = catalog.enableRatingPosters === false;
+      return {
+        ...prev,
+        catalogs: prev.catalogs.map(c => {
+          if (c.id === catalog.id && c.type === catalog.type) {
+            return { ...c, enableRatingPosters: nextValue };
+          }
+          if (isMergedParent && c.mergedInto === catalog.id) {
+            return { ...c, enableRatingPosters: nextValue };
+          }
+          return c;
+        })
+      };
+    });
   };
 
   const handleToggleRandomize = () => {
+    if (isMergedChild || isMergedParentCatalogEntry) return;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
@@ -1078,20 +1367,88 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   };
 
   const handleDelete = () => {
-    setConfig(prev => ({
-      ...prev,
-      catalogs: prev.catalogs.filter(c => !(c.id === catalog.id && c.type === catalog.type)),
-    }));
+    if (isChildDeleteBlocked) {
+      toast.info('Delete merge parent first', {
+        description: 'Merged child catalogs can only be deleted after their parent merge is removed.',
+      });
+      return;
+    }
+
+    setConfig(prev => {
+      const isMergedParent = catalog.source === 'merged' || catalog.id.startsWith('merge.');
+      const parentIdOfDeletedChild = catalog.mergedInto;
+
+      let nextCatalogs = prev.catalogs.map(c => {
+        if (isMergedParent && c.mergedInto === catalog.id) {
+          return restoreMergedChildState(c);
+        }
+        return c;
+      });
+
+      if (parentIdOfDeletedChild) {
+        nextCatalogs = nextCatalogs.map(c => {
+          if (c.id !== parentIdOfDeletedChild || c.source !== 'merged') return c;
+          const mergedMeta = c.metadata?.merged;
+          if (!mergedMeta?.children || !Array.isArray(mergedMeta.children)) return c;
+
+          const filteredChildren = mergedMeta.children.filter(
+            child => !(child.id === catalog.id && child.type === catalog.type)
+          );
+
+          return {
+            ...c,
+            metadata: {
+              ...c.metadata,
+              merged: {
+                ...mergedMeta,
+                children: filteredChildren,
+              },
+            },
+          };
+        });
+      }
+
+      const deletedKey = `${catalog.id}-${catalog.type}`;
+      nextCatalogs = nextCatalogs.filter(c => `${c.id}-${c.type}` !== deletedKey);
+
+      const brokenMergedParents = new Set(
+        nextCatalogs
+          .filter(c => (c.source === 'merged' || c.id.startsWith('merge.')))
+          .filter(c => {
+            const childCount = c.metadata?.merged?.children?.length || 0;
+            return childCount < 2;
+          })
+          .map(c => c.id)
+      );
+
+      if (brokenMergedParents.size > 0) {
+        nextCatalogs = nextCatalogs
+          .map(c => {
+            if (brokenMergedParents.has(c.mergedInto || '')) {
+              return restoreMergedChildState(c);
+            }
+            return c;
+          })
+          .filter(c => !brokenMergedParents.has(c.id));
+      }
+
+      return {
+        ...prev,
+        catalogs: nextCatalogs,
+      };
+    });
   };
 
   const handleMoveToTop = () => {
+    if (isMergedChild) return;
     setConfig(prev => {
-      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
-      if (currentIndex <= 0) return prev; // Already at top or not found
+      const movingKeys = expandKeysWithMergedChildren(
+        prev.catalogs,
+        [getActionableCatalogKey(prev.catalogs, catalog)]
+      );
+      if (movingKeys.length === 0) return prev;
 
-      const newCatalogs = [...prev.catalogs];
-      const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
-      newCatalogs.unshift(movedCatalog);
+      const newCatalogs = moveCatalogKeysToTop(prev.catalogs, movingKeys);
 
       return {
         ...prev,
@@ -1101,13 +1458,15 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
   };
 
   const handleMoveToBottom = () => {
+    if (isMergedChild) return;
     setConfig(prev => {
-      const currentIndex = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
-      if (currentIndex === -1 || currentIndex === prev.catalogs.length - 1) return prev; // Not found or already at bottom
+      const movingKeys = expandKeysWithMergedChildren(
+        prev.catalogs,
+        [getActionableCatalogKey(prev.catalogs, catalog)]
+      );
+      if (movingKeys.length === 0) return prev;
 
-      const newCatalogs = [...prev.catalogs];
-      const [movedCatalog] = newCatalogs.splice(currentIndex, 1);
-      newCatalogs.push(movedCatalog);
+      const newCatalogs = moveCatalogKeysToBottom(prev.catalogs, movingKeys);
 
       return {
         ...prev,
@@ -1127,7 +1486,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
         // Dragging state
         isDragging && "opacity-80 scale-[1.02] shadow-2xl ring-2 ring-primary/50",
         // Disabled state
-        !catalog.enabled && "opacity-60",
+        !isEffectivelyEnabled && "opacity-60",
         // Selected state with smooth background transition
         selected && "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700",
         // Hover effect for selected items (slightly darker)
@@ -1137,11 +1496,11 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       )}
     >
       {/* --- Group Dragging Badge --- */}
-      {isDragging && selected && selectionCount > 1 && (
+      {isDragging && selected && effectiveSelectionCount > 1 && (
         <div className="absolute -top-3 -right-3 z-[60] animate-in zoom-in duration-200">
           <Badge className="bg-blue-600 text-white shadow-xl px-3 py-1 flex items-center gap-1.5 border-2 border-background">
             <Layers className="h-3.5 w-3.5" />
-            <span className="font-bold">Moving {selectionCount} items</span>
+            <span className="font-bold">Moving {effectiveSelectionCount} items</span>
           </Badge>
         </div>
       )}
@@ -1182,18 +1541,43 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             )}
           </div>
         </div>
-        <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none" aria-label="Drag to reorder">
-          <GripVertical />
-        </button>
+        {isMergedChild ? (
+          <div
+            className="text-muted-foreground p-2 -ml-2"
+            title="Merged child catalog (move the parent to reorder)"
+            aria-label="Merged child catalog"
+          >
+            <CornerDownRight className="h-4 w-4" />
+          </div>
+        ) : (
+          <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none" aria-label="Drag to reorder">
+            <GripVertical />
+          </button>
+        )}
         <div>
           <div className="flex items-center gap-2">
-            <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
-            <button
-              onClick={() => setShowEditDialog(true)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Pencil size={14} />
-            </button>
+            <p className={`font-medium transition-colors ${isEffectivelyEnabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            {catalog.source === 'merged' && (
+              <Badge variant="outline" className="text-[10px] uppercase tracking-wide border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-300">
+                Merged
+              </Badge>
+            )}
+            {catalog.mergedInto && (
+              <Badge
+                variant="outline"
+                className="text-[10px] font-semibold uppercase tracking-wide border-amber-400/80 bg-amber-100/70 text-amber-800 dark:border-amber-600/70 dark:bg-amber-900/30 dark:text-amber-200"
+              >
+                Child
+              </Badge>
+            )}
+            {!isMergedChild && (
+              <button
+                onClick={() => setShowEditDialog(true)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Pencil size={14} />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-1">
             {/* Show itemCount and author only on screens >= sm for trakt and mdblist */}
@@ -1212,14 +1596,14 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             {/* Show only type badge on mobile */}
             <Badge
               variant="outline"
-              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} flex sm:hidden`}
+              className={`text-xs capitalize ${isEffectivelyEnabled ? '' : 'opacity-50'} flex sm:hidden`}
             >
               {catalog.displayType || catalog.type}
             </Badge>
             {/* Show type badge on desktop as well */}
             <Badge
               variant="outline"
-              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} hidden sm:flex`}
+              className={`text-xs capitalize ${isEffectivelyEnabled ? '' : 'opacity-50'} hidden sm:flex`}
             >
               {catalog.displayType || catalog.type}
             </Badge>
@@ -1230,92 +1614,126 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
       {/* Row 2: Action buttons + Source badge */}
       <div className="flex items-center space-x-2 mt-3 md:mt-0 md:ml-auto justify-start md:justify-end">
         <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={handleToggleEnabled}>
-                {catalog.enabled ? (
-                  <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
-                ) : (
-                  <EyeOff className="h-5 w-5 text-muted-foreground" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent><p>{catalog.enabled ? 'Enabled (Visible)' : 'Disabled'}</p></TooltipContent>
-          </Tooltip>
+          {!isMergedChild && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={handleToggleEnabled}>
+                    {isEffectivelyEnabled ? (
+                      <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
+                    ) : (
+                      <EyeOff className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {isInheritedDisabled
+                      ? 'Disabled (merge parent is disabled)'
+                      : isEffectivelyEnabled
+                        ? 'Enabled (Visible)'
+                        : 'Disabled'}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleToggleShowInHome}
-                disabled={!catalog.enabled}
-                className="disabled:opacity-20 disabled:cursor-not-allowed"
-              >
-                <Home className={`h-5 w-5 transition-colors ${catalog.showInHome && catalog.enabled ? 'text-blue-500 dark:text-blue-400' : 'text-muted-foreground'}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
-          </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleToggleShowInHome}
+                    disabled={!isEffectivelyEnabled}
+                    className="disabled:opacity-20 disabled:cursor-not-allowed"
+                  >
+                    <Home className={`h-5 w-5 transition-colors ${catalog.showInHome && isEffectivelyEnabled ? 'text-blue-500 dark:text-blue-400' : 'text-muted-foreground'}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>{catalog.showInHome && isEffectivelyEnabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
+              </Tooltip>
+            </>
+          )}
 
-          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && !isMergedChild && (
             <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleToggleRatingPosters}
-                disabled={!catalog.enabled}
+                disabled={!isEffectivelyEnabled}
                 className="disabled:opacity-20 disabled:cursor-not-allowed"
               >
-                <Star className={`h-5 w-5 transition-colors ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                <Star className={`h-5 w-5 transition-colors ${catalog.enableRatingPosters !== false && isEffectivelyEnabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
               </Button>
             </TooltipTrigger>
-            <TooltipContent><p>{catalog.enableRatingPosters !== false && catalog.enabled ? 'Rating Posters Enabled' : 'Rating Posters Disabled'}</p></TooltipContent>
+            <TooltipContent><p>{catalog.enableRatingPosters !== false && isEffectivelyEnabled ? 'Rating Posters Enabled' : 'Rating Posters Disabled'}</p></TooltipContent>
           </Tooltip>
           )}
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleToggleRandomize}
-                disabled={!catalog.enabled}
-                className="disabled:opacity-20 disabled:cursor-not-allowed"
-                aria-label="Toggle random order"
-              >
-                <Shuffle className={`h-5 w-5 transition-colors ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-500 dark:text-purple-400' : 'text-muted-foreground'}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{catalog.randomizePerPage && catalog.enabled ? 'Randomized per page' : 'Original order'}</p>
-            </TooltipContent>
-          </Tooltip>
+          {!isMergedChild && catalog.id.includes('.discover.') && catalog.metadata?.discover?.formState && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onEditDiscover?.(catalog)}
+                  aria-label="Edit Catalog Filters"
+                >
+                  <Wand2 className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit catalog filters</TooltipContent>
+            </Tooltip>
+          )}
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={handleMoveToTop} aria-label="Move to Top" className="h-8 w-8">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
-                  <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Move to top of list</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={handleMoveToBottom} aria-label="Move to Bottom" className="h-8 w-8">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
-                  <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Move to bottom of list</TooltipContent>
-          </Tooltip>
+          {!isMergedChild && !isMergedParentCatalogEntry && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleToggleRandomize}
+                  disabled={!isEffectivelyEnabled}
+                  className="disabled:opacity-20 disabled:cursor-not-allowed"
+                  aria-label="Toggle random order"
+                >
+                  <Shuffle className={`h-5 w-5 transition-colors ${catalog.randomizePerPage && isEffectivelyEnabled ? 'text-purple-500 dark:text-purple-400' : 'text-muted-foreground'}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{catalog.randomizePerPage && isEffectivelyEnabled ? 'Randomized per page' : 'Original order'}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {!isMergedChild && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={handleMoveToTop} aria-label="Move to Top" className="h-8 w-8">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
+                      <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
+                    </svg>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Move to top of list</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={handleMoveToBottom} aria-label="Move to Bottom" className="h-8 w-8">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
+                      <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
+                    </svg>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Move to bottom of list</TooltipContent>
+              </Tooltip>
+            </>
+          )}
 
 
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
+          {!isMergedChild && (catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))) && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1327,7 +1745,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {catalog.source === 'custom' && (
+          {!isMergedChild && catalog.source === 'custom' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Cache Settings">
@@ -1338,7 +1756,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {catalog.source === 'anilist' && (
+          {!isMergedChild && catalog.source === 'anilist' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="AniList Settings">
@@ -1499,7 +1917,7 @@ const SortableCatalogItem = ({ catalog }: { catalog: CatalogConfig & { source?: 
             </Tooltip>
           )}
 
-          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
+          {!isChildDeleteBlocked && (['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'merged'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
             (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
             catalog.id.includes('.discover.')) && (
@@ -1713,7 +2131,6 @@ function CatalogsSettingsContent({
     selectBySource,
     deselectBySource,
     invertSelection,
-    selectionCount,
     selectedIds
   } = useSelection();
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
@@ -1721,10 +2138,16 @@ function CatalogsSettingsContent({
   const [isSimklOpen, setIsSimklOpen] = useState(false);
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
+  const [editingDiscoverCatalog, setEditingDiscoverCatalog] = useState<CatalogConfig | null>(null);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeName, setMergeName] = useState('');
+  const [mergeStrategy, setMergeStrategy] = useState<'sequential' | 'interleaved'>('sequential');
+  const [mergePrimaryType, setMergePrimaryType] = useState<'movie' | 'series' | 'anime' | 'all'>('series');
+  const [mergeChildOrderKeys, setMergeChildOrderKeys] = useState<string[]>([]);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
@@ -1734,6 +2157,7 @@ function CatalogsSettingsContent({
     | 'disable'
     | 'addToHome'
     | 'removeFromHome'
+    | 'merge'
     | 'delete'
     | 'invert'
     | 'enableRatingPosters'
@@ -1776,6 +2200,7 @@ function CatalogsSettingsContent({
       catalogs: [],
     }));
     setHasChosenCatalogSetup(true);
+    setEditingDiscoverCatalog(null);
     setIsTmdbDiscoverBuilderOpen(true);
   };
 
@@ -1786,12 +2211,14 @@ function CatalogsSettingsContent({
     setLoadingAction('moveToTop');
     setIsLoading(true);
     try {
+      let movedCount = 0;
       setConfig(prev => {
-        const selected = prev.catalogs.filter(c => selectedIds.has(`${c.id}-${c.type}`));
-        const remaining = prev.catalogs.filter(c => !selectedIds.has(`${c.id}-${c.type}`));
-        return { ...prev, catalogs: [...selected, ...remaining] };
+        const actionableKeys = resolveActionableCatalogKeys(prev.catalogs, selectedIds);
+        const expandedMovingKeys = expandKeysWithMergedChildren(prev.catalogs, actionableKeys);
+        movedCount = expandedMovingKeys.length;
+        return { ...prev, catalogs: moveCatalogKeysToTop(prev.catalogs, expandedMovingKeys) };
       });
-      toast.success(`Moved ${selectedIds.size} catalogs to top of the list`);
+      toast.success(`Moved ${movedCount} catalogs to top of the list`);
     } finally {
       setIsLoading(false);
       setLoadingAction(null);
@@ -1802,12 +2229,14 @@ function CatalogsSettingsContent({
     setLoadingAction('moveToBottom');
     setIsLoading(true);
     try {
+      let movedCount = 0;
       setConfig(prev => {
-        const selected = prev.catalogs.filter(c => selectedIds.has(`${c.id}-${c.type}`));
-        const remaining = prev.catalogs.filter(c => !selectedIds.has(`${c.id}-${c.type}`));
-        return { ...prev, catalogs: [...remaining, ...selected] };
+        const actionableKeys = resolveActionableCatalogKeys(prev.catalogs, selectedIds);
+        const expandedMovingKeys = expandKeysWithMergedChildren(prev.catalogs, actionableKeys);
+        movedCount = expandedMovingKeys.length;
+        return { ...prev, catalogs: moveCatalogKeysToBottom(prev.catalogs, expandedMovingKeys) };
       });
-      toast.success(`Moved ${selectedIds.size} catalogs to bottom of the list`);
+      toast.success(`Moved ${movedCount} catalogs to bottom of the list`);
     } finally {
       setIsLoading(false);
       setLoadingAction(null);
@@ -1843,6 +2272,10 @@ function CatalogsSettingsContent({
     }),
     [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey]
   );
+  const selectableFilteredCatalogs = useMemo(
+    () => getSelectableCatalogs(filteredCatalogs),
+    [filteredCatalogs]
+  );
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1853,20 +2286,25 @@ function CatalogsSettingsContent({
   
     setConfig(prev => {
       const currentCatalogs = [...prev.catalogs];
-      const getCatalogKey = (catalog: CatalogConfig) => `${catalog.id}-${catalog.type}`;
-      
-      const movingKeys = selectedIds.has(activeKey)
-        ? currentCatalogs
-            .map(getCatalogKey)
-            .filter(key => selectedIds.has(key))
-        : [activeKey];
+      const [actionableActiveKey] = resolveActionableCatalogKeys(currentCatalogs, [activeKey]);
+      const [actionableOverKey] = resolveActionableCatalogKeys(currentCatalogs, [overKey]);
+
+      if (!actionableActiveKey || !actionableOverKey || actionableActiveKey === actionableOverKey) {
+        return prev;
+      }
+
+      const actionableSelectedKeys = resolveActionableCatalogKeys(currentCatalogs, selectedIds);
+      const baseMovingKeys = actionableSelectedKeys.includes(actionableActiveKey)
+        ? actionableSelectedKeys
+        : [actionableActiveKey];
+      const movingKeys = expandKeysWithMergedChildren(currentCatalogs, baseMovingKeys);
 
       const movingKeySet = new Set(movingKeys);
       const movingItems = currentCatalogs.filter(c => movingKeySet.has(getCatalogKey(c)));
       const remainingItems = currentCatalogs.filter(c => !movingKeySet.has(getCatalogKey(c)));
   
-      const activeIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === activeKey);
-      const overIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === overKey);
+      const activeIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === actionableActiveKey);
+      const overIndexTotal = currentCatalogs.findIndex(c => getCatalogKey(c) === actionableOverKey);
       if (activeIndexTotal === -1 || overIndexTotal === -1) return prev;
 
       const isMovingDown = activeIndexTotal < overIndexTotal;
@@ -1875,13 +2313,13 @@ function CatalogsSettingsContent({
         .filter(c => !movingKeySet.has(getCatalogKey(c))).length;
 
       const insertIndex = isMovingDown
-        ? remainingBeforeOver + (movingKeySet.has(overKey) ? 0 : 1)
+        ? remainingBeforeOver + (movingKeySet.has(actionableOverKey) ? 0 : 1)
         : remainingBeforeOver;
   
       const newCatalogs = [...remainingItems];
       newCatalogs.splice(insertIndex, 0, ...movingItems);
   
-      return { ...prev, catalogs: newCatalogs };
+      return { ...prev, catalogs: normalizeMergedParentChildOrder(newCatalogs) };
     });
   };
 
@@ -2020,10 +2458,248 @@ function CatalogsSettingsContent({
 
   // Get selected catalogs for bulk actions
   const selectedCatalogs = useMemo(() => {
+    const actionableSelectedKeys = new Set(
+      resolveActionableCatalogKeys(filteredCatalogs, selectedIds)
+    );
+
     return filteredCatalogs.filter(catalog =>
-      selectedIds.has(`${catalog.id}-${catalog.type}`)
+      actionableSelectedKeys.has(getCatalogKey(catalog))
     );
   }, [filteredCatalogs, selectedIds]);
+  const effectiveSelectionCount = selectedCatalogs.length;
+
+  const selectedMergeTypes = useMemo(() => new Set(selectedCatalogs.map(c => c.type)), [selectedCatalogs]);
+
+  const showMergePrimaryTypeSelector = useMemo(() => {
+    return selectedMergeTypes.size > 1;
+  }, [selectedMergeTypes]);
+
+  const mergePrimaryTypeOptions = useMemo(() => {
+    const allowedTypes = new Set<CatalogConfig['type']>(['all']);
+    selectedMergeTypes.forEach((type) => {
+      if (type === 'movie' || type === 'series' || type === 'anime' || type === 'all') {
+        allowedTypes.add(type);
+      }
+    });
+
+    const orderedTypes: CatalogConfig['type'][] = ['movie', 'series', 'anime', 'all'];
+    return orderedTypes.filter((type) => allowedTypes.has(type));
+  }, [selectedMergeTypes]);
+
+  React.useEffect(() => {
+    if (!showMergeDialog || !showMergePrimaryTypeSelector) return;
+    if (mergePrimaryTypeOptions.includes(mergePrimaryType)) return;
+    const fallbackType = mergePrimaryTypeOptions.includes('all')
+      ? 'all'
+      : mergePrimaryTypeOptions[0] || 'series';
+    setMergePrimaryType(fallbackType);
+  }, [showMergeDialog, showMergePrimaryTypeSelector, mergePrimaryType, mergePrimaryTypeOptions]);
+
+  const mergeValidation = useMemo(() => {
+    if (selectedCatalogs.length < 2) {
+      return { canMerge: false, reason: 'Select at least two catalogs to merge.' };
+    }
+
+    if (selectedCatalogs.some(c => c.source === 'merged' || c.id.startsWith('merge.'))) {
+      return { canMerge: false, reason: 'Merged catalogs cannot be merged again.' };
+    }
+
+    if (selectedCatalogs.some(c => !!c.mergedInto)) {
+      return { canMerge: false, reason: 'One or more selected catalogs are already inside another merge.' };
+    }
+
+    const types = selectedMergeTypes;
+    const isSingleType = types.size === 1;
+    const isSupportedMixedSet = Array.from(types).every(
+      t => t === 'movie' || t === 'series' || t === 'anime' || t === 'all'
+    );
+    const canMergeTypes = isSingleType || isSupportedMixedSet;
+
+    if (!canMergeTypes) {
+      return { canMerge: false, reason: 'Select catalogs of one type, or a mix limited to movie/series/anime/all.' };
+    }
+
+    return { canMerge: true, reason: '' };
+  }, [selectedCatalogs, selectedMergeTypes]);
+
+  const openMergeDialog = () => {
+    if (!mergeValidation.canMerge) {
+      toast.error('Cannot merge selection', { description: mergeValidation.reason });
+      return;
+    }
+
+    const first = selectedCatalogs[0];
+    const selectedTypes = selectedMergeTypes;
+    const needsPrimaryTypeSelector = selectedTypes.size > 1;
+    const defaultName =
+      selectedCatalogs.length === 2
+        ? `${selectedCatalogs[0].name} + ${selectedCatalogs[1].name}`
+        : needsPrimaryTypeSelector
+          ? `Merged mixed (${selectedCatalogs.length})`
+          : `Merged ${first.type} (${selectedCatalogs.length})`;
+
+    setMergeName(defaultName);
+    setMergeStrategy('sequential');
+    if (selectedTypes.size > 1) {
+      setMergePrimaryType('all');
+    } else {
+      setMergePrimaryType(selectedCatalogs[0]?.type === 'all' ? 'all' : selectedCatalogs[0]?.type === 'movie' ? 'movie' : selectedCatalogs[0]?.type === 'anime' ? 'anime' : 'series');
+    }
+    const selectedKeySet = new Set(selectedCatalogs.map(getCatalogKey));
+    const selectedInCurrentOrder = config.catalogs
+      .filter(c => selectedKeySet.has(getCatalogKey(c)))
+      .map(getCatalogKey);
+    setMergeChildOrderKeys(selectedInCurrentOrder);
+    const randomizedChildren = selectedCatalogs.filter(c => c.randomizePerPage);
+    if (randomizedChildren.length > 0) {
+      toast.warning(
+        `${randomizedChildren.length} selected catalog${randomizedChildren.length === 1 ? '' : 's'} use randomize-per-page and will be auto-disabled in merged context.`
+      );
+    }
+    setShowMergeDialog(true);
+  };
+
+  const mergeOrderedCatalogs = useMemo(() => {
+    if (mergeChildOrderKeys.length === 0) return selectedCatalogs;
+    const catalogByKey = new Map(config.catalogs.map(c => [getCatalogKey(c), c]));
+    const ordered = mergeChildOrderKeys
+      .map(key => catalogByKey.get(key))
+      .filter((catalog): catalog is CatalogConfig => !!catalog);
+    return ordered;
+  }, [config.catalogs, mergeChildOrderKeys, selectedCatalogs]);
+
+  const handleMergeChildrenDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setMergeChildOrderKeys(prev => {
+      const oldIndex = prev.indexOf(String(active.id));
+      const newIndex = prev.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergeValidation.canMerge) {
+      toast.error('Cannot merge selection', { description: mergeValidation.reason });
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadingAction('merge');
+
+    try {
+      const selectedKeySet = new Set(selectedCatalogs.map(c => `${c.id}-${c.type}`));
+      const selectedTypes = selectedMergeTypes;
+      const allowMixedTypes = selectedTypes.size > 1;
+      const selectedType: CatalogConfig['type'] = allowMixedTypes
+        ? (mergePrimaryTypeOptions.includes(mergePrimaryType)
+          ? mergePrimaryType
+          : (mergePrimaryTypeOptions.includes('all') ? 'all' : mergePrimaryTypeOptions[0] || 'all'))
+        : selectedCatalogs[0].type;
+      const safeName = mergeName.trim() || (allowMixedTypes
+        ? `Merged mixed (${selectedCatalogs.length})`
+        : `Merged ${selectedType} (${selectedCatalogs.length})`);
+      const randomizedChildrenCount = selectedCatalogs.filter(c => c.randomizePerPage).length;
+
+      setConfig(prev => {
+        const catalogByKey = new Map(prev.catalogs.map(c => [getCatalogKey(c), c]));
+        const selectedByDialogOrder = mergeChildOrderKeys
+          .map(key => catalogByKey.get(key))
+          .filter((catalog): catalog is CatalogConfig => !!catalog && selectedKeySet.has(getCatalogKey(catalog)));
+        const selectedInOrder = selectedByDialogOrder.length >= 2
+          ? selectedByDialogOrder
+          : prev.catalogs.filter(c => selectedKeySet.has(getCatalogKey(c)));
+        if (selectedInOrder.length < 2) return prev;
+
+        const childCacheTtls = selectedInOrder
+          .map(c => (typeof c.cacheTTL === 'number' && c.cacheTTL > 0 ? c.cacheTTL : null))
+          .filter((ttl): ttl is number => ttl !== null);
+        const mergedCacheTtl = childCacheTtls.length > 0 ? Math.max(300, Math.min(...childCacheTtls)) : undefined;
+        const mergedRatingPostersEnabled = selectedInOrder.some(c => c.enableRatingPosters !== false);
+
+        const children = selectedInOrder.map(c => ({
+          id: c.id,
+          type: c.type,
+        }));
+
+        let mergedId = `merge.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+        while (prev.catalogs.some(c => c.id === mergedId)) {
+          mergedId = `merge.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        const updatedExisting = prev.catalogs.map(c => {
+          const key = `${c.id}-${c.type}`;
+          if (!selectedKeySet.has(key)) return c;
+          const withRestoreState = ensureMergedChildRestoreState(c);
+          return {
+            ...withRestoreState,
+            mergedInto: mergedId,
+            showInHome: false,
+            randomizePerPage: false,
+            enableRatingPosters: mergedRatingPostersEnabled,
+          };
+        });
+
+        const updatedByKey = new Map(updatedExisting.map(c => [getCatalogKey(c), c]));
+        const selectedChildrenUpdated = selectedInOrder
+          .map(child => updatedByKey.get(getCatalogKey(child)))
+          .filter((catalog): catalog is CatalogConfig => !!catalog);
+        const nonSelectedCatalogs = updatedExisting.filter(c => !selectedKeySet.has(getCatalogKey(c)));
+
+        const firstSelectedIndex = prev.catalogs.findIndex(c => selectedKeySet.has(getCatalogKey(c)));
+        const insertAt = firstSelectedIndex >= 0
+          ? prev.catalogs
+              .slice(0, firstSelectedIndex)
+              .filter(c => !selectedKeySet.has(getCatalogKey(c))).length
+          : nonSelectedCatalogs.length;
+
+        const mergedCatalog: CatalogConfig = {
+          id: mergedId,
+          name: safeName,
+          type: selectedType,
+          source: 'merged',
+          enabled: selectedInOrder.some(c => c.enabled),
+          showInHome: selectedInOrder.some(c => c.showInHome),
+          enableRatingPosters: mergedRatingPostersEnabled,
+          randomizePerPage: false,
+          cacheTTL: mergedCacheTtl,
+          metadata: {
+            merged: {
+              version: 1,
+              children,
+              strategy: mergeStrategy,
+              genreMode: 'strict',
+              dedupe: true,
+              allowMixedTypes,
+            },
+          },
+        };
+
+        const nextCatalogs = [...nonSelectedCatalogs];
+        nextCatalogs.splice(insertAt, 0, mergedCatalog, ...selectedChildrenUpdated);
+
+        return {
+          ...prev,
+          catalogs: normalizeMergedParentChildOrder(nextCatalogs),
+        };
+      });
+
+      deselectAll();
+      setShowMergeDialog(false);
+      toast.success(`Merged ${selectedCatalogs.length} catalogs into "${safeName}"`);
+      if (randomizedChildrenCount > 0) {
+        toast.info(
+          `Disabled randomize-per-page for ${randomizedChildrenCount} merged child catalog${randomizedChildrenCount === 1 ? '' : 's'}.`
+        );
+      }
+    } catch (error) {
+      showBulkActionError('merge catalogs', error as Error);
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
 
   // Bulk action handlers
   const handleBulkEnable = async () => {
@@ -2186,25 +2862,28 @@ function CatalogsSettingsContent({
     setLoadingAction('enableRatingPosters');
 
     try {
-      // Filter selected catalogs to only those with Rating posters disabled
-      const catalogsToEnableRatingPosters = selectedCatalogs.filter(catalog => catalog.enableRatingPosters === false);
+      let affectedCount = 0;
+      const selectedCatalogKeys = selectedCatalogs.map(getCatalogKey);
 
-      // Update config state to enable RPDB for selected catalogs
-      if (catalogsToEnableRatingPosters.length > 0) {
-        setConfig(prev => ({
+      setConfig(prev => {
+        const targetKeys = new Set(
+          expandKeysWithMergedChildren(prev.catalogs, selectedCatalogKeys)
+        );
+        const nextCatalogs = prev.catalogs.map(c => {
+          const key = getCatalogKey(c);
+          if (!targetKeys.has(key)) return c;
+          if (c.enableRatingPosters !== false) return c;
+          affectedCount += 1;
+          return { ...c, enableRatingPosters: true };
+        });
+        return {
           ...prev,
-          catalogs: prev.catalogs.map(c => {
-            const catalogKey = `${c.id}-${c.type}`;
-            const shouldEnableRatingPosters = catalogsToEnableRatingPosters.some(
-              cat => `${cat.id}-${cat.type}` === catalogKey
-            );
-            return shouldEnableRatingPosters ? { ...c, enableRatingPosters: true } : c;
-          })
-        }));
-      }
+          catalogs: nextCatalogs,
+        };
+      });
 
       // Show toast notification
-      toast.success(`Rating Posters enabled for ${catalogsToEnableRatingPosters.length} catalog${catalogsToEnableRatingPosters.length === 1 ? '' : 's'}`);
+      toast.success(`Rating Posters enabled for ${affectedCount} catalog${affectedCount === 1 ? '' : 's'}`);
     } catch (error) {
       showBulkActionError('enable Rating Posters', error as Error);
     } finally {
@@ -2218,25 +2897,28 @@ function CatalogsSettingsContent({
     setLoadingAction('disableRatingPosters');
 
     try {
-      // Filter selected catalogs to only those with Rating posters enabled
-      const catalogsToDisableRatingPosters = selectedCatalogs.filter(catalog => catalog.enableRatingPosters !== false);
+      let affectedCount = 0;
+      const selectedCatalogKeys = selectedCatalogs.map(getCatalogKey);
 
-      // Update config state to disable RPDB for selected catalogs
-      if (catalogsToDisableRatingPosters.length > 0) {
-        setConfig(prev => ({
+      setConfig(prev => {
+        const targetKeys = new Set(
+          expandKeysWithMergedChildren(prev.catalogs, selectedCatalogKeys)
+        );
+        const nextCatalogs = prev.catalogs.map(c => {
+          const key = getCatalogKey(c);
+          if (!targetKeys.has(key)) return c;
+          if (c.enableRatingPosters === false) return c;
+          affectedCount += 1;
+          return { ...c, enableRatingPosters: false };
+        });
+        return {
           ...prev,
-          catalogs: prev.catalogs.map(c => {
-            const catalogKey = `${c.id}-${c.type}`;
-            const shouldDisableRatingPosters = catalogsToDisableRatingPosters.some(
-              cat => `${cat.id}-${cat.type}` === catalogKey
-            );
-            return shouldDisableRatingPosters ? { ...c, enableRatingPosters: false } : c;
-          })
-        }));
-      }
+          catalogs: nextCatalogs,
+        };
+      });
 
       // Show toast notification
-      toast.success(`Rating Posters disabled for ${catalogsToDisableRatingPosters.length} catalog${catalogsToDisableRatingPosters.length === 1 ? '' : 's'}`);
+      toast.success(`Rating Posters disabled for ${affectedCount} catalog${affectedCount === 1 ? '' : 's'}`);
     } catch (error) {
       showBulkActionError('disable Rating Posters', error as Error);
     } finally {
@@ -2250,6 +2932,11 @@ function CatalogsSettingsContent({
     setLoadingAction('enableRandomize');
 
     try {
+      if (selectedCatalogs.some(isMergedParentCatalog)) {
+        toast.error('Cannot enable randomize for selections containing merged catalogs');
+        return;
+      }
+
       const catalogsToEnableRandomize = selectedCatalogs.filter(catalog => !catalog.randomizePerPage);
 
       if (catalogsToEnableRandomize.length > 0) {
@@ -2279,6 +2966,11 @@ function CatalogsSettingsContent({
     setLoadingAction('disableRandomize');
 
     try {
+      if (selectedCatalogs.some(isMergedParentCatalog)) {
+        toast.error('Cannot disable randomize for selections containing merged catalogs');
+        return;
+      }
+
       const catalogsToDisableRandomize = selectedCatalogs.filter(catalog => catalog.randomizePerPage);
 
       if (catalogsToDisableRandomize.length > 0) {
@@ -2309,7 +3001,11 @@ function CatalogsSettingsContent({
   };
 
   const isRemovableCatalog = (catalog: CatalogConfig) => {
-    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'];
+    if (hasActiveMergedParent(catalog, config.catalogs)) {
+      return false;
+    }
+
+    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'merged'];
     if (removableSources.includes(catalog.source)) {
       return true;
     }
@@ -2340,16 +3036,80 @@ function CatalogsSettingsContent({
 
       // Remove catalogs from config state
       if (catalogsToDelete.length > 0) {
-        setConfig(prev => ({
-          ...prev,
-          catalogs: prev.catalogs.filter(c => {
-            const catalogKey = `${c.id}-${c.type}`;
-            const shouldDelete = catalogsToDelete.some(
-              cat => `${cat.id}-${cat.type}` === catalogKey
-            );
-            return !shouldDelete;
-          })
-        }));
+        setConfig(prev => {
+          const deleteKeySet = new Set(catalogsToDelete.map(c => `${c.id}-${c.type}`));
+          const deletedMergedParentIds = new Set(
+            catalogsToDelete
+              .filter(c => c.source === 'merged' || c.id.startsWith('merge.'))
+              .map(c => c.id)
+          );
+
+          const deletedChildrenByParent = new Map<string, Set<string>>();
+          catalogsToDelete.forEach(c => {
+            if (!c.mergedInto || deletedMergedParentIds.has(c.mergedInto)) return;
+            const childKey = `${c.id}-${c.type}`;
+            if (!deletedChildrenByParent.has(c.mergedInto)) {
+              deletedChildrenByParent.set(c.mergedInto, new Set());
+            }
+            deletedChildrenByParent.get(c.mergedInto)!.add(childKey);
+          });
+
+          let nextCatalogs = prev.catalogs.map(c => {
+            if (deletedMergedParentIds.has(c.mergedInto || '')) {
+              return restoreMergedChildState(c);
+            }
+            return c;
+          });
+
+          if (deletedChildrenByParent.size > 0) {
+            nextCatalogs = nextCatalogs.map(c => {
+              if (!deletedChildrenByParent.has(c.id) || c.source !== 'merged') return c;
+              const mergedMeta = c.metadata?.merged;
+              if (!mergedMeta?.children || !Array.isArray(mergedMeta.children)) return c;
+
+              const keysToRemove = deletedChildrenByParent.get(c.id)!;
+              const filteredChildren = mergedMeta.children.filter(
+                child => !keysToRemove.has(`${child.id}-${child.type}`)
+              );
+
+              return {
+                ...c,
+                metadata: {
+                  ...c.metadata,
+                  merged: {
+                    ...mergedMeta,
+                    children: filteredChildren,
+                  },
+                },
+              };
+            });
+          }
+
+          nextCatalogs = nextCatalogs.filter(c => !deleteKeySet.has(`${c.id}-${c.type}`));
+
+          const brokenMergedParents = new Set(
+            nextCatalogs
+              .filter(c => c.source === 'merged' || c.id.startsWith('merge.'))
+              .filter(c => (c.metadata?.merged?.children?.length || 0) < 2)
+              .map(c => c.id)
+          );
+
+          if (brokenMergedParents.size > 0) {
+            nextCatalogs = nextCatalogs
+              .map(c => {
+                if (brokenMergedParents.has(c.mergedInto || '')) {
+                  return restoreMergedChildState(c);
+                }
+                return c;
+              })
+              .filter(c => !brokenMergedParents.has(c.id));
+          }
+
+          return {
+            ...prev,
+            catalogs: nextCatalogs,
+          };
+        });
       }
 
       // Show toast notifications using helper
@@ -2381,13 +3141,13 @@ function CatalogsSettingsContent({
     <div className={cn(
       "space-y-8 animate-fade-in",
       // Add bottom padding on mobile when items are selected to prevent overlap with bottom sheet
-      selectionCount > 0 && "pb-[280px] md:pb-0"
+      effectiveSelectionCount > 0 && "pb-[280px] md:pb-0"
     )}>
       <div className="space-y-4">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold">Catalog Management</h2>
           <p className="text-muted-foreground">
-            Drag to reorder. Click icons to toggle visibility.
+            Drag to reorder. Merged children follow their parent and are not selected independently.
           </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -2421,7 +3181,14 @@ function CatalogsSettingsContent({
               <Link className="h-4 w-4 mr-2" />
               Quick Add
             </Button>
-            <Button onClick={() => setIsTmdbDiscoverBuilderOpen(true)} size="sm" variant="outline">
+            <Button
+              onClick={() => {
+                setEditingDiscoverCatalog(null);
+                setIsTmdbDiscoverBuilderOpen(true);
+              }}
+              size="sm"
+              variant="outline"
+            >
               <Wand2 className="h-4 w-4 mr-2" />
               Build Your Catalog
             </Button>
@@ -2597,14 +3364,104 @@ function CatalogsSettingsContent({
         </div>
       </div>
 
+      <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="h-5 w-5 text-indigo-500" />
+              Merge Catalogs
+            </DialogTitle>
+            <DialogDescription>
+              Merge {selectedCatalogs.length} catalogs into a single manifest entry. Selected catalogs will be hidden from manifest and represented by this merged catalog.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="merge-name">Merged catalog name</Label>
+              <Input
+                id="merge-name"
+                value={mergeName}
+                onChange={(e) => setMergeName(e.target.value)}
+                placeholder="Enter merged catalog name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Merge strategy</Label>
+              <Select value={mergeStrategy} onValueChange={(value: 'sequential' | 'interleaved') => setMergeStrategy(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sequential">Sequential (source A then B)</SelectItem>
+                  <SelectItem value="interleaved">Interleaved (round-robin)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {showMergePrimaryTypeSelector && (
+              <div className="space-y-2">
+                <Label>Primary catalog type</Label>
+                <Select value={mergePrimaryType} onValueChange={(value: 'movie' | 'series' | 'anime' | 'all') => setMergePrimaryType(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mergePrimaryTypeOptions.includes('movie') && <SelectItem value="movie">Movie</SelectItem>}
+                    {mergePrimaryTypeOptions.includes('series') && <SelectItem value="series">Series</SelectItem>}
+                    {mergePrimaryTypeOptions.includes('anime') && <SelectItem value="anime">Anime</SelectItem>}
+                    {mergePrimaryTypeOptions.includes('all') && <SelectItem value="all">All</SelectItem>}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Sets the merged parent catalog type shown in manifest while still combining mixed sources.
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>Child order (drag to reorder)</Label>
+              <p className="text-xs text-muted-foreground">
+                Order determines precedence for sequential merges and starting position for interleaving.
+              </p>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleMergeChildrenDragEnd}
+              >
+                <SortableContext
+                  items={mergeChildOrderKeys}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {mergeOrderedCatalogs.map(catalog => (
+                      <SortableMergeChildRow
+                        key={getCatalogKey(catalog)}
+                        catalog={catalog}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowMergeDialog(false)}>Cancel</Button>
+            <Button onClick={handleConfirmMerge} disabled={!mergeValidation.canMerge || isLoading}>
+              {isLoading && loadingAction === 'merge' ? 'Merging...' : 'Create Merge'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Bulk Action Bar - shown when items are selected */}
-      {selectionCount > 0 && (
+      {effectiveSelectionCount > 0 && (
         <BulkActionBar
           selectedCatalogs={selectedCatalogs}
           onEnableSelected={handleBulkEnable}
           onDisableSelected={handleBulkDisable}
           onAddToHome={handleBulkAddToHome}
           onRemoveFromHome={handleBulkRemoveFromHome}
+          onMergeSelected={openMergeDialog}
+          canMergeSelected={mergeValidation.canMerge}
+          mergeDisabledReason={mergeValidation.reason}
           onDeleteSelected={handleBulkDelete}
           onInvertSelection={invertSelection}
           onClearSelection={deselectAll}
@@ -2623,13 +3480,13 @@ function CatalogsSettingsContent({
       {/* Selection Controls */}
       <div className="flex flex-wrap items-center gap-2">
         <SelectAllControl
-          totalVisible={filteredCatalogs.length}
-          selectedCount={selectionCount}
+          totalVisible={selectableFilteredCatalogs.length}
+          selectedCount={effectiveSelectionCount}
           onSelectAll={selectAll}
           onDeselectAll={deselectAll}
         />
         <SelectBySourceControl
-          catalogs={filteredCatalogs}
+          catalogs={selectableFilteredCatalogs}
           onSelectBySource={selectBySource}
           onDeselectBySource={deselectBySource}
         />
@@ -2648,7 +3505,16 @@ function CatalogsSettingsContent({
           <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
               {filteredCatalogs.map((catalog) => (
-                <SortableCatalogItem key={`${catalog.id}-${catalog.type}`} catalog={catalog} />
+                <SortableCatalogItem
+                  key={`${catalog.id}-${catalog.type}`}
+                  catalog={catalog}
+                  effectiveSelectionCount={effectiveSelectionCount}
+                  onEditDiscover={(cat) => {
+                    if (cat.mergedInto) return;
+                    setEditingDiscoverCatalog(cat);
+                    setIsTmdbDiscoverBuilderOpen(true);
+                  }}
+                />
               ))}
             </div>
           </SortableContext>
@@ -2691,7 +3557,11 @@ function CatalogsSettingsContent({
       />
       <TMDBDiscoverBuilderDialog
         isOpen={isTmdbDiscoverBuilderOpen}
-        onClose={() => setIsTmdbDiscoverBuilderOpen(false)}
+        onClose={() => {
+          setIsTmdbDiscoverBuilderOpen(false);
+          setEditingDiscoverCatalog(null);
+        }}
+        editingCatalog={editingDiscoverCatalog}
       />
 
       {/* Bulk Delete Confirmation Dialog */}
@@ -2703,6 +3573,7 @@ function CatalogsSettingsContent({
         description={(() => {
           const catalogsToDelete = selectedCatalogs.filter(isRemovableCatalog);
           const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
+          const blockedChildDeleteCount = selectedCatalogs.filter(c => hasActiveMergedParent(c, config.catalogs)).length;
 
           let message = `Are you sure you want to delete ${catalogsToDelete.length} catalog${catalogsToDelete.length === 1 ? '' : 's'}?`;
 
@@ -2716,6 +3587,9 @@ function CatalogsSettingsContent({
 
           if (skippedCount > 0) {
             message += `\n\nNote: ${skippedCount} non-removable catalog${skippedCount === 1 ? '' : 's'} will be skipped.`;
+          }
+          if (blockedChildDeleteCount > 0) {
+            message += `\n\nMerged child catalogs can only be deleted after their merge parent is removed.`;
           }
 
           return message;
@@ -2762,9 +3636,13 @@ export function CatalogsSettings() {
     }),
     [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey]
   );
+  const selectableCatalogs = useMemo(
+    () => getSelectableCatalogs(filteredCatalogs),
+    [filteredCatalogs]
+  );
 
   return (
-    <SelectionProvider catalogs={filteredCatalogs}>
+    <SelectionProvider catalogs={selectableCatalogs}>
       <CatalogsSettingsContent
         hideDisabledCatalogs={hideDisabledCatalogs}
         setHideDisabledCatalogs={handleSetHideDisabled}

@@ -529,7 +529,7 @@ class ComprehensiveCatalogWarmer {
             if (catalogConfig.sortDirection) extraArgs.sortDirection = catalogConfig.sortDirection;
           }
         }
-        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.') || catalogId.startsWith('simkl.discover.') || cleanId.startsWith('anilist.discover.') || cleanId.startsWith('mal.discover.')) {
+        else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.') || catalogId.startsWith('simkl.discover.') || catalogId.startsWith('anilist.discover.') || catalogId.startsWith('mal.discover.')) {
           const discoverParams =
             catalogConfig?.metadata?.discover?.params ||
             catalogConfig?.metadata?.discoverParams ||
@@ -601,18 +601,18 @@ class ComprehensiveCatalogWarmer {
           const result = await cacheWrapCatalog(uuid, catalogKey, async () => {
           // Check if this is a MAL catalog
           if (catalogId.startsWith('mal.')) {
-            const configWithUUID = { ...config, userUUID: uuid };
+             const configWithUUID = { ...config, userUUID: uuid };
              return await this.warmMALCatalog(catalogId, derivedPage, configWithUUID, extraArgs);
-          } else if (catalogId === 'tmdb.trending') {
-            // Special handling for tmdb.trending - call getTrending directly
-            if (!uuid) {
-              throw new Error(`UUID is required for catalog ${catalogId}`);
-            }
+           } else if (catalogId === 'tmdb.trending') {
+             // Special handling for tmdb.trending - call getTrending directly
+             if (!uuid) {
+               throw new Error(`UUID is required for catalog ${catalogId}`);
+             }
             const configWithUUID = { ...config, userUUID: uuid };
-            const { getTrending } = require('./getTrending');
-            // getTrending is page-based; derive page from totalSeen/pageSize to keep behavior aligned
-             return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
-          } else {
+             const { getTrending } = require('./getTrending');
+             // getTrending is page-based; derive page from totalSeen/pageSize to keep behavior aligned
+              return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
+           } else {
             // Everything else goes through getCatalog
             if (!uuid) {
               throw new Error(`UUID is required for catalog ${catalogId}`);

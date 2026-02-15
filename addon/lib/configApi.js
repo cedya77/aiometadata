@@ -67,6 +67,109 @@ class ConfigApi {
     return { cleaned: false };
   }
 
+  sanitizeMergedCatalogs(config) {
+    if (!config || !Array.isArray(config.catalogs)) return;
+
+    const catalogs = config.catalogs;
+    const ensureMergedChildRestoreState = (catalog) => {
+      const current = catalog?.metadata?.mergedChildState;
+      if (
+        current &&
+        typeof current.showInHome === 'boolean' &&
+        typeof current.randomizePerPage === 'boolean'
+      ) {
+        return;
+      }
+
+      catalog.metadata = {
+        ...(catalog.metadata || {}),
+        mergedChildState: {
+          showInHome: !!catalog.showInHome,
+          randomizePerPage: !!catalog.randomizePerPage,
+        },
+      };
+    };
+    const restoreMergedChildState = (catalog) => {
+      const restoreState = catalog?.metadata?.mergedChildState;
+      if (restoreState && typeof restoreState.showInHome === 'boolean') {
+        catalog.showInHome = restoreState.showInHome;
+      }
+      if (restoreState && typeof restoreState.randomizePerPage === 'boolean') {
+        catalog.randomizePerPage = restoreState.randomizePerPage;
+      }
+      if (catalog.metadata && typeof catalog.metadata === 'object') {
+        delete catalog.metadata.mergedChildState;
+        if (Object.keys(catalog.metadata).length === 0) {
+          delete catalog.metadata;
+        }
+      }
+      delete catalog.mergedInto;
+    };
+    const catalogByKey = new Map(catalogs.map(c => [`${c.id}-${c.type}`, c]));
+    const validMergedParents = new Set();
+    const childrenByParent = new Map();
+
+    for (const catalog of catalogs) {
+      const isMergedParent = catalog?.source === 'merged' || String(catalog?.id || '').startsWith('merge.');
+      if (!isMergedParent) continue;
+
+      const mergedMeta = catalog?.metadata?.merged;
+      if (!mergedMeta || !Array.isArray(mergedMeta.children)) continue;
+      const allowMixedTypes = (catalog.type === 'series' || catalog.type === 'movie' || catalog.type === 'anime' || catalog.type === 'all') && mergedMeta.allowMixedTypes === true;
+
+      const seen = new Set();
+      const normalizedChildren = [];
+      for (const childRef of mergedMeta.children) {
+        const childKey = `${childRef?.id}-${childRef?.type}`;
+        if (!childRef?.id || !childRef?.type || seen.has(childKey)) continue;
+        if (childRef.id === catalog.id && childRef.type === catalog.type) continue;
+        const resolvedChild = catalogByKey.get(childKey);
+        if (!resolvedChild) continue;
+        const parentType = catalog.type;
+        if (allowMixedTypes) {
+          if (!(resolvedChild.type === 'movie' || resolvedChild.type === 'series' || resolvedChild.type === 'anime' || resolvedChild.type === 'all')) continue;
+        } else if (resolvedChild.type !== parentType) {
+          continue;
+        }
+        seen.add(childKey);
+        normalizedChildren.push({
+          id: resolvedChild.id,
+          type: resolvedChild.type,
+          ...(typeof childRef.weight === 'number' ? { weight: childRef.weight } : {}),
+        });
+      }
+
+      mergedMeta.version = 1;
+      mergedMeta.children = normalizedChildren;
+      mergedMeta.strategy = mergedMeta.strategy === 'interleaved' ? 'interleaved' : 'sequential';
+      mergedMeta.genreMode = 'strict';
+      if (mergedMeta.dedupe === undefined) mergedMeta.dedupe = true;
+      mergedMeta.allowMixedTypes = allowMixedTypes;
+
+      if (normalizedChildren.length >= 2) {
+        validMergedParents.add(catalog.id);
+        childrenByParent.set(catalog.id, normalizedChildren);
+      }
+    }
+
+    for (const catalog of catalogs) {
+      if (catalog.mergedInto && !validMergedParents.has(catalog.mergedInto)) {
+        restoreMergedChildState(catalog);
+      }
+    }
+
+    for (const [parentId, children] of childrenByParent.entries()) {
+      for (const childRef of children) {
+        const child = catalogByKey.get(`${childRef.id}-${childRef.type}`);
+        if (!child) continue;
+        ensureMergedChildRestoreState(child);
+        child.mergedInto = parentId;
+        child.showInHome = false;
+        child.randomizePerPage = false;
+      }
+    }
+  }
+
   // Validate required API keys
   validateRequiredKeys(config) {
     const requiredKeys = ['tmdb'];
@@ -158,6 +261,7 @@ class ConfigApi {
       }
 
       await this.sanitizeTraktToken(config);
+      this.sanitizeMergedCatalogs(config);
 
       // Use existing UUID if provided, otherwise generate a new one
       const userUUID = existingUUID || database.generateUserUUID();
@@ -229,7 +333,7 @@ class ConfigApi {
             
             if (rpdbChanged || mdblistChanged) {
               // RPDB/MDBList API key changes affect catalog rendering, clear user's catalogs
-              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              patterns.push(`*catalog:${userUUID}:*`); // User-scoped catalog cache
               logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
@@ -330,7 +434,7 @@ class ConfigApi {
             if (mdblistChanged) {
               // Clear cache for specific MDBList catalogs that changed
               for (const catalogId of changedCatalogs) {
-                const pattern = `catalog:${userUUID}:*${catalogId}*`;
+                const pattern = `*catalog:${userUUID}:*${catalogId}*`;
                 patterns.push(pattern);
                 logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
@@ -501,6 +605,7 @@ class ConfigApi {
       }
       
       await this.sanitizeTraktToken(config);
+      this.sanitizeMergedCatalogs(config);
 
       // Verify existing config exists
       const existingConfig = await database.verifyUserAndGetConfig(userUUID, password);
@@ -571,7 +676,7 @@ class ConfigApi {
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              patterns.push(`*catalog:${userUUID}:*`); // User-scoped catalog cache
               logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
@@ -690,7 +795,7 @@ class ConfigApi {
             // Clear each pattern
             for (const pattern of patterns) {
               try {
-                const deleted = await deleteKeysByPattern(`*:${userUUID}:${pattern}`);
+                const deleted = await deleteKeysByPattern(pattern);
                 if (deleted > 0) {
                   logger.debug(`Cleared ${deleted} cache entries for pattern: ${pattern}`);
                 }

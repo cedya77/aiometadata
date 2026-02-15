@@ -45,10 +45,18 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
   const getCatalogKey = useCallback((catalog: CatalogConfig) => {
     return `${catalog.id}-${catalog.type}`;
   }, []);
+  const selectableCatalogKeys = useMemo(
+    () => new Set(catalogs.map(getCatalogKey)),
+    [catalogs, getCatalogKey]
+  );
 
   // Toggle selection for a single catalog
   const toggleSelection = useCallback((id: string) => {
     setState(prev => {
+      if (!selectableCatalogKeys.has(id)) {
+        return prev;
+      }
+
       const newSelectedIds = new Set(prev.selectedIds);
       if (newSelectedIds.has(id)) {
         newSelectedIds.delete(id);
@@ -60,7 +68,7 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
         lastSelectedId: id,
       };
     });
-  }, []);
+  }, [selectableCatalogKeys]);
 
   // Select all visible catalogs (maintains existing selection for hidden items)
   const selectAll = useCallback(() => {
