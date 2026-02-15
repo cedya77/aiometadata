@@ -2204,6 +2204,7 @@ function CatalogsSettingsContent({
     setIsTmdbDiscoverBuilderOpen(true);
   };
 
+
   // Check if TVDB key is available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
 

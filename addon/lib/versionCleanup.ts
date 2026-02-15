@@ -21,8 +21,8 @@ export async function performVersionCleanup(): Promise<void> {
   try {
     // Ensure Redis is connected
     if (redis.status !== 'ready') {
-      logger.info('Waiting for Redis connection...');
-      await redis.connect();
+      logger.warn('Redis not ready, skipping version cleanup');
+      return;
     }
 
     const lastVersion = await redis.get(VERSION_KEY);

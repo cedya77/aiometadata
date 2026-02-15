@@ -336,6 +336,14 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
 function createTMDBDiscoverCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false) {
   try {
     logger.info(`Creating TMDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
+    let genres = ['None'];
+    if (userCatalog.type === 'movie' && movieGenres.length > 0) {
+      genres = movieGenres;
+      logger.debug(`TMDB List using ${genres.length} movie genres`);
+    } else if (userCatalog.type === 'series' && seriesGenres.length > 0) {
+      genres = seriesGenres;
+      logger.debug(`TMDB List using ${genres.length} series genres`);
+    }
 
     let genres = ['None'];
     if (userCatalog.type === 'movie' && movieGenres.length > 0) {
@@ -593,6 +601,9 @@ async function createMalCatalog(userCatalog, genres = [], showPrefix = false){
       ? (userCatalog.showInHome ? genres : ['None', ...genres])
       : ['None'];
 
+    const genreOptions = genres.length > 0 
+    ? (userCatalog.showInHome ? genres : ['None', ...genres])
+    : ['None'];
     const catalog = {
       id: userCatalog.id,
       type: 'anime',
