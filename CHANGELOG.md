@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.28.1](https://github.com/cedya77/aiometadata/compare/v1.28.0...v1.28.1) (2026-02-15)
+
+
+### Bug Fixes
+
+* **BYOC:** Add year input for simkl ([e0a3126](https://github.com/cedya77/aiometadata/commit/e0a3126b2354a6558358848aae6bcfe91d7a0ceb))
+
 ## [1.28.0](https://github.com/cedya77/aiometadata/compare/v1.27.1...v1.28.0) (2026-02-15)
 
 
