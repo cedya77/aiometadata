@@ -1007,12 +1007,25 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
   const ratingPostersEnabled = searchEngine ? (config.search?.engineRatingPosters?.[searchEngine] !== false) : true;
   
   // Search-specific config (only relevant parameters for search results)
+  const defaultSearchOrder = [
+    'movie',
+    'series',
+    'tvdb.collections.search',
+    'gemini.search',
+    'anime_series',
+    'anime_movie',
+    'people_search_movie',
+    'people_search_series',
+  ];
+  const rawSearchOrder = Array.isArray(config.search?.searchOrder) ? config.search.searchOrder : [];
+  const searchOrder = Array.from(new Set([...rawSearchOrder, ...defaultSearchOrder]));
+
   const searchConfig = {
     language: config.language || 'en-US',
     searchProviders: config.search?.providers || {},
     searchNames: config.search?.searchNames || {},
     providerNames: config.search?.providerNames || {},
-    searchOrder: config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'],
+    searchOrder,
     engineEnabled: config.search?.engineEnabled || {},
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
