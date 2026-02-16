@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type KeyboardEvent } from "react";
 import { useConfig } from "@/contexts/ConfigContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -263,6 +263,25 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     }
   };
 
+  const canSubmitPasswordDialog = auth.userUUID
+    ? password.length >= 6
+    : password.length >= 6 && password === confirmPassword;
+
+  const submitPasswordDialog = () => {
+    if (isLoading || !canSubmitPasswordDialog) return;
+    if (auth.userUUID) {
+      void handleLoadFromUrl();
+      return;
+    }
+    void handleSaveConfiguration();
+  };
+
+  const handlePasswordDialogKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    submitPasswordDialog();
+  };
+
   const validation = useMemo(() => validateRequiredKeys(), [config, hasBuiltInTmdb, hasBuiltInTvdb, contextLoading]);
 
   return (
@@ -495,6 +514,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                         type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={handlePasswordDialogKeyDown}
                         placeholder="Enter your password"
                         minLength={6}
                       />
@@ -518,6 +538,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                            type={showConfirmPassword ? "text" : "password"}
                            value={confirmPassword}
                            onChange={(e) => setConfirmPassword(e.target.value)}
+                           onKeyDown={handlePasswordDialogKeyDown}
                            placeholder="Confirm your password"
                            minLength={6}
                          />
@@ -541,6 +562,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                         type="password"
                         value={addonPassword}
                         onChange={e => setAddonPassword(e.target.value)}
+                        onKeyDown={handlePasswordDialogKeyDown}
                         placeholder="Enter the addon password"
                         minLength={6}
                       />
@@ -555,8 +577,8 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                       Cancel
                     </Button>
                     <Button 
-                      onClick={auth.userUUID ? handleLoadFromUrl : handleSaveConfiguration}
-                      disabled={isLoading || password.length < 6 || (!auth.userUUID && password !== confirmPassword)}
+                      onClick={submitPasswordDialog}
+                      disabled={isLoading || !canSubmitPasswordDialog}
                     >
                       {isLoading ? (
                         <>
