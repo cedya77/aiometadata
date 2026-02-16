@@ -2058,6 +2058,13 @@ addon.post("/api/letterboxd/list", async (req, res) => {
 
 // --- AniList OAuth Routes ---
 const anilistTracker = require('./lib/anilistTracker');
+const noStoreOAuthHeaders = (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+};
+addon.use(['/anilist/auth', '/anilist/callback'], noStoreOAuthHeaders);
 
 // GET /anilist/auth - Initiate AniList OAuth flow
 addon.get("/anilist/auth", async (req, res) => {
