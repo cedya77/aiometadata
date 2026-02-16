@@ -879,8 +879,7 @@ class DashboardAPI {
       if (config.mdblistWatchTracking) stats.features.mdblistWatchTracking++;
       if (config.anilistWatchTracking) stats.features.anilistWatchTracking++;
       if (config.simklWatchTracking) stats.features.simklWatchTracking++;
-      if (config.posterRatingProvider === 'rpdb') stats.features.ratingPostersRpdb++;
-      if (config.posterRatingProvider === 'top') stats.features.ratingPostersTop++;
+      config.posterRatingProvider === 'top' ? stats.features.ratingPostersTop++ : stats.features.ratingPostersRpdb++;
       if (config.search?.ai_enabled) stats.features.aiSearchEnabled++;
     });
 
