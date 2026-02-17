@@ -228,8 +228,7 @@ class ConfigApi {
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              // RPDB/MDBList API key changes affect catalog rendering, clear user's catalogs
-              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              patterns.push(`v*:catalog:${userUUID}:*`);
               logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
@@ -330,27 +329,10 @@ class ConfigApi {
             if (mdblistChanged) {
               // Clear cache for specific MDBList catalogs that changed
               for (const catalogId of changedCatalogs) {
-                const pattern = `catalog:${userUUID}:*${catalogId}*`;
+                const pattern = `v*:catalog:${userUUID}:*${catalogId}*`;
                 patterns.push(pattern);
                 logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
-            }
-          }
-          
-          // Search-specific changes - affects search results
-          if (config.search && oldConfig?.search) {
-            const searchProvidersChanged = config.search.providers && oldConfig.search.providers && 
-              Object.keys(config.search.providers).some(key => 
-                config.search.providers[key] !== oldConfig.search.providers?.[key]
-              );
-            const aiEnabledChanged = config.search.ai_enabled !== oldConfig.search.ai_enabled;
-            
-            if (searchProvidersChanged || aiEnabledChanged) {
-              patterns.push(`search:*`); // Clear all search cache
-              logger.debug(`Search settings changed, clearing search cache`);
-              if (searchProvidersChanged) logger.debug(`Search providers changed`);
-              if (aiEnabledChanged) logger.debug(`AI enabled changed from ${oldConfig.search.ai_enabled} to ${config.search.ai_enabled}`);
-              logger.debug(`DEBUG: Added pattern "search:*" for search settings change`);
             }
           }
           
@@ -371,10 +353,6 @@ class ConfigApi {
               logger.debug(`No keys found matching pattern "${pattern}"`);
             }
           }
-          
-          // NOTE: Nuclear option removed - meta cache uses config hash in keys,
-          // so new config = new cache keys = fresh data automatically.
-          // Old entries expire naturally via TTL. This prevents cross-user cache pollution.
           
           if (totalCleared > 0) {
             logger.info(`Total affected cache cleared: ${totalCleared} entries`);
@@ -571,7 +549,7 @@ class ConfigApi {
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              patterns.push(`v*:catalog:${userUUID}:*`);
               logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
@@ -676,7 +654,7 @@ class ConfigApi {
             if (mdblistChanged) {
               // Clear cache for specific MDBList catalogs that changed
               for (const catalogId of changedCatalogs) {
-                const pattern = `*${catalogId}*`;
+                const pattern = `v*:catalog:${userUUID}:*${catalogId}*`;
                 patterns.push(pattern);
                 logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
@@ -690,7 +668,7 @@ class ConfigApi {
             // Clear each pattern
             for (const pattern of patterns) {
               try {
-                const deleted = await deleteKeysByPattern(`*:${userUUID}:${pattern}`);
+                const deleted = await deleteKeysByPattern(pattern);
                 if (deleted > 0) {
                   logger.debug(`Cleared ${deleted} cache entries for pattern: ${pattern}`);
                 }
