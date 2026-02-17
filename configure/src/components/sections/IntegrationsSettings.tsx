@@ -8,6 +8,29 @@ import { Eye, EyeOff, CheckCircle, XCircle, Loader2, LogIn, LogOut, AlertCircle 
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
 import { toast } from 'sonner';
 
+type KeyValidationResultStatus = 'valid' | 'invalid' | 'timeout' | 'error';
+
+interface KeyValidationDetail {
+  status: KeyValidationResultStatus;
+  reason?: string;
+  message?: string;
+  durationMs?: number;
+}
+
+interface KeyValidationSummary {
+  totalCount: number;
+  validCount: number;
+  failedCount: number;
+  testedKeys: string[];
+  validKeys: string[];
+  invalidKeys: string[];
+  invalidNonQuotaKeys: string[];
+  quotaExhaustedKeys: string[];
+  timeoutKeys: string[];
+  errorKeys: string[];
+  failureLines: string[];
+}
+
 const ApiKeyInput = ({
   id,
   label,
@@ -87,6 +110,8 @@ export function IntegrationsSettings() {
   
   // Track successfully validated keys to prevent re-testing unchanged keys
   const lastValidatedKeys = useRef<Record<string, string>>({});
+  // Track known-bad keys (definitive invalid keys, excluding temporary failures).
+  const lastKnownBadKeys = useRef<Record<string, string>>({});
   const [hasChangedKeys, setHasChangedKeys] = useState(true);
   
   // Track if we've already processed a request token to prevent infinite loops
@@ -203,14 +228,22 @@ export function IntegrationsSettings() {
     for (const key of apiKeyFields) {
       const currentValue = config.apiKeys[key] || '';
       const lastValidated = lastValidatedKeys.current[key] || '';
+      const lastKnownBad = lastKnownBadKeys.current[key] || '';
       
-      // If this key was previously validated successfully and has changed
-      if (lastValidated && currentValue !== lastValidated) {
-        changed = true;
-        break;
+      if (!currentValue) {
+        // If a previously checked key was removed, treat as changed.
+        if (lastValidated || lastKnownBad) {
+          changed = true;
+          break;
+        }
+        continue;
       }
-      // If this is a new key that wasn't tested before
-      if (!lastValidated && currentValue) {
+
+      const matchesKnownGood = currentValue === lastValidated;
+      const matchesKnownBad = currentValue === lastKnownBad;
+
+      // If current value is not a known checked value, it changed.
+      if (!matchesKnownGood && !matchesKnownBad) {
         changed = true;
         break;
       }
@@ -225,6 +258,9 @@ export function IntegrationsSettings() {
       ...prev,
       [id]: 'idle'
     }));
+    // Clear stored state for this key so a changed value is re-tested.
+    delete lastValidatedKeys.current[id];
+    delete lastKnownBadKeys.current[id];
   };
 
   const handleTmdbLogin = async () => {
@@ -290,32 +326,40 @@ export function IntegrationsSettings() {
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
-    const skippedKeys: string[] = [];
+    const skippedValidKeys: string[] = [];
+    const skippedKnownBadKeys: string[] = [];
     
     for (const key of apiKeyFields) {
       const currentValue = config.apiKeys[key];
       if (!currentValue || currentValue.trim() === "") continue;
       
       const lastValidated = lastValidatedKeys.current[key];
+      const lastKnownBad = lastKnownBadKeys.current[key];
       
       // Skip if this key was already successfully validated and hasn't changed
       if (lastValidated === currentValue && validationStatus[key] === 'success') {
-        skippedKeys.push(key);
+        skippedValidKeys.push(key);
+        continue;
+      }
+
+      // Skip if this key is a known invalid key and hasn't changed
+      if (lastKnownBad === currentValue && validationStatus[key] === 'error') {
+        skippedKnownBadKeys.push(key);
         continue;
       }
       
       keysToTest[key] = currentValue;
     }
     
-    if (Object.keys(keysToTest).length === 0 && skippedKeys.length === 0) {
+    if (Object.keys(keysToTest).length === 0 && skippedValidKeys.length === 0 && skippedKnownBadKeys.length === 0) {
       toast.info("No API keys to test.", { description: "Please enter at least one API key to validate." });
       setIsTesting(false);
       return;
     }
     
-    if (Object.keys(keysToTest).length === 0 && skippedKeys.length > 0) {
-      toast.info("All keys already validated.", { 
-        description: "No changes detected since last successful validation." 
+    if (Object.keys(keysToTest).length === 0 && (skippedValidKeys.length > 0 || skippedKnownBadKeys.length > 0)) {
+      toast.info("No changed keys to test.", {
+        description: "All entered keys are unchanged from their last check."
       });
       setIsTesting(false);
       return;
@@ -326,31 +370,62 @@ export function IntegrationsSettings() {
       initialStatus[key] = 'loading';
     }
     setValidationStatus(prev => ({ ...prev, ...initialStatus }));
+
+    const controller = new AbortController();
+    const requestTimeout = window.setTimeout(() => controller.abort(), 20000);
     
     try {
       const response = await fetch('/api/test-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKeys: keysToTest })
+        body: JSON.stringify({ apiKeys: keysToTest }),
+        signal: controller.signal,
       });
       
-      if (!response.ok) throw new Error('Server responded with an error.');
-      
-      const { results } = await response.json();
+      const payload: {
+        details?: Record<string, KeyValidationDetail>;
+        summary?: KeyValidationSummary;
+        error?: string;
+      } = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Server responded with an error.');
+      }
+
+      if (!payload?.details || typeof payload.details !== 'object' || !payload?.summary || typeof payload.summary !== 'object') {
+        throw new Error('Invalid API response: missing key validation details/summary.');
+      }
+
+      const detailsFromApi: Record<string, KeyValidationDetail> = payload.details;
+      const summary = payload.summary;
+      const detailsForTestedKeys: Record<string, KeyValidationDetail> = {};
+
+      for (const key of Object.keys(keysToTest)) {
+        const detail = detailsFromApi[key];
+        detailsForTestedKeys[key] =
+          detail && typeof detail === 'object'
+            ? detail
+            : { status: 'error', message: 'Missing key status in API response.' };
+      }
+
       const finalStatus: Record<string, 'idle' | 'loading' | 'success' | 'error'> = {};
-      let successCount = 0;
-      let errorCount = 0;
       
       // Update validation status and track successfully validated keys
-      for (const key of Object.keys(results)) {
-        if (results[key] === true) {
+      for (const key of Object.keys(detailsForTestedKeys)) {
+        const detail = detailsForTestedKeys[key];
+        if (detail.status === 'valid') {
           finalStatus[key] = 'success';
-          successCount++;
           // Store the successfully validated key value
           lastValidatedKeys.current[key] = keysToTest[key];
+          delete lastKnownBadKeys.current[key];
         } else {
           finalStatus[key] = 'error';
-          errorCount++;
+          if (detail.status === 'invalid' && detail.reason !== 'quota_exhausted') {
+            // Known bad key (definitive invalid). Skip retesting until value changes.
+            lastKnownBadKeys.current[key] = keysToTest[key];
+          } else {
+            // Transient failure (timeout/error/quota), allow future retesting.
+            delete lastKnownBadKeys.current[key];
+          }
           // Clear the last validated value for failed keys
           delete lastValidatedKeys.current[key];
         }
@@ -359,30 +434,41 @@ export function IntegrationsSettings() {
       setValidationStatus(prev => ({ ...prev, ...finalStatus }));
       
       // Prepare the final message
+      const newlyValidatedCount = typeof summary.validCount === 'number' ? summary.validCount : 0;
+      const alreadyValidatedCount = skippedValidKeys.length;
+      const successCount = newlyValidatedCount + alreadyValidatedCount;
+      const knownBadCount = skippedKnownBadKeys.length;
+      const errorCount = (typeof summary.failedCount === 'number' ? summary.failedCount : 0) + knownBadCount;
       const totalTestedCount = successCount + errorCount;
-      const skippedMessage = skippedKeys.length > 0 
-        ? ` (${skippedKeys.length} unchanged key${skippedKeys.length > 1 ? 's' : ''} skipped)` 
-        : '';
       
       if (errorCount > 0) {
-        toast.warning(`${successCount} key(s) valid, ${errorCount} key(s) invalid${skippedMessage}`, {
-          description: "Please check the invalid keys and try again."
+        const failureDetailLines = Array.isArray(summary.failureLines)
+          ? summary.failureLines.filter((line): line is string => typeof line === 'string' && line.trim() !== '')
+          : [];
+
+        toast.warning(`${successCount} key(s) valid, ${errorCount} key(s) failed`, {
+          description: failureDetailLines.join('\n'),
+          descriptionClassName: 'whitespace-pre-line'
         });
       } else {
-        toast.success(`All ${totalTestedCount} key(s) are valid!${skippedMessage}`, {
+        toast.success(`All ${totalTestedCount} key(s) are valid!`, {
           description: `Successfully validated ${successCount} key${successCount > 1 ? 's' : ''}.`
         });
       }
     } catch (error) {
+      const isAbortError = error instanceof DOMException && error.name === 'AbortError';
       toast.error("Failed to test keys.", {
-        description: error instanceof Error ? error.message : "An unknown error occurred."
+        description: isAbortError
+          ? "The validation request timed out. Please try again."
+          : (error instanceof Error ? error.message : "An unknown error occurred.")
       });
       const errorStatus: Record<string, 'idle' | 'loading' | 'success' | 'error'> = {};
       for (const key of Object.keys(keysToTest)) {
-        errorStatus[key] = 'idle';
+        errorStatus[key] = isAbortError ? 'error' : 'idle';
       }
       setValidationStatus(prev => ({ ...prev, ...errorStatus }));
     } finally {
+      window.clearTimeout(requestTimeout);
       setIsTesting(false);
     }
   };
@@ -409,6 +495,8 @@ export function IntegrationsSettings() {
       if (allValidated) {
         return { disabled: true, text: "All Keys Validated", variant: "success" };
       }
+
+      return { disabled: true, text: "No Key Changes", variant: "default" };
     }
     
     return { disabled: false, text: "Test All Keys", variant: "default" };

@@ -204,7 +204,9 @@ async function makeRateLimitedRequest<T>(
         const limit = headers['x-ratelimit-limit'];
         const remaining = headers['x-ratelimit-remaining'];
         const reset = headers['x-ratelimit-reset'];
-        logger.debug(`[MDBList] Rate limit: limit=${limit}, remaining=${remaining}, reset=${reset}`);
+        if (limit || remaining || reset) {
+          logger.debug(`[MDBList] Rate limit: limit=${limit}, remaining=${remaining}, reset=${reset}`);
+        }
         state.lastLimit = limit ? parseInt(limit) : undefined;
         state.lastRemaining = remaining ? parseInt(remaining) : undefined;
         state.lastReset = reset ? parseInt(reset) : undefined;
@@ -232,7 +234,9 @@ async function makeRateLimitedRequest<T>(
         const remaining = headers['x-ratelimit-remaining'];
         const reset = headers['x-ratelimit-reset'];
         const retryAfter = headers['retry-after'];
-        logger.warn(`[MDBList] Rate limit error: limit=${limit}, remaining=${remaining}, reset=${reset}, retry-after=${retryAfter}`);
+        if (limit || remaining || reset || retryAfter) {
+          logger.warn(`[MDBList] Rate limit error: limit=${limit}, remaining=${remaining}, reset=${reset}, retry-after=${retryAfter}`);
+        }
         state.lastLimit = limit ? parseInt(limit) : undefined;
         state.lastRemaining = remaining ? parseInt(remaining) : undefined;
         state.lastReset = reset ? parseInt(reset) : undefined;
@@ -1234,6 +1238,41 @@ async function makeRateLimitedMDBListRequest(url: string, apiKey: string, contex
 }
 
 /**
+ * Validate an MDBList API key using the rate-limited path with no retries.
+ */
+async function testMdblistKey(
+  apiKey: string
+): Promise<boolean> {
+  if (!apiKey || apiKey.trim() === '') {
+    const emptyKeyError = new Error('MDBList API key is empty.') as Error & { statusCode?: number };
+    emptyKeyError.statusCode = 400;
+    throw emptyKeyError;
+  }
+
+  const url = `https://api.mdblist.com/user?apikey=${apiKey}`;
+  const response = await makeRateLimitedRequest(
+    () => httpGet(url, { dispatcher: mdblistDispatcher, timeout: 5000 }),
+    apiKey,
+    'MDBList Proxy - Get User (API Key Test)',
+    1
+  );
+
+  const remainingRaw = response?.data?.rate_limit_remaining;
+  const remaining =
+    typeof remainingRaw === 'number' || typeof remainingRaw === 'string'
+      ? Number(remainingRaw)
+      : NaN;
+
+  if (!Number.isNaN(remaining) && remaining <= 0) {
+    const quotaError = new Error('MDBList API quota exhausted (rate_limit_remaining=0).') as Error & { code?: string };
+    quotaError.code = 'MDBLIST_QUOTA_EXHAUSTED';
+    throw quotaError;
+  }
+
+  return true;
+}
+
+/**
  * Fetch MDBList Up Next shows for a user
  * @param apiKey - User's MDBList API key
  * @param page - Page number (default: 1)
@@ -1525,6 +1564,7 @@ export {
   markMovieAsWatched, 
   markEpisodeAsWatched, 
   makeRateLimitedMDBListRequest, 
+  testMdblistKey,
   fetchMDBListUpNext, 
   parseMDBListUpNextItems,
   fetchMdbListSearchItems,
