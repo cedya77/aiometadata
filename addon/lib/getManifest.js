@@ -1099,7 +1099,18 @@ async function getManifest(config) {
   const searchDisplayTypes = config.search?.searchDisplayTypes || {};
   // Backward compatibility: support old providerNames format
   const legacyProviderNames = config.search?.providerNames || {};
-  const searchOrder = config.search?.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'];
+  const defaultSearchOrder = [
+    'movie',
+    'series',
+    'tvdb.collections.search',
+    'gemini.search',
+    'anime_series',
+    'anime_movie',
+    'people_search_movie',
+    'people_search_series',
+  ];
+  const rawSearchOrder = Array.isArray(config.search?.searchOrder) ? config.search.searchOrder : [];
+  const searchOrder = Array.from(new Set([...rawSearchOrder, ...defaultSearchOrder]));
   
   // Helper function to get default search name
   const getDefaultSearchName = (searchId) => {

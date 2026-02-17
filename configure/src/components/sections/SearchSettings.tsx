@@ -15,6 +15,17 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+const DEFAULT_SEARCH_ORDER = [
+  'movie',
+  'series',
+  'tvdb.collections.search',
+  'gemini.search',
+  'anime_series',
+  'anime_movie',
+  'people_search_movie',
+  'people_search_series',
+];
+
 // Sortable Search Provider Item Component
 function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnabledChange, onengineRatingPostersChange, getSearchDisplayName, getProviderBaseLabel, getSearchCustomName, getSearchDisplayType, hasRPDBKey, engineRatingPostersEnabled }: {
   provider: { id: string; type: string; provider: string };
@@ -109,7 +120,8 @@ export function SearchSettings() {
 
   // Get enabled search providers in order
   const getEnabledSearchProviders = () => {
-    const searchOrder = config.search.searchOrder || ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie'];
+    const rawSearchOrder = Array.isArray(config.search.searchOrder) ? config.search.searchOrder : [];
+    const searchOrder = Array.from(new Set([...rawSearchOrder, ...DEFAULT_SEARCH_ORDER]));
     const enabledProviders = [];
     
     // Add movie search if enabled
@@ -155,7 +167,9 @@ export function SearchSettings() {
     return enabledProviders.sort((a, b) => {
       const aIndex = searchOrder.indexOf(a.id);
       const bIndex = searchOrder.indexOf(b.id);
-      return aIndex - bIndex;
+      const aPos = aIndex === -1 ? Number.POSITIVE_INFINITY : aIndex;
+      const bPos = bIndex === -1 ? Number.POSITIVE_INFINITY : bIndex;
+      return aPos - bPos;
     });
   };
 
@@ -169,7 +183,11 @@ export function SearchSettings() {
     
     if (oldIndex !== -1 && newIndex !== -1) {
       const reorderedProviders = arrayMove(enabledProviders, oldIndex, newIndex);
-      const newSearchOrder = reorderedProviders.map(item => item.id);
+      const reorderedEnabledIds = reorderedProviders.map(item => item.id);
+      const currentOrder = Array.isArray(config.search.searchOrder) ? config.search.searchOrder : [];
+      const normalizedCurrentOrder = Array.from(new Set([...currentOrder, ...DEFAULT_SEARCH_ORDER]));
+      const remainingIds = normalizedCurrentOrder.filter(id => !reorderedEnabledIds.includes(id));
+      const newSearchOrder = [...reorderedEnabledIds, ...remainingIds];
       
       setConfig(prev => ({
         ...prev,
@@ -300,6 +318,10 @@ export function SearchSettings() {
           ...prev.search.engineEnabled,
           'gemini.search': checked,
         },
+        searchOrder: (() => {
+          const currentOrder = Array.isArray(prev.search.searchOrder) ? prev.search.searchOrder : [];
+          return Array.from(new Set([...currentOrder, ...DEFAULT_SEARCH_ORDER]));
+        })(),
       },
     }));
   };
