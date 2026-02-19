@@ -42,6 +42,168 @@ import {
 } from '@/utils/toastHelpers';
 import { toast } from 'sonner';
 
+interface CustomizeTemplate {
+  source: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
+  catalogType: 'movie' | 'series' | 'anime';
+  name: string;
+  formState: Record<string, any>;
+}
+
+const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTemplate> = {
+  'tmdb.top': (c) => ({
+    source: 'tmdb',
+    catalogType: c.type,
+    name: `${c.name} (Custom)`,
+    formState: { 
+      sortBy: c.type === 'movie' ? 'primary_release_date.desc' : 'popularity.desc',
+      voteCountMin: 50,
+    }
+  }),
+  'tmdb.top_rated': (c) => ({
+    source: 'tmdb',
+    catalogType: c.type,
+    name: `${c.name} (Custom)`,
+    formState: { sortBy: 'vote_average.desc', voteCountMin: 500 }
+  }),
+  'tmdb.airing_today': (c) => ({
+    source: 'tmdb',
+    catalogType: 'series',
+    name: `${c.name} (Custom)`,
+    formState: { 
+      sortBy: 'popularity.desc',
+      airDateFrom: new Date().toISOString().split('T')[0],
+      airDateTo: new Date().toISOString().split('T')[0],
+    }
+  }),
+  'tvdb.genres': (c) => ({
+    source: 'tvdb',
+    catalogType: c.type,
+    name: `${c.name} (Custom)`,
+    formState: { sortBy: 'score', tvdbSortDirection: 'desc' }
+  }),
+  'mal.airing': (c) => ({
+    source: 'mal',
+    catalogType: 'anime',
+    name: 'MAL Airing Now (Custom)',
+    formState: { sortBy: 'popularity', malStatus: 'airing', malSortDirection: 'desc', malSfw: true }
+  }),
+  'mal.upcoming': (c) => ({
+    source: 'mal',
+    catalogType: 'anime',
+    name: 'MAL Upcoming (Custom)',
+    formState: { sortBy: 'popularity', malStatus: 'upcoming', malSortDirection: 'desc' }
+  }),
+  'mal.top_anime': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Top Anime (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+    },
+  }),
+
+  'mal.most_popular': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Most Popular (Custom)',
+    formState: {
+      sortBy: 'popularity',
+      malSortDirection: 'desc',
+    },
+  }),
+
+  'mal.most_favorites': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Most Favorites (Custom)',
+    formState: {
+      sortBy: 'favorites',
+      malSortDirection: 'desc',
+    },
+  }),
+
+  'mal.top_movies': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Top Movies (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malType: 'movie',
+    },
+  }),
+
+  'mal.top_series': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Top Series (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malType: 'tv',
+    },
+  }),
+  'mal.80sDecade': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Best of 80s (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malStartDate: '1980-01-01',
+      malEndDate: '1989-12-31',
+    },
+  }),
+  'mal.90sDecade': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Best of 90s (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malStartDate: '1990-01-01',
+      malEndDate: '1999-12-31',
+    },
+  }),
+
+  'mal.00sDecade': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Best of 2000s (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malStartDate: '2000-01-01',
+      malEndDate: '2009-12-31',
+    },
+  }),
+
+  'mal.10sDecade': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Best of 2010s (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malStartDate: '2010-01-01',
+      malEndDate: '2019-12-31',
+    },
+  }),
+
+  'mal.20sDecade': (c) => ({
+    source: 'mal',
+    catalogType: 'series',
+    name: 'MAL Best of 2020s (Custom)',
+    formState: {
+      sortBy: 'score',
+      malSortDirection: 'desc',
+      malStartDate: '2020-01-01',
+      malEndDate: '2029-12-31',
+    },
+  })
+};
+
 type TraktSortOption = 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
 type StreamingSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
 type TMDBSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
@@ -968,9 +1130,10 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
   );
 };
 import { Layers } from 'lucide-react';
-const SortableCatalogItem = ({ catalog, onEditDiscover }: { 
+const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: { 
   catalog: CatalogConfig & { source?: string };
   onEditDiscover?: (catalog: CatalogConfig) => void;
+  onCustomize?: (catalog: CatalogConfig) => void;
 }) => {
   console.log('catalog:', catalog.id, catalog.source); 
   const { setConfig, config } = useConfig();
@@ -1520,6 +1683,22 @@ const SortableCatalogItem = ({ catalog, onEditDiscover }: {
             </Tooltip>
           )}
 
+          <Tooltip>
+                <TooltipTrigger asChild>
+                  {onCustomize && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onCustomize(catalog)}
+                      aria-label="Customize as Discover Catalog"
+                    >
+                      <Wand2 className="h-5 w-5 text-blue-500 hover:text-blue-600" />
+                    </Button>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>Clone and Edit as Built Catalog</TooltipContent>
+              </Tooltip>
+
           {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
             (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
@@ -1743,6 +1922,7 @@ function CatalogsSettingsContent({
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
   const [editingDiscoverCatalog, setEditingDiscoverCatalog] = useState<CatalogConfig | null>(null);
+  const [customizeTemplate, setCustomizeTemplate] = useState<CustomizeTemplate | null>(null);
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
@@ -1772,6 +1952,14 @@ function CatalogsSettingsContent({
   const [hasChosenCatalogSetup, setHasChosenCatalogSetup] = useState(
     () => config.catalogSetupComplete === true
   );
+
+  const handleCustomize = (catalog: CatalogConfig) => {
+    const getTemplate = DEFAULT_CATALOG_TEMPLATES[catalog.id];
+    if (getTemplate) {
+      setCustomizeTemplate(getTemplate(catalog));
+      setIsTmdbDiscoverBuilderOpen(true);
+    }
+  };
   
   const handleLoadDefaults = () => {
     setConfig(prev => ({
@@ -2678,6 +2866,7 @@ function CatalogsSettingsContent({
                   setEditingDiscoverCatalog(cat);
                   setIsTmdbDiscoverBuilderOpen(true);
                 }}
+                onCustomize={DEFAULT_CATALOG_TEMPLATES[catalog.id] ? handleCustomize : undefined}
               />
             ))}
             </div>
@@ -2724,8 +2913,10 @@ function CatalogsSettingsContent({
         onClose={() => {
           setIsTmdbDiscoverBuilderOpen(false);
           setEditingDiscoverCatalog(null);
+          setCustomizeTemplate(null);
         }}
         editingCatalog={editingDiscoverCatalog}
+        customizeTemplate={customizeTemplate}
       />
 
       {/* Bulk Delete Confirmation Dialog */}

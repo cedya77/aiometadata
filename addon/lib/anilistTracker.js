@@ -73,11 +73,12 @@ const RETRY_DELAYS = [1000, 2000, 4000]; // Exponential backoff: 1s, 2s, 4s
  * @returns {boolean} True if token is expired or about to expire
  */
 function isTokenExpired(expiresAt) {
-  if (!expiresAt || typeof expiresAt !== 'number') {
+  const numericExpiry = Number(expiresAt);
+  if (!Number.isFinite(numericExpiry) || numericExpiry <= 0) {
     return true;
   }
   const now = Date.now();
-  return now >= (expiresAt - TOKEN_EXPIRATION_BUFFER_MS);
+  return now >= (numericExpiry - TOKEN_EXPIRATION_BUFFER_MS);
 }
 
 /**

@@ -18,6 +18,12 @@ interface TMDBDiscoverBuilderDialogProps {
   isOpen: boolean;
   onClose: () => void;
   editingCatalog?: CatalogConfig | null;
+  customizeTemplate?: {
+    source: string;
+    catalogType: 'movie' | 'series' | 'anime';
+    name: string;
+    formState: Record<string, any>;
+  } | null;
 }
 
 type CatalogMediaType = 'movie' | 'series';
@@ -512,7 +518,7 @@ function LabelWithTooltip({
   );
 }
 
-export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: TMDBDiscoverBuilderDialogProps) {
+export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customizeTemplate }: TMDBDiscoverBuilderDialogProps) {
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
@@ -1084,6 +1090,67 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
   }, [isOpen, editingCatalog]);
 
   useEffect(() => {
+    if (!isOpen || !customizeTemplate || editingCatalog) return;
+  
+    const fs = customizeTemplate.formState;
+    if (!fs) return;
+  
+    // Set source and basic info
+    setCatalogName(customizeTemplate.name);
+    setDiscoverSource(customizeTemplate.source as DiscoverSource);
+    setCatalogType(customizeTemplate.catalogType as CatalogMediaType);
+  
+    // TMDB fields
+    if (fs.sortBy) setSortBy(fs.sortBy);
+    if (typeof fs.includeAdult === 'boolean') setIncludeAdult(fs.includeAdult);
+    if (typeof fs.releasedOnly === 'boolean') setReleasedOnly(fs.releasedOnly);
+    if (typeof fs.voteCountMin === 'number') setVoteCountMin(fs.voteCountMin);
+    if (fs.voteAverageRange) setVoteAverageRange(fs.voteAverageRange);
+    if (fs.runtimeRange) setRuntimeRange(fs.runtimeRange);
+    if (fs.originalLanguage) setOriginalLanguage(fs.originalLanguage);
+    if (fs.originCountry) setOriginCountry(fs.originCountry);
+    if (fs.primaryReleaseFrom) setPrimaryReleaseFrom(fs.primaryReleaseFrom);
+    if (fs.primaryReleaseTo) setPrimaryReleaseTo(fs.primaryReleaseTo);
+    if (fs.firstAirFrom) setFirstAirFrom(fs.firstAirFrom);
+    if (fs.firstAirTo) setFirstAirTo(fs.firstAirTo);
+  
+    // TVDB fields
+    if (fs.tvdbSortDirection) setTvdbSortDirection(fs.tvdbSortDirection);
+    if (fs.tvdbStatus) setTvdbStatus(fs.tvdbStatus);
+    if (fs.tvdbYear) setTvdbYear(fs.tvdbYear);
+  
+    // MAL fields
+    if (fs.malType) setMalType(fs.malType);
+    if (fs.malStatus) setMalStatus(fs.malStatus);
+    if (fs.malRating) setMalRating(fs.malRating);
+    if (fs.malSortDirection) setMalSortDirection(fs.malSortDirection);
+    if (typeof fs.malMinScore === 'number') setMalMinScore(fs.malMinScore);
+    if (typeof fs.malMaxScore === 'number') setMalMaxScore(fs.malMaxScore);
+    if (fs.malStartDate) setMalStartDate(fs.malStartDate);
+    if (fs.malEndDate) setMalEndDate(fs.malEndDate);
+    if (typeof fs.malSfw === 'boolean') setMalSfw(fs.malSfw);
+  
+    // AniList fields
+    if (fs.anilistFormats) setAnilistFormats(fs.anilistFormats);
+    if (fs.anilistStatus) setAnilistStatus(fs.anilistStatus);
+    if (fs.anilistSeason) setAnilistSeason(fs.anilistSeason);
+    if (fs.anilistSeasonYear) setAnilistSeasonYear(fs.anilistSeasonYear);
+    if (fs.anilistCountry) setAnilistCountry(fs.anilistCountry);
+  
+    // Simkl fields
+    if (fs.simklMediaType) setSimklMediaType(fs.simklMediaType);
+    if (fs.simklGenre) setSimklGenre(fs.simklGenre);
+    if (fs.simklType) setSimklType(fs.simklType);
+    if (fs.simklCountry) setSimklCountry(fs.simklCountry);
+    if (fs.simklNetwork) setSimklNetwork(fs.simklNetwork);
+    if (fs.simklYear) setSimklYear(fs.simklYear);
+  
+    toast.info("Template Applied", {
+      description: `Pre-populated filters based on ${customizeTemplate.name.replace(' (Custom)', '')}`
+    });
+  }, [isOpen, customizeTemplate, editingCatalog]);
+
+  useEffect(() => {
     if (!sortOptions.some(option => option.value === sortBy)) {
       setSortBy(sortOptions[0].value);
     }
@@ -1142,10 +1209,10 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
 
   useEffect(() => {
     if (!isOpen) return;
-    if (!editingCatalog) {
+    if (!editingCatalog && !customizeTemplate) {
       resetState();
     }
-  }, [isOpen]);
+  }, [isOpen, editingCatalog, customizeTemplate]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -2155,10 +2222,14 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wand2 className="h-5 w-5" />
-              {editingCatalog ? 'Edit Catalog' : 'Build Your Catalog'}
-            </DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Wand2 className="h-5 w-5" />
+            {editingCatalog 
+              ? 'Edit Catalog' 
+              : customizeTemplate 
+                ? `Customize ${customizeTemplate.name.replace(' (Custom)', '')}` 
+                : 'Build Your Catalog'}
+          </DialogTitle>
               <DialogDescription>
               Create custom TMDB, TVDB, Simkl, or AniList discover catalogs with filters and save them directly into your catalog list.
               </DialogDescription>
@@ -2207,7 +2278,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog }: T
                   </div>
                   <div className="space-y-2">
                     <Label>Source</Label>
-                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)} disabled={!!editingCatalog}>
+                    <Select value={discoverSource} onValueChange={(value: DiscoverSource) => setDiscoverSource(value)} disabled={!!editingCatalog || !!customizeTemplate}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
