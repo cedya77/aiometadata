@@ -504,6 +504,7 @@ function DashboardAnalytics({ data, loading, isMobile }) {
     hitRate: data?.cachePerformance?.hitRate || 0,
     missRate: data?.cachePerformance?.missRate || 0,
     memoryUsage: data?.cachePerformance?.memoryUsage || 0,
+    memoryUsagePercent: data?.cachePerformance?.memoryUsagePercent ?? null,
     evictionRate: data?.cachePerformance?.evictionRate || 0,
   }));
 
@@ -572,6 +573,15 @@ function DashboardAnalytics({ data, loading, isMobile }) {
   }, []);
 
   const slidingData = normalizeHourlyData(providerHourlyData, providerKeys);
+  const cacheMemoryUsagePercent =
+    typeof cachePerformance.memoryUsagePercent === "number" &&
+    Number.isFinite(cachePerformance.memoryUsagePercent)
+      ? Math.max(0, Math.min(100, cachePerformance.memoryUsagePercent))
+      : null;
+  const cacheMemoryUsageLabel =
+    typeof cachePerformance.memoryUsage === "string" && cachePerformance.memoryUsage.trim()
+      ? cachePerformance.memoryUsage
+      : "N/A";
 
   return (
     <div className="space-y-6">
@@ -628,7 +638,11 @@ function DashboardAnalytics({ data, loading, isMobile }) {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Memory Usage</span>
                 <span className="text-2xl font-bold text-orange-600">
-                  <AnimatedNumber value={Number(cachePerformance.memoryUsage)} suffix="%" />
+                  {cacheMemoryUsagePercent !== null ? (
+                    <AnimatedNumber value={cacheMemoryUsagePercent} suffix="%" />
+                  ) : (
+                    cacheMemoryUsageLabel
+                  )}
                 </span>
               </div>
               <Progress

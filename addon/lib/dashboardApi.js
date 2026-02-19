@@ -328,6 +328,7 @@ class DashboardAPI {
 
           // Get real Redis memory usage
           let memoryUsed = "0 MB";
+          let memoryUsagePercent = null;
           try {
             const info = await this.cache.info("memory");
             const lines = info.split("\r\n");
@@ -357,7 +358,8 @@ class DashboardAPI {
             // If maxmemory is set, add percentage
             if (maxMemory > 0) {
               const percentage = Math.round((usedMemory / maxMemory) * 100);
-              memoryUsed = `${formattedUsed} (${percentage}% of limit)`;
+              memoryUsagePercent = Math.max(0, Math.min(100, percentage));
+              memoryUsed = `${formattedUsed} (${memoryUsagePercent}% of limit)`;
             } else {
               memoryUsed = formattedUsed;
             }
@@ -367,12 +369,14 @@ class DashboardAPI {
               memError.message,
             );
             memoryUsed = "N/A";
+            memoryUsagePercent = null;
           }
 
           return {
             hitRate: hitRate,
             missRate: missRate,
             memoryUsage: memoryUsed,
+            memoryUsagePercent: memoryUsagePercent,
             evictionRate: 2.1, // TODO: Calculate real eviction rate from Redis stats
             totalKeys: totalKeys,
             hits: cacheHealth.hits || 0,
@@ -389,6 +393,7 @@ class DashboardAPI {
             hitRate: 0,
             missRate: 0,
             memoryUsage: "N/A",
+            memoryUsagePercent: null,
             evictionRate: 0,
             totalKeys: 0,
             hits: 0,
@@ -402,6 +407,7 @@ class DashboardAPI {
         hitRate: 0,
         missRate: 0,
         memoryUsage: "N/A",
+        memoryUsagePercent: null,
         evictionRate: 0,
         totalKeys: 0,
         hits: 0,
@@ -415,6 +421,7 @@ class DashboardAPI {
         hitRate: 0,
         missRate: 0,
         memoryUsage: "N/A",
+        memoryUsagePercent: null,
         evictionRate: 0,
         totalKeys: 0,
         hits: 0,
@@ -879,8 +886,7 @@ class DashboardAPI {
       if (config.mdblistWatchTracking) stats.features.mdblistWatchTracking++;
       if (config.anilistWatchTracking) stats.features.anilistWatchTracking++;
       if (config.simklWatchTracking) stats.features.simklWatchTracking++;
-      if (config.posterRatingProvider === 'rpdb') stats.features.ratingPostersRpdb++;
-      if (config.posterRatingProvider === 'top') stats.features.ratingPostersTop++;
+      config.posterRatingProvider === 'top' ? stats.features.ratingPostersTop++ : stats.features.ratingPostersRpdb++;
       if (config.search?.ai_enabled) stats.features.aiSearchEnabled++;
     });
 

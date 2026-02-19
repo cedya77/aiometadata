@@ -98,6 +98,34 @@ addon.use((req, res, next) => {
 // Add request tracking middleware
 addon.use(requestTracker.middleware());
 
+const TEST_KEYS_RATE_LIMIT_PER_MIN = parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10);
+
+async function testKeysRateLimitMiddleware(req, res, next) {
+  // If Redis is disabled/unavailable, do not block requests.
+  if (!redis) {
+    return next();
+  }
+
+  try {
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const rateKey = `rate-limit:test-keys:${minuteBucket}`;
+    const currentCount = await redis.incr(rateKey);
+
+    // First hit in this minute bucket: set a short TTL.
+    if (currentCount === 1) {
+      await redis.expire(rateKey, 70);
+    }
+
+    if (currentCount > TEST_KEYS_RATE_LIMIT_PER_MIN) {
+      return res.status(429).json({ error: 'Too many API key validation requests. Please try again shortly.' });
+    }
+  } catch (error) {
+    consola.warn('[Rate Limit] /api/test-keys limiter failed, allowing request:', error.message);
+  }
+
+  next();
+}
+
 
 const NO_CACHE = process.env.NO_CACHE === 'true';
 
@@ -393,7 +421,7 @@ addon.post("/api/config/load/:userUUID", configApi.loadConfig.bind(configApi));
 addon.put("/api/config/update/:userUUID", configApi.updateConfig.bind(configApi));
 addon.post("/api/config/migrate", configApi.migrateFromLocalStorage.bind(configApi));
 addon.get('/api/config/is-trusted/:uuid', configApi.isTrusted.bind(configApi));
-addon.post("/api/test-keys", configApi.testApiKeys);
+addon.post("/api/test-keys", testKeysRateLimitMiddleware, configApi.testApiKeys);
 
 // --- Trakt OAuth Routes ---
 addon.get("/api/auth/trakt/authorize", async (req, res) => {
@@ -2058,6 +2086,13 @@ addon.post("/api/letterboxd/list", async (req, res) => {
 
 // --- AniList OAuth Routes ---
 const anilistTracker = require('./lib/anilistTracker');
+const noStoreOAuthHeaders = (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+};
+addon.use(['/anilist/auth', '/anilist/callback'], noStoreOAuthHeaders);
 
 // GET /anilist/auth - Initiate AniList OAuth flow
 addon.get("/anilist/auth", async (req, res) => {

@@ -31,6 +31,16 @@ const CONFIG_STORAGE_KEY = 'stremio-addon-config';
 
 let initialConfigFromSources: AppConfig | null = null;
 let hasInitialized = false;
+const DEFAULT_SEARCH_ORDER = [
+  'movie',
+  'series',
+  'tvdb.collections.search',
+  'gemini.search',
+  'anime_series',
+  'anime_movie',
+  'people_search_movie',
+  'people_search_series',
+];
 
 function initializeConfigFromSources(): AppConfig | null {
   if (hasInitialized) {
@@ -169,7 +179,7 @@ const initialConfig: AppConfig = {
       'mal.search.series': true,
     },
     searchNames: {},
-    searchOrder: ['movie', 'series', 'tvdb.collections.search', 'anime_series', 'anime_movie', 'people_search_movie', 'people_search_series'],
+    searchOrder: DEFAULT_SEARCH_ORDER,
   },
   streaming: [], // Added to satisfy AppConfig interface
 };

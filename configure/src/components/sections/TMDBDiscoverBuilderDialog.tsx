@@ -997,7 +997,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
 
   useEffect(() => {
     if (!isOpen || !editingCatalog) return;
-  
+
     const fs = editingCatalog.metadata?.discover?.formState;
     if (!fs) return;
   
@@ -1157,6 +1157,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
   }, [sortBy, sortOptions]);
 
   useEffect(() => {
+    if (editingCatalog) return;
     setIncludeGenres([]);
     setExcludeGenres([]);
     setPendingIncludeGenreId('');
@@ -1179,7 +1180,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     setSimklCountry('all');
     setSimklNetwork('all-networks');
     setSimklYear(getSimklDefaultYear(simklMediaType));
-  }, [catalogType, discoverSource, simklMediaType]);
+  }, [catalogType, discoverSource, simklMediaType, editingCatalog]);
 
   useEffect(() => {
     setShowPreview(false);
@@ -1290,13 +1291,15 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
 
           setReferences({ ...data, source: 'tmdb' });
 
-          const languageCountryCode = (config.language || 'en-US').split('-')[1];
-          if (languageCountryCode) {
-            const hasRegion = (data.watchRegions || []).some(
-              region => region.iso_3166_1?.toUpperCase() === languageCountryCode.toUpperCase()
-            );
-            if (hasRegion) {
-              setWatchRegion(languageCountryCode.toUpperCase());
+          if (!editingCatalog) {
+            const languageCountryCode = (config.language || 'en-US').split('-')[1];
+            if (languageCountryCode) {
+              const hasRegion = (data.watchRegions || []).some(
+                region => region.iso_3166_1?.toUpperCase() === languageCountryCode.toUpperCase()
+              );
+              if (hasRegion) {
+                setWatchRegion(languageCountryCode.toUpperCase());
+              }
             }
           }
           return;

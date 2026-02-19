@@ -2,6 +2,14 @@ const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
 const packageJson = require('../../package.json');
+const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error']);
+const isKnownKeyValidationStatus = (status) =>
+  typeof status === 'string' && KEY_VALIDATION_STATUS_SET.has(status);
+const TESTABLE_API_KEY_FIELDS = new Set(['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist']);
+const TEST_API_KEY_MAX_LENGTH = (() => {
+  const parsed = parseInt(process.env.TEST_API_KEY_MAX_LENGTH || '128', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 128;
+})();
 
 // Gemini dispatcher configuration for API key testing
 // Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
@@ -228,8 +236,7 @@ class ConfigApi {
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              // RPDB/MDBList API key changes affect catalog rendering, clear user's catalogs
-              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              patterns.push(`v*:catalog:${userUUID}:*`);
               logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
@@ -330,27 +337,10 @@ class ConfigApi {
             if (mdblistChanged) {
               // Clear cache for specific MDBList catalogs that changed
               for (const catalogId of changedCatalogs) {
-                const pattern = `catalog:${userUUID}:*${catalogId}*`;
+                const pattern = `v*:catalog:${userUUID}:*${catalogId}*`;
                 patterns.push(pattern);
                 logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
-            }
-          }
-          
-          // Search-specific changes - affects search results
-          if (config.search && oldConfig?.search) {
-            const searchProvidersChanged = config.search.providers && oldConfig.search.providers && 
-              Object.keys(config.search.providers).some(key => 
-                config.search.providers[key] !== oldConfig.search.providers?.[key]
-              );
-            const aiEnabledChanged = config.search.ai_enabled !== oldConfig.search.ai_enabled;
-            
-            if (searchProvidersChanged || aiEnabledChanged) {
-              patterns.push(`search:*`); // Clear all search cache
-              logger.debug(`Search settings changed, clearing search cache`);
-              if (searchProvidersChanged) logger.debug(`Search providers changed`);
-              if (aiEnabledChanged) logger.debug(`AI enabled changed from ${oldConfig.search.ai_enabled} to ${config.search.ai_enabled}`);
-              logger.debug(`DEBUG: Added pattern "search:*" for search settings change`);
             }
           }
           
@@ -371,10 +361,6 @@ class ConfigApi {
               logger.debug(`No keys found matching pattern "${pattern}"`);
             }
           }
-          
-          // NOTE: Nuclear option removed - meta cache uses config hash in keys,
-          // so new config = new cache keys = fresh data automatically.
-          // Old entries expire naturally via TTL. This prevents cross-user cache pollution.
           
           if (totalCleared > 0) {
             logger.info(`Total affected cache cleared: ${totalCleared} entries`);
@@ -571,7 +557,7 @@ class ConfigApi {
             const mdblistChanged = config.apiKeys.mdblist !== oldConfig.apiKeys.mdblist;
             
             if (rpdbChanged || mdblistChanged) {
-              patterns.push(`catalog:${userUUID}:*`); // User-scoped catalog cache
+              patterns.push(`v*:catalog:${userUUID}:*`);
               logger.debug(`API keys changed - RPDB: ${rpdbChanged}, MDBList: ${mdblistChanged} - clearing user's catalog cache`);
             }
           }
@@ -676,7 +662,7 @@ class ConfigApi {
             if (mdblistChanged) {
               // Clear cache for specific MDBList catalogs that changed
               for (const catalogId of changedCatalogs) {
-                const pattern = `*${catalogId}*`;
+                const pattern = `v*:catalog:${userUUID}:*${catalogId}*`;
                 patterns.push(pattern);
                 logger.debug(`Added cache invalidation pattern for MDBList catalog: ${pattern}`);
               }
@@ -690,7 +676,7 @@ class ConfigApi {
             // Clear each pattern
             for (const pattern of patterns) {
               try {
-                const deleted = await deleteKeysByPattern(`*:${userUUID}:${pattern}`);
+                const deleted = await deleteKeysByPattern(pattern);
                 if (deleted > 0) {
                   logger.debug(`Cleared ${deleted} cache entries for pattern: ${pattern}`);
                 }
@@ -989,150 +975,388 @@ class ConfigApi {
     }
   }
 
-    async testApiKeys(req, res) {
+  buildApiKeyValidationSummary(details) {
+    const summary = {
+      totalCount: 0,
+      validCount: 0,
+      failedCount: 0,
+      testedKeys: [],
+      validKeys: [],
+      invalidKeys: [],
+      invalidNonQuotaKeys: [],
+      quotaExhaustedKeys: [],
+      timeoutKeys: [],
+      errorKeys: [],
+      failureLines: [],
+    };
+
+    for (const [key, detail] of Object.entries(details || {})) {
+      summary.totalCount += 1;
+      summary.testedKeys.push(key);
+
+      if (detail?.status === 'valid') {
+        summary.validCount += 1;
+        summary.validKeys.push(key);
+        continue;
+      }
+
+      if (detail?.status === 'invalid') {
+        summary.invalidKeys.push(key);
+        if (detail.reason === 'quota_exhausted') {
+          summary.quotaExhaustedKeys.push(key);
+        } else {
+          summary.invalidNonQuotaKeys.push(key);
+        }
+        continue;
+      }
+
+      if (detail?.status === 'timeout') {
+        summary.timeoutKeys.push(key);
+        continue;
+      }
+
+      summary.errorKeys.push(key);
+    }
+
+    summary.failedCount = summary.totalCount - summary.validCount;
+
+    if (summary.quotaExhaustedKeys.length > 0) {
+      summary.failureLines.push(`Quota exhausted: ${summary.quotaExhaustedKeys.join(', ')}`);
+    }
+    if (summary.invalidNonQuotaKeys.length > 0) {
+      summary.failureLines.push(`Invalid: ${summary.invalidNonQuotaKeys.join(', ')}`);
+    }
+    if (summary.timeoutKeys.length > 0) {
+      summary.failureLines.push(`Timed out: ${summary.timeoutKeys.join(', ')}`);
+    }
+    if (summary.errorKeys.length > 0) {
+      summary.failureLines.push(`Errors: ${summary.errorKeys.join(', ')}`);
+    }
+
+    return summary;
+  }
+
+  validateAndNormalizeTestApiKeys(apiKeys) {
+    if (!apiKeys || typeof apiKeys !== 'object' || Array.isArray(apiKeys)) {
+      return { error: "apiKeys must be a plain object." };
+    }
+
+    const prototype = Object.getPrototypeOf(apiKeys);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return { error: "apiKeys must be a plain object." };
+    }
+
+    const normalizedApiKeys = {};
+
+    for (const [key, value] of Object.entries(apiKeys)) {
+      if (!TESTABLE_API_KEY_FIELDS.has(key)) {
+        return { error: `Unsupported apiKeys field '${key}'.` };
+      }
+
+      if (typeof value !== 'string') {
+        return { error: `API key '${key}' must be a string.` };
+      }
+
+      const trimmedValue = value.trim();
+      if (trimmedValue.length === 0) {
+        continue;
+      }
+
+      if (trimmedValue.length > TEST_API_KEY_MAX_LENGTH) {
+        return { error: `API key '${key}' exceeds max length (${TEST_API_KEY_MAX_LENGTH}).` };
+      }
+
+      normalizedApiKeys[key] = trimmedValue;
+    }
+
+    if (Object.keys(normalizedApiKeys).length === 0) {
+      return { error: "At least one non-empty API key is required." };
+    }
+
+    return { apiKeys: normalizedApiKeys };
+  }
+
+  async validateApiKeys(apiKeys) {
+    const KEY_TEST_TIMEOUT_MS = Math.max(
+      1000,
+      parseInt(process.env.API_KEY_TEST_TIMEOUT_MS || '8000', 10)
+    );
+
+    const withTimeout = (promise, timeoutMs, keyName) =>
+      new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          const timeoutError = new Error(`Validation timed out for ${keyName} after ${timeoutMs}ms`);
+          timeoutError.code = 'API_KEY_TEST_TIMEOUT';
+          reject(timeoutError);
+        }, timeoutMs);
+
+        Promise.resolve(promise)
+          .then((value) => {
+            clearTimeout(timeoutId);
+            resolve(value);
+          })
+          .catch((error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          });
+      });
+
+    const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+    const RETRYABLE_ERROR_CODES = new Set([
+      'ABORT_ERR',
+      'UND_ERR_CONNECT_TIMEOUT',
+      'UND_ERR_HEADERS_TIMEOUT',
+      'UND_ERR_BODY_TIMEOUT',
+      'UND_ERR_SOCKET',
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'ENOTFOUND',
+    ]);
+    const TIMEOUT_ERROR_CODES = new Set([
+      'API_KEY_TEST_TIMEOUT',
+      'ABORT_ERR',
+      'UND_ERR_CONNECT_TIMEOUT',
+      'UND_ERR_HEADERS_TIMEOUT',
+      'UND_ERR_BODY_TIMEOUT',
+      'ETIMEDOUT',
+    ]);
+
+    const getErrorCode = (err) => err?.code || err?.cause?.code;
+
+    const getHttpStatusCode = (err) => {
+      const candidates = [
+        err?.statusCode,
+        err?.response?.status,
+        err?.cause?.statusCode,
+        err?.cause?.response?.status,
+      ];
+
+      for (const candidate of candidates) {
+        if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+          return candidate;
+        }
+        if (typeof candidate === 'string' && candidate.trim() !== '') {
+          const parsed = Number(candidate);
+          if (Number.isFinite(parsed)) {
+            return parsed;
+          }
+        }
+      }
+
+      return undefined;
+    };
+
+    const isInvalidKeyStatusCode = (statusCode) => {
+      if (typeof statusCode !== 'number') {
+        return false;
+      }
+      if (statusCode === 400 || statusCode === 401 || statusCode === 403) {
+        return true;
+      }
+      return statusCode >= 400 && statusCode < 500 && statusCode !== 429;
+    };
+
+    const isTimeoutLikeError = (error) => {
+      const code = getErrorCode(error);
+      return (
+        (typeof code === 'string' && TIMEOUT_ERROR_CODES.has(code)) ||
+        error?.name === 'TimeoutError'
+      );
+    };
+
+    const shouldRetryApiKeyTestError = (error) => {
+      const statusCode = getHttpStatusCode(error);
+      if (typeof statusCode === 'number') {
+        return RETRYABLE_STATUS_CODES.has(statusCode);
+      }
+
+      const code = getErrorCode(error);
+      return typeof code === 'string' && RETRYABLE_ERROR_CODES.has(code);
+    };
+
+    const normalizeErrorStatus = (error) => {
+      if (!error) {
+        return { status: 'error', message: 'Unknown error' };
+      }
+
+      const code = getErrorCode(error);
+      const message = error.message || 'Unexpected error during validation';
+      const normalizedStatusCode = getHttpStatusCode(error);
+
+      if (code === 'MDBLIST_QUOTA_EXHAUSTED') {
+        return { status: 'invalid', reason: 'quota_exhausted', message };
+      }
+
+      if (isTimeoutLikeError(error)) {
+        return { status: 'timeout', message };
+      }
+
+      if (isInvalidKeyStatusCode(normalizedStatusCode)) {
+        return { status: 'invalid', message };
+      }
+
+      return { status: 'error', message };
+    };
+
+    const serviceRequest = async (url, options = {}, retries = 2) => {
+      for (let i = 0; i <= retries; i++) {
+        try {
+          const response = await request(url, {
+            ...options,
+            headers: { "User-Agent": `AIOMetadata/${packageJson.version}`, ...options.headers },
+            signal: AbortSignal.timeout(5000),
+          });
+
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            const body = await response.body.json().catch(() => ({}));
+            return { statusCode: response.statusCode, data: body };
+          }
+
+          const statusError = new Error(
+            `Request failed with status code ${response.statusCode}`,
+          );
+          statusError.statusCode = response.statusCode;
+          throw statusError;
+        } catch (error) {
+          const isLastAttempt = i === retries;
+          if (isLastAttempt || !shouldRetryApiKeyTestError(error)) {
+            throw error;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    };
+
+    const testFunctions = {
+      gemini: async (key) => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models`;
+        const response = await serviceRequest(url, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": key,
+          },
+          dispatcher: geminiDispatcher
+        });
+        return !!(response && response.statusCode === 200);
+      },
+
+      tmdb: async (key) => {
+        const url = `https://api.themoviedb.org/3/configuration?api_key=${key}`;
+        const response = await serviceRequest(url, { method: "GET" });
+        return response && response.statusCode === 200;
+      },
+
+      tvdb: async (key) => {
+        const url = "https://api4.thetvdb.com/v4/login";
+        const bodyContent = JSON.stringify({ apikey: key });
+
+        const options = {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: Buffer.from(bodyContent),
+        };
+
+        const response = await serviceRequest(url, options);
+
+        const isValid = !!(
+          response &&
+          response.statusCode === 200 &&
+          response.data?.data?.token
+        );
+        return isValid;
+      },
+
+      fanart: async (key) => {
+        const url = `https://webservice.fanart.tv/v3/movies/603?api_key=${key}`;
+        const response = await serviceRequest(url, { method: "GET" });
+        return response && response.statusCode === 200;
+      },
+
+      rpdb: async (key) => {
+        const url = `https://api.ratingposterdb.com/${key}/isValid`;
+        const response = await serviceRequest(url, { method: "GET" });
+        return (
+          response &&
+          response.statusCode === 200 &&
+          response.data?.valid === true
+        );
+      },
+
+      topPoster: async (key) => {
+        const url = `https://api.top-streaming.stream/auth/verify/${key}`;
+        const response = await serviceRequest(url, { method: "GET" });
+        return (
+          response &&
+          response.statusCode === 200 &&
+          response.data?.valid === true &&
+          response.data?.is_active === true
+        );
+      },
+
+      mdblist: async (key) => {
+        const { testMdblistKey } = require('../utils/mdbList');
+        return await testMdblistKey(key);
+      },
+    };
+
+    const validationPromises = Object.entries(apiKeys)
+      .filter(([key, value]) => typeof value === 'string' && value.length > 0 && testFunctions[key])
+      .map(async ([key, value]) => {
+        const startedAt = Date.now();
+
+        try {
+          const result = await withTimeout(testFunctions[key](value), KEY_TEST_TIMEOUT_MS, key);
+
+          if (
+            result &&
+            typeof result === 'object' &&
+            isKnownKeyValidationStatus(result.status)
+          ) {
+            return [
+              key,
+              {
+                status: result.status,
+                reason: typeof result.reason === 'string' ? result.reason : undefined,
+                message: typeof result.message === 'string' ? result.message : undefined,
+                durationMs: Date.now() - startedAt,
+              },
+            ];
+          }
+
+          const isValid = !!result;
+          return [key, { status: isValid ? 'valid' : 'invalid', durationMs: Date.now() - startedAt }];
+        } catch (error) {
+          const normalizedError = normalizeErrorStatus(error);
+          return [key, { ...normalizedError, durationMs: Date.now() - startedAt }];
+        }
+      });
+
+    const detailsEntries = await Promise.all(validationPromises);
+    const details = Object.fromEntries(detailsEntries);
+    const summary = this.buildApiKeyValidationSummary(details);
+
+    return { details, summary };
+  }
+
+  async testApiKeys(req, res) {
     try {
       await this.initialize();
       const { apiKeys } = req.body;
-      if (!apiKeys) {
-        return res.status(400).json({ error: "apiKeys object is required" });
+      const validation = this.validateAndNormalizeTestApiKeys(apiKeys);
+      if (validation.error) {
+        return res.status(400).json({ error: validation.error });
       }
 
-      const serviceRequest = async (url, options = {}, retries = 2) => {
-        for (let i = 0; i <= retries; i++) {
-          try {
-            const response = await request(url, {
-              ...options,
-              headers: { "User-Agent": `AIOMetadata/${packageJson.version}`, ...options.headers },
-              signal: AbortSignal.timeout(5000),
-            });
-
-            // Fail immediately on authorization errors.
-            if (response.statusCode === 401 || response.statusCode === 403) {
-              return { statusCode: response.statusCode, data: null };
-            }
-
-            // For other errors, allow retrying.
-            if (response.statusCode < 200 || response.statusCode >= 300) {
-              throw new Error(
-                `Request failed with status code ${response.statusCode}`,
-              );
-            }
-
-            const body = await response.body.json().catch(() => ({}));
-            return { statusCode: response.statusCode, data: body };
-          } catch (error) {
-            if (i === retries) throw error;
-            await new Promise((resolve) => setTimeout(resolve, 500));
-          }
-        }
-      };
-
-      const testFunctions = {
-        gemini: async (key) => {
-          // Validate by listing available models - no token usage
-          // Use Gemini-specific proxy if configured
-          const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-          const response = await serviceRequest(url, {
-            method: "GET",
-            dispatcher: geminiDispatcher
-          }).catch(
-            () => null,
-          );
-          return !!(response && response.statusCode === 200 && response.data?.models);
-        },
-
-        tmdb: async (key) => {
-          const url = `https://api.themoviedb.org/3/configuration?api_key=${key}`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
-            () => null,
-          );
-          return response && response.statusCode === 200;
-        },
-
-        tvdb: async (key) => {
-          const url = "https://api4.thetvdb.com/v4/login";
-          const bodyContent = JSON.stringify({ apikey: key });
-
-          const options = {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: Buffer.from(bodyContent),
-          };
-
-          const response = await serviceRequest(url, options).catch((err) => {
-            return null;
-          });
-
-          const isValid = !!(
-            response &&
-            response.statusCode === 200 &&
-            response.data?.data?.token
-          );
-          return isValid;
-        },
-
-        fanart: async (key) => {
-          const url = `https://webservice.fanart.tv/v3/movies/603?api_key=${key}`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
-            () => null,
-          );
-          return response && response.statusCode === 200;
-        },
-
-        rpdb: async (key) => {
-          const url = `https://api.ratingposterdb.com/${key}/isValid`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
-            () => null,
-          );
-          return (
-            response &&
-            response.statusCode === 200 &&
-            response.data?.valid === true
-          );
-        },
-
-        topPoster: async (key) => {
-          const url = `https://api.top-streaming.stream/auth/verify/${key}`;
-          const response = await serviceRequest(url, { method: "GET" }).catch(
-            () => null,
-          );
-          return (
-            response &&
-            response.statusCode === 200 &&
-            response.data?.valid === true &&
-            response.data?.is_active === true
-          );
-        },
-
-        mdblist: async (key) => {
-          try {
-            const { makeRateLimitedMDBListRequest } = require('../utils/mdbList');
-            const url = `https://api.mdblist.com/lists/user?apikey=${key}`;
-            const response = await makeRateLimitedMDBListRequest(url, key, 'MDBList API Key Test');
-            // Rate-limited request returns response with .data property on success
-            return response && (response.data !== undefined || Array.isArray(response.data));
-          } catch (error) {
-            // Rate limiter throws on failure, return false
-            return false;
-          }
-        },
-      };
-
-      const promises = Object.entries(apiKeys)
-        .filter(([key, value]) => value && testFunctions[key])
-        .map(async ([key, value]) => {
-          const isValid = await testFunctions[key](value);
-          return [key, isValid];
-        });
-
-      const resultsArray = await Promise.all(promises);
-      const results = Object.fromEntries(resultsArray);
-
-      res.json({ success: true, results });
+      const { details, summary } = await this.validateApiKeys(validation.apiKeys);
+      res.json({ success: true, details, summary });
     } catch (error) {
+      logger.error('API key testing failed:', error);
       res.status(500).json({ error: "Failed to test API keys" });
     }
   }

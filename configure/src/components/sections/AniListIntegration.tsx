@@ -437,12 +437,28 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
   const handleDisconnect = async () => {
     setDisconnecting(true);
     try {
+      // For guests/imported configs without authenticated user context,
+      // clear local AniList linkage without hitting the backend.
+      if (!auth.userUUID) {
+        setConfig(prev => ({
+          ...prev,
+          apiKeys: {
+            ...prev.apiKeys,
+            anilistTokenId: undefined,
+          },
+        }));
+        setTempTokenId("");
+        setIsConnected(false);
+        setUsername(null);
+        toast.success("AniList account disconnected");
+        return;
+      }
+
       const response = await fetch("/anilist/disconnect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          userUUID: auth.userUUID,
-          tokenId: config.apiKeys?.anilistTokenId 
+          userUUID: auth.userUUID
         }),
       });
       
