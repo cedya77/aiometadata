@@ -683,7 +683,9 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   //console.log(`[MDBList] Batch media info: ${JSON.stringify(batchMediaInfo)}`);
   
   // Normalize IDs, falling back to imdb_id or tvdb_id when possible
-  const normalizedItems = filteredItems.map((item: any) => {
+  const normalizedItems = filteredItems
+  .filter((item: any) => item.mediatype === 'movie' || item.mediatype === 'show')
+  .map((item: any) => {
     if (!item.id || item.id === null || item.id === undefined) {
       if(item.imdb_id.startsWith('tr')) item.imdb_id = null;
       const fallbackId = item.imdb_id || item.tvdb_id;

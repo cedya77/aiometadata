@@ -1837,8 +1837,9 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     return null;
   }
   
-  if (!expiresAt || typeof expiresAt !== 'number' || isNaN(expiresAt) || expiresAt === 0) {
-    logger.error(`Trakt token has invalid expires_at (${expiresAt}). Please disconnect and reconnect your Trakt account`);
+  const numericExpiresAt = Number(expiresAt);
+  if (!Number.isFinite(numericExpiresAt) || numericExpiresAt <= 0) {
+    logger.error(`Trakt token has invalid expires_at (${numericExpiresAt}). Please disconnect and reconnect your Trakt account`);
     return null;
   }
   
@@ -1846,7 +1847,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
   const now = Date.now();
   const oneHour = 60 * 60 * 1000;
   
-  if (expiresAt && expiresAt < (now + oneHour)) {
+  if (numericExpiresAt < (now + oneHour)) {
     // Prevent concurrent refreshes for the same token
     if (refreshLocks.has(tokenId)) {
       logger.debug(`Trakt token refresh already in progress for ${tokenId}, waiting...`);
@@ -1854,7 +1855,7 @@ async function getTraktAccessToken(config: any): Promise<string | null> {
     }
 
     const refreshPromise = (async (): Promise<string | null> => {
-      logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(expiresAt).toISOString()}), refreshing...`);
+      logger.debug(`Trakt token expired or expiring soon (expires: ${new Date(numericExpiresAt).toISOString()}), refreshing...`);
       try {
         const { TraktClient } = require('../lib/trakt');
         const traktClient = new TraktClient(
