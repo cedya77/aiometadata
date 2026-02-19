@@ -1779,6 +1779,8 @@ async function getTraktCatalog(
         return [];
       }
 
+      const privacy = catalogConfig?.metadata?.privacy || 'public';
+
       if (parts[1] === 'list') {
         // New numeric list-id format
         let listId = parts[2];
@@ -1792,8 +1794,8 @@ async function getTraktCatalog(
           splitType = 'shows';
         }
 
-        logger.debug(`Fetching Trakt list by id: ${listId} (splitType=${splitType || 'all'})`);
-        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL);
+        logger.debug(`Fetching Trakt list by id: ${listId} (splitType=${splitType || 'all'}), privacy=${privacy})`);
+        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL, privacy);
       } else {
         // Legacy username + slug format
         const username = parts[1];
@@ -1805,8 +1807,8 @@ async function getTraktCatalog(
           listSlug = listSlug.slice(0, -7); // Remove '.series'
         }
 
-        logger.debug(`Fetching Trakt list: ${username}/${listSlug}`);
-        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL);
+        logger.debug(`Fetching Trakt list: ${username}/${listSlug}, privacy=${privacy})`);
+        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL, privacy);
       }
     }
     

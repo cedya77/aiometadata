@@ -1,109 +1,484 @@
+import { httpGet } from "./httpClient.js";
+import { getMeta } from "../lib/getMeta.js";
+import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
+import { UserConfig } from "../types/index.js";
+const consola = require('consola');
+const crypto = require('crypto');
+const { Agent } = require('undici');
+const database = require('../lib/database.js');
+const redis = require('../lib/redisClient');
+
+const logger = consola.withTag('Trakt');
+
+/**
+ * Sanitize URL by removing access token for safe logging
+ */
+function sanitizeUrlForLogging(url: string): string {
+  return url.replace(/(Authorization: Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
+}
+
+const traktDispatcher = new Agent({ connect: { timeout: 30000 } });
+
+/**
+ * Checks if an error is a "permanent" client-side error that should not be retried.
+ */
+function isPermanentError(error: any): boolean {
+  const status = error.response?.status;
+  // Consider 4xx errors (except 429 rate limit) as permanent.
+  // 401 (unauthorized) and 403 (forbidden) are permanent auth errors
+  // 500 errors are now retryable since they can be transient on Trakt's side
+  return status >= 400 && status < 500 && status !== 429;
+}
+
+const QUEUE_CONFIG = {
+  concurrency: parseInt(process.env.TRAKT_CONCURRENCY || '5', 10),     
+  minTime: parseInt(process.env.TRAKT_MIN_TIME || '150', 10),        
+  rateLimitBuffer: 1000, 
+  queueCleanupInterval: 1000 * 60 * 10 
+};
+
+// --- Multi-Queue Implementation ---
+
+class RequestQueue {
+  private queue: Array<() => Promise<void>> = [];
+  private activeCount = 0;
+  private lastRequestTime = 0;
+  private pausedUntil = 0;
+  private processing = false;
+  public lastActivity = Date.now(); 
+
+  async add<T>(fn: () => Promise<T>): Promise<T> {
+    this.lastActivity = Date.now();
+    return new Promise((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (e) {
+          reject(e);
+        }
+      });
+      this.process();
+    });
+  }
+
+  pause(durationMs: number) {
+    const now = Date.now();
+    const newResumeTime = now + durationMs;
+    if (newResumeTime > this.pausedUntil) {
+      this.pausedUntil = newResumeTime;
+    }
+  }
+
+  private async process() {
+    if (this.processing) return;
+    this.processing = true;
+
+    while (this.queue.length > 0) {
+      const now = Date.now();
+      
+      if (now < this.pausedUntil) {
+        const wait = this.pausedUntil - now;
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+
+      if (this.activeCount >= QUEUE_CONFIG.concurrency) {
+        await new Promise(r => setTimeout(r, 50));
+        continue;
+      }
+
+      const timeSinceLast = now - this.lastRequestTime;
+      if (timeSinceLast < QUEUE_CONFIG.minTime) {
+        await new Promise(r => setTimeout(r, QUEUE_CONFIG.minTime - timeSinceLast));
+      }
+
+      const task = this.queue.shift();
+      if (task) {
+        this.activeCount++;
+        this.lastRequestTime = Date.now();
+        this.lastActivity = Date.now();
+        
+        task().finally(() => {
+          this.activeCount--;
+          this.process();
+        });
+      }
+    }
+
+    this.processing = false;
+  }
+}
+
+class QueueManager {
+  private queues = new Map<string, RequestQueue>();
+
+  constructor() {
+    setInterval(() => this.cleanup(), QUEUE_CONFIG.queueCleanupInterval);
+  }
+
+  getQueue(key: string): RequestQueue {
+    if (!this.queues.has(key)) {
+      this.queues.set(key, new RequestQueue());
+    }
+    return this.queues.get(key)!;
+  }
+
+  private cleanup() {
+    const now = Date.now();
+    for (const [key, queue] of this.queues.entries()) {
+      if (now - queue.lastActivity > QUEUE_CONFIG.queueCleanupInterval) {
+        this.queues.delete(key);
+      }
+    }
+  }
+}
+
+const queueManager = new QueueManager();
+
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isRateLimitError(error: any): boolean {
+  return error.response?.status === 429 || error.response?.status === 503;
+}
+
+function getRetryAfterMs(error: any): number {
+  const headers = error.response?.headers;
+  if (!headers) return 1000;
+
+  const retryAfter = headers['retry-after'] || headers['Retry-After'];
+  if (retryAfter) {
+    const seconds = parseInt(retryAfter, 10);
+    if (!isNaN(seconds)) return (seconds * 1000) + QUEUE_CONFIG.rateLimitBuffer;
+  }
+
+  const rateLimitInfo = headers['x-ratelimit'] || headers['X-Ratelimit'];
+  if (rateLimitInfo) {
+    try {
+      const info = typeof rateLimitInfo === 'string' ? JSON.parse(rateLimitInfo) : rateLimitInfo;
+      if (info && info.until) {
+        const untilDate = new Date(info.until);
+        const now = new Date();
+        const diff = untilDate.getTime() - now.getTime();
+        if (diff > 0) return diff + QUEUE_CONFIG.rateLimitBuffer;
+      }
+    } catch (e) {}
+  }
+
+  return 2000; 
+}
+
+function getEpisodeIdPart(ep: any): string {
+  const traktId = (ep as any).trakt_id ?? (ep as any).ids?.trakt;
+  if (traktId) return `trakt${traktId}`;
+  const season = ep?.season;
+  const episode = (ep as any).episode ?? (ep as any).number;
+  if (season != null && episode != null) return `S${season}E${String(episode).padStart(2, '0')}`;
+  return 'unknown';
+}
+
+/**
+ * Execute a request with rate limiting and retries.
+ * 
+ * @param requestFn The request function
+ * @param context Log context
+ * @param retries Number of retries
+ * @param queueKey Unique key for the queue. Use accessToken for user requests, or 'global' for generic.
+ */
+async function makeRateLimitedRequest<T>(
+  requestFn: () => Promise<T>,
+  context: string = 'Trakt',
+  retries: number = 3,
+  queueKey: string = 'global'
+): Promise<T> {
+  const queue = queueManager.getQueue(queueKey);
+
+  return queue.add(async () => {
+    let attempt = 0;
+    
+    while (attempt <= retries) {
+      attempt++;
+      
+      try {
+        const response = await requestFn();
+        return response;
+      } catch (error: any) {
+        if (isPermanentError(error)) {
+          logger.error(`[Trakt] Permanent error: ${error.message} - ${context}`);
+          throw error;
+        }
+
+        const isLastAttempt = attempt > retries;
+
+        if (isRateLimitError(error)) {
+          const waitMs = getRetryAfterMs(error);
+          const keyShort = queueKey === 'global' ? 'GLOBAL' : `User:${queueKey.substring(0,5)}...`;
+          
+          logger.warn(`[Trakt] Rate Limit (${keyShort}). Pausing queue for ${Math.round(waitMs/1000)}s - ${context}`);
+          
+          // Pause ONLY this specific queue
+          queue.pause(waitMs);
+          
+          if (isLastAttempt) throw error;
+          
+          await sleep(waitMs);
+          continue;
+        }
+
+        if (isLastAttempt) {
+          // Log error but don't spam console for expected 404s in lookup flows
+          if (error.response?.status !== 404) {
+             logger.warn(`[Trakt] Request failed after ${retries} attempts: ${error.message} - ${context}`);
+          }
+          throw error;
+        }
+
+        const delay = 1000 * Math.pow(2, attempt - 1);
+        await sleep(delay);
+      }
+    }
+    throw new Error('Unreachable code');
+  });
+}
+
+// Fetch episodes watched by the user since a specific date
+async function fetchTraktHistory(
+  accessToken: string,
+  startAt: string,
+  page: number = 1,
+  limit: number = 100
+): Promise<number[]> {
+  try {
+    const url = `${TRAKT_BASE_URL}/sync/history/episodes?start_at=${startAt}&page=${page}&limit=${limit}`;
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      'Trakt History Sync',
+      3,
+      accessToken
+    );
+    
+    // Extract unique Show IDs
+    const showIds = new Set<number>();
+    if (Array.isArray(response.data)) {
+      response.data.forEach((item: any) => {
+        if (item.show?.ids?.trakt) showIds.add(item.show.ids.trakt);
+      });
+    }
+    return Array.from(showIds);
+  } catch (error) {
+    logger.warn(`[Trakt] Failed to fetch history: ${error.message}`);
+    return [];
+  }
+}
+
+async function fetchTraktUpdatedShows(
+  accessToken: string, 
+  startAt: string,
+  page: number = 1,
+  limit: number = 100
+): Promise<number[]> {
+  try {
+    const url = `${TRAKT_BASE_URL}/shows/updates/${startAt}?page=${page}&limit=${limit}`;
+    const response: any = await makeRateLimitedRequest(
+      () => httpGet(url, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID
+        }
+      }),
+      'Trakt Shows Updates',
+      3,
+      'global'
+    );
+
+    const showIds = new Set<number>();
+    if (Array.isArray(response.data)) {
+      response.data.forEach((item: any) => {
+        if (item.show?.ids?.trakt) showIds.add(item.show.ids.trakt);
+      });
+    }
+    return Array.from(showIds);
+  } catch (error) {
+    logger.warn(`[Trakt] Failed to fetch show updates: ${error.message}`);
+    return [];
+  }
+}
+
 const TRAKT_SEARCH_DISABLED = process.env.DISABLE_TRAKT_SEARCH === 'true';
 
 
-/**
- * Fetch Trakt Up Next episodes for a user with last_activities optimization
- * Returns object with items array and last watched timestamp
- * @param accessToken - User's Trakt access token
- * @param cachedTimestamp - Optional cached episodes.watched_at timestamp to check against
- * @returns Object with items array and watched_at timestamp
- */
+// Interface for the cached state stored in Redis
+interface TraktUpNextState {
+  last_watched_at: string; // User activity timestamp
+  last_updated_at: string; // Global show update timestamp
+  shows: Record<number, any>; // Map of ShowID -> UpNextEntry
+}
+
 async function fetchTraktUpNextEpisodes(
-  accessToken: string, 
-  cachedTimestamp?: string
+  accessToken: string,
+  cachedTimestamp?: string // Legacy parameter, largely ignored in favor of internal state
 ): Promise<{ items: any[], watched_at: string }> {
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+  const stateKey = `trakt_upnext_state:${tokenHash}`;
   const startTime = Date.now();
-  
-  // First, check if anything has changed since last fetch
-  const activityStart = Date.now();
+
+  // 1. Get Current Activity Timestamps (1 API Call)
   const lastActivity = await fetchTraktLastActivity(accessToken);
-  const activityTime = Date.now() - activityStart;
-  logger.info(`Up Next: last_activities fetch took ${activityTime}ms`);
-  
-  const currentWatchedAt = lastActivity?.episodes?.watched_at;
-  
-  // If we have a cached timestamp and nothing has changed, return empty result
-  // The caller will use the cached data
-  if (cachedTimestamp && currentWatchedAt && cachedTimestamp === currentWatchedAt) {
-    const totalTime = Date.now() - startTime;
-    logger.info(`Up Next: No changes detected (watched_at: ${currentWatchedAt}), using cached data [total: ${totalTime}ms]`);
-    return { items: [], watched_at: currentWatchedAt };
+  const userWatchedAt = lastActivity?.episodes?.watched_at;
+  const globalUpdatedAt = lastActivity?.shows?.updated_at; // When shows were last updated on Trakt
+
+  // 2. Load Previous State from Redis
+  let state: TraktUpNextState = { last_watched_at: '', last_updated_at: '', shows: {} };
+  if (redis) {
+    const cachedState = await redis.get(stateKey);
+    if (cachedState) {
+      try { state = JSON.parse(cachedState); } catch(e) {}
+    }
   }
-  
-  logger.info(`Up Next: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);
-  
-  // Fetch all watched shows and dropped shows
-  const watchedStart = Date.now();
-  const [watchedShows, droppedShowIds] = await Promise.all([
-    fetchTraktWatchedShows(accessToken),
-    fetchTraktDroppedShows(accessToken)
-  ]);
-  const watchedTime = Date.now() - watchedStart;
-  
-  // Filter out dropped shows
-  const activeWatchedShows = watchedShows.filter(show => {
-    const showId = show?.show?.ids?.trakt;
-    return showId && !droppedShowIds.has(showId);
-  });
-  
-  logger.info(`Up Next: watched shows fetch took ${watchedTime}ms (${watchedShows.length} total, ${activeWatchedShows.length} active after filtering ${droppedShowIds.size} dropped)`);
-  
-  const progressStart = Date.now();
-  
-  const MAX_RESULTS = 50;
-  const BATCH_SIZE = 30;
-  const upNextList: any[] = [];
-  let processedCount = 0;
-  
-  for (let i = 0; i < activeWatchedShows.length && upNextList.length < MAX_RESULTS; i += BATCH_SIZE) {
-    const remainingNeeded = MAX_RESULTS - upNextList.length;
-    const batchSize = Math.min(BATCH_SIZE, activeWatchedShows.length - i, remainingNeeded + 20); // Fetch extra to account for shows without next episodes
-    const batch = activeWatchedShows.slice(i, i + batchSize);
+
+  // 3. Determine what needs refreshing
+  const showsToRefresh = new Set<number>();
+  let needsFullSync = Object.keys(state.shows).length === 0; // First run
+
+  // Check 1: Did user watch something?
+  if (!needsFullSync && userWatchedAt !== state.last_watched_at) {
+    logger.debug(`[Up Next] User watched something since ${state.last_watched_at}`);
+    // Only fetch history if we have a previous date, otherwise full sync
+    if (state.last_watched_at) {
+      const historyIds = await fetchTraktHistory(accessToken, state.last_watched_at);
+      historyIds.forEach(id => showsToRefresh.add(id));
+      logger.debug(`[Up Next] Found ${historyIds.length} shows affected by user history`);
+    } else {
+      needsFullSync = true;
+    }
+  }
+
+  // Check 2: Did any shows air new episodes?
+  if (!needsFullSync && globalUpdatedAt !== state.last_updated_at) {
+    logger.debug(`[Up Next] Global shows updated since ${state.last_updated_at}`);
+    if (state.last_updated_at) {
+      const updatedIds = await fetchTraktUpdatedShows(accessToken, state.last_updated_at);
+      // Only refresh if we are actually tracking this show in our cache
+      let relevantUpdates = 0;
+      updatedIds.forEach(id => {
+        if (state.shows[id]) {
+          showsToRefresh.add(id);
+          relevantUpdates++;
+        }
+      });
+      logger.debug(`[Up Next] Found ${relevantUpdates} relevant show updates (out of ${updatedIds.length} global)`);
+    } 
+    // Note: We don't force full sync on global update mismatch, just ignore if no date
+  }
+
+  // 4. Execute Sync Strategy
+  if (needsFullSync) {
+    // --- FULL SYNC PATH (Expensive, run once) ---
+    logger.info(`[Up Next] Performing FULL SYNC for ${tokenHash}`);
     
-    const results = await Promise.all(
-      batch.map(async (show) => {
-        const showData = show.show;
-        const showId = showData?.ids?.trakt;
-        if (!showId) return null;
+    // Get all watched shows (excludes dropped automatically via filter later)
+    const [watchedShows, droppedShowIds] = await Promise.all([
+      fetchTraktWatchedShows(accessToken),
+      fetchTraktDroppedShows(accessToken)
+    ]);
+
+    const activeShows = watchedShows.filter(s => s.show?.ids?.trakt && !droppedShowIds.has(s.show.ids.trakt));
+    
+    // Mark ALL for refresh
+    activeShows.forEach(s => showsToRefresh.add(s.show.ids.trakt));
+    
+    // Clear old state for fresh start
+    state.shows = {}; 
+    
+    // Optimization: Pre-fill state with basic show info to avoid re-fetching details
+    activeShows.forEach(s => {
+      state.shows[s.show.ids.trakt] = { type: 'show', show: s.show, upNextEpisode: null };
+    });
+
+  } else if (showsToRefresh.size === 0) {
+    // --- FAST PATH (No API calls) ---
+    logger.debug(`[Up Next] No changes detected. Serving from cache.`);
+    const items = Object.values(state.shows)
+      .filter(item => item.upNextEpisode) // Only return shows with next episodes
+      .sort((a, b) => new Date(b.upNextEpisode.first_aired).getTime() - new Date(a.upNextEpisode.first_aired).getTime())
+      .slice(0, 50);
+    return { items, watched_at: userWatchedAt };
+  }
+
+  // 5. Process Refreshes (The Queue handles concurrency)
+  // If we have > 50 updates, maybe we should just limit to top 50 recently watched?
+  // For now, process all dirty items to keep state consistent.
+  const refreshArray = Array.from(showsToRefresh);
+  logger.info(`[Up Next] Refreshing progress for ${refreshArray.length} shows`);
+
+  await Promise.all(refreshArray.map(async (showId) => {
+    try {
+      // 1. Fetch Progress
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
+          dispatcher: traktDispatcher,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID,
+            'User-Agent': `AIOMetadata/${packageJson.version}`
+          },
+          params: { 'extended': 'full' }
+        }),
+        `Trakt Progress ${showId}`,
+        3,
+        accessToken
+      );
+
+      const progress = response.data;
+      const nextEp = progress?.next_episode;
+
+      // Logic to handle New Shows vs Existing Shows
+      if (nextEp && nextEp.first_aired && new Date(nextEp.first_aired) <= new Date()) {
         
-        try {
-          // Use up to 3 attempts for individual show fetches
-          const response: any = await makeRateLimitedRequest(
-            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
-              dispatcher: traktDispatcher,
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-                'trakt-api-version': '2',
-                'trakt-api-key': TRAKT_CLIENT_ID,
-                'User-Agent': `AIOMetadata/${packageJson.version}`
-              },
-              params: {
-                'now': Date.now() 
-              }
-            }),
-            `Trakt fetchShowWatchedProgress (${showId})`,
-            3  // Allow up to 3 attempts for individual show fetches
-          );
-          const progress = response.data;
-          if (!progress?.next_episode) return null;
-          const nextEp = progress.next_episode;          
-          
-          // Skip episodes without air date (indicates unscheduled/cancelled episodes)
-          if (!nextEp.first_aired) {
-            logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - no air date`);
-            return null;
+        // ATTEMPT TO GET EXISTING SHOW DATA
+        let showData = state.shows[showId]?.show;
+
+        // IF MISSING (New Show), FETCH IT
+        if (!showData) {
+          try {
+            const showResponse: any = await makeRateLimitedRequest(
+              () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}`, {
+                dispatcher: traktDispatcher,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'trakt-api-version': '2',
+                  'trakt-api-key': TRAKT_CLIENT_ID
+                },
+                params: { 'extended': 'full' }
+              }),
+              `Trakt Show Info ${showId}`,
+              3,
+              accessToken
+            );
+            showData = showResponse.data;
+          } catch (err) {
+            logger.warn(`[Up Next] Failed to fetch details for new show ${showId}`);
           }
-          
-          // Skip episodes that haven't aired yet
-            const airedDate = new Date(nextEp.first_aired);
-            const now = new Date();
-            if (airedDate > now) {
-              logger.debug(`Up Next: Skipping ${showData?.title} S${nextEp.season}E${nextEp.number} - airs on ${airedDate.toISOString()}`);
-              return null;
-          }
-          
-          return {
+        }
+
+        // Only proceed if we have show data (either from cache or fresh fetch)
+        if (showData) {
+          state.shows[showId] = {
             type: 'show',
             show: showData,
             upNextEpisode: {
@@ -112,32 +487,45 @@ async function fetchTraktUpNextEpisodes(
               trakt_id: nextEp.ids.trakt,
               imdb_id: nextEp.ids.imdb,
               tvdb_id: nextEp.ids.tvdb,
+              title: nextEp.title,
+              overview: nextEp.overview,
+              first_aired: nextEp.first_aired
             }
           };
-        } catch (error: any) {
-          logger.error(`Up Next: Failed to fetch progress for show ${showId} (${showData?.title || 'unknown'}): ${error?.message || String(error)}`);
-          if (error?.response?.data) {
-            logger.error(`Up Next: Trakt API response for show ${showId}: ${JSON.stringify(error.response.data)}`);
-          }
-          return null;
         }
-      })
-    );
-    
-    const validResults = results.filter(item => item !== null);
-    upNextList.push(...validResults.slice(0, MAX_RESULTS - upNextList.length));
-    processedCount += batch.length;
-    
-    if (upNextList.length >= MAX_RESULTS) break;
+      } else {
+        // Show completed or not aired
+        if (state.shows[showId]) {
+          state.shows[showId].upNextEpisode = null;
+        }
+      }
+    } catch (error) {
+      logger.warn(`[Up Next] Failed to refresh show ${showId}`);
+    }
+  }));
+
+  // 6. Save State
+  state.last_watched_at = userWatchedAt;
+  state.last_updated_at = globalUpdatedAt;
+  
+  if (redis) {
+    await redis.set(stateKey, JSON.stringify(state), 'EX', 86400 * 7); // 1 week TTL
   }
-  
-  const progressTime = Date.now() - progressStart;
-  const totalTime = Date.now() - startTime;
-  logger.info(`Up Next: Built list with ${upNextList.length} shows from ${processedCount} watched shows (watched_at: ${currentWatchedAt})`);
-  logger.info(`Up Next: Parallel fetches took ${progressTime}ms (avg: ${Math.round(progressTime/processedCount)}ms/show, ${BATCH_SIZE} concurrent)`);
-  logger.info(`Up Next: Total rebuild time: ${totalTime}ms`);
-  
-  return { items: upNextList, watched_at: currentWatchedAt };
+
+  // 7. Format Output
+  const finalItems = Object.values(state.shows)
+    .filter(item => item.upNextEpisode)
+    .sort((a: any, b: any) => {
+        const dateA = new Date(a.upNextEpisode.first_aired).getTime();
+        const dateB = new Date(b.upNextEpisode.first_aired).getTime();
+        return dateB - dateA;
+    })
+    .slice(0, 50);
+
+  const duration = Date.now() - startTime;
+  logger.info(`[Up Next] Sync complete in ${duration}ms. Returning ${finalItems.length} items.`);
+
+  return { items: finalItems, watched_at: userWatchedAt };
 }
 /**
  * Fetch Trakt last activity for a user (OAuth required)
@@ -332,7 +720,8 @@ async function fetchTraktUnwatchedEpisodes(
               }
             }),
             `Trakt fetchShowWatchedProgress (unwatched ${showId})`,
-            1
+            1,
+            accessToken
           );
           const progress = response.data;
           if (!progress?.seasons || !Array.isArray(progress.seasons)) return null;
@@ -442,216 +831,6 @@ async function fetchTraktUnwatchedEpisodes(
 
   return { items, watched_at: currentWatchedAt };
 }
-import { httpGet } from "./httpClient.js";
-import { getMeta } from "../lib/getMeta.js";
-import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
-import { UserConfig } from "../types/index.js";
-import { meta } from "@eslint/js";
-const consola = require('consola');
-const crypto = require('crypto');
-const { Agent } = require('undici');
-const database = require('../lib/database.js');
-
-const logger = consola.withTag('Trakt');
-
-/**
- * Sanitize URL by removing access token for safe logging
- */
-function sanitizeUrlForLogging(url: string): string {
-  return url.replace(/(Authorization: Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
-}
-
-const traktDispatcher = new Agent({ connect: { timeout: 30000 } });
-
-/**
- * Checks if an error is a "permanent" client-side error that should not be retried.
- */
-function isPermanentError(error: any): boolean {
-  const status = error.response?.status;
-  // Consider 4xx errors (except 429 rate limit) as permanent.
-  // 401 (unauthorized) and 403 (forbidden) are permanent auth errors
-  // 500 errors are now retryable since they can be transient on Trakt's side
-  return status >= 400 && status < 500 && status !== 429;
-}
-
-// Rate limiting configuration for Trakt API
-// Trakt rate limit: 1000 requests per 5 minutes (rolling window)
-const RATE_LIMIT_CONFIG = {
-  maxRetries: 5,
-  baseDelay: 1000, // 1 second base delay
-  maxDelay: 30000, // 30 seconds max delay
-  rateLimitDelay: 5000, // 5 seconds for rate limit backoff
-  minInterval: 300, // Minimum 300ms between requests (1000 req / 5 min = ~3.3 req/sec)
-  backoffMultiplier: 2
-};
-
-// Rate limiting state
-let rateLimitState = {
-  lastRequestTime: 0,
-  recentRateLimitHits: 0,
-  lastRateLimitTime: 0,
-  isRateLimited: false,
-  rateLimitResetTime: 0
-};
-
-/**
- * Sleep function for delays
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Check if error is a rate limit error
- */
-function isRateLimitError(error: any): boolean {
-  return error.response?.status === 429 || error.response?.status === 503;
-}
-
-/**
- * Extract retry delay from Trakt's Retry-After header (in seconds)
- * Falls back to exponential backoff if header is not present
- */
-function getRetryAfterMs(error: any, fallbackMs: number): number {
-  const headers = error.response?.headers;
-  if (!headers) return fallbackMs;
-
-  // Try to get Retry-After header (value is in seconds)
-  const retryAfter = headers['retry-after'] || headers['Retry-After'];
-  if (retryAfter) {
-    const retrySeconds = parseInt(retryAfter, 10);
-    if (!isNaN(retrySeconds) && retrySeconds > 0) {
-      // Add small jitter (0-1 second) to prevent thundering herd
-      const jitter = Math.random() * 1000;
-      return (retrySeconds * 1000) + jitter;
-    }
-  }
-
-  // Log X-Ratelimit header for debugging if available
-  const rateLimitInfo = headers['x-ratelimit'] || headers['X-Ratelimit'];
-  if (rateLimitInfo) {
-    try {
-      const info = typeof rateLimitInfo === 'string' ? JSON.parse(rateLimitInfo) : rateLimitInfo;
-      logger.debug(`Trakt rate limit info: ${info.name}, remaining: ${info.remaining}/${info.limit}, resets: ${info.until}`);
-    } catch (e) {
-      // Ignore parse errors
-    }
-  }
-
-  return fallbackMs;
-}
-
-/**
- * Get a stable episode identifier part for cache keys.
- * Handles multiple shapes: { trakt_id }, { ids: { trakt } }, or { season, episode/number }
- */
-function getEpisodeIdPart(ep: any): string {
-  const traktId = (ep as any).trakt_id ?? (ep as any).ids?.trakt;
-  if (traktId) return `trakt${traktId}`;
-  const season = ep?.season;
-  const episode = (ep as any).episode ?? (ep as any).number;
-  if (season != null && episode != null) return `S${season}E${String(episode).padStart(2, '0')}`;
-  return 'unknown';
-}
-
-/**
- * Rate limiting and retry logic for Trakt API calls
- */
-async function makeRateLimitedRequest<T>(
-  requestFn: () => Promise<T>, 
-  context: string = 'Trakt', 
-  retries: number = RATE_LIMIT_CONFIG.maxRetries
-): Promise<T> {
-  let attempt = 0;
-  
-  while (attempt < retries) {
-    attempt++;
-    const isLastAttempt = attempt === retries;
-
-    const now = Date.now();
-    
-    // Check if we're in a global cooldown period from a previous rate limit hit.
-    if (rateLimitState.isRateLimited && rateLimitState.rateLimitResetTime > now) {
-      const waitTime = rateLimitState.rateLimitResetTime - now;
-      logger.debug(`Global rate limit cooldown active, waiting ${waitTime}ms - ${context}`);
-      await sleep(waitTime);
-    }
-    rateLimitState.isRateLimited = false; // Cooldown is over
-
-    // Enforce minimum interval between every single request attempt.
-    const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
-    if (timeSinceLastRequest < RATE_LIMIT_CONFIG.minInterval) {
-      const waitTime = RATE_LIMIT_CONFIG.minInterval - timeSinceLastRequest;
-      await sleep(waitTime);
-    }
-    
-    // Update the timestamp BEFORE making the request to prevent parallel calls
-    rateLimitState.lastRequestTime = Date.now();
-    const startTime = Date.now();
-    
-    try {
-      const response = await requestFn();
-      const responseTime = Date.now() - startTime;
-      
-      const requestTracker = require('../lib/requestTracker.js');
-      requestTracker.trackProviderCall('trakt', responseTime, true);
-      
-      // Reset recent hits on success
-      rateLimitState.recentRateLimitHits = 0;
-      
-      return response;
-      
-    } catch (error: any) {
-      const responseTime = Date.now() - startTime;
-      const requestTracker = require('../lib/requestTracker.js');
-      requestTracker.trackProviderCall('trakt', responseTime, false);
-
-      if (isPermanentError(error)) {
-        logger.error(`Request failed with permanent error, no retry: ${error.message} - ${context}`);
-        throw error;
-      }
-      
-      if (isRateLimitError(error)) {
-        rateLimitState.lastRateLimitTime = Date.now();
-        rateLimitState.recentRateLimitHits++;
-        
-        if (isLastAttempt) {
-          logger.error(`Rate limit exceeded after ${retries} attempts: ${error.message} - ${context}`);
-          throw error;
-        }
-
-        // Use Trakt's Retry-After header if available, otherwise fall back to exponential backoff
-        const fallbackDelay = RATE_LIMIT_CONFIG.rateLimitDelay * Math.pow(2, rateLimitState.recentRateLimitHits - 1);
-        const totalDelay = Math.min(getRetryAfterMs(error, fallbackDelay), RATE_LIMIT_CONFIG.maxDelay);
-
-        logger.warn(`Rate limit hit (429). Retrying in ${Math.round(totalDelay / 1000)}s (attempt ${attempt}/${retries}) - ${context}`);
-
-        // Set a global cooldown period for all subsequent requests.
-        rateLimitState.isRateLimited = true;
-        rateLimitState.rateLimitResetTime = Date.now() + totalDelay;
-
-        await sleep(totalDelay);
-        continue; // Go to the next attempt
-      }
-
-      // Handle other temporary errors (e.g., 500, timeouts)
-      if (isLastAttempt) {
-        logger.error(`Request failed after ${retries} attempts: ${error.message} - ${context}`);
-        throw error;
-      }
-      
-      const delay = Math.min(
-        RATE_LIMIT_CONFIG.baseDelay * Math.pow(RATE_LIMIT_CONFIG.backoffMultiplier, attempt - 1),
-        RATE_LIMIT_CONFIG.maxDelay
-      );
-      
-      logger.debug(`Attempt ${attempt} failed with temporary error, retrying in ${delay}ms - ${context}`);
-      await sleep(delay);
-    }
-  }
-  
-  throw new Error(`[${context}] All ${retries} attempts failed.`);
-}
 
 const packageJson = require('../../package.json');
 const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
@@ -756,7 +935,9 @@ async function fetchTraktWatchlistItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchWatchlistItems (type: ${typeParam}, page: ${page})`
+        `Trakt fetchWatchlistItems (type: ${typeParam}, page: ${page})`,
+        3,
+        accessToken
       );
       
       // Extract pagination info from headers
@@ -838,7 +1019,9 @@ async function fetchTraktFavoritesItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchFavoritesItems (type: ${type}, page: ${page})`
+        `Trakt fetchFavoritesItems (type: ${type}, page: ${page})`,
+        3,
+        accessToken
       );
       
       // Extract pagination info from headers
@@ -913,7 +1096,9 @@ async function fetchTraktRecommendationsItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchRecommendationsItems (type: ${type}, page: ${page})`
+        `Trakt fetchRecommendationsItems (type: ${type}, page: ${page})`,
+        3,
+        accessToken
       );
       
       // Extract pagination info from headers
@@ -965,7 +1150,9 @@ async function fetchTraktRecommendationsItems(
  * @param type - Content type filter ('movies', 'shows', or undefined for all)
  * @param page - Page number (1-indexed)
  * @param limit - Items per page
- * @param sort - Sort order
+ * @param sort - Sort order,
+ * @param cacheTTL - Cache TTL
+ * @param privacy - List privacy setting ('public', 'private', 'friends')
  * @returns Object with items array and pagination info
  */
 async function fetchTraktListItems(
@@ -978,12 +1165,14 @@ async function fetchTraktListItems(
   sort?: string,
   genre?: string,
   sortDirection?: 'asc' | 'desc',
-  cacheTTL?: number
+  cacheTTL?: number,
+   privacy: string = 'public'
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   const typeParam = type || 'all';
-  const tokenHash = accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public';
+  const isPublic = privacy === 'public';
+  const tokenHash = isPublic ? 'public' : (accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public');
   const cacheKey = `trakt-api:list:${tokenHash}:${username}:${listSlug}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
-  
+  const queueKey = accessToken || 'global'; 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
   return await cacheWrapGlobal(cacheKey, async () => {
@@ -1009,7 +1198,9 @@ async function fetchTraktListItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchListItems (${username}/${listSlug}, page: ${page}, genre: ${genre || 'none'})`
+        `Trakt fetchListItems (${username}/${listSlug}, page: ${page}, genre: ${genre || 'none'})`,
+        3,
+        queueKey
       );
       
       // Extract pagination info from headers
@@ -1054,7 +1245,9 @@ async function fetchTraktListItems(
  * @param limit - Items per page
  * @param sort - Sort order
  * @param genre - Genre filter
- * @param sortDirection - 'asc' or 'desc'
+ * @param sortDirection - 'asc' or 'desc',
+ * @param cacheTTL - Cache TTL
+ * @param privacy - List privacy setting ('public', 'private', 'friends')
  */
 async function fetchTraktListItemsById(
   listId: string | number,
@@ -1065,12 +1258,14 @@ async function fetchTraktListItemsById(
   sort?: string,
   genre?: string,
   sortDirection?: 'asc' | 'desc',
-  cacheTTL?: number
+  cacheTTL?: number,
+  privacy: string = 'public'
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   const typeParam = type || 'movie,show';
-  const tokenHash = accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public';
+  const isPublic = privacy === 'public';
+  const tokenHash = isPublic ? 'public' : (accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public');
   const cacheKey = `trakt-api:list-by-id:${tokenHash}:${listId}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
-  
+  const queueKey = accessToken || 'global'; 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
   return await cacheWrapGlobal(cacheKey, async () => {
@@ -1097,7 +1292,9 @@ async function fetchTraktListItemsById(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchListItemsById (${listId}, page: ${page}, genre: ${genre || 'none'})`
+        `Trakt fetchListItemsById (${listId}, page: ${page}, genre: ${genre || 'none'})`,
+        3,
+        queueKey
       );
 
       const paginationHeaders = response.headers || {};
@@ -1497,7 +1694,9 @@ async function fetchTraktCalendarShows(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchCalendarShows (startDate: ${startDate}, days: ${days})`
+        `Trakt fetchCalendarShows (startDate: ${startDate}, days: ${days})`,
+        3,
+        accessToken
       );
       
       const items = Array.isArray(response.data) ? response.data : [];

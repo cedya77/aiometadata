@@ -1863,7 +1863,7 @@ function cacheWrapTraktGenres(genreType, method) {
   // genreType should be 'movies' or 'shows'
   cacheLogger.debug(`Caching Trakt genres for type: ${genreType}`);
   // Use same TTL as MDBList genres (30 days) since Trakt genres are also stable
-  return cacheWrapGlobal(`trakt-genres-${genreType}`, method, MDBLIST_GENRES_TTL);
+  return cacheWrapGlobal(`trakt-genres-${genreType}`, method, MDBLIST_GENRES_TTL, { skipVersion: true });
 }
 
 function cacheWrapStremThruGenres(catalogUrl, method) {
