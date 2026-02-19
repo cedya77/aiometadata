@@ -1036,7 +1036,7 @@ async function fetchSimklGenreItems(
     const normalizedMedia = mediaType === 'shows' ? 'tv' : mediaType;
     const genre = String(query.genre || 'all').trim().toLowerCase();
     const type = String(query.type || 'all-types').trim().toLowerCase();
-    const country = String(query.country || 'all').trim().toLowerCase();
+    const country = String(query.country || 'all-countries').trim().toLowerCase();
     const network = String(query.network || 'all-networks').trim().toLowerCase();
     const year = String(query.year || (mediaType === 'movies' ? 'this-year' : 'all-years')).trim().toLowerCase();
     const sort = String(query.sort || (mediaType === 'movies' ? 'popular-this-week' : 'popular-today')).trim().toLowerCase();

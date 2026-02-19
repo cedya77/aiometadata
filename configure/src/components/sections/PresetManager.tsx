@@ -250,7 +250,7 @@ type RequiredKeyMode = 'custom' | 'builtin';
 type RequiredKeyTestStatus = 'idle' | 'testing' | 'valid' | 'invalid' | 'timeout' | 'error';
 type CatalogMediaType = 'movie' | 'series';
 type GuidedBinaryAnswer = 'yes' | 'no';
-type GuidedAnimeSourceAnswer = 'kitsu' | 'tvdb';
+type GuidedAnimeSourceAnswer = 'kitsu' | 'tvdb' | 'imdb';
 
 interface GuidedPresetAnswers {
   animeFan?: GuidedBinaryAnswer;
@@ -906,11 +906,6 @@ export function PresetManager() {
       animeSource: undefined,
     }));
 
-    if (answer === 'yes') {
-      completeGuidedPresetSelection('anime-lovers-mal', 'Great choice!');
-      return;
-    }
-
     setGuidedQuestionIndex(2);
   };
 
@@ -919,14 +914,29 @@ export function PresetManager() {
       ...previous,
       animeSource: source,
     }));
-
+  
+    const grouped = guidedAnswers.groupedSeasons === 'yes';
+  
+    if (grouped) {
+      if (source === 'imdb') {
+        completeGuidedPresetSelection('anime-lovers-mal', 'Great choice!');
+        setGuidedAnswers((prev) => ({ ...prev, animeSource: 'imdb' }));
+        return;
+      }
+  
+      completeGuidedPresetSelection('anime-lovers-mal', 'Great choice!');
+      return;
+    }
+  
     if (source === 'kitsu') {
       completeGuidedPresetSelection('movies-shows-anime-mal', 'Great choice!');
       return;
     }
-
+  
     completeGuidedPresetSelection('movies-shows-anime-tvdb', 'Great choice!');
   };
+  
+  
 
   const toggleStreamingProvider = (provider: TmdbProvider) => {
     if (!streamingWatchRegion) return;
@@ -1631,8 +1641,13 @@ export function PresetManager() {
         const nextConfig = { ...previousConfig };
 
         if (selectedPreset.config.providers) {
-          nextConfig.providers = { ...previousConfig.providers, ...selectedPreset.config.providers };
+          nextConfig.providers = { ...previousConfig.providers, ...selectedPreset.config.providers };        
+          if (guidedAnswers.groupedSeasons === 'yes' && guidedAnswers.animeSource === 'imdb') {
+            nextConfig.providers.anime = 'imdb';
+            nextConfig.providers.anime_id_provider = 'imdb';
+          }
         }
+        
         if (selectedPreset.config.artProviders) {
           nextConfig.artProviders = { ...previousConfig.artProviders, ...selectedPreset.config.artProviders };
         }
@@ -2058,7 +2073,7 @@ export function PresetManager() {
                             Yes, grouped seasons
                           </Button>
                           <Button type="button" variant="outline" className="justify-start" onClick={() => handleGuidedGroupedSeasonsAnswer('no')}>
-                            No, standard seasons
+                            No, Split cour
                           </Button>
                         </div>
                       </div>
@@ -2067,19 +2082,67 @@ export function PresetManager() {
                     {guidedQuestionIndex === 2 && (
                       <div className="animate-in fade-in-0 slide-in-from-right-2 duration-300 rounded-lg border border-border/60 bg-background/70 p-4 space-y-4">
                         <div className="space-y-1">
-                          <p className="text-base font-medium">Which anime metadata source do you prefer?</p>
-                          <p className="text-sm text-muted-foreground">Kitsu is anime-focused. TVDB is a safe, broad default.</p>
+                          <p className="text-base font-medium">
+                            Which anime metadata source do you prefer?
+                          </p>
+
+                          {guidedAnswers.groupedSeasons === 'yes' ? (
+                            <p className="text-sm text-muted-foreground">
+                              TVDB matching works best with grouped seasons. IMDB is the alternative.
+                            </p>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Kitsu is anime-focused. TVDB is a safe, broad default.
+                            </p>
+                          )}
                         </div>
+
                         <div className="grid gap-2 sm:grid-cols-2">
-                          <Button type="button" variant="outline" className="justify-start" onClick={() => handleGuidedAnimeSourceAnswer('kitsu')}>
-                            Kitsu
-                          </Button>
-                          <Button type="button" variant="outline" className="justify-start" onClick={() => handleGuidedAnimeSourceAnswer('tvdb')}>
-                            TVDB
-                          </Button>
+                          {guidedAnswers.groupedSeasons === 'yes' ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="justify-start"
+                                onClick={() => handleGuidedAnimeSourceAnswer('tvdb')}
+                              >
+                                TVDB
+                              </Button>
+
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="justify-start"
+                                onClick={() => handleGuidedAnimeSourceAnswer('imdb')}
+                              >
+                                IMDB
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="justify-start"
+                                onClick={() => handleGuidedAnimeSourceAnswer('kitsu')}
+                              >
+                                Kitsu
+                              </Button>
+
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="justify-start"
+                                onClick={() => handleGuidedAnimeSourceAnswer('tvdb')}
+                              >
+                                TVDB
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
+
 
                     <div className="flex items-center justify-between">
                       <Button type="button" variant="ghost" onClick={handleGuidedBack}>
