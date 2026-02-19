@@ -17,6 +17,7 @@ import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
+import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
 
 const consola = require('consola');
 const database = require('./database.js');
@@ -793,7 +794,10 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 
     const mediaType = isMovieCatalog ? 'movie' : 'tv';
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
-    const rawParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+    const storedParams = discoverMetadata?.params || catalogConfig?.metadata?.discoverParams || {};
+    const rawParams = storedParams && typeof storedParams === 'object' && !Array.isArray(storedParams)
+      ? { ...storedParams }
+      : {};
     if (genre && genre.toLowerCase() !== 'none') {
       const genreList = await getGenreList('tmdb', language, type === 'movie' ? 'movie' : 'series', config);
       const genreId = genreList.find((g: any) => g.name.toLowerCase() === genre.toLowerCase())?.id;
@@ -807,7 +811,14 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
     }
     const discoverPage = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
-    const parameters = sanitizeTmdbDiscoverParams(rawParams, language, discoverPage, config.includeAdult || false, type as 'movie' | 'series');
+    const resolvedParams = resolveDynamicTmdbDiscoverParams(rawParams, { timezone: config.timezone });
+    const parameters = sanitizeTmdbDiscoverParams(
+      resolvedParams,
+      language,
+      discoverPage,
+      config.includeAdult || false,
+      type as 'movie' | 'series'
+    );
 
     try {
       const response = mediaType === 'movie'

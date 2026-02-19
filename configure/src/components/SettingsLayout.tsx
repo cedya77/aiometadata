@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useBreakpoint } from '@/hooks/use-breakpoint';
@@ -26,6 +27,8 @@ const settingsPages = [
   { value: 'catalogs', title: 'Catalogs', component: <CatalogsSettings /> },
   { value: 'configuration', title: 'Configuration', component: <ConfigurationManager /> },
 ];
+type SettingsPageValue = (typeof settingsPages)[number]['value'];
+const SETTINGS_LAYOUT_NAVIGATE_EVENT = 'settings-layout:navigate';
 
 /**
  * A responsive layout component that displays settings in Tabs on desktop
@@ -34,10 +37,51 @@ const settingsPages = [
 export function SettingsLayout() {
   // Use our custom hook to determine if we're on a mobile-sized screen.
   const { isMobile } = useBreakpoint();
+  const [activeDesktopTab, setActiveDesktopTab] = useState<SettingsPageValue>('presets');
+  const [activeMobileSection, setActiveMobileSection] = useState<SettingsPageValue | undefined>(undefined);
+  const layoutRootRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollLayoutToTop = useCallback(() => {
+    if (layoutRootRef.current) {
+      layoutRootRef.current.scrollIntoView({ block: 'start', behavior: 'auto' });
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
+
+  useEffect(() => {
+    const handleNavigate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ tab?: SettingsPageValue; scrollToTop?: boolean }>;
+      const nextTab = customEvent.detail?.tab;
+      if (!nextTab) return;
+
+      const isKnownTab = settingsPages.some((page) => page.value === nextTab);
+      if (!isKnownTab) return;
+
+      setActiveDesktopTab(nextTab);
+      setActiveMobileSection(nextTab);
+
+      if (!isMobile && customEvent.detail?.scrollToTop !== false) {
+        window.requestAnimationFrame(() => {
+          scrollLayoutToTop();
+          window.setTimeout(scrollLayoutToTop, 120);
+        });
+      }
+    };
+
+    window.addEventListener(SETTINGS_LAYOUT_NAVIGATE_EVENT, handleNavigate as EventListener);
+    return () => {
+      window.removeEventListener(SETTINGS_LAYOUT_NAVIGATE_EVENT, handleNavigate as EventListener);
+    };
+  }, [isMobile, scrollLayoutToTop]);
   
   // Check if we're in dashboard mode FIRST (before mobile check)
-  const isDashboardMode = typeof window !== 'undefined' && (window as any).DASHBOARD_MODE;
-  const isRatingMode = typeof window !== 'undefined' && (window as any).RATING_MODE;
+  const windowFlags = typeof window !== 'undefined'
+    ? (window as Window & { DASHBOARD_MODE?: boolean; RATING_MODE?: boolean })
+    : undefined;
+  const isDashboardMode = !!windowFlags?.DASHBOARD_MODE;
+  const isRatingMode = !!windowFlags?.RATING_MODE;
 
   // If in dashboard mode, show only the dashboard (regardless of mobile/desktop)
   if (isRatingMode) {
@@ -60,8 +104,14 @@ export function SettingsLayout() {
   // --- RENDER ACCORDION ON MOBILE ---
   if (isMobile) {
     return (
-      <div className="w-full space-y-6">
-        <Accordion type="single" collapsible className="w-full">
+      <div ref={layoutRootRef} className="w-full space-y-6">
+        <Accordion
+          type="single"
+          collapsible
+          className="w-full"
+          value={activeMobileSection}
+          onValueChange={(value) => setActiveMobileSection(value ? (value as SettingsPageValue) : undefined)}
+        >
           {settingsPages.map((page, index) => (
             <AccordionItem 
               value={page.value} 
@@ -99,7 +149,12 @@ export function SettingsLayout() {
   }
 
   return (
-    <Tabs defaultValue="presets" className="w-full">
+    <div ref={layoutRootRef} className="w-full">
+      <Tabs
+        value={activeDesktopTab}
+        onValueChange={(value) => setActiveDesktopTab(value as SettingsPageValue)}
+        className="w-full"
+      >
         <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-2 bg-muted">
           {settingsPages.map((page) => (
             <TabsTrigger 
@@ -116,6 +171,7 @@ export function SettingsLayout() {
           {page.component}
         </TabsContent>
       ))}
-    </Tabs>
+      </Tabs>
+    </div>
   );
 }
