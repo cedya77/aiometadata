@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.29.0](https://github.com/cedya77/aiometadata/compare/v1.28.1...v1.29.0) (2026-02-19)
+
+
+### Features
+
+* **BYOC:** Make some aiom default catalogs editable as BYOC ([6cdbb7f](https://github.com/cedya77/aiometadata/commit/6cdbb7ff481af3e0f3251af5424c64f944d41ffc))
+
+
+### Bug Fixes
+
+* ai search re-ordering bug ([745b0f8](https://github.com/cedya77/aiometadata/commit/745b0f8330037201a962083175f01cff3ff97fb0))
+* allow anilist disconnect for guests ([9cb685a](https://github.com/cedya77/aiometadata/commit/9cb685a8d73c2be39b7e997739b89745b3b4ddbe))
+* allow anilist disconnect for guests ([89a1bcb](https://github.com/cedya77/aiometadata/commit/89a1bcb6daf893be0c0d4bf68cb7fd39d2dc899c))
+* allow pressing Enter on save config modal ([21e07f6](https://github.com/cedya77/aiometadata/commit/21e07f632f135972f40e98a4b1544a610b4d9c11))
+* **anilist & trakt:** fix expiry date retrieval for pg users ([6cdbb7f](https://github.com/cedya77/aiometadata/commit/6cdbb7ff481af3e0f3251af5424c64f944d41ffc))
+* avoid caching null ratings whilst IMDB dataset is updating ([3a6e60e](https://github.com/cedya77/aiometadata/commit/3a6e60e74cbaff4ccbd0206cd60333df9ed60dc4))
+* avoid caching null ratings whilst IMDB dataset is updating ([9a4dd24](https://github.com/cedya77/aiometadata/commit/9a4dd24784b51e52ed2c50fd1f266b1b85a7df52))
+* loading watch provider being overriden in edit mode ([c07e15b](https://github.com/cedya77/aiometadata/commit/c07e15b3802f689cd7ee39bc1bde19b2174119e5))
+* **mdblist:** prevent season items from being fetched in user lists ([4daf969](https://github.com/cedya77/aiometadata/commit/4daf9697f773675fcc81af99076c1e452d73f589))
+* memory usage displaying NaN ([b4b2227](https://github.com/cedya77/aiometadata/commit/b4b222799e0c34dc7fa9d6e09c33a19536232dfd))
+* RPDB/TOP adoption metrics stuck at 0% in admin dashboard ([769da77](https://github.com/cedya77/aiometadata/commit/769da770ae7aec6b1ccaf263a97ba7cdd13085ac))
+* RPDB/TOP adoption metrics stuck at 0% in admin dashboard ([f32daea](https://github.com/cedya77/aiometadata/commit/f32daea203d7ac112961171e882e14ef97f70720))
+* **trakt:** add DISABLE_TRAKT_SEARCH env to let instances disable trakt search for better rate limit handling ([799652f](https://github.com/cedya77/aiometadata/commit/799652f2bace0d49acfbdd545336f8add8681eb6))
+* update invalidation patterns ([f4d1d36](https://github.com/cedya77/aiometadata/commit/f4d1d368ccbc07be830943051ce198482715667e))
+* watch region being overriden in edit mode ([edf90e5](https://github.com/cedya77/aiometadata/commit/edf90e51c3bbba2138bb9555c722dfc08148e330))
+
 ## [1.28.1](https://github.com/cedya77/aiometadata/compare/v1.28.0...v1.28.1) (2026-02-15)
 
 
