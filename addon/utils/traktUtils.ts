@@ -1,3 +1,6 @@
+const TRAKT_SEARCH_DISABLED = process.env.DISABLE_TRAKT_SEARCH === 'true';
+
+
 /**
  * Fetch Trakt Up Next episodes for a user with last_activities optimization
  * Returns object with items array and last watched timestamp
@@ -1929,6 +1932,10 @@ async function fetchTraktSearchItems(
   query: string,
   config?: any
 ): Promise<any[]> {
+  if (TRAKT_SEARCH_DISABLED) {
+    logger.debug('[Trakt Search] Disabled via DISABLE_TRAKT_SEARCH env');
+    return [];
+  }
   try {
     const searchType = type === 'movie' ? 'movie' : 'show';
     const escapedQuery = escapeTraktQuery(query);
@@ -1972,6 +1979,9 @@ async function fetchTraktSearchItems(
  * @returns Array of person search results
  */
 async function fetchTraktPersonSearch(query: string): Promise<any[]> {
+  if (TRAKT_SEARCH_DISABLED) {
+    return [];
+  }
   try {
     // Escape special characters in query
     const escapedQuery = escapeTraktQuery(query);

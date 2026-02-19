@@ -344,6 +344,7 @@ const respond = function (req, res, data, opts) {
       hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
       catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
       simklTrendingPageSizeOptions: resolvedOptions,
+      traktSearchEnabled: process.env.DISABLE_TRAKT_SEARCH !== 'true',
     };
     
     // No cache to prevent cross-instance contamination
@@ -505,17 +506,20 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         data: tokenError.response?.data 
       });
       
-      return res.status(500).send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Trakt OAuth Error</title></head>
-        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-          <h1>❌ Token Exchange Failed</h1>
-          <p>Trakt returned an error: ${tokenError.response?.data?.error_description || tokenError.message}</p>
-          <p>Please check if your <b>TRAKT_REDIRECT_URI</b> exactly matches the one in your Trakt Dashboard.</p>
-        </body>
-        </html>
-      `);
+      if (tokenError.response?.status === 429) {
+        const retryAfter = tokenError.response.headers?.['retry-after'] || 30;
+        return res.status(429).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Trakt Rate Limited</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>⏳ Rate Limited</h1>
+            <p>Trakt's API is temporarily rate-limited. Please try again in ${retryAfter} seconds.</p>
+            <button onclick="this.disabled=true; this.textContent='Retrying...'; setTimeout(() => location.reload(), ${Number(retryAfter) * 1000})">Retry Automatically</button>
+          </body>
+          </html>
+        `);
+      }
     }
     
     // Get user info

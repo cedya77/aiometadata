@@ -372,15 +372,21 @@ export function SearchSettings() {
   // Check if TVDB key and rating poster keys are available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
   const hasRPDBKey = !!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster;
-  
+  const isTraktSearchEnabled= (config.apiKeys as any)?.traktSearchEnabled ?? true;;
   const movieSearchProviders = allSearchProviders.filter(p => {
-    return p.mediaType.includes('movie') && 
+    if ((p.value === 'trakt.search' || p.value === 'trakt.people.search') && !isTraktSearchEnabled) {
+      return false;
+    }
+    return p.mediaType.includes('movie') &&
            !p.value.includes('people.search') &&
            p.value !== 'mal.search.movie' &&
            p.value !== 'kitsu.search.movie';
   });
   
   const seriesSearchProviders = allSearchProviders.filter(p => {
+    if ((p.value === 'trakt.search' || p.value === 'trakt.people.search') && !isTraktSearchEnabled) {
+      return false;
+    }
     return p.mediaType.includes('series') && 
            !p.value.includes('people.search') &&
            p.value !== 'mal.search.series' &&
@@ -392,7 +398,12 @@ export function SearchSettings() {
   );
   
   const peopleSearchProviders = allSearchProviders.filter(
-    p => p.value.includes('people.search')
+    p => {
+      if (p.value === 'trakt.people.search' && !isTraktSearchEnabled) {
+        return false;
+      }
+      return p.value.includes('people.search')
+    }
   );
 
   return (
