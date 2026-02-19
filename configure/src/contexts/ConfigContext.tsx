@@ -19,6 +19,7 @@ interface ConfigContextType {
   setAuth: React.Dispatch<React.SetStateAction<AuthState>>;
   hasBuiltInTvdb: boolean;
   hasBuiltInTmdb: boolean;
+  traktSearchEnabled: boolean;
   catalogTTL: number;
   isLoading: boolean;
   sessionId: string;
@@ -317,6 +318,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasBuiltInTvdb, setHasBuiltInTvdb] = useState(false);
   const [hasBuiltInTmdb, setHasBuiltInTmdb] = useState(false);
+  const [traktSearchEnabled, setTraktSearchEnabled] = useState(true);
   const [catalogTTL, setCatalogTTL] = useState(86400); // Default to 24 hours
 
   // --- THIS IS THE CORRECTED EFFECT ---
@@ -330,6 +332,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
         setAddonVersion(envApiKeys.addonVersion || ' ');
         setHasBuiltInTvdb(!!envApiKeys.hasBuiltInTvdb);
         setHasBuiltInTmdb(!!envApiKeys.hasBuiltInTmdb);
+        setTraktSearchEnabled(envApiKeys.traktSearchEnabled ?? true);
         setCatalogTTL(envApiKeys.catalogTTL || 86400);
 
         // Layer in the server keys with the correct priority.
@@ -341,7 +344,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
             ...envApiKeys,              // Priority 2: Server-provided keys
             ...preloadedConfig?.apiKeys, // Priority 1: User's saved keys (from URL or localStorage)
             // ALWAYS override customDescriptionBlurb from server - it's instance-specific, not user-specific
-            customDescriptionBlurb: envApiKeys.customDescriptionBlurb
+            customDescriptionBlurb: envApiKeys.customDescriptionBlurb,
           }
         }));
 
@@ -384,7 +387,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId, traktSearchEnabled }}>
       {children}
     </ConfigContext.Provider>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
@@ -105,7 +105,7 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
 }
 
 export function SearchSettings() {
-  const { config, setConfig, hasBuiltInTvdb } = useConfig();
+  const { config, setConfig, hasBuiltInTvdb, traktSearchEnabled } = useConfig();
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editType, setEditType] = useState('');
@@ -372,7 +372,7 @@ export function SearchSettings() {
   // Check if TVDB key and rating poster keys are available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
   const hasRPDBKey = !!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster;
-  const isTraktSearchEnabled= (config.apiKeys as any)?.traktSearchEnabled ?? true;;
+  const isTraktSearchEnabled = traktSearchEnabled;
   const movieSearchProviders = allSearchProviders.filter(p => {
     if ((p.value === 'trakt.search' || p.value === 'trakt.people.search') && !isTraktSearchEnabled) {
       return false;
@@ -405,6 +405,29 @@ export function SearchSettings() {
       return p.value.includes('people.search')
     }
   );
+
+  useEffect(() => {
+    if (!traktSearchEnabled) {
+      const updates: Partial<Record<string, string>> = {};
+      if (config.search.providers.movie === 'trakt.search') updates.movie = 'tmdb.search';
+      if (config.search.providers.series === 'trakt.search') updates.series = 'tvdb.search';
+      if (config.search.providers.people_search_movie === 'trakt.people.search') updates.people_search_movie = 'tmdb.people.search';
+      if (config.search.providers.people_search_series === 'trakt.people.search') updates.people_search_series = 'tmdb.people.search';
+
+      if (Object.keys(updates).length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          search: {
+            ...prev.search,
+            providers: {
+              ...prev.search.providers,
+              ...updates,
+            },
+          },
+        }));
+      }
+    }
+  }, [traktSearchEnabled]);
 
   return (
     <div className="space-y-8 animate-fade-in">
