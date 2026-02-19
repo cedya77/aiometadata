@@ -7,6 +7,7 @@ const database = require('./database');
 const redis = require('./redisClient');
 const consola = require('consola');
 const { loadConfigFromDatabase } = require('./configApi.js');
+const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens');
 const packageJson = require('../../package.json');
 
 const logger = consola.create({
@@ -535,9 +536,12 @@ class ComprehensiveCatalogWarmer {
             catalogConfig?.metadata?.discoverParams ||
             null;
           if (discoverParams && typeof discoverParams === 'object') {
+            const discoverParamsForSignature = catalogId.startsWith('tmdb.discover.')
+              ? resolveDynamicTmdbDiscoverParams(discoverParams, { timezone: config.timezone })
+              : discoverParams;
             const discoverSignature = crypto
               .createHash('md5')
-              .update(stableStringify(discoverParams))
+              .update(stableStringify(discoverParamsForSignature))
               .digest('hex')
               .substring(0, 8);
             extraArgs.discoverSig = discoverSignature;

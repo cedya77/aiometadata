@@ -47,6 +47,7 @@ const { loadConfigFromDatabase } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
 const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
+const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
 const { blurImage } = require('./utils/imageProcessor');
 const { TraktClient } = require('./lib/trakt');
 const { SimklClient } = require('./lib/simkl');
@@ -1767,11 +1768,14 @@ addon.get("/api/tmdb/discover/preview", async (req, res) => {
         params[key] = value;
       }
     }
-    params.page = 1;
+    const resolvedParams = resolveDynamicTmdbDiscoverParams(params, {
+      timezone: typeof req.query?.timezone === 'string' ? req.query.timezone : undefined
+    });
+    resolvedParams.page = 1;
 
     const response = mediaType === 'movie'
-      ? await moviedb.discoverMovie(params, config)
-      : await moviedb.discoverTv(params, config);
+      ? await moviedb.discoverMovie(resolvedParams, config)
+      : await moviedb.discoverTv(resolvedParams, config);
 
     const results = (response?.results || []).map(item => ({
       id: item.id,
@@ -2949,9 +2953,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       catalogConfig?.metadata?.discoverParams ||
       null;
     if (discoverParams && typeof discoverParams === 'object') {
+      const discoverParamsForSignature = cleanId.startsWith('tmdb.discover.')
+        ? resolveDynamicTmdbDiscoverParams(discoverParams, { timezone: config.timezone })
+        : discoverParams;
       const discoverSignature = crypto
         .createHash('md5')
-        .update(stableStringify(discoverParams))
+        .update(stableStringify(discoverParamsForSignature))
         .digest('hex')
         .substring(0, 8);
       extraArgs.discoverSig = discoverSignature;

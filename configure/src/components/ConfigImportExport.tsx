@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Download, Upload, FileText, Shield, AlertCircle, Loader2, Trash2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { exportConfigFile } from "@/lib/exportConfigFile";
 
 export function ConfigImportExport() {
   const { config, setConfig, resetConfig: resetConfigFromContext, auth, setAuth } = useConfig();
@@ -43,44 +44,10 @@ export function ConfigImportExport() {
   const exportConfig = () => {
     setIsExporting(true);
     try {
-      // Create a copy of the config
-      const configToExport = { ...config };
-      
-      // Remove API keys if requested
-      if (excludeApiKeys) {
-        configToExport.apiKeys = {
-          gemini: "",
-          tmdb: "",
-          tvdb: "",
-          fanart: "",
-          rpdb: "",
-          topPoster: "",
-          mdblist: ""
-        };
-      }
-
-      // Create the export data
-      const exportData = {
-        version: addonVersion,
-        exportedAt: new Date().toISOString(),
-        config: configToExport,
-        metadata: {
-          apiKeysExcluded: excludeApiKeys,
-          totalCatalogs: config.catalogs?.length || 0,
-          enabledCatalogs: config.catalogs?.filter(c => c.enabled).length || 0
-        }
-      };
-
-      // Create and download the file
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `aiometadata-config-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      exportConfigFile(config, {
+        addonVersion,
+        excludeApiKeys,
+      });
 
       toast.success("Configuration exported successfully!", {
         description: excludeApiKeys ? "API keys were excluded from export" : "Full configuration exported"
@@ -152,7 +119,7 @@ export function ConfigImportExport() {
         // Show summary of what was imported
         const summary = {
           catalogs: importData.config.catalogs?.length || 0,
-          enabledCatalogs: importData.config.catalogs?.filter((c: any) => c.enabled).length || 0,
+          enabledCatalogs: importData.config.catalogs?.filter((catalog: { enabled?: boolean }) => catalog.enabled).length || 0,
           apiKeysIncluded: !importData.metadata?.apiKeysExcluded,
           language: importData.config.language,
           providers: importData.config.providers

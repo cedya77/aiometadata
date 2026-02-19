@@ -43,6 +43,7 @@ type DatePresetKey =
   | 'era_1980s'
   | 'clear'
   | 'custom';
+type RelativeDatePresetKey = 'today' | 'last_month' | 'last_year' | 'last_5_years' | 'last_10_years';
 
 interface TmdbGenre {
   id: number;
@@ -165,6 +166,15 @@ const DATE_PRESET_OPTIONS: Array<{ value: Exclude<DatePresetKey, 'custom'>; labe
   { value: 'era_1980s', label: '1980s' },
   { value: 'clear', label: 'Clear' },
 ];
+
+const RELATIVE_DATE_PRESET_KEYS: RelativeDatePresetKey[] = [
+  'today',
+  'last_month',
+  'last_year',
+  'last_5_years',
+  'last_10_years',
+];
+const TMDB_DYNAMIC_DATE_TOKEN_PREFIX = '__tmdb_date__';
 
 const ANILIST_SORT_OPTIONS = [
   { value: 'TRENDING_DESC', label: 'Trending' },
@@ -409,6 +419,40 @@ function getDateRangeFromPreset(preset: Exclude<DatePresetKey, 'custom'>): { fro
     default:
       return { from: '', to: '' };
   }
+}
+
+function isRelativeDatePreset(preset: DatePresetKey): preset is RelativeDatePresetKey {
+  return RELATIVE_DATE_PRESET_KEYS.includes(preset as RelativeDatePresetKey);
+}
+
+function buildTmdbDateToken(preset: RelativeDatePresetKey, bound: 'from' | 'to'): string {
+  return `${TMDB_DYNAMIC_DATE_TOKEN_PREFIX}:${preset}:${bound}`;
+}
+
+function applyDynamicTmdbDateTokens(
+  params: Record<string, string | number | boolean>,
+  catalogType: CatalogMediaType,
+  movieDatePreset: DatePresetKey,
+  seriesDatePreset: DatePresetKey,
+  releasedOnly: boolean
+): Record<string, string | number | boolean> {
+  const serializedParams = { ...params };
+
+  if (catalogType === 'movie' && releasedOnly && serializedParams['release_date.lte']) {
+    serializedParams['release_date.lte'] = buildTmdbDateToken('today', 'to');
+  }
+
+  if (catalogType === 'movie' && isRelativeDatePreset(movieDatePreset)) {
+    serializedParams['primary_release_date.gte'] = buildTmdbDateToken(movieDatePreset, 'from');
+    serializedParams['primary_release_date.lte'] = buildTmdbDateToken(movieDatePreset, 'to');
+  }
+
+  if (catalogType === 'series' && isRelativeDatePreset(seriesDatePreset)) {
+    serializedParams['first_air_date.gte'] = buildTmdbDateToken(seriesDatePreset, 'from');
+    serializedParams['first_air_date.lte'] = buildTmdbDateToken(seriesDatePreset, 'to');
+  }
+
+  return serializedParams;
 }
 
 function buildTmdbDiscoverWebUrl(
@@ -1034,10 +1078,34 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     if (fs.voteAverageRange) setVoteAverageRange(fs.voteAverageRange);
     if (typeof fs.voteCountMin === 'number') setVoteCountMin(fs.voteCountMin);
     if (fs.runtimeRange) setRuntimeRange(fs.runtimeRange);
-    if (fs.primaryReleaseFrom) setPrimaryReleaseFrom(fs.primaryReleaseFrom);
-    if (fs.primaryReleaseTo) setPrimaryReleaseTo(fs.primaryReleaseTo);
-    if (fs.firstAirFrom) setFirstAirFrom(fs.firstAirFrom);
-    if (fs.firstAirTo) setFirstAirTo(fs.firstAirTo);
+    const moviePreset = fs.movieDatePreset as DatePresetKey | undefined;
+    if (moviePreset) {
+      setMovieDatePreset(moviePreset);
+    } else if (fs.primaryReleaseFrom || fs.primaryReleaseTo) {
+      setMovieDatePreset('custom');
+    }
+    if (moviePreset && moviePreset !== 'custom') {
+      const { from, to } = getDateRangeFromPreset(moviePreset);
+      setPrimaryReleaseFrom(from);
+      setPrimaryReleaseTo(to);
+    } else {
+      if (fs.primaryReleaseFrom) setPrimaryReleaseFrom(fs.primaryReleaseFrom);
+      if (fs.primaryReleaseTo) setPrimaryReleaseTo(fs.primaryReleaseTo);
+    }
+    const loadedSeriesPreset = fs.seriesDatePreset as DatePresetKey | undefined;
+    if (loadedSeriesPreset) {
+      setSeriesDatePreset(loadedSeriesPreset);
+    } else if (fs.firstAirFrom || fs.firstAirTo) {
+      setSeriesDatePreset('custom');
+    }
+    if (loadedSeriesPreset && loadedSeriesPreset !== 'custom') {
+      const { from, to } = getDateRangeFromPreset(loadedSeriesPreset);
+      setFirstAirFrom(from);
+      setFirstAirTo(to);
+    } else {
+      if (fs.firstAirFrom) setFirstAirFrom(fs.firstAirFrom);
+      if (fs.firstAirTo) setFirstAirTo(fs.firstAirTo);
+    }
     if (fs.airDateFrom) setAirDateFrom(fs.airDateFrom);
     if (fs.airDateTo) setAirDateTo(fs.airDateTo);
     if (fs.releaseRegion) setReleaseRegion(fs.releaseRegion);
@@ -1915,8 +1983,10 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         runtimeRange,
         primaryReleaseFrom,
         primaryReleaseTo,
+        movieDatePreset,
         firstAirFrom,
         firstAirTo,
+        seriesDatePreset,
         airDateFrom,
         airDateTo,
         releaseRegion,
@@ -2057,6 +2127,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     setIsSaving(true);
     try {
       const params = buildDiscoverParams();
+      const persistedParams = discoverSource === 'tmdb'
+        ? applyDynamicTmdbDateTokens(params, catalogType, movieDatePreset, seriesDatePreset, releasedOnly)
+        : params;
       const formState = buildFormState();
   
       // Reuse existing ID when editing, generate new one when creating
@@ -2143,7 +2216,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
             version: 2,
             source: discoverSource,
             mediaType: discoverMediaType as 'movie' | 'tv' | 'series' | 'anime',
-            params,
+            params: persistedParams,
             formState,
           }
         }
