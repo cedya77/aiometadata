@@ -320,27 +320,24 @@ async function fetchTraktUpdatedShows(
 const TRAKT_SEARCH_DISABLED = process.env.DISABLE_TRAKT_SEARCH === 'true';
 
 
-// Interface for the cached state stored in Redis
 interface TraktUpNextState {
-  last_watched_at: string; // User activity timestamp
-  last_updated_at: string; // Global show update timestamp
-  shows: Record<number, any>; // Map of ShowID -> UpNextEntry
+  last_watched_at: string; 
+  last_updated_at: string;
+  shows: Record<number, any>;
 }
 
 async function fetchTraktUpNextEpisodes(
   accessToken: string,
-  cachedTimestamp?: string // Legacy parameter, largely ignored in favor of internal state
+  cachedTimestamp?: string 
 ): Promise<{ items: any[], watched_at: string }> {
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
   const stateKey = `trakt_upnext_state:${tokenHash}`;
   const startTime = Date.now();
 
-  // 1. Get Current Activity Timestamps (1 API Call)
   const lastActivity = await fetchTraktLastActivity(accessToken);
   const userWatchedAt = lastActivity?.episodes?.watched_at;
-  const globalUpdatedAt = lastActivity?.shows?.updated_at; // When shows were last updated on Trakt
+  const globalUpdatedAt = lastActivity?.shows?.updated_at; 
 
-  // 2. Load Previous State from Redis
   let state: TraktUpNextState = { last_watched_at: '', last_updated_at: '', shows: {} };
   if (redis) {
     const cachedState = await redis.get(stateKey);
@@ -450,10 +447,8 @@ async function fetchTraktUpNextEpisodes(
       // Logic to handle New Shows vs Existing Shows
       if (nextEp && nextEp.first_aired && new Date(nextEp.first_aired) <= new Date()) {
         
-        // ATTEMPT TO GET EXISTING SHOW DATA
         let showData = state.shows[showId]?.show;
 
-        // IF MISSING (New Show), FETCH IT
         if (!showData) {
           try {
             const showResponse: any = await makeRateLimitedRequest(
@@ -509,16 +504,15 @@ async function fetchTraktUpNextEpisodes(
   state.last_updated_at = globalUpdatedAt;
   
   if (redis) {
-    await redis.set(stateKey, JSON.stringify(state), 'EX', 86400 * 7); // 1 week TTL
+    await redis.set(stateKey, JSON.stringify(state), 'EX', 86400 * 7);
   }
 
-  // 7. Format Output
   const finalItems = Object.values(state.shows)
-    .filter(item => item.upNextEpisode)
-    .sort((a: any, b: any) => {
-        const dateA = new Date(a.upNextEpisode.first_aired).getTime();
-        const dateB = new Date(b.upNextEpisode.first_aired).getTime();
-        return dateB - dateA;
+    .filter(item => item.upNextEpisode !== null)
+    .sort((a, b) => {
+      const timeA = new Date(a.last_watched_at).getTime();
+      const timeB = new Date(b.last_watched_at).getTime();
+      return timeB - timeA;
     })
     .slice(0, 50);
 
