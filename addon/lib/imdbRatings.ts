@@ -49,6 +49,7 @@ function parseRedisRating(value: string): ImdbRating | null {
  */
 export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
   const isRedisReady = redis?.status === 'ready';
+  let tempRatingsHashKey: string | null = null;
 
   try {
     if (isRedisReady && redis) {
@@ -88,9 +89,10 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
     });
 
     if (!redis) return false;
-    
-    // Clear existing data before repopulating
-    await redis.del(REDIS_RATINGS_HASH);
+
+    // Stage into a temporary hash and swap atomically at the end.
+    tempRatingsHashKey = `${REDIS_RATINGS_HASH}:tmp:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    await redis.del(tempRatingsHashKey);
 
     logger.info('Streaming and parsing ratings...');
     const gunzipStream = createGunzip();
@@ -123,7 +125,7 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
         continue;
       }
 
-      pipeline.hset(REDIS_RATINGS_HASH, id, `${rating}|${votes}`);
+      pipeline.hset(tempRatingsHashKey, id, `${rating}|${votes}`);
       count++;
 
       if (count % REDIS_BATCH_SIZE === 0) {
@@ -141,6 +143,13 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
 
     logger.debug(`Filtered out ${filtered.toLocaleString()} ratings with < ${MIN_VOTES} votes.`);
 
+    if (count === 0) {
+      throw new Error('Parsed zero IMDb ratings; aborting atomic swap to preserve existing cache.');
+    }
+
+    await redis.rename(tempRatingsHashKey, REDIS_RATINGS_HASH);
+    tempRatingsHashKey = null;
+
     if (response.headers.etag && redis) {
       await redis.set(REDIS_RATINGS_ETAG_KEY, response.headers.etag as string);
     }
@@ -155,6 +164,15 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
     return true;
 
   } catch (error) {
+    if (redis && tempRatingsHashKey) {
+      try {
+        await redis.del(tempRatingsHashKey);
+      } catch (cleanupError) {
+        const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : 'Unknown cleanup error';
+        logger.warn(`Failed to clean up temporary IMDb ratings hash (${tempRatingsHashKey}):`, cleanupMessage);
+      }
+    }
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Failed to download or process ratings:', errorMessage);
     return false;
