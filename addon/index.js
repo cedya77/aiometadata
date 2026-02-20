@@ -3827,7 +3827,10 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
         if (token && token.access_token) {
           const { httpPost } = require('./utils/httpClient');
           const { Agent } = require('undici');
-          const traktDispatcher = new Agent({ connect: { timeout: 30000 } });
+          const TRAKT_PROXY_URL = process.env.TRAKT_PROXY_URL;
+          const traktDispatcher = TRAKT_PROXY_URL 
+          ? new ProxyAgent({ uri: TRAKT_PROXY_URL, requestTls: { timeout: 30000 } })
+          : new Agent({ connect: { timeout: 30000 } });
           
           // Import the rate limiting function from traktUtils
           // Since makeRateLimitedRequest is not exported, we'll use a similar pattern

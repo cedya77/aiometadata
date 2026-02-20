@@ -4,7 +4,7 @@ import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const crypto = require('crypto');
-const { Agent } = require('undici');
+import {Agent, ProxyAgent } from 'undici';
 const database = require('../lib/database.js');
 const redis = require('../lib/redisClient');
 
@@ -17,7 +17,10 @@ function sanitizeUrlForLogging(url: string): string {
   return url.replace(/(Authorization: Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
 }
 
-const traktDispatcher = new Agent({ connect: { timeout: 30000 } });
+const TRAKT_PROXY_URL = process.env.TRAKT_PROXY_URL;
+const traktDispatcher = TRAKT_PROXY_URL 
+  ? new ProxyAgent({ uri: TRAKT_PROXY_URL, requestTls: { timeout: 30000 } })
+  : new Agent({ connect: { timeout: 30000 } });
 
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.
