@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.30.0](https://github.com/cedya77/aiometadata/compare/v1.29.0...v1.30.0) (2026-02-20)
+
+
+### Features
+
+* add preset wizard ([ed8cf50](https://github.com/cedya77/aiometadata/commit/ed8cf50d9f3a39d93a838efe302e628042b43272))
+
+
+### Bug Fixes
+
+* **trakt:** overhaul rate limit handling to better handle load ([a66db07](https://github.com/cedya77/aiometadata/commit/a66db07d30b5dfce3efae8bcc4a50886db0b46c3))
+
 ## [1.29.0](https://github.com/cedya77/aiometadata/compare/v1.28.1...v1.29.0) (2026-02-19)
 
 
