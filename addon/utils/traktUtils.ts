@@ -247,37 +247,31 @@ async function makeRateLimitedRequest<T>(
 // Fetch episodes watched by the user since a specific date
 async function fetchTraktHistory(
   accessToken: string,
-  startAt: string,
-  page: number = 1,
-  limit: number = 100
-): Promise<number[]> {
+  startAt: string
+): Promise<Array<{id: number, watched_at: string}>> {
   try {
-    const url = `${TRAKT_BASE_URL}/sync/history/episodes?start_at=${startAt}&page=${page}&limit=${limit}`;
+    const url = `${TRAKT_BASE_URL}/sync/history/episodes?start_at=${startAt}&limit=100`;
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, {
-        dispatcher: traktDispatcher,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
           'trakt-api-version': '2',
           'trakt-api-key': TRAKT_CLIENT_ID
         }
       }),
-      'Trakt History Sync',
-      3,
-      accessToken
+      'Trakt History Sync', 3, accessToken
     );
     
-    // Extract unique Show IDs
-    const showIds = new Set<number>();
+    const updates: Array<{id: number, watched_at: string}> = [];
     if (Array.isArray(response.data)) {
       response.data.forEach((item: any) => {
-        if (item.show?.ids?.trakt) showIds.add(item.show.ids.trakt);
+        if (item.show?.ids?.trakt) {
+          updates.push({ id: item.show.ids.trakt, watched_at: item.watched_at });
+        }
       });
     }
-    return Array.from(showIds);
+    return updates;
   } catch (error) {
-    logger.warn(`[Trakt] Failed to fetch history: ${error.message}`);
     return [];
   }
 }
@@ -346,29 +340,29 @@ async function fetchTraktUpNextEpisodes(
     }
   }
 
-  // 3. Determine what needs refreshing
   const showsToRefresh = new Set<number>();
-  let needsFullSync = Object.keys(state.shows).length === 0; // First run
+  const historyTimestampMap = new Map<number, string>();
+  let needsFullSync = Object.keys(state.shows).length === 0; 
 
-  // Check 1: Did user watch something?
   if (!needsFullSync && userWatchedAt !== state.last_watched_at) {
-    logger.debug(`[Up Next] User watched something since ${state.last_watched_at}`);
-    // Only fetch history if we have a previous date, otherwise full sync
     if (state.last_watched_at) {
-      const historyIds = await fetchTraktHistory(accessToken, state.last_watched_at);
-      historyIds.forEach(id => showsToRefresh.add(id));
-      logger.debug(`[Up Next] Found ${historyIds.length} shows affected by user history`);
+      const historyUpdates = await fetchTraktHistory(accessToken, state.last_watched_at);
+      historyUpdates.forEach(update => {
+        showsToRefresh.add(update.id);
+        historyTimestampMap.set(update.id, update.watched_at);
+        if (state.shows[update.id]) {
+           state.shows[update.id].last_watched_at = update.watched_at;
+        }
+      });
     } else {
       needsFullSync = true;
     }
-  }
+}
 
-  // Check 2: Did any shows air new episodes?
   if (!needsFullSync && globalUpdatedAt !== state.last_updated_at) {
     logger.debug(`[Up Next] Global shows updated since ${state.last_updated_at}`);
     if (state.last_updated_at) {
       const updatedIds = await fetchTraktUpdatedShows(accessToken, state.last_updated_at);
-      // Only refresh if we are actually tracking this show in our cache
       let relevantUpdates = 0;
       updatedIds.forEach(id => {
         if (state.shows[id]) {
@@ -378,15 +372,9 @@ async function fetchTraktUpNextEpisodes(
       });
       logger.debug(`[Up Next] Found ${relevantUpdates} relevant show updates (out of ${updatedIds.length} global)`);
     } 
-    // Note: We don't force full sync on global update mismatch, just ignore if no date
   }
 
-  // 4. Execute Sync Strategy
   if (needsFullSync) {
-    // --- FULL SYNC PATH (Expensive, run once) ---
-    logger.info(`[Up Next] Performing FULL SYNC for ${tokenHash}`);
-    
-    // Get all watched shows (excludes dropped automatically via filter later)
     const [watchedShows, droppedShowIds] = await Promise.all([
       fetchTraktWatchedShows(accessToken),
       fetchTraktDroppedShows(accessToken)
@@ -394,28 +382,33 @@ async function fetchTraktUpNextEpisodes(
 
     const activeShows = watchedShows.filter(s => s.show?.ids?.trakt && !droppedShowIds.has(s.show.ids.trakt));
     
-    // Mark ALL for refresh
-    activeShows.forEach(s => showsToRefresh.add(s.show.ids.trakt));
-    
-    // Clear old state for fresh start
     state.shows = {}; 
-    
-    // Optimization: Pre-fill state with basic show info to avoid re-fetching details
     activeShows.forEach(s => {
-      state.shows[s.show.ids.trakt] = { type: 'show', show: s.show, upNextEpisode: null };
+      const id = s.show.ids.trakt;
+      showsToRefresh.add(id);
+      state.shows[id] = { 
+        type: 'show', 
+        show: s.show, 
+        upNextEpisode: null,
+        last_watched_at: s.last_watched_at 
+      };
     });
-
   } else if (showsToRefresh.size === 0) {
-    // --- FAST PATH (No API calls) ---
     logger.debug(`[Up Next] No changes detected. Serving from cache.`);
+    
     const items = Object.values(state.shows)
-      .filter(item => item.upNextEpisode) // Only return shows with next episodes
-      .sort((a, b) => new Date(b.upNextEpisode.first_aired).getTime() - new Date(a.upNextEpisode.first_aired).getTime())
+      .filter(item => item.upNextEpisode !== null) 
+      .sort((a, b) => {
+        const timeA = a.last_watched_at ? new Date(a.last_watched_at).getTime() : 0;
+        const timeB = b.last_watched_at ? new Date(b.last_watched_at).getTime() : 0;
+        return timeB - timeA; 
+      })
       .slice(0, 50);
+
     return { items, watched_at: userWatchedAt };
   }
 
-  // 5. Process Refreshes (The Queue handles concurrency)
+  // Process Refreshes (The Queue handles concurrency)
   // If we have > 50 updates, maybe we should just limit to top 50 recently watched?
   // For now, process all dirty items to keep state consistent.
   const refreshArray = Array.from(showsToRefresh);
@@ -444,10 +437,10 @@ async function fetchTraktUpNextEpisodes(
       const progress = response.data;
       const nextEp = progress?.next_episode;
 
-      // Logic to handle New Shows vs Existing Shows
       if (nextEp && nextEp.first_aired && new Date(nextEp.first_aired) <= new Date()) {
         
         let showData = state.shows[showId]?.show;
+        const existingDate = state.shows[showId]?.last_watched_at || historyTimestampMap.get(showId);
 
         if (!showData) {
           try {
@@ -471,11 +464,11 @@ async function fetchTraktUpNextEpisodes(
           }
         }
 
-        // Only proceed if we have show data (either from cache or fresh fetch)
         if (showData) {
           state.shows[showId] = {
             type: 'show',
             show: showData,
+            last_watched_at: existingDate,
             upNextEpisode: {
               season: nextEp.season,
               episode: nextEp.number,
@@ -489,7 +482,6 @@ async function fetchTraktUpNextEpisodes(
           };
         }
       } else {
-        // Show completed or not aired
         if (state.shows[showId]) {
           state.shows[showId].upNextEpisode = null;
         }
@@ -499,7 +491,6 @@ async function fetchTraktUpNextEpisodes(
     }
   }));
 
-  // 6. Save State
   state.last_watched_at = userWatchedAt;
   state.last_updated_at = globalUpdatedAt;
   
@@ -507,12 +498,20 @@ async function fetchTraktUpNextEpisodes(
     await redis.set(stateKey, JSON.stringify(state), 'EX', 86400 * 7);
   }
 
+
   const finalItems = Object.values(state.shows)
     .filter(item => item.upNextEpisode !== null)
     .sort((a, b) => {
-      const timeA = new Date(a.last_watched_at).getTime();
-      const timeB = new Date(b.last_watched_at).getTime();
-      return timeB - timeA;
+      const timeA = a.last_watched_at ? new Date(a.last_watched_at).getTime() : 0;
+      const timeB = b.last_watched_at ? new Date(b.last_watched_at).getTime() : 0;
+
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+
+      const titleA = (a.show?.title || '').toLowerCase();
+      const titleB = (b.show?.title || '').toLowerCase();
+      return titleA.localeCompare(titleB);
     })
     .slice(0, 50);
 
