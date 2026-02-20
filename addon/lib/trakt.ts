@@ -176,13 +176,13 @@ export class TraktClient {
   /**
    * Get list information by username and slug
    */
-  async getListBySlug(username: string, listSlug: string, accessToken: string): Promise<any> {
+  async getListBySlug(username: string, listSlug: string, accessToken?: string): Promise<any> {
     try {
       const headers = {
         'Content-Type': 'application/json',
         'trakt-api-version': TRAKT_API_VERSION,
         'trakt-api-key': this.clientId,
-        'Authorization': `Bearer ${accessToken}`,
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
       };
 
       const response = await httpGet(`${TRAKT_API_BASE}/users/${username}/lists/${listSlug}`, { headers });
@@ -196,13 +196,13 @@ export class TraktClient {
   /**
    * Get list information by list ID (integer)
    */
-  async getList(listId: string | number, accessToken: string): Promise<any> {
+  async getList(listId: string | number, accessToken?: string): Promise<any> {
     try {
       const headers = {
         'Content-Type': 'application/json',
         'trakt-api-version': TRAKT_API_VERSION,
         'trakt-api-key': this.clientId,
-        'Authorization': `Bearer ${accessToken}`,
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
       };
 
       const response = await httpGet(`${TRAKT_API_BASE}/lists/${listId}`, { headers });
@@ -216,13 +216,13 @@ export class TraktClient {
   /**
    * Get all lists from a Trakt user
    */
-  async getUserLists(username: string, accessToken: string): Promise<any[]> {
+  async getUserLists(username: string, accessToken?: string): Promise<any[]> {
     try {
       const headers = {
         'Content-Type': 'application/json',
         'trakt-api-version': TRAKT_API_VERSION,
         'trakt-api-key': this.clientId,
-        'Authorization': `Bearer ${accessToken}`,
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
       };
 
       const response = await httpGet(`${TRAKT_API_BASE}/users/${username}/lists`, { headers });

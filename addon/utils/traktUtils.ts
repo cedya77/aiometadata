@@ -1,4 +1,4 @@
-import { httpGet } from "./httpClient.js";
+import { httpGet, httpPost } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
@@ -9,6 +9,23 @@ const database = require('../lib/database.js');
 const redis = require('../lib/redisClient');
 
 const logger = consola.withTag('Trakt');
+const TRAKT_UNAUTHED_QUEUE_KEY = 'unauthed';
+const DEFAULT_TRAKT_GET_WINDOW_MS = 5 * 60 * 1000;
+const DEFAULT_TRAKT_GET_WINDOW_LIMIT = 1000;
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const TRAKT_GET_WINDOW_MS = parsePositiveInt(process.env.TRAKT_GET_WINDOW_MS, DEFAULT_TRAKT_GET_WINDOW_MS);
+const TRAKT_GET_WINDOW_LIMIT = parsePositiveInt(process.env.TRAKT_GET_WINDOW_LIMIT, DEFAULT_TRAKT_GET_WINDOW_LIMIT);
+const TRAKT_SAFE_MIN_TIME_MS = Math.ceil(TRAKT_GET_WINDOW_MS / TRAKT_GET_WINDOW_LIMIT);
+const TRAKT_MIN_TIME_MS = Math.max(
+  parsePositiveInt(process.env.TRAKT_MIN_TIME, TRAKT_SAFE_MIN_TIME_MS),
+  TRAKT_SAFE_MIN_TIME_MS
+);
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -34,9 +51,11 @@ function isPermanentError(error: any): boolean {
 }
 
 const QUEUE_CONFIG = {
-  concurrency: parseInt(process.env.TRAKT_CONCURRENCY || '5', 10),     
-  minTime: parseInt(process.env.TRAKT_MIN_TIME || '150', 10),        
-  rateLimitBuffer: 1000, 
+  concurrency: parsePositiveInt(process.env.TRAKT_CONCURRENCY, 5),
+  minTime: TRAKT_MIN_TIME_MS,
+  maxRequestsPerWindow: TRAKT_GET_WINDOW_LIMIT,
+  rateLimitWindowMs: TRAKT_GET_WINDOW_MS,
+  rateLimitBuffer: parsePositiveInt(process.env.TRAKT_RATE_LIMIT_BUFFER_MS, 1000),
   queueCleanupInterval: 1000 * 60 * 10 
 };
 
@@ -46,6 +65,7 @@ class RequestQueue {
   private queue: Array<() => Promise<void>> = [];
   private activeCount = 0;
   private lastRequestTime = 0;
+  private requestStarts: number[] = [];
   private pausedUntil = 0;
   private processing = false;
   public lastActivity = Date.now(); 
@@ -73,6 +93,24 @@ class RequestQueue {
     }
   }
 
+  private pruneRequestStarts(now: number) {
+    const cutoff = now - QUEUE_CONFIG.rateLimitWindowMs;
+    while (this.requestStarts.length > 0 && this.requestStarts[0] <= cutoff) {
+      this.requestStarts.shift();
+    }
+  }
+
+  private getWindowWaitMs(now: number): number {
+    this.pruneRequestStarts(now);
+
+    if (this.requestStarts.length < QUEUE_CONFIG.maxRequestsPerWindow) {
+      return 0;
+    }
+
+    const oldestRequest = this.requestStarts[0];
+    return Math.max(0, (oldestRequest + QUEUE_CONFIG.rateLimitWindowMs - now) + QUEUE_CONFIG.rateLimitBuffer);
+  }
+
   private async process() {
     if (this.processing) return;
     this.processing = true;
@@ -96,10 +134,19 @@ class RequestQueue {
         await new Promise(r => setTimeout(r, QUEUE_CONFIG.minTime - timeSinceLast));
       }
 
+      const windowWaitMs = this.getWindowWaitMs(Date.now());
+      if (windowWaitMs > 0) {
+        await new Promise(r => setTimeout(r, windowWaitMs));
+        continue;
+      }
+
       const task = this.queue.shift();
       if (task) {
         this.activeCount++;
-        this.lastRequestTime = Date.now();
+        const requestStart = Date.now();
+        this.lastRequestTime = requestStart;
+        this.requestStarts.push(requestStart);
+        this.pruneRequestStarts(requestStart);
         this.lastActivity = Date.now();
         
         task().finally(() => {
@@ -138,6 +185,33 @@ class QueueManager {
 }
 
 const queueManager = new QueueManager();
+const AUTHED_API_WRITE_INTERVAL_MS = parseInt(process.env.TRAKT_AUTHED_API_WRITE_INTERVAL_MS || '1000', 10);
+const writeChains = new Map<string, Promise<void>>();
+const lastWriteAtByToken = new Map<string, number>();
+
+async function runSerializedWrite<T>(tokenKey: string, task: () => Promise<T>): Promise<T> {
+  const key = tokenKey || 'global';
+  const previous = writeChains.get(key) || Promise.resolve();
+
+  let releaseGate: (() => void) | null = null;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+
+  writeChains.set(key, previous.catch(() => undefined).then(() => gate));
+  await previous.catch(() => undefined);
+
+  try {
+    return await task();
+  } finally {
+    if (releaseGate) {
+      releaseGate();
+    }
+    if (writeChains.get(key) === gate) {
+      writeChains.delete(key);
+    }
+  }
+}
 
 
 function sleep(ms: number): Promise<void> {
@@ -198,53 +272,54 @@ async function makeRateLimitedRequest<T>(
   queueKey: string = 'global'
 ): Promise<T> {
   const queue = queueManager.getQueue(queueKey);
+  let attempt = 0;
 
-  return queue.add(async () => {
-    let attempt = 0;
+  while (attempt <= retries) {
+    attempt++;
     
-    while (attempt <= retries) {
-      attempt++;
-      
-      try {
-        const response = await requestFn();
-        return response;
-      } catch (error: any) {
-        if (isPermanentError(error)) {
-          logger.error(`[Trakt] Permanent error: ${error.message} - ${context}`);
-          throw error;
-        }
-
-        const isLastAttempt = attempt > retries;
-
-        if (isRateLimitError(error)) {
-          const waitMs = getRetryAfterMs(error);
-          const keyShort = queueKey === 'global' ? 'GLOBAL' : `User:${queueKey.substring(0,5)}...`;
-          
-          logger.warn(`[Trakt] Rate Limit (${keyShort}). Pausing queue for ${Math.round(waitMs/1000)}s - ${context}`);
-          
-          // Pause ONLY this specific queue
-          queue.pause(waitMs);
-          
-          if (isLastAttempt) throw error;
-          
-          await sleep(waitMs);
-          continue;
-        }
-
-        if (isLastAttempt) {
-          // Log error but don't spam console for expected 404s in lookup flows
-          if (error.response?.status !== 404) {
-             logger.warn(`[Trakt] Request failed after ${retries} attempts: ${error.message} - ${context}`);
-          }
-          throw error;
-        }
-
-        const delay = 1000 * Math.pow(2, attempt - 1);
-        await sleep(delay);
+    try {
+      const response = await queue.add(() => requestFn());
+      return response;
+    } catch (error: any) {
+      if (isPermanentError(error)) {
+        logger.error(`[Trakt] Permanent error: ${error.message} - ${context}`);
+        throw error;
       }
+
+      const isLastAttempt = attempt > retries;
+
+      if (isRateLimitError(error)) {
+        const waitMs = getRetryAfterMs(error);
+        const keyShort = queueKey === TRAKT_UNAUTHED_QUEUE_KEY
+          ? 'UNAUTHED'
+          : queueKey === 'global'
+            ? 'GLOBAL'
+            : `User:${queueKey.substring(0,5)}...`;
+        
+        logger.warn(`[Trakt] Rate Limit (${keyShort}). Pausing queue for ${Math.round(waitMs/1000)}s - ${context}`);
+        
+        // Pause ONLY this specific queue
+        queue.pause(waitMs);
+        
+        if (isLastAttempt) throw error;
+        
+        await sleep(waitMs);
+        continue;
+      }
+
+      if (isLastAttempt) {
+        // Log error but don't spam console for expected 404s in lookup flows
+        if (error.response?.status !== 404) {
+           logger.warn(`[Trakt] Request failed after ${retries} attempts: ${error.message} - ${context}`);
+        }
+        throw error;
+      }
+
+      const delay = 1000 * Math.pow(2, attempt - 1);
+      await sleep(delay);
     }
-    throw new Error('Unreachable code');
-  });
+  }
+  throw new Error('Unreachable code');
 }
 
 // Fetch episodes watched by the user since a specific date
@@ -298,7 +373,7 @@ async function fetchTraktUpdatedShows(
       }),
       'Trakt Shows Updates',
       3,
-      'unauthed'
+      TRAKT_UNAUTHED_QUEUE_KEY
     );
 
     const showIds = new Set<number>();
@@ -459,7 +534,7 @@ async function fetchTraktUpNextEpisodes(
               }),
               `Trakt Show Info ${showId}`,
               3,
-              accessToken
+              TRAKT_UNAUTHED_QUEUE_KEY
             );
             showData = showResponse.data;
           } catch (err) {
@@ -739,14 +814,14 @@ async function fetchTraktUnwatchedEpisodes(
             () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/seasons?extended=full,episodes`, {
               dispatcher: traktDispatcher,
               headers: {
-                'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
                 'trakt-api-version': '2',
                 'trakt-api-key': TRAKT_CLIENT_ID
               }
             }),
             `Trakt fetchShowSeasons (unwatched ${showId})`,
-            1
+            1,
+            TRAKT_UNAUTHED_QUEUE_KEY
           );
           const seasonsData = Array.isArray(showSeasonsResp.data) ? showSeasonsResp.data : [];
           const airedMap = new Map<string, string>();
@@ -1176,7 +1251,7 @@ async function fetchTraktListItems(
   const isPublic = privacy === 'public';
   const tokenHash = isPublic ? 'public' : (accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public');
   const cacheKey = `trakt-api:list:${tokenHash}:${username}:${listSlug}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
-  const queueKey = accessToken || 'global'; 
+  const queueKey = accessToken ? accessToken : TRAKT_UNAUTHED_QUEUE_KEY;
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
   return await cacheWrapGlobal(cacheKey, async () => {
@@ -1269,7 +1344,7 @@ async function fetchTraktListItemsById(
   const isPublic = privacy === 'public';
   const tokenHash = isPublic ? 'public' : (accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public');
   const cacheKey = `trakt-api:list-by-id:${tokenHash}:${listId}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
-  const queueKey = accessToken || 'global'; 
+  const queueKey = accessToken ? accessToken : TRAKT_UNAUTHED_QUEUE_KEY;
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
   return await cacheWrapGlobal(cacheKey, async () => {
@@ -1649,7 +1724,7 @@ async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]
         }),
         `Trakt fetchGenres (${type})`,
         3,
-        'unauthed'
+        TRAKT_UNAUTHED_QUEUE_KEY
       );
 
       const timeoutPromise = new Promise<never>((_, reject) =>
@@ -1896,6 +1971,7 @@ async function getTraktListDetails(
 ): Promise<any> {
   try {
     const url = `${TRAKT_BASE_URL}/users/${username}/lists/${listSlug}`;
+    const queueKey = accessToken ? accessToken : TRAKT_UNAUTHED_QUEUE_KEY;
     
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 
@@ -1907,7 +1983,9 @@ async function getTraktListDetails(
           'trakt-api-key': TRAKT_CLIENT_ID
         }
       }),
-      `Trakt getTraktListDetails (${username}/${listSlug})`
+      `Trakt getTraktListDetails (${username}/${listSlug})`,
+      3,
+      queueKey
     );
     
     return response.data || null;
@@ -1928,6 +2006,7 @@ async function getTraktListDetailsById(
 ): Promise<any> {
   try {
     const url = `${TRAKT_BASE_URL}/lists/${listId}`;
+    const queueKey = accessToken ? accessToken : TRAKT_UNAUTHED_QUEUE_KEY;
 
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, { 
@@ -1939,7 +2018,9 @@ async function getTraktListDetailsById(
           ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
         }
       }),
-      `Trakt getTraktListDetailsById (${listId})`
+      `Trakt getTraktListDetailsById (${listId})`,
+      3,
+      queueKey
     );
 
     return response.data || null;
@@ -2048,6 +2129,7 @@ export {
   fetchTraktUnwatchedEpisodes,
   makeRateLimitedTraktRequest,
   makeAuthenticatedRateLimitedTraktRequest,
+  makeAuthenticatedRateLimitedTraktWriteRequest,
   getTraktAccessToken
 };
 
@@ -2069,7 +2151,7 @@ async function makeRateLimitedTraktRequest(url: string, context: string = 'Trakt
     }),
     context,
     3,
-    'unauthed'
+    TRAKT_UNAUTHED_QUEUE_KEY
   );
 }
 
@@ -2095,6 +2177,47 @@ async function makeAuthenticatedRateLimitedTraktRequest(url: string, accessToken
     3,
     accessToken
   );
+}
+
+/**
+ * Wrapper for authenticated write endpoints - serializes writes and enforces 1 write/sec per token.
+ * @param url - Full Trakt API URL
+ * @param data - POST payload
+ * @param accessToken - OAuth access token
+ * @param context - Context string for logging
+ */
+async function makeAuthenticatedRateLimitedTraktWriteRequest(
+  url: string,
+  data: any,
+  accessToken: string,
+  context: string = 'Trakt Proxy (Auth Write)'
+): Promise<any> {
+  return await runSerializedWrite(accessToken, async () => {
+    const lastWriteAt = lastWriteAtByToken.get(accessToken) || 0;
+    const elapsedMs = Date.now() - lastWriteAt;
+    const waitMs = AUTHED_API_WRITE_INTERVAL_MS - elapsedMs;
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+
+    const response = await makeRateLimitedRequest(
+      () => httpPost(url, data, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': '2',
+          'trakt-api-key': TRAKT_CLIENT_ID,
+          'Authorization': `Bearer ${accessToken}`
+        }
+      }),
+      context,
+      3,
+      accessToken
+    );
+
+    lastWriteAtByToken.set(accessToken, Date.now());
+    return response;
+  });
 }
 
 
@@ -2136,7 +2259,7 @@ async function fetchTraktMostFavoritedItems(
         }),
         `Trakt fetchMostFavoritedItems (${type}, period: ${period}, page: ${page}, genre: ${genre || 'none'})`,
         3,
-        'unauthed'
+        TRAKT_UNAUTHED_QUEUE_KEY
       );
       const paginationHeaders = response.headers || {};
       const totalItems = paginationHeaders['x-pagination-item-count'] 
@@ -2208,7 +2331,7 @@ async function fetchTraktTrendingItems(
         }),
         `Trakt fetchTrendingItems (${type}, page: ${page})`,
         3,
-        'unauthed'
+        TRAKT_UNAUTHED_QUEUE_KEY
       );
 
       const paginationHeaders = response.headers || {};
@@ -2265,7 +2388,7 @@ async function fetchTraktPopularItems(
         }),
         `Trakt fetchPopularItems (${type}, page: ${page})`,
         3,
-        'unauthed'
+        TRAKT_UNAUTHED_QUEUE_KEY
       );
 
       const paginationHeaders = response.headers || {};
@@ -2455,7 +2578,9 @@ async function fetchTraktSearchItems(
           'trakt-api-key': TRAKT_CLIENT_ID
         }
       }),
-      `Trakt fetchSearchItems (${searchType}, query: "${query}")`
+      `Trakt fetchSearchItems (${searchType}, query: "${query}")`,
+      3,
+      TRAKT_UNAUTHED_QUEUE_KEY
     );
 
     if (!response.data || !Array.isArray(response.data)) {
@@ -2497,7 +2622,9 @@ async function fetchTraktPersonSearch(query: string): Promise<any[]> {
           'trakt-api-key': TRAKT_CLIENT_ID
         }
       }),
-      `Trakt fetchPersonSearch (query: "${query}")`
+      `Trakt fetchPersonSearch (query: "${query}")`,
+      3,
+      TRAKT_UNAUTHED_QUEUE_KEY
     );
 
     if (!response.data || !Array.isArray(response.data)) {
@@ -2538,7 +2665,9 @@ async function fetchTraktPersonCredits(
           'trakt-api-key': TRAKT_CLIENT_ID
         }
       }),
-      `Trakt fetchPersonCredits (personId: ${personId}, type: ${type})`
+      `Trakt fetchPersonCredits (personId: ${personId}, type: ${type})`,
+      3,
+      TRAKT_UNAUTHED_QUEUE_KEY
     );
 
     if (!response.data || typeof response.data !== 'object') {
