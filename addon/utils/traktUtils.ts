@@ -22,6 +22,7 @@ const traktDispatcher = TRAKT_PROXY_URL
   ? new ProxyAgent({ uri: TRAKT_PROXY_URL, requestTls: { timeout: 30000 } })
   : new Agent({ connect: { timeout: 30000 } });
 
+
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.
  */
@@ -136,6 +137,7 @@ class QueueManager {
     }
   }
 }
+
 
 const queueManager = new QueueManager();
 

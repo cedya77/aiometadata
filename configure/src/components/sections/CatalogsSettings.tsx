@@ -2513,7 +2513,73 @@ function CatalogsSettingsContent({
       setLoadingAction(null);
     }
   };
+  const handleBulkSetDisplayType = (displayType: string) => {
+    setIsLoading(true);
+    try {
+      setConfig(prev => ({
+        ...prev,
+        catalogs: prev.catalogs.map(c => {
+          const catalogKey = `${c.id}-${c.type}`;
+          if (selectedCatalogs.some(cat => `${cat.id}-${cat.type}` === catalogKey)) {
+            return { ...c, displayType };
+          }
+          return c;
+        })
+      }));
+      toast.success(`Display type set to "${displayType}" for ${selectedCatalogs.length} catalog${selectedCatalogs.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('set display type', error as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  const handleBulkResetDisplayType = () => {
+    setIsLoading(true);
+    try {
+      const count = selectedCatalogs.filter(c => c.displayType).length;
+      setConfig(prev => ({
+        ...prev,
+        catalogs: prev.catalogs.map(c => {
+          const catalogKey = `${c.id}-${c.type}`;
+          if (selectedCatalogs.some(cat => `${cat.id}-${cat.type}` === catalogKey)) {
+            const { displayType, ...rest } = c as any;
+            return rest;
+          }
+          return c;
+        })
+      }));
+      toast.success(`Display type reset for ${count} catalog${count === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('reset display type', error as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  const handleBulkFindReplaceType = (find: string, replace: string) => {
+    setIsLoading(true);
+    try {
+      let count = 0;
+      setConfig(prev => ({
+        ...prev,
+        catalogs: prev.catalogs.map(c => {
+          const catalogKey = `${c.id}-${c.type}`;
+          if (!selectedCatalogs.some(cat => `${cat.id}-${cat.type}` === catalogKey)) return c;
+          const currentType = c.displayType || c.type;
+          if (currentType === find) {
+            count++;
+            return { ...c, displayType: replace };
+          }
+          return c;
+        })
+      }));
+      toast.success(`Replaced "${find}" → "${replace}" for ${count} catalog${count === 1 ? '' : 's'}`);
+    } catch (error) {
+      showBulkActionError('find and replace type', error as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const handleBulkDelete = () => {
     // Show confirmation dialog
     setShowDeleteConfirmDialog(true);
@@ -2825,6 +2891,9 @@ function CatalogsSettingsContent({
           onDisableRatingPosters={handleBulkDisableRatingPosters}
           onEnableRandomize={handleBulkEnableRandomize}
           onDisableRandomize={handleBulkDisableRandomize}
+          onSetDisplayType={handleBulkSetDisplayType}
+          onResetDisplayType={handleBulkResetDisplayType}
+          onFindReplaceType={handleBulkFindReplaceType}
           hasRatingPostersKey={!!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster}
           isLoading={isLoading}
           loadingAction={loadingAction}

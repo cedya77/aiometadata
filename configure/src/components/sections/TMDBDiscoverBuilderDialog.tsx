@@ -1159,11 +1159,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
 
   useEffect(() => {
     if (!isOpen || !customizeTemplate || editingCatalog) return;
-  
     const fs = customizeTemplate.formState;
     if (!fs) return;
-  
-    // Set source and basic info
+    resetState();
     setCatalogName(customizeTemplate.name);
     setDiscoverSource(customizeTemplate.source as DiscoverSource);
     setCatalogType(customizeTemplate.catalogType as CatalogMediaType);
@@ -1181,6 +1179,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     if (fs.primaryReleaseTo) setPrimaryReleaseTo(fs.primaryReleaseTo);
     if (fs.firstAirFrom) setFirstAirFrom(fs.firstAirFrom);
     if (fs.firstAirTo) setFirstAirTo(fs.firstAirTo);
+    if (fs.airDateFrom) setAirDateFrom(fs.airDateFrom);
+    if (fs.airDateTo) setAirDateTo(fs.airDateTo);
   
     // TVDB fields
     if (fs.tvdbSortDirection) setTvdbSortDirection(fs.tvdbSortDirection);

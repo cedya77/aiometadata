@@ -1,12 +1,22 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move  } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move, Type } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +33,7 @@ type BulkActionType =
   | 'disableRandomize'
   | 'moveToTop'     
   | 'moveToBottom'   
+  | 'setDisplayType'
   | null;
 
 interface BulkActionBarProps {
@@ -40,6 +51,9 @@ interface BulkActionBarProps {
   onDisableRatingPosters?: () => void;
   onEnableRandomize?: () => void;
   onDisableRandomize?: () => void;
+  onSetDisplayType?: (type: string) => void;
+  onResetDisplayType?: () => void;
+  onFindReplaceType?: (find: string, replace: string) => void;
   hasRatingPostersKey?: boolean;
   isLoading?: boolean;
   loadingAction?: BulkActionType;
@@ -60,6 +74,9 @@ export function BulkActionBar({
   onDisableRatingPosters,
   onEnableRandomize,
   onDisableRandomize,
+  onSetDisplayType,
+  onResetDisplayType,
+  onFindReplaceType,
   hasRatingPostersKey = false,
   isLoading = false,
   loadingAction = null,
@@ -80,11 +97,18 @@ export function BulkActionBar({
   const hasRandomizeEnabled = selectedCatalogs.some(c => c.randomizePerPage);
   
   // Count non-removable catalogs for tooltip
-  const nonRemovableCount = selectedCatalogs.filter(c => 
+  const nonRemovableCount = selectedCatalogs.filter(c =>
     !['mdblist', 'streaming', 'stremthru', 'custom'].includes(c.source)
   ).length;
-
-  // Don't render if no items selected
+  const [showDisplayTypeDialog, setShowDisplayTypeDialog] = useState(false);
+  const [displayTypeValue, setDisplayTypeValue] = useState('');
+  const [showFindReplaceDialog, setShowFindReplaceDialog] = useState(false);
+  const [findTypeValue, setFindTypeValue] = useState('');
+  const [replaceTypeValue, setReplaceTypeValue] = useState('');
+  const hasDisplayTypeOverrides = selectedCatalogs.some(c => c.displayType);
+  const findReplaceMatchCount = findTypeValue.trim()
+    ? selectedCatalogs.filter(c => (c.displayType || c.type) === findTypeValue.trim()).length
+    : 0;
   if (selectionCount === 0) {
     return null;
   }
@@ -421,15 +445,135 @@ export function BulkActionBar({
                   <span className="ml-2">More</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
+                {onSetDisplayType && (
+                  <>
+                    <DropdownMenuItem onClick={() => { setDisplayTypeValue(''); setShowDisplayTypeDialog(true); }} disabled={isLoading}>
+                      <Type className="h-4 w-4 mr-2" />
+                      Set Display Type
+                    </DropdownMenuItem>
+                    {hasDisplayTypeOverrides && onResetDisplayType && (
+                      <DropdownMenuItem onClick={onResetDisplayType} disabled={isLoading}>
+                        <Type className="h-4 w-4 mr-2 text-muted-foreground" />
+                        Reset Display Type
+                      </DropdownMenuItem>
+                    )}
+                    {onFindReplaceType && (
+                      <DropdownMenuItem onClick={() => { setFindTypeValue(''); setReplaceTypeValue(''); setShowFindReplaceDialog(true); }} disabled={isLoading}>
+                        <Type className="h-4 w-4 mr-2" />
+                        Find &amp; Replace Type
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={onInvertSelection} disabled={isLoading}>
                   {loadingAction === 'invert' && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   Invert Selection
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Clear Selection - desktop only */}
+            {onSetDisplayType && (
+              <Dialog open={showDisplayTypeDialog} onOpenChange={setShowDisplayTypeDialog} modal={false}>
+                <DialogContent className="sm:max-w-[320px]">
+                  <DialogHeader>
+                    <DialogTitle>Set Display Type</DialogTitle>
+                    <DialogDescription>
+                      Override the type label for {selectionCount} selected catalog{selectionCount === 1 ? '' : 's'} (e.g. "film", "shows", "anime")
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Input
+                    value={displayTypeValue}
+                    onChange={(e) => setDisplayTypeValue(e.target.value)}
+                    placeholder="e.g. film, shows, anime..."
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && displayTypeValue.trim()) {
+                        onSetDisplayType(displayTypeValue.trim());
+                        setDisplayTypeValue('');
+                        setShowDisplayTypeDialog(false);
+                      } else if (e.key === 'Escape') {
+                        setShowDisplayTypeDialog(false);
+                      }
+                    }}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowDisplayTypeDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!displayTypeValue.trim()}
+                      onClick={() => {
+                        onSetDisplayType(displayTypeValue.trim());
+                        setDisplayTypeValue('');
+                        setShowDisplayTypeDialog(false);
+                      }}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+            {onFindReplaceType && (
+              <Dialog open={showFindReplaceDialog} onOpenChange={setShowFindReplaceDialog}>
+                <DialogContent className="sm:max-w-[360px]">
+                  <DialogHeader>
+                    <DialogTitle>Find &amp; Replace Type</DialogTitle>
+                    <DialogDescription>
+                      Replace all instances of one type with another across {selectionCount} selected catalog{selectionCount === 1 ? '' : 's'}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Find</label>
+                      <Input
+                        value={findTypeValue}
+                        onChange={(e) => setFindTypeValue(e.target.value)}
+                        placeholder="Current type (e.g. movie)"
+                        autoFocus
+                      />
+                      {findTypeValue.trim() && (
+                        <p className="text-xs text-muted-foreground">
+                          {findReplaceMatchCount} catalog{findReplaceMatchCount === 1 ? '' : 's'} match{findReplaceMatchCount === 1 ? 'es' : ''}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Replace with</label>
+                      <Input
+                        value={replaceTypeValue}
+                        onChange={(e) => setReplaceTypeValue(e.target.value)}
+                        placeholder="New type (e.g. film)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && findTypeValue.trim() && replaceTypeValue.trim() && findReplaceMatchCount > 0) {
+                            onFindReplaceType(findTypeValue.trim(), replaceTypeValue.trim());
+                            setShowFindReplaceDialog(false);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowFindReplaceDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!findTypeValue.trim() || !replaceTypeValue.trim() || findReplaceMatchCount === 0}
+                      onClick={() => {
+                        onFindReplaceType(findTypeValue.trim(), replaceTypeValue.trim());
+                        setShowFindReplaceDialog(false);
+                      }}
+                    >
+                      Replace {findReplaceMatchCount > 0 ? `(${findReplaceMatchCount})` : ''}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+            {}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
