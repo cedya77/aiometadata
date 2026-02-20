@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.30.1](https://github.com/cedya77/aiometadata/compare/v1.30.0...v1.30.1) (2026-02-20)
+
+
+### Bug Fixes
+
+* **trakt:** prevent manifest from hanging due to trakt genres ([ef02401](https://github.com/cedya77/aiometadata/commit/ef024012d549301e418bbd1f6eac6c19b762dcba))
+
 ## [1.30.0](https://github.com/cedya77/aiometadata/compare/v1.29.0...v1.30.0) (2026-02-20)
 
 
