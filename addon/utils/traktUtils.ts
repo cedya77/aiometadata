@@ -2064,7 +2064,9 @@ async function makeRateLimitedTraktRequest(url: string, context: string = 'Trakt
         'trakt-api-key': TRAKT_CLIENT_ID
       }
     }),
-    context
+    context,
+    3,
+    'unauthed'
   );
 }
 
@@ -2086,7 +2088,9 @@ async function makeAuthenticatedRateLimitedTraktRequest(url: string, accessToken
         'Authorization': `Bearer ${accessToken}`
       }
     }),
-    context
+    context,
+    3,
+    accessToken
   );
 }
 

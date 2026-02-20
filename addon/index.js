@@ -581,13 +581,10 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
 
     let tokens;
-    const exchangePromise = exchangeWithRetry(traktClient, code, 3);
-    pendingTraktExchanges.set(code, exchangePromise);
-
     try {
-      tokens = await exchangePromise;
+      tokens = await traktClient.exchangeCodeForToken(code);
     } catch (tokenError) {
-      consola.error("[Trakt OAuth] Detailed Exchange Error:", {
+      consola.error("[Trakt OAuth] Exchange Error:", {
         message: tokenError.message,
         status: tokenError.response?.status,
         data: tokenError.response?.data
@@ -595,17 +592,16 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
 
       if (tokenError.response?.status === 429) {
         const retryAfter = tokenError.response.headers?.['retry-after'] || 60;
+        const waitSeconds = Math.min(Math.max(Number(retryAfter), 30), 300);
         return res.status(429).send(`
           <!DOCTYPE html>
           <html>
           <head><title>Trakt Rate Limited</title></head>
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
             <h1>⏳ Rate Limited</h1>
-            <p>Trakt's API is temporarily rate-limited. The server retried automatically but the rate limit persists.</p>
-            <p>Please wait a few minutes and try connecting again.</p>
-            <button onclick="this.disabled=true; this.textContent='Redirecting...'; setTimeout(() => window.location.href='/api/auth/trakt/authorize', ${Math.min(Number(retryAfter), 120) * 1000})">
-              Retry in ${Math.min(Number(retryAfter), 120)}s
-            </button>
+            <p>Trakt's API is temporarily rate-limited. Please wait and try again.</p>
+            <p>Estimated wait: <strong>${waitSeconds} seconds</strong></p>
+            <a href="/api/auth/trakt/authorize" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#ed1c24;color:white;text-decoration:none;border-radius:5px;">Try Again</a>
             <br><br>
             <a href="/configure" style="color: #666; text-decoration: underline;">Return to configuration</a>
           </body>
@@ -613,7 +609,6 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         `);
       }
 
-      // Non-429 errors
       return res.status(500).send(`
         <!DOCTYPE html>
         <html>
@@ -625,8 +620,6 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </body>
         </html>
       `);
-    } finally {
-      pendingTraktExchanges.delete(code);
     }
 
     usedTraktCodes.add(code);
