@@ -386,6 +386,8 @@ const LABEL_OVERRIDE_TOOLTIP_TEXT = "Clients like stremio show catalogs as such:
 const STREAMING_TIME_RANGE_OPTIONS = [
   { value: 'last_month', label: 'Last Month' },
   { value: 'last_year', label: 'Last Year' },
+  { value: 'last_5_years', label: 'Last 5 Years' },
+  { value: 'last_10_years', label: 'Last 10 Years' },
 ] as const;
 type StreamingTimeRangePreset = (typeof STREAMING_TIME_RANGE_OPTIONS)[number]['value'];
 
@@ -404,11 +406,23 @@ function getStreamingDateRange(preset: StreamingTimeRangePreset): { from: string
   const now = new Date();
   const to = formatLocalDateForInput(now);
   const fromDate = new Date(now);
-  if (preset === 'last_month') {
-    fromDate.setDate(fromDate.getDate() - 30);
-  } else {
-    fromDate.setFullYear(fromDate.getFullYear() - 1);
+
+  switch (preset) {
+    case 'last_month':
+      fromDate.setDate(fromDate.getDate() - 30);
+      break;
+    case 'last_5_years':
+      fromDate.setFullYear(fromDate.getFullYear() - 5);
+      break;
+    case 'last_10_years':
+      fromDate.setFullYear(fromDate.getFullYear() - 10);
+      break;
+    case 'last_year':
+    default:
+      fromDate.setFullYear(fromDate.getFullYear() - 1);
+      break;
   }
+
   return { from: formatLocalDateForInput(fromDate), to };
 }
 
@@ -520,7 +534,7 @@ export function PresetManager() {
   const [streamingProviderFilter, setStreamingProviderFilter] = useState('');
   const [selectedStreamingServices, setSelectedStreamingServices] = useState<SelectedStreamingService[]>([]);
   const [streamingReleasedOnly, setStreamingReleasedOnly] = useState<boolean>(false);
-  const [streamingDatePreset, setStreamingDatePreset] = useState<StreamingTimeRangePreset>('last_year');
+  const [streamingDatePreset, setStreamingDatePreset] = useState<StreamingTimeRangePreset>('last_5_years');
 
   const [showMDBListModal, setShowMDBListModal] = useState(false);
   const [isValidatingApiKey, setIsValidatingApiKey] = useState(false);
