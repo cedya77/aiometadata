@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.30.2](https://github.com/cedya77/aiometadata/compare/v1.30.1...v1.30.2) (2026-02-20)
+
+
+### Bug Fixes
+
+* **trakt:** improve routing of auth'ed vs unauth'ed requests to correct queue for trakt rate limits handling ([c0c860d](https://github.com/cedya77/aiometadata/commit/c0c860dd83a39e7f40eaa61bf077127bdccf1a95))
+
 ## [1.30.1](https://github.com/cedya77/aiometadata/compare/v1.30.0...v1.30.1) (2026-02-20)
 
 
