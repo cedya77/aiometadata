@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.30.4](https://github.com/cedya77/aiometadata/compare/v1.30.3...v1.30.4) (2026-02-20)
+
+
+### Bug Fixes
+
+* **BYOC:** fix air dates not being set correctly for tmdb now airing ([b3ba6bc](https://github.com/cedya77/aiometadata/commit/b3ba6bc397d14cf07b2cfc96366e9201bfce8474))
+* **BYOC:** fix catalog context not being reset for cloned catalogs ([b3ba6bc](https://github.com/cedya77/aiometadata/commit/b3ba6bc397d14cf07b2cfc96366e9201bfce8474))
+* trakt handling enhancements ([e4f249e](https://github.com/cedya77/aiometadata/commit/e4f249e0e05352ad48365aab8bca82c1960d32d7))
+* trakt handling enhancements ([921bc66](https://github.com/cedya77/aiometadata/commit/921bc661f6cf88ede70599ef335dfb920759afe9))
+
 ## [1.30.3](https://github.com/cedya77/aiometadata/compare/v1.30.2...v1.30.3) (2026-02-20)
 
 
