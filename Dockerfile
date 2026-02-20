@@ -1,22 +1,15 @@
 FROM node:20-alpine AS builder
-
 WORKDIR /app
-
 COPY package*.json package-lock.json* ./
-RUN npm ci
-
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY . .
 RUN npm run build && npm run build:backend
 
 FROM node:20-alpine AS runner
-
 WORKDIR /app
-
 RUN apk add --no-cache ca-certificates wget
-
 COPY package*.json package-lock.json* ./
-RUN npm ci --omit=dev
-
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 COPY --from=builder /app/addon ./addon
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
