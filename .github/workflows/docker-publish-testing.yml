@@ -7,11 +7,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push-image:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
     env:
       REGISTRY: ghcr.io
 
@@ -44,8 +50,6 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "NIGHTLY_VERSION=${VERSION}" >> "$GITHUB_ENV"
           echo "NIGHTLY_SEMVER=${SEMVER}" >> "$GITHUB_ENV"
-          echo "Computed nightly version: ${VERSION}"
-          echo "Computed semver version: ${SEMVER}"
 
       - name: Update package version for build
         env:
@@ -69,14 +73,6 @@ jobs:
             }
           "
 
-      - name: Announce nightly version
-        run: |
-          echo "Nightly build version: ${NIGHTLY_VERSION}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Package semver version: ${NIGHTLY_SEMVER}" >> "$GITHUB_STEP_SUMMARY"
-        env:
-          NIGHTLY_VERSION: ${{ env.NIGHTLY_VERSION }}
-          NIGHTLY_SEMVER: ${{ env.NIGHTLY_SEMVER }}
-
       - name: Set up QEMU for multi-arch builds
         uses: docker/setup-qemu-action@v3
 
@@ -90,39 +86,107 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=${{ env.NIGHTLY_VERSION }}
-            type=raw,value=${{ env.NIGHTLY_VERSION }}-{{sha}}
-            type=raw,value=testing
+      - name: Prepare platform pair
+        id: prep
+        run: |
+          platform=${{ matrix.platform }}
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push multi-platform image
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,scope=${{ steps.prep.outputs.pair }},mode=max
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ steps.prep.outputs.pair }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate nightly version
+        id: nightly
+        run: |
+          DATE=$(date -u +'%Y%m%d')
+          PREFIX="v.testing.${DATE}"
+          git fetch --tags --force --prune
+          COUNT=$(git tag -l "${PREFIX}.*" | wc -l | tr -d ' ')
+          if [ -z "$COUNT" ]; then
+            COUNT=0
+          fi
+          BUILD=$((COUNT + 1))
+          VERSION="${PREFIX}.${BUILD}"
+          echo "NIGHTLY_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        working-directory: /tmp/digests
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          TAGS=(
+            "$IMAGE:${{ env.NIGHTLY_VERSION }}"
+            "$IMAGE:${{ env.NIGHTLY_VERSION }}-${{ github.sha }}"
+            "$IMAGE:testing"
+          )
+          TAG_ARGS=""
+          for tag in "${TAGS[@]}"; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf "$IMAGE@sha256:%s " *)
 
       - name: Push nightly git tag
         env:
           NIGHTLY_VERSION: ${{ env.NIGHTLY_VERSION }}
         run: |
           if git rev-parse "${NIGHTLY_VERSION}" >/dev/null 2>&1; then
-            echo "Tag ${NIGHTLY_VERSION} already exists locally."
+            echo "Tag ${NIGHTLY_VERSION} already exists."
           else
             git config user.name "${GITHUB_ACTOR}"
             git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
             git tag "${NIGHTLY_VERSION}"
             git push origin "${NIGHTLY_VERSION}"
           fi
-
-
-
