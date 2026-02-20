@@ -1322,6 +1322,272 @@ async function fetchTraktListItemsById(
   }, ttl, { skipVersion: true });
 }
 
+
+const TRAKT_GENRES_FETCH_TIMEOUT = 3000;
+
+const TRAKT_FALLBACK_GENRES: Record<string, Array<{ name: string; slug: string }>> = {
+  movies: [
+    {
+      "name": "Action",
+      "slug": "action"
+    },
+    {
+      "name": "Adventure",
+      "slug": "adventure"
+    },
+    {
+      "name": "Animation",
+      "slug": "animation"
+    },
+    {
+      "name": "Anime",
+      "slug": "anime"
+    },
+    {
+      "name": "Comedy",
+      "slug": "comedy"
+    },
+    {
+      "name": "Crime",
+      "slug": "crime"
+    },
+    {
+      "name": "Documentary",
+      "slug": "documentary"
+    },
+    {
+      "name": "Donghua",
+      "slug": "donghua"
+    },
+    {
+      "name": "Drama",
+      "slug": "drama"
+    },
+    {
+      "name": "Family",
+      "slug": "family"
+    },
+    {
+      "name": "Fantasy",
+      "slug": "fantasy"
+    },
+    {
+      "name": "History",
+      "slug": "history"
+    },
+    {
+      "name": "Holiday",
+      "slug": "holiday"
+    },
+    {
+      "name": "Horror",
+      "slug": "horror"
+    },
+    {
+      "name": "Music",
+      "slug": "music"
+    },
+    {
+      "name": "Musical",
+      "slug": "musical"
+    },
+    {
+      "name": "Mystery",
+      "slug": "mystery"
+    },
+    {
+      "name": "None",
+      "slug": "none"
+    },
+    {
+      "name": "Romance",
+      "slug": "romance"
+    },
+    {
+      "name": "Science Fiction",
+      "slug": "science-fiction"
+    },
+    {
+      "name": "Short",
+      "slug": "short"
+    },
+    {
+      "name": "Sporting Event",
+      "slug": "sporting-event"
+    },
+    {
+      "name": "Superhero",
+      "slug": "superhero"
+    },
+    {
+      "name": "Suspense",
+      "slug": "suspense"
+    },
+    {
+      "name": "Thriller",
+      "slug": "thriller"
+    },
+    {
+      "name": "War",
+      "slug": "war"
+    },
+    {
+      "name": "Western",
+      "slug": "western"
+    }
+  ],
+  shows: [
+    {
+      "name": "Action",
+      "slug": "action"
+    },
+    {
+      "name": "Adventure",
+      "slug": "adventure"
+    },
+    {
+      "name": "Animation",
+      "slug": "animation"
+    },
+    {
+      "name": "Anime",
+      "slug": "anime"
+    },
+    {
+      "name": "Biography",
+      "slug": "biography"
+    },
+    {
+      "name": "Children",
+      "slug": "children"
+    },
+    {
+      "name": "Comedy",
+      "slug": "comedy"
+    },
+    {
+      "name": "Crime",
+      "slug": "crime"
+    },
+    {
+      "name": "Documentary",
+      "slug": "documentary"
+    },
+    {
+      "name": "Donghua",
+      "slug": "donghua"
+    },
+    {
+      "name": "Drama",
+      "slug": "drama"
+    },
+    {
+      "name": "Family",
+      "slug": "family"
+    },
+    {
+      "name": "Fantasy",
+      "slug": "fantasy"
+    },
+    {
+      "name": "Game Show",
+      "slug": "game-show"
+    },
+    {
+      "name": "History",
+      "slug": "history"
+    },
+    {
+      "name": "Holiday",
+      "slug": "holiday"
+    },
+    {
+      "name": "Home And Garden",
+      "slug": "home-and-garden"
+    },
+    {
+      "name": "Horror",
+      "slug": "horror"
+    },
+    {
+      "name": "Mini Series",
+      "slug": "mini-series"
+    },
+    {
+      "name": "Music",
+      "slug": "music"
+    },
+    {
+      "name": "Musical",
+      "slug": "musical"
+    },
+    {
+      "name": "Mystery",
+      "slug": "mystery"
+    },
+    {
+      "name": "News",
+      "slug": "news"
+    },
+    {
+      "name": "None",
+      "slug": "none"
+    },
+    {
+      "name": "Reality",
+      "slug": "reality"
+    },
+    {
+      "name": "Romance",
+      "slug": "romance"
+    },
+    {
+      "name": "Science Fiction",
+      "slug": "science-fiction"
+    },
+    {
+      "name": "Short",
+      "slug": "short"
+    },
+    {
+      "name": "Soap",
+      "slug": "soap"
+    },
+    {
+      "name": "Special Interest",
+      "slug": "special-interest"
+    },
+    {
+      "name": "Sporting Event",
+      "slug": "sporting-event"
+    },
+    {
+      "name": "Superhero",
+      "slug": "superhero"
+    },
+    {
+      "name": "Suspense",
+      "slug": "suspense"
+    },
+    {
+      "name": "Talk Show",
+      "slug": "talk-show"
+    },
+    {
+      "name": "Thriller",
+      "slug": "thriller"
+    },
+    {
+      "name": "War",
+      "slug": "war"
+    },
+    {
+      "name": "Western",
+      "slug": "western"
+    }
+  ],
+};
+
 /**
  * Fetch genres from Trakt API
  * @param type - 'movies' or 'shows'
@@ -1334,24 +1600,20 @@ async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]
         fetchTraktGenres('movies'),
         fetchTraktGenres('shows')
       ]);
-      
-      // Combine
       const combined = [...movies, ...shows];
-      
-      // Deduplicate by slug using a Map
       const uniqueMap = new Map();
       combined.forEach(item => {
         if (item && item.slug) {
           uniqueMap.set(item.slug, item);
         }
       });
-      
       const unique = Array.from(uniqueMap.values());
-      
-      // Sort alphabetically by name
       return unique.sort((a: any, b: any) => a.name.localeCompare(b.name));
     } catch (err) {
-      return [];
+      const combined = [...TRAKT_FALLBACK_GENRES.movies, ...TRAKT_FALLBACK_GENRES.shows];
+      const uniqueMap = new Map();
+      combined.forEach(item => uniqueMap.set(item.slug, item));
+      return Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     }
   }
 
@@ -1360,7 +1622,12 @@ async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]
     return await cacheWrapTraktGenres(type, async () => {
       const url = `${TRAKT_BASE_URL}/genres/${type}`;
       logger.debug(`Fetching Trakt genres from API for type: ${type}`);
-      const response: any = await makeRateLimitedRequest(
+
+      // -----------------------------------------------------------------------
+      // PATCH: Wrap the rate-limited request in a timeout so it doesn't block
+      // manifest generation when the Trakt queue is paused from a 429.
+      // -----------------------------------------------------------------------
+      const fetchPromise = makeRateLimitedRequest(
         () => httpGet(url, {
           dispatcher: traktDispatcher,
           headers: {
@@ -1372,12 +1639,27 @@ async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]
         `Trakt fetchGenres (${type})`
       );
 
-      if (!Array.isArray(response.data)) {
-        logger.warn(`Trakt genres API returned non-array response for ${type}`);
-        return [];
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Trakt genres fetch timed out after ${TRAKT_GENRES_FETCH_TIMEOUT}ms`)), TRAKT_GENRES_FETCH_TIMEOUT)
+      );
+
+      let response: any;
+      try {
+        response = await Promise.race([fetchPromise, timeoutPromise]);
+      } catch (timeoutOrRateLimitError: any) {
+        // On timeout or rate limit, return fallback genres instead of empty
+        logger.warn(
+          `[Trakt] Genres fetch failed for ${type}: ${timeoutOrRateLimitError.message}. ` +
+          `Using ${TRAKT_FALLBACK_GENRES[type].length} hardcoded fallback genres.`
+        );
+        return TRAKT_FALLBACK_GENRES[type] || [];
       }
 
-      // Return objects with name and slug
+      if (!Array.isArray(response.data)) {
+        logger.warn(`Trakt genres API returned non-array response for ${type}`);
+        return TRAKT_FALLBACK_GENRES[type] || [];
+      }
+
       const genres = response.data
         .map((g: any) => ({ name: g.name, slug: g.slug }))
         .filter((g: any) => g.name && g.slug);
@@ -1387,7 +1669,8 @@ async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]
     });
   } catch (err: any) {
     logger.error(`Error fetching Trakt genres for ${type}:`, err.message);
-    return [];
+    logger.info(`[Trakt] Using fallback genres for ${type}`);
+    return TRAKT_FALLBACK_GENRES[type] || [];
   }
 }
 

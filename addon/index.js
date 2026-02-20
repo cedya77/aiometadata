@@ -448,9 +448,60 @@ addon.get("/api/auth/trakt/authorize", async (req, res) => {
   }
 });
 
+const pendingTraktExchanges = new Map();
+
+// Helper: sleep with ms
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function exchangeWithRetry(traktClient, code, maxRetries = 3) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const tokens = await traktClient.exchangeCodeForToken(code);
+      return tokens;
+    } catch (error) {
+      lastError = error;
+
+      if (error.response?.status === 429) {
+        if (attempt >= maxRetries) {
+          throw error;
+        }
+
+        const retryAfterHeader = error.response.headers?.['retry-after'];
+        let waitSeconds;
+
+        if (retryAfterHeader && !isNaN(parseInt(retryAfterHeader, 10))) {
+          waitSeconds = parseInt(retryAfterHeader, 10);
+        } else {
+          waitSeconds = Math.min(10 * Math.pow(3, attempt), 120);
+        }
+
+        waitSeconds = Math.min(waitSeconds, 300);
+
+        consola.warn(
+          `[Trakt OAuth] Rate limited on token exchange (attempt ${attempt + 1}/${maxRetries + 1}). ` +
+          `Waiting ${waitSeconds}s before retry...`
+        );
+
+        await sleepMs(waitSeconds * 1000);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+
 addon.get("/api/auth/trakt/callback", async (req, res) => {
   try {
     const { code } = req.query;
+
     if (!code) {
       return res.status(400).send(`
         <!DOCTYPE html>
@@ -463,6 +514,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
+
     if (usedTraktCodes.has(code)) {
       return res.status(400).send(`
         <!DOCTYPE html>
@@ -471,16 +523,48 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
           <h1>⚠️ Code Already Used</h1>
           <p>This authorization code has already been exchanged. Please try authenticating again.</p>
+          <a href="/api/auth/trakt/authorize" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#ed1c24;color:white;text-decoration:none;border-radius:5px;">Reconnect Trakt</a>
         </body>
         </html>
       `);
     }
-    usedTraktCodes.add(code);
-    setTimeout(() => usedTraktCodes.delete(code), 120000);
+
+    if (pendingTraktExchanges.has(code)) {
+      consola.info(`[Trakt OAuth] Duplicate callback for code ${code.substring(0, 8)}... — waiting on existing exchange`);
+      try {
+        const tokens = await pendingTraktExchanges.get(code);
+
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Trakt OAuth</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>⏳ Processing</h1>
+            <p>Your Trakt authorization is already being processed. Please check your other tab/window.</p>
+          </body>
+          </html>
+        `);
+      } catch {
+        return res.status(500).send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Trakt OAuth Error</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>❌ Exchange Failed</h1>
+            <p>The token exchange failed. Please try authenticating again.</p>
+            <a href="/api/auth/trakt/authorize" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#ed1c24;color:white;text-decoration:none;border-radius:5px;">Reconnect Trakt</a>
+          </body>
+          </html>
+        `);
+      }
+    }
+
     const clientId = process.env.TRAKT_CLIENT_ID;
     const clientSecret = process.env.TRAKT_CLIENT_SECRET;
-    const redirectUri = normalizeRedirectUri(process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`);
-    
+    const redirectUri = normalizeRedirectUri(
+      process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`
+    );
+
     if (!clientId || !clientSecret) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -493,51 +577,71 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
-    
+
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
-    
-    // Exchange code for tokens
+
     let tokens;
+    const exchangePromise = exchangeWithRetry(traktClient, code, 3);
+    pendingTraktExchanges.set(code, exchangePromise);
+
     try {
-      tokens = await traktClient.exchangeCodeForToken(code);
+      tokens = await exchangePromise;
     } catch (tokenError) {
       consola.error("[Trakt OAuth] Detailed Exchange Error:", {
         message: tokenError.message,
         status: tokenError.response?.status,
-        data: tokenError.response?.data 
+        data: tokenError.response?.data
       });
-      
+
       if (tokenError.response?.status === 429) {
-        const retryAfter = tokenError.response.headers?.['retry-after'] || 30;
+        const retryAfter = tokenError.response.headers?.['retry-after'] || 60;
         return res.status(429).send(`
           <!DOCTYPE html>
           <html>
           <head><title>Trakt Rate Limited</title></head>
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
             <h1>⏳ Rate Limited</h1>
-            <p>Trakt's API is temporarily rate-limited. Please try again in ${retryAfter} seconds.</p>
-            <button onclick="this.disabled=true; this.textContent='Retrying...'; setTimeout(() => location.reload(), ${Number(retryAfter) * 1000})">Retry Automatically</button>
+            <p>Trakt's API is temporarily rate-limited. The server retried automatically but the rate limit persists.</p>
+            <p>Please wait a few minutes and try connecting again.</p>
+            <button onclick="this.disabled=true; this.textContent='Redirecting...'; setTimeout(() => window.location.href='/api/auth/trakt/authorize', ${Math.min(Number(retryAfter), 120) * 1000})">
+              Retry in ${Math.min(Number(retryAfter), 120)}s
+            </button>
+            <br><br>
+            <a href="/configure" style="color: #666; text-decoration: underline;">Return to configuration</a>
           </body>
           </html>
         `);
       }
+
+      // Non-429 errors
+      return res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>❌ Exchange Failed</h1>
+          <p>Failed to exchange authorization code: ${tokenError.message}</p>
+          <a href="/api/auth/trakt/authorize" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#ed1c24;color:white;text-decoration:none;border-radius:5px;">Try Again</a>
+        </body>
+        </html>
+      `);
+    } finally {
+      pendingTraktExchanges.delete(code);
     }
-    
-    // Get user info
+
+    usedTraktCodes.add(code);
+    setTimeout(() => usedTraktCodes.delete(code), 120000);
+
+
     const user = await traktClient.getMe(tokens.access_token);
-    
-    // Check if this Trakt user already has a token in the database
     const existingTokens = await database.getOAuthTokensByProvider('trakt');
     const existingToken = existingTokens.find(t => t.user_id.toLowerCase() === user.username.toLowerCase());
-    
+
     let tokenId;
     let saved;
-    
     if (existingToken) {
-      // Update existing token
       tokenId = existingToken.id;
       consola.info(`[Trakt OAuth] Updating existing token - tokenId: ${tokenId}, user: ${user.username}`);
-      
       saved = await database.updateOAuthToken(
         tokenId,
         tokens.access_token,
@@ -545,10 +649,8 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         tokens.expires_at
       );
     } else {
-      // Create new token
       tokenId = crypto.randomUUID();
       consola.info(`[Trakt OAuth] Creating new token - tokenId: ${tokenId}, user: ${user.username}`);
-      
       saved = await database.saveOAuthToken(
         tokenId,
         'trakt',
@@ -559,7 +661,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         tokens.scope || ''
       );
     }
-    
+
     if (!saved) {
       return res.status(500).send(`
         <!DOCTYPE html>
@@ -572,18 +674,14 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </html>
       `);
     }
-    
-    // Update config
+
     try {
       const allUsers = await database.getAllUsers();
       for (const dbUser of allUsers) {
         const userConfig = JSON.parse(dbUser.config || '{}');
         let configUpdated = false;
-        
-        // Only update if user has an existing Trakt token configured
         if (userConfig.apiKeys?.traktTokenId) {
           const currentToken = await database.getOAuthToken(userConfig.apiKeys.traktTokenId);
-          
           if (currentToken && currentToken.user_id.toLowerCase() === user.username.toLowerCase()) {
             userConfig.apiKeys.traktTokenId = tokenId;
             configUpdated = true;
@@ -592,8 +690,6 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
             consola.warn(`[Trakt OAuth] User ${dbUser.id} has missing Trakt token ${userConfig.apiKeys.traktTokenId} - manual reconnection required`);
           }
         }
-        
-        // Save updated config if changed
         if (configUpdated) {
           await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
           configCache.del(dbUser.id);
@@ -602,8 +698,7 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     } catch (configError) {
       consola.warn(`[Trakt OAuth] Warning: Could not auto-update user configs - ${configError.message}`);
     }
-    
-    // Display success page with token ID
+
     res.send(`
       <!DOCTYPE html>
       <html>
@@ -625,13 +720,10 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         <div class="container">
           <h1>✅ Trakt OAuth Successful</h1>
           <p>Your Trakt account <strong>${user.username}</strong> has been authorized!</p>
-          
           <div class="token-box">
             <div class="token" id="tokenId">${tokenId}</div>
           </div>
-          
           <button onclick="copyToken()">📋 Copy Token ID</button>
-          
           <div class="instructions">
             <h3>📝 Next Steps:</h3>
             <ol>
@@ -644,30 +736,30 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
             <p><strong>⚠️ Important:</strong> Keep this Token ID private. Anyone with this ID can access your Trakt account through this addon.</p>
           </div>
         </div>
-        
         <script>
           function copyToken() {
             const tokenText = document.getElementById('tokenId').textContent;
             navigator.clipboard.writeText(tokenText).then(() => {
-              alert('✅ Token ID copied to clipboard!');
-            }).catch(err => {
-              alert('❌ Failed to copy. Please select and copy manually.');
+              const btn = event.target;
+              btn.textContent = '✅ Copied!';
+              setTimeout(() => btn.textContent = '📋 Copy Token ID', 2000);
             });
           }
         </script>
       </body>
       </html>
     `);
+
   } catch (error) {
-    consola.error("[Trakt OAuth] Callback error:", error);
+    consola.error("[Trakt OAuth] Unexpected callback error:", error);
     res.status(500).send(`
       <!DOCTYPE html>
       <html>
       <head><title>Trakt OAuth Error</title></head>
       <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-        <h1>❌ OAuth Error</h1>
-        <p>An error occurred during authentication: ${error.message}</p>
-        <p><a href="${process.env.HOST_NAME}/configure">← Back to Configuration</a></p>
+        <h1>❌ Unexpected Error</h1>
+        <p>${error.message || 'An unexpected error occurred during authorization.'}</p>
+        <a href="/api/auth/trakt/authorize" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#ed1c24;color:white;text-decoration:none;border-radius:5px;">Try Again</a>
       </body>
       </html>
     `);
