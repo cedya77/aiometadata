@@ -71,7 +71,34 @@ const normalizeRedirectUri = (uri) => {
   return `https://${trimmed.replace(/^\/+/, '')}`;
 };
 const usedTraktCodes = new Set();
+const pendingTraktOAuthStates = new Map();
+const TRAKT_OAUTH_STATE_TTL_MS = parseInt(process.env.TRAKT_OAUTH_STATE_TTL_MS || String(10 * 60 * 1000), 10);
 const usedAnilistCodes = new Set();
+
+function createTraktOAuthState() {
+  const state = crypto.randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + TRAKT_OAUTH_STATE_TTL_MS;
+  pendingTraktOAuthStates.set(state, expiresAt);
+
+  // Opportunistic cleanup to keep the in-memory map bounded.
+  const now = Date.now();
+  for (const [storedState, storedExpiresAt] of pendingTraktOAuthStates.entries()) {
+    if (storedExpiresAt <= now) {
+      pendingTraktOAuthStates.delete(storedState);
+    }
+  }
+
+  return state;
+}
+
+function consumeTraktOAuthState(state) {
+  if (!state || typeof state !== 'string') return false;
+  const expiresAt = pendingTraktOAuthStates.get(state);
+  if (!expiresAt) return false;
+  pendingTraktOAuthStates.delete(state);
+  return expiresAt > Date.now();
+}
+
 function shuffleMetas(metas = []) {
   const shuffled = Array.isArray(metas) ? metas.slice() : [];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -438,8 +465,8 @@ addon.get("/api/auth/trakt/authorize", async (req, res) => {
     
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
     
-    // Get authorization URL (no state needed - token ID generated in callback)
-    const authUrl = traktClient.getAuthorizationUrl();
+    const state = createTraktOAuthState();
+    const authUrl = traktClient.getAuthorizationUrl(state);
     
     res.redirect(authUrl);
   } catch (error) {
@@ -500,7 +527,8 @@ async function exchangeWithRetry(traktClient, code, maxRetries = 3) {
 
 addon.get("/api/auth/trakt/callback", async (req, res) => {
   try {
-    const { code } = req.query;
+    const code = Array.isArray(req.query.code) ? req.query.code[0] : req.query.code;
+    const state = Array.isArray(req.query.state) ? req.query.state[0] : req.query.state;
 
     if (!code) {
       return res.status(400).send(`
@@ -529,10 +557,24 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
       `);
     }
 
+    if (!state || !consumeTraktOAuthState(state)) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Trakt OAuth Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>OAuth State Error</h1>
+          <p>The OAuth state is missing, expired, or invalid. Please try again.</p>
+          <a href="/api/auth/trakt/authorize" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#ed1c24;color:white;text-decoration:none;border-radius:5px;">Reconnect Trakt</a>
+        </body>
+        </html>
+      `);
+    }
+
     if (pendingTraktExchanges.has(code)) {
       consola.info(`[Trakt OAuth] Duplicate callback for code ${code.substring(0, 8)}... — waiting on existing exchange`);
       try {
-        const tokens = await pendingTraktExchanges.get(code);
+        await pendingTraktExchanges.get(code);
 
         return res.send(`
           <!DOCTYPE html>
@@ -581,8 +623,10 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     const traktClient = new TraktClient(clientId, clientSecret, redirectUri);
 
     let tokens;
+    const exchangePromise = exchangeWithRetry(traktClient, code);
+    pendingTraktExchanges.set(code, exchangePromise);
     try {
-      tokens = await traktClient.exchangeCodeForToken(code);
+      tokens = await exchangePromise;
     } catch (tokenError) {
       consola.error("[Trakt OAuth] Exchange Error:", {
         message: tokenError.message,
@@ -620,6 +664,8 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
         </body>
         </html>
       `);
+    } finally {
+      pendingTraktExchanges.delete(code);
     }
 
     usedTraktCodes.add(code);
@@ -1084,27 +1130,139 @@ addon.post("/api/auth/simkl/disconnect", async (req, res) => {
   }
 });
 
-// Proxy endpoint for authenticated Trakt API calls
+function normalizeTraktEndpoint(endpoint) {
+  if (typeof endpoint !== 'string') return '';
+  const normalized = endpoint.trim();
+  if (!normalized) return '';
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+function isOptionalUsersRoute(pathnameLower) {
+  const parts = pathnameLower.split('/').filter(Boolean);
+  // /users/{id}
+  if (parts.length === 2) return true;
+  // /users/{id}/stats
+  if (parts.length === 3 && parts[2] === 'stats') return true;
+  // /users/{id}/lists
+  if (parts.length === 3 && parts[2] === 'lists') return true;
+  // /users/{id}/lists/{list_id}
+  if (parts.length === 4 && parts[2] === 'lists') return true;
+  // /users/{id}/lists/{list_id}/items[...]
+  if (parts.length >= 5 && parts[2] === 'lists' && parts[4] === 'items') return true;
+  return false;
+}
+
+function resolveTraktProxyAuthMode(pathname) {
+  const pathnameLower = pathname.toLowerCase();
+
+  // Auth required routes.
+  if (
+    pathnameLower.startsWith('/calendars/my/') ||
+    pathnameLower.startsWith('/recommendations/') ||
+    pathnameLower.startsWith('/sync/') ||
+    pathnameLower.startsWith('/users/hidden/') ||
+    pathnameLower.includes('/progress/watched')
+  ) {
+    return 'required';
+  }
+
+  // OAuth optional routes we currently proxy.
+  if (pathnameLower.startsWith('/users/') && isOptionalUsersRoute(pathnameLower)) {
+    return 'optional';
+  }
+
+  // Known public/unauthed route groups we currently proxy.
+  if (
+    pathnameLower.startsWith('/genres/') ||
+    pathnameLower.startsWith('/lists/') ||
+    pathnameLower.startsWith('/movies/') ||
+    pathnameLower.startsWith('/shows/') ||
+    pathnameLower.startsWith('/search/') ||
+    pathnameLower.startsWith('/people/')
+  ) {
+    return 'unauthed';
+  }
+
+  // Default to auth-required for unknown routes.
+  return 'required';
+}
+
+// Proxy endpoint for Trakt API calls with auth-aware routing
 addon.post("/api/trakt/proxy", async (req, res) => {
   try {
     const { tokenId, endpoint, method = 'GET' } = req.body;
     
-    if (!tokenId || !endpoint) {
-      return res.status(400).json({ error: "tokenId and endpoint are required" });
+    if (!endpoint) {
+      return res.status(400).json({ error: "endpoint is required" });
     }
 
-    // Get the access token from database
-    const token = await database.getOAuthToken(tokenId);
-    if (!token) {
-      return res.status(404).json({ error: "Token not found" });
+    const normalizedMethod = String(method || 'GET').toUpperCase();
+    if (normalizedMethod !== 'GET') {
+      return res.status(405).json({ error: "Only GET is supported by this proxy endpoint" });
     }
 
+    const normalizedEndpoint = normalizeTraktEndpoint(endpoint);
+    if (!normalizedEndpoint) {
+      return res.status(400).json({ error: "endpoint must be a non-empty string" });
+    }
 
-    const { makeAuthenticatedRateLimitedTraktRequest } = require('./utils/traktUtils');
-    
-    // Make the authenticated, rate-limited request to Trakt API
-    const traktUrl = `https://api.trakt.tv${endpoint}`;
-    const response = await makeAuthenticatedRateLimitedTraktRequest(traktUrl, token.access_token, `Trakt Proxy - ${endpoint}`);
+    const traktUrl = `https://api.trakt.tv${normalizedEndpoint}`;
+    const pathname = new URL(traktUrl).pathname;
+
+    const authMode = resolveTraktProxyAuthMode(pathname);
+
+    const {
+      makeRateLimitedTraktRequest,
+      makeAuthenticatedRateLimitedTraktRequest,
+      getTraktAccessToken
+    } = require('./utils/traktUtils');
+
+    let accessToken = null;
+    if (tokenId) {
+      accessToken = await getTraktAccessToken({ apiKeys: { traktTokenId: tokenId } });
+      if (!accessToken) {
+        const token = await database.getOAuthToken(tokenId);
+        accessToken = token?.access_token || null;
+      }
+    }
+
+    if (authMode === 'required' && !accessToken) {
+      return res.status(400).json({ error: "tokenId is required for this endpoint" });
+    }
+
+    let response;
+
+    if (authMode === 'unauthed') {
+      response = await makeRateLimitedTraktRequest(traktUrl, `Trakt Proxy (Unauthed) - ${normalizedEndpoint}`);
+    } else if (authMode === 'optional') {
+      if (accessToken) {
+        try {
+          response = await makeRateLimitedTraktRequest(
+            traktUrl,
+            `Trakt Proxy (Optional->Unauthed) - ${normalizedEndpoint}`
+          );
+        } catch (optionalError) {
+          const status = optionalError?.response?.status;
+          if (status !== 401 && status !== 403 && status !== 404) {
+            throw optionalError;
+          }
+          response = await makeAuthenticatedRateLimitedTraktRequest(
+            traktUrl,
+            accessToken,
+            `Trakt Proxy (Optional->Authed Fallback) - ${normalizedEndpoint}`
+          );
+        }
+      } else {
+        response = await makeRateLimitedTraktRequest(traktUrl, `Trakt Proxy (Optional) - ${normalizedEndpoint}`);
+      }
+    } else {
+      response = await makeAuthenticatedRateLimitedTraktRequest(
+        traktUrl,
+        accessToken,
+        `Trakt Proxy (Auth Required) - ${normalizedEndpoint}`
+      );
+    }
+
     res.json(response.data);
   } catch (error) {
     consola.error("[Trakt Proxy] Error:", error.message);
@@ -3823,20 +3981,16 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
     const sendToTrakt = services ? (services.trakt === true) : true; // Default to true if services not specified
     if (sendToTrakt && config.apiKeys?.traktTokenId) {
       try {
-        const token = await database.getOAuthToken(config.apiKeys.traktTokenId);
-        if (token && token.access_token) {
-          const { httpPost } = require('./utils/httpClient');
-          const { Agent } = require('undici');
-          const TRAKT_PROXY_URL = process.env.TRAKT_PROXY_URL;
-          const traktDispatcher = TRAKT_PROXY_URL 
-          ? new ProxyAgent({ uri: TRAKT_PROXY_URL, requestTls: { timeout: 30000 } })
-          : new Agent({ connect: { timeout: 30000 } });
-          
-          // Import the rate limiting function from traktUtils
-          // Since makeRateLimitedRequest is not exported, we'll use a similar pattern
-          const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
+        const { getTraktAccessToken, makeAuthenticatedRateLimitedTraktWriteRequest } = require('./utils/traktUtils');
+        let accessToken = await getTraktAccessToken(config);
+        if (!accessToken) {
+          const fallbackToken = await database.getOAuthToken(config.apiKeys.traktTokenId);
+          accessToken = fallbackToken?.access_token || null;
+        }
+        if (!accessToken) {
+          results.trakt.error = "Trakt token not found or expired";
+        } else {
           const TRAKT_BASE_URL = 'https://api.trakt.tv';
-          
           const traktType = type.toLowerCase() === 'series' ? 'shows' : 'movies';
           const tmdbId = allIds.tmdbId;
           const imdbId = allIds.imdbId;
@@ -3845,9 +3999,9 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
           if (tmdbId || imdbId || tvdbId) {
             // Build IDs object for Trakt (only include non-null values)
             const ids = {};
-            if (tmdbId) ids.tmdb = parseInt(tmdbId);
+            if (tmdbId) ids.tmdb = parseInt(tmdbId, 10);
             if (imdbId) ids.imdb = imdbId;
-            if (tvdbId) ids.tvdb = parseInt(tvdbId);
+            if (tvdbId) ids.tvdb = parseInt(tvdbId, 10);
             
             // Trakt sync/ratings payload format
             const payload = {
@@ -3859,19 +4013,14 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
               ]
             };
 
-            // Use httpPost directly with rate limiting considerations
-            // Trakt returns 201 (Created) on successful rating submission
-            const response = await httpPost(`${TRAKT_BASE_URL}/sync/ratings`, payload, {
-              dispatcher: traktDispatcher,
-              headers: {
-                'Authorization': `Bearer ${token.access_token}`,
-                'Content-Type': 'application/json',
-                'trakt-api-version': '2',
-                'trakt-api-key': TRAKT_CLIENT_ID
-              }
-            });
-            
-            // httpClient treats 200-299 as success, so 201 is handled correctly
+            const response = await makeAuthenticatedRateLimitedTraktWriteRequest(
+              `${TRAKT_BASE_URL}/sync/ratings`,
+              payload,
+              accessToken,
+              `Trakt submitRating (${traktType})`
+            );
+
+            // Trakt returns 201 (Created) on successful rating submission.
             results.trakt.success = true;
             consola.info(`[Rating] Successfully rated ${traktType} on Trakt with score ${score} (status: ${response.status})`);
           } else {
