@@ -102,6 +102,13 @@ export class TraktClient {
         client_secret: this.clientSecret,
         redirect_uri: this.redirectUri,
         grant_type: 'refresh_token',
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'trakt-api-version': TRAKT_API_VERSION,
+          'trakt-api-key': this.clientId,
+          'User-Agent': `AIOMetadata/${process.env.npm_package_version || '1.0.0'}`
+        }
       });
 
       const data = response.data;

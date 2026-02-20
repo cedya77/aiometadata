@@ -295,7 +295,7 @@ async function fetchTraktUpdatedShows(
       }),
       'Trakt Shows Updates',
       3,
-      'global'
+      'unauthed'
     );
 
     const showIds = new Set<number>();
@@ -537,7 +537,9 @@ async function fetchTraktLastActivity(accessToken: string): Promise<any> {
         'trakt-api-key': TRAKT_CLIENT_ID
       }
     }),
-    'Trakt fetchLastActivity'
+    'Trakt fetchLastActivity',
+    3,
+    accessToken
   );
   return response.data;
 }
@@ -559,7 +561,9 @@ async function fetchTraktWatchedShows(accessToken: string): Promise<any[]> {
         'trakt-api-key': TRAKT_CLIENT_ID
       }
     }),
-    'Trakt fetchWatchedShows'
+    'Trakt fetchWatchedShows',
+    3,
+    accessToken
   );
   return Array.isArray(response.data) ? response.data : [];
 }
@@ -590,7 +594,9 @@ async function fetchTraktDroppedShows(accessToken: string): Promise<Set<number>>
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        'Trakt fetchDroppedShows'
+        'Trakt fetchDroppedShows',
+        3,
+        accessToken
       );
       
       // Extract pagination info from headers
@@ -641,7 +647,9 @@ async function fetchTraktShowWatchedProgress(accessToken: string, showId: string
         'trakt-api-key': TRAKT_CLIENT_ID
       }
     }),
-    `Trakt fetchShowWatchedProgress (${showId})`
+    `Trakt fetchShowWatchedProgress (${showId})`,
+    3,
+    accessToken
   );
   return response.data;
 }
@@ -1636,7 +1644,9 @@ async function fetchTraktGenres(type: 'movies' | 'shows' | 'all'): Promise<any[]
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchGenres (${type})`
+        `Trakt fetchGenres (${type})`,
+        3,
+        'unauthed'
       );
 
       const timeoutPromise = new Promise<never>((_, reject) =>
@@ -2117,7 +2127,9 @@ async function fetchTraktMostFavoritedItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchMostFavoritedItems (${type}, period: ${period}, page: ${page}, genre: ${genre || 'none'})`
+        `Trakt fetchMostFavoritedItems (${type}, period: ${period}, page: ${page}, genre: ${genre || 'none'})`,
+        3,
+        'unauthed'
       );
       const paginationHeaders = response.headers || {};
       const totalItems = paginationHeaders['x-pagination-item-count'] 
@@ -2187,7 +2199,9 @@ async function fetchTraktTrendingItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchTrendingItems (${type}, page: ${page})`
+        `Trakt fetchTrendingItems (${type}, page: ${page})`,
+        3,
+        'unauthed'
       );
 
       const paginationHeaders = response.headers || {};
@@ -2242,7 +2256,9 @@ async function fetchTraktPopularItems(
             'trakt-api-key': TRAKT_CLIENT_ID
           }
         }),
-        `Trakt fetchPopularItems (${type}, page: ${page})`
+        `Trakt fetchPopularItems (${type}, page: ${page})`,
+        3,
+        'unauthed'
       );
 
       const paginationHeaders = response.headers || {};
