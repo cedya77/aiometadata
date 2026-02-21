@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2 } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -41,6 +41,7 @@ import {
   showBulkActionError
 } from '@/utils/toastHelpers';
 import { toast } from 'sonner';
+import { buildExportPayload, exportToJson, parseImportJson, fetchAndParseUrl, mergeCatalogs, ImportResult } from '@/lib/catalogShare';
 
 interface CustomizeTemplate {
   source: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
@@ -1930,7 +1931,21 @@ function CatalogsSettingsContent({
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [exportJson, setExportJson] = useState('');
+  const [exportStats, setExportStats] = useState<{ exported: number; skipped: number; skippedReasons: string[] } | null>(null);
+  const [includeUserSpecific, setIncludeUserSpecific] = useState(false);
+  const [importTab, setImportTab] = useState<'paste' | 'url' | 'file'>('paste');
+  const [importText, setImportText] = useState('');
+  const [importUrl, setImportUrl] = useState('');
+  const [importPreview, setImportPreview] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState('');
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [isImportLoading, setIsImportLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [excludeDisabled, setExcludeDisabled] = useState(false);
+  const [builtOnly, setBuiltOnly] = useState(false);
   const [loadingAction, setLoadingAction] = useState<
     | 'enable'
     | 'disable'
@@ -2580,6 +2595,92 @@ function CatalogsSettingsContent({
       setIsLoading(false);
     }
   };
+
+  const handleExport = () => {
+    try {
+      const { payload, exportedCount, skippedCount, skippedReasons } = buildExportPayload(
+        config.catalogs,
+        includeUserSpecific,
+        excludeDisabled,
+        builtOnly
+      );
+      setExportJson(exportToJson(payload));
+      setExportStats({ exported: exportedCount, skipped: skippedCount, skippedReasons });
+      setShowExportDialog(true);
+    } catch (error) {
+      toast.error('Failed to export', { description: (error as Error).message });
+    }
+  };
+
+  const handleReExport = (includeUser?: boolean, excludeDisabledOverride?: boolean, builtOnlyOverride?: boolean) => {
+    try {
+      const { payload, exportedCount, skippedCount, skippedReasons } = buildExportPayload(
+        config.catalogs,
+        includeUser ?? includeUserSpecific,
+        excludeDisabledOverride ?? excludeDisabled,
+        builtOnlyOverride ?? builtOnly
+      );
+      setExportJson(exportToJson(payload));
+      setExportStats({ exported: exportedCount, skipped: skippedCount, skippedReasons });
+    } catch (error) {
+      toast.error('Failed to export', { description: (error as Error).message });
+    }
+  };
+
+  const handleImportFromText = (value: string) => {
+    setImportText(value);
+    setImportError('');
+    setImportPreview(null);
+    if (!value.trim()) return;
+    try {
+      const result = parseImportJson(value);
+      setImportPreview(result);
+    } catch (error) {
+      setImportError((error as Error).message);
+    }
+  };
+
+  const handleImportFromUrl = async () => {
+    if (!importUrl.trim()) return;
+    setIsImportLoading(true);
+    setImportError('');
+    setImportPreview(null);
+    try {
+      const result = await fetchAndParseUrl(importUrl.trim());
+      setImportPreview(result);
+    } catch (error) {
+      setImportError((error as Error).message);
+    } finally {
+      setIsImportLoading(false);
+    }
+  };
+
+  const handleImportConfirm = () => {
+    if (!importPreview) return;
+    try {
+      const newCatalogs = mergeCatalogs(config.catalogs, importPreview.payload.catalogs, importMode);
+      setConfig(prev => ({ ...prev, catalogs: newCatalogs }));
+      toast.success(`Imported ${importPreview.catalogCount} catalogs`, {
+        description: importMode === 'replace'
+          ? 'Matching catalogs replaced, new catalogs added'
+          : 'Existing catalogs updated, new catalogs added',
+      });
+      setShowImportDialog(false);
+    } catch (error) {
+      toast.error('Import failed', { description: (error as Error).message });
+    }
+  };
+
+  const resetImportDialog = () => {
+    setImportText('');
+    setImportUrl('');
+    setImportPreview(null);
+    setImportError('');
+    setImportTab('paste');
+    setImportMode('merge');
+    setIsImportLoading(false);
+  };
+
   const handleBulkDelete = () => {
     // Show confirmation dialog
     setShowDeleteConfirmDialog(true);
@@ -2702,8 +2803,15 @@ function CatalogsSettingsContent({
               <Wand2 className="h-4 w-4 mr-2" />
               Build Your Catalog
             </Button>
-            
-            <div className="hidden sm:block h-6 w-px bg-border" /> {/* Divider - hidden on mobile */}
+            <Button onClick={handleExport} size="sm" variant="outline">
+              <Upload className="h-4 w-4 mr-2" />
+              Share Setup
+            </Button>
+            <Button onClick={() => { resetImportDialog(); setShowImportDialog(true); }} size="sm" variant="outline">
+              <Download className="h-4 w-4 mr-2" />
+              Import Setup
+            </Button>
+            <div className="hidden sm:block h-6 w-px bg-border" /> {}
             
             <TooltipProvider delayDuration={200}>
               <div className="flex items-center flex-wrap gap-1">
@@ -3018,6 +3126,292 @@ function CatalogsSettingsContent({
         cancelText="Cancel"
         variant="destructive"
       />
+
+      {/* Export Setup Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Share Your Catalog Setup</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Copy the JSON below or download it to share on Discord.
+          </p>
+          {exportStats && (
+            <div className="text-sm text-muted-foreground">
+              <p>{exportStats.exported} catalogs exported{exportStats.skipped > 0 && `, ${exportStats.skipped} skipped`}</p>
+              {exportStats.skippedReasons.length > 0 && exportStats.skippedReasons.length <= 5 && (
+                <p className="text-xs mt-1 text-muted-foreground/60">
+                  Skipped: {exportStats.skippedReasons.join(', ')}
+                </p>
+              )}
+            </div>
+          )}
+          <textarea
+            readOnly
+            value={exportJson}
+            className="w-full h-48 p-3 text-xs font-mono bg-muted rounded-md border resize-none focus:outline-none"
+            onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+          />
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="include-user-specific"
+                checked={includeUserSpecific}
+                onChange={(e) => {
+                  setIncludeUserSpecific(e.target.checked);
+                  handleReExport(e.target.checked, undefined, undefined);
+                }}
+                className="rounded"
+              />
+              <label htmlFor="include-user-specific" className="text-sm">
+                Include user-specific catalogs (watchlists, personal lists)
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="exclude-disabled"
+                checked={excludeDisabled}
+                onChange={(e) => {
+                  setExcludeDisabled(e.target.checked);
+                  handleReExport(undefined, e.target.checked, undefined);
+                }}
+                className="rounded"
+              />
+              <label htmlFor="exclude-disabled" className="text-sm">
+                Exclude disabled catalogs
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="built-only"
+                checked={builtOnly}
+                onChange={(e) => {
+                  setBuiltOnly(e.target.checked);
+                  handleReExport(undefined, undefined, e.target.checked);
+                }}
+                className="rounded"
+              />
+              <label htmlFor="built-only" className="text-sm">
+                Only export built/discover catalogs
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const blob = new Blob([exportJson], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `aiometadata-setup-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('Downloaded!');
+              }}
+            >
+              Download .json
+            </Button>
+            <Button
+              onClick={() => {
+                navigator.clipboard.writeText(exportJson);
+                toast.success('Copied to clipboard!');
+              }}
+            >
+              Copy to Clipboard
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Setup Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Import Catalog Setup</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Paste JSON or enter a URL to import someone's catalog setup.
+          </p>
+          {/* Tab switcher */}
+          <div className="flex gap-1 p-1 bg-muted rounded-md w-fit">
+            <button
+              className={`px-3 py-1.5 text-sm rounded-sm transition-colors ${importTab === 'paste' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => { setImportTab('paste'); setImportError(''); setImportPreview(null); }}
+            >
+              Paste JSON
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm rounded-sm transition-colors ${importTab === 'url' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => { setImportTab('url'); setImportError(''); setImportPreview(null); }}
+            >
+              From URL
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm rounded-sm transition-colors ${importTab === 'file' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => { setImportTab('file'); setImportError(''); setImportPreview(null); }}
+            >
+              Upload File
+            </button>
+          </div>
+
+          {importTab === 'paste' && (
+            <textarea
+              value={importText}
+              onChange={(e) => handleImportFromText(e.target.value)}
+              placeholder='Paste JSON here...'
+              className="w-full h-36 p-3 text-xs font-mono bg-muted rounded-md border resize-none focus:outline-none"
+            />
+          )}
+          {importTab === 'url' && (
+            <div className="flex gap-2">
+              <Input
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                placeholder="https://example.com/setup.json"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleImportFromUrl(); }}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleImportFromUrl}
+                disabled={!importUrl.trim() || isImportLoading}
+                size="sm"
+              >
+                {isImportLoading ? 'Loading...' : 'Fetch'}
+              </Button>
+            </div>
+          )}
+          {importTab === 'file' && (
+            <div
+              className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-md cursor-pointer hover:border-primary/50 transition-colors"
+              onClick={() => document.getElementById('import-file-input')?.click()}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    try {
+                      const text = ev.target?.result as string;
+                      const result = parseImportJson(text);
+                      setImportPreview(result);
+                      setImportError('');
+                    } catch (error) {
+                      setImportError((error as Error).message);
+                      setImportPreview(null);
+                    }
+                  };
+                  reader.readAsText(file);
+                }
+              }}
+            >
+              <Download className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Click to browse or drag & drop a .json file</p>
+              <input
+                id="import-file-input"
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      try {
+                        const text = ev.target?.result as string;
+                        const result = parseImportJson(text);
+                        setImportPreview(result);
+                        setImportError('');
+                      } catch (error) {
+                        setImportError((error as Error).message);
+                        setImportPreview(null);
+                      }
+                    };
+                    reader.readAsText(file);
+                  }
+                  e.target.value = '';
+                }}
+              />
+            </div>
+          )}
+
+          {importError && (
+            <p className="text-sm text-red-500">{importError}</p>
+          )}
+
+          {importPreview && (
+            <div className="space-y-3 p-3 bg-muted/50 rounded-md border">
+              <p className="text-sm font-medium">
+                {importPreview.catalogCount} catalogs found
+              </p>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                {importPreview.defaultCount > 0 && (
+                  <p>{importPreview.defaultCount} default catalogs</p>
+                )}
+                {importPreview.discoverCount > 0 && (
+                  <p>{importPreview.discoverCount} custom/discover catalogs</p>
+                )}
+                {importPreview.userSpecificCount > 0 && (
+                  <p className="text-yellow-600">{importPreview.userSpecificCount} user-specific catalogs (may require your own auth)</p>
+                )}
+                {Object.keys(importPreview.sourceBreakdown).length > 1 && (
+                  <p className="mt-1">
+                    Sources: {Object.entries(importPreview.sourceBreakdown)
+                      .map(([source, count]) => `${source.toUpperCase()} (${count})`)
+                      .join(', ')}
+                  </p>
+                )}
+                <p className="text-muted-foreground/60 mt-1">
+                  Exported {new Date(importPreview.payload.exportedAt).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4 pt-1">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="importMode"
+                    checked={importMode === 'merge'}
+                    onChange={() => setImportMode('merge')}
+                  />
+                  Merge
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="importMode"
+                    checked={importMode === 'replace'}
+                    onChange={() => setImportMode('replace')}
+                  />
+                  Replace
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {importMode === 'merge'
+                  ? 'Updates settings for existing catalogs, adds new ones at the end.'
+                  : 'Overwrites matching catalogs with imported settings and order.'}
+              </p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!importPreview}
+              onClick={handleImportConfirm}
+            >
+              Import{importPreview ? ` (${importPreview.catalogCount})` : ''}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
