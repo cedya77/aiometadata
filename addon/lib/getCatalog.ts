@@ -1546,18 +1546,24 @@ async function getTraktCatalog(
   try {
     logger.info(`Fetching Trakt catalog: ${catalogId}, Genre: ${genre}, Page: ${page}`);
     
-    // Get Trakt access token from database
-    const accessToken = await getTraktAccessToken(config);
-    if (!accessToken) {
-      logger.warn(`Trakt not connected for user ${userUUID}`);
-      return [];
-    }
-    
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
     
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const sort = catalogConfig?.sort;
     const sortDirection = catalogConfig?.sortDirection;
+    let accessToken: string | null | undefined = undefined;
+
+    const ensureTraktAccessToken = async (): Promise<string | null> => {
+      if (accessToken !== undefined) {
+        return accessToken;
+      }
+
+      accessToken = await getTraktAccessToken(config);
+      if (!accessToken) {
+        logger.warn(`Trakt not connected for user ${userUUID} (catalog: ${catalogId})`);
+      }
+      return accessToken;
+    };
     // Determine content type filter for API
     let traktType: 'movies' | 'shows' | undefined;
     if (type === 'movie') traktType = 'movies';
@@ -1590,11 +1596,16 @@ async function getTraktCatalog(
           hasMore: false
         };
       } else {
+        const token = await ensureTraktAccessToken();
+        if (!token) {
+          return [];
+        }
+
         const upNextStart = Date.now();
         logger.info('Up Next: Starting catalog fetch');
         
-        const cacheKey = `trakt_upnext_${accessToken.substring(0, 8)}`;
-        const timestampKey = `trakt_upnext_timestamp_${accessToken.substring(0, 8)}`;
+        const cacheKey = `trakt_upnext_${token.substring(0, 8)}`;
+        const timestampKey = `trakt_upnext_timestamp_${token.substring(0, 8)}`;
         const cacheTTL = 300; // 5 minutes for items
         const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
         
@@ -1609,7 +1620,7 @@ async function getTraktCatalog(
         logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
         
         const fetchStart = Date.now();
-        const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(accessToken, cachedTimestamp);
+        const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(token, cachedTimestamp);
         const fetchTime = Date.now() - fetchStart;
         logger.info(`Up Next: fetchTraktUpNextEpisodes took ${fetchTime}ms`);
         
@@ -1646,18 +1657,23 @@ async function getTraktCatalog(
         logger.info(`Unwatched: Page ${page} requested, returning empty (only page 1 exists)`);
         response = { items: [], hasMore: false };
       } else {
+        const token = await ensureTraktAccessToken();
+        if (!token) {
+          return [];
+        }
+
         const runStart = Date.now();
         logger.info('Unwatched: Starting catalog fetch');
 
-        const cacheKey = `trakt_unwatched_${accessToken.substring(0, 8)}`;
-        const timestampKey = `trakt_unwatched_timestamp_${accessToken.substring(0, 8)}`;
+        const cacheKey = `trakt_unwatched_${token.substring(0, 8)}`;
+        const timestampKey = `trakt_unwatched_timestamp_${token.substring(0, 8)}`;
         const cacheTTL = 300; // 5 minutes
         const timestampTTL = 3600; // 1 hour
 
         const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
         const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
 
-        const result = await require('../utils/traktUtils.js').fetchTraktUnwatchedEpisodes(accessToken, cachedTimestamp);
+        const result = await require('../utils/traktUtils.js').fetchTraktUnwatchedEpisodes(token, cachedTimestamp);
 
         let allItems: any[];
         if (result.items.length === 0 && cachedData?.items) {
@@ -1683,6 +1699,11 @@ async function getTraktCatalog(
         logger.info(`Trakt Calendar: Page ${page} requested, returning empty (only page 1 exists)`);
         response = { items: [], hasMore: false };
       } else {
+        const token = await ensureTraktAccessToken();
+        if (!token) {
+          return [];
+        }
+
         // Get timezone from config or default to UTC
         const timezone = config.timezone || process.env.TZ || 'UTC';
         
@@ -1704,7 +1725,7 @@ async function getTraktCatalog(
         logger.info(`Trakt Calendar: Fetching shows airing in next ${clampedDays} day(s) (${startDate}, timezone: ${timezone})`);
         
         // Fetch shows for the configured number of days
-        const calendarResult = await fetchTraktCalendarShows(accessToken, startDate, clampedDays, catalogConfig?.cacheTTL);
+        const calendarResult = await fetchTraktCalendarShows(token, startDate, clampedDays, catalogConfig?.cacheTTL);
         
         response = {
           items: calendarResult.items,
@@ -1743,32 +1764,60 @@ async function getTraktCatalog(
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt unified watchlist`);
-      response = await fetchTraktWatchlistItems(accessToken, undefined, page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
+      response = await fetchTraktWatchlistItems(token, undefined, page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.watchlist.movies') {
       // Movies-only watchlist
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt watchlist (movies only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
+      response = await fetchTraktWatchlistItems(token, 'movies', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.watchlist.series') {
       // Series-only watchlist
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt watchlist (shows only)`);
-      response = await fetchTraktWatchlistItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
+      response = await fetchTraktWatchlistItems(token, 'shows', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.favorites.movies') {
       // Movies-only favorites
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt favorites (movies only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'movies', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
+      response = await fetchTraktFavoritesItems(token, 'movies', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.favorites.shows') {
       // Shows-only favorites
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt favorites (shows only)`);
-      response = await fetchTraktFavoritesItems(accessToken, 'shows', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
+      response = await fetchTraktFavoritesItems(token, 'shows', page, pageSize, sort, sortDirection, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.recommendations.movies') {
       // Movies-only recommendations
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt recommendations (movies only)`);
-      response = await fetchTraktRecommendationsItems(accessToken, 'movies', page, 50, catalogConfig?.cacheTTL);
+      response = await fetchTraktRecommendationsItems(token, 'movies', page, 50, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.recommendations.shows') {
       // Shows-only recommendations
+      const token = await ensureTraktAccessToken();
+      if (!token) {
+        return [];
+      }
       logger.debug(`Fetching Trakt recommendations (shows only)`);
-      response = await fetchTraktRecommendationsItems(accessToken, 'shows', page, 50, catalogConfig?.cacheTTL);
+      response = await fetchTraktRecommendationsItems(token, 'shows', page, 50, catalogConfig?.cacheTTL);
     } else {
       // Custom list: supports two formats:
       // - trakt.list.<traktListId>
@@ -1780,6 +1829,13 @@ async function getTraktCatalog(
       }
 
       const privacy = catalogConfig?.metadata?.privacy || 'public';
+      const listAccessToken = privacy === 'public'
+        ? ''
+        : (await ensureTraktAccessToken() || '');
+
+      if (privacy !== 'public' && !listAccessToken) {
+        return [];
+      }
 
       if (parts[1] === 'list') {
         // New numeric list-id format
@@ -1795,7 +1851,7 @@ async function getTraktCatalog(
         }
 
         logger.debug(`Fetching Trakt list by id: ${listId} (splitType=${splitType || 'all'}), privacy=${privacy})`);
-        response = await fetchTraktListItemsById(listId, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL, privacy);
+        response = await fetchTraktListItemsById(listId, listAccessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL, privacy);
       } else {
         // Legacy username + slug format
         const username = parts[1];
@@ -1808,7 +1864,7 @@ async function getTraktCatalog(
         }
 
         logger.debug(`Fetching Trakt list: ${username}/${listSlug}, privacy=${privacy})`);
-        response = await fetchTraktListItems(username, listSlug, accessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL, privacy);
+        response = await fetchTraktListItems(username, listSlug, listAccessToken, traktType, page, pageSize, sort, genreSlug, sortDirection, catalogConfig?.cacheTTL, privacy);
       }
     }
     
