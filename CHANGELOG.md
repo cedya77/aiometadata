@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.31.0](https://github.com/cedya77/aiometadata/compare/v1.30.4...v1.31.0) (2026-02-21)
+
+
+### Features
+
+* Add easy catalog share option ([af9dc18](https://github.com/cedya77/aiometadata/commit/af9dc182bd9a1b80ae7e07b4a3c5935d85c02393))
+
 ## [1.30.4](https://github.com/cedya77/aiometadata/compare/v1.30.3...v1.30.4) (2026-02-20)
 
 
