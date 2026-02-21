@@ -223,73 +223,32 @@ const respond = function (req, res, data, opts) {
     res.setHeader('Expires', '0');
   } else {
     const userUUID = req.params.userUUID || '';
-    
-    // Enhanced ETag generation with config hash for better cache invalidation
-    const configString = req.userConfig ? JSON.stringify(req.userConfig) : '';
-    const configHash = crypto.createHash('md5').update(configString).digest('hex').substring(0, 8);
-    let etagContent = ADDON_VERSION + JSON.stringify(data) + userUUID + configHash;
-    
-    // Force ETag to change when language changes
-    if (req.userConfig && req.userConfig.language) {
+
+    const routePath = req.route?.path || '';
+    const isCatalogOrMetaRoute = routePath.includes('/catalog/') || routePath.includes('/meta/');
+
+    if (!isCatalogOrMetaRoute) {
+      // Preserve rich ETag behavior for non-hot routes (e.g., manifest/debug endpoints).
+      const configHash = req.userConfig?.configHash
+        || crypto.createHash('md5').update(req.userConfig ? JSON.stringify(req.userConfig) : '').digest('hex').substring(0, 8);
+      let etagContent = ADDON_VERSION + JSON.stringify(data) + userUUID + configHash;
+
+      if (req.userConfig && req.userConfig.language) {
         etagContent += ':lang:' + req.userConfig.language;
-    }
-    
-    // Add route-specific cache invalidation factors
-    if (req.route && req.route.path) {
-      if (req.route.path.includes('/manifest.json')) {
-        // Manifest should invalidate when any config changes
-        etagContent += ':manifest';
-      } else if (req.route.path.includes('/catalog/')) {
-        // Catalog should invalidate when catalog-related config changes
-        const catalogConfig = req.userConfig ? {
-          language: req.userConfig.language,
-          providers: req.userConfig.providers,
-          sfw: req.userConfig.sfw,
-          includeAdult: req.userConfig.includeAdult,
-          ageRating: req.userConfig.ageRating,
-          hideUnreleasedDigital: req.userConfig.hideUnreleasedDigital,
-          hideUnreleasedDigitalSearch: req.userConfig.hideUnreleasedDigitalSearch,
-          exclusionKeywords: req.userConfig.exclusionKeywords,
-          regexExclusionFilter: req.userConfig.regexExclusionFilter,
-          showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
-          displayAgeRating: req.userConfig.displayAgeRating,
-          apiKeys: { 
-            rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
-            mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
-          },
-          mal: req.userConfig.mal
-        } : {};
-        etagContent += crypto.createHash('md5').update(JSON.stringify(catalogConfig)).digest('hex').substring(0, 8);
-      } else if (req.route.path.includes('/meta/')) {
-        // Meta should invalidate when meta-related config changes
-        const metaConfig = req.userConfig ? {
-          language: req.userConfig.language,
-          providers: req.userConfig.providers,
-          tvdbSeasonType: req.userConfig.tvdbSeasonType,
-          castCount: req.userConfig.castCount,
-          blurThumbs: req.userConfig.blurThumbs,
-          showMetaProviderAttribution: req.userConfig.showMetaProviderAttribution,
-          displayAgeRating: req.userConfig.displayAgeRating,
-          apiKeys: { 
-            rpdb: req.userConfig.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
-            mdblist: req.userConfig.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
-          },
-          mal: req.userConfig.mal
-        } : {};
-        etagContent += crypto.createHash('md5').update(JSON.stringify(metaConfig)).digest('hex').substring(0, 8);
       }
-    }
-    
-    const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
-    const etag = `W/"${etagHash}"`;
 
-    res.setHeader('ETag', etag);
+      if (req.route && req.route.path && req.route.path.includes('/manifest.json')) {
+        etagContent += ':manifest';
+      }
 
-    // Enhanced cache invalidation strategy
-    if (req.headers['if-none-match'] === etag) {
-      consola.debug('[Cache] Browser cache hit but forcing refresh for ETag:', etag);
-      // Don't return 304, continue to send fresh content
-      // This ensures Stremio always gets the latest data when config changes
+      const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
+      const etag = `W/"${etagHash}"`;
+
+      res.setHeader('ETag', etag);
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
     }
 
     // Enhanced aggressive cache control for config-sensitive routes
@@ -3490,7 +3449,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const show = entry?.show;
               if (!show?.id) return null;
 
-              const stremioId = `tvmaze:${show.id}`;
+              let stremioId = `tvmaze:${show.id}`;
               try {
                 const allIds = await resolveAllIds(stremioId, 'series', config);
                 if (allIds) {
