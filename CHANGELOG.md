@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.31.2](https://github.com/cedya77/aiometadata/compare/v1.31.1...v1.31.2) (2026-02-22)
+
+
+### Bug Fixes
+
+* **simkl:** fix simkl trending and calendar not being accessible without login ([28ed1e6](https://github.com/cedya77/aiometadata/commit/28ed1e69afa3b9d051bb6112b100bf3b863a1246))
+
 ## [1.31.1](https://github.com/cedya77/aiometadata/compare/v1.31.0...v1.31.1) (2026-02-22)
 
 
