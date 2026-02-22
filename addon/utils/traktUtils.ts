@@ -195,7 +195,7 @@ async function runSerializedWrite<T>(tokenKey: string, task: () => Promise<T>): 
   const key = tokenKey || 'global';
   const previous = writeChains.get(key) || Promise.resolve();
 
-  let releaseGate: (() => void) | null = null;
+  let releaseGate!: () => void;
   const gate = new Promise<void>((resolve) => {
     releaseGate = resolve;
   });
@@ -206,9 +206,7 @@ async function runSerializedWrite<T>(tokenKey: string, task: () => Promise<T>): 
   try {
     return await task();
   } finally {
-    if (releaseGate) {
-      releaseGate();
-    }
+    releaseGate();
     if (writeChains.get(key) === gate) {
       writeChains.delete(key);
     }
@@ -2723,5 +2721,6 @@ export {
   fetchTraktPopularItems,
   fetchTraktSearchItems,
   fetchTraktPersonSearch,
-  fetchTraktPersonCredits
+  fetchTraktPersonCredits,
+  traktDispatcher
 };

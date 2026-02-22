@@ -5,6 +5,7 @@ const logger = consola.withTag('Trakt');
 
 export const TRAKT_API_BASE = 'https://api.trakt.tv';
 export const TRAKT_API_VERSION = '2';
+import { traktDispatcher } from '../utils/traktUtils';
 
 export interface TraktTokens {
   access_token: string;
@@ -62,6 +63,7 @@ export class TraktClient {
         redirect_uri: this.redirectUri,
         grant_type: 'authorization_code',
       }, {
+        dispatcher: traktDispatcher,
         headers: {
           'Content-Type': 'application/json',
           'trakt-api-version': TRAKT_API_VERSION,
@@ -103,6 +105,7 @@ export class TraktClient {
         redirect_uri: this.redirectUri,
         grant_type: 'refresh_token',
       }, {
+        dispatcher: traktDispatcher,
         headers: {
           'Content-Type': 'application/json',
           'trakt-api-version': TRAKT_API_VERSION,
@@ -141,7 +144,7 @@ export class TraktClient {
         'Authorization': `Bearer ${accessToken}`,
       };
 
-      const response = await httpGet(`${TRAKT_API_BASE}/users/me`, { headers });
+      const response = await httpGet(`${TRAKT_API_BASE}/users/me`, { dispatcher: traktDispatcher, headers });
       const data = response.data;
 
       return {
@@ -163,6 +166,7 @@ export class TraktClient {
   async revokeToken(accessToken: string): Promise<void> {
     try {
       await httpPost('https://api.trakt.tv/oauth/revoke', {
+        dispatcher: traktDispatcher,
         token: accessToken,
         client_id: this.clientId,
         client_secret: this.clientSecret,
