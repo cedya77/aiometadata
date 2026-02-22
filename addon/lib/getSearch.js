@@ -744,23 +744,18 @@ async function performTmdbPeopleSearch(type, query, language, config, page = 1) 
     const MAX_PERSON_CANDIDATES = 5;
     const MIN_QUALITY_WORK_VOTES = 4000;
     const MIN_RECOGNIZED_WORK_VOTES = 100;
-    const MIN_POPULARITY_WITH_QUALITY_WORK = 1;
-    const MIN_POPULARITY_PRIMARY_NAME = 1;
+    const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
+    const MIN_POPULARITY_PRIMARY_NAME = 2.5;
     const candidates = sortedPersons.slice(0, MAX_PERSON_CANDIDATES);
     let allCredits = [];
     const suffixPattern = /^(jr|sr|ii|iii|iv|v)$/i;
     for (const candidate of candidates) {
-      logger.debug(`Person candidate: ${candidate.name} (popularity: ${candidate.popularity || 0})`);
-      const knownFor = candidate.known_for || [];
-      const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
       const personPopularity = candidate.popularity || 0;
-      
-      if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK) {
-        logger.debug(`Skipping person ${candidate.name} - too low popularity (${personPopularity})`);
-        continue;
-      }
-      if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES && personPopularity < MIN_POPULARITY_PRIMARY_NAME) {
-        logger.debug(`Skipping person ${candidate.name} - no recognized work and low popularity`);
+      const knownFor = candidate.known_for || [];
+      const highestVoteCount = Math.max(...knownFor.map((w) => w.vote_count || 0), 0);
+    
+      if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK && highestVoteCount < MIN_RECOGNIZED_WORK_VOTES) {
+        logger.debug(`Skipping person ${candidate.name} - low popularity (${personPopularity}) and no recognized work (${highestVoteCount} votes)`);
         continue;
       }
       
@@ -791,13 +786,6 @@ async function performTmdbPeopleSearch(type, query, language, config, page = 1) 
       const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
       if (!primaryNameMatches) {
         logger.debug(`Skipping person ${candidate.name} - query "${query}" doesn't match name`);
-        continue;
-      }
-      
-      const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
-      const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
-      if (!passesQualityCheck && !passesPopularityCheck) {
-        logger.debug(`Skipping person ${candidate.name} - insufficient popularity (${personPopularity})`);
         continue;
       }
       

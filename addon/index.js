@@ -4218,6 +4218,11 @@ addon.get("/poster/:type/:id", async function (req, res) {
   if (!key) {
     return res.redirect(302, fallback);
   }
+  const etag = crypto.createHash('md5').update(`${type}:${id}:${key}:${lang}`).digest('hex');
+  res.setHeader('ETag', `"${etag}"`);
+  if (req.headers['if-none-match'] === `"${etag}"`) {
+    return res.status(304).end();
+  }
 
   const [idSource, idValue] = id.startsWith('tt') ? ['imdb', id] : id.split(':');
   const ids = {
@@ -4250,7 +4255,7 @@ addon.get("/poster/:type/:id", async function (req, res) {
         responseType: 'stream'
       });
       res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800'); // Cache for 1 day
       imageResponse.data.pipe(res);
     } else {
       res.redirect(302, fallback);
@@ -4304,7 +4309,7 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
     const processedImage = await convertBannerToBackground(imageUrl, options);
     if (processedImage) {
       res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); // Cache for 1 day
       res.send(processedImage);
     } else {
       res.status(500).send('Failed to process image');
@@ -4331,7 +4336,7 @@ addon.get("/api/image/gradient-overlay", async function (req, res) {
     const processedImage = await addGradientOverlay(imageUrl, options);
     if (processedImage) {
       res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.send(processedImage);
     } else {
       res.status(500).send('Failed to process image');
