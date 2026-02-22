@@ -1686,11 +1686,25 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
          //cacheLogger.debug(`[Reconstruct] Rebuilding poster proxy URL for ${reconstructedMeta.id} (canonical: ${canonicalProxyId}), cached poster: ${data.poster?.substring(0, 100)}...`);
          reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
        } else {
-         if (isUpNextWithEpisodeThumbnail || hasEpisodeThumbnailShape) {
-           cacheLogger.debug(`[Reconstruct] Preserving cached episode thumbnail for ${metaId} (useShowPoster=${useShowPoster}, posterShape=${reconstructedMeta.posterShape}), poster: ${data.poster?.substring(0, 100)}...`);
-         }
-         reconstructedMeta.poster = data.poster;
-       }
+        if (isUpNextWithEpisodeThumbnail || hasEpisodeThumbnailShape) {
+          cacheLogger.debug(`[Reconstruct] Preserving cached episode thumbnail for ${metaId}...`);
+        }
+        if (data.poster && data.poster.includes('/poster/')) {
+          try {
+            const urlObj = new URL(data.poster);
+            const fallback = urlObj.searchParams.get('fallback');
+            if (fallback) {
+              reconstructedMeta.poster = decodeURIComponent(fallback);
+            } else {
+              reconstructedMeta.poster = data.poster;
+            }
+          } catch(e) {
+            reconstructedMeta.poster = data.poster;
+          }
+        } else {
+          reconstructedMeta.poster = data.poster;
+        }
+      }
      } else if (componentName === 'rawPoster') {
        reconstructedMeta._rawPosterUrl = data._rawPosterUrl;
      } else if (componentName === 'background') {
