@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.31.1](https://github.com/cedya77/aiometadata/compare/v1.31.0...v1.31.1) (2026-02-22)
+
+
+### Bug Fixes
+
+* **trakt:** pass proxy dispatcher to post requests in trakt.ts ([441d7b2](https://github.com/cedya77/aiometadata/commit/441d7b2c60189eefb29b39a7d6d1ab4f41112142))
+
 ## [1.31.0](https://github.com/cedya77/aiometadata/compare/v1.30.4...v1.31.0) (2026-02-21)
 
 
