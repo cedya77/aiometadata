@@ -222,7 +222,11 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
       'NONE': 'none'
     };
     const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
-    const subtypesArray = type === 'movie' ? ['movie'] : Array.from(desiredTvTypes);
+    const normalizedTvSubtypes = [...new Set(Array.from(desiredTvTypes).map((subtype) => {
+      // Kitsu uses "special" as subtype; normalize our legacy "tv special" value.
+      return subtype.toLowerCase() === 'tv special' ? 'special' : subtype;
+    }))];
+    const subtypesArray = type === 'movie' ? ['movie'] : [normalizedTvSubtypes.join(',')];
     const searchResults = await kitsu.searchByName(
       query,
       subtypesArray,

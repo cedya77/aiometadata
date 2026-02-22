@@ -2003,7 +2003,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         const mapping = idMapper.getMappingByMalId(id);
         if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animes.find(anime => anime.mal_id === id), config, language);
         const kitsuData = await cacheWrapGlobal(
-          `kitsu-anime-${mapping.kitsu_id}-genres`,
+          `kitsu-anime-${mapping.kitsu_id}-categories`,
           () => kitsu.getMultipleAnimeDetails([mapping.kitsu_id]),
           CATALOG_TTL
         );
@@ -2027,7 +2027,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
             }
           }
         }
-        let genres = item.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
+        let genres = kitsuData.included?.filter(item => item.type === 'categories').map(item => item.attributes?.title).filter(Boolean) || [];
         
         let releaseDates = null;
         if (config.hideUnreleasedDigital && stremioType === 'movie' && tmdbId) {

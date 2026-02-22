@@ -270,7 +270,28 @@ class Database {
 
   // Save user configuration by UUID with password
   async saveUserConfig(userUUID, passwordHash, configData) {
-    const configJson = typeof configData === 'string' ? configData : JSON.stringify(configData);
+    let normalizedConfig = configData;
+
+    if (typeof normalizedConfig === 'string') {
+      try {
+        normalizedConfig = JSON.parse(normalizedConfig);
+      } catch (error) {
+        normalizedConfig = null;
+      }
+    }
+
+    let configJson;
+    if (normalizedConfig && typeof normalizedConfig === 'object' && !Array.isArray(normalizedConfig)) {
+      const configForHash = { ...normalizedConfig };
+      delete configForHash.configHash;
+      const configHash = crypto.createHash('md5').update(JSON.stringify(configForHash)).digest('hex').substring(0, 16);
+      configJson = JSON.stringify({
+        ...normalizedConfig,
+        configHash
+      });
+    } else {
+      configJson = typeof configData === 'string' ? configData : JSON.stringify(configData);
+    }
     
     if (this.type === 'sqlite') {
       try {
