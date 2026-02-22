@@ -3808,12 +3808,6 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     // Note: Popular content warming is now handled globally by warmPopularContent()
     // which runs every 6 hours in the background
     
-    // Warm user's frequently accessed content in background
-    if (!NO_CACHE) {
-      warmUserContent(userUUID, type).catch(error => {
-        consola.warn(`[Cache Warming] User content warming failed for ${userUUID}:`, error.message);
-      });
-    }
     
     // Use aggressive cache control for meta routes to ensure fresh data when config changes
     // Don't pass cacheOpts to let the respond function use the aggressive cache control

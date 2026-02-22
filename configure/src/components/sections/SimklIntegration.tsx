@@ -473,91 +473,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                     </Card>
                   )}
 
-                  {/* Trending Catalogs Section */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Trending & Calendar</CardTitle>
-                      <CardDescription>Add trending catalogs or view upcoming releases</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="flex gap-2">
-                        <Button 
-                          onClick={() => handleAddTrendingCatalog('movies')} 
-                          variant="outline" 
-                          className="flex-1"
-                          disabled={config.catalogs.some(c => c.id === 'simkl.trending.movies')}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Trending Movies
-                        </Button>
-                        <Button 
-                          onClick={() => handleAddTrendingCatalog('shows')} 
-                          variant="outline" 
-                          className="flex-1"
-                          disabled={config.catalogs.some(c => c.id === 'simkl.trending.shows')}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Trending Shows
-                        </Button>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button 
-                          onClick={() => handleAddTrendingCatalog('anime')} 
-                          variant="outline" 
-                          className="flex-1"
-                          disabled={config.catalogs.some(c => c.id === 'simkl.trending.anime')}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Trending Anime
-                        </Button>
-                        <Button 
-                          onClick={() => {
-                            const newCatalog: CatalogConfig = {
-                              id: "simkl.calendar.anime",
-                              type: "anime",
-                              name: "Simkl Anime Airing Soon",
-                              enabled: true,
-                              showInHome: true,
-                              source: "simkl",
-                              metadata: { airingSoonDays: 1 }
-                            };
-                            setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
-                            toast.success("Added Simkl Anime Airing Soon");
-                          }}
-                          variant="outline"
-                          className="flex-1"
-                          disabled={config.catalogs.some(c => c.id === 'simkl.calendar.anime')}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Airing Soon (Anime)
-                        </Button>
-                        <Button 
-                          onClick={() => {
-                            const newCatalog: CatalogConfig = {
-                              id: "simkl.calendar.series",
-                              type: "series",
-                              name: "Simkl TV Airing Soon",
-                              enabled: true,
-                              showInHome: true,
-                              source: "simkl",
-                              metadata: { airingSoonDays: 1 }
-                            };
-                            setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
-                            toast.success("Added Simkl TV Airing Soon");
-                          }}
-                          variant="outline"
-                          className="flex-1"
-                          disabled={config.catalogs.some(c => c.id === 'simkl.calendar.series')}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Airing Soon (Series)
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Trending catalogs update automatically. Airing Soon shows TV and Anime episodes releasing in your timezone.
-                      </p>
-                    </CardContent>
-                  </Card>
+                  
 
                   <Card>
                     <CardHeader>
@@ -720,6 +636,91 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                   </Card>
                 </div>
               )}
+              {}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Trending & Calendar</CardTitle>
+                  <CardDescription>Add trending catalogs or view upcoming releases</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleAddTrendingCatalog('movies')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'simkl.trending.movies')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Trending Movies
+                    </Button>
+                    <Button
+                      onClick={() => handleAddTrendingCatalog('shows')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'simkl.trending.shows')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Trending Shows
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleAddTrendingCatalog('anime')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'simkl.trending.anime')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Trending Anime
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const newCatalog: CatalogConfig = {
+                          id: "simkl.calendar.anime",
+                          type: "anime",
+                          name: "Simkl Anime Airing Soon",
+                          enabled: true,
+                          showInHome: true,
+                          source: "simkl",
+                          metadata: { airingSoonDays: 1 }
+                        };
+                        setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+                        toast.success("Added Simkl Anime Airing Soon");
+                      }}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'simkl.calendar.anime')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Airing Soon (Anime)
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const newCatalog: CatalogConfig = {
+                          id: "simkl.calendar.series",
+                          type: "series",
+                          name: "Simkl TV Airing Soon",
+                          enabled: true,
+                          showInHome: true,
+                          source: "simkl",
+                          metadata: { airingSoonDays: 1 }
+                        };
+                        setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+                        toast.success("Added Simkl TV Airing Soon");
+                      }}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'simkl.calendar.series')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Airing Soon (Series)
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Trending catalogs update automatically. Airing Soon shows TV and Anime episodes releasing in your timezone.
+                  </p>
+                </CardContent>
+              </Card>
             </CardContent>
           </Card>
         </div>
