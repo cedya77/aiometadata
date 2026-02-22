@@ -730,28 +730,6 @@ async function performTmdbPeopleSearch(type, query, language, config, page = 1) 
     }
 
     const sortedPersons = personRes.results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-    const topPerson = sortedPersons[0];
-    logger.debug(`[People Search] Top person: ${topPerson.name} (popularity: ${topPerson.popularity || 0})`);
-
-    // ── Name validation (same logic as existing performTmdbSearch) ──
-    const MIN_QUALITY_WORK_VOTES = 4000;
-    const MIN_RECOGNIZED_WORK_VOTES = 100;
-    const MIN_POPULARITY_WITH_QUALITY_WORK = 1.5;
-    const MIN_POPULARITY_PRIMARY_NAME = 2.5;
-
-    const personPopularity = topPerson.popularity || 0;
-    if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK || !topPerson.profile_path) {
-      logger.debug(`[People Search] Skipping ${topPerson.name} - too low popularity or missing profile`);
-      return [];
-    }
-
-    const knownFor = topPerson.known_for || [];
-    const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
-    if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES) {
-      logger.debug(`[People Search] Skipping ${topPerson.name} - no recognized work`);
-      return [];
-    }
-
     const normalizeNameForMatching = (name) => {
       return name
         .toLowerCase()
@@ -762,52 +740,74 @@ async function performTmdbPeopleSearch(type, query, language, config, page = 1) 
         .replace(/\s+/g, ' ')
         .trim();
     };
-
-    const queryNorm = normalizeNameForMatching(query);
-    const personNameNorm = normalizeNameForMatching(topPerson.name);
-
-    if (!queryNorm || !personNameNorm) {
-      return [];
-    }
-
-    const queryWords = queryNorm.split(' ').filter(w => w);
-    const personWords = personNameNorm.split(' ').filter(w => w);
-    const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
-
-    const isExactMatch = queryNorm === personNameNorm;
-    const isMiddleNameMatch = personWords.length === 3 && queryWords.length === 2 &&
-      queryWords[0] === personWords[0] &&
-      queryWords[1] === personWords[2] &&
-      personWords[1].length === 1;
+    // Check up to top 5 results for a name match instead of only the first
+    const MAX_PERSON_CANDIDATES = 5;
+    const MIN_QUALITY_WORK_VOTES = 4000;
+    const MIN_RECOGNIZED_WORK_VOTES = 100;
+    const MIN_POPULARITY_WITH_QUALITY_WORK = 1;
+    const MIN_POPULARITY_PRIMARY_NAME = 1;
+    const candidates = sortedPersons.slice(0, MAX_PERSON_CANDIDATES);
+    let allCredits = [];
     const suffixPattern = /^(jr|sr|ii|iii|iv|v)$/i;
-    const isSuffixMatch = personWords.length >= 3 &&
-      queryWords.length === personWords.length - 1 &&
-      suffixPattern.test(personWords[personWords.length - 1]) &&
-      queryWords.every((word, index) => word === personWords[index]);
-    const isSingleWordMatch = queryWords.length === 1 && personWords.length === 1 &&
-      queryWords[0] === personWords[0] &&
-      hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+    for (const candidate of candidates) {
+      logger.debug(`Person candidate: ${candidate.name} (popularity: ${candidate.popularity || 0})`);
+      const knownFor = candidate.known_for || [];
+      const highestVoteCount = Math.max(0, ...knownFor.map(work => work.vote_count || 0));
+      const personPopularity = candidate.popularity || 0;
+      
+      if (personPopularity < MIN_POPULARITY_WITH_QUALITY_WORK) {
+        logger.debug(`Skipping person ${candidate.name} - too low popularity (${personPopularity})`);
+        continue;
+      }
+      if (highestVoteCount < MIN_RECOGNIZED_WORK_VOTES && personPopularity < MIN_POPULARITY_PRIMARY_NAME) {
+        logger.debug(`Skipping person ${candidate.name} - no recognized work and low popularity`);
+        continue;
+      }
+      
+      const personNameNorm = normalizeNameForMatching(candidate.name);
+      const queryNorm = normalizeNameForMatching(query);
+      if (!personNameNorm) continue;
+      const personWords = personNameNorm.split(' ').filter(w => w);
+      const queryWords = queryNorm.split(' ').filter(w => w);
+      const hasHighQualityWork = highestVoteCount >= MIN_QUALITY_WORK_VOTES;
 
-    const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
-    if (!primaryNameMatches) {
-      logger.debug(`[People Search] Skipping ${topPerson.name} - query "${query}" doesn't match name`);
-      return [];
+      if (!queryNorm || !personNameNorm) {
+        return [];
+      }
+      
+      const isExactMatch = queryNorm === personNameNorm;
+      const isMiddleNameMatch = personWords.length === 3 && queryWords.length === 2 &&
+        queryWords[0] === personWords[0] &&
+        queryWords[1] === personWords[2] &&
+        personWords[1].length === 1;
+      const isSuffixMatch = personWords.length >= 3 &&
+        queryWords.length === personWords.length - 1 &&
+        suffixPattern.test(personWords[personWords.length - 1]) &&
+        queryWords.every((word, index) => word === personWords[index]);
+      const isSingleWordMatch = queryWords.length === 1 && personWords.length === 1 &&
+        queryWords[0] === personWords[0] &&
+        hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+      
+      const primaryNameMatches = isExactMatch || isMiddleNameMatch || isSuffixMatch || isSingleWordMatch;
+      if (!primaryNameMatches) {
+        logger.debug(`Skipping person ${candidate.name} - query "${query}" doesn't match name`);
+        continue;
+      }
+      
+      const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
+      const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
+      if (!passesQualityCheck && !passesPopularityCheck) {
+        logger.debug(`Skipping person ${candidate.name} - insufficient popularity (${personPopularity})`);
+        continue;
+      }
+      
+      logger.debug(`Person match confirmed: ${candidate.name} (popularity: ${personPopularity})`);
+      const credits = type === 'movie'
+        ? await moviedb.personMovieCredits({ id: candidate.id, language }, config)
+        : await moviedb.personTvCredits({ id: candidate.id, language }, config);
+      allCredits= [...(credits.cast || []), ...(credits.crew || [])];
+      break;
     }
-
-    const passesQualityCheck = hasHighQualityWork && personPopularity >= MIN_POPULARITY_WITH_QUALITY_WORK;
-    const passesPopularityCheck = personPopularity >= MIN_POPULARITY_PRIMARY_NAME;
-    if (!passesQualityCheck && !passesPopularityCheck) {
-      logger.debug(`[People Search] Skipping ${topPerson.name} - insufficient popularity`);
-      return [];
-    }
-
-    // Step 2: Fetch person credits (1 API call) — NO per-result hydration!
-    const credits = type === 'movie'
-      ? await moviedb.personMovieCredits({ id: topPerson.id, language }, config)
-      : await moviedb.personTvCredits({ id: topPerson.id, language }, config);
-
-    const allCredits = [...(credits.cast || []), ...(credits.crew || [])];
-    logger.debug(`[People Search] Got ${allCredits.length} raw credits for ${topPerson.name}`);
 
     if (allCredits.length === 0) {
       return [];
