@@ -44,6 +44,7 @@ export interface CatalogConfig {
     airingSoonDays?: number;
     // Letterboxd-specific metadata
     isWatchlist?: boolean;
+    hideUnreleased?: boolean;
     identifier?: string;
     url?: string;
     // TMDB-specific metadata

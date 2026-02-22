@@ -21,11 +21,6 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 
 const TRAKT_GET_WINDOW_MS = parsePositiveInt(process.env.TRAKT_GET_WINDOW_MS, DEFAULT_TRAKT_GET_WINDOW_MS);
 const TRAKT_GET_WINDOW_LIMIT = parsePositiveInt(process.env.TRAKT_GET_WINDOW_LIMIT, DEFAULT_TRAKT_GET_WINDOW_LIMIT);
-const TRAKT_SAFE_MIN_TIME_MS = Math.ceil(TRAKT_GET_WINDOW_MS / TRAKT_GET_WINDOW_LIMIT);
-const TRAKT_MIN_TIME_MS = Math.max(
-  parsePositiveInt(process.env.TRAKT_MIN_TIME, TRAKT_SAFE_MIN_TIME_MS),
-  TRAKT_SAFE_MIN_TIME_MS
-);
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -52,12 +47,12 @@ function isPermanentError(error: any): boolean {
 }
 
 const QUEUE_CONFIG = {
-  concurrency: parsePositiveInt(process.env.TRAKT_CONCURRENCY, 5),
-  minTime: TRAKT_MIN_TIME_MS,
-  maxRequestsPerWindow: TRAKT_GET_WINDOW_LIMIT,
+  concurrency: parsePositiveInt(process.env.TRAKT_CONCURRENCY, 15),
+  minTime: parsePositiveInt(process.env.TRAKT_MIN_TIME, 50), 
+  maxRequestsPerWindow: TRAKT_GET_WINDOW_LIMIT, 
   rateLimitWindowMs: TRAKT_GET_WINDOW_MS,
   rateLimitBuffer: parsePositiveInt(process.env.TRAKT_RATE_LIMIT_BUFFER_MS, 1000),
-  queueCleanupInterval: 1000 * 60 * 10 
+  queueCleanupInterval: 1000 * 60 * 10
 };
 
 // --- Multi-Queue Implementation ---
@@ -395,6 +390,7 @@ const TRAKT_SEARCH_DISABLED = process.env.DISABLE_TRAKT_SEARCH === 'true';
 interface TraktUpNextState {
   last_watched_at: string; 
   last_updated_at: string;
+  last_hidden_at: string;
   shows: Record<number, any>;
 }
 
@@ -409,8 +405,9 @@ async function fetchTraktUpNextEpisodes(
   const lastActivity = await fetchTraktLastActivity(accessToken);
   const userWatchedAt = lastActivity?.episodes?.watched_at;
   const globalUpdatedAt = lastActivity?.shows?.updated_at; 
+  const userHiddenAt = lastActivity?.shows?.hidden_at;
 
-  let state: TraktUpNextState = { last_watched_at: '', last_updated_at: '', shows: {} };
+  let state: TraktUpNextState = { last_watched_at: '', last_updated_at: '', last_hidden_at: '', shows: {} };
   if (redis) {
     const cachedState = await redis.get(stateKey);
     if (cachedState) {
@@ -450,6 +447,21 @@ async function fetchTraktUpNextEpisodes(
       });
       logger.debug(`[Up Next] Found ${relevantUpdates} relevant show updates (out of ${updatedIds.length} global)`);
     } 
+  }
+
+  if (!needsFullSync && userHiddenAt !== state.last_hidden_at) {
+    logger.debug(`[Up Next] Hidden/dropped shows changed since ${state.last_hidden_at}`);
+    const droppedShowIds = await fetchTraktDroppedShows(accessToken);
+    let removedCount = 0;
+    for (const id of Object.keys(state.shows).map(Number)) {
+      if (droppedShowIds.has(id)) {
+        delete state.shows[id];
+        removedCount++;
+      }
+    }
+    if (removedCount > 0) {
+      logger.info(`[Up Next] Removed ${removedCount} dropped shows from state`);
+    }
   }
 
   if (needsFullSync) {
@@ -571,6 +583,7 @@ async function fetchTraktUpNextEpisodes(
 
   state.last_watched_at = userWatchedAt;
   state.last_updated_at = globalUpdatedAt;
+  state.last_hidden_at = userHiddenAt;
   
   if (redis) {
     await redis.set(stateKey, JSON.stringify(state), 'EX', 86400 * 7);
@@ -748,10 +761,12 @@ async function fetchTraktUnwatchedEpisodes(
   logger.info(`Unwatched: last_activities fetch took ${activityTime}ms`);
 
   const currentWatchedAt = lastActivity?.episodes?.watched_at;
-  if (cachedTimestamp && currentWatchedAt && cachedTimestamp === currentWatchedAt) {
-    const totalTime = Date.now() - startTime;
-    logger.info(`Unwatched: No changes detected (watched_at: ${currentWatchedAt}), using cached data [total: ${totalTime}ms]`);
-    return { items: [], watched_at: currentWatchedAt };
+  const currentHiddenAt = lastActivity?.shows?.hidden_at;
+  const activityFingerprint = `${currentWatchedAt}|${currentHiddenAt}`;
+
+  if (cachedTimestamp && cachedTimestamp === activityFingerprint) {
+    logger.info(`Unwatched: No changes detected, using cached data`);
+    return { items: [], watched_at: activityFingerprint };
   }
 
   logger.info(`Unwatched: Changes detected or no cache, rebuilding list (watched_at: ${currentWatchedAt})`);

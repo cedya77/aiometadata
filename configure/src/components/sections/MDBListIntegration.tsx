@@ -1092,6 +1092,25 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                         }}
                       />
                     </div>
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="space-y-0.5">
+                        <label className="text-sm font-medium">Hide Unreleased Episodes</label>
+                        <p className="text-xs text-muted-foreground">Exclude episodes airing today (they appear starting the next day)</p>
+                      </div>
+                      <Switch
+                        checked={config.catalogs.find(c => c.id === 'mdblist.upnext')?.metadata?.hideUnreleased || false}
+                        onCheckedChange={(checked) => {
+                          setConfig(prev => ({
+                            ...prev,
+                            catalogs: prev.catalogs.map(c =>
+                              c.id === 'mdblist.upnext'
+                                ? { ...c, metadata: { ...c.metadata, hideUnreleased: checked } }
+                                : c
+                            )
+                          }));
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">

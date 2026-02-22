@@ -1284,7 +1284,8 @@ async function testMdblistKey(
 async function fetchMDBListUpNext(
   apiKey: string,
   page: number = 1,
-  limit: number = 20
+  limit: number = 20,
+  hideUnreleased?: boolean
 ): Promise<{ items: any[], hasMore: boolean, limit: number }> {
   if (!apiKey) {
     logger.warn('[MDBList Up Next] Missing API key');
@@ -1298,7 +1299,10 @@ async function fetchMDBListUpNext(
     // Ensure page is a number and calculate offset
     const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
     const offset = (pageNum * pageSize) - pageSize;
-    const url = `https://api.mdblist.com/upnext?apikey=${apiKey}&limit=${pageSize}&offset=${offset}`;
+    let url = `https://api.mdblist.com/upnext?apikey=${apiKey}&limit=${pageSize}&offset=${offset}`;
+    if (hideUnreleased !== undefined) {
+      url += `&hide_unreleased=${hideUnreleased}`;
+    }
     
     logger.debug(`[MDBList Up Next] Fetching page ${pageNum} (limit: ${pageSize}, offset: ${offset})`);
     

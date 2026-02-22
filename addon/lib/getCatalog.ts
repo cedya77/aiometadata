@@ -631,7 +631,8 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
       // Ensure page is a number
       const pageNum = typeof page === 'number' ? page : parseInt(String(page), 10) || 1;
-      const response = await fetchMDBListUpNext(apiKey, pageNum, pageSize);
+      const hideUnreleased = catalogConfig?.metadata?.hideUnreleased;
+      const response = await fetchMDBListUpNext(apiKey, pageNum, pageSize, hideUnreleased);
       
       // Early exit for empty pages beyond list end
       if (!response.hasMore && (!response.items || response.items.length === 0)) {
