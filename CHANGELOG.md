@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.32.0](https://github.com/cedya77/aiometadata/compare/v1.31.2...v1.32.0) (2026-02-22)
+
+
+### Features
+
+* add filtering to kitsu, batch calls better ([ee5249a](https://github.com/cedya77/aiometadata/commit/ee5249a591d427f9368191f40215f89a835a5bcb))
+* **mdblist:** add option to filter out unreleased shows from up next as shown in mdblist UI ([847fb28](https://github.com/cedya77/aiometadata/commit/847fb28901e7ea8f550fb8cda219758925585fee))
+
+
+### Bug Fixes
+
+* **simkl:** fix plan to watch and on hold items order ([cc56f96](https://github.com/cedya77/aiometadata/commit/cc56f9611bd3b36d19c692c41bcbfa29404394b0))
+* **tmdb people search:** reduce popularity threshold and improve logic ([978742b](https://github.com/cedya77/aiometadata/commit/978742b7081fc67481b2da6f26cfd32d5801db95))
+
+
+### Performance Improvements
+
+* improve up next fetching logic for speed ([79c51ec](https://github.com/cedya77/aiometadata/commit/79c51ec995a766e65b07674dfb7d1023cc6ef552))
+
 ## [1.31.2](https://github.com/cedya77/aiometadata/compare/v1.31.1...v1.31.2) (2026-02-22)
 
 
