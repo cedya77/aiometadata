@@ -326,6 +326,7 @@ async function fetchTraktHistory(
     const url = `${TRAKT_BASE_URL}/sync/history/episodes?start_at=${startAt}&limit=100`;
     const response: any = await makeRateLimitedRequest(
       () => httpGet(url, {
+        dispatcher: traktDispatcher,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'trakt-api-version': '2',
@@ -471,16 +472,19 @@ async function fetchTraktUpNextEpisodes(
     ]);
 
     const activeShows = watchedShows.filter(s => s.show?.ids?.trakt && !droppedShowIds.has(s.show.ids.trakt));
-    
-    state.shows = {}; 
-    activeShows.forEach(s => {
+    activeShows.sort((a, b) => {
+      const aTime = a.last_watched_at ? new Date(a.last_watched_at).getTime() : 0;
+      const bTime = b.last_watched_at ? new Date(b.last_watched_at).getTime() : 0;
+      return bTime - aTime;
+    });
+    const MAX_FULL_SYNC_REFRESH = 60;
+    state.shows = {};
+    activeShows.forEach((s, i) => {
       const id = s.show.ids.trakt;
-      showsToRefresh.add(id);
-      state.shows[id] = { 
-        type: 'show', 
-        show: s.show, 
-        upNextEpisode: null,
-        last_watched_at: s.last_watched_at 
+      if (i < MAX_FULL_SYNC_REFRESH) showsToRefresh.add(id);
+      state.shows[id] = {
+        type: 'show', show: s.show, upNextEpisode: null,
+        last_watched_at: s.last_watched_at
       };
     });
   } else if (showsToRefresh.size === 0) {
@@ -503,6 +507,22 @@ async function fetchTraktUpNextEpisodes(
   // For now, process all dirty items to keep state consistent.
   const refreshArray = Array.from(showsToRefresh);
   logger.info(`[Up Next] Refreshing progress for ${refreshArray.length} shows`);
+  const showsNeedingData = refreshArray.filter(id => !state.shows[id]?.show);
+
+  const showDataMap = new Map();
+  await Promise.all(showsNeedingData.map(async (showId) => {
+    try {
+      const resp = await makeRateLimitedRequest(
+        () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}`, {
+          dispatcher: traktDispatcher,
+          headers: { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': TRAKT_CLIENT_ID },
+          params: { extended: 'full' }
+        }),
+        `Trakt Show Info ${showId}`, 3, TRAKT_UNAUTHED_QUEUE_KEY
+      );
+      showDataMap.set(showId, resp.data);
+    } catch(e) {}
+  }));
 
   await Promise.all(refreshArray.map(async (showId) => {
     try {
@@ -528,32 +548,9 @@ async function fetchTraktUpNextEpisodes(
       const nextEp = progress?.next_episode;
 
       if (nextEp && nextEp.first_aired && new Date(nextEp.first_aired) <= new Date()) {
-        
-        let showData = state.shows[showId]?.show;
+        const showData = state.shows[showId]?.show || showDataMap.get(showId);
         const existingDate = state.shows[showId]?.last_watched_at || historyTimestampMap.get(showId);
-
-        if (!showData) {
-          try {
-            const showResponse: any = await makeRateLimitedRequest(
-              () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}`, {
-                dispatcher: traktDispatcher,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'trakt-api-version': '2',
-                  'trakt-api-key': TRAKT_CLIENT_ID
-                },
-                params: { 'extended': 'full' }
-              }),
-              `Trakt Show Info ${showId}`,
-              3,
-              TRAKT_UNAUTHED_QUEUE_KEY
-            );
-            showData = showResponse.data;
-          } catch (err) {
-            logger.warn(`[Up Next] Failed to fetch details for new show ${showId}`);
-          }
-        }
-
+      
         if (showData) {
           state.shows[showId] = {
             type: 'show',
@@ -570,6 +567,8 @@ async function fetchTraktUpNextEpisodes(
               first_aired: nextEp.first_aired
             }
           };
+        } else {
+          logger.warn(`[Up Next] No show data available for ${showId}, skipping`);
         }
       } else {
         if (state.shows[showId]) {
