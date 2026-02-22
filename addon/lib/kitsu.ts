@@ -16,6 +16,74 @@ const normalizeToFlat = (item: any): any => {
   return { ...rest, ...attributes };
 };
 
+function normalizeSearchText(str: string): string {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s*&\s*/g, ' and ')
+    .replace(/[\u2010-\u2015\u2212_\/-]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/^the\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getSearchTitleCandidates(item: KitsuAnime): string[] {
+  const flatItem = normalizeToFlat(item);
+  const titleCandidates: string[] = [];
+
+  if (typeof flatItem?.canonicalTitle === 'string') {
+    titleCandidates.push(flatItem.canonicalTitle);
+  }
+
+  if (flatItem?.titles && typeof flatItem.titles === 'object') {
+    titleCandidates.push(
+      ...Object.values(flatItem.titles).filter(
+        (title): title is string => typeof title === 'string' && title.trim().length > 0
+      )
+    );
+  }
+
+  if (Array.isArray(flatItem?.abbreviatedTitles)) {
+    titleCandidates.push(
+      ...flatItem.abbreviatedTitles.filter(
+        (title: unknown): title is string => typeof title === 'string' && title.trim().length > 0
+      )
+    );
+  }
+
+  return [...new Set(titleCandidates)];
+}
+
+function filterJunkSearchResults(results: KitsuAnime[], query: string): KitsuAnime[] {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return results;
+
+  const queryTokens = normalizedQuery.split(/\s+/).filter(token => token.length > 0);
+
+  const filteredResults = results.filter((item) => {
+    const normalizedCandidates = getSearchTitleCandidates(item)
+      .map(normalizeSearchText)
+      .filter(Boolean);
+
+    if (!normalizedCandidates.length) return false;
+
+    const isMatch = normalizedCandidates.some((candidate) => {
+      if (candidate.includes(normalizedQuery)) {
+        return true;
+      }
+
+      return queryTokens.some((token) => candidate.includes(token));
+    });
+
+    return isMatch;
+  });
+
+  return filteredResults;
+}
+
 // Type definitions for Kitsu API responses
 export interface KitsuAnimeAttributes {
   canonicalTitle: string;
@@ -25,6 +93,7 @@ export interface KitsuAnimeAttributes {
     en?: string;
     ja_jp?: string;
   };
+  abbreviatedTitles?: string[];
   synopsis: string;
   description: string;
   subtype: string;
@@ -176,6 +245,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
 
   const results: KitsuAnime[] = [];
   const startTime = Date.now();
+  const maxSearchPages = 3;
 
   try {
     // Loop over all provided subtypes
@@ -185,7 +255,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
         'filter[text]': query,
         'filter[subtype]': subtype,
         'page[limit]': 20,
-        include: 'categories'
+        'fields[anime]': 'canonicalTitle,titles,abbreviatedTitles,coverImage,posterImage,synopsis,description,startDate,status,episodeCount,episodeLength,ageRating'
       };
       if(ageRating.toLowerCase() !== 'none') {
         params['filter[ageRating]'] = ageRating;
@@ -199,9 +269,10 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
       // Add results
       results.push(...(response.data ?? []));
       nextUrl = response.links?.next;
+      let pagesFetched = 1;
 
-      // 🔁 Paginate until no next page
-      while (nextUrl) {
+      // 🔁 Paginate until no next page or page cap is reached
+      while (nextUrl && pagesFetched < maxSearchPages) {
         const nextResponse = await fetch(nextUrl);
         if (!nextResponse.ok) break;
 
@@ -216,6 +287,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
 
         results.push(...flattenedData);
         nextUrl = nextData.links?.next;
+        pagesFetched++;
       }
     }
 
@@ -224,7 +296,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('kitsu', responseTime, true);
 
-    return results;
+    return filterJunkSearchResults(results, query);
   } catch (error: any) {
     // Track failed request
     const responseTime = Date.now() - startTime;
@@ -240,7 +312,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
     });
     
     logger.error(`Error searching for "${query}":`, error.message);
-    return results;
+    return filterJunkSearchResults(results, query);
   }
 }
 
