@@ -403,11 +403,15 @@ async function fetchSimklWatchlistItems(
     }
 
     // 6. Sort by last watched
-    finalItems.sort((a: any, b: any) => {
-      const aTime = (a.last_watched_at || a.last_watched) ? new Date(a.last_watched_at || a.last_watched).getTime() : 0;
-      const bTime = (b.last_watched_at || b.last_watched) ? new Date(b.last_watched_at || b.last_watched).getTime() : 0;
-      return bTime - aTime;
-    });
+    if (status === 'plantowatch' || status === 'hold') {
+      finalItems.reverse();
+    } else {
+      finalItems.sort((a: any, b: any) => {
+        const aTime = (a.last_watched_at || a.last_watched) ? new Date(a.last_watched_at || a.last_watched).getTime() : 0;
+        const bTime = (b.last_watched_at || b.last_watched) ? new Date(b.last_watched_at || b.last_watched).getTime() : 0;
+        return bTime - aTime;
+      });
+    }
 
     return { items: finalItems };
 
