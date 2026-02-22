@@ -85,7 +85,7 @@ export interface KitsuAnime {
 
     };
 
-    genres: {
+    categories?: {
 
       data: Array<{
 
@@ -185,7 +185,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
         'filter[text]': query,
         'filter[subtype]': subtype,
         'page[limit]': 20,
-        include: 'genres'
+        include: 'categories'
       };
       if(ageRating.toLowerCase() !== 'none') {
         params['filter[ageRating]'] = ageRating;
@@ -251,7 +251,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
  * @param ids - An array of Kitsu IDs.
  * @returns A promise that resolves to an array of Kitsu anime resource objects.
  */
-async function getMultipleAnimeDetails(ids: (string | number)[], appends: string = 'genres') {
+async function getMultipleAnimeDetails(ids: (string | number)[], appends: string = 'categories') {
   if (!ids || ids.length === 0) {
     return null;
   }
@@ -262,7 +262,7 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
     logger.info(`Fetching details for ${ids.length} IDs: ${ids.join(',')}`);
     
     // Use direct API call to bypass Kitsu library filter issues
-    const baseUrl = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}&include=${appends}&page[size]=20`;
+    const baseUrl = `https://kitsu.io/api/edge/anime?filter[id]=${ids.join(',')}&include=${appends}&page[limit]=20`;
     
     logger.debug(`Direct API URL: ${baseUrl}`);
     
@@ -402,13 +402,15 @@ async function _fetchEpisodesRecursively(
 
 // -------------------- Helpers --------------------
 
-async function fetchRelationshipList(url?: string): Promise<string[]> {
+async function fetchRelationshipList(url?: string, attributeKey: 'name' | 'title' = 'name'): Promise<string[]> {
   if (!url) return []
   try {
     const res = await fetch(url)
     if (!res.ok) return []
     const json = await res.json()
-    return ((json as any).data || []).map((i: any) => i.attributes.name)
+    return ((json as any).data || [])
+      .map((i: any) => i.attributes?.[attributeKey])
+      .filter((value: any) => typeof value === 'string' && value.trim().length > 0)
   } catch {
     return []
   }
@@ -417,7 +419,7 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
 // -------------------- Main fetch --------------------
 
 /**
- * Fetches a Kitsu anime by ID, including genres and characters.
+ * Fetches a Kitsu anime by ID, including categories and characters.
  */
  async function getAnimeDetails(kitsuId: string | number) {
   if (!kitsuId) return null
@@ -427,7 +429,7 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
   try {
     const response = await kitsu.get(`anime/${kitsuId}`, {
       params: {
-        include: 'episodes,genres,characters,mediaRelationships.destination'
+        include: 'episodes,categories,characters.character,mediaRelationships.destination'
       }
     })
 
@@ -435,14 +437,20 @@ async function fetchRelationshipList(url?: string): Promise<string[]> {
     const included = response.included || []
 
     // try to read from included first
-    let genres = included.filter((i: any) => i.type === 'genres').map((i: any) => i.attributes.name)
-    let characters = included.filter((i: any) => i.type === 'characters').map((i: any) => i.attributes.name)
+    let genres = included
+      .filter((i: any) => i.type === 'categories')
+      .map((i: any) => i.attributes?.title)
+      .filter((value: any) => typeof value === 'string' && value.trim().length > 0)
+    let characters = included
+      .filter((i: any) => i.type === 'characters')
+      .map((i: any) => i.attributes?.name)
+      .filter((value: any) => typeof value === 'string' && value.trim().length > 0)
 
     // fallback if missing
     if (!genres.length)
-      genres = await fetchRelationshipList(anime.relationships?.genres?.links?.related)
+      genres = await fetchRelationshipList(anime.relationships?.categories?.links?.related, 'title')
     if (!characters.length)
-      characters = await fetchRelationshipList(anime.relationships?.characters?.links?.related)
+      characters = await fetchRelationshipList(anime.relationships?.characters?.links?.related, 'name')
 
     // Track successful request
     const responseTime = Date.now() - startTime;

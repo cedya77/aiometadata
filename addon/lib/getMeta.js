@@ -851,8 +851,8 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     try {
       logger.debug(`[AnimeMeta] Using provider 'kitsu' for ${stremioId} (Kitsu ID: ${allIds.kitsuId})`);
       const kitsuDetails = await cacheWrapGlobal(
-        `kitsu-anime-${allIds.kitsuId}-genres,episodes,mediaRelationships.destination`,
-        () => kitsu.getMultipleAnimeDetails([allIds.kitsuId], 'genres,episodes,mediaRelationships.destination'),
+        `kitsu-anime-${allIds.kitsuId}-categories,episodes,mediaRelationships.destination`,
+        () => kitsu.getMultipleAnimeDetails([allIds.kitsuId], 'categories,episodes,mediaRelationships.destination'),
         CATALOG_TTL
       );
       if (!kitsuDetails) {
@@ -862,7 +862,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       const artwork = await getAnimeArtwork(allIds, config, details.attributes?.posterImage?.original, details.attributes?.coverImage?.original, type);
       const { background, poster, logo, landscapePosterUrl } = artwork;
       let episodes = kitsuDetails.included?.filter(item => item.type === 'episodes') || [];
-      let genres = kitsuDetails.included?.filter(item => item.type === 'genres').map(item => item.attributes?.name) || [];
+      let genres = kitsuDetails.included?.filter(item => item.type === 'categories').map(item => item.attributes?.title).filter(Boolean) || [];
       return await buildKitsuAnimeResponse(stremioId, details, genres, kitsuDetails.included, episodes, config, userUUID, {
         mapping: allIds,
         bestBackgroundUrl: background,
