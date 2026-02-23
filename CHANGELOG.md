@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.32.1](https://github.com/cedya77/aiometadata/compare/v1.32.0...v1.32.1) (2026-02-23)
+
+
+### Bug Fixes
+
+* **mdblist:** fix meta issue arising when use show poster was on for mdb upnext ([7536c8e](https://github.com/cedya77/aiometadata/commit/7536c8e9346ea0cde551e20699c52a869da3b697))
+
 ## [1.32.0](https://github.com/cedya77/aiometadata/compare/v1.31.2...v1.32.0) (2026-02-22)
 
 
