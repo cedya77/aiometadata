@@ -286,6 +286,8 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [filterScoreMin, setFilterScoreMin] = useState<number | undefined>(catalog.filter_score_min);
   const [filterScoreMax, setFilterScoreMax] = useState<number | undefined>(catalog.filter_score_max);
+  const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
+  const [hideUnreleased, setHideUnreleased] = useState<boolean>(catalog.metadata?.hideUnreleased || false);
   const isUpNext = catalog.id === 'mdblist.upnext';
   const showSortOptions = !isUpNext;
 
@@ -294,7 +296,24 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, order, cacheTTL: Math.max(cacheTTL, 300), genreSelection, enableRatingPosters, filter_score_min: filterScoreMin, filter_score_max: filterScoreMax }
+          ? 
+          { 
+            ...c, 
+            sort, 
+            order, 
+            cacheTTL: Math.max(cacheTTL, 300), 
+            genreSelection, 
+            enableRatingPosters, 
+            filter_score_min: filterScoreMin, 
+            filter_score_max: filterScoreMax,
+            ...(isUpNext && {
+              metadata: {
+                ...c.metadata,
+                useShowPosterForUpNext: useShowPoster,
+                hideUnreleased
+              }
+            }) 
+          }
           : c
       )
     }));
@@ -359,6 +378,24 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </Select>
             </div>
               )}
+            </>
+          )}
+          {isUpNext && (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Use Show Poster</Label>
+                  <p className="text-xs text-muted-foreground">Display show poster instead of episode thumbnail</p>
+                </div>
+                <Switch checked={useShowPoster} onCheckedChange={setUseShowPoster} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Hide Unreleased Episodes</Label>
+                  <p className="text-xs text-muted-foreground">Exclude episodes airing today (appear the next day)</p>
+                </div>
+                <Switch checked={hideUnreleased} onCheckedChange={setHideUnreleased} />
+              </div>
             </>
           )}
           {catalog.source === 'mdblist' && catalog.sourceUrl?.includes('/external/lists/') && (

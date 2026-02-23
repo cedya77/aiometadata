@@ -3661,6 +3661,12 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
       }
     }
+    if (type === 'series' && stremioId && stremioId.startsWith('mdblist_upnext_')) {
+      const catalogConfig = fullConfig.catalogs?.find(c => c.id === 'mdblist.upnext');
+      if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
+        useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
+      }
+    }
     const result = await cacheWrapMetaSmart(
       userUUID,
       stremioId,
