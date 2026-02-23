@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.32.3](https://github.com/cedya77/aiometadata/compare/v1.32.2...v1.32.3) (2026-02-23)
+
+
+### Bug Fixes
+
+* **tvdb meta for anime:** add fallback to tvdb's db imdb id when anime mapping fails ([a82dad6](https://github.com/cedya77/aiometadata/commit/a82dad664e265b24b22d09736c9a312eeabe6ce2))
+
 ## [1.32.2](https://github.com/cedya77/aiometadata/compare/v1.32.1...v1.32.2) (2026-02-23)
 
 
