@@ -2013,6 +2013,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const tvdbId = tvdbShow.id;
   const malId = allIds?.malId;
   const castCount = config.castCount;
+  imdbId = imdbId || tvdbShow.remoteIds?.find(id => id.sourceName === 'IMDB')?.id
 
   // Get artwork based on art provider preference
   const tvdbPosterUrl = findArtwork(tvdbShow.artworks, 2, langCode3, config) || `${host}/missing_poster.png`;
