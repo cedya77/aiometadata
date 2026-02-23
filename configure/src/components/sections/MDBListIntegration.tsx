@@ -1601,15 +1601,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
                   <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
                     {externalLists.map((list) => {
-                      const movieCount = list.items - (list.items_show || 0);
-                      const showCount = list.items_show || 0;
-                      const listType = (() => {
-                        if (list.mediatype) return list.mediatype;
-                        if (movieCount > 0 && showCount > 0) return 'all';
-                        if (movieCount > 0) return 'movie';
-                        if (showCount > 0) return 'series';
-                        return 'Empty';
-                      })();
+                      const listType = getMdbListType(list);
                       const isMixedType = listType === 'all';
 
                       return (
