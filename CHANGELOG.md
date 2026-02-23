@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.32.2](https://github.com/cedya77/aiometadata/compare/v1.32.1...v1.32.2) (2026-02-23)
+
+
+### Bug Fixes
+
+* **mdblist:** use list.shows instead of list.items_shows to get shows count ([c8cf543](https://github.com/cedya77/aiometadata/commit/c8cf543d90a98216bd146ffa8994aca51bb63ca4))
+
 ## [1.32.1](https://github.com/cedya77/aiometadata/compare/v1.32.0...v1.32.1) (2026-02-23)
 
 
