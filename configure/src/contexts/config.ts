@@ -52,7 +52,7 @@ export interface CatalogConfig {
     listDescription?: string;
     discover?: {
       version?: number;
-      source?: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
+      source?: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal' | 'mdblist';
       mediaType?: 'movie' | 'tv' | 'series' | 'anime';
       params?: Record<string, string | number | boolean>;
       formState?: Record<string, any>;

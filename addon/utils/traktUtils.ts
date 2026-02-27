@@ -55,6 +55,71 @@ const QUEUE_CONFIG = {
   queueCleanupInterval: 1000 * 60 * 10
 };
 
+// --- Global Rate Limit Tracker ---
+// Tracks ALL Trakt API requests across all per-user queues against the shared client ID limit.
+
+const TRAKT_RATE_LIMIT_SAFETY_RATIO = (() => {
+  const val = parseFloat(process.env.TRAKT_RATE_LIMIT_SAFETY_RATIO || '0.85');
+  return Number.isFinite(val) && val > 0 && val <= 1 ? val : 0.85;
+})();
+
+class GlobalRateLimitTracker {
+  private requestTimestamps: number[] = [];
+  private globalPausedUntil = 0;
+  private lastLogTime = 0;
+  private readonly windowMs = TRAKT_GET_WINDOW_MS;
+  private readonly maxRequests = Math.floor(TRAKT_GET_WINDOW_LIMIT * TRAKT_RATE_LIMIT_SAFETY_RATIO);
+
+  private prune(now: number) {
+    const cutoff = now - this.windowMs;
+    while (this.requestTimestamps.length > 0 && this.requestTimestamps[0] <= cutoff) {
+      this.requestTimestamps.shift();
+    }
+  }
+
+  recordRequest(now: number) {
+    this.requestTimestamps.push(now);
+    this.prune(now);
+    this.maybeLog(now);
+  }
+
+  getWaitMs(now: number): number {
+    // If globally paused (e.g. from a 429), wait for that first
+    if (now < this.globalPausedUntil) {
+      return this.globalPausedUntil - now;
+    }
+
+    this.prune(now);
+    if (this.requestTimestamps.length < this.maxRequests) {
+      return 0;
+    }
+
+    // Budget exhausted — wait until the oldest request exits the window
+    const oldest = this.requestTimestamps[0];
+    return Math.max(0, (oldest + this.windowMs - now) + QUEUE_CONFIG.rateLimitBuffer);
+  }
+
+  pauseGlobal(durationMs: number) {
+    const resumeAt = Date.now() + durationMs;
+    if (resumeAt > this.globalPausedUntil) {
+      this.globalPausedUntil = resumeAt;
+      logger.warn(`[GlobalRateLimit] All queues paused for ${Math.round(durationMs / 1000)}s due to 429`);
+    }
+  }
+
+  private maybeLog(now: number) {
+    if (now - this.lastLogTime < 60_000) return;
+    const usage = this.requestTimestamps.length;
+    const ratio = usage / this.maxRequests;
+    if (ratio > 0.5) {
+      logger.info(`[GlobalRateLimit] ${usage}/${this.maxRequests} requests in window (${Math.round(ratio * 100)}%)`);
+      this.lastLogTime = now;
+    }
+  }
+}
+
+const globalRateLimiter = new GlobalRateLimitTracker();
+
 // --- Multi-Queue Implementation ---
 
 class RequestQueue {
@@ -136,6 +201,13 @@ class RequestQueue {
         continue;
       }
 
+      // Check global rate limit budget across all queues
+      const globalWaitMs = globalRateLimiter.getWaitMs(Date.now());
+      if (globalWaitMs > 0) {
+        await new Promise(r => setTimeout(r, globalWaitMs));
+        continue;
+      }
+
       const task = this.queue.shift();
       if (task) {
         this.activeCount++;
@@ -143,6 +215,7 @@ class RequestQueue {
         this.lastRequestTime = requestStart;
         this.requestStarts.push(requestStart);
         this.pruneRequestStarts(requestStart);
+        globalRateLimiter.recordRequest(requestStart);
         this.lastActivity = Date.now();
         
         task().finally(() => {
@@ -292,9 +365,10 @@ async function makeRateLimitedRequest<T>(
             : `User:${queueKey.substring(0,5)}...`;
         
         logger.warn(`[Trakt] Rate Limit (${keyShort}). Pausing queue for ${Math.round(waitMs/1000)}s - ${context}`);
-        
-        // Pause ONLY this specific queue
+
+        // Pause this queue and notify global tracker (client-ID-level limit)
         queue.pause(waitMs);
+        globalRateLimiter.pauseGlobal(waitMs);
         
         if (isLastAttempt) throw error;
         
@@ -512,15 +586,23 @@ async function fetchTraktUpNextEpisodes(
   const showDataMap = new Map();
   await Promise.all(showsNeedingData.map(async (showId) => {
     try {
-      const resp = await makeRateLimitedRequest(
-        () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}`, {
-          dispatcher: traktDispatcher,
-          headers: { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': TRAKT_CLIENT_ID },
-          params: { extended: 'full' }
-        }),
-        `Trakt Show Info ${showId}`, 3, TRAKT_UNAUTHED_QUEUE_KEY
+      const data = await cacheWrapGlobal(
+        `trakt:show:${showId}:full`,
+        async () => {
+          const resp = await makeRateLimitedRequest(
+            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}`, {
+              dispatcher: traktDispatcher,
+              headers: { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': TRAKT_CLIENT_ID },
+              params: { extended: 'full' }
+            }),
+            `Trakt Show Info ${showId}`, 3, TRAKT_UNAUTHED_QUEUE_KEY
+          );
+          return resp.data;
+        },
+        86400, // 1 day TTL
+        { skipVersion: true }
       );
-      showDataMap.set(showId, resp.data);
+      showDataMap.set(showId, data);
     } catch(e) {}
   }));
 
@@ -823,21 +905,28 @@ async function fetchTraktUnwatchedEpisodes(
           if (progress.completed >= progress.aired) return null;
 
           logger.debug(`Unwatched: access token ${accessToken}`);
-          // Fetch seasons with episode air dates to sort accurately
-          const showSeasonsResp: any = await makeRateLimitedRequest(
-            () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/seasons?extended=full,episodes`, {
-              dispatcher: traktDispatcher,
-              headers: {
-                'Content-Type': 'application/json',
-                'trakt-api-version': '2',
-                'trakt-api-key': TRAKT_CLIENT_ID
-              }
-            }),
-            `Trakt fetchShowSeasons (unwatched ${showId})`,
-            1,
-            TRAKT_UNAUTHED_QUEUE_KEY
+          // Fetch seasons with episode air dates to sort accurately (globally cached - public data)
+          const seasonsData: any[] = await cacheWrapGlobal(
+            `trakt:show:${showId}:seasons:full_episodes`,
+            async () => {
+              const showSeasonsResp: any = await makeRateLimitedRequest(
+                () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/seasons?extended=full,episodes`, {
+                  dispatcher: traktDispatcher,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'trakt-api-version': '2',
+                    'trakt-api-key': TRAKT_CLIENT_ID
+                  }
+                }),
+                `Trakt fetchShowSeasons (unwatched ${showId})`,
+                1,
+                TRAKT_UNAUTHED_QUEUE_KEY
+              );
+              return Array.isArray(showSeasonsResp.data) ? showSeasonsResp.data : [];
+            },
+            43200, // 12 hour TTL
+            { skipVersion: true }
           );
-          const seasonsData = Array.isArray(showSeasonsResp.data) ? showSeasonsResp.data : [];
           const airedMap = new Map<string, string>();
           for (const season of seasonsData) {
             if (!season?.episodes || season.number === 0) continue; // skip specials

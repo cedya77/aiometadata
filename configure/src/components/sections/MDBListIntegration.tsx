@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,8 +8,9 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
+import { apiCache } from '@/utils/apiCache';
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
 import { getMdbListType, createMDBListCatalog } from '@/utils/catalogUtils';
 import type { CatalogConfig } from '@/contexts/ConfigContext';
@@ -47,7 +48,33 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
+
+  // User info state
+  const [userInfo, setUserInfo] = useState<any>(null);
+  const [loadingUserInfo, setLoadingUserInfo] = useState(false);
+  const [userInfoCollapsed, setUserInfoCollapsed] = useState(false);
   
+  // Fetch user info when dialog opens with valid key
+  useEffect(() => {
+    if (isOpen && isValid && tempKey) {
+      setLoadingUserInfo(true);
+      const cacheKey = `mdblist_user_${tempKey.substring(0, 8)}`;
+      apiCache.cachedFetch(
+        cacheKey,
+        async () => {
+          const response = await fetch(`/api/mdblist/user?apikey=${encodeURIComponent(tempKey)}`);
+          return response.ok ? await response.json() : null;
+        },
+        15 * 60 * 1000 // Cache for 15 minutes
+      )
+        .then(data => setUserInfo(data))
+        .catch(() => setUserInfo(null))
+        .finally(() => setLoadingUserInfo(false));
+    } else {
+      setUserInfo(null);
+    }
+  }, [isOpen, isValid, tempKey]);
+
   // Helper function to get display type override
   const getDisplayTypeOverride = (
     type: 'movie' | 'series',
@@ -933,7 +960,130 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               </div>
             </CardContent>
           </Card>
-          
+
+          {/* User Info & Limits */}
+          {isValid && (
+            <Card>
+              <CardHeader className="cursor-pointer" onClick={() => setUserInfoCollapsed(!userInfoCollapsed)}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {userInfo?.avatar_url && (
+                      <img src={userInfo.avatar_url} alt="Avatar" className="h-8 w-8 rounded-full" />
+                    )}
+                    <div>
+                      <CardTitle>Account & Limits</CardTitle>
+                      <CardDescription>
+                        {userInfo ? `${userInfo.username || 'User'}${userInfo.plan ? ` \u2022 ${userInfo.plan} plan` : ''}` : 'Your MDBList account info and usage limits'}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <ChevronDown
+                    className={`w-5 h-5 transition-transform ${userInfoCollapsed ? 'rotate-180' : ''}`}
+                  />
+                </div>
+              </CardHeader>
+              {!userInfoCollapsed && (
+                <CardContent>
+                  {loadingUserInfo ? (
+                    <div className="text-center text-muted-foreground py-8">Loading account info...</div>
+                  ) : userInfo ? (
+                    <div className="space-y-6">
+                      {/* Account Info */}
+                      <div className="space-y-3">
+                        <h3 className="font-semibold text-sm text-muted-foreground">Account</h3>
+                        <div className="space-y-2">
+                          {userInfo.name && (
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">Name</span>
+                              <span className="font-bold text-sm">{userInfo.name}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                            <span className="text-xs text-muted-foreground">Plan</span>
+                            <span className="font-bold text-sm capitalize">{userInfo.plan || 'Free'}</span>
+                          </div>
+                          {userInfo.is_supporter && (
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">Supporter</span>
+                              <Badge variant="secondary" className="text-xs">Supporter</Badge>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Limits */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* List Limits */}
+                        <div className="space-y-3">
+                          <h3 className="font-semibold text-sm text-muted-foreground">List Limits</h3>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">Lists</span>
+                              <span className="font-bold text-sm">{userInfo.limits?.lists ?? '—'}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">External Lists</span>
+                              <span className="font-bold text-sm">{userInfo.limits?.external_lists ?? '—'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Catalog Queries */}
+                        <div className="space-y-3">
+                          <h3 className="font-semibold text-sm text-muted-foreground">Catalog Queries</h3>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">Limit</span>
+                              <span className="font-bold text-sm">{userInfo.limits?.catalog_queries ?? '—'}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">Used</span>
+                              <span className="font-bold text-sm">{userInfo.limits?.catalog_queries_used ?? 0}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                              <span className="text-xs text-muted-foreground">Remaining</span>
+                              <span className={`font-bold text-sm ${
+                                userInfo.limits?.catalog_queries_remaining != null && userInfo.limits.catalog_queries_remaining <= 5
+                                  ? 'text-destructive' : ''
+                              }`}>
+                                {userInfo.limits?.catalog_queries_remaining ?? '—'}
+                              </span>
+                            </div>
+                            {userInfo.limits?.catalog_queries_first_expires_at && (
+                              <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                                <span className="text-xs text-muted-foreground">Next Expiry</span>
+                                <span className="font-bold text-sm">
+                                  {new Date(userInfo.limits.catalog_queries_first_expires_at).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rate Limits */}
+                      <div className="space-y-3">
+                        <h3 className="font-semibold text-sm text-muted-foreground">Rate Limits</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                            <span className="text-xs text-muted-foreground">Limit</span>
+                            <span className="font-bold text-sm">{userInfo.rate_limit ?? '—'}/s</span>
+                          </div>
+                          <div className="flex justify-between items-center p-2 rounded-lg bg-muted/40">
+                            <span className="text-xs text-muted-foreground">Remaining</span>
+                            <span className="font-bold text-sm">{userInfo.rate_limit_remaining ?? '—'}/s</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted-foreground py-8">Unable to load account info.</div>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           {isValid && (
             <Card>
               <CardHeader>

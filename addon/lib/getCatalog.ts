@@ -610,7 +610,44 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
   if (id.startsWith("mdblist.")) {
     logger.info(`Fetching MDBList catalog: ${id}, Genre: ${genre}, Page: ${page}`);
     const catalogConfig = config.catalogs?.find(c => c.id === id);
-    
+
+    // Handle MDBList Discover catalogs (dynamic filter-based)
+    if (id.startsWith('mdblist.discover.')) {
+      const apiKey = config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '';
+      if (!apiKey) {
+        logger.warn('[MDBList Discover] Missing API key');
+        return [];
+      }
+
+      const discoverParams = catalogConfig?.metadata?.discover?.params || {};
+      const params: Record<string, string | number | boolean> = { ...discoverParams };
+
+      // Override genre if user selected one at request time
+      if (genre && genre.toLowerCase() !== 'none') {
+        const { convertGenreToSlug } = await import('../utils/mdbList.js');
+        params.genre = convertGenreToSlug(genre);
+      }
+
+      const mediaType = type === 'movie' ? 'movie' : 'show';
+      const { fetchMDBListCatalog } = await import('../utils/mdbList.js');
+      const response = await fetchMDBListCatalog(mediaType, apiKey, page, params, catalogConfig?.cacheTTL);
+
+      // Catalog endpoint returns a different shape than list items:
+      // { title, year, score, type, ids: { imdbid, tmdbid, traktid, ... } }
+      // parseMDBListItems expects: { id (tmdb), imdb_id, tvdb_id, mediatype }
+      const normalizedItems = response.items.map((item: any) => ({
+        ...item,
+        id: item.ids?.tmdbid || item.id,
+        imdb_id: item.ids?.imdbid || item.imdb_id,
+        tvdb_id: item.ids?.tvdbid || item.tvdb_id,
+        mediatype: item.type === 'movie' ? 'movie' : item.type === 'show' ? 'show' : mediaType,
+      }));
+
+      let metas = await parseMDBListItems(normalizedItems, type, language, config, includeVideos);
+      metas = applyAgeRatingFilter(metas, type, config);
+      return metas;
+    }
+
     // Handle MDBList Up Next catalog
     if (id === 'mdblist.upnext') {
       // MDBList Up Next catalog - only supports series type

@@ -289,7 +289,8 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
   const [hideUnreleased, setHideUnreleased] = useState<boolean>(catalog.metadata?.hideUnreleased || false);
   const isUpNext = catalog.id === 'mdblist.upnext';
-  const showSortOptions = !isUpNext;
+  const isDiscover = catalog.id.startsWith('mdblist.discover.');
+  const showSortOptions = !isUpNext && !isDiscover;
 
   const handleSave = () => {
     setConfig(prev => ({
@@ -424,27 +425,36 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </div>
             </>
           )}
-          <div className="space-y-2">
-            <Label>Cache TTL (seconds)</Label>
-            <div className="flex items-center space-x-2">
-              <input
-                type="number"
-                value={cacheTTL}
-                onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
-                min="300"
-                max="604800"
-                step="3600"
-                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={catalogTTL.toString()}
-              />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
-              </span>
+          {isDiscover ? (
+            <div className="space-y-2">
+              <Label>Cache TTL</Label>
+              <p className="text-sm text-muted-foreground">
+                Fixed at 6 hours (MDBList caches dynamic catalog results server-side for 6 hours).
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              How long to cache this list before refreshing. Range: 5 minutes to 7 days.
-            </p>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Cache TTL (seconds)</Label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="number"
+                  value={cacheTTL}
+                  onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
+                  min="300"
+                  max="604800"
+                  step="3600"
+                  className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                  placeholder={catalogTTL.toString()}
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                How long to cache this list before refreshing. Range: 5 minutes to 7 days.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Genre Selection</Label>
             <Select value={genreSelection} onValueChange={(value: GenreSelection) => setGenreSelection(value)}>
@@ -1609,7 +1619,8 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
             </Tooltip>
           )}
 
-          {((catalog.source === 'mdblist' && ((catalog as any).metadata?.url || ((catalog as any).metadata?.author && catalog.name))) ||
+          {!catalog.id.includes('.discover.') &&
+           ((catalog.source === 'mdblist' && ((catalog as any).metadata?.url || ((catalog as any).metadata?.author && catalog.name))) ||
             (catalog.source === 'letterboxd' && (catalog as any).metadata?.url) ||
             (catalog.source === 'trakt' && ((catalog as any).metadata?.url || catalog.id.startsWith('trakt.list.') || (catalog.id.startsWith('trakt.') && (catalog as any).metadata?.author))) ||
             (catalog.source === 'tmdb' && catalog.id.startsWith('tmdb.list.') && ((catalog as any).metadata?.url || (catalog as any).metadata?.listId)) ||

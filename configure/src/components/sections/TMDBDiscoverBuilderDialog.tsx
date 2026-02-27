@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel } from '@/components/ui/alert-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -28,7 +29,7 @@ interface TMDBDiscoverBuilderDialogProps {
 
 type CatalogMediaType = 'movie' | 'series';
 type TmdbMediaType = 'movie' | 'tv';
-type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal';
+type DiscoverSource = 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal' | 'mdblist';
 type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
@@ -314,6 +315,101 @@ const MAL_SORT_OPTIONS = [
   { value: 'title', label: 'Title (A–Z)' },
 ] as const;
 
+const MDBLIST_SORT_OPTIONS = [
+  { value: 'score', label: 'MDBList Score' },
+  { value: 'score_average', label: 'Average Score' },
+  { value: 'released', label: 'Release Date' },
+  { value: 'releasedigital', label: 'Digital Release' },
+  { value: 'imdbrating', label: 'IMDb Rating' },
+  { value: 'imdbvotes', label: 'IMDb Votes' },
+  { value: 'imdbpopular', label: 'IMDb Popularity' },
+  { value: 'tmdbpopular', label: 'TMDB Popularity' },
+  { value: 'metacritic', label: 'Metacritic' },
+  { value: 'rtomatoes', label: 'Rotten Tomatoes' },
+  { value: 'rtaudience', label: 'RT Audience' },
+  { value: 'letterrating', label: 'Letterboxd Rating' },
+  { value: 'title', label: 'Title' },
+] as const;
+
+const MDBLIST_SORT_DIRECTION_OPTIONS = [
+  { value: 'desc', label: 'Descending' },
+  { value: 'asc', label: 'Ascending' },
+] as const;
+
+const MDBLIST_STANDARD_GENRES = [
+  { value: 'action', label: 'Action' },
+  { value: 'adult', label: 'Adult' },
+  { value: 'adventure', label: 'Adventure' },
+  { value: 'animation', label: 'Animation' },
+  { value: 'anime', label: 'Anime' },
+  { value: 'biography', label: 'Biography' },
+  { value: 'children', label: 'Children' },
+  { value: 'comedy', label: 'Comedy' },
+  { value: 'crime', label: 'Crime' },
+  { value: 'documentary', label: 'Documentary' },
+  { value: 'donghua', label: 'Donghua' },
+  { value: 'drama', label: 'Drama' },
+  { value: 'eastern', label: 'Eastern' },
+  { value: 'family', label: 'Family' },
+  { value: 'fantasy', label: 'Fantasy' },
+  { value: 'film-noir', label: 'Film-Noir' },
+  { value: 'game-show', label: 'Game Show' },
+  { value: 'history', label: 'History' },
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'home-and-garden', label: 'Home & Garden' },
+  { value: 'horror', label: 'Horror' },
+  { value: 'kids', label: 'Kids' },
+  { value: 'music', label: 'Music' },
+  { value: 'musical', label: 'Musical' },
+  { value: 'mystery', label: 'Mystery' },
+  { value: 'news', label: 'News' },
+  { value: 'reality', label: 'Reality' },
+  { value: 'reality-tv', label: 'Reality TV' },
+  { value: 'romance', label: 'Romance' },
+  { value: 'sci-fi', label: 'Sci-Fi' },
+  { value: 'science-fiction', label: 'Science Fiction' },
+  { value: 'short', label: 'Short' },
+  { value: 'soap', label: 'Soap' },
+  { value: 'special-interest', label: 'Special Interest' },
+  { value: 'sport', label: 'Sport' },
+  { value: 'sporting-event', label: 'Sporting Event' },
+  { value: 'superhero', label: 'Superhero' },
+  { value: 'suspense', label: 'Suspense' },
+  { value: 'talk', label: 'Talk' },
+  { value: 'talk-show', label: 'Talk Show' },
+  { value: 'thriller', label: 'Thriller' },
+  { value: 'tv-movie', label: 'TV Movie' },
+  { value: 'war', label: 'War' },
+  { value: 'western', label: 'Western' },
+] as const;
+
+const MDBLIST_ANIME_GENRES = [
+  { value: 'anime-bl', label: 'BL' },
+  { value: 'anime-ecchi', label: 'Ecchi' },
+  { value: 'anime-historical', label: 'Historical' },
+  { value: 'anime-isekai', label: 'Isekai' },
+  { value: 'anime-josei', label: 'Josei' },
+  { value: 'anime-martial-arts', label: 'Martial Arts' },
+  { value: 'anime-mecha', label: 'Mecha' },
+  { value: 'anime-military', label: 'Military' },
+  { value: 'anime-music', label: 'Music (Anime)' },
+  { value: 'anime-parody', label: 'Parody' },
+  { value: 'anime-psychological', label: 'Psychological' },
+  { value: 'anime-samurai', label: 'Samurai' },
+  { value: 'anime-school', label: 'School' },
+  { value: 'anime-seinen', label: 'Seinen' },
+  { value: 'anime-shoujo', label: 'Shoujo' },
+  { value: 'anime-shounen', label: 'Shounen' },
+  { value: 'anime-slice-of-life', label: 'Slice of Life' },
+  { value: 'anime-space', label: 'Space' },
+  { value: 'anime-sports', label: 'Sports' },
+  { value: 'anime-supernatural', label: 'Supernatural' },
+  { value: 'anime-vampire', label: 'Vampire' },
+  { value: 'anime-yuri', label: 'Yuri' },
+] as const;
+
+const MDBLIST_ALL_GENRES = [...MDBLIST_STANDARD_GENRES, ...MDBLIST_ANIME_GENRES];
+
 const MAL_TYPE_OPTIONS = [
   { value: 'tv', label: 'TV' },
   { value: 'movie', label: 'Movie' },
@@ -566,6 +662,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';
+  const mdblistApiKey = config.apiKeys?.mdblist?.trim() || '';
+  const hasMdblistApiKey = mdblistApiKey.length > 0;
   const [simklClientId, setSimklClientId] = useState<string>("");
   
   useEffect(() => {
@@ -710,12 +808,30 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
   const [malEndDate, setMalEndDate] = useState('');
   const [malSfw, setMalSfw] = useState(true);
 
+  // MDBList Discover state
+  const [mdblistSortDirection, setMdblistSortDirection] = useState<'desc' | 'asc'>('desc');
+  const [mdblistScoreMin, setMdblistScoreMin] = useState<number>(0);
+  const [mdblistScoreMax, setMdblistScoreMax] = useState<number>(100);
+  const [mdblistYearMin, setMdblistYearMin] = useState<string>('');
+  const [mdblistYearMax, setMdblistYearMax] = useState<string>('');
+  const [mdblistReleasedFrom, setMdblistReleasedFrom] = useState<string>('');
+  const [mdblistReleasedTo, setMdblistReleasedTo] = useState<string>('');
+  const [mdblistRuntimeMin, setMdblistRuntimeMin] = useState<string>('');
+  const [mdblistRuntimeMax, setMdblistRuntimeMax] = useState<string>('');
+  const [mdblistLanguage, setMdblistLanguage] = useState<string>('');
+  const [mdblistCountry, setMdblistCountry] = useState<string>('');
+  const [mdblistGenres, setMdblistGenres] = useState<string[]>([]);
+  const [mdblistGenreMode, setMdblistGenreMode] = useState<'or' | 'and'>('or');
+  const [mdblistGenreSelection, setMdblistGenreSelection] = useState<'standard' | 'anime' | 'all'>('standard');
+
   const [previewResults, setPreviewResults] = useState<any[]>([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewTotalResults, setPreviewTotalResults] = useState(0);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [showMdblistPreviewConfirm, setShowMdblistPreviewConfirm] = useState(false);
+  const [mdblistPreviewRemember, setMdblistPreviewRemember] = useState(false);
 
   const tmdbMediaType = toTmdbMediaType(catalogType);
 
@@ -723,7 +839,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     anilist: 'Anilist',
     tvdb: 'TVDB',
     simkl: 'Simkl',
-    mal: 'MAL'
+    mal: 'MAL',
+    mdblist: 'MDBList'
   };
   
   const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
@@ -734,11 +851,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     simkl: simklClientId,
     mal: 'public-api',
     anilist: 'public-api',
+    mdblist: mdblistApiKey,
   };
   
   const activeSourceApiKey = SOURCE_API_KEYS[discoverSource] ?? 'public-api';
   
   const sortOptions = useMemo(() => {
+    if (discoverSource === 'mdblist') return MDBLIST_SORT_OPTIONS;
     if (discoverSource === 'mal') return MAL_SORT_OPTIONS;
     if (discoverSource === 'anilist') return ANILIST_SORT_OPTIONS;
     if (discoverSource === 'simkl') {
@@ -910,6 +1029,19 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     malStartDate,
     malEndDate,
     malSfw,
+    mdblistSortDirection,
+    mdblistScoreMin,
+    mdblistScoreMax,
+    mdblistYearMin,
+    mdblistYearMax,
+    mdblistReleasedFrom,
+    mdblistReleasedTo,
+    mdblistRuntimeMin,
+    mdblistRuntimeMax,
+    mdblistLanguage,
+    mdblistCountry,
+    mdblistGenres,
+    mdblistGenreMode,
   ]);
 
   const activeFilterCount = useMemo(() => {
@@ -919,6 +1051,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
            ? new Set(['sort', 'sortType', 'country', 'lang'])
            : discoverSource === 'simkl'
              ? new Set(['media', 'sort'])
+           : discoverSource === 'mdblist'
+             ? new Set(['sort', 'sort_order'])
            : discoverSource === 'anilist'
                   ? new Set(['sort', 'isAdult'])
                   : new Set(['order_by', 'sort', 'sfw']);
@@ -1030,6 +1164,21 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     setMalStartDate('');
     setMalEndDate('');
     setMalSfw(true);
+
+    setMdblistSortDirection('desc');
+    setMdblistScoreMin(0);
+    setMdblistScoreMax(100);
+    setMdblistYearMin('');
+    setMdblistYearMax('');
+    setMdblistReleasedFrom('');
+    setMdblistReleasedTo('');
+    setMdblistRuntimeMin('');
+    setMdblistRuntimeMax('');
+    setMdblistLanguage('');
+    setMdblistCountry('');
+    setMdblistGenres([]);
+    setMdblistGenreMode('or');
+    setMdblistGenreSelection('standard');
 
     setPreviewResults([]);
     setShowPreview(false);
@@ -1157,6 +1306,22 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     if (fs.malStartDate) setMalStartDate(fs.malStartDate);
     if (fs.malEndDate) setMalEndDate(fs.malEndDate);
     if (typeof fs.malSfw === 'boolean') setMalSfw(fs.malSfw);
+
+    // MDBList
+    if (fs.mdblistSortDirection) setMdblistSortDirection(fs.mdblistSortDirection);
+    if (typeof fs.mdblistScoreMin === 'number') setMdblistScoreMin(fs.mdblistScoreMin);
+    if (typeof fs.mdblistScoreMax === 'number') setMdblistScoreMax(fs.mdblistScoreMax);
+    if (fs.mdblistYearMin) setMdblistYearMin(fs.mdblistYearMin);
+    if (fs.mdblistYearMax) setMdblistYearMax(fs.mdblistYearMax);
+    if (fs.mdblistReleasedFrom) setMdblistReleasedFrom(fs.mdblistReleasedFrom);
+    if (fs.mdblistReleasedTo) setMdblistReleasedTo(fs.mdblistReleasedTo);
+    if (fs.mdblistRuntimeMin) setMdblistRuntimeMin(fs.mdblistRuntimeMin);
+    if (fs.mdblistRuntimeMax) setMdblistRuntimeMax(fs.mdblistRuntimeMax);
+    if (fs.mdblistLanguage) setMdblistLanguage(fs.mdblistLanguage);
+    if (fs.mdblistCountry) setMdblistCountry(fs.mdblistCountry);
+    if (fs.mdblistGenres) setMdblistGenres(fs.mdblistGenres);
+    if (fs.mdblistGenreMode) setMdblistGenreMode(fs.mdblistGenreMode);
+    if (fs.mdblistGenreSelection) setMdblistGenreSelection(fs.mdblistGenreSelection);
   }, [isOpen, editingCatalog]);
 
   useEffect(() => {
@@ -1214,7 +1379,23 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     if (fs.simklCountry) setSimklCountry(fs.simklCountry);
     if (fs.simklNetwork) setSimklNetwork(fs.simklNetwork);
     if (fs.simklYear) setSimklYear(fs.simklYear);
-  
+
+    // MDBList fields
+    if (fs.mdblistSortDirection) setMdblistSortDirection(fs.mdblistSortDirection);
+    if (typeof fs.mdblistScoreMin === 'number') setMdblistScoreMin(fs.mdblistScoreMin);
+    if (typeof fs.mdblistScoreMax === 'number') setMdblistScoreMax(fs.mdblistScoreMax);
+    if (fs.mdblistYearMin) setMdblistYearMin(fs.mdblistYearMin);
+    if (fs.mdblistYearMax) setMdblistYearMax(fs.mdblistYearMax);
+    if (fs.mdblistReleasedFrom) setMdblistReleasedFrom(fs.mdblistReleasedFrom);
+    if (fs.mdblistReleasedTo) setMdblistReleasedTo(fs.mdblistReleasedTo);
+    if (fs.mdblistRuntimeMin) setMdblistRuntimeMin(fs.mdblistRuntimeMin);
+    if (fs.mdblistRuntimeMax) setMdblistRuntimeMax(fs.mdblistRuntimeMax);
+    if (fs.mdblistLanguage) setMdblistLanguage(fs.mdblistLanguage);
+    if (fs.mdblistCountry) setMdblistCountry(fs.mdblistCountry);
+    if (fs.mdblistGenres) setMdblistGenres(fs.mdblistGenres);
+    if (fs.mdblistGenreMode) setMdblistGenreMode(fs.mdblistGenreMode);
+    if (fs.mdblistGenreSelection) setMdblistGenreSelection(fs.mdblistGenreSelection);
+
     toast.info("Template Applied", {
       description: `Pre-populated filters based on ${customizeTemplate.name.replace(' (Custom)', '')}`
     });
@@ -1700,6 +1881,19 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         const data = await res.json();
         results = data.results || [];
         totalResults = data.total_results || 0;
+
+      } else if (discoverSource === 'mdblist') {
+        // Check if user already opted in to skip the confirmation
+        const skipConfirm = localStorage.getItem('mdblist-preview-confirmed') === 'true';
+        if (!skipConfirm) {
+          // Show confirmation dialog and bail — the actual fetch happens in executeMdblistPreview
+          setShowMdblistPreviewConfirm(true);
+          setIsPreviewLoading(false);
+          return;
+        }
+        const mdblistData = await executeMdblistPreview(params);
+        results = mdblistData.results;
+        totalResults = mdblistData.totalResults;
       }
   
       setPreviewResults(results);
@@ -1716,7 +1910,59 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     }
   };
 
+  const executeMdblistPreview = async (params?: Record<string, string | number | boolean>) => {
+    const p = params || buildDiscoverParams();
+    setIsPreviewLoading(true);
+    setShowPreview(true);
+    try {
+      const queryParams = new URLSearchParams();
+      const mediaType = catalogType === 'movie' ? 'movie' : 'show';
+      queryParams.set('mediaType', mediaType);
+      for (const [key, value] of Object.entries(p)) {
+        queryParams.set(key, String(value));
+      }
+      if (config.apiKeys?.mdblist) queryParams.set('apikey', config.apiKeys.mdblist);
+      const res = await fetch(`/api/mdblist/discover/preview?${queryParams.toString()}`);
+      const data = await res.json();
+      const results = data.results || [];
+      const totalResults = data.total_results || 0;
+      setPreviewResults(results);
+      setPreviewTotalResults(totalResults);
+      return { results, totalResults };
+    } catch (error) {
+      console.error('MDBList preview failed:', error);
+      toast.error('Preview failed', {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+      setPreviewResults([]);
+      setPreviewTotalResults(0);
+      return { results: [], totalResults: 0 };
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
   function buildDiscoverParams(): Record<string, string | number | boolean> {
+
+    if (discoverSource === 'mdblist') {
+      const p: Record<string, string | number | boolean> = {
+        sort: sortBy,
+        sort_order: mdblistSortDirection,
+      };
+      if (mdblistScoreMin > 0) p.score_min = mdblistScoreMin;
+      if (mdblistScoreMax < 100) p.score_max = mdblistScoreMax;
+      if (mdblistYearMin) p.year_min = parseInt(mdblistYearMin);
+      if (mdblistYearMax) p.year_max = parseInt(mdblistYearMax);
+      if (mdblistReleasedFrom) p.released_from = mdblistReleasedFrom;
+      if (mdblistReleasedTo) p.released_to = mdblistReleasedTo;
+      if (mdblistRuntimeMin) p.runtime_min = parseInt(mdblistRuntimeMin);
+      if (mdblistRuntimeMax) p.runtime_max = parseInt(mdblistRuntimeMax);
+      if (mdblistLanguage) p.language = mdblistLanguage;
+      if (mdblistCountry) p.country = mdblistCountry;
+      if (mdblistGenres.length > 0) p.genre = mdblistGenres.join(',');
+      if (mdblistGenres.length > 1) p.genre_mode = mdblistGenreMode;
+      return p;
+    }
 
     if (discoverSource === 'simkl') {
       const simklParams: Record<string, string | number | boolean> = {
@@ -2056,7 +2302,27 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         malSfw,
       });
     }
-  
+
+    // MDBList
+    if (discoverSource === 'mdblist') {
+      Object.assign(state, {
+        mdblistSortDirection,
+        mdblistScoreMin,
+        mdblistScoreMax,
+        mdblistYearMin,
+        mdblistYearMax,
+        mdblistReleasedFrom,
+        mdblistReleasedTo,
+        mdblistRuntimeMin,
+        mdblistRuntimeMax,
+        mdblistLanguage,
+        mdblistCountry,
+        mdblistGenres,
+        mdblistGenreMode,
+        mdblistGenreSelection,
+      });
+    }
+
     return state;
   }
 
@@ -2151,6 +2417,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
           simkl: 'simkl.discover',
           mal: 'mal.discover',
           anilist: 'anilist.discover',
+          mdblist: 'mdblist.discover',
         };
         const sourcePrefix = SOURCE_PREFIXES[discoverSource] ?? 'tmdb.discover';
         const catalogTypeSegment = discoverSource === 'simkl'
@@ -2174,7 +2441,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
           );
   
       const SOURCE_LABELS: Record<string, string> = {
-        tmdb: 'TMDB', tvdb: 'TVDB', simkl: 'SIMKL', mal: 'MAL', anilist: 'ANILIST',
+        tmdb: 'TMDB', tvdb: 'TVDB', simkl: 'SIMKL', mal: 'MAL', anilist: 'ANILIST', mdblist: 'MDBLIST',
       };
       const sourceLabel = SOURCE_LABELS[discoverSource] ?? 'TMDB';
   
@@ -2194,7 +2461,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
             ? buildSimklDiscoverApiUrl(simklMediaType, params)
             : discoverSource === 'mal'
               ? `https://myanimelist.net/anime.php`
-              : `https://anilist.co/search/anime`;
+              : discoverSource === 'mdblist'
+                ? `https://mdblist.com`
+                : `https://anilist.co/search/anime`;
   
       const newCatalog: CatalogConfig = {
         id: catalogId,
@@ -2372,6 +2641,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
                         </SelectItem>
                         <SelectItem value="anilist">AniList</SelectItem>
                         <SelectItem value="mal">MAL</SelectItem>
+                        <SelectItem value="mdblist" disabled={!hasMdblistApiKey}>
+                          {hasMdblistApiKey ? 'MDBList' : 'MDBList (No API Key)'}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -2817,6 +3089,227 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
                           />
                         </div>
                       </div>
+                    </CardContent>
+                  </Card>
+                  )}
+                  {discoverSource === 'mdblist' && (
+                  <div className="space-y-4">
+                    {/* Sort Direction */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Sort Direction</Label>
+                        <Select value={mdblistSortDirection} onValueChange={(v: 'desc' | 'asc') => setMdblistSortDirection(v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {MDBLIST_SORT_DIRECTION_OPTIONS.map(o => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                  )}
+                  {discoverSource === 'mdblist' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Score &amp; Year</CardTitle>
+                      <CardDescription>Filter by MDBList score and year range.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Score range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Min Score: {mdblistScoreMin}</Label>
+                          <input
+                            type="range" min={0} max={100} step={1}
+                            value={mdblistScoreMin}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMdblistScoreMin(val);
+                              if (val > mdblistScoreMax) setMdblistScoreMax(val);
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Max Score: {mdblistScoreMax}</Label>
+                          <input
+                            type="range" min={0} max={100} step={1}
+                            value={mdblistScoreMax}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setMdblistScoreMax(val);
+                              if (val < mdblistScoreMin) setMdblistScoreMin(val);
+                            }}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                      {/* Year range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-year-min">Year Min</Label>
+                          <Input
+                            id="mdblist-year-min" type="number" min={1900} max={2030} placeholder="e.g. 2020"
+                            value={mdblistYearMin}
+                            onChange={(e) => setMdblistYearMin(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-year-max">Year Max</Label>
+                          <Input
+                            id="mdblist-year-max" type="number" min={1900} max={2030} placeholder="e.g. 2025"
+                            value={mdblistYearMax}
+                            onChange={(e) => setMdblistYearMax(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  )}
+                  {discoverSource === 'mdblist' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Release Date &amp; Runtime</CardTitle>
+                      <CardDescription>Filter by release date range and runtime in minutes.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Release date range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-released-from">Released After</Label>
+                          <Input
+                            id="mdblist-released-from" type="date"
+                            value={mdblistReleasedFrom}
+                            onChange={(e) => setMdblistReleasedFrom(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-released-to">Released Before</Label>
+                          <Input
+                            id="mdblist-released-to" type="date"
+                            value={mdblistReleasedTo}
+                            onChange={(e) => setMdblistReleasedTo(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      {/* Runtime range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-runtime-min">Runtime Min (minutes)</Label>
+                          <Input
+                            id="mdblist-runtime-min" type="number" min={0} placeholder="e.g. 60"
+                            value={mdblistRuntimeMin}
+                            onChange={(e) => setMdblistRuntimeMin(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-runtime-max">Runtime Max (minutes)</Label>
+                          <Input
+                            id="mdblist-runtime-max" type="number" min={0} placeholder="e.g. 180"
+                            value={mdblistRuntimeMax}
+                            onChange={(e) => setMdblistRuntimeMax(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  )}
+                  {discoverSource === 'mdblist' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Language, Country &amp; Genres</CardTitle>
+                      <CardDescription>Filter by language/country codes (ISO, comma-separated) and genres.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-language">Language</Label>
+                          <Input
+                            id="mdblist-language" placeholder="e.g. en,fr,de"
+                            value={mdblistLanguage}
+                            onChange={(e) => setMdblistLanguage(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mdblist-country">Country</Label>
+                          <Input
+                            id="mdblist-country" placeholder="e.g. us,gb,ca"
+                            value={mdblistCountry}
+                            onChange={(e) => setMdblistCountry(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Genres</Label>
+                          <Select value={mdblistGenreSelection} onValueChange={(v: 'standard' | 'anime' | 'all') => setMdblistGenreSelection(v)}>
+                            <SelectTrigger className="w-[140px] h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="standard">Standard</SelectItem>
+                              <SelectItem value="anime">Anime</SelectItem>
+                              <SelectItem value="all">All</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Select
+                          value=""
+                          onValueChange={(value) => {
+                            if (value && !mdblistGenres.includes(value)) {
+                              setMdblistGenres(prev => [...prev, value]);
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select genre to add" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(mdblistGenreSelection === 'standard' ? MDBLIST_STANDARD_GENRES
+                              : mdblistGenreSelection === 'anime' ? MDBLIST_ANIME_GENRES
+                              : MDBLIST_ALL_GENRES
+                            ).filter(g => !mdblistGenres.includes(g.value)).map(genre => (
+                              <SelectItem key={genre.value} value={genre.value}>
+                                {genre.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {mdblistGenres.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {mdblistGenres.map(genre => (
+                              <Badge key={genre} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                                <span className="max-w-[180px] truncate">{MDBLIST_ALL_GENRES.find(g => g.value === genre)?.label || genre}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setMdblistGenres(prev => prev.filter(g => g !== genre))}
+                                  className="rounded-sm p-0.5 hover:bg-background/50"
+                                  aria-label={`Remove ${genre}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No genres selected</p>
+                        )}
+                      </div>
+                      {mdblistGenres.length > 1 && (
+                      <div className="space-y-2">
+                        <Label>Genre Mode</Label>
+                        <Select value={mdblistGenreMode} onValueChange={(v: 'or' | 'and') => setMdblistGenreMode(v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {JOIN_MODE_OPTIONS.map(option => (
+                              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      )}
                     </CardContent>
                   </Card>
                   )}
@@ -4481,6 +4974,39 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         </DialogFooter>
       </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showMdblistPreviewConfirm} onOpenChange={setShowMdblistPreviewConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>MDBList Preview</AlertDialogTitle>
+            <AlertDialogDescription>
+              This preview uses a catalog query that counts against your MDBList plan quota. The results will be cached and reused when browsing in Stremio, so it won't count again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={mdblistPreviewRemember}
+              onChange={(e) => setMdblistPreviewRemember(e.target.checked)}
+              className="rounded"
+            />
+            Don't ask again
+          </label>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setMdblistPreviewRemember(false);
+            }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (mdblistPreviewRemember) {
+                localStorage.setItem('mdblist-preview-confirmed', 'true');
+              }
+              setShowMdblistPreviewConfirm(false);
+              setMdblistPreviewRemember(false);
+              executeMdblistPreview();
+            }}>Proceed</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </TooltipProvider>
   );
 }

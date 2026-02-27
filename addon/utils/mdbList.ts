@@ -687,7 +687,11 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
   .filter((item: any) => item.mediatype === 'movie' || item.mediatype === 'show')
   .map((item: any) => {
     if (!item.id || item.id === null || item.id === undefined) {
-      if(item.imdb_id.startsWith('tr')) item.imdb_id = null;
+      // Prefer tmdb_id for catalog endpoint items (used as tmdb:{id} downstream)
+      if (item.tmdb_id) {
+        return { ...item, id: item.tmdb_id };
+      }
+      if(item.imdb_id && item.imdb_id.startsWith('tr')) item.imdb_id = null;
       const fallbackId = item.imdb_id || item.tvdb_id;
       if (fallbackId) {
         const resolvedId = typeof fallbackId === 'string' ? fallbackId : String(fallbackId);
@@ -1558,23 +1562,112 @@ async function checkinEpisode(
 }
 
 
-export { 
-  fetchMDBListItems, 
-  fetchMDBListExternalItems, 
-  fetchMDBListBatchMediaInfo, 
-  getGenresFromMDBList, 
-  parseMDBListItems, 
-  getMediaRatingFromMDBList, 
-  fetchMDBListGenres, 
-  convertGenreToSlug, 
-  markMovieAsWatched, 
-  markEpisodeAsWatched, 
-  makeRateLimitedMDBListRequest, 
+/**
+ * Fetch dynamic MDBList catalog (discover) items from /catalog/movie or /catalog/show endpoints.
+ * Uses cursor-based pagination: cursors are stored in Redis per unique filter combination.
+ */
+async function fetchMDBListCatalog(
+  mediaType: 'movie' | 'show',
+  apiKey: string,
+  page: number,
+  params: Record<string, string | number | boolean>,
+  cacheTTL?: number
+): Promise<{ items: any[]; hasMore: boolean }> {
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+
+  const paramEntries = Object.entries(params).filter(([k]) => k !== 'cursor' && k !== 'limit').sort(([a], [b]) => a.localeCompare(b));
+  const paramsHash = crypto.createHash('sha256').update(JSON.stringify(paramEntries)).digest('hex').substring(0, 16);
+
+  const responseCacheKey = `mdblist-api:catalog:${paramsHash}:${mediaType}:page:${page}`;
+  // MDBList caches catalog results server-side for 6 hours 
+  const maxTtl = 6 * 60 * 60;
+  const baseTtl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(maxTtl), 10);
+  const ttl = Math.min(baseTtl, maxTtl);
+
+  return await cacheWrapGlobal(responseCacheKey, async () => {
+    try {
+      // For page > 1, look up cursor from previous page
+      let cursor: string | undefined;
+      if (page > 1) {
+        const cursorCacheKey = `mdblist-catalog:cursor:${paramsHash}:${mediaType}:page:${page - 1}`;
+        try {
+          cursor = await cacheWrapGlobal(cursorCacheKey, async () => {
+            return null;
+          }, ttl, { skipVersion: true });
+        } catch {
+          cursor = undefined;
+        }
+
+        if (!cursor) {
+          logger.warn(`[MDBList Catalog] No cursor found for page ${page} (paramsHash: ${paramsHash}). Returning empty.`);
+          return { items: [], hasMore: false };
+        }
+      }
+
+      const url = new URL(`https://api.mdblist.com/catalog/${mediaType}`);
+      url.searchParams.set('apikey', apiKey);
+      url.searchParams.set('limit', String(Math.min(pageSize, 100)));
+      if (cursor) url.searchParams.set('cursor', cursor);
+
+      // Add all filter params
+      for (const [key, value] of Object.entries(params)) {
+        if (key !== 'cursor' && key !== 'limit' && value !== '' && value !== undefined) {
+          url.searchParams.set(key, String(value));
+        }
+      }
+
+      logger.debug(`[MDBList Catalog] Request URL: ${sanitizeUrlForLogging(url.toString())}`);
+
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url.toString(), { dispatcher: mdblistDispatcher }),
+        apiKey,
+        `MDBList catalog (${mediaType}, page: ${page})`
+      );
+
+      // Handle 202 (cache building)
+      if (response.status === 202) {
+        logger.info(`[MDBList Catalog] 202 response - cache building for ${mediaType} catalog`);
+        return { items: [], hasMore: true };
+      }
+
+      const data = response.data;
+      const items = mediaType === 'movie' ? (data?.movies || []) : (data?.shows || []);
+      const hasMore = data?.pagination?.has_more ?? false;
+      const nextCursor = data?.pagination?.next_cursor;
+
+      // Store cursor for next page
+      if (nextCursor && hasMore) {
+        const cursorStoreKey = `mdblist-catalog:cursor:${paramsHash}:${mediaType}:page:${page}`;
+        await cacheWrapGlobal(cursorStoreKey, async () => nextCursor, ttl, { skipVersion: true });
+      }
+
+      logger.info(`[MDBList Catalog] Fetched ${items.length} ${mediaType} items (page ${page}, hasMore: ${hasMore})`);
+      return { items, hasMore };
+    } catch (err: any) {
+      logger.error(`[MDBList Catalog] Error fetching ${mediaType} catalog page ${page}: ${err.message}`);
+      return { items: [], hasMore: false };
+    }
+  }, ttl, { skipVersion: true });
+}
+
+export {
+  fetchMDBListItems,
+  fetchMDBListExternalItems,
+  fetchMDBListBatchMediaInfo,
+  getGenresFromMDBList,
+  parseMDBListItems,
+  getMediaRatingFromMDBList,
+  fetchMDBListGenres,
+  convertGenreToSlug,
+  markMovieAsWatched,
+  markEpisodeAsWatched,
+  makeRateLimitedMDBListRequest,
   testMdblistKey,
-  fetchMDBListUpNext, 
+  fetchMDBListUpNext,
   parseMDBListUpNextItems,
   fetchMdbListSearchItems,
   checkinMovie,
-  checkinEpisode  
+  checkinEpisode,
+  fetchMDBListCatalog
 };
 

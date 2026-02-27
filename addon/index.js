@@ -1237,6 +1237,23 @@ addon.post("/api/trakt/proxy", async (req, res) => {
 // These proxy frontend MDBList calls through the backend rate limiter
 const { makeRateLimitedMDBListRequest } = require('./utils/mdbList');
 
+// Proxy: Get user info and limits
+addon.get("/api/mdblist/user", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    if (!apikey) {
+      return res.status(400).json({ error: "apikey is required" });
+    }
+    const url = `https://api.mdblist.com/user?apikey=${apikey}`;
+    const response = await makeRateLimitedMDBListRequest(url, apikey, 'MDBList Proxy - Get User Info');
+    res.json(response.data);
+  } catch (error) {
+    consola.error("[MDBList Proxy] Error fetching user info:", error.message);
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message || "Failed to fetch user info" });
+  }
+});
+
 // Proxy: Get user's lists
 addon.get("/api/mdblist/lists/user", async (req, res) => {
   try {
@@ -2095,6 +2112,38 @@ addon.get("/api/mal/discover/preview", async (req, res) => {
     return res.json({ results, total_results: response?.total || items.length });
   } catch (error) {
     consola.error("[MAL Discover Preview] Error:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ── MDBList Discover Preview ──
+addon.get("/api/mdblist/discover/preview", async (req, res) => {
+  try {
+    const params = { ...req.query };
+    const apiKey = params.apikey || process.env.MDBLIST_API_KEY || '';
+    const mediaType = params.mediaType === 'show' ? 'show' : 'movie';
+    delete params.apikey;
+    delete params.userUUID;
+    delete params.mediaType;
+
+    if (!apiKey) {
+      return res.status(400).json({ error: "MDBList API key is required" });
+    }
+
+    const { fetchMDBListCatalog } = require('./utils/mdbList');
+    const response = await fetchMDBListCatalog(mediaType, apiKey, 1, params);
+    const items = Array.isArray(response?.items) ? response.items : [];
+    const results = items.slice(0, 20).map(item => ({
+      id: item.ids?.tmdbid || item.ids?.imdbid || item.id || item.imdb_id,
+      title: item.title || '',
+      poster_path: item.poster || null,
+      score: item.score,
+      year: item.year,
+    }));
+
+    return res.json({ results, total_results: results.length });
+  } catch (error) {
+    consola.error("[MDBList Discover Preview] Error:", error.message);
     return res.status(500).json({ error: error.message });
   }
 });

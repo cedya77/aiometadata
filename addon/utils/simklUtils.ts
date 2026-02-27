@@ -846,7 +846,7 @@ async function parseSimklItems(
     const result: (any | null)[] = new Array(items.length).fill(null);
 
     if (animeItems.length > 0) {
-      const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeItems, config, config.language || 'en-US', includeVideos);
+      const batchMetas = await Utils.parseAnimeCatalogMetaBatch(animeItems, config, config.language, includeVideos);
       let batchIdx = 0;
       for (let i = 0; i < items.length && batchIdx < batchMetas.length; i++) {
         const malId = resolveMalIdFromIds(items[i].ids || {});
