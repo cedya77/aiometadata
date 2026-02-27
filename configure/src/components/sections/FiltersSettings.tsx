@@ -42,14 +42,59 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, regexExclusionFilter: value }));
   };
 
+  const handleHideWatchedChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, hideWatched: checked }));
+  };
+
+  const handleHideWatchedInSearchChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, hideWatchedInSearch: checked }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
       <div>
         <h2 className="text-2xl font-semibold">Content Filters</h2>
-        {/* FIX: Use theme-aware text color for descriptions */}
-        <p className="text-muted-foreground mt-1">Filter the content displayed in catalogs and search results based on age ratings.</p>
+        <p className="text-muted-foreground mt-1">Filter the content displayed in catalogs and search results.</p>
       </div>
+
+      {/* Watched Filter Card */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Watched Filter</CardTitle>
+          <CardDescription>
+            Using your Trakt watch history, hide from all Catalogs or Search results all movies and shows you've already watched.
+            Personal lists (Watchlist, Up Next, Unwatched, Calendar) are never filtered.
+            {!config.apiKeys?.traktTokenId && (
+              <span className="block mt-2 text-yellow-600 dark:text-yellow-400">
+                Requires a Trakt connection — connect Trakt in the Catalogs tab first.
+              </span>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col space-y-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="hide-watched"
+                checked={!!config.hideWatched}
+                onCheckedChange={handleHideWatchedChange}
+                disabled={!config.apiKeys?.traktTokenId}
+              />
+              <Label htmlFor="hide-watched">Hide Watched in Catalogs</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="hide-watched-search"
+                checked={!!config.hideWatchedInSearch}
+                onCheckedChange={handleHideWatchedInSearchChange}
+                disabled={!config.apiKeys?.traktTokenId}
+              />
+              <Label htmlFor="hide-watched-search">Hide Watched in Search</Label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Content Rating Card */}
       <Card className="max-w-lg">

@@ -3,7 +3,7 @@ import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken, fetchTraktWatchedIds } from "../utils/traktUtils.js";
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
@@ -106,74 +106,97 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
   return filteredMetas;
 }
 
+// Catalogs that should never have watched items filtered out
+// (they are personal/progress lists where watched state is the point)
+const WATCHED_FILTER_EXCLUDED_PREFIXES = [
+  'trakt.upnext', 'trakt.unwatched', 'trakt.watchlist', 'trakt.favorites', 'trakt.calendar',
+  'simkl.watchlist', 'simkl.calendar',
+  'mdblist.upnext',
+  'tmdb.watchlist', 'tmdb.favorites'
+];
+
+async function applyWatchedFilter(metas: any[], type: string, config: any, userUUID: string): Promise<any[]> {
+  // Note: the hideWatched / hideWatchedInSearch guard is handled by the caller in index.js.
+  // This function is only invoked when filtering should happen.
+  if (!config.apiKeys?.traktTokenId) return metas;
+
+  try {
+    const accessToken = await getTraktAccessToken(config);
+    if (!accessToken) return metas;
+
+    const { movieImdbIds, showImdbIds } = await fetchTraktWatchedIds(accessToken, userUUID);
+    const watchedIds = type === 'movie' ? movieImdbIds : showImdbIds;
+
+    const beforeCount = metas.length;
+    const filtered = metas.filter(meta => !meta.id || !meta.id.startsWith('tt') || !watchedIds.has(meta.id));
+    if (beforeCount !== filtered.length) {
+      logger.info(`Filter watched: removed ${beforeCount - filtered.length} watched ${type}(s)`);
+    }
+    return filtered;
+  } catch (err: any) {
+    logger.warn(`applyWatchedFilter failed: ${err.message}`);
+    return metas;
+  }
+}
 
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
+    let metas: any[] = [];
+
     if (id === 'tvdb.collections') {
       logger.debug(`Fetching TVDB collections catalog: ${id}`);
-      const metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
-      return { metas };
+      metas = await getTvdbCollectionsCatalog(type, id, page, language, config);
     }
-    if (id.startsWith('tvdb.discover.')) {
+    else if (id.startsWith('tvdb.discover.')) {
       logger.debug(`Routing to TVDB discover catalog handler for id: ${id}`);
-      const tvdbDiscoverResults = await getTvdbDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: tvdbDiscoverResults };
+      metas = await getTvdbDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
-    if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
+    else if (id.startsWith('tvdb.') && !id.startsWith('tvdb.collection.')) {
       logger.debug(`Routing to TVDB catalog handler for id: ${id}`);
-      const tvdbResults = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
-      return { metas: tvdbResults };
-    } 
+      metas = await getTvdbCatalog(type, id, genre, page, language, config, id === 'tvdb.trending', includeVideos);
+    }
     else if (id.startsWith('tmdb.') || id.startsWith('mdblist.') || id.startsWith('streaming.')) {
       logger.debug(`Routing to TMDB/MDBList catalog handler for id: ${id}`);
-      const tmdbResults = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: tmdbResults };
+      metas = await getTmdbAndMdbListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('stremthru.')) {
       logger.debug(`Routing to StremThru catalog handler for id: ${id}`);
-      const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: stremthruResults };
+      metas = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('custom.')) {
       logger.debug(`Routing to Custom Manifest catalog handler for id: ${id}`);
-      const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: customResults };
+      metas = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('trakt.')) {
       logger.debug(`Routing to Trakt catalog handler for id: ${id}`);
-      const traktResults = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: traktResults };
+      metas = await getTraktCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('mal.discover.')) {
       logger.debug(`Routing to MAL discover catalog handler for id: ${id}`);
-      const malDiscoverResults = await getMalDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: malDiscoverResults };
+      metas = await getMalDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('anilist.discover.')) {
-     logger.debug(`Routing to AniList discover catalog handler for id: ${id}`);
-     const anilistDiscoverResults = await getAniListDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-     return { metas: anilistDiscoverResults };
+      logger.debug(`Routing to AniList discover catalog handler for id: ${id}`);
+      metas = await getAniListDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('anilist.')) {
       logger.debug(`Routing to AniList catalog handler for id: ${id}`);
-      const anilistResults = await getAniListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: anilistResults };
+      metas = await getAniListCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('letterboxd.')) {
       logger.debug(`Routing to Letterboxd catalog handler for id: ${id}`);
-      const letterboxdResults = await getLetterboxdCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
-      return { metas: letterboxdResults };
+      metas = await getLetterboxdCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
     }
     else if (id.startsWith('simkl.')) {
       logger.debug(`Routing to Simkl catalog handler for id: ${id}`);
-      const simklResults = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
-      return { metas: simklResults };
+      metas = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
     }
-
     else {
       logger.warn(`Received request for unknown catalog prefix: ${id}`);
       return { metas: [] };
     }
+
+    return { metas };
   } catch (error: any) {
     const errorLine = error.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`Error in getCatalog router for id=${id}, type=${type}: ${error.message}`);
@@ -2577,4 +2600,4 @@ async function getSimklCatalog(
   }
 }
 
-export { getCatalog };
+export { getCatalog, applyWatchedFilter, WATCHED_FILTER_EXCLUDED_PREFIXES };

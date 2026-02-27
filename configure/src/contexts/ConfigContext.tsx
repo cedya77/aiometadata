@@ -138,6 +138,8 @@ const initialConfig: AppConfig = {
   mdblistWatchTracking: true,
   anilistWatchTracking: true,
   simklWatchTracking: true,
+  hideWatched: false,
+  hideWatchedInSearch: false,
   enableRatingPostersForLibrary: true, // Default to enabled - keep Rating Posters for library items
   showRateMeButton: false, // Default to disabled - user must enable to show rate button
   ageRating: 'None',

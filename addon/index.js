@@ -6,7 +6,7 @@ const addon = express();
 // Honor X-Forwarded-* headers from reverse proxies (e.g., Traefik) so req.protocol reflects HTTPS
 //addon.set('trust proxy', true);
 
-const { getCatalog } = require("./lib/getCatalog");
+const { getCatalog, applyWatchedFilter, WATCHED_FILTER_EXCLUDED_PREFIXES } = require("./lib/getCatalog");
 const anilist = require("./lib/anilist");
 const { getSearch } = require("./lib/getSearch");
 const { getManifest, DEFAULT_LANGUAGE } = require("./lib/getManifest");
@@ -3581,6 +3581,20 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       return { metas: metas || [] };
     }, undefined, cacheOptions);
     }
+    // Filter watched — applied after cache, covers all catalog types and optionally search.
+    // For catalogs: uses config.hideWatched. For search: uses config.hideWatchedInSearch.
+    // Shows are only filtered when fully watched (all aired episodes seen).
+    if (responseData?.metas && Array.isArray(responseData.metas) && config.apiKeys?.traktTokenId) {
+      const isSearchCatalog = ['search', 'people_search', 'gemini.search'].includes(cleanId);
+      const isExcluded = WATCHED_FILTER_EXCLUDED_PREFIXES.some(prefix => cleanId.startsWith(prefix));
+      if (!isExcluded) {
+        const shouldFilter = isSearchCatalog ? !!config.hideWatchedInSearch : !!config.hideWatched;
+        if (shouldFilter) {
+          responseData.metas = await applyWatchedFilter(responseData.metas, actualType, config, userUUID);
+        }
+      }
+    }
+
     // Digital release filter for catalog ids only not for search results
     if (config.hideUnreleasedDigital && !['search', 'people_search', 'gemini.search'].includes(cleanId) && responseData?.metas && Array.isArray(responseData.metas)) {
       const { isReleasedDigitally } = require("./utils/parseProps");

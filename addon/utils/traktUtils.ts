@@ -659,6 +659,120 @@ async function fetchTraktWatchedShows(accessToken: string): Promise<any[]> {
 }
 
 /**
+ * Fetch watched shows with full season/episode data and aired_episodes count (OAuth required).
+ * Used by fetchTraktWatchedIds to determine if a show is *fully* watched.
+ * Unlike fetchTraktWatchedShows (noseasons), this returns seasons[] so we can count
+ * watched episodes and compare against show.aired_episodes.
+ * @param accessToken - User's Trakt access token
+ * @returns Array of watched show objects including seasons and aired_episodes
+ */
+async function fetchTraktWatchedShowsFull(accessToken: string): Promise<any[]> {
+  const url = `${TRAKT_BASE_URL}/sync/watched/shows?extended=full`;
+  const response: any = await makeRateLimitedRequest(
+    () => httpGet(url, {
+      dispatcher: traktDispatcher,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': TRAKT_CLIENT_ID
+      }
+    }),
+    'Trakt fetchWatchedShowsFull',
+    3,
+    accessToken
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+/**
+ * Fetch watched movies for a user (OAuth required)
+ * @param accessToken - User's Trakt access token
+ * @returns Array of watched movie objects from Trakt
+ */
+async function fetchTraktWatchedMovies(accessToken: string): Promise<any[]> {
+  const url = `${TRAKT_BASE_URL}/sync/watched/movies`;
+  const response: any = await makeRateLimitedRequest(
+    () => httpGet(url, {
+      dispatcher: traktDispatcher,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': TRAKT_CLIENT_ID
+      }
+    }),
+    'Trakt fetchWatchedMovies',
+    3,
+    accessToken
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+/**
+ * Fetch watched IMDb IDs for movies and shows (OAuth required)
+ * Results are cached in Redis for 1 hour per user.
+ * @param accessToken - User's Trakt access token
+ * @param userUUID - User identifier used for cache key
+ * @returns Object with Sets of watched IMDb IDs for movies and shows
+ */
+async function fetchTraktWatchedIds(accessToken: string, userUUID: string): Promise<{ movieImdbIds: Set<string>, showImdbIds: Set<string> }> {
+  const cacheKey = `watched:trakt:${userUUID}`;
+  const TTL = 3600;
+
+  if (redis) {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        return {
+          movieImdbIds: new Set<string>(parsed.movieImdbIds),
+          showImdbIds: new Set<string>(parsed.showImdbIds)
+        };
+      } catch {}
+    }
+  }
+
+  const [watchedMovies, watchedShows] = await Promise.all([
+    fetchTraktWatchedMovies(accessToken),
+    fetchTraktWatchedShowsFull(accessToken)
+  ]);
+
+  const movieImdbIds = new Set<string>();
+  for (const item of watchedMovies) {
+    const imdb = item?.movie?.ids?.imdb;
+    if (imdb) movieImdbIds.add(imdb);
+  }
+
+  const showImdbIds = new Set<string>();
+  for (const item of watchedShows) {
+    const imdb = item?.show?.ids?.imdb;
+    if (!imdb) continue;
+    // Only treat a show as "watched" if all aired episodes have been seen.
+    // aired_episodes comes from extended=full on the show object.
+    // If aired_episodes is missing or 0 (e.g. show has no aired episodes yet),
+    // fall back to the simple "any watch" behaviour so the show is still filtered.
+    const airedEpisodes: number = item?.show?.aired_episodes ?? 0;
+    const watchedEpisodes: number = (item.seasons ?? []).reduce(
+      (total: number, season: any) => total + (season.episodes?.length ?? 0), 0
+    );
+    if (airedEpisodes === 0 || watchedEpisodes >= airedEpisodes) {
+      showImdbIds.add(imdb);
+    }
+  }
+
+  if (redis) {
+    await redis.set(cacheKey, JSON.stringify({
+      movieImdbIds: Array.from(movieImdbIds),
+      showImdbIds: Array.from(showImdbIds)
+    }), 'EX', TTL);
+  }
+
+  logger.debug(`fetchTraktWatchedIds: cached ${movieImdbIds.size} movies and ${showImdbIds.size} shows for user ${userUUID}`);
+  return { movieImdbIds, showImdbIds };
+}
+
+/**
  * Fetch dropped shows for a user (OAuth required)
  * Handles pagination to fetch all dropped shows across multiple pages
  * @param accessToken - User's Trakt access token
@@ -2144,7 +2258,8 @@ export {
   makeRateLimitedTraktRequest,
   makeAuthenticatedRateLimitedTraktRequest,
   makeAuthenticatedRateLimitedTraktWriteRequest,
-  getTraktAccessToken
+  getTraktAccessToken,
+  fetchTraktWatchedIds
 };
 
 /**
