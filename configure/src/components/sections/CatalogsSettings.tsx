@@ -96,7 +96,7 @@ const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTempl
   }),
   'mal.top_anime': (c) => ({
     source: 'mal',
-    catalogType: 'series',
+    catalogType: 'anime',
     name: 'MAL Top Anime (Custom)',
     formState: {
       sortBy: 'score',
@@ -106,7 +106,7 @@ const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTempl
 
   'mal.most_popular': (c) => ({
     source: 'mal',
-    catalogType: 'series',
+    catalogType: 'anime',
     name: 'MAL Most Popular (Custom)',
     formState: {
       sortBy: 'popularity',
@@ -116,7 +116,7 @@ const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTempl
 
   'mal.most_favorites': (c) => ({
     source: 'mal',
-    catalogType: 'series',
+    catalogType: 'anime',
     name: 'MAL Most Favorites (Custom)',
     formState: {
       sortBy: 'favorites',
@@ -126,7 +126,7 @@ const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTempl
 
   'mal.top_movies': (c) => ({
     source: 'mal',
-    catalogType: 'series',
+    catalogType: 'anime',
     name: 'MAL Top Movies (Custom)',
     formState: {
       sortBy: 'score',
@@ -137,7 +137,7 @@ const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTempl
 
   'mal.top_series': (c) => ({
     source: 'mal',
-    catalogType: 'series',
+    catalogType: 'anime',
     name: 'MAL Top Series (Custom)',
     formState: {
       sortBy: 'score',

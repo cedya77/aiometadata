@@ -1042,6 +1042,8 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
   useEffect(() => {
     if (!isOpen || !editingCatalog) return;
 
+    resetState();
+
     const fs = editingCatalog.metadata?.discover?.formState;
     if (!fs) return;
   
@@ -2208,6 +2210,9 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         ...(editingCatalog?.enableRatingPosters !== undefined && {
           enableRatingPosters: editingCatalog.enableRatingPosters
         }),
+        ...(editingCatalog?.randomizePerPage !== undefined && {
+          randomizePerPage: editingCatalog.randomizePerPage
+        }),
         ...(displayType && { displayType }),
         metadata: {
           description: `${sourceLabel} Discover (${discoverMediaType})`,
@@ -2246,6 +2251,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         });
       }
   
+      resetState();
       onClose();
     } catch (error) {
       console.error(`[Discover] Failed to save catalog:`, error);
