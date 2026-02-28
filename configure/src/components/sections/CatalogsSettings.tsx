@@ -205,7 +205,7 @@ const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTempl
   })
 };
 
-type TraktSortOption = 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
+type TraktSortOption = 'default' | 'rank' | 'added' | 'title' | 'released' | 'runtime' | 'popularity' | 'random' | 'percentage' | 'imdb_rating' | 'tmdb_rating' | 'rt_tomatometer' | 'rt_audience' | 'metascore' | 'votes' | 'imdb_votes' | 'tmdb_votes' | 'my_rating' | 'watched' | 'collected';
 type StreamingSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
 type TMDBSortOption = 'popularity' | 'release_date' | 'vote_average' | 'revenue';
 const STREAMING_SORT_OPTIONS: { value: StreamingSortOption; label: string }[] = [
@@ -222,6 +222,7 @@ const TMDB_SORT_OPTIONS: { value: TMDBSortOption; label: string }[] = [
 ];
 
 const TRAKT_SORT_OPTIONS: { value: TraktSortOption; label: string; vip?: boolean }[] = [
+  { value: 'default', label: 'Default (Original Order)' },
   { value: 'rank', label: 'Rank' },
   { value: 'added', label: 'Added' },
   { value: 'title', label: 'Title' },
@@ -503,7 +504,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 
 const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, catalogTTL } = useConfig();
-  const [sort, setSort] = useState<TraktSortOption>(catalog.sort as TraktSortOption || 'added');
+  const [sort, setSort] = useState<TraktSortOption>(catalog.sort as TraktSortOption || 'default');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);

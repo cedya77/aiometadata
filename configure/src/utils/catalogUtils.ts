@@ -138,7 +138,7 @@ export function createTraktCatalog(options: TraktCatalogOptions): CatalogConfig 
   const {
     list,
     username,
-    sort = 'rank',
+    sort = 'default',
     sortDirection = 'asc',
     displayTypeOverrides,
     catalogType = 'all',
@@ -169,8 +169,8 @@ export function createTraktCatalog(options: TraktCatalogOptions): CatalogConfig 
     enabled: true,
     showInHome: true,
     source: 'trakt',
-    sort: (list.sort_by || sort) as any,
-    sortDirection: list.sort_how === 'desc' ? 'desc' : sortDirection,
+    sort: (sort === 'default' ? (list.sort_by || 'default') : sort) as any,
+    sortDirection: sort === 'default' ? (list.sort_how === 'desc' ? 'desc' : 'asc') : sortDirection,
     ...(displayType && { displayType }),
     metadata: {
       itemCount: list.item_count || 0,

@@ -1090,22 +1090,24 @@ async function fetchTraktWatchlistItems(
   cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   const typeParam = type || 'all';
-  const sortParam = sort || 'rank';
+  const sortParam = sort || '';
   const sortHow = sortDirection || 'asc';
-  
+
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
   const cacheKey = `trakt-api:watchlist:${tokenHash}:${typeParam}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}`;
-  
+
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
-  
+
   return await cacheWrapGlobal(cacheKey, async () => {
     try {
-      let url = `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+      let url = sortParam
+        ? `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`
+        : `${TRAKT_BASE_URL}/sync/watchlist/${typeParam}?page=${page}&limit=${limit}`;
       if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
         url += `&genres=${encodeURIComponent(genre)}`;
       }
-      
-      logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
+
+      logger.debug(`Trakt watchlist request: type=${typeParam}, page=${page}, limit=${limit}, sort=${sortParam || 'default'}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
       
       const response: any = await makeRateLimitedRequest(
         () => httpGet(url, { 
@@ -1174,22 +1176,24 @@ async function fetchTraktFavoritesItems(
   genre?: string,
   cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
-  const sortParam = sort || 'rank';
+  const sortParam = sort || '';
   const sortHow = sortDirection || 'asc';
-  
+
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
   const cacheKey = `trakt-api:favorites:${tokenHash}:${type}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}`;
-  
+
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
-  
+
   return await cacheWrapGlobal(cacheKey, async () => {
     try {
-      let url = `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`;
+      let url = sortParam
+        ? `${TRAKT_BASE_URL}/sync/favorites/${type}/${sortParam}/${sortHow}?page=${page}&limit=${limit}`
+        : `${TRAKT_BASE_URL}/sync/favorites/${type}?page=${page}&limit=${limit}`;
       if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
         url += `&genres=${encodeURIComponent(genre)}`;
       }
-      
-      logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
+
+      logger.debug(`Trakt favorites request: type=${type}, page=${page}, limit=${limit}, sort=${sortParam || 'default'}, sortDirection=${sortHow}, genre=${genre || 'none'}`);
       
       const response: any = await makeRateLimitedRequest(
         () => httpGet(url, { 

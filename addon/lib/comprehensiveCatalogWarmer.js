@@ -9,6 +9,7 @@ const consola = require('consola');
 const { loadConfigFromDatabase } = require('./configApi.js');
 const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens');
 const packageJson = require('../../package.json');
+const crypto = require('crypto');
 
 const logger = consola.create({
   defaults: {

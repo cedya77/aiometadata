@@ -315,7 +315,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       // For danaramapyjama, only include lists containing "wearers" in the name
       if (username === 'danaramapyjama') {
         filteredLists = userLists.filter((list: any) => 
-          list.name && list.name.toLowerCase().includes('wearers')
+          list.name && (list.name.toLowerCase().includes('wearers') || list.name.toLowerCase().includes('digital bits'))
         );
       }
 

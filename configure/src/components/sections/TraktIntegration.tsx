@@ -32,6 +32,7 @@ const VIP_SORT_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
+  { value: 'default', label: 'Default (Original Order)' },
   { value: 'rank', label: 'Rank' },
   { value: 'added', label: 'Added' },
   { value: 'title', label: 'Title' },
@@ -92,9 +93,9 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
   const [disconnecting, setDisconnecting] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loadingUsername, setLoadingUsername] = useState(false);
-  const [watchlistSortBy, setWatchlistSortBy] = useState('rank');
+  const [watchlistSortBy, setWatchlistSortBy] = useState('default');
   const [watchlistSortHow, setWatchlistSortHow] = useState<'asc' | 'desc'>('asc');
-  const [customListSortBy, setCustomListSortBy] = useState('rank');
+  const [customListSortBy, setCustomListSortBy] = useState('default');
   const [customListSortHow, setCustomListSortHow] = useState<'asc' | 'desc'>('asc');
   const [listPreview, setListPreview] = useState<any>(null);
   const [listPreviewPending, setListPreviewPending] = useState(false);
@@ -114,7 +115,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
   const [likedLists, setLikedLists] = useState<any[]>([]);
   const [selectedLikedLists, setSelectedLikedLists] = useState<Set<string>>(new Set());
   const [isLoadingLikedLists, setIsLoadingLikedLists] = useState(false);
-  const [favoriteSortBy, setFavoriteSortBy] = useState('rank');
+  const [favoriteSortBy, setFavoriteSortBy] = useState('default');
   const [favoriteSortHow, setFavoriteSortHow] = useState<'asc' | 'desc'>('asc');
   const [mostFavType, setMostFavType] = useState<'movies' | 'shows'>('movies');
   const [mostFavPeriod, setMostFavPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'all'>('weekly');
@@ -470,6 +471,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         return;
       }
       const listData = await response.json();
+
+      // Parse sort params from URL query string (e.g. ?sort=added,asc)
+      const urlSortParam = url.searchParams.get('sort');
+      if (urlSortParam) {
+        const [sortBy, sortHow] = urlSortParam.split(',');
+        if (sortBy) listData.sort_by = sortBy;
+        if (sortHow === 'asc' || sortHow === 'desc') listData.sort_how = sortHow;
+      }
+
       const numericListId = listData?.ids?.trakt;
       
         if (customListType === 'split') {

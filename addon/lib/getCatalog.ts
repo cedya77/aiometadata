@@ -1587,7 +1587,7 @@ async function getTraktCatalog(
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
     
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
-    const sort = catalogConfig?.sort;
+    const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
     const sortDirection = catalogConfig?.sortDirection;
     let accessToken: string | null | undefined = undefined;
 
