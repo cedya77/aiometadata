@@ -745,6 +745,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
   const [withoutKeywords, setWithoutKeywords] = useState<SelectionItem[]>([]);
   const [keywordJoinMode, setKeywordJoinMode] = useState<JoinMode>('or');
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
+  const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<number>>(new Set());
   const [activeSearchDropdown, setActiveSearchDropdown] = useState<SearchEntity | null>(null);
 
   const peopleSearchRef = useRef<HTMLDivElement | null>(null);
@@ -1109,6 +1110,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
 
     setKeywordQuery('');
     setKeywordResults([]);
+    setSelectedKeywordIds(new Set());
     setWithKeywords([]);
     setWithoutKeywords([]);
     setKeywordJoinMode('or');
@@ -3998,50 +4000,106 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
                     </Button>
                   </div>
                   {activeSearchDropdown === 'keyword' && keywordResults.length > 0 && (
-                    <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
+                    <div className="border rounded-md p-2 space-y-1">
                       <div className="flex items-center justify-between pb-1 border-b">
-                        <p className="text-xs text-muted-foreground">{keywordResults.length} results</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-muted-foreground">{keywordResults.length} results</p>
+                          {keywordResults.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => {
+                                const allIds = new Set(keywordResults.map(k => k.id));
+                                setSelectedKeywordIds(prev => prev.size === allIds.size ? new Set() : allIds);
+                              }}
+                            >
+                              {selectedKeywordIds.size === keywordResults.length ? 'Deselect All' : 'Select All'}
+                            </Button>
+                          )}
+                        </div>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
                           className="h-6 px-2 text-xs"
-                          onClick={() => setActiveSearchDropdown(null)}
+                          onClick={() => { setActiveSearchDropdown(null); setSelectedKeywordIds(new Set()); }}
                         >
                           Close
                         </Button>
                       </div>
-                      {keywordResults.map(keyword => (
-                        <div key={keyword.id} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="truncate">{keyword.name || keyword.title || `ID ${keyword.id}`}</span>
-                          <div className="flex gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setWithKeywords(prev => addUniqueItem(prev, toSelectionItem(keyword)));
-                                setWithoutKeywords(prev => removeItemById(prev, keyword.id));
-                                setActiveSearchDropdown(null);
-                              }}
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {keywordResults.map(keyword => {
+                          const isAlreadyIncluded = withKeywords.some(k => k.id === keyword.id);
+                          const isAlreadyExcluded = withoutKeywords.some(k => k.id === keyword.id);
+                          return (
+                            <label
+                              key={keyword.id}
+                              className={`flex items-center gap-2 text-sm p-1 rounded cursor-pointer hover:bg-muted/40 ${
+                                isAlreadyIncluded ? 'opacity-50' : isAlreadyExcluded ? 'opacity-50' : ''
+                              }`}
                             >
-                              Include
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setWithoutKeywords(prev => addUniqueItem(prev, toSelectionItem(keyword)));
-                                setWithKeywords(prev => removeItemById(prev, keyword.id));
-                                setActiveSearchDropdown(null);
-                              }}
-                            >
-                              Exclude
-                            </Button>
-                          </div>
+                              <input
+                                type="checkbox"
+                                className="rounded border-input"
+                                checked={selectedKeywordIds.has(keyword.id)}
+                                onChange={(e) => {
+                                  setSelectedKeywordIds(prev => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(keyword.id);
+                                    else next.delete(keyword.id);
+                                    return next;
+                                  });
+                                }}
+                              />
+                              <span className="truncate flex-1">
+                                {keyword.name || keyword.title || `ID ${keyword.id}`}
+                                {isAlreadyIncluded && <span className="text-xs text-muted-foreground ml-1">(included)</span>}
+                                {isAlreadyExcluded && <span className="text-xs text-muted-foreground ml-1">(excluded)</span>}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {selectedKeywordIds.size > 0 && (
+                        <div className="flex gap-2 pt-1 border-t">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 h-7 text-xs"
+                            onClick={() => {
+                              keywordResults
+                                .filter(k => selectedKeywordIds.has(k.id))
+                                .forEach(k => {
+                                  setWithKeywords(prev => addUniqueItem(prev, toSelectionItem(k)));
+                                  setWithoutKeywords(prev => removeItemById(prev, k.id));
+                                });
+                              setSelectedKeywordIds(new Set());
+                            }}
+                          >
+                            Include {selectedKeywordIds.size} Selected
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 h-7 text-xs"
+                            onClick={() => {
+                              keywordResults
+                                .filter(k => selectedKeywordIds.has(k.id))
+                                .forEach(k => {
+                                  setWithoutKeywords(prev => addUniqueItem(prev, toSelectionItem(k)));
+                                  setWithKeywords(prev => removeItemById(prev, k.id));
+                                });
+                              setSelectedKeywordIds(new Set());
+                            }}
+                          >
+                            Exclude {selectedKeywordIds.size} Selected
+                          </Button>
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
