@@ -64,7 +64,82 @@ During `docker build`, the TypeScript compiler caught that `getTraktAccessToken`
 
 ### Ideas Backlog (not yet implemented)
 
-1. **Hide watched in search results** — Currently only applies to catalogs. A second toggle `hideWatchedInSearch` would apply the same filter to search results (one extra call in the search route in `index.js`).
+1. ~~**Hide watched in search results**~~ — **Implemented** (see Session 2 below).
 2. **Configurable cache TTL** — The 1-hour Redis TTL for watched IDs is hardcoded. A dropdown (15 min / 1 hr / 6 hrs / 24 hrs) would let users trade freshness for fewer Trakt API calls.
-3. **"Fully watched" mode for TV shows** — Trakt's `/sync/watched/shows` marks a show as soon as *one* episode is watched. A strict mode could use Trakt's progress endpoint to only hide shows where all aired episodes are watched (i.e. truly completed series).
+3. ~~**"Fully watched" mode for TV shows**~~ — **Implemented** (see Session 2 below).
 4. **Multi-source support** — Currently Trakt-only. Simkl also exposes a watch history endpoint (`/sync/all-items/watched`) and could be a natural extension given Simkl is already integrated.
+
+---
+
+## Session 2 — Fully Watched Logic, Search Filter, UI Polish & PR Submission
+
+**Date:** 2026-02-28
+
+### Changes
+
+#### `addon/utils/traktUtils.ts`
+- Added `fetchTraktWatchedShowsFull(accessToken)` — calls `/sync/watched/shows?extended=full` (no `noseasons`), returning full season/episode data and `show.aired_episodes`.
+  - The existing `fetchTraktWatchedShows()` (which uses `?extended=noseasons`) was left untouched — it is still used by `fetchTraktUpNextEpisodes` and `fetchTraktUnwatchedEpisodes`, which only need show IDs and timestamps, not episode counts.
+- Updated `fetchTraktWatchedIds()` to use `fetchTraktWatchedShowsFull` instead of `fetchTraktWatchedShows`, and to apply "fully watched" logic for shows:
+  - Counts watched episodes by summing `seasons[].episodes.length` across all seasons in the response.
+  - Compares against `show.aired_episodes` from the `extended=full` show object.
+  - Only adds a show's IMDb ID to the filter set if `watchedEpisodes >= airedEpisodes`.
+  - If `aired_episodes` is missing or 0 (edge case), falls back to the old "any watch" behaviour so the show is still filtered.
+  - Movies are unchanged — filtered as soon as any watch is recorded.
+
+#### `addon/lib/getCatalog.ts`
+- Removed the `if (!config.hideWatched) return metas` guard from inside `applyWatchedFilter`. The caller in `index.js` now decides when to invoke the function, allowing it to be used for both catalog and search filtering with different config flags.
+- Updated log message: `Filter watched: removed N watched type(s)`.
+
+#### `addon/index.js`
+- Replaced the old single-condition watched filter block with logic that handles catalogs and search independently:
+  ```javascript
+  const isSearchCatalog = ['search', 'people_search', 'gemini.search'].includes(cleanId);
+  const isExcluded = WATCHED_FILTER_EXCLUDED_PREFIXES.some(prefix => cleanId.startsWith(prefix));
+  if (!isExcluded) {
+    const shouldFilter = isSearchCatalog ? !!config.hideWatchedInSearch : !!config.hideWatched;
+    if (shouldFilter) {
+      responseData.metas = await applyWatchedFilter(...);
+    }
+  }
+  ```
+
+#### `configure/src/contexts/config.ts`
+- Added `hideWatchedInSearch: boolean` to the `AppConfig` interface.
+
+#### `configure/src/contexts/ConfigContext.tsx`
+- Added `hideWatchedInSearch: false` to the default config object.
+
+#### `configure/src/components/sections/FiltersSettings.tsx`
+- Renamed card title from "Hide Watched" → **"Watched Filter"** (consistent with naming on other filter cards).
+- Updated card description to: *"Using your Trakt watch history, hide from all Catalogs or Search results all movies and shows you've already watched. Personal lists (Watchlist, Up Next, Unwatched, Calendar) are never filtered."*
+- Replaced the single switch with two independent switches:
+  - **"Hide Watched in Catalogs"** (`config.hideWatched`)
+  - **"Hide Watched in Search"** (`config.hideWatchedInSearch`)
+- Both switches are disabled when Trakt is not connected.
+- Added `handleHideWatchedInSearchChange` handler.
+
+### Design Decisions
+
+- **`fetchTraktWatchedShowsFull` is a separate function** rather than modifying `fetchTraktWatchedShows`, because the noseasons version is still used by two other internal functions that don't need episode counts. Modifying it would have caused unnecessary response bloat for those callers.
+- **Fully watched = `watchedEpisodes >= airedEpisodes`**. This correctly handles ongoing shows (new episodes push `aired_episodes` up, causing the show to reappear) and completed shows (once all aired episodes are watched, the show stays filtered).
+- **Guard moved to call site.** `applyWatchedFilter` no longer checks `config.hideWatched` internally — the caller in `index.js` decides when to call it, enabling the same function to serve both catalog and search contexts with different config flags.
+
+### GitHub
+
+- Commit: `e4bb5e9` (amended from `db7ace0`)
+- Fork: `github.com/pedantique/aiometadata` branch `feature/filter-watched`
+- PR submitted to `cedya77/aiometadata` targeting `dev` branch
+
+### Maintaining Your Fork
+
+If a new upstream `dev` release comes out while your PR is open, you will need to rebase your branch onto the new `dev`:
+
+```bash
+cd /Users/darren/aiometadata
+git fetch origin
+git rebase origin/dev
+git push fork feature/filter-watched --force
+```
+
+This replays your single commit on top of the latest upstream code and force-pushes to update the PR automatically. If there are conflicts, Git will pause and show you what to resolve before continuing with `git rebase --continue`.
