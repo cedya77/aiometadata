@@ -129,8 +129,7 @@ export function FiltersSettings() {
             <CardDescription className="space-y-2 mt-2">
               <p>Hide items you've already watched on Trakt, AniList, or MDBList from all catalogs.</p>
               <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong>Trakt:</strong> Refreshes every 5 minutes</li>
-                <li><strong>MDBList:</strong> Refreshes every hour</li>
+                <li><strong>Trakt & MDBList:</strong> Refreshes every 5 minutes</li>
                 <li><strong>AniList:</strong> Refreshes every 24 hours</li>
               </ul>
               <p className="text-muted-foreground mt-2">

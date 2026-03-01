@@ -10,12 +10,6 @@ import { consola } from 'consola';
 
 const logger = consola.withTag('anilist-utils');
 
-/**
- * Fetches and caches AniList "Completed" IDs for a user to hide from catalogs.
- * Caches full watched lists for 24h.
- * @param config - User config with apiKeys.anilistTokenId
- * @returns Object with anilistIds and malIds Sets, or null on error
- */
 export async function getAnilistWatchedIds(config: any): Promise<{ anilistIds: Set<number>, malIds: Set<number> } | null> {
   try {
     const anilistTokenId = config.apiKeys?.anilistTokenId;
@@ -49,7 +43,7 @@ export async function getAnilistWatchedIds(config: any): Promise<{ anilistIds: S
       
       logger.info(`[Watched IDs] Fetched ${anilistIds.length} completed items from AniList for ${username}`);
       return { anilistIds, malIds };
-    }, 86400); // 24h TTL
+    }, 86400);
 
     return {
       anilistIds: new Set(watchedData.anilistIds),

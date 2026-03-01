@@ -3650,14 +3650,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
     }
     
-    // Hide Trakt watched items filter
     if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.traktTokenId) {
       const globalHideWatched = !!config.hideWatchedTrakt;
       const catalogHideWatched = catalogConfig?.metadata?.hideWatchedTrakt;
-      // Per-catalog overrides global. undefined = inherit global.
       const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
 
-      // Skip for search, watchlist, favorites, up-next (personal lists)
       const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
         || cleanId.includes('watchlist')
         || cleanId.includes('favorites')
@@ -3675,9 +3672,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               const metaId = meta.id || '';
               const isMovie = (meta.type || actualType) === 'movie';
               const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
-              // Check meta.id (tt-prefixed IMDb IDs)
               if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
-              // Check meta.imdb_id fallback
               if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
               return true;
             });
@@ -3691,13 +3686,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
     }
 
-    // Hide AniList watched items filter
     if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.anilistTokenId) {
       const globalHideWatched = !!config.hideWatchedAnilist;
       const catalogHideWatched = catalogConfig?.metadata?.hideWatchedAnilist;
       const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
 
-      // Skip for search, watchlist, favorites, up-next (personal lists)
       const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
         || cleanId.includes('watchlist')
         || cleanId.includes('favorites')
@@ -3715,7 +3708,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
               let anilistId = null;
               let malId = null;
 
-              // 1. Direct checks (only for native anime IDs)
               if (metaId.startsWith('anilist:')) {
                 anilistId = parseInt(metaId.split(':')[1], 10);
               } else if (metaId.startsWith('mal:')) {
@@ -3749,13 +3741,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
     }
 
-    // Hide MDBList watched items filter
     if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.mdblist) {
       const globalHideWatched = !!config.hideWatchedMdblist;
       const catalogHideWatched = catalogConfig?.metadata?.hideWatchedMdblist;
       const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
 
-      // Skip for search, watchlist, favorites, up-next (personal lists)
       const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
         || cleanId.includes('watchlist')
         || cleanId.includes('favorites')

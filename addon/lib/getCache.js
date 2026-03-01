@@ -783,7 +783,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Match by both id AND type to handle duplicate IDs (e.g., tvdb.trending for movie vs series)
   const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly && c.type === catalogType);
   const enableRatingPosters = catalogFromConfig?.enableRatingPosters !== false; // Default to true if not explicitly disabled
-  const catalogHideWatchedTrakt = catalogFromConfig?.metadata?.hideWatchedTrakt; // Per-catalog override for hide watched
+  const catalogHideWatchedTrakt = catalogFromConfig?.metadata?.hideWatchedTrakt;
 
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {

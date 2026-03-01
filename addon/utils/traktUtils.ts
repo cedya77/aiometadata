@@ -741,9 +741,7 @@ async function fetchTraktWatchedShows(accessToken: string): Promise<any[]> {
 }
 
 /**
- * Fetch watched shows for a user WITH season/episode data (OAuth required)
- * Unlike fetchTraktWatchedShows which uses noseasons, this returns full season/episode counts
- * needed to determine if a show is fully watched.
+ * Fetch watched shows with season/episode data (OAuth required)
  * @param accessToken - User's Trakt access token
  * @returns array of watched shows with season data
  */
@@ -2271,14 +2269,6 @@ async function fetchTraktCalendarShows(
   }, ttl);
 }
 
-/**
- * Get IMDb IDs of all watched movies and shows for a user.
- * Uses activity-based cache invalidation: checks /sync/last_activities (cached 5 min)
- * to build a fingerprint, then caches full watched lists for 24h keyed by fingerprint.
- * Max staleness: ~5 minutes after watching something on Trakt.
- * @param config - User config with apiKeys.traktTokenId
- * @returns Object with movieImdbIds and showImdbIds Sets, or null on error
- */
 async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<string>, showImdbIds: Set<string> } | null> {
   try {
     const accessToken = await getTraktAccessToken(config);
@@ -2286,13 +2276,11 @@ async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<stri
 
     const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
 
-    // Step 1: Fetch last activities (cached 5 min) — lightweight call
     const activitiesCacheKey = `trakt_activities:${tokenHash}`;
     const activities = await cacheWrapGlobal(activitiesCacheKey, async () => {
       return await fetchTraktLastActivity(accessToken);
-    }, 300); // 5 min TTL
+    }, 300);
 
-    // Step 2: Build fingerprint from watched timestamps
     const moviesWatchedAt = activities?.movies?.watched_at || '';
     const episodesWatchedAt = activities?.episodes?.watched_at || '';
     const fingerprint = crypto.createHash('sha256')
@@ -2300,7 +2288,6 @@ async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<stri
       .digest('hex')
       .substring(0, 16);
 
-    // Step 3: Fetch watched IDs (cached 24h, keyed by fingerprint)
     const watchedCacheKey = `trakt_watched_ids:${tokenHash}:${fingerprint}`;
     const watchedData = await cacheWrapGlobal(watchedCacheKey, async () => {
       const [watchedMovies, watchedShows] = await Promise.all([
@@ -2314,7 +2301,6 @@ async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<stri
         if (imdbId) movieIds.push(imdbId);
       }
 
-      // Only include fully-watched shows (all aired episodes watched)
       const showIds: string[] = [];
       let partialCount = 0;
       for (const item of watchedShows) {
@@ -2343,7 +2329,7 @@ async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<stri
 
       logger.info(`[Watched IDs] Fetched ${movieIds.length} watched movies, ${showIds.length} fully-watched shows (${partialCount} partial, skipped)`);
       return { movieIds, showIds };
-    }, 86400); // 24h TTL
+    }, 86400);
 
     return {
       movieImdbIds: new Set(watchedData.movieIds),

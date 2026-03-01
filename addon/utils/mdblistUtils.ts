@@ -8,26 +8,39 @@ import { consola } from 'consola';
 
 const logger = consola.withTag('mdblist-utils');
 
-/**
- * Fetches and caches MDBList watched IDs for a user to hide from catalogs.
- * Aggregates episodes to determine if a show is fully watched.
- * @param config - User config with apiKeys.mdblist
- * @returns Object with ID sets, or null on error
- */
+async function fetchMdblistLastActivities(apiKey: string): Promise<any> {
+  const url = `https://api.mdblist.com/sync/last_activities?apikey=${apiKey}`;
+  const response = await httpGet(url, {
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'AioMetadata/1.0' }
+  });
+  return response?.data || {};
+}
+
 export async function getMdblistWatchedIds(config: any): Promise<{ movieImdbIds: Set<string>, showImdbIds: Set<string>, tmdbIds: Set<number>, mdblistIds: Set<string> } | null> {
   try {
     const mdblist = config.apiKeys?.mdblist;
     if (!mdblist) return null;
 
     const keyHash = crypto.createHash('sha256').update(mdblist).digest('hex').substring(0, 16);
-    const cacheKey = `mdblist_watched_ids:${keyHash}`;
 
-    const watchedData = await cacheWrapGlobal(cacheKey, async () => {
+    const activitiesCacheKey = `mdblist_activities:${keyHash}`;
+    const activities = await cacheWrapGlobal(activitiesCacheKey, async () => {
+      return await fetchMdblistLastActivities(mdblist);
+    }, 300);
+
+    const watchedAt = activities?.watched_at || '';
+    const episodeWatchedAt = activities?.episode_watched_at || '';
+    const fingerprint = crypto.createHash('sha256')
+      .update(`${watchedAt}:${episodeWatchedAt}`)
+      .digest('hex')
+      .substring(0, 16);
+
+    const watchedCacheKey = `mdblist_watched_ids:${keyHash}:${fingerprint}`;
+    const watchedData = await cacheWrapGlobal(watchedCacheKey, async () => {
       const movieImdbIds: string[] = [];
       const tmdbIds: number[] = [];
       const mdblistIds: string[] = [];
-      
-      // Temporary maps for show aggregation
+
       const showAiredMap = new Map<string, number>();
       const showIdsMap = new Map<string, { imdb?: string, tmdb?: number, mdblist?: string }>();
       const showWatchedEpisodes = new Map<string, Set<string>>();
@@ -67,7 +80,7 @@ export async function getMdblistWatchedIds(config: any): Promise<{ movieImdbIds:
               }
               const epKey = `S${String(item.episode.season).padStart(2, '0')}E${String(item.episode.number).padStart(2, '0')}`;
               showWatchedEpisodes.get(imdbId)?.add(epKey);
-              
+
               if (!showIdsMap.has(imdbId)) {
                 showIdsMap.set(imdbId, item.episode.show.ids);
               }
@@ -81,7 +94,6 @@ export async function getMdblistWatchedIds(config: any): Promise<{ movieImdbIds:
         }
       }
 
-      // 4. Final calculation for shows
       const finalShowImdbIds: string[] = [];
       for (const [imdbId, watchedSet] of showWatchedEpisodes.entries()) {
         const airedCount = showAiredMap.get(imdbId) || 0;
@@ -96,13 +108,13 @@ export async function getMdblistWatchedIds(config: any): Promise<{ movieImdbIds:
       }
 
       logger.info(`[Watched IDs] MDBList sync complete: ${movieImdbIds.length} movies, ${finalShowImdbIds.length} shows fully watched.`);
-      return { 
-        movieImdbIds, 
-        showImdbIds: finalShowImdbIds, 
-        tmdbIds, 
-        mdblistIds 
+      return {
+        movieImdbIds,
+        showImdbIds: finalShowImdbIds,
+        tmdbIds,
+        mdblistIds
       };
-    }, 3600); // 1 hour TTL
+    }, 86400);
 
     return {
       movieImdbIds: new Set(watchedData.movieImdbIds),

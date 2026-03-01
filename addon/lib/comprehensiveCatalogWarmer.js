@@ -651,7 +651,6 @@ class ComprehensiveCatalogWarmer {
             }
           }
 
-          // Hide Trakt watched items filter
           if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.traktTokenId) {
             const globalHideWatched = !!config.hideWatchedTrakt;
             const catalogHideWatched = catalog.metadata?.hideWatchedTrakt;
@@ -687,7 +686,6 @@ class ComprehensiveCatalogWarmer {
             }
           }
 
-          // Hide AniList watched items filter
           if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.anilistTokenId) {
             const globalHideWatched = !!config.hideWatchedAnilist;
             const catalogHideWatched = catalog.metadata?.hideWatchedAnilist;
@@ -710,7 +708,6 @@ class ComprehensiveCatalogWarmer {
                     let anilistId = null;
                     let malId = null;
 
-                    // 1. Direct checks (only for native anime IDs)
                     if (metaId.startsWith('anilist:')) {
                       anilistId = parseInt(metaId.split(':')[1], 10);
                     } else if (metaId.startsWith('mal:')) {
@@ -744,7 +741,6 @@ class ComprehensiveCatalogWarmer {
             }
           }
 
-          // Hide MDBList watched items filter
           if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.mdblist) {
             const globalHideWatched = !!config.hideWatchedMdblist;
             const catalogHideWatched = catalog.metadata?.hideWatchedMdblist;
