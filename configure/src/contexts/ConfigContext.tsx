@@ -106,6 +106,9 @@ const initialConfig: AppConfig = {
   sfw: false,
   hideUnreleasedDigital: false,
   hideUnreleasedDigitalSearch: false,
+  hideWatchedTrakt: false,
+  hideWatchedAnilist: false,
+  hideWatchedMdblist: false,
   providers: { movie: 'tmdb', series: 'tvdb', anime: 'mal', anime_id_provider: 'imdb', forceAnimeForDetectedImdb: false },
   artProviders: { 
     movie: { poster: 'meta', background: 'meta', logo: 'meta' },

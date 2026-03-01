@@ -409,9 +409,12 @@ function classifyResult(result, error = null, cacheKey = null) {
     cacheKey.includes('simkl-') ||
     cacheKey.includes('fanart-api:') ||
     cacheKey.includes('anilist-') ||
+    cacheKey.includes('anilist_') ||
     cacheKey.includes('kitsu-') ||
     cacheKey.includes('mdblist-') ||
     cacheKey.includes('trakt-') ||
+    cacheKey.includes('trakt_') ||
+    cacheKey.includes('mdblist_') ||
     cacheKey.includes('stremthru-') ||
     cacheKey.includes('cinemeta-')
   );
@@ -780,7 +783,8 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Match by both id AND type to handle duplicate IDs (e.g., tvdb.trending for movie vs series)
   const catalogFromConfig = config.catalogs?.find(c => c.id === idOnly && c.type === catalogType);
   const enableRatingPosters = catalogFromConfig?.enableRatingPosters !== false; // Default to true if not explicitly disabled
-  
+  const catalogHideWatchedTrakt = catalogFromConfig?.metadata?.hideWatchedTrakt; // Per-catalog override for hide watched
+
   // Create context-aware catalog config (only relevant parameters for catalogs)
   const catalogConfig = {
     // Language (affects all catalogs except MAL when MAL is the anime provider)
@@ -801,15 +805,15 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
-    
+
     // Poster rating provider and API key (affects poster generation)
     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: enableRatingPosters ? (config.posterRatingProvider === 'top' 
-      ? (config.apiKeys?.topPoster || '') 
+    posterRatingApiKey: enableRatingPosters ? (config.posterRatingProvider === 'top'
+      ? (config.apiKeys?.topPoster || '')
       : (config.apiKeys?.rpdb || '')) : '',
     usePosterProxy: !!config.usePosterProxy,
   };
-  
+
   // Only include MDBList API key for MDBList catalogs
   if (isMDBListCatalog) {
     catalogConfig.apiKeys = {
@@ -1928,7 +1932,7 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     // Anime-specific settings (for MAL catalogs)
     mal: config.mal || {}
   };
-  
+
   const catalogConfigString = JSON.stringify(catalogConfig);
   const key = `catalog:${catalogConfigString}:${catalogKey}`;
   

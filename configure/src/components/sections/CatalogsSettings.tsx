@@ -289,32 +289,41 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   const [filterScoreMax, setFilterScoreMax] = useState<number | undefined>(catalog.filter_score_max);
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
   const [hideUnreleased, setHideUnreleased] = useState<boolean>(catalog.metadata?.hideUnreleased || false);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
   const isUpNext = catalog.id === 'mdblist.upnext';
   const isDiscover = catalog.id.startsWith('mdblist.discover.');
   const showSortOptions = !isUpNext && !isDiscover;
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? 
-          { 
-            ...c, 
-            sort, 
-            order, 
-            cacheTTL: Math.max(cacheTTL, 300), 
-            genreSelection, 
-            enableRatingPosters, 
-            filter_score_min: filterScoreMin, 
+          ?
+          {
+            ...c,
+            sort,
+            order,
+            cacheTTL: Math.max(cacheTTL, 300),
+            genreSelection,
+            enableRatingPosters,
+            filter_score_min: filterScoreMin,
             filter_score_max: filterScoreMax,
-            ...(isUpNext && {
-              metadata: {
-                ...c.metadata,
+            metadata: {
+              ...c.metadata,
+              ...(isUpNext && {
                 useShowPosterForUpNext: useShowPoster,
                 hideUnreleased
-              }
-            }) 
+              }),
+              hideWatchedTrakt: hideTraktValue,
+              hideWatchedAnilist: hideAnilistValue,
+              hideWatchedMdblist: hideMdblistValue
+            }
           }
           : c
       )
@@ -489,6 +498,51 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               </div>
             </div>
           )}
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="text-xs text-muted-foreground mb-4">
           Note: Changes will take effect after you save your configuration in the Configuration Manager.
@@ -503,11 +557,14 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 };
 
 const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig, catalogTTL } = useConfig();
+  const { setConfig, catalogTTL, config } = useConfig();
   const [sort, setSort] = useState<TraktSortOption>(catalog.sort as TraktSortOption || 'default');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'asc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [useShowPoster, setUseShowPoster] = useState<boolean>(catalog.metadata?.useShowPosterForUpNext || false);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
   const [airingSoonDays, setAiringSoonDays] = useState<number>(() => {
     const days = catalog.metadata?.airingSoonDays;
     if (typeof days === 'number' && days >= 1 && days <= 7) {
@@ -522,20 +579,26 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.') && catalog.id !== 'trakt.upnext';
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => {
       const updatedCatalogs = prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { 
-              ...c, 
-              sort, 
-              sortDirection, 
+          ? {
+              ...c,
+              sort,
+              sortDirection,
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
               metadata: {
                 ...c.metadata,
                 ...(isUpNext && { useShowPosterForUpNext: useShowPoster }),
-                ...(isCalendar && { 
-                  airingSoonDays: Math.max(1, Math.min(7, airingSoonDays)) 
-                })
+                ...(isCalendar && {
+                  airingSoonDays: Math.max(1, Math.min(7, airingSoonDays))
+                }),
+                hideWatchedTrakt: hideTraktValue,
+                hideWatchedAnilist: hideAnilistValue,
+                hideWatchedMdblist: hideMdblistValue
               }
             }
           : c
@@ -652,6 +715,51 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               </p>
             </div>
           )}
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -671,6 +779,9 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const isWatchlist = catalog.id.startsWith('simkl.watchlist.');
   const isCalendar = catalog.id.startsWith('simkl.calendar');
   const [pageSize, setPageSize] = useState<number>(catalog.metadata?.pageSize || 50);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
   const [airingSoonDays, setAiringSoonDays] = useState<number>(() => {
     const days = catalog.metadata?.airingSoonDays;
     if (typeof days === 'number' && days >= 1 && days <= 7) {
@@ -682,11 +793,14 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const minCacheTTL = isTrending ? 3600 : 300;
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => {
       const updatedCatalogs = prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { 
-              ...c, 
+          ? {
+              ...c,
               cacheTTL: Math.max(cacheTTL, minCacheTTL),
               metadata: {
                 ...c.metadata,
@@ -695,7 +809,10 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
                 // Remove pageSize from watchlists if it exists
                 ...(isWatchlist && catalog.metadata?.pageSize && { pageSize: undefined }),
                 // Airing soon days
-                ...(isCalendar && { airingSoonDays: Math.max(1, Math.min(7, airingSoonDays)) })
+                ...(isCalendar && { airingSoonDays: Math.max(1, Math.min(7, airingSoonDays)) }),
+                hideWatchedTrakt: hideTraktValue,
+                hideWatchedAnilist: hideAnilistValue,
+                hideWatchedMdblist: hideMdblistValue
               }
             }
           : c
@@ -782,6 +899,51 @@ const SimklSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
               </p>
             </div>
           )}
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -798,13 +960,19 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
   const { setConfig, catalogTTL, config } = useConfig();
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL: Math.max(cacheTTL, 7200), enableRatingPosters }
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 7200), enableRatingPosters, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
           : c
       )
     }));
@@ -851,6 +1019,51 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
               </div>
             </div>
           )}
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -862,22 +1075,28 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
 };
 
 const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig, catalogTTL } = useConfig();
-  
+  const { setConfig, catalogTTL, config } = useConfig();
+
   const validTMDBSorts: TMDBSortOption[] = ['popularity', 'release_date', 'vote_average', 'revenue'];
-  const initialSort = validTMDBSorts.includes(catalog.sort as TMDBSortOption) 
-    ? (catalog.sort as TMDBSortOption) 
+  const initialSort = validTMDBSorts.includes(catalog.sort as TMDBSortOption)
+    ? (catalog.sort as TMDBSortOption)
     : 'popularity';
-  
+
   const [sort, setSort] = useState<TMDBSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection }
+          ? { ...c, sort, sortDirection, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
           : c
       )
     }));
@@ -918,6 +1137,51 @@ const TMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConf
               </SelectContent>
             </Select>
           </div>
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -935,13 +1199,19 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
   const [enableRatingPosters, setEnableRatingPosters] = useState<boolean>(catalog.enableRatingPosters !== false);
   const [pageSize, setPageSize] = useState<number>(catalog.pageSize || 100);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, cacheTTL: Math.max(cacheTTL, 300), enableRatingPosters, pageSize }
+          ? { ...c, cacheTTL: Math.max(cacheTTL, 300), enableRatingPosters, pageSize, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
           : c
       )
     }));
@@ -1013,6 +1283,51 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
               </div>
             </div>
           )}
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -1024,17 +1339,23 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
 };
 
 const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig, catalogTTL } = useConfig();
+  const { setConfig, catalogTTL, config } = useConfig();
   const [sort, setSort] = useState<AniListSortOption>(catalog.sort as AniListSortOption || 'ADDED_TIME');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(catalog.sortDirection as 'asc' | 'desc' || 'desc');
   const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || catalogTTL);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, 300) }
+          ? { ...c, sort, sortDirection, cacheTTL: Math.max(cacheTTL, 300), metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
           : c
       )
     }));
@@ -1097,6 +1418,51 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               How long to cache this catalog before refreshing. Range: 5 minutes to 7 days.
             </p>
           </div>
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="text-xs text-muted-foreground mb-4">
           Note: Changes will take effect after you save your configuration in the Configuration Manager.
@@ -1111,22 +1477,28 @@ const AniListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 };
 
 const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
-  const { setConfig, catalogTTL } = useConfig();
-  
+  const { setConfig, catalogTTL, config } = useConfig();
+
   const validStreamingSorts: StreamingSortOption[] = ['popularity', 'release_date', 'vote_average', 'revenue'];
-  const initialSort = validStreamingSorts.includes(catalog.sort as StreamingSortOption) 
-    ? (catalog.sort as StreamingSortOption) 
+  const initialSort = validStreamingSorts.includes(catalog.sort as StreamingSortOption)
+    ? (catalog.sort as StreamingSortOption)
     : 'popularity';
-  
+
   const [sort, setSort] = useState<StreamingSortOption>(initialSort);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>((catalog.sortDirection as 'asc' | 'desc') || 'desc');
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
 
   const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
     setConfig(prev => ({
       ...prev,
       catalogs: prev.catalogs.map(c =>
         c.id === catalog.id && c.type === catalog.type
-          ? { ...c, sort, sortDirection }
+          ? { ...c, sort, sortDirection, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
           : c
       )
     }));
@@ -1167,6 +1539,51 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
               </SelectContent>
             </Select>
           </div>
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -1178,6 +1595,91 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
     </Dialog>
   );
 };
+
+const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, config } = useConfig();
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
+
+  const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
+    
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{catalog.name} Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 import { Layers } from 'lucide-react';
 const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: { 
   catalog: CatalogConfig & { source?: string };
@@ -1530,8 +2032,10 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
           </Tooltip>
 
 
+          {/* Settings Gear - Now show for all catalogs if any tracking is connected */}
           {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
-            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))) && (
+            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')) ||
+            (config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist)) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`}>
@@ -1542,7 +2046,8 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
             </Tooltip>
           )}
 
-          {catalog.source === 'custom' && (
+          {/* Remove redundant individual source checks since we combined them above */}
+          {false && catalog.source === 'custom' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="Cache Settings">
@@ -1553,7 +2058,8 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
             </Tooltip>
           )}
 
-          {catalog.source === 'anilist' && (
+          {/* Redundant check removed */}
+          {false && catalog.source === 'anilist' && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label="AniList Settings">
@@ -1816,6 +2322,21 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
       <AniListSettingsDialog
         catalog={catalog}
         isOpen={showSettings && catalog.source === 'anilist'}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <GenericSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && 
+          catalog.source !== 'mdblist' && 
+          catalog.source !== 'trakt' && 
+          catalog.source !== 'simkl' && 
+          catalog.source !== 'letterboxd' && 
+          catalog.source !== 'streaming' && 
+          catalog.source !== 'custom' && 
+          catalog.source !== 'anilist' &&
+          !(catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))
+        }
         onClose={() => setShowSettings(false)}
       />
 

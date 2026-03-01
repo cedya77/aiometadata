@@ -3650,6 +3650,144 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
     }
     
+    // Hide Trakt watched items filter
+    if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.traktTokenId) {
+      const globalHideWatched = !!config.hideWatchedTrakt;
+      const catalogHideWatched = catalogConfig?.metadata?.hideWatchedTrakt;
+      // Per-catalog overrides global. undefined = inherit global.
+      const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
+
+      // Skip for search, watchlist, favorites, up-next (personal lists)
+      const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
+        || cleanId.includes('watchlist')
+        || cleanId.includes('favorites')
+        || cleanId.includes('up_next')
+        || cleanId.includes('upnext');
+
+      if (shouldHideWatched && !isExcluded) {
+        try {
+          const { getTraktWatchedIds } = require('./utils/traktUtils');
+          const watchedIds = await getTraktWatchedIds(config);
+          if (watchedIds) {
+            const beforeCount = responseData.metas.length;
+            const actualType = catalogConfig?.type || type;
+            responseData.metas = responseData.metas.filter(meta => {
+              const metaId = meta.id || '';
+              const isMovie = (meta.type || actualType) === 'movie';
+              const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
+              // Check meta.id (tt-prefixed IMDb IDs)
+              if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
+              // Check meta.imdb_id fallback
+              if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
+              return true;
+            });
+            if (beforeCount !== responseData.metas.length) {
+              consola.debug(`[Catalog Route] Hide watched filter: removed ${beforeCount - responseData.metas.length} Trakt-watched items`);
+            }
+          }
+        } catch (err) {
+          consola.warn(`[Catalog Route] Hide watched filter error: ${err.message}`);
+        }
+      }
+    }
+
+    // Hide AniList watched items filter
+    if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.anilistTokenId) {
+      const globalHideWatched = !!config.hideWatchedAnilist;
+      const catalogHideWatched = catalogConfig?.metadata?.hideWatchedAnilist;
+      const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
+
+      // Skip for search, watchlist, favorites, up-next (personal lists)
+      const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
+        || cleanId.includes('watchlist')
+        || cleanId.includes('favorites')
+        || cleanId.includes('up_next')
+        || cleanId.includes('upnext');
+
+      if (shouldHideWatched && !isExcluded) {
+        try {
+          const { getAnilistWatchedIds } = require('./utils/anilistUtils');
+          const watchedIds = await getAnilistWatchedIds(config);
+          if (watchedIds) {
+            const beforeCount = responseData.metas.length;
+            responseData.metas = responseData.metas.filter(meta => {
+              const metaId = meta.id || '';
+              let anilistId = null;
+              let malId = null;
+
+              // 1. Direct checks (only for native anime IDs)
+              if (metaId.startsWith('anilist:')) {
+                anilistId = parseInt(metaId.split(':')[1], 10);
+              } else if (metaId.startsWith('mal:')) {
+                malId = parseInt(metaId.split(':')[1], 10);
+              } else if (metaId.startsWith('kitsu:')) {
+                const mapping = idMapper.getMappingByKitsuId(parseInt(metaId.split(':')[1], 10));
+                if (mapping) {
+                  anilistId = mapping.anilist_id;
+                  malId = mapping.mal_id;
+                }
+              } else if (metaId.startsWith('anidb:')) {
+                const mapping = idMapper.getMappingByAnidbId(parseInt(metaId.split(':')[1], 10));
+                if (mapping) {
+                  anilistId = mapping.anilist_id;
+                  malId = mapping.mal_id;
+                }
+              }
+
+              if (anilistId && watchedIds.anilistIds.has(anilistId)) return false;
+              if (malId && watchedIds.malIds.has(malId)) return false;
+              
+              return true;
+            });
+            if (beforeCount !== responseData.metas.length) {
+              consola.debug(`[Catalog Route] Hide watched filter: removed ${beforeCount - responseData.metas.length} AniList-watched items`);
+            }
+          }
+        } catch (err) {
+          consola.warn(`[Catalog Route] Hide AniList watched filter error: ${err.message}`);
+        }
+      }
+    }
+
+    // Hide MDBList watched items filter
+    if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.mdblist) {
+      const globalHideWatched = !!config.hideWatchedMdblist;
+      const catalogHideWatched = catalogConfig?.metadata?.hideWatchedMdblist;
+      const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
+
+      // Skip for search, watchlist, favorites, up-next (personal lists)
+      const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
+        || cleanId.includes('watchlist')
+        || cleanId.includes('favorites')
+        || cleanId.includes('up_next')
+        || cleanId.includes('upnext');
+
+      if (shouldHideWatched && !isExcluded) {
+        try {
+          const { getMdblistWatchedIds } = require('./utils/mdblistUtils');
+          const watchedIds = await getMdblistWatchedIds(config);
+          if (watchedIds) {
+            const beforeCount = responseData.metas.length;
+            const actualType = catalogConfig?.type || type;
+            responseData.metas = responseData.metas.filter(meta => {
+              const metaId = meta.id || '';
+              const isMovie = (meta.type || actualType) === 'movie';
+              const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
+              if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
+              if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
+
+              return true;
+            });
+            if (beforeCount !== responseData.metas.length) {
+              consola.debug(`[Catalog Route] Hide watched filter: removed ${beforeCount - responseData.metas.length} MDBList-watched items`);
+            }
+          }
+        } catch (err) {
+          consola.warn(`[Catalog Route] Hide MDBList watched filter error: ${err.message}`);
+        }
+      }
+    }
+
     if ((config.exclusionKeywords || config.regexExclusionFilter) && responseData?.metas && Array.isArray(responseData.metas)) {
       const { filterMetasByRegex } = require("./utils/regexFilter");
       const beforeCount = responseData.metas.length;

@@ -121,6 +121,58 @@ export function FiltersSettings() {
         </CardContent>
       </Card>
 
+      {/* Hide Watched Card */}
+      {(config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist) && (
+        <Card className="max-w-lg">
+          <CardHeader>
+            <CardTitle>Hide Watched</CardTitle>
+            <CardDescription className="space-y-2 mt-2">
+              <p>Hide items you've already watched on Trakt, AniList, or MDBList from all catalogs.</p>
+              <ul className="list-disc list-inside ml-2 space-y-1">
+                <li><strong>Trakt:</strong> Refreshes every 5 minutes</li>
+                <li><strong>MDBList:</strong> Refreshes every hour</li>
+                <li><strong>AniList:</strong> Refreshes every 24 hours</li>
+              </ul>
+              <p className="text-muted-foreground mt-2">
+                Note: Does not apply to search results, watchlists, or up-next catalogs.
+              </p>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {config.apiKeys?.traktTokenId && (
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-watched-trakt"
+                  checked={config.hideWatchedTrakt ?? false}
+                  onCheckedChange={(checked) => setConfig(prev => ({ ...prev, hideWatchedTrakt: checked }))}
+                />
+                <Label htmlFor="hide-watched-trakt">Hide Trakt Watched Items</Label>
+              </div>
+            )}
+            {config.apiKeys?.anilistTokenId && (
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-watched-anilist"
+                  checked={config.hideWatchedAnilist ?? false}
+                  onCheckedChange={(checked) => setConfig(prev => ({ ...prev, hideWatchedAnilist: checked }))}
+                />
+                <Label htmlFor="hide-watched-anilist">Hide AniList Watched Items</Label>
+              </div>
+            )}
+            {config.apiKeys?.mdblist && (
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-watched-mdblist"
+                  checked={config.hideWatchedMdblist ?? false}
+                  onCheckedChange={(checked) => setConfig(prev => ({ ...prev, hideWatchedMdblist: checked }))}
+                />
+                <Label htmlFor="hide-watched-mdblist">Hide MDBList Watched Items</Label>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Content Exclusion Filter Card */}
       <Card className="max-w-lg">
         <CardHeader>

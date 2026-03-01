@@ -741,6 +741,56 @@ async function fetchTraktWatchedShows(accessToken: string): Promise<any[]> {
 }
 
 /**
+ * Fetch watched shows for a user WITH season/episode data (OAuth required)
+ * Unlike fetchTraktWatchedShows which uses noseasons, this returns full season/episode counts
+ * needed to determine if a show is fully watched.
+ * @param accessToken - User's Trakt access token
+ * @returns array of watched shows with season data
+ */
+async function fetchTraktWatchedShowsFull(accessToken: string): Promise<any[]> {
+  const url = `${TRAKT_BASE_URL}/sync/watched/shows?extended=full`;
+  const response: any = await makeRateLimitedRequest(
+    () => httpGet(url, {
+      dispatcher: traktDispatcher,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': TRAKT_CLIENT_ID
+      }
+    }),
+    'Trakt fetchWatchedShowsFull',
+    3,
+    accessToken
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+/**
+ * Fetch watched movies for a user (OAuth required)
+ * @param accessToken - User's Trakt access token
+ * @returns array of watched movies
+ */
+async function fetchTraktWatchedMovies(accessToken: string): Promise<any[]> {
+  const url = `${TRAKT_BASE_URL}/sync/watched/movies`;
+  const response: any = await makeRateLimitedRequest(
+    () => httpGet(url, {
+      dispatcher: traktDispatcher,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': TRAKT_CLIENT_ID
+      }
+    }),
+    'Trakt fetchWatchedMovies',
+    3,
+    accessToken
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+/**
  * Fetch dropped shows for a user (OAuth required)
  * Handles pagination to fetch all dropped shows across multiple pages
  * @param accessToken - User's Trakt access token
@@ -2221,8 +2271,92 @@ async function fetchTraktCalendarShows(
   }, ttl);
 }
 
-export { 
-  fetchTraktWatchlistItems, 
+/**
+ * Get IMDb IDs of all watched movies and shows for a user.
+ * Uses activity-based cache invalidation: checks /sync/last_activities (cached 5 min)
+ * to build a fingerprint, then caches full watched lists for 24h keyed by fingerprint.
+ * Max staleness: ~5 minutes after watching something on Trakt.
+ * @param config - User config with apiKeys.traktTokenId
+ * @returns Object with movieImdbIds and showImdbIds Sets, or null on error
+ */
+async function getTraktWatchedIds(config: any): Promise<{ movieImdbIds: Set<string>, showImdbIds: Set<string> } | null> {
+  try {
+    const accessToken = await getTraktAccessToken(config);
+    if (!accessToken) return null;
+
+    const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
+
+    // Step 1: Fetch last activities (cached 5 min) — lightweight call
+    const activitiesCacheKey = `trakt_activities:${tokenHash}`;
+    const activities = await cacheWrapGlobal(activitiesCacheKey, async () => {
+      return await fetchTraktLastActivity(accessToken);
+    }, 300); // 5 min TTL
+
+    // Step 2: Build fingerprint from watched timestamps
+    const moviesWatchedAt = activities?.movies?.watched_at || '';
+    const episodesWatchedAt = activities?.episodes?.watched_at || '';
+    const fingerprint = crypto.createHash('sha256')
+      .update(`${moviesWatchedAt}:${episodesWatchedAt}`)
+      .digest('hex')
+      .substring(0, 16);
+
+    // Step 3: Fetch watched IDs (cached 24h, keyed by fingerprint)
+    const watchedCacheKey = `trakt_watched_ids:${tokenHash}:${fingerprint}`;
+    const watchedData = await cacheWrapGlobal(watchedCacheKey, async () => {
+      const [watchedMovies, watchedShows] = await Promise.all([
+        fetchTraktWatchedMovies(accessToken),
+        fetchTraktWatchedShowsFull(accessToken)
+      ]);
+
+      const movieIds: string[] = [];
+      for (const item of watchedMovies) {
+        const imdbId = item.movie?.ids?.imdb;
+        if (imdbId) movieIds.push(imdbId);
+      }
+
+      // Only include fully-watched shows (all aired episodes watched)
+      const showIds: string[] = [];
+      let partialCount = 0;
+      for (const item of watchedShows) {
+        const imdbId = item.show?.ids?.imdb;
+        if (!imdbId) continue;
+
+        const airedEpisodes = item.show?.aired_episodes || 0;
+        if (airedEpisodes === 0) continue;
+
+        let watchedEpisodes = 0;
+        if (item.seasons && Array.isArray(item.seasons)) {
+          for (const season of item.seasons) {
+            if (season.number === 0) continue;
+            if (season.episodes && Array.isArray(season.episodes)) {
+              watchedEpisodes += season.episodes.length;
+            }
+          }
+        }
+
+        if (watchedEpisodes >= airedEpisodes) {
+          showIds.push(imdbId);
+        } else {
+          partialCount++;
+        }
+      }
+
+      logger.info(`[Watched IDs] Fetched ${movieIds.length} watched movies, ${showIds.length} fully-watched shows (${partialCount} partial, skipped)`);
+      return { movieIds, showIds };
+    }, 86400); // 24h TTL
+
+    return {
+      movieImdbIds: new Set(watchedData.movieIds),
+      showImdbIds: new Set(watchedData.showIds)
+    };
+  } catch (err: any) {
+    logger.warn(`[Watched IDs] Error fetching Trakt watched IDs: ${err.message}`);
+    return null;
+  }
+}
+
+export {
+  fetchTraktWatchlistItems,
   fetchTraktFavoritesItems,
   fetchTraktRecommendationsItems,
   fetchTraktListItems,
@@ -2237,7 +2371,8 @@ export {
   makeRateLimitedTraktRequest,
   makeAuthenticatedRateLimitedTraktRequest,
   makeAuthenticatedRateLimitedTraktWriteRequest,
-  getTraktAccessToken
+  getTraktAccessToken,
+  getTraktWatchedIds
 };
 
 /**

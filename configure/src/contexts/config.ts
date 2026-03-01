@@ -45,6 +45,9 @@ export interface CatalogConfig {
     // Letterboxd-specific metadata
     isWatchlist?: boolean;
     hideUnreleased?: boolean;
+    hideWatchedTrakt?: boolean;
+    hideWatchedAnilist?: boolean;
+    hideWatchedMdblist?: boolean;
     identifier?: string;
     url?: string;
     // TMDB-specific metadata
@@ -145,6 +148,9 @@ export interface AppConfig {
   sfw: boolean;
   hideUnreleasedDigital: boolean;
   hideUnreleasedDigitalSearch: boolean;
+  hideWatchedTrakt?: boolean;
+  hideWatchedAnilist?: boolean;
+  hideWatchedMdblist?: boolean;
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
   catalogSetupComplete?: boolean;

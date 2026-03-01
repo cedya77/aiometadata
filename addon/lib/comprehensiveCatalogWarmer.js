@@ -6,6 +6,7 @@ const jikan = require('./mal');
 const database = require('./database');
 const redis = require('./redisClient');
 const consola = require('consola');
+const idMapper = require('./id-mapper');
 const { loadConfigFromDatabase } = require('./configApi.js');
 const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens');
 const packageJson = require('../../package.json');
@@ -647,6 +648,138 @@ class ComprehensiveCatalogWarmer {
             const afterCount = result.metas.length;
             if (beforeCount !== afterCount) {
               this.log('debug', `[Catalog Warmer] Content exclusion filter: filtered out ${beforeCount - afterCount} items from ${catalogId}`);
+            }
+          }
+
+          // Hide Trakt watched items filter
+          if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.traktTokenId) {
+            const globalHideWatched = !!config.hideWatchedTrakt;
+            const catalogHideWatched = catalog.metadata?.hideWatchedTrakt;
+            const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
+            const isExcluded = ['search', 'people_search', 'gemini.search'].includes(catalogId)
+              || catalogId.includes('watchlist')
+              || catalogId.includes('favorites')
+              || catalogId.includes('up_next')
+              || catalogId.includes('upnext');
+
+            if (shouldHideWatched && !isExcluded) {
+              try {
+                const { getTraktWatchedIds } = require('../utils/traktUtils');
+                const watchedIds = await getTraktWatchedIds(config);
+                if (watchedIds) {
+                  const beforeCount = result.metas.length;
+                  const actualType = catalog.type || 'movie';
+                  result.metas = result.metas.filter(meta => {
+                    const metaId = meta.id || '';
+                    const isMovie = (meta.type || actualType) === 'movie';
+                    const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
+                    if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
+                    if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
+                    return true;
+                  });
+                  if (beforeCount !== result.metas.length) {
+                    this.log('debug', `[Catalog Warmer] Hide watched filter: removed ${beforeCount - result.metas.length} Trakt-watched items from ${catalogId}`);
+                  }
+                }
+              } catch (err) {
+                this.log('warn', `[Catalog Warmer] Hide watched filter error for ${catalogId}: ${err.message}`);
+              }
+            }
+          }
+
+          // Hide AniList watched items filter
+          if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.anilistTokenId) {
+            const globalHideWatched = !!config.hideWatchedAnilist;
+            const catalogHideWatched = catalog.metadata?.hideWatchedAnilist;
+            const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
+
+            const isExcluded = ['search', 'people_search', 'gemini.search'].includes(catalogId)
+              || catalogId.includes('watchlist')
+              || catalogId.includes('favorites')
+              || catalogId.includes('up_next')
+              || catalogId.includes('upnext');
+
+            if (shouldHideWatched && !isExcluded) {
+              try {
+                const { getAnilistWatchedIds } = require('../utils/anilistUtils');
+                const watchedIds = await getAnilistWatchedIds(config);
+                if (watchedIds) {
+                  const beforeCount = result.metas.length;
+                  result.metas = result.metas.filter(meta => {
+                    const metaId = meta.id || '';
+                    let anilistId = null;
+                    let malId = null;
+
+                    // 1. Direct checks (only for native anime IDs)
+                    if (metaId.startsWith('anilist:')) {
+                      anilistId = parseInt(metaId.split(':')[1], 10);
+                    } else if (metaId.startsWith('mal:')) {
+                      malId = parseInt(metaId.split(':')[1], 10);
+                    } else if (metaId.startsWith('kitsu:')) {
+                      const mapping = idMapper.getMappingByKitsuId(parseInt(metaId.split(':')[1], 10));
+                      if (mapping) {
+                        anilistId = mapping.anilist_id;
+                        malId = mapping.mal_id;
+                      }
+                    } else if (metaId.startsWith('anidb:')) {
+                      const mapping = idMapper.getMappingByAnidbId(parseInt(metaId.split(':')[1], 10));
+                      if (mapping) {
+                        anilistId = mapping.anilist_id;
+                        malId = mapping.mal_id;
+                      }
+                    }
+
+                    if (anilistId && watchedIds.anilistIds.has(anilistId)) return false;
+                    if (malId && watchedIds.malIds.has(malId)) return false;
+                    
+                    return true;
+                  });
+                  if (beforeCount !== result.metas.length) {
+                    this.log('debug', `[Catalog Warmer] Hide watched filter: removed ${beforeCount - result.metas.length} AniList-watched items from ${catalogId}`);
+                  }
+                }
+              } catch (err) {
+                this.log('warn', `[Catalog Warmer] Hide AniList watched filter error for ${catalogId}: ${err.message}`);
+              }
+            }
+          }
+
+          // Hide MDBList watched items filter
+          if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.mdblist) {
+            const globalHideWatched = !!config.hideWatchedMdblist;
+            const catalogHideWatched = catalog.metadata?.hideWatchedMdblist;
+            const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
+
+            const isExcluded = ['search', 'people_search', 'gemini.search'].includes(catalogId)
+              || catalogId.includes('watchlist')
+              || catalogId.includes('favorites')
+              || catalogId.includes('up_next')
+              || catalogId.includes('upnext');
+
+            if (shouldHideWatched && !isExcluded) {
+              try {
+                const { getMdblistWatchedIds } = require('../utils/mdblistUtils');
+                const watchedIds = await getMdblistWatchedIds(config);
+                if (watchedIds) {
+                  const beforeCount = result.metas.length;
+                  const actualType = catalog.type || 'movie';
+                  result.metas = result.metas.filter(meta => {
+                    const metaId = meta.id || '';
+                    const isMovie = (meta.type || actualType) === 'movie';
+                    const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
+
+                    if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
+                    if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
+
+                    return true;
+                  });
+                  if (beforeCount !== result.metas.length) {
+                    this.log('debug', `[Catalog Warmer] Hide watched filter: removed ${beforeCount - result.metas.length} MDBList-watched items from ${catalogId}`);
+                  }
+                }
+              } catch (err) {
+                this.log('warn', `[Catalog Warmer] Hide MDBList watched filter error for ${catalogId}: ${err.message}`);
+              }
             }
           }
 
