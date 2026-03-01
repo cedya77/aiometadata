@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { AlertCircle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff, List } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff, List } from "lucide-react";
 import { toast } from "sonner";
 import { InstallDialog } from "@/components/InstallDialog";
 import { ConfigImportExport } from "@/components/ConfigImportExport";
@@ -21,7 +21,7 @@ interface SavedConfig {
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
-  const { config, setConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading } = useConfig();
+  const { config, setConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, isLoading: contextLoading, snapshotManifestFingerprint } = useConfig();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -40,6 +40,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
   const [loadError, setLoadError] = useState("");
   const [isLoadingLoad, setIsLoadingLoad] = useState(false);
   const [isUUIDTrusted, setIsUUIDTrusted] = useState<boolean | null>(null);
+  const [showReinstallWarning, setShowReinstallWarning] = useState(false);
 
   useEffect(() => {
     fetch("/api/config/addon-info")
@@ -189,6 +190,9 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       setPassword("");
       setConfirmPassword("");
       setAddonPassword("");
+      if (snapshotManifestFingerprint()) {
+        setShowReinstallWarning(true);
+      }
       toast.success("Configuration saved successfully!");
     } catch (err) {
       console.error('Save configuration error:', err);
@@ -653,6 +657,21 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                 </span>
               </div>
             </div>
+            {showReinstallWarning && (
+              <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-md">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 shrink-0" />
+                    <span className="text-sm text-yellow-800">
+                      <strong>Reinstall Required:</strong> Your configuration was saved, but the changes you made affect the addon manifest (catalogs, search, or resources). Stremio does not auto-reload manifests, so you need to reinstall the addon for these changes to take effect.
+                    </span>
+                  </div>
+                  <Button variant="ghost" size="sm" className="shrink-0 text-yellow-700 hover:text-yellow-900 hover:bg-yellow-100 -mt-1 -mr-1" onClick={() => setShowReinstallWarning(false)}>
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
                 <Button

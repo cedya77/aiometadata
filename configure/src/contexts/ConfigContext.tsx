@@ -24,6 +24,8 @@ interface ConfigContextType {
   isLoading: boolean;
   sessionId: string;
   setSessionId: (sessionId: string) => void;
+  manifestFingerprint: React.MutableRefObject<string | null>;
+  snapshotManifestFingerprint: () => boolean;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -200,6 +202,33 @@ const defaultCatalogs = allCatalogDefinitions.map(c => ({
 }));
 
 
+function getManifestFingerprint(config: AppConfig): string {
+  const catalogFingerprint = (config.catalogs || []).map(c => ({
+    id: c.id,
+    type: c.type,
+    enabled: c.enabled,
+    name: c.name,
+    displayType: c.displayType,
+    showInHome: c.showInHome,
+  }));
+
+  return JSON.stringify({
+    catalogs: catalogFingerprint,
+    catalogModeOnly: config.catalogModeOnly,
+    showRateMeButton: config.showRateMeButton,
+    showPrefix: config.showPrefix,
+    language: config.language,
+    search: {
+      enabled: config.search?.enabled,
+      engineEnabled: config.search?.engineEnabled,
+      searchNames: config.search?.searchNames,
+      searchDisplayTypes: config.search?.searchDisplayTypes,
+      searchOrder: config.search?.searchOrder,
+      ai_enabled: config.search?.ai_enabled,
+    },
+  });
+}
+
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [addonVersion, setAddonVersion] = useState<string>(' ');
   const [preloadedConfig] = useState(initializeConfigFromSources);
@@ -323,6 +352,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [hasBuiltInTmdb, setHasBuiltInTmdb] = useState(false);
   const [traktSearchEnabled, setTraktSearchEnabled] = useState(true);
   const [catalogTTL, setCatalogTTL] = useState(86400); // Default to 24 hours
+  const manifestFingerprint = useRef<string | null>(null);
 
   // --- THIS IS THE CORRECTED EFFECT ---
   useEffect(() => {
@@ -361,6 +391,13 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     return () => { isMounted = false; };
   }, []); // The empty dependency array is correct.
 
+  // Snapshot the manifest fingerprint when config is first loaded or when auth changes (user logs in)
+  useEffect(() => {
+    if (!isLoading) {
+      manifestFingerprint.current = getManifestFingerprint(config);
+    }
+  }, [isLoading, auth.authenticated, auth.userUUID]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Note: localStorage usage has been removed in favor of database storage
   // Configurations are now saved via the ConfigurationManager component
 
@@ -389,8 +426,17 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     setConfig(prev => ({ ...prev, sessionId: newSessionId }));
   };
 
+  // Compares current config against the stored baseline.
+  // Returns true if the manifest changed. Updates the baseline to current.
+  const snapshotManifestFingerprint = (): boolean => {
+    const current = getManifestFingerprint(config);
+    const changed = manifestFingerprint.current !== null && current !== manifestFingerprint.current;
+    manifestFingerprint.current = current;
+    return changed;
+  };
+
   return (
-    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId, traktSearchEnabled }}>
+    <ConfigContext.Provider value={{ config, setConfig, addonVersion, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb, catalogTTL, isLoading, sessionId, setSessionId, traktSearchEnabled, manifestFingerprint, snapshotManifestFingerprint }}>
       {children}
     </ConfigContext.Provider>
   );
