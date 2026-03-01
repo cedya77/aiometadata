@@ -799,7 +799,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
-    hideUnreleasedDigital: config.hideUnreleasedDigital || false,
     exclusionKeywords: config.exclusionKeywords || null,
     regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
@@ -973,13 +972,22 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
   const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog || isAuthCatalog;
-  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s`);
+  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
   
   // Set module-level context for this catalog request
   // This allows reconstruction to access the correct RPDB state
   currentRequestContext.catalogConfig = catalogFromConfig;
-  
+
   try {
+    // Check if the catalog is already cached before calling cacheWrap
+    // so we can log the full config detail on HITs (cacheWrap only logs the key)
+    if (redis) {
+      const versionedKey = `v${ADDON_VERSION}:${key}`;
+      const cached = await redis.get(versionedKey);
+      if (cached) {
+        cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
+      }
+    }
     return await cacheWrap(key, method, cacheTTL, options);
   } finally {
     // Clear context after request completes
@@ -1922,7 +1930,6 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
-    hideUnreleasedDigital: config.hideUnreleasedDigital || false,
     exclusionKeywords: config.exclusionKeywords || null,
     regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,

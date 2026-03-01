@@ -3270,8 +3270,31 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
   }
 
-  const catalogKey = `${cleanId}:${actualType}:${stableStringify(extraArgs)}`;
-  
+  // Compute pageSize and derive page from skip BEFORE building the cache key.
+  // This normalizes skip values so that different skip values mapping to the same
+  // underlying page produce the same cache key (e.g. skip=17 and skip=20 both → page=1).
+  let catalogPageSize;
+  if (cleanId.includes('mal.')) {
+    catalogPageSize = 25;
+  } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
+    catalogPageSize = 50;
+  } else if (cleanId.startsWith('simkl.trending.')) {
+    catalogPageSize = typeof catalogConfig?.metadata?.pageSize === 'number'
+      ? catalogConfig.metadata.pageSize
+      : 50;
+  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
+    catalogPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+  } else {
+    catalogPageSize = 20;
+  }
+  const catalogPage = extraArgs.skip ? Math.floor(parseInt(extraArgs.skip) / catalogPageSize) + 1 : 1;
+
+  // Build cache key with page instead of skip for stable cache hits
+  const cacheExtraArgs = { ...extraArgs };
+  delete cacheExtraArgs.skip;
+  if (catalogPage > 1) cacheExtraArgs.page = catalogPage;
+  const catalogKey = `${cleanId}:${actualType}:${stableStringify(cacheExtraArgs)}`;
+
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2,
@@ -3349,22 +3372,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       // Use regular catalog cache wrapper
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
         let metas = [];
-        const { genre: genreName, type_filter,  skip } = extraArgs;
-        let pageSize;
-        if (cleanId.includes(`mal.`)) {
-          pageSize = 25;
-        } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
-          pageSize = 50;
-        } else if (cleanId.startsWith('simkl.trending.')) {
-          pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
-            ? catalogConfig.metadata.pageSize 
-            : 50;
-        }  else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
-          pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
-        } else {
-          pageSize = 20;
-        }
-        const page = skip ? Math.floor(parseInt(skip) / pageSize) + 1 : 1;
+        const { genre: genreName, type_filter } = extraArgs;
+        const page = catalogPage;
         const args = [actualType, language, page];
         switch (cleanId) {
           case "tmdb.trending":

@@ -6,7 +6,6 @@ const jikan = require('./mal');
 const database = require('./database');
 const redis = require('./redisClient');
 const consola = require('consola');
-const idMapper = require('./id-mapper');
 const { loadConfigFromDatabase } = require('./configApi.js');
 const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens');
 const packageJson = require('../../package.json');
@@ -412,9 +411,6 @@ class ComprehensiveCatalogWarmer {
     config._currentCatalogConfig = catalog;
     
     const catalogId = catalog.id;
-    const pageSize = catalogId.startsWith('mal.') ? 25 : 
-            ((catalogId.startsWith('stremthru.') || catalogId.startsWith('mdblist.') || catalogId.startsWith('trakt.') || catalogId.startsWith('simkl.watchlist.') || catalogId.startsWith('custom.') || catalogId.startsWith('letterboxd.') || (catalogId.startsWith('tvdb.') && !catalogId.startsWith('tvdb.collection.'))) ? 
-            parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20') : 20);
     // Determine if manifest will include a "None" genre option for this catalog
     // When showInHome=false and catalog type adds "None", Stremio will send genre=None
     const shouldIncludeGenreNone = (
@@ -444,8 +440,11 @@ class ComprehensiveCatalogWarmer {
     // For MAL catalogs (except mal.genres) we use 'None' when showInHome is false.
     let genreValue = null;
     if (catalog.showInHome === false) {
+      if (catalogId === 'tmdb.trending') {
+        genreValue = 'Day';
+      }
       // TVDB genres and tvdb.trending use the first genre when showInHome is false
-      if (catalogId === 'tvdb.genres' || catalogId === 'tvdb.trending') {
+      else if (catalogId === 'tvdb.genres' || catalogId === 'tvdb.trending') {
         try {
           const genres = await getGenreList('tvdb', config.language, catalog.type, config);
           let genreNames = genres.map(genre => genre.name).sort();
@@ -510,20 +509,20 @@ class ComprehensiveCatalogWarmer {
       }
     }
 
-    let totalItems = 0;
-
     this.log('debug', `Starting to warm catalog: ${catalogId} with UUID: ${uuid}${shouldIncludeGenreNone ? ' (with genre=None)' : ''}`);
 
-    // Real-world Stremio skip: accumulate items seen so far
-    let totalSeen = 0;
-    let iterations = 0; // used for maxPages safety cap
+    // Page-based iteration: use page numbers directly instead of skip values.
+    // This matches the endpoint's cache key construction which also uses page instead of skip,
+    // ensuring warmer cache keys align with live request cache keys regardless of post-cache filtering.
+    let currentPage = 1;
+    let totalItems = 0;
     const maxPages = this.config.maxPagesPerCatalog;
 
-    while (iterations < maxPages) {
+    while (currentPage <= maxPages) {
       try {
-        // Construct extraArgs in the exact order Stremio sends: skip first, then genre
+        // Construct extraArgs with page instead of skip
         const extraArgs = {};
-        if (totalSeen > 0) extraArgs.skip = totalSeen.toString();
+        if (currentPage > 1) extraArgs.page = currentPage;
         if (genreValue) extraArgs.genre = genreValue;
         const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
         if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.') || catalogId.startsWith('streaming.') || catalogId.startsWith('tmdb.year') || catalogId.startsWith('tmdb.language')) {
@@ -600,7 +599,7 @@ class ComprehensiveCatalogWarmer {
             : 50;
         }
         
-          const derivedPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
+          const derivedPage = currentPage;
           const actualType = catalog.type;
           const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;
 
@@ -616,7 +615,6 @@ class ComprehensiveCatalogWarmer {
             }
             const configWithUUID = { ...config, userUUID: uuid };
             const { getTrending } = require('./getTrending');
-            // getTrending is page-based; derive page from totalSeen/pageSize to keep behavior aligned
              return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
           } else {
             // Everything else goes through getCatalog
@@ -626,177 +624,28 @@ class ComprehensiveCatalogWarmer {
             // Add userUUID to config object for parseStremThruItems
             const configWithUUID = { ...config, userUUID: uuid };
             const { getCatalog } = require('./getCatalog');
-            // getCatalog is page-based; derive page from totalSeen/pageSize to mirror Stremio skip accumulation
              return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
           }
           }, undefined, { enableErrorCaching: false, maxRetries: 1 });
 
-          if (config.hideUnreleasedDigital && result?.metas && Array.isArray(result.metas)) {
-            const { isReleasedDigitally } = require('../utils/parseProps');
-            const beforeCount = result.metas.length;
-            result.metas = result.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
-            const afterCount = result.metas.length;
-            if (beforeCount !== afterCount) {
-              this.log('debug', `[Catalog Warmer] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies from ${catalogId}`);
-            }
-          }
-          
-          if ((config.exclusionKeywords || config.regexExclusionFilter) && result?.metas && Array.isArray(result.metas)) {
-            const { filterMetasByRegex } = require('../utils/regexFilter');
-            const beforeCount = result.metas.length;
-            result.metas = filterMetasByRegex(result.metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
-            const afterCount = result.metas.length;
-            if (beforeCount !== afterCount) {
-              this.log('debug', `[Catalog Warmer] Content exclusion filter: filtered out ${beforeCount - afterCount} items from ${catalogId}`);
-            }
-          }
+          const rawMetaCount = result?.metas?.length || 0;
 
-          if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.traktTokenId) {
-            const globalHideWatched = !!config.hideWatchedTrakt;
-            const catalogHideWatched = catalog.metadata?.hideWatchedTrakt;
-            const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
-            const isExcluded = ['search', 'people_search', 'gemini.search'].includes(catalogId)
-              || catalogId.includes('watchlist')
-              || catalogId.includes('favorites')
-              || catalogId.includes('up_next')
-              || catalogId.includes('upnext');
-
-            if (shouldHideWatched && !isExcluded) {
-              try {
-                const { getTraktWatchedIds } = require('../utils/traktUtils');
-                const watchedIds = await getTraktWatchedIds(config);
-                if (watchedIds) {
-                  const beforeCount = result.metas.length;
-                  const actualType = catalog.type || 'movie';
-                  result.metas = result.metas.filter(meta => {
-                    const metaId = meta.id || '';
-                    const isMovie = (meta.type || actualType) === 'movie';
-                    const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
-                    if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
-                    if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
-                    return true;
-                  });
-                  if (beforeCount !== result.metas.length) {
-                    this.log('debug', `[Catalog Warmer] Hide watched filter: removed ${beforeCount - result.metas.length} Trakt-watched items from ${catalogId}`);
-                  }
-                }
-              } catch (err) {
-                this.log('warn', `[Catalog Warmer] Hide watched filter error for ${catalogId}: ${err.message}`);
-              }
-            }
-          }
-
-          if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.anilistTokenId) {
-            const globalHideWatched = !!config.hideWatchedAnilist;
-            const catalogHideWatched = catalog.metadata?.hideWatchedAnilist;
-            const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
-
-            const isExcluded = ['search', 'people_search', 'gemini.search'].includes(catalogId)
-              || catalogId.includes('watchlist')
-              || catalogId.includes('favorites')
-              || catalogId.includes('up_next')
-              || catalogId.includes('upnext');
-
-            if (shouldHideWatched && !isExcluded) {
-              try {
-                const { getAnilistWatchedIds } = require('../utils/anilistUtils');
-                const watchedIds = await getAnilistWatchedIds(config);
-                if (watchedIds) {
-                  const beforeCount = result.metas.length;
-                  result.metas = result.metas.filter(meta => {
-                    const metaId = meta.id || '';
-                    let anilistId = null;
-                    let malId = null;
-
-                    if (metaId.startsWith('anilist:')) {
-                      anilistId = parseInt(metaId.split(':')[1], 10);
-                    } else if (metaId.startsWith('mal:')) {
-                      malId = parseInt(metaId.split(':')[1], 10);
-                    } else if (metaId.startsWith('kitsu:')) {
-                      const mapping = idMapper.getMappingByKitsuId(parseInt(metaId.split(':')[1], 10));
-                      if (mapping) {
-                        anilistId = mapping.anilist_id;
-                        malId = mapping.mal_id;
-                      }
-                    } else if (metaId.startsWith('anidb:')) {
-                      const mapping = idMapper.getMappingByAnidbId(parseInt(metaId.split(':')[1], 10));
-                      if (mapping) {
-                        anilistId = mapping.anilist_id;
-                        malId = mapping.mal_id;
-                      }
-                    }
-
-                    if (anilistId && watchedIds.anilistIds.has(anilistId)) return false;
-                    if (malId && watchedIds.malIds.has(malId)) return false;
-                    
-                    return true;
-                  });
-                  if (beforeCount !== result.metas.length) {
-                    this.log('debug', `[Catalog Warmer] Hide watched filter: removed ${beforeCount - result.metas.length} AniList-watched items from ${catalogId}`);
-                  }
-                }
-              } catch (err) {
-                this.log('warn', `[Catalog Warmer] Hide AniList watched filter error for ${catalogId}: ${err.message}`);
-              }
-            }
-          }
-
-          if (result?.metas && Array.isArray(result.metas) && result.metas.length > 0 && config.apiKeys?.mdblist) {
-            const globalHideWatched = !!config.hideWatchedMdblist;
-            const catalogHideWatched = catalog.metadata?.hideWatchedMdblist;
-            const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
-
-            const isExcluded = ['search', 'people_search', 'gemini.search'].includes(catalogId)
-              || catalogId.includes('watchlist')
-              || catalogId.includes('favorites')
-              || catalogId.includes('up_next')
-              || catalogId.includes('upnext');
-
-            if (shouldHideWatched && !isExcluded) {
-              try {
-                const { getMdblistWatchedIds } = require('../utils/mdblistUtils');
-                const watchedIds = await getMdblistWatchedIds(config);
-                if (watchedIds) {
-                  const beforeCount = result.metas.length;
-                  const actualType = catalog.type || 'movie';
-                  result.metas = result.metas.filter(meta => {
-                    const metaId = meta.id || '';
-                    const isMovie = (meta.type || actualType) === 'movie';
-                    const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
-
-                    if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
-                    if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
-
-                    return true;
-                  });
-                  if (beforeCount !== result.metas.length) {
-                    this.log('debug', `[Catalog Warmer] Hide watched filter: removed ${beforeCount - result.metas.length} MDBList-watched items from ${catalogId}`);
-                  }
-                }
-              } catch (err) {
-                this.log('warn', `[Catalog Warmer] Hide MDBList watched filter error for ${catalogId}: ${err.message}`);
-              }
-            }
-          }
-
-          if (!result?.metas || result.metas.length === 0) {
-            this.log('debug', `Catalog ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} complete at page ${derivedPage}`);
+          if (rawMetaCount === 0) {
+            this.log('debug', `Catalog ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} complete at page ${currentPage}`);
             break;
           }
 
-          totalItems += result.metas.length;
-          totalSeen += result.metas.length;
-          iterations++;
+          totalItems += rawMetaCount;
+          currentPage++;
 
           await this.delay(this.config.taskDelayMs);
       } catch (error) {
-          const currentPage = totalSeen > 0 ? Math.floor(totalSeen / pageSize) + 1 : 1;
           this.log('error', `Error warming ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} page ${currentPage}: ${error.message}`);
           break;
       }
     }
 
-    return { pages: iterations, items: totalItems };
+    return { pages: currentPage - 1, items: totalItems };
   }
 
   async runWarmup(force = false) {
