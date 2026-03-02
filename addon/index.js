@@ -3537,8 +3537,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             }));
 
             const validScheduleMetas = metasFromSchedule.filter(Boolean);
-            const startIndex = (page - 1) * pageSize;
-            const endIndex = startIndex + pageSize;
+            const startIndex = (page - 1) * catalogPageSize;
+            const endIndex = startIndex + catalogPageSize;
             metas = validScheduleMetas.slice(startIndex, endIndex);
             break;
           }
@@ -3632,7 +3632,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
             break;
           }
           default:
-            const skipValue = skip ? parseInt(skip) : undefined;
+            const skipValue = extraArgs.skip ? parseInt(extraArgs.skip) : undefined;
             metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipValue)).metas;
             break;
       }
