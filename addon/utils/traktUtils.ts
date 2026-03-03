@@ -2943,6 +2943,100 @@ async function fetchTraktPersonCredits(
   }
 }
 
+export async function getTraktToken(tokenId: string): Promise<string | null> {
+  try {
+    const tokenData = await database.getOAuthToken(tokenId);
+    if (!tokenData || !tokenData.access_token) return null;
+    return tokenData.access_token;
+  } catch (error) {
+    logger.error(`[Trakt Checkin] Error fetching token from DB:`, error);
+    return null;
+  }
+}
+
+export async function checkinMovie(idInput: Record<string, string | number>, accessToken: string): Promise<boolean> {
+  try {
+    const url = 'https://api.trakt.tv/checkin';
+    const payload = {
+      movie: {
+        ids: idInput
+      },
+      app_version: "1.0",
+      app_date: new Date().toISOString().split('T')[0]
+    };
+    
+    await makeRateLimitedRequest(
+      () => httpPost(url, payload, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'trakt-api-version': '2',
+          'trakt-api-key': process.env.TRAKT_CLIENT_ID
+        }
+      }),
+      'Trakt checkinMovie',
+      3,
+      accessToken
+    );
+    logger.info(`[Trakt Checkin] Checked in movie`, { ids: idInput });
+    return true;
+  } catch (error: any) {
+    if (error.response?.status === 409) {
+      logger.info('[Trakt Checkin] Already checked in (409 Conflict)');
+      return true;
+    }
+    logger.error(`[Trakt Checkin] Movie check-in failed: ${error.message}`);
+    return false;
+  }
+}
+
+export async function checkinSeries(
+  idInput: Record<string, string | number>,
+  season: number,
+  episode: number,
+  accessToken: string
+): Promise<boolean> {
+  try {
+    const url = 'https://api.trakt.tv/checkin';
+    const payload = {
+      episode: {
+        season: season,
+        number: episode
+      },
+      show: {
+        ids: idInput
+      },
+      app_version: "1.0",
+      app_date: new Date().toISOString().split('T')[0]
+    };
+
+    await makeRateLimitedRequest(
+      () => httpPost(url, payload, {
+        dispatcher: traktDispatcher,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'trakt-api-version': '2',
+          'trakt-api-key': process.env.TRAKT_CLIENT_ID
+        }
+      }),
+      'Trakt checkinSeries',
+      3,
+      accessToken
+    );
+    logger.info(`[Trakt Checkin] Checked in episode`, { ids: idInput, season, episode });
+    return true;
+  } catch (error: any) {
+    if (error.response?.status === 409) {
+      logger.info('[Trakt Checkin] Already checked in (409 Conflict)');
+      return true;
+    }
+    logger.error(`[Trakt Checkin] Episode check-in failed: ${error.message}`);
+    return false;
+  }
+}
+
 export {
   fetchTraktMostFavoritedItems,
   fetchTraktTrendingItems,

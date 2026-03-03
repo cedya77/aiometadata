@@ -19,6 +19,7 @@ const SIMKL_TRENDING_TTL = 12 * 60 * 60; // 12 hours
 const SIMKL_WATCHLIST_TTL = 24 * 60 * 60; // Cache in Redis for 24h, relies on activity check to invalidate
 const SIMKL_ACTIVITIES_TTL = parseInt(process.env.SIMKL_ACTIVITIES_TTL || '21600'); // Cache activity check for 6 hours (21600s) to prevent spamming on pagination
 const SIMKL_TRENDING_DATA_URL = 'https://data.simkl.in/discover/trending';
+const SIMKL_DISCOVER_DATA_URL = 'https://data.simkl.in/discover';
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -1104,6 +1105,62 @@ async function fetchSimklGenreItems(
   }
 }
 
+async function fetchSimklDvdReleases(
+  page: number = 1,
+  limit: number = 20,
+  cacheTTL?: number
+): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
+  try {
+    const url = `${SIMKL_DISCOVER_DATA_URL}/dvd/releases_500.json`;
+
+    logger.debug(`Simkl dvd releases: page=${page}, limit=${limit}, url=${url}`);
+
+    // Cache the FULL 500-item file, then paginate locally
+    const cacheKey = `simkl-dvd-releases-json`;
+    const ttl = Math.max(cacheTTL || SIMKL_TRENDING_TTL, 3600);
+    const response: any = await cacheWrapGlobal(
+      cacheKey,
+      async () => {
+        return await makeRateLimitedRequest(
+          () => httpGet(url, {
+            dispatcher: simklDispatcher,
+            headers: {
+              'User-Agent': `AIOMetadata/${process.env.npm_package_version || '1.0'}`,
+              'Accept': 'application/json'
+            }
+          }),
+          `Simkl fetchDvdReleases JSON`
+        );
+      },
+      ttl,
+      { skipVersion: true }
+    );
+
+    const allItems: any[] = Array.isArray(response.data) ? response.data : [];
+
+    // Paginate locally from the cached full list
+    const startIndex = (page - 1) * limit;
+    const pageItems = allItems.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < allItems.length;
+    const totalItems = allItems.length;
+    const totalPages = Math.ceil(totalItems / limit);
+
+    logger.debug(`Simkl dvd releases page ${page}: ${pageItems.length} items (of ${totalItems} total), hasMore: ${hasMore}`);
+
+    const items = pageItems.map((entry: any) => {
+      return {
+        type: 'movie',
+        ...entry
+      };
+    });
+
+    return { items, hasMore, totalItems, totalPages };
+  } catch (err: any) {
+    logger.error(`Error fetching Simkl dvd releases: ${err.message}`);
+    return { items: [], hasMore: false, totalItems: 0 };
+  }
+}
+
 export {
   fetchSimklUserStats,
   fetchSimklWatchlistItems,
@@ -1114,6 +1171,7 @@ export {
   makeAuthenticatedSimklRequest,
   getSimklToken,
   fetchSimklTrendingItems,
+  fetchSimklDvdReleases,
   fetchSimklGenreItems,
   fetchSimklCalendarItems,
   checkinMovie,

@@ -217,6 +217,28 @@ function shouldTrackSimkl(config) {
 }
 
 /**
+ * Check if Trakt watch tracking should be enabled for this request
+ * @param {Object} config - User configuration
+ * @returns {boolean} True if Trakt tracking should proceed
+ */
+function shouldTrackTrakt(config) {
+  // Check if traktTokenId exists in config (user has connected their account)
+  if (!config?.apiKeys?.traktTokenId) {
+    logger.debug('[Watch Tracking] Trakt skipped - No Trakt account connected');
+    return false;
+  }
+
+  // Check if traktWatchTracking is enabled
+  if (!config.traktWatchTracking) {
+    logger.debug('[Watch Tracking] Trakt skipped - Feature disabled in user config');
+    return false;
+  }
+
+  logger.debug('[Watch Tracking] Trakt enabled - Account connected and tracking enabled');
+  return true;
+}
+
+/**
  * Main handler for subtitle requests - coordinates parsing and tracking
  * @param {string} type - Content type ('movie' or 'series')
  * @param {string} id - Media ID (e.g., 'tt1234567' or 'tt1234567:2:5')
@@ -261,6 +283,16 @@ function handleSubtitleRequest(type, id, config, userUUID) {
     if (shouldTrackSimkl(config)) {
       checkinSimkl(parsedId, config).catch(error => {
         logger.error(`[Watch Tracking] Simkl tracking failed for ${id}: ${error.message}`, {
+          stack: error.stack,
+          parsedId: parsedId
+        });
+      });
+    }
+
+    // Trakt tracking (fire-and-forget) - executes asynchronously without blocking response
+    if (shouldTrackTrakt(config)) {
+      checkinTrakt(parsedId, config).catch(error => {
+        logger.error(`[Watch Tracking] Trakt tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
         });
@@ -497,6 +529,51 @@ async function checkinSimkl(parsedId, config) {
     logger.debug(`[Simkl Checkin] Unsupported content type for tracking: ${parsedId.type}`);
   } catch (error) {
     logger.error(`[Simkl Checkin] Unexpected tracking error: ${error.message}`, {
+      stack: error.stack
+    });
+  }
+}
+
+async function checkinTrakt(parsedId, config) {
+  try {
+    const { checkinSeries, checkinMovie, getTraktToken } = require('../utils/traktUtils');
+    const tokenId = config.apiKeys?.traktTokenId;
+    const accessToken = await getTraktToken(tokenId);
+
+    if (!accessToken) {
+      logger.debug('[Trakt Checkin] Skipping checkin - missing or invalid token');
+      return;
+    }
+
+    if (parsedId.type === 'movie') {
+      const ids = normalizeIdsForMovie(parsedId);
+      if (!ids) {
+        logger.debug(`[Trakt Checkin] No valid identifiers for movie provider ${parsedId.provider}`);
+        return;
+      }
+
+      logger.debug(`[Trakt Checkin] Checking in movie (${buildIdSummary(ids)})`);
+      await checkinMovie(ids, accessToken);
+      return;
+    }
+
+    if (parsedId.type === 'series') {
+      const resolution = await resolveSeriesIds(parsedId, config, true);
+      if (!resolution) {
+        logger.debug(`[Trakt Checkin] Unable to resolve identifiers for series provider ${parsedId.provider}`);
+        return;
+      }
+
+      logger.debug(
+        `[Trakt Checkin] Checkin in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`
+      );
+      await checkinSeries(resolution.ids, resolution.season, resolution.episode, accessToken);
+      return;
+    }
+
+    logger.debug(`[Trakt Checkin] Unsupported content type for tracking: ${parsedId.type}`);
+  } catch (error) {
+    logger.error(`[Trakt Checkin] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }

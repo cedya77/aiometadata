@@ -1021,6 +1021,7 @@ addon.post("/api/auth/trakt/disconnect", async (req, res) => {
     
     // Remove Trakt user info
     delete config.traktUser;
+    delete config.traktWatchTracking;
     
     // Remove Trakt catalogs
     config.catalogs = (config.catalogs || []).filter(c => !c.id.startsWith('trakt.'));
@@ -3239,12 +3240,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       ? catalogConfig.metadata.airingSoonDays 
       : 1;
   }
-  // SimKL trending and watchlist catalogs need pageSize in cache key for proper cache invalidation
-  if (cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.watchlist.')) {
-    extraArgs.pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
-      ? catalogConfig.metadata.pageSize 
-      : 50;
-  }
   // Simkl calendar needs today's date and days in cache key
   if (cleanId.startsWith('simkl.calendar')) {
     const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
@@ -3278,11 +3273,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     catalogPageSize = 25;
   } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
     catalogPageSize = 50;
-  } else if (cleanId.startsWith('simkl.trending.')) {
-    catalogPageSize = typeof catalogConfig?.metadata?.pageSize === 'number'
-      ? catalogConfig.metadata.pageSize
-      : 50;
-  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
+  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.dvd.') || cleanId.startsWith('simkl.trending.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
     catalogPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   } else {
     catalogPageSize = 20;
@@ -4037,19 +4028,22 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
     
-    // Check if any watch tracking is enabled (MDBList or AniList)
+    // Check if any watch tracking is enabled (MDBList, AniList, Simkl, or Trakt)
     const hasMdblistKey = config?.apiKeys?.mdblist;
     const mdblistEnabled = !!config?.mdblistWatchTracking;
     const hasAnilistToken = config?.apiKeys?.anilistTokenId;
     const anilistEnabled = !!config?.anilistWatchTracking;
     const hasSimklToken = config?.apiKeys?.simklTokenId;
     const simklEnabled = !!config?.simklWatchTracking;
-    
+    const hasTraktToken = config?.apiKeys?.traktTokenId;
+    const traktEnabled = !!config?.traktWatchTracking;
+
     const shouldTrackMdblist = hasMdblistKey && mdblistEnabled;
     const shouldTrackAnilist = hasAnilistToken && anilistEnabled;
     const shouldTrackSimkl = hasSimklToken && simklEnabled;
-    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackSimkl) {
-      // Import and call subtitle handler
+    const shouldTrackTrakt = hasTraktToken && traktEnabled;
+
+    if (shouldTrackMdblist || shouldTrackAnilist || shouldTrackSimkl || shouldTrackTrakt) {      // Import and call subtitle handler
       const { handleSubtitleRequest } = require('./lib/subtitleHandler');
       
       // Call handler synchronously (no await)
@@ -4059,7 +4053,7 @@ addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function 
       return respond(req, res, result, { cacheMaxAge: 0 });
     } else {
       // Watch tracking disabled or no credentials - return empty subtitles
-      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, simkl: ${shouldTrackSimkl}`);
+      consola.debug(`[Watch Tracking] Skipped for user ${userUUID} - mdblist: ${shouldTrackMdblist}, anilist: ${shouldTrackAnilist}, simkl: ${shouldTrackSimkl}, trakt: ${shouldTrackTrakt}`);
       return respond(req, res, { subtitles: [] }, { cacheMaxAge: 0 });
     }
   } catch (error) {

@@ -302,6 +302,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, simklWatchTracking: checked }));
   };
 
+  const handleTraktTrackingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, traktWatchTracking: checked }));
+  };
+
   const handleEnableRatingPostersForLibraryChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
   };
@@ -484,6 +488,19 @@ export function GeneralSettings() {
             id="simkl-watch-tracking"
             checked={!!config.simklWatchTracking}
             onCheckedChange={handleSimklTrackingChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="trakt-watch-tracking" className="text-lg font-medium">Trakt Checkin</Label>
+            <p className="text-sm text-muted-foreground">
+              Automatically sync trakt watch progress when you play titles (requires connection in Catalogs → 'Manage Trakt Integration').
+            </p>
+          </div>
+          <Switch
+            id="trakt-watch-tracking"
+            checked={!!config.traktWatchTracking}
+            onCheckedChange={handleTraktTrackingChange}
           />
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">

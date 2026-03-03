@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
@@ -2378,9 +2378,7 @@ async function getSimklCatalog(
     
     // For watchlists, use default pageSize (Simkl doesn't support pagination, we do local pagination)
     // For trending, use configured pageSize
-    const pageSize = catalogId.startsWith('simkl.watchlist.')
-      ? parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20')
-      : (catalogConfig?.metadata?.pageSize || 50);
+    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20')
     const discoverPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
     
     let response: any;
@@ -2441,6 +2439,16 @@ async function getSimklCatalog(
         const ids = it.ids || {};
         const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb || ids.simkl || ids.simkl_id);
         if (!ok) logger.debug(`[Simkl] Skipping trending anime item with only simkl ID: ${JSON.stringify(it)}`);
+        return ok;
+      });
+      response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else if (catalogId === 'simkl.dvd.movies') {
+      logger.debug(`[Simkl] Fetching latest DVD movie releases (pageSize: ${pageSize})`);
+      const result = await fetchSimklDvdReleases(page, pageSize, catalogConfig?.cacheTTL);
+      const items = (result.items as any[]).filter((it: any) => {
+        const ids = it.ids || {};
+        const ok = !!(ids.imdb || ids.tmdb || ids.tvdb || ids.simkl || ids.simkl_id);
+        if (!ok) logger.debug(`[Simkl] Skipping DVD release item with only simkl ID: ${it.title || 'Unknown'}`);
         return ok;
       });
       response = { items, hasMore: result.hasMore, totalItems: result.totalItems };

@@ -757,6 +757,7 @@ class DashboardAPI {
         mdblistWatchTracking: 0,
         anilistWatchTracking: 0,
         simklWatchTracking: 0,
+        traktWatchTracking: 0,
         ratingPostersRpdb: 0,
         ratingPostersTop: 0,
         aiSearchEnabled: 0,
@@ -886,6 +887,7 @@ class DashboardAPI {
       if (config.mdblistWatchTracking) stats.features.mdblistWatchTracking++;
       if (config.anilistWatchTracking) stats.features.anilistWatchTracking++;
       if (config.simklWatchTracking) stats.features.simklWatchTracking++;
+      if (config.traktWatchTracking) stats.features.traktWatchTracking++;
       config.posterRatingProvider === 'top' ? stats.features.ratingPostersTop++ : stats.features.ratingPostersRpdb++;
       if (config.search?.ai_enabled) stats.features.aiSearchEnabled++;
     });
@@ -925,6 +927,7 @@ class DashboardAPI {
         mdblistWatchTracking: Math.round((stats.features.mdblistWatchTracking / total) * 100),
         anilistWatchTracking: Math.round((stats.features.anilistWatchTracking / total) * 100),
         simklWatchTracking: Math.round((stats.features.simklWatchTracking / total) * 100),
+        traktWatchTracking: Math.round((stats.features.traktWatchTracking / total) * 100),
         ratingPostersRpdb: Math.round((stats.features.ratingPostersRpdb / total) * 100),
         ratingPostersTop: Math.round((stats.features.ratingPostersTop / total) * 100),
         aiSearchEnabled: Math.round((stats.features.aiSearchEnabled / total) * 100),
@@ -953,6 +956,7 @@ class DashboardAPI {
         mdblistWatchTracking: 0,
         anilistWatchTracking: 0,
         simklWatchTracking: 0,
+        traktWatchTracking: 0,
         ratingPostersRpdb: 0,
         ratingPostersTop: 0,
         aiSearchEnabled: 0,

@@ -2209,13 +2209,13 @@ function DashboardSystem({ data, loading }) {
                   <p className="text-sm font-bold">Watch Tracking Adoption</p>
                 </div>
                 
-                <BarList 
+                <BarList
                   data={[
                     { name: "AniList", value: systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-blue-500 mr-2" /> },
                     { name: "MDBList", value: systemConfig.aggregatedStats?.features?.mdblistWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2" /> },
                     { name: "Simkl", value: systemConfig.aggregatedStats?.features?.simklWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-red-500 mr-2" /> },
-                  ]}
-                  className="mt-2"
+                    { name: "Trakt", value: systemConfig.aggregatedStats?.features?.traktWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-red-600 mr-2" /> },
+                  ]}                  className="mt-2"
                   valueFormatter={(number: number) => `${number}%`}
                   color="blue"
                 />

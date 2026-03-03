@@ -171,6 +171,26 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
     toast.success(`Added Simkl Trending ${type}`);
   };
 
+  const handleAddDvdReleasesCatalog = () => {
+    const id = 'simkl.dvd.movies';
+    if (config.catalogs.some(c => c.id === id)) {
+      toast.info('Simkl DVD Releases catalog already added.');
+      return;
+    }
+    const displayType = getDisplayTypeOverride('movie', config.displayTypeOverrides);
+    const newCatalog: CatalogConfig = {
+      id,
+      type: 'movie',
+      name: 'Simkl DVD Releases',
+      enabled: true,
+      showInHome: true,
+      source: 'simkl' as any,
+      ...(displayType && { displayType })
+    };
+    setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+    toast.success('Added Simkl DVD Releases');
+  };
+
   // Handlers to add watchlist catalogs
   const handleAddWatchlistCatalog = (type: 'movies' | 'shows' | 'anime', status: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped') => {
     const id = `simkl.watchlist.${type}.${status}`;
@@ -714,6 +734,17 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Airing Soon (Series)
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleAddDvdReleasesCatalog}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'simkl.dvd.movies')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      DVD Releases
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">

@@ -593,12 +593,6 @@ class ComprehensiveCatalogWarmer {
             : 1;
         }
         
-        if (catalogId.startsWith('simkl.trending.') || catalogId.startsWith('simkl.watchlist.')) {
-          extraArgs.pageSize = typeof catalogConfig?.metadata?.pageSize === 'number' 
-            ? catalogConfig.metadata.pageSize 
-            : 50;
-        }
-        
           const derivedPage = currentPage;
           const actualType = catalog.type;
           const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;
@@ -742,16 +736,18 @@ class ComprehensiveCatalogWarmer {
           this.log('info', `Processing UUID: ${uuid} (${enabledCatalogs.length} catalogs)`);
           const uuidStartTime = Date.now();
           
+          let uuidWarmingInterrupted = false;
           for (const catalog of enabledCatalogs) {
             if (!this.shouldContinueWarming()) {
               this.log('info', 'Stop requested - stopping catalog warming');
+              uuidWarmingInterrupted = true;
               break;
             }
 
             try {
               this.log('info', `Warming catalog: ${catalog.id} (${catalog.name}) for UUID ${uuid}`);
               const result = await this.warmCatalog(catalog, config, uuid);
-              
+
               // Update Instance Stats (UUID)
               this.stats.uuidStats[uuid].catalogsWarmed++;
               this.stats.uuidStats[uuid].totalPages += result.pages;
@@ -771,10 +767,13 @@ class ComprehensiveCatalogWarmer {
 
           const uuidDuration = Date.now() - uuidStartTime;
           this.stats.uuidStats[uuid].duration = `${Math.floor(uuidDuration / 60000)}m ${Math.floor((uuidDuration % 60000) / 1000)}s`;
-          
-          await this.markWarmed(uuid, uuidStartTime);
-          
-          this.log('success', `UUID ${uuid} complete: ${this.stats.uuidStats[uuid].catalogsWarmed}/${this.stats.uuidStats[uuid].totalCatalogs} catalogs, ${this.stats.uuidStats[uuid].totalPages} pages, ${this.stats.uuidStats[uuid].totalItems} items in ${this.stats.uuidStats[uuid].duration}`);
+
+          if (!uuidWarmingInterrupted) {
+            await this.markWarmed(uuid, uuidStartTime);
+            this.log('success', `UUID ${uuid} complete: ${this.stats.uuidStats[uuid].catalogsWarmed}/${this.stats.uuidStats[uuid].totalCatalogs} catalogs, ${this.stats.uuidStats[uuid].totalPages} pages, ${this.stats.uuidStats[uuid].totalItems} items in ${this.stats.uuidStats[uuid].duration}`);
+          } else {
+            this.log('warn', `UUID ${uuid} interrupted: ${this.stats.uuidStats[uuid].catalogsWarmed}/${this.stats.uuidStats[uuid].totalCatalogs} catalogs warmed before stop`);
+          }
         } catch (error) {
           this.log('error', `Failed to process UUID ${uuid}: ${error.message}`);
           this.stats.errors.push({ uuid, error: error.message });
