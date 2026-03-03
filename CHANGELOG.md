@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.33.0](https://github.com/cedya77/aiometadata/compare/v1.32.3...v1.33.0) (2026-03-03)
+
+
+### Features
+
+* **byoc:** add MDBList Discover as a BYOC source with user info display ([44e04a0](https://github.com/cedya77/aiometadata/commit/44e04a0687eacb0d2693c531a2a0e2f8de62cf1d))
+* hide watched items from catalogs (Trakt, AniList, MDBList) ([5fedaa8](https://github.com/cedya77/aiometadata/commit/5fedaa85febee5b35f84eabb364ddc4a937640b6))
+* show reinstall warning when manifest-affecting config changes are saved ([5c02eb4](https://github.com/cedya77/aiometadata/commit/5c02eb477d200e04c06245cda28fd304f438e101))
+* **simkl:** add simkl latest dvd release catalog ([b26fb75](https://github.com/cedya77/aiometadata/commit/b26fb75b4119c11bd84d7bc1408d9b07d63ddc8b))
+* **trakt:** add "default" as sort option ([04247c1](https://github.com/cedya77/aiometadata/commit/04247c142a71cddce6287ab4e3120d5e27f1c698))
+* **trakt:** add trakt check in ([b26fb75](https://github.com/cedya77/aiometadata/commit/b26fb75b4119c11bd84d7bc1408d9b07d63ddc8b))
+
+
+### Bug Fixes
+
+* **byoc:** preserve randomization on save, fix MAL catalog type, and prevent state leaking between edits ([bd023d9](https://github.com/cedya77/aiometadata/commit/bd023d96e86bf39963614ea13b4436f3beadf251))
+* resolve undefined skip and pageSize references after page-based refactor ([cb83e5d](https://github.com/cedya77/aiometadata/commit/cb83e5d8364452fe40ecb31e1ab257b26af1398a))
+* **warming:** Fix byoc warming that was broken due to missing dependency ([04247c1](https://github.com/cedya77/aiometadata/commit/04247c142a71cddce6287ab4e3120d5e27f1c698))
+
 ## [1.32.3](https://github.com/cedya77/aiometadata/compare/v1.32.2...v1.32.3) (2026-02-23)
 
 
