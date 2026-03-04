@@ -275,7 +275,11 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
 
       const delay = error.retryDelay || (1000 * Math.pow(2, attempt - 1));
 
-      if (attempt < maxRetries && (error.isRetryable || (typeof error.code === 'string' && error.code.startsWith('UND_ERR_')))) {
+      const isNetworkError = error.name === 'TypeError' && error.message === 'fetch failed';
+      const isUndiciError = typeof error.code === 'string' && error.code.startsWith('UND_ERR_');
+      const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
+
+      if (attempt < maxRetries && (error.isRetryable || isUndiciError || isNetworkError || isTimeout)) {
         consola.debug(`[TMDB] Request to ${endpoint} failed. Retrying in ${delay}ms (attempt ${attempt}/${maxRetries}). Error: ${error.message}`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {

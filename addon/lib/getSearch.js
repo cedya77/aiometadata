@@ -635,7 +635,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
   // STEP 3: KEYWORD FILTERING
   let keywordFilteredResults;
   if (config.includeAdult === false) {
-    const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga'];
+    const adultKeywordBlacklist = ['porn', 'porno', 'soft porn', 'softcore', 'pinku-eiga','erotica', 'erotic film', 'erotic movie', 'adult video'];
     logger.debug(`Filtering results with adult keyword blacklist as includeAdult is false.`);
     keywordFilteredResults = hydratedResults.filter(result => {
         const keywordsObject = result.details.keywords;
