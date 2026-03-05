@@ -8,7 +8,7 @@ const REMOTE_SERIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidat
 const REMOTE_MOVIES_URL = 'https://raw.githubusercontent.com/0xConstant1/Wikidata-Fetcher/refs/heads/main/data/movie_mappings.csv';
 const SERIES_CACHE = path.join(process.cwd(), 'addon', 'data', 'tv_mappings.csv.cache');
 const MOVIES_CACHE = path.join(process.cwd(), 'addon', 'data', 'movie_mappings.csv.cache');
-const UPDATE_INTERVAL_HOURS = parseInt(process.env.WIKI_MAPPER_UPDATE_INTERVAL_HOURS || '24'); // Update every 24 hours (configurable)
+const UPDATE_INTERVAL_HOURS = parseInt(process.env.WIKI_MAPPER_UPDATE_INTERVAL_HOURS || '24'); // Update every 24 hours
 
 interface IdMap {
   imdbId: string;
