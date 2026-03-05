@@ -23,13 +23,44 @@ const UPDATE_INTERVAL_HOURS = parseInt(process.env.ANIME_LIST_UPDATE_INTERVAL_HO
 const UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS = parseInt(process.env.KITSU_TO_IMDB_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
 const UPDATE_INTERVAL_TRAKT_ANIME_MOVIES_HOURS = parseInt(process.env.TRAKT_ANIME_MOVIES_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
 
+// Simple size-limited Map that evicts oldest entries when full
+class SizeLimitedMap {
+  constructor(maxSize) {
+    this._map = new Map();
+    this._maxSize = maxSize;
+  }
+  has(key) { return this._map.has(key); }
+  get(key) { return this._map.get(key); }
+  set(key, value) {
+    // Delete first so re-insertion moves key to end (most recent)
+    if (this._map.has(key)) this._map.delete(key);
+    this._map.set(key, value);
+    // Evict oldest entries if over limit
+    if (this._map.size > this._maxSize) {
+      const it = this._map.keys();
+      this._map.delete(it.next().value);
+    }
+    return this;
+  }
+  delete(key) { return this._map.delete(key); }
+  clear() { this._map.clear(); }
+  get size() { return this._map.size; }
+  keys() { return this._map.keys(); }
+  values() { return this._map.values(); }
+  entries() { return this._map.entries(); }
+  forEach(fn) { this._map.forEach(fn); }
+  [Symbol.iterator]() { return this._map[Symbol.iterator](); }
+}
+
+const ID_MAPPER_CACHE_MAX_SIZE = parseInt(process.env.ID_MAPPER_CACHE_MAX_SIZE || '2000', 10);
+
 let animeIdMap = new Map();
 let tvdbIdToAnimeListMap = new Map();
 let isInitialized = false;
 let tvdbIdMap = new Map();
-const franchiseMapCache = new Map();
-const tmdbFranchiseInfoCache = new Map();
-const tmdbSeasonCache = new Map();
+const franchiseMapCache = new SizeLimitedMap(ID_MAPPER_CACHE_MAX_SIZE);
+const tmdbFranchiseInfoCache = new SizeLimitedMap(ID_MAPPER_CACHE_MAX_SIZE);
+const tmdbSeasonCache = new SizeLimitedMap(ID_MAPPER_CACHE_MAX_SIZE);
 
 // Auxiliary index maps for O(1) lookups (instead of O(N) Array.from().find())
 let kitsuIdMap = new Map();
@@ -58,7 +89,7 @@ async function getTmdbSeasonInfo(tmdbId, config = {}) {
 }
 
 let tmdbIndexArray; 
-const kitsuToImdbCache = new Map();
+const kitsuToImdbCache = new SizeLimitedMap(ID_MAPPER_CACHE_MAX_SIZE);
 let imdbIdToAnimeListMap = new Map();
 let updateInterval = null;
 let kitsuToImdbMapping = null;

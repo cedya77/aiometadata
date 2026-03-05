@@ -74,8 +74,8 @@ const SELF_HEALING_CONFIG = {
   corruptedEntryThreshold: parseInt(process.env.CACHE_CORRUPTED_THRESHOLD || '10', 10)
 };
 
-const MAX_TRACKED_KEYS = parseInt(process.env.MAX_TRACKED_KEYS || '20000', 10);
-const KEYS_TO_KEEP_AFTER_PRUNE = parseInt(process.env.KEYS_TO_KEEP_AFTER_PRUNE || '5000', 10);
+const MAX_TRACKED_KEYS = parseInt(process.env.MAX_TRACKED_KEYS || '5000', 10);
+const KEYS_TO_KEEP_AFTER_PRUNE = parseInt(process.env.KEYS_TO_KEEP_AFTER_PRUNE || '1000', 10);
 
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
@@ -256,6 +256,17 @@ function safeParseConfigString(configString) {
  */
 function updateCacheHealth(key, type, success = true) {
   cacheHealth.keyAccessCounts.set(key, (cacheHealth.keyAccessCounts.get(key) || 0) + 1);
+
+  // Prune immediately if map grows too large (don't wait for health check interval)
+  if (cacheHealth.keyAccessCounts.size > MAX_TRACKED_KEYS) {
+    const sorted = Array.from(cacheHealth.keyAccessCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, KEYS_TO_KEEP_AFTER_PRUNE);
+    cacheHealth.keyAccessCounts.clear();
+    for (const [k, count] of sorted) {
+      cacheHealth.keyAccessCounts.set(k, count);
+    }
+  }
   
   if (success) {
     if (type === 'hit') {
