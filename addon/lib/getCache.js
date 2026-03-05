@@ -6,6 +6,7 @@ const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
 const idMapper = require('./id-mapper');
 const crypto = require('crypto');
+const { isMetricsDisabled } = require('./metricsConfig');
 
 // Helper to hash config
 function hashConfig(configObj) {
@@ -18,6 +19,14 @@ const cacheLogger = consola.withTag('Cache');
 const globalCacheLogger = consola.withTag('Global-Cache');
 const selfHealingLogger = consola.withTag('Self-Healing');
 const cacheHealthLogger = consola.withTag('Cache-Health');
+
+function parsePositiveIntEnv(envValue, defaultValue, minValue = 1, maxValue = 1000000) {
+  const parsed = Number.parseInt(envValue, 10);
+  if (!Number.isFinite(parsed) || parsed < minValue) {
+    return defaultValue;
+  }
+  return Math.min(parsed, maxValue);
+}
 
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -68,14 +77,17 @@ const cacheHealth = {
 // Self-healing configuration
 const SELF_HEALING_CONFIG = {
   enabled: process.env.ENABLE_SELF_HEALING !== 'false',
-  maxRetries: parseInt(process.env.CACHE_MAX_RETRIES || '2', 10),
-  retryDelay: parseInt(process.env.CACHE_RETRY_DELAY || '1000', 10),
-  healthCheckInterval: parseInt(process.env.CACHE_HEALTH_CHECK_INTERVAL || '300000', 10), // 5 minutes
-  corruptedEntryThreshold: parseInt(process.env.CACHE_CORRUPTED_THRESHOLD || '10', 10)
+  maxRetries: parsePositiveIntEnv(process.env.CACHE_MAX_RETRIES, 2),
+  retryDelay: parsePositiveIntEnv(process.env.CACHE_RETRY_DELAY, 1000),
+  healthCheckInterval: parsePositiveIntEnv(process.env.CACHE_HEALTH_CHECK_INTERVAL, 300000), // 5 minutes
+  corruptedEntryThreshold: parsePositiveIntEnv(process.env.CACHE_CORRUPTED_THRESHOLD, 10)
 };
 
-const MAX_TRACKED_KEYS = parseInt(process.env.MAX_TRACKED_KEYS || '20000', 10);
-const KEYS_TO_KEEP_AFTER_PRUNE = parseInt(process.env.KEYS_TO_KEEP_AFTER_PRUNE || '5000', 10);
+const MAX_TRACKED_KEYS = parsePositiveIntEnv(process.env.MAX_TRACKED_KEYS, 30000, 100);
+const KEYS_TO_KEEP_AFTER_PRUNE = Math.min(
+  parsePositiveIntEnv(process.env.KEYS_TO_KEEP_AFTER_PRUNE, 6000, 10),
+  Math.max(1, MAX_TRACKED_KEYS - 1)
+);
 
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
@@ -251,11 +263,33 @@ function safeParseConfigString(configString) {
   }
 }
 
+function pruneKeyAccessCounts() {
+  if (cacheHealth.keyAccessCounts.size <= MAX_TRACKED_KEYS) {
+    return null;
+  }
+
+  const oldSize = cacheHealth.keyAccessCounts.size;
+  const sorted = Array.from(cacheHealth.keyAccessCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, KEYS_TO_KEEP_AFTER_PRUNE);
+
+  cacheHealth.keyAccessCounts.clear();
+  for (const [trackedKey, count] of sorted) {
+    cacheHealth.keyAccessCounts.set(trackedKey, count);
+  }
+
+  return { oldSize, newSize: cacheHealth.keyAccessCounts.size };
+}
+
 /**
  * Self-healing cache health monitoring
  */
 function updateCacheHealth(key, type, success = true) {
-  cacheHealth.keyAccessCounts.set(key, (cacheHealth.keyAccessCounts.get(key) || 0) + 1);
+  const metricsDisabled = isMetricsDisabled();
+  if (!metricsDisabled) {
+    cacheHealth.keyAccessCounts.set(key, (cacheHealth.keyAccessCounts.get(key) || 0) + 1);
+    pruneKeyAccessCounts();
+  }
   
   if (success) {
     if (type === 'hit') {
@@ -304,7 +338,6 @@ function updateCacheHealth(key, type, success = true) {
  */
 function logCacheHealth() {
   // Skip logging if metrics are disabled
-  const { isMetricsDisabled } = require('./metricsConfig');
   if (isMetricsDisabled()) {
     return;
   }
@@ -325,21 +358,9 @@ function logCacheHealth() {
     cacheHealthLogger.info('Most accessed keys:', topKeys.map(([key, count]) => `${key}:${count}`).join(', '));
   }
 
-  // Prune keyAccessCounts Map if threshold exceeded to prevent memory leak
-  if (cacheHealth.keyAccessCounts.size > MAX_TRACKED_KEYS) {
-    const oldSize = cacheHealth.keyAccessCounts.size;
-
-    // Sort by access count (frequency) and keep top N keys
-    const sorted = Array.from(cacheHealth.keyAccessCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, KEYS_TO_KEEP_AFTER_PRUNE);
-
-    cacheHealth.keyAccessCounts.clear();
-    for (const [key, count] of sorted) {
-      cacheHealth.keyAccessCounts.set(key, count);
-    }
-
-    cacheHealthLogger.info(`Pruned keyAccessCounts Map: ${oldSize} -> ${KEYS_TO_KEEP_AFTER_PRUNE} keys`);
+  const pruneResult = pruneKeyAccessCounts();
+  if (pruneResult) {
+    cacheHealthLogger.info(`Pruned keyAccessCounts Map: ${pruneResult.oldSize} -> ${pruneResult.newSize} keys`);
   }
 }
 
