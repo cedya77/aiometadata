@@ -558,7 +558,7 @@ async function checkinTrakt(parsedId, config) {
     }
 
     if (parsedId.type === 'series') {
-      const resolution = await resolveSeriesIds(parsedId, config, true);
+      const resolution = await resolveSeriesIds(parsedId, config);
       if (!resolution) {
         logger.debug(`[Trakt Checkin] Unable to resolve identifiers for series provider ${parsedId.provider}`);
         return;
