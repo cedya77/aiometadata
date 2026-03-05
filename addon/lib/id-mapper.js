@@ -3,11 +3,19 @@ const path = require('path');
 const { httpGet, httpHead } = require('../utils/httpClient');
 const redis = require('./redisClient');
 const kitsu = require('./kitsu');
-const { numberValueTypes } = require('framer-motion');
+const { LRUCache } = require('lru-cache');
 const consola = require('consola');
 
 
 const logger = consola.withTag('ID-Mapper');
+
+function parsePositiveIntEnv(envValue, defaultValue, minValue = 1, maxValue = 100000) {
+  const parsed = Number.parseInt(envValue, 10);
+  if (!Number.isFinite(parsed) || parsed < minValue) {
+    return defaultValue;
+  }
+  return Math.min(parsed, maxValue);
+}
 
 // from  https://github.com/Fribb/anime-lists
 const REMOTE_MAPPING_URL ='https://raw.githubusercontent.com/Fribb/anime-lists/refs/heads/master/anime-list-full.json';
@@ -19,17 +27,37 @@ const LOCAL_TRAKT_ANIME_MOVIES_PATH = path.join(process.cwd(), 'addon', 'data', 
 const REDIS_ETAG_KEY = 'anime-list-etag'; 
 const REDIS_KITSU_TO_IMDB_ETAG_KEY = 'kitsu-to-imdb-etag';
 const REDIS_TRAKT_ANIME_MOVIES_ETAG_KEY = 'trakt-anime-movies-etag';
-const UPDATE_INTERVAL_HOURS = parseInt(process.env.ANIME_LIST_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
-const UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS = parseInt(process.env.KITSU_TO_IMDB_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
-const UPDATE_INTERVAL_TRAKT_ANIME_MOVIES_HOURS = parseInt(process.env.TRAKT_ANIME_MOVIES_UPDATE_INTERVAL_HOURS) || 24; // Update every 24 hours (configurable)
+const UPDATE_INTERVAL_HOURS = parsePositiveIntEnv(process.env.ANIME_LIST_UPDATE_INTERVAL_HOURS, 24); // Update every 24 hours (configurable)
+const UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS = parsePositiveIntEnv(process.env.KITSU_TO_IMDB_UPDATE_INTERVAL_HOURS, 24); // Update every 24 hours (configurable)
+const UPDATE_INTERVAL_TRAKT_ANIME_MOVIES_HOURS = parsePositiveIntEnv(process.env.TRAKT_ANIME_MOVIES_UPDATE_INTERVAL_HOURS, 24); // Update every 24 hours (configurable)
+const FRANCHISE_MAP_CACHE_MAX_SIZE = parsePositiveIntEnv(
+  process.env.ID_MAPPER_FRANCHISE_MAP_CACHE_MAX_SIZE,
+  20000,
+  100
+);
+const TMDB_FRANCHISE_INFO_CACHE_MAX_SIZE = parsePositiveIntEnv(
+  process.env.ID_MAPPER_TMDB_FRANCHISE_INFO_CACHE_MAX_SIZE,
+  3000,
+  100
+);
+const TMDB_SEASON_CACHE_MAX_SIZE = parsePositiveIntEnv(
+  process.env.ID_MAPPER_TMDB_SEASON_CACHE_MAX_SIZE,
+  15000,
+  100
+);
+const KITSU_TO_IMDB_CACHE_MAX_SIZE = parsePositiveIntEnv(
+  process.env.ID_MAPPER_KITSU_TO_IMDB_CACHE_MAX_SIZE,
+  20000,
+  100
+);
 
 let animeIdMap = new Map();
 let tvdbIdToAnimeListMap = new Map();
 let isInitialized = false;
 let tvdbIdMap = new Map();
-const franchiseMapCache = new Map();
-const tmdbFranchiseInfoCache = new Map();
-const tmdbSeasonCache = new Map();
+const franchiseMapCache = new LRUCache({ max: FRANCHISE_MAP_CACHE_MAX_SIZE });
+const tmdbFranchiseInfoCache = new LRUCache({ max: TMDB_FRANCHISE_INFO_CACHE_MAX_SIZE });
+const tmdbSeasonCache = new LRUCache({ max: TMDB_SEASON_CACHE_MAX_SIZE });
 
 // Auxiliary index maps for O(1) lookups (instead of O(N) Array.from().find())
 let kitsuIdMap = new Map();
@@ -58,7 +86,7 @@ async function getTmdbSeasonInfo(tmdbId, config = {}) {
 }
 
 let tmdbIndexArray; 
-const kitsuToImdbCache = new Map();
+const kitsuToImdbCache = new LRUCache({ max: KITSU_TO_IMDB_CACHE_MAX_SIZE });
 let imdbIdToAnimeListMap = new Map();
 let updateInterval = null;
 let kitsuToImdbMapping = null;
@@ -2056,7 +2084,21 @@ function getIdMapperStats() {
   return {
     count: animeIdMap.size,
     updateIntervalHours: UPDATE_INTERVAL_HOURS,
-    initialized: isInitialized
+    initialized: isInitialized,
+    cacheStats: {
+      franchiseMap: {
+        size: franchiseMapCache.size,
+        max: FRANCHISE_MAP_CACHE_MAX_SIZE
+      },
+      tmdbFranchiseInfo: {
+        size: tmdbFranchiseInfoCache.size,
+        max: TMDB_FRANCHISE_INFO_CACHE_MAX_SIZE
+      },
+      tmdbSeason: {
+        size: tmdbSeasonCache.size,
+        max: TMDB_SEASON_CACHE_MAX_SIZE
+      }
+    }
   };
 }
 
@@ -2068,7 +2110,11 @@ function getKitsuImdbStats() {
   return {
     count: kitsuToImdbMappingCount, // O(1) - uses pre-computed count
     updateIntervalHours: UPDATE_INTERVAL_KITSU_TO_IMDB_HOURS,
-    initialized: isKitsuToImdbInitialized
+    initialized: isKitsuToImdbInitialized,
+    resolverCache: {
+      size: kitsuToImdbCache.size,
+      max: KITSU_TO_IMDB_CACHE_MAX_SIZE
+    }
   };
 }
 
