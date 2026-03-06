@@ -1370,7 +1370,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     const seasonToKitsuIdMap = new Map();
     const seasonToImdbIdMap = new Map();
     
-    if (kitsuId && config.providers?.anime_id_provider === 'kitsu') {
+    if (kitsuId && idProvider === 'kitsu') {
       const officialSeasons = (seasons || [])
         .filter(season => season.season_number > 0 && season.episode_count > 0)
         .sort((a, b) => a.season_number - b.season_number);
@@ -2010,6 +2010,16 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   const { year, image: tvdbPosterPath, remoteIds, characters, episodes } = tvdbShow;
   const { allIds } = enrichmentData;
   const kitsuId = allIds?.kitsuId;
+  
+  // Resolve 'retain' to actual provider based on stremioId
+  let idProvider = config.providers?.anime_id_provider;
+  if (idProvider === 'retain' && isAnime) {
+    if (stremioId.startsWith('mal:')) idProvider = 'mal';
+    else if (stremioId.startsWith('kitsu:')) idProvider = 'kitsu';
+    else if (stremioId.startsWith('tt')) idProvider = 'imdb';
+    else idProvider = 'imdb';
+  }
+  
   const langCode = language.split('-')[0];
   const langCode3 = await to3LetterCode(langCode, config);
   const nameTranslations = tvdbShow.translations?.nameTranslations || [];
@@ -2225,7 +2235,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           if (episode.seasonNumber === 0) {
             episodeId = `${imdbId || `tvdb:${tvdbId}`}:0:${episode.number}`;
           } 
-          else if ((config.providers?.anime_id_provider === 'kitsu' || (config.providers?.anime_id_provider === 'retain' && stremioId.startsWith('kitsu:'))) && isAnime) {
+          else if (idProvider === 'kitsu' && isAnime) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
@@ -2245,7 +2255,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               }
             }
           }
-          else if((config.providers?.anime_id_provider === 'mal' || (config.providers?.anime_id_provider === 'retain' && stremioId.startsWith('mal:'))) && !config.mal?.useImdbIdForCatalogAndSearch) {
+          else if(idProvider === 'mal' && !config.mal?.useImdbIdForCatalogAndSearch) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
