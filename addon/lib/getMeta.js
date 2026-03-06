@@ -2225,7 +2225,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
           if (episode.seasonNumber === 0) {
             episodeId = `${imdbId || `tvdb:${tvdbId}`}:0:${episode.number}`;
           } 
-          else if (config.providers?.anime_id_provider === 'kitsu' && isAnime) {
+          else if ((config.providers?.anime_id_provider === 'kitsu' || (config.providers?.anime_id_provider === 'retain' && stremioId.startsWith('kitsu:'))) && isAnime) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
@@ -2245,7 +2245,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               }
             }
           }
-          else if(config.providers?.anime_id_provider === 'mal' && !config.mal?.useImdbIdForCatalogAndSearch) {
+          else if((config.providers?.anime_id_provider === 'mal' || (config.providers?.anime_id_provider === 'retain' && stremioId.startsWith('mal:'))) && !config.mal?.useImdbIdForCatalogAndSearch) {
             if ((config.tvdbSeasonType === 'default' || config.tvdbSeasonType === 'official')){
               const anidbEpisodeInfo = await resolveAnidbEpisodeFromTvdbEpisode(tvdbId, episode.seasonNumber, episode.number);
               if (anidbEpisodeInfo) {
