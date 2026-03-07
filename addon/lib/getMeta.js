@@ -901,6 +901,47 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
     }
   }
 
+  if (preferredProvider !== 'tmdb' && allIds?.tmdbId) {
+    try {
+      logger.debug(`[AnimeMeta] Falling back to TMDB for ${stremioId} (TMDB ID: ${allIds.tmdbId})`);
+      const langCode = language.split('-')[0];
+      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const videoLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      if (type === 'movie') {
+        const movieData = await moviedb.movieInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
+        if (movieData) {
+          return await buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, { allIds }, isAnime);
+        }
+      } else {
+        const seriesData = await moviedb.tvInfo({ id: allIds.tmdbId, language, append_to_response: "videos,credits,external_ids,images,translations,watch/providers", include_image_language: imageLanguages, include_video_language: videoLanguages }, config);
+        if (seriesData) {
+          return await buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, { allIds }, isAnime, includeVideos);
+        }
+      }
+    } catch (tmdbError) {
+      logger.warn(`[AnimeMeta] TMDB fallback failed for ${stremioId}: ${tmdbError.message}`);
+    }
+  }
+
+  if (preferredProvider !== 'imdb' && allIds?.imdbId) {
+    try {
+      logger.debug(`[AnimeMeta] Falling back to IMDB for ${stremioId} (IMDB ID: ${allIds.imdbId})`);
+      if (type === 'series') {
+        const imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
+        if (imdbData) {
+          return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
+        }
+      } else if (type === 'movie') {
+        const imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
+        if (imdbData) {
+          return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
+        }
+      }
+    } catch (imdbError) {
+      logger.warn(`[AnimeMeta] IMDB fallback failed for ${stremioId}: ${imdbError.message}`);
+    }
+  }
+
   return null;
 }
 
