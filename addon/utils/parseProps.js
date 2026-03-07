@@ -1207,7 +1207,7 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
     if (type === 'movie') {
         if (tvdbId) {
             idType = 'tvdb';
-            fullMediaId = tvdbId;
+            fullMediaId = `movie-${tvdbId}`;
         } else if (tmdbId) {
             idType = 'tmdb';
             fullMediaId = `movie-${tmdbId}`;
@@ -1218,7 +1218,7 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
     } else if (type === 'series') {
         if (tvdbId) {
             idType = 'tvdb';
-            fullMediaId = tvdbId;
+            fullMediaId = `series-${tvdbId}`;
         } else if (tmdbId) {
             idType = 'tmdb';
             fullMediaId = `series-${tmdbId}`;
