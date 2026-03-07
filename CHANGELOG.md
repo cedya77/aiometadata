@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.33.2](https://github.com/cedya77/aiometadata/compare/v1.33.1...v1.33.2) (2026-03-07)
+
+
+### Bug Fixes
+
+* add oom guardrails to maps ([1ef7706](https://github.com/cedya77/aiometadata/commit/1ef77069e5e78f4667fa0d514059eb480354d6cf))
+* add oom guardrails to maps ([1a382f1](https://github.com/cedya77/aiometadata/commit/1a382f18ed0a99368230208ae064d799f336e016))
+* resolve 'retain' anime_id_provider to actual provider for correct episode IDs ([403fcd3](https://github.com/cedya77/aiometadata/commit/403fcd3a92f8777efe47eb16f1e57a002d85ebc8)), closes [#263](https://github.com/cedya77/aiometadata/issues/263)
+
 ## [1.33.1](https://github.com/cedya77/aiometadata/compare/v1.33.0...v1.33.1) (2026-03-05)
 
 
