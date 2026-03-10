@@ -19,6 +19,8 @@ let animeListMap = new Map(); // anidbid -> anime entry
 let tvdbToAnimeMap = new Map(); // tvdbid -> array of anime entries
 let tmdbToAnimeMap = new Map(); // tmdbid -> array of anime entries
 let imdbToAnimeMap = new Map(); // imdbid -> array of anime entries
+let sameSeasonEntryGroupCache = new Map(); // `${tvdbId}|${defaulttvdbseason}` -> grouped entries
+let episodeMappingStringCache = new Map(); // mapping string -> parsed ranges
 let isInitialized = false;
 let updateInterval = null;
 
@@ -30,6 +32,8 @@ function processAndIndexXmlData(xmlData) {
   tvdbToAnimeMap.clear();
   tmdbToAnimeMap.clear();
   imdbToAnimeMap.clear();
+  sameSeasonEntryGroupCache.clear();
+  episodeMappingStringCache.clear();
 
   const parser = new xml2js.Parser({ explicitArray: true });
   
@@ -288,6 +292,57 @@ function getMappingList(animeEntry) {
   return [];
 }
 
+function getSameSeasonEntryGroup(animeEntry) {
+  const key = `${animeEntry.$.tvdbid}|${animeEntry.$.defaulttvdbseason}`;
+  const cached = sameSeasonEntryGroupCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const allEntries = getAnimeByTvdbId(animeEntry.$.tvdbid);
+  const sameSeasonEntries = allEntries.filter(
+    (entry) => entry.$.defaulttvdbseason === animeEntry.$.defaulttvdbseason
+  );
+
+  const sortedEntries = [...sameSeasonEntries].sort((a, b) => {
+    const offsetA = parseInt(a.$.episodeoffset) || 0;
+    const offsetB = parseInt(b.$.episodeoffset) || 0;
+    return offsetA - offsetB;
+  });
+
+  const sortedOffsetEntries = sortedEntries.map((entry) => ({
+    entry,
+    offset: parseInt(entry.$.episodeoffset) || 0,
+  }));
+
+  const indexByAnidbId = new Map();
+  for (let i = 0; i < sortedEntries.length; i++) {
+    indexByAnidbId.set(parseInt(sortedEntries[i].$.anidbid), i);
+  }
+
+  const group = {
+    sameSeasonEntries,
+    sortedEntries,
+    sortedOffsetEntries,
+    indexByAnidbId,
+  };
+
+  sameSeasonEntryGroupCache.set(key, group);
+  return group;
+}
+
+function getCachedEpisodeMapping(mappingString) {
+  if (!mappingString) return [];
+
+  if (episodeMappingStringCache.has(mappingString)) {
+    return episodeMappingStringCache.get(mappingString);
+  }
+
+  const parsed = parseEpisodeMapping(mappingString);
+  episodeMappingStringCache.set(mappingString, parsed);
+  return parsed;
+}
+
 /**
  * Parses episode mapping string (e.g., ";1-2;3-4;")
  */
@@ -320,7 +375,7 @@ function getSeasonMappings(animeEntry, anidbSeason, targetType = 'tvdb') {
     if (mappingAnidbSeason === anidbSeason) {
       return {
         targetSeason,
-        episodeMappings: parseEpisodeMapping(mapping._)
+        episodeMappings: getCachedEpisodeMapping(mapping._)
       };
     }
   }
@@ -462,10 +517,8 @@ function handleRegularSeasonMapping(animeEntry, tvdbSeason, tvdbEpisode, episode
   // logger.debug(`Starting with tvdbSeason=${tvdbSeason}, tvdbEpisode=${tvdbEpisode}, episodeOffset=${episodeOffset}`);
   
   // Check if there are multiple entries with the same tvdbId and defaulttvdbseason
-  const allEntries = getAnimeByTvdbId(animeEntry.$.tvdbid);
-  const sameSeasonEntries = allEntries.filter(entry => 
-    entry.$.defaulttvdbseason === animeEntry.$.defaulttvdbseason
-  );
+  const seasonGroup = getSameSeasonEntryGroup(animeEntry);
+  const sameSeasonEntries = seasonGroup.sameSeasonEntries;
   
   // logger.debug(`Found ${sameSeasonEntries.length} entries with same defaulttvdbseason`);
   
@@ -565,17 +618,10 @@ function handleRegularSeasonMapping(animeEntry, tvdbSeason, tvdbEpisode, episode
     // logger.debug(`Multiple entries detected, implementing episode range logic`);
     
     // Find the next entry with a higher episodeOffset to determine the range
-    const sortedEntries = sameSeasonEntries.sort((a, b) => {
-      const offsetA = parseInt(a.$.episodeoffset) || 0;
-      const offsetB = parseInt(b.$.episodeoffset) || 0;
-      return offsetA - offsetB;
-    });
+    const sortedEntries = seasonGroup.sortedEntries;
+    const currentEntryIndex = seasonGroup.indexByAnidbId.get(parseInt(animeEntry.$.anidbid));
     
-    const currentEntryIndex = sortedEntries.findIndex(entry => 
-      parseInt(entry.$.anidbid) === parseInt(animeEntry.$.anidbid)
-    );
-    
-    if (currentEntryIndex >= 0) {
+    if (currentEntryIndex !== undefined) {
       const currentOffset = parseInt(animeEntry.$.episodeoffset) || 0;
       const nextEntry = sortedEntries[currentEntryIndex + 1];
       
@@ -689,7 +735,7 @@ function resolveTvdbEpisodeFromAnidbEpisode(anidbId, anidbSeason, anidbEpisode) 
            });
         }
      } else if (mapping._) {
-        const ranges = parseEpisodeMapping(mapping._);
+        const ranges = getCachedEpisodeMapping(mapping._);
         for (const range of ranges) {
           if (anidbEpisode >= range.start && anidbEpisode <= range.end) {
             const tvdbEpisode = anidbEpisode + offset;
@@ -717,10 +763,8 @@ function resolveTvdbEpisodeFromAnidbEpisode(anidbId, anidbSeason, anidbEpisode) 
   }
 
   const tvdbSeason = parseInt(defaultTvdbSeason);
-  const allEntries = getAnimeByTvdbId(animeEntry.$.tvdbid);
-  const sameSeasonEntries = allEntries.filter(
-    (entry) => entry.$.defaulttvdbseason === animeEntry.$.defaulttvdbseason
-  );
+  const seasonGroup = getSameSeasonEntryGroup(animeEntry);
+  const sameSeasonEntries = seasonGroup.sameSeasonEntries;
 
   if (sameSeasonEntries.length === 1) {
     const tvdbEpisode = anidbEpisode + episodeOffset;
@@ -762,18 +806,10 @@ function resolveTvdbEpisodeFromAnidbEpisode(anidbId, anidbSeason, anidbEpisode) 
   }
 
   if (sameSeasonEntries.length > 1) {
-    const sortedEntries = sameSeasonEntries
-      .map((entry) => ({
-        entry,
-        offset: parseInt(entry.$.episodeoffset) || 0,
-      }))
-      .sort((a, b) => a.offset - b.offset);
+    const sortedEntries = seasonGroup.sortedOffsetEntries;
+    const currentIndex = seasonGroup.indexByAnidbId.get(parseInt(animeEntry.$.anidbid));
 
-    const currentIndex = sortedEntries.findIndex(
-      (item) => parseInt(item.entry.$.anidbid) === parseInt(animeEntry.$.anidbid)
-    );
-
-    if (currentIndex >= 0) {
+    if (currentIndex !== undefined) {
       const currentOffset = sortedEntries[currentIndex].offset;
       const nextOffset = sortedEntries[currentIndex + 1]?.offset;
 
