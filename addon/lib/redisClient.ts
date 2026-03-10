@@ -6,7 +6,8 @@ const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
 const redis: Redis | null = GLOBAL_NO_CACHE ? null : new Redis(REDIS_URL, {
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
-  lazyConnect: true
+  lazyConnect: true,
+  enableAutoPipelining: true
 });
 
 if (redis) {
