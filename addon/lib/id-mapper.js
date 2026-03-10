@@ -53,6 +53,7 @@ const KITSU_TO_IMDB_CACHE_MAX_SIZE = parsePositiveIntEnv(
 
 let animeIdMap = new Map();
 let tvdbIdToAnimeListMap = new Map();
+let tmdbIdToAnimeListMap = new Map();
 let isInitialized = false;
 let tvdbIdMap = new Map();
 const franchiseMapCache = new LRUCache({ max: FRANCHISE_MAP_CACHE_MAX_SIZE });
@@ -65,6 +66,10 @@ let anidbIdMap = new Map();
 let anilistIdMap = new Map();
 let imdbIdMap = new Map();
 let simklIdMap = new Map();
+let animeTypeFromAnilistIdMap = new Map();
+let animeTypeFromKitsuIdMap = new Map();
+let animeTypeFromAnidbIdMap = new Map();
+const seriesLikeTypes = new Set(['tv', 'ova', 'ona', 'special']);
 
 async function getTmdbSeasonInfo(tmdbId, config = {}) {
   if (tmdbSeasonCache.has(tmdbId)) {
@@ -135,6 +140,7 @@ function processAndIndexData(data) {
   animeIdMap.clear();
   tvdbIdMap.clear();
   tvdbIdToAnimeListMap.clear();
+  tmdbIdToAnimeListMap.clear();
   imdbIdToAnimeListMap.clear();
   
   // Clear auxiliary index maps
@@ -143,6 +149,9 @@ function processAndIndexData(data) {
   anilistIdMap.clear();
   imdbIdMap.clear();
   simklIdMap.clear();
+  animeTypeFromAnilistIdMap.clear();
+  animeTypeFromKitsuIdMap.clear();
+  animeTypeFromAnidbIdMap.clear();
   
   for (const item of animeList) {
     if (item.mal_id) {
@@ -164,6 +173,13 @@ function processAndIndexData(data) {
       }
       tvdbIdToAnimeListMap.get(tvdbId).push(item);
     }
+    if (item.themoviedb_id) {
+      const tmdbId = item.themoviedb_id;
+      if (!tmdbIdToAnimeListMap.has(tmdbId)) {
+        tmdbIdToAnimeListMap.set(tmdbId, []);
+      }
+      tmdbIdToAnimeListMap.get(tmdbId).push(item);
+    }
     if (item.imdb_id) {
       const imdbId = item.imdb_id;
       if (!imdbIdToAnimeListMap.has(imdbId)) {
@@ -173,6 +189,20 @@ function processAndIndexData(data) {
     }
   }
   tmdbIndexArray = animeList.filter(item => item.themoviedb_id);
+
+  // Preserve current scan semantics for type lookups by indexing the deduplicated MAL-keyed map.
+  for (const mapping of animeIdMap.values()) {
+    if (mapping.anilist_id !== undefined && mapping.anilist_id !== null && !animeTypeFromAnilistIdMap.has(mapping.anilist_id)) {
+      animeTypeFromAnilistIdMap.set(mapping.anilist_id, mapping);
+    }
+    if (mapping.kitsu_id !== undefined && mapping.kitsu_id !== null && !animeTypeFromKitsuIdMap.has(mapping.kitsu_id)) {
+      animeTypeFromKitsuIdMap.set(mapping.kitsu_id, mapping);
+    }
+    if (mapping.anidb_id !== undefined && mapping.anidb_id !== null && !animeTypeFromAnidbIdMap.has(mapping.anidb_id)) {
+      animeTypeFromAnidbIdMap.set(mapping.anidb_id, mapping);
+    }
+  }
+
   isInitialized = true;
   logger.info(`Successfully loaded and indexed ${animeIdMap.size} anime mappings.`);
 }
@@ -1048,8 +1078,7 @@ function getMappingByTmdbId(tmdbId, type) {
   if (!isInitialized) return null;
 
   const numericTmdbId = parseInt(tmdbId, 10);
-  
-  const allMatches = tmdbIndexArray.filter(item => item.themoviedb_id === numericTmdbId);
+  const allMatches = tmdbIdToAnimeListMap.get(numericTmdbId) || [];
 
   if (allMatches.length === 0) {
     return null;
@@ -1067,8 +1096,7 @@ function getMappingByTmdbId(tmdbId, type) {
   }
   
   if (type === 'series') {
-    const seriesLikeTypes = ['tv', 'ova', 'ona', 'special'];
-    const seriesMatch = allMatches.find(item => item.type && seriesLikeTypes.includes(item.type.toLowerCase()));
+    const seriesMatch = allMatches.find(item => item.type && seriesLikeTypes.has(item.type.toLowerCase()));
     if (seriesMatch) return seriesMatch;
   }
 
@@ -1076,64 +1104,33 @@ function getMappingByTmdbId(tmdbId, type) {
   return allMatches[0];
 }
 
+function getAnimeTypeFromMapping(mapping) {
+  if (!mapping?.type) return null;
+  return seriesLikeTypes.has(mapping.type.toLowerCase()) ? 'series' : 'movie';
+}
+
 function getAnimeTypeFromAnilistId(anilistId) {
   if (!isInitialized) return null;
   const numericAnilistId = parseInt(anilistId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.anilist_id === numericAnilistId);
-  if(mapping?.type){
-    const seriesLikeTypes = ['tv', 'ova', 'ona', 'special'];
-    if(seriesLikeTypes.includes(mapping.type.toLowerCase())){
-      return 'series';
-    }else{
-      return 'movie';
-    }
-  }
-  return null;
+  return getAnimeTypeFromMapping(animeTypeFromAnilistIdMap.get(numericAnilistId));
 }
 
 function getAnimeTypeFromKitsuId(kitsuId) {
   if (!isInitialized) return null;
   const numericKitsuId = parseInt(kitsuId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.kitsu_id === numericKitsuId);
-  if(mapping?.type){
-    const seriesLikeTypes = ['tv', 'ova', 'ona', 'special'];
-    if(seriesLikeTypes.includes(mapping.type.toLowerCase())){
-      return 'series';
-    }else{
-      return 'movie';
-    }
-  }
-  return null;
+  return getAnimeTypeFromMapping(animeTypeFromKitsuIdMap.get(numericKitsuId));
 }
 
 function getAnimeTypeFromMalId(malId) {
   if (!isInitialized) return null;
   const numericMalId = parseInt(malId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.mal_id === numericMalId);
-  if(mapping?.type){
-    const seriesLikeTypes = ['tv', 'ova', 'ona', 'special'];
-    if(seriesLikeTypes.includes(mapping.type.toLowerCase())){
-      return 'series';
-    }else{
-      return 'movie';
-    }
-  }
-  return null;
+  return getAnimeTypeFromMapping(animeIdMap.get(numericMalId));
 }
 
 function getAnimeTypeFromAnidbId(anidbId) {
   if (!isInitialized) return null;
   const numericAnidbId = parseInt(anidbId, 10);
-  const mapping = Array.from(animeIdMap.values()).find(item => item.anidb_id === numericAnidbId);
-  if(mapping?.type){
-    const seriesLikeTypes = ['tv', 'ova', 'ona', 'special'];
-    if(seriesLikeTypes.includes(mapping.type.toLowerCase())){
-      return 'series';
-    }else{
-      return 'movie';
-    }
-  }
-  return null;
+  return getAnimeTypeFromMapping(animeTypeFromAnidbIdMap.get(numericAnidbId));
 }
 
 function getMappingByTvdbId(tvdbId) {
@@ -1824,11 +1821,13 @@ function getAllMappings() {
   return {
     animeIdMapSize: animeIdMap.size,
     tvdbIdMapSize: tvdbIdToAnimeListMap.size,
+    tmdbIdMapSize: tmdbIdToAnimeListMap.size,
     imdbIdMapSize: imdbIdToAnimeListMap.size,
     simklIdMapSize: simklIdMap.size, // Added stats
     tmdbIndexArraySize: tmdbIndexArray ? tmdbIndexArray.length : 0,
     animeIdMap: animeIdMap,
     tvdbIdToAnimeListMap: tvdbIdToAnimeListMap,
+    tmdbIdToAnimeListMap: tmdbIdToAnimeListMap,
     imdbIdToAnimeListMap: imdbIdToAnimeListMap,
     tmdbIndexArray: tmdbIndexArray
   };
