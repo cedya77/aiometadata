@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.33.3](https://github.com/cedya77/aiometadata/compare/v1.33.2...v1.33.3) (2026-03-10)
+
+
+### Bug Fixes
+
+* **anilist:** stable pagination and sort-aware caching ([ebab787](https://github.com/cedya77/aiometadata/commit/ebab787cbef178f172cedb04ff97ae5ff94c5ce6))
+
+
+### Performance Improvements
+
+* cache anime-list season groups and episode mapping parses ([2e37be7](https://github.com/cedya77/aiometadata/commit/2e37be760d35eb4c7f9e3bde02322776e65d63b3))
+* enable auto pipelining ([#376](https://github.com/cedya77/aiometadata/issues/376)) ([6129570](https://github.com/cedya77/aiometadata/commit/612957094d17106f9d0a889a7a9907e0fd203a3a))
+* optimize id-mapper lookups ([6b4c71b](https://github.com/cedya77/aiometadata/commit/6b4c71beef85c0dcb68cb09bc8a7f89f179fd76e))
+
 ## [1.33.2](https://github.com/cedya77/aiometadata/compare/v1.33.1...v1.33.2) (2026-03-07)
 
 
