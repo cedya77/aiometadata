@@ -3278,7 +3278,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   } else {
     catalogPageSize = 20;
   }
-  const catalogPage = extraArgs.skip ? Math.floor(parseInt(extraArgs.skip) / catalogPageSize) + 1 : 1;
+  const catalogPage = extraArgs.skip ? Math.ceil(parseInt(extraArgs.skip) / catalogPageSize) + 1 : 1;
 
   // Build cache key with page instead of skip for stable cache hits
   const cacheExtraArgs = { ...extraArgs };

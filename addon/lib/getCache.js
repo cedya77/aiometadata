@@ -2076,8 +2076,9 @@ async function clearCache(key) {
  * @param {number} page - Page number for pagination
  * @returns {string} Cache key
  */
-function generateAniListCatalogCacheKey(username, listName, page) {
-  return `anilist-catalog:${username}:${listName}:page${page}`;
+function generateAniListCatalogCacheKey(username, listName, page, sort = null) {
+  const sortSuffix = sort ? `:${sort}` : '';
+  return `anilist-catalog:${username}:${listName}:page${page}${sortSuffix}`;
 }
 
 /**
@@ -2091,8 +2092,8 @@ function generateAniListCatalogCacheKey(username, listName, page) {
  * @param {object} options - Additional cache options
  * @returns {Promise<any>} Cached or freshly fetched data
  */
-async function cacheWrapAniListCatalog(username, listName, page, method, customTTL = null, options = {}) {
-  const key = generateAniListCatalogCacheKey(username, listName, page);
+async function cacheWrapAniListCatalog(username, listName, page, method, customTTL = null, options = {}, sort = null) {
+  const key = generateAniListCatalogCacheKey(username, listName, page, sort);
   const ttl = customTTL !== null ? customTTL : ANILIST_CATALOG_TTL;
   
   cacheLogger.debug(`[AniList] Cache key: ${key}, TTL: ${ttl}s`);

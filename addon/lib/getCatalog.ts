@@ -2037,7 +2037,8 @@ async function getAniListCatalog(
       page,
       async () => anilist.fetchListItems(username, listName, page, pageSize, sort),
       customCacheTTL,
-      { enableErrorCaching: true }
+      { enableErrorCaching: true },
+      sort
     );
     
     // Handle cached error responses

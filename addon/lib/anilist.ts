@@ -305,7 +305,7 @@ class AniListAPI {
             status,
             page,
             perPage: pageSize,
-            sort: [sort],
+            sort: [sort, 'MEDIA_ID'],
           }
         }, {
           headers: {
@@ -380,7 +380,7 @@ class AniListAPI {
       const response = await this.makeRateLimitedRequest(() => 
         httpPost(this.baseURL, {
           query,
-          variables: { userName: username, sort: [sort] }
+          variables: { userName: username, sort: [sort, 'MEDIA_ID'] }
         }, {
           headers: {
             'Content-Type': 'application/json',
@@ -1003,7 +1003,7 @@ class AniListAPI {
     // Sort
     if (params.sort) {
       variableDeclarations.push('$sort: [MediaSort]');
-      variables.sort = [params.sort];
+      variables.sort = [params.sort, 'ID'];
       mediaFilters.push('sort: $sort');
     }
 
