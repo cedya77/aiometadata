@@ -1257,7 +1257,7 @@ async function performTvdbCollectionsSearch(query, language, config) {
   }
 }
 
-async function performTvdbSearch(type, query, language, config) {
+async function performTvdbSearch(type, query, language, config, page = 1) {
   // Check if query is an IMDb ID
   if (isImdbId(query)) {
     logger.info(`Detected IMDb ID: ${query}, using TVDB findByImdbId`);
@@ -1309,9 +1309,11 @@ async function performTvdbSearch(type, query, language, config) {
   logger.info(`Starting TVDB title search for: "${sanitizedQuery}"`);
 
   // Title search only - no person search
-  const titleResults = await (type === 'movie' 
-    ? tvdb.searchMovies(sanitizedQuery, config) 
-    : tvdb.searchSeries(sanitizedQuery, config));
+  const pageSize = 25;
+  const offset = (page - 1) * pageSize;
+  const titleResults = await (type === 'movie'
+    ? tvdb.searchMovies(sanitizedQuery, config, offset, pageSize)
+    : tvdb.searchSeries(sanitizedQuery, config, offset, pageSize));
 
   logger.debug(`TVDB initial search completed in ${Date.now() - searchStartTime}ms.`);
 
@@ -1397,7 +1399,7 @@ async function performTvdbSearch(type, query, language, config) {
 /**
  * Perform TVDB people-only search for movies or series
  */
-async function performTvdbPeopleSearch(type, query, language, config) {
+async function performTvdbPeopleSearch(type, query, language, config, page = 1) {
   const searchStartTime = Date.now();
   logger.info(`Starting TVDB people-only search for type "${type}" with query: "${query}"`);
 
@@ -1423,7 +1425,9 @@ async function performTvdbPeopleSearch(type, query, language, config) {
   }
 
   // People search only - no title search
-  const peopleResults = await tvdb.searchPeople(sanitizedQuery, config);
+  const pageSize = 25;
+  const offset = (page - 1) * pageSize;
+  const peopleResults = await tvdb.searchPeople(sanitizedQuery, config, offset, pageSize);
 
   logger.debug(`TVDB people search completed in ${Date.now() - searchStartTime}ms.`);
 
@@ -2384,9 +2388,7 @@ async function getSearch(id, type, language, extra, config) {
     // Timing handled by logger.info at completion
 
     let metas = [];
-     const pageSize = 25; 
-    
-    const page = extra.skip ? Math.floor(parseInt(extra.skip) / pageSize) + 1 : 1;
+    const page = extra.page ? parseInt(extra.page) : 1;
     switch (id) {
       case 'mal.genre_search':
         if (extra.genre_id) {
@@ -2455,7 +2457,7 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performTmdbPeopleSearch(type, query, language, config, page);
                 break;
               case 'tvdb.people.search':
-                metas = await performTvdbPeopleSearch(type, query, language, config);
+                metas = await performTvdbPeopleSearch(type, query, language, config, page);
                 break;
               case 'trakt.people.search':
                 metas = await performTraktPeopleSearch(type, query, language, config);
@@ -2503,7 +2505,7 @@ async function getSearch(id, type, language, extra, config) {
                 metas = await performTmdbSearch(type, query, language, config, false, page);
                 break;
               case 'tvdb.search':
-                metas = await performTvdbSearch(type, query, language, config);
+                metas = await performTvdbSearch(type, query, language, config, page);
                 break;
               case 'tvdb.collections.search':
                 metas = await performTvdbCollectionsSearch(query, language, config);

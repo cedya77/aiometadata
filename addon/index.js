@@ -3351,12 +3351,26 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         searchEngine = 'tvdb.collections.search';
       }
       config._currentSearchEngine = searchEngine;
-      
+
+      // Compute search-specific page size based on the provider's actual results per page
+      let searchPageSize = 20; // default (TMDB)
+      if (searchEngine && (searchEngine.startsWith('tvdb.') || searchEngine.startsWith('mal.') || searchEngine.startsWith('kitsu.'))) {
+        searchPageSize = 25;
+      } else if (searchEngine && searchEngine.startsWith('trakt.')) {
+        searchPageSize = 30;
+      }
+      const searchPage = extraArgs.skip ? Math.ceil(parseInt(extraArgs.skip) / searchPageSize) + 1 : 1;
+
+      // Normalize skip to page for stable search cache keys
+      const searchExtraArgs = { ...extraArgs };
+      delete searchExtraArgs.skip;
+      if (searchPage > 1) searchExtraArgs.page = searchPage;
+
       // Use search-specific cache wrapper
-      const searchKey = `${cleanId}:${originalSearchId}:${searchType}:${stableStringify(extraArgs)}`;
-      
+      const searchKey = `${cleanId}:${originalSearchId}:${searchType}:${stableStringify(searchExtraArgs)}`;
+
       responseData = await cacheWrapSearch(userUUID, searchKey, async () => {
-        const searchResult = await getSearch(cleanId, searchType, language, extraArgs, config);
+        const searchResult = await getSearch(cleanId, searchType, language, searchExtraArgs, config);
         return { metas: searchResult.metas || [] };
       }, searchEngine, cacheOptions);
       } else {

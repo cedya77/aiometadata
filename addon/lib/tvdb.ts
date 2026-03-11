@@ -548,13 +548,13 @@ function _filterTvdbSearchResults(results: TvdbSearchResult[], query: string): T
   return filteredResults;
 }
 
-async function searchSeries(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+async function searchSeries(query: string, config: UserConfig, offset: number = 0, limit: number = 25): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  
+
   const startTime = Date.now();
   try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=series&offset=${offset}&limit=${limit}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -578,13 +578,13 @@ async function searchSeries(query: string, config: UserConfig): Promise<TvdbSear
   }
 }
 
-async function searchMovies(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+async function searchMovies(query: string, config: UserConfig, offset: number = 0, limit: number = 25): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  
+
   const startTime = Date.now();
   try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=movie&offset=${offset}&limit=${limit}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     
@@ -608,13 +608,13 @@ async function searchMovies(query: string, config: UserConfig): Promise<TvdbSear
   }
 }
 
-async function searchPeople(query: string, config: UserConfig): Promise<TvdbSearchResult[]> {
+async function searchPeople(query: string, config: UserConfig, offset: number = 0, limit: number = 25): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  
+
   const startTime = Date.now();
   try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people`, {
+    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search?query=${encodeURIComponent(query)}&type=people&offset=${offset}&limit=${limit}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     

@@ -1252,7 +1252,7 @@ async function getManifest(config) {
           id: catalogId,
           type: getSearchCatalogType(config.id, config.type),
           name: getSearchCatalogName(config.id, prefix, config.suffix),
-          extra: [{ name: 'search', isRequired: true }]
+          extra: [{ name: 'search', isRequired: true }, { name: 'skip' }]
         });
       });
     // MAL special search catalogs (only if any mal.search engine is enabled)
