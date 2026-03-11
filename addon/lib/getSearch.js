@@ -211,12 +211,12 @@ async function performAnimeSearch(type, query, language, config, page = 1) {
 
 async function performKitsuSearch(type, query, language, config, page = 1) {
   logger.debug(`Performing Kitsu search for ${type}:`, query);
-  
+
   try {
     const KITSU_RATING_MAP = {
       'G': 'G',
       'PG': 'PG',
-      'PG-13': 'PG-13',  
+      'PG-13': 'PG-13',
       'R': 'R',
       'NC-17': 'R18',
       'NONE': 'none'
@@ -227,10 +227,14 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
       return subtype.toLowerCase() === 'tv special' ? 'special' : subtype;
     }))];
     const subtypesArray = type === 'movie' ? ['movie'] : [normalizedTvSubtypes.join(',')];
+    const pageSize = 20;
+    const offset = (page - 1) * pageSize;
     const searchResults = await kitsu.searchByName(
       query,
       subtypesArray,
-      'none'
+      'none',
+      offset,
+      pageSize
     );
     
     if (!searchResults || searchResults.length === 0) {

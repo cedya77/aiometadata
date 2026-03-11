@@ -240,55 +240,31 @@ interface KitsuDirectApiResponse {
  * @param query - The name of the anime to search for.
  * @returns A promise that resolves to an array of Kitsu anime resource objects.
  */
-async function searchByName(query: string, subtypes: string[] = [], ageRating: string = 'G'): Promise<KitsuAnime[]> {
+async function searchByName(query: string, subtypes: string[] = [], ageRating: string = 'G', offset: number = 0, limit: number = 20): Promise<KitsuAnime[]> {
   if (!query.trim()) return [];
 
   const results: KitsuAnime[] = [];
   const startTime = Date.now();
-  const maxSearchPages = 3;
 
   try {
     // Loop over all provided subtypes
     for (const subtype of subtypes.length ? subtypes : ['tv']) {
-      let nextUrl: string | undefined;
       let params: any = {
         'filter[text]': query,
         'filter[subtype]': subtype,
-        'page[limit]': 20,
+        'page[limit]': limit,
+        'page[offset]': offset,
         'fields[anime]': 'canonicalTitle,titles,abbreviatedTitles,coverImage,posterImage,synopsis,description,startDate,status,episodeCount,episodeLength,ageRating'
       };
       if(ageRating.toLowerCase() !== 'none') {
         params['filter[ageRating]'] = ageRating;
       }
 
-      // 🔹 Fetch first page for this subtype
       let response = await kitsu.fetch('anime', {
         params: params
       });
 
-      // Add results
       results.push(...(response.data ?? []));
-      nextUrl = response.links?.next;
-      let pagesFetched = 1;
-
-      // 🔁 Paginate until no next page or page cap is reached
-      while (nextUrl && pagesFetched < maxSearchPages) {
-        const nextResponse = await fetch(nextUrl);
-        if (!nextResponse.ok) break;
-
-        const nextData = await nextResponse.json() as KitsuApiResponse<KitsuAnime>;
-        
-        // Manually flatten the attributes for paginated results to match the library's output
-        const flattenedData = (nextData.data ?? []).map(item => ({
-          id: item.id,
-          type: item.type,
-          ...item.attributes
-        }));
-
-        results.push(...flattenedData);
-        nextUrl = nextData.links?.next;
-        pagesFetched++;
-      }
     }
 
     // Track successful request

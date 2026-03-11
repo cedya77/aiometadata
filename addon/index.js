@@ -3353,8 +3353,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       config._currentSearchEngine = searchEngine;
 
       // Compute search-specific page size based on the provider's actual results per page
-      let searchPageSize = 20; // default (TMDB)
-      if (searchEngine && (searchEngine.startsWith('tvdb.') || searchEngine.startsWith('mal.') || searchEngine.startsWith('kitsu.'))) {
+      let searchPageSize = 20; // default (TMDB, Kitsu)
+      if (searchEngine && (searchEngine.startsWith('tvdb.') || searchEngine.startsWith('mal.'))) {
         searchPageSize = 25;
       } else if (searchEngine && searchEngine.startsWith('trakt.')) {
         searchPageSize = 30;
