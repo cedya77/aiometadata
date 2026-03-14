@@ -77,6 +77,7 @@ export interface SearchConfig {
 
 export interface AppConfig {
   language: string;
+  addonName: string;
   includeAdult: boolean;
   blurThumbs: boolean;
   showPrefix: boolean;

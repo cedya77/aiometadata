@@ -398,7 +398,7 @@ export function GeneralSettings() {
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
           <div>
             <Label htmlFor="show-prefix" className="text-lg font-medium">Show Prefix</Label>
-            <p className="text-sm text-muted-foreground">Add "AIOMetadata - " prefix to all catalogs and search names.</p>
+            <p className="text-sm text-muted-foreground">Add "{config.addonName || 'AIOMetadata'} - " prefix to all catalogs and search names.</p>
           </div>
           <Switch
             id="show-prefix"

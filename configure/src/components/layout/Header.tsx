@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { InstallDialog } from '../InstallDialog';
 import { toast } from 'sonner';
 import { compressToEncodedURIComponent } from 'lz-string';
-import { LogIn, LogOut, Eye, EyeOff, BarChart3 } from 'lucide-react';
+import { LogIn, LogOut, Eye, EyeOff, BarChart3, Pencil, Check, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +17,8 @@ export function Header() {
   const [manifestUrl, setManifestUrl] = useState('');
   const [authTransitioning, setAuthTransitioning] = useState(false);
   
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [uuidInput, setUuidInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
@@ -234,9 +236,61 @@ export function Header() {
             />
           </button>
           <div className="text-left">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              AIOMetadata <span className="text-sm text-muted-foreground">v{addonVersion}</span>
-            </h1>
+            <div className="flex items-center gap-2">
+              {isEditingName ? (
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setConfig(prev => ({ ...prev, addonName: nameInput.trim() }));
+                        setIsEditingName(false);
+                      } else if (e.key === 'Escape') {
+                        setIsEditingName(false);
+                      }
+                    }}
+                    className="text-2xl sm:text-3xl font-bold h-auto py-0.5 px-1.5 w-[200px] sm:w-[280px]"
+                    autoFocus
+                    placeholder="AIOMetadata"
+                  />
+                  <button
+                    onClick={() => {
+                      setConfig(prev => ({ ...prev, addonName: nameInput.trim() }));
+                      setIsEditingName(false);
+                    }}
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                    aria-label="Save name"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingName(false)}
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                    aria-label="Cancel"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+                    {config.addonName || 'AIOMetadata'}
+                  </h1>
+                  <button
+                    onClick={() => {
+                      setNameInput(config.addonName || 'AIOMetadata');
+                      setIsEditingName(true);
+                    }}
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                    aria-label="Edit addon name"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-sm text-muted-foreground">v{addonVersion}</span>
+                </>
+              )}
+            </div>
             <p className="text-md text-muted-foreground mt-1">
               Your one-stop-shop for Stremio metadata.
             </p>

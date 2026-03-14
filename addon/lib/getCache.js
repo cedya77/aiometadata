@@ -1036,8 +1036,9 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     return { metas: [] };
   }
   
-  // Get rating posters enablement state for this search engine
-  const ratingPostersEnabled = searchEngine ? (config.search?.engineRatingPosters?.[searchEngine] !== false) : true;
+  // Get rating posters enablement state for this search type (movie/series)
+  const searchType = config._currentSearchType;
+  const ratingPostersEnabled = searchType ? (config.search?.engineRatingPosters?.[searchType] !== false) : true;
   
   // Search-specific config (only relevant parameters for search results)
   const defaultSearchOrder = [

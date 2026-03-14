@@ -53,7 +53,7 @@ function loadTranslations(language) {
   return { ...defaultTranslations, ...selectedTranslations };
 }
 
-function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false, customName = null, displayType = null) {
+function createCatalog(id, type, catalogDef, options, showPrefix, translatedCatalogs, showInHome = false, customName = null, displayType = null, prefixName = "AIOMetadata") {
   const extra = [];
 
   if (catalogDef.extraSupported.includes("genre")) {
@@ -120,7 +120,7 @@ function createCatalog(id, type, catalogDef, options, showPrefix, translatedCata
   // Use custom name only if it's provided, not empty, and not just the default English name
   const hasCustomName = customName && typeof customName === 'string' && customName.trim() !== '' && !isDefaultEnglishName;
   const baseName = hasCustomName ? customName : translatedCatalogs[catalogDef.nameKey];
-  const catalogName = `${showPrefix ? "AIOMetadata - " : ""}${baseName}`;
+  const catalogName = `${showPrefix ? `${prefixName} - ` : ""}${baseName}`;
 
   // Use displayType if defined, otherwise use original type
   const catalogType = displayType || type;
@@ -178,7 +178,7 @@ function getOptionsForCatalog(catalogDef, type, showInHome, { years, genres_movi
   }
 }
 
-async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardGenres = [], prefetchedAnimeGenres = [], showPrefix = false) {
+async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardGenres = [], prefetchedAnimeGenres = [], showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating MDBList catalog: ${userCatalog.id} (${userCatalog.type})`);
     const listId = userCatalog.id.split(".")[1];
@@ -213,7 +213,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -230,7 +230,7 @@ async function createMDBListCatalog(userCatalog, mdblistKey, prefetchedStandardG
   }
 }
 
-async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = [], showPrefix = false) {
+async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefetchedShowGenres = [], showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating Trakt catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -263,7 +263,7 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "skip" },
@@ -288,7 +288,7 @@ async function createTraktCatalog(userCatalog, prefetchedMovieGenres = [], prefe
   }
 }
 
-async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false) {
+async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating TMDB List catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -315,7 +315,7 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -332,7 +332,7 @@ async function createTMDBListCatalog(userCatalog, movieGenres = [], seriesGenres
   }
 }
 
-function createTMDBDiscoverCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false) {
+function createTMDBDiscoverCatalog(userCatalog, movieGenres = [], seriesGenres = [], showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating TMDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
     let genres = ['None'];
@@ -351,7 +351,7 @@ function createTMDBDiscoverCatalog(userCatalog, movieGenres = [], seriesGenres =
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -368,7 +368,7 @@ function createTMDBDiscoverCatalog(userCatalog, movieGenres = [], seriesGenres =
   }
 }
 
-function createTVDBDiscoverCatalog(userCatalog, genres=[], showPrefix = false) {
+function createTVDBDiscoverCatalog(userCatalog, genres=[], showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating TVDB Discover catalog: ${userCatalog.id} (${userCatalog.type})`);
 
@@ -379,7 +379,7 @@ function createTVDBDiscoverCatalog(userCatalog, genres=[], showPrefix = false) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -396,7 +396,7 @@ function createTVDBDiscoverCatalog(userCatalog, genres=[], showPrefix = false) {
   }
 }
 
-async function createLetterboxdCatalog(userCatalog, showPrefix = false) {
+async function createLetterboxdCatalog(userCatalog, showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating Letterboxd catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -428,7 +428,7 @@ async function createLetterboxdCatalog(userCatalog, showPrefix = false) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -445,7 +445,7 @@ async function createLetterboxdCatalog(userCatalog, showPrefix = false) {
   }
 }
 
-async function createStremThruCatalog(userCatalog, showPrefix = false) {
+async function createStremThruCatalog(userCatalog, showPrefix = false, prefixName = "AIOMetadata") {
   try {
     // Extract catalog info from the StremThru catalog ID
     // Format: stremthru.{manifestId}.{catalogId}
@@ -519,7 +519,7 @@ async function createStremThruCatalog(userCatalog, showPrefix = false) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -540,7 +540,7 @@ async function createStremThruCatalog(userCatalog, showPrefix = false) {
  * Create an AniList catalog entry for the manifest
  * AniList catalogs are user's personal anime lists (Watching, Completed, etc.)
  */
-function createAniListCatalog(userCatalog, showPrefix = false) {
+function createAniListCatalog(userCatalog, showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating AniList catalog: ${userCatalog.id} (${userCatalog.type})`);
     const catalogType = userCatalog.displayType || userCatalog.type || 'series';
@@ -562,7 +562,7 @@ function createAniListCatalog(userCatalog, showPrefix = false) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: userCatalog.id === 'anilist.trending' ? 50 : (parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20),
       extra: [
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
@@ -579,7 +579,7 @@ function createAniListCatalog(userCatalog, showPrefix = false) {
   }
 }
 
-async function createMalCatalog(userCatalog, genres, showPrefix = false){
+async function createMalCatalog(userCatalog, genres, showPrefix = false, prefixName = "AIOMetadata"){
   try {
     logger.info(`Creating MAL discover catalog: ${userCatalog.id} (${userCatalog.type})`);
     
@@ -614,7 +614,7 @@ async function createMalCatalog(userCatalog, genres, showPrefix = false){
   }
 }
 
-async function createSimklCatalog(userCatalog, showPrefix = false) {
+async function createSimklCatalog(userCatalog, showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
 
@@ -656,7 +656,7 @@ async function createSimklCatalog(userCatalog, showPrefix = false) {
     const catalog = {
       id: userCatalog.id,
       type: catalogType,
-      name: `${showPrefix ? "AIOMetadata - " : ""}${userCatalog.name}`,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
       pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
       extra: [
         { name: "genre", options: SOURCE_LABELS[userCatalog.type], isRequired: userCatalog.showInHome ? false : true },
@@ -701,6 +701,7 @@ async function getManifest(config) {
   // The manifest is fast to generate and caching causes more problems than it solves
     const language = config.language || DEFAULT_LANGUAGE;
     const showPrefix = config.showPrefix === true;
+    const prefixName = config.addonName || "AIOMetadata";
     const provideImdbId = config.provideImdbId === "true";
     const sessionId = config.sessionId;
     const userCatalogs = config.catalogs || getDefaultCatalogs();
@@ -918,65 +919,65 @@ async function getManifest(config) {
     .map(async (userCatalog) => {
       if (isMDBList(userCatalog.id)) {
           logger.debug(`Processing MDBList catalog: ${userCatalog.id}`);
-          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime, showPrefix);
+          const result = await createMDBListCatalog(userCatalog, config.apiKeys?.mdblist, mdblistGenresStandard, mdblistGenresAnime, showPrefix, prefixName);
           logger.debug(`MDBList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (isTrakt(userCatalog.id)) {
           logger.debug(`Processing Trakt catalog: ${userCatalog.id}`);
-          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows, showPrefix);
+          const result = await createTraktCatalog(userCatalog, traktGenresMovies, traktGenresShows, showPrefix, prefixName);
           logger.debug(`Trakt catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (isSimkl(userCatalog.id)) {
           logger.debug(`Processing Simkl catalog: ${userCatalog.id}`);
-          const result = await createSimklCatalog(userCatalog, showPrefix);
+          const result = await createSimklCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`Simkl catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {
           logger.debug(`Processing TMDB List catalog: ${userCatalog.id}`);
-          const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix);
+          const result = await createTMDBListCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix, prefixName);
           logger.debug(`TMDB List catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tmdb.discover.')) {
           logger.debug(`Processing TMDB Discover catalog: ${userCatalog.id}`);
-          const result = createTMDBDiscoverCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix);
+          const result = createTMDBDiscoverCatalog(userCatalog, genres_movie_names, genres_series_names, showPrefix, prefixName);
           logger.debug(`TMDB Discover catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('tvdb.discover.')) {
           logger.debug(`Processing TVDB Discover catalog: ${userCatalog.id}`);
-          const result = createTVDBDiscoverCatalog(userCatalog, genres_tvdb_all_names, showPrefix);
+          const result = createTVDBDiscoverCatalog(userCatalog, genres_tvdb_all_names, showPrefix, prefixName);
           logger.debug(`TVDB Discover catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('stremthru.')) {
-          const result = await createStremThruCatalog(userCatalog, showPrefix);
+          const result = await createStremThruCatalog(userCatalog, showPrefix, prefixName);
           return result;
       }
       if (userCatalog.id.startsWith('custom.')) {
           logger.debug(`Processing Custom catalog: ${userCatalog.id}`);
-          const result = await createStremThruCatalog(userCatalog, showPrefix);
+          const result = await createStremThruCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`Custom catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if (userCatalog.id.startsWith('anilist.')) {
           logger.debug(`Processing AniList catalog: ${userCatalog.id}`);
-          const result = createAniListCatalog(userCatalog);
+          const result = createAniListCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`AniList catalog result:`, result ? 'success' : 'failed');
           return result;
       }
       if(userCatalog.id.startsWith('mal.discover')){
         logger.debug(`Processing mal discover catalog: ${userCatalog.id}`);
-        const result = createMalCatalog(userCatalog, animeGenreNames);
+        const result = createMalCatalog(userCatalog, animeGenreNames, showPrefix, prefixName);
         logger.debug(`Mal discover catalog result:`, result ? 'success' : 'failed');
         return result;
       }
       if (userCatalog.id.startsWith('letterboxd.')) {
           logger.debug(`Processing Letterboxd catalog: ${userCatalog.id}`);
-          const result = await createLetterboxdCatalog(userCatalog, showPrefix);
+          const result = await createLetterboxdCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`Letterboxd catalog result:`, result ? 'success' : 'failed');
           return result;
       }
@@ -1000,7 +1001,8 @@ async function getManifest(config) {
           translatedCatalogs,
           userCatalog.showInHome,
           userCatalog.name,
-          userCatalog.displayType
+          userCatalog.displayType,
+          prefixName
         );
       }
       else if (userCatalog.id === 'mal.genres') {
@@ -1077,7 +1079,8 @@ async function getManifest(config) {
           translatedCatalogs,
           userCatalog.showInHome,
           userCatalog.name,
-          userCatalog.displayType
+          userCatalog.displayType,
+          prefixName
       );
       return catalog;   
     }));
@@ -1167,7 +1170,7 @@ async function getManifest(config) {
   };
 
   if (isSearchEnabled) {
-    const prefix = showPrefix ? "AIOMetadata - " : "";
+    const prefix = showPrefix ? `${prefixName} - ` : "";
     
     // Generate search catalogs in the specified order
     const searchCatalogConfigs = [
@@ -1311,9 +1314,10 @@ async function getManifest(config) {
   ].join(' | ');
   
 
-  // Support custom name suffix (e.g., "| ElfHosted")
+  // Support custom name: user config > env suffix > default
   const nameSuffix = process.env.ADDON_NAME_SUFFIX || "";
-  const addonName = nameSuffix ? `AIOMetadata ${nameSuffix}` : "AIOMetadata";
+  const baseName = config.addonName || (nameSuffix ? `AIOMetadata ${nameSuffix}` : "AIOMetadata");
+  const addonName = baseName;
 
   // Build resources array - exclude "meta" if catalogModeOnly is enabled
   const resources = ["catalog"];

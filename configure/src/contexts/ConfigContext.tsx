@@ -98,6 +98,7 @@ function initializeConfigFromSources(): AppConfig | null {
 // --- Define the initial, default state for a new user ---
 const initialConfig: AppConfig = {
   language: "en-US",
+  addonName: "",
   includeAdult: false,
   blurThumbs: false,
   showPrefix: false,
@@ -215,6 +216,7 @@ function getManifestFingerprint(config: AppConfig): string {
 
   return JSON.stringify({
     catalogs: catalogFingerprint,
+    addonName: config.addonName,
     catalogModeOnly: config.catalogModeOnly,
     showRateMeButton: config.showRateMeButton,
     showPrefix: config.showPrefix,

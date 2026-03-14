@@ -494,11 +494,11 @@ export function SearchSettings() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleengineRatingPostersChange(config.search.providers.movie, !(config.search.engineRatingPosters?.[config.search.providers.movie] ?? true))}
+                                    onClick={() => handleengineRatingPostersChange('movie', !(config.search.engineRatingPosters?.['movie'] ?? true))}
                                     className="px-2"
-                                    title={(config.search.engineRatingPosters?.[config.search.providers.movie] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
+                                    title={(config.search.engineRatingPosters?.['movie'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
                                 >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.['movie'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
                                 </Button>
                             )}
                             <Switch
@@ -543,11 +543,11 @@ export function SearchSettings() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleengineRatingPostersChange(config.search.providers.series, !(config.search.engineRatingPosters?.[config.search.providers.series] ?? true))}
+                                    onClick={() => handleengineRatingPostersChange('series', !(config.search.engineRatingPosters?.['series'] ?? true))}
                                     className="px-2"
-                                    title={(config.search.engineRatingPosters?.[config.search.providers.series] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
+                                    title={(config.search.engineRatingPosters?.['series'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
                                 >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.['series'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
                                 </Button>
                             )}
                             <Switch

@@ -3351,6 +3351,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         searchEngine = 'tvdb.collections.search';
       }
       config._currentSearchEngine = searchEngine;
+      config._currentSearchType = searchType;
 
       // Compute search-specific page size based on the provider's actual results per page
       let searchPageSize = 20; // default (TMDB, Kitsu)
