@@ -1945,7 +1945,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
       </div>
 
       {/* Row 2: Action buttons + Source badge */}
-      <div className="flex items-center space-x-2 mt-3 md:mt-0 md:ml-auto justify-start md:justify-end">
+      <div className="flex items-center flex-wrap gap-1 sm:gap-2 mt-3 md:mt-0 md:ml-auto justify-start md:justify-end">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

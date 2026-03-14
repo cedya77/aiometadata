@@ -293,14 +293,16 @@ class ConfigApi {
             }
           }
           
-          // Meta provider changes - new config creates new cache keys
+          // Meta provider changes - actively clear user's catalog cache so stale
+          // enriched metas (with old provider attribution) are not served.
           if (config.providers && oldConfig?.providers) {
             logger.debug('Comparing providers - old:', oldConfig.providers, 'new:', config.providers);
-            const providersChanged = Object.keys(config.providers).some(key => 
+            const providersChanged = Object.keys(config.providers).some(key =>
               config.providers[key] !== oldConfig.providers?.[key]
             );
             if (providersChanged) {
-              logger.debug('Providers changed - new requests will use new cache key');
+              logger.info('Providers changed - clearing user catalog cache to avoid stale meta provider data');
+              patterns.push(`v*:catalog:${userUUID}:*`);
             }
           } else {
             logger.debug('No providers to compare - old:', oldConfig?.providers, 'new:', config.providers);
@@ -635,7 +637,19 @@ class ConfigApi {
           } else {
             logger.debug(`No art providers in config or oldConfig`);
           }
-          
+
+          // Meta provider changes - actively clear user's catalog cache so stale
+          // enriched metas (with old provider attribution) are not served.
+          if (config.providers && oldConfig?.providers) {
+            const providersChanged = Object.keys(config.providers).some(key =>
+              config.providers[key] !== oldConfig.providers?.[key]
+            );
+            if (providersChanged) {
+              logger.info('Providers changed - clearing user catalog cache to avoid stale meta provider data');
+              patterns.push(`v*:catalog:${userUUID}:*`);
+            }
+          }
+
           // MDBList catalog changes - affects specific catalog cache
           if (config.catalogs && oldConfig?.catalogs) {
             const oldMdbCatalogs = oldConfig.catalogs.filter(c => c.id?.startsWith('mdblist.'));

@@ -644,7 +644,7 @@ function LabelWithTooltip({
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground hover:text-foreground"
+            className="inline-flex h-6 w-6 items-center justify-center text-muted-foreground hover:text-foreground"
             aria-label="Field help"
           >
             <CircleHelp className="h-3.5 w-3.5" />

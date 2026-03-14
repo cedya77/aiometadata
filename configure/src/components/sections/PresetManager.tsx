@@ -2210,7 +2210,7 @@ export function PresetManager() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex text-muted-foreground hover:text-foreground"
+                              className="inline-flex p-1 text-muted-foreground hover:text-foreground"
                               aria-label="Movies label override help"
                             >
                               <CircleHelp className="h-3.5 w-3.5" />
@@ -2249,7 +2249,7 @@ export function PresetManager() {
                           <TooltipTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex text-muted-foreground hover:text-foreground"
+                              className="inline-flex p-1 text-muted-foreground hover:text-foreground"
                               aria-label="Series label override help"
                             >
                               <CircleHelp className="h-3.5 w-3.5" />

@@ -1,7 +1,7 @@
 const consola = require('consola');
 const idMapper = require('./id-mapper');
 const { resolveTmdbEpisodeFromKitsu } = require('./id-mapper');
-const { resolveTvdbEpisodeFromAnidbEpisode } = require('./anime-list-mapper');
+const { resolveTvdbEpisodeFromAnidbEpisode, resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
 const anilistTracker = require('./anilistTracker');
 const simklUtils = require('../utils/simklUtils');
 
@@ -360,12 +360,50 @@ function normalizeIdsForMovie(parsedId) {
 
 async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
   switch (parsedId.provider) {
-    case 'imdb':
+    case 'imdb': {
+      // Check if this is an anime by looking up in anime ID mappings
+      const animeMapping = idMapper.getMappingByImdbId(parsedId.id);
+      if (animeMapping?.tvdb_id && !isSimkl) {
+        try {
+          // IMDB → TVDB → AniDB
+          const anidbInfo = await resolveAnidbEpisodeFromTvdbEpisode(
+            animeMapping.tvdb_id, parsedId.season || 1, parsedId.episode
+          );
+          if (anidbInfo) {
+            // AniDB → AniList
+            const anidbMapping = idMapper.getMappingByAnidbId(anidbInfo.anidbId);
+            if (anidbMapping?.anilist_id) {
+              // AniList → Kitsu
+              const anilistMapping = idMapper.getMappingByAnilistId(anidbMapping.anilist_id);
+              if (anilistMapping?.kitsu_id) {
+                // Kitsu → TMDB
+                const resolved = await resolveTmdbEpisodeFromKitsu(
+                  anilistMapping.kitsu_id, anidbInfo.anidbEpisode, config
+                );
+                if (resolved) {
+                  logger.debug(
+                    `[Watch Tracking] Resolved anime IMDB ${parsedId.id} → TVDB ${animeMapping.tvdb_id} → AniDB ${anidbInfo.anidbId} → AniList ${anidbMapping.anilist_id} → Kitsu ${anilistMapping.kitsu_id} → TMDB ${resolved.tmdbId} S${resolved.seasonNumber}E${resolved.episodeNumber}`
+                  );
+                  return {
+                    ids: { tmdb: resolved.tmdbId },
+                    season: resolved.seasonNumber,
+                    episode: resolved.episodeNumber
+                  };
+                }
+              }
+            }
+          }
+        } catch (error) {
+          logger.debug(`[Watch Tracking] Anime IMDB resolution failed for ${parsedId.id}: ${error.message}`);
+        }
+      }
+      // Fallback: standard IMDB passthrough (non-anime or resolution failed)
       return {
         ids: { imdb: parsedId.id },
         season: parsedId.season,
         episode: parsedId.episode
       };
+    }
     case 'tvdb':
       return {
         ids: { tvdb: parseInt(parsedId.id, 10) },

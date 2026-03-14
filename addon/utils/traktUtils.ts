@@ -662,6 +662,66 @@ async function fetchTraktUpNextEpisodes(
     }
   }));
 
+  // Progressive backfill: resolve a batch of shows that still have no
+  // upNextEpisode (e.g. shows beyond the initial top-60 on first sync).
+  // This runs on every sync so all shows eventually get their progress
+  // without slamming the API.
+  const BACKFILL_BATCH = 15;
+  const unresolvedIds = Object.entries(state.shows)
+    .filter(([, v]) => v.upNextEpisode === null && !showsToRefresh.has(Number(v.show?.ids?.trakt)))
+    .sort((a, b) => {
+      const tA = a[1].last_watched_at ? new Date(a[1].last_watched_at).getTime() : 0;
+      const tB = b[1].last_watched_at ? new Date(b[1].last_watched_at).getTime() : 0;
+      return tB - tA;
+    })
+    .slice(0, BACKFILL_BATCH)
+    .map(([id]) => Number(id));
+
+  if (unresolvedIds.length > 0) {
+    logger.info(`[Up Next] Backfilling progress for ${unresolvedIds.length} unresolved shows`);
+    await Promise.all(unresolvedIds.map(async (showId) => {
+      try {
+        const response: any = await makeRateLimitedRequest(
+          () => httpGet(`${TRAKT_BASE_URL}/shows/${showId}/progress/watched`, {
+            dispatcher: traktDispatcher,
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+              'trakt-api-version': '2',
+              'trakt-api-key': TRAKT_CLIENT_ID,
+              'User-Agent': `AIOMetadata/${packageJson.version}`
+            },
+            params: { 'extended': 'full' }
+          }),
+          `Trakt Progress ${showId}`,
+          3,
+          accessToken
+        );
+
+        const progress = response.data;
+        const nextEp = progress?.next_episode;
+
+        if (nextEp && nextEp.first_aired && new Date(nextEp.first_aired) <= new Date()) {
+          const showData = state.shows[showId]?.show;
+          if (showData) {
+            state.shows[showId].upNextEpisode = {
+              season: nextEp.season,
+              episode: nextEp.number,
+              trakt_id: nextEp.ids.trakt,
+              imdb_id: nextEp.ids.imdb,
+              tvdb_id: nextEp.ids.tvdb,
+              title: nextEp.title,
+              overview: nextEp.overview,
+              first_aired: nextEp.first_aired
+            };
+          }
+        }
+      } catch (error) {
+        logger.warn(`[Up Next] Backfill failed for show ${showId}`);
+      }
+    }));
+  }
+
   state.last_watched_at = userWatchedAt;
   state.last_updated_at = globalUpdatedAt;
   state.last_hidden_at = userHiddenAt;
@@ -2070,6 +2130,7 @@ async function parseTraktItems(
                 metaResult.meta.id = cacheId;
               } else {
                 logger.warn(`Unwatched episodes not found in videos for ${metaResult.meta.name}; leaving original videos`);
+                metaResult.meta.id = cacheId;
               }
             }
             

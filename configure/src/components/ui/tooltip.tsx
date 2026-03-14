@@ -5,9 +5,85 @@ import { cn } from "@/lib/utils"
 
 const TooltipProvider = TooltipPrimitive.Provider
 
-const Tooltip = TooltipPrimitive.Root
+interface TooltipContextValue {
+  onTouchTrigger: () => void
+}
 
-const TooltipTrigger = TooltipPrimitive.Trigger
+const TooltipContext = React.createContext<TooltipContextValue | null>(null)
+
+const Tooltip = ({
+  children,
+  open: _open,
+  onOpenChange: _onOpenChange,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) => {
+  const [open, setOpen] = React.useState(false)
+  const touchOpenRef = React.useRef(false)
+
+  // Dismiss on outside touch for touch-opened tooltips
+  React.useEffect(() => {
+    if (!open || !touchOpenRef.current) return
+
+    const dismiss = () => {
+      setOpen(false)
+      touchOpenRef.current = false
+    }
+
+    // Small delay to avoid catching the same touch that opened the tooltip
+    const setupTimeout = setTimeout(() => {
+      document.addEventListener("touchstart", dismiss, { once: true })
+    }, 10)
+
+    return () => {
+      clearTimeout(setupTimeout)
+      document.removeEventListener("touchstart", dismiss)
+    }
+  }, [open])
+
+  const onTouchTrigger = React.useCallback(() => {
+    touchOpenRef.current = true
+    setOpen(true)
+  }, [])
+
+  return (
+    <TooltipContext.Provider value={{ onTouchTrigger }}>
+      <TooltipPrimitive.Root
+        open={open}
+        onOpenChange={(isOpen) => {
+          // On desktop hover, let Radix control open state
+          // When touch-opened, ignore Radix hover events (dismiss handles closing)
+          if (!touchOpenRef.current) {
+            setOpen(isOpen)
+          }
+        }}
+        {...props}
+      >
+        {children}
+      </TooltipPrimitive.Root>
+    </TooltipContext.Provider>
+  )
+}
+
+const TooltipTrigger = React.forwardRef<
+  React.ElementRef<typeof TooltipPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
+>(({ onPointerDown, ...props }, ref) => {
+  const ctx = React.useContext(TooltipContext)
+
+  return (
+    <TooltipPrimitive.Trigger
+      ref={ref}
+      onPointerDown={(e) => {
+        if (e.pointerType === "touch") {
+          ctx?.onTouchTrigger()
+        }
+        onPointerDown?.(e)
+      }}
+      {...props}
+    />
+  )
+})
+TooltipTrigger.displayName = TooltipPrimitive.Trigger.displayName
 
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
