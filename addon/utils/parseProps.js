@@ -301,7 +301,7 @@ function sortSearchResults(results, query) {
     CURRENT_YEAR: new Date().getFullYear(),
     HQ_VOTE_THRESHOLD: 100,
     HQ_POPULARITY_THRESHOLD: 5.0,
-    LQ_EXACT: { MIN_VOTES: 5, MIN_POPULARITY: 0.5, RECENT_YEAR_SPAN: 5 },
+    LQ_EXACT: { MIN_VOTES: 1, MIN_POPULARITY: 0.5, RECENT_YEAR_SPAN: 5 },
     STARTS_WITH: {
       MIN_VOTES: 15,
       MIN_POPULARITY: 1,
@@ -332,7 +332,7 @@ function sortSearchResults(results, query) {
       item.score < RULES.OBSCURE.MAX_POPULARITY &&
       item.voteCount < RULES.OBSCURE.MAX_VOTES;
     
-    if (isMissingCoreData || isObscureContent) return false;
+    if (isMissingCoreData || (isObscureContent && !item.isExact && !item.isNearExact)) return false;
 
     // Stage 3: Case-by-Case Rules
     switch (item.matchReason) {
