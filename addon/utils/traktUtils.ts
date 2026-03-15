@@ -3005,14 +3005,8 @@ async function fetchTraktPersonCredits(
 }
 
 export async function getTraktToken(tokenId: string): Promise<string | null> {
-  try {
-    const tokenData = await database.getOAuthToken(tokenId);
-    if (!tokenData || !tokenData.access_token) return null;
-    return tokenData.access_token;
-  } catch (error) {
-    logger.error(`[Trakt Checkin] Error fetching token from DB:`, error);
-    return null;
-  }
+  if (!tokenId) return null;
+  return getTraktAccessToken({ apiKeys: { traktTokenId: tokenId } });
 }
 
 export async function checkinMovie(idInput: Record<string, string | number>, accessToken: string): Promise<boolean> {

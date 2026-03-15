@@ -1199,10 +1199,6 @@ addon.post("/api/trakt/proxy", async (req, res) => {
     let accessToken = null;
     if (tokenId) {
       accessToken = await getTraktAccessToken({ apiKeys: { traktTokenId: tokenId } });
-      if (!accessToken) {
-        const token = await database.getOAuthToken(tokenId);
-        accessToken = token?.access_token || null;
-      }
     }
 
     if (authMode === 'required' && !accessToken) {
@@ -4169,10 +4165,6 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
         const { getTraktAccessToken, makeAuthenticatedRateLimitedTraktWriteRequest } = require('./utils/traktUtils');
         let accessToken = await getTraktAccessToken(config);
         if (!accessToken) {
-          const fallbackToken = await database.getOAuthToken(config.apiKeys.traktTokenId);
-          accessToken = fallbackToken?.access_token || null;
-        }
-        if (!accessToken) {
           results.trakt.error = "Trakt token not found or expired";
         } else {
           const TRAKT_BASE_URL = 'https://api.trakt.tv';
@@ -4698,13 +4690,13 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
         // Check Trakt
         if (config.apiKeys?.traktTokenId) {
           const token = await database.getOAuthToken(config.apiKeys.traktTokenId);
-          availableServices.trakt = !!(token && token.access_token);
+          availableServices.trakt = !!(token && token.access_token && (!token.expires_at || Date.now() < Number(token.expires_at)));
         }
-        
+
         // Check AniList (only if Stremio ID is from anime provider and user has AniList configured)
         if (isAnimeId && config.apiKeys?.anilistTokenId) {
           const token = await database.getOAuthToken(config.apiKeys.anilistTokenId);
-          availableServices.anilist = !!(token && token.access_token);
+          availableServices.anilist = !!(token && token.access_token && (!token.expires_at || Date.now() < Number(token.expires_at)));
         }
         
         // Check MDBList
