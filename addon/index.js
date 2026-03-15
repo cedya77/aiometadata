@@ -108,6 +108,25 @@ function shuffleMetas(metas = []) {
   return shuffled;
 }
 
+/**
+ * Extract IDs from a catalog meta object for custom poster URL resolution.
+ * Handles id formats: "tmdb:123", "tvdb:456", "tt1234567"
+ */
+function extractIdsFromMeta(meta) {
+  const ids = {};
+  if (!meta) return ids;
+
+  const id = meta.id || '';
+  if (id.startsWith('tmdb:')) ids.tmdbId = id.slice(5);
+  else if (id.startsWith('tvdb:')) ids.tvdbId = id.slice(5);
+  else if (id.startsWith('tt')) ids.imdbId = id;
+
+  // Some metas carry imdb_id as a separate property
+  if (meta.imdb_id) ids.imdbId = meta.imdb_id;
+
+  return ids;
+}
+
 // Parse JSON and URL-encoded bodies for API routes
 addon.use(express.json({ limit: '2mb' }));
 addon.use(express.urlencoded({ extended: true }));
@@ -3808,6 +3827,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         ...responseData,
         metas: shuffleMetas(responseData.metas)
       };
+    }
+
+    // Custom poster URL pattern override for catalog items
+    if (config.customPosterUrlPattern && responseData?.metas && Array.isArray(responseData.metas)) {
+      const { resolveCustomPosterUrl } = require('./utils/parseProps');
+      for (const meta of responseData.metas) {
+        const ids = extractIdsFromMeta(meta);
+        const resolved = resolveCustomPosterUrl(config.customPosterUrlPattern, ids, meta.type || actualType);
+        if (resolved) {
+          meta.poster = resolved;
+        }
+      }
     }
 
     const httpCacheOpts = { cacheMaxAge: 0, staleRevalidate: 5 * 60 }; // No cache for regular catalogs, 5 min stale-while-revalidate

@@ -190,6 +190,7 @@ const initialConfig: AppConfig = {
     searchOrder: DEFAULT_SEARCH_ORDER,
   },
   streaming: [], // Added to satisfy AppConfig interface
+  customPosterUrlPattern: '',
 };
 
 const defaultCatalogs = allCatalogDefinitions.map(c => ({

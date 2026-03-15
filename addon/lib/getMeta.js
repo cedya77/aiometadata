@@ -276,6 +276,12 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
       return { meta: null };
     }
 
+    // Custom poster URL pattern override
+    const customPosterUrl = Utils.resolveCustomPosterUrl(config.customPosterUrlPattern, allIds, meta.type || type);
+    if (customPosterUrl) {
+      meta.poster = customPosterUrl;
+    }
+
     if(isTraktUpNextId) {
       // Legacy support for external Trakt Up Next addon (tun_ prefix)
       if(meta.id && meta.id.startsWith('tt')) {

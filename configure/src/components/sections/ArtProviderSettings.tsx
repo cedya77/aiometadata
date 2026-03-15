@@ -1,4 +1,5 @@
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -437,6 +438,29 @@ export function ArtProviderSettings() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Custom Poster URL Pattern */}
+      <div>
+        <h3 className="text-xl font-semibold mb-4">Custom Poster URL</h3>
+        <Card>
+          <CardHeader>
+            <CardTitle>URL Pattern</CardTitle>
+            <CardDescription>
+              Override all poster sources with a custom URL pattern. Supported placeholders: <code>{'{tmdb_id}'}</code>, <code>{'{imdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{type}'}</code>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Input
+              placeholder="https://example.com/poster/{tmdb_id}.jpg"
+              value={config.customPosterUrlPattern || ''}
+              onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground">
+              When set, this overrides all other poster providers. If a placeholder references an ID that is unavailable for an item, the normal poster is used instead.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

@@ -200,4 +200,5 @@ export interface AppConfig {
   };
   showDisabledCatalogs?: boolean;
   catalogModeOnly?: boolean;
+  customPosterUrlPattern?: string;
 }

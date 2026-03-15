@@ -63,6 +63,35 @@ function isPosterRatingEnabled(config) {
 }
 
 /**
+ * Resolve a custom poster URL pattern by replacing placeholders with actual IDs.
+ * Returns the resolved URL, or null if the pattern is empty or a referenced placeholder has no value.
+ * @param {string} pattern - URL pattern with placeholders like {tmdb_id}, {imdb_id}, {tvdb_id}, {type}
+ * @param {object} ids - Object with tmdbId, imdbId, tvdbId properties
+ * @param {string} type - Content type (movie, series, anime)
+ * @returns {string|null} Resolved URL or null
+ */
+function resolveCustomPosterUrl(pattern, ids, type) {
+  if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return null;
+
+  const placeholders = {
+    '{tmdb_id}': ids?.tmdbId || '',
+    '{imdb_id}': ids?.imdbId || '',
+    '{tvdb_id}': ids?.tvdbId || '',
+    '{type}': type || '',
+  };
+
+  let url = pattern;
+  for (const [placeholder, value] of Object.entries(placeholders)) {
+    if (url.includes(placeholder)) {
+      if (!value) return null; // Referenced placeholder has no value — fall back
+      url = url.split(placeholder).join(value);
+    }
+  }
+
+  return url;
+}
+
+/**
  * Get poster URL from the selected rating provider (RPDB or Top Poster)
  */
 function getRatingPosterUrl(type, ids, language, config, fallbackUrl = null) {
@@ -3279,7 +3308,8 @@ module.exports = {
   getTvdbCertification,
   getAnimePosterUrl,
   getKitsuLocalizedTitle,
-  isPosterRatingEnabled
+  isPosterRatingEnabled,
+  resolveCustomPosterUrl
 };
 
 /**
