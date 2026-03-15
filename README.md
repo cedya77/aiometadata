@@ -172,6 +172,7 @@ http {
             proxy_ssl_server_name on;
 
             proxy_cache poster_cache;
+            proxy_cache_key $upstream_url;
             proxy_cache_valid 200 30d;
             proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
             proxy_cache_lock on;
