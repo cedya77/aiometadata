@@ -175,6 +175,7 @@ async function testKeysRateLimitMiddleware(req, res, next) {
 
 
 const NO_CACHE = process.env.NO_CACHE === 'true';
+const POSTER_PROXY_PREFIX_URL = (process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
 
 // Initialize cache warming for public instances (enabled by default)
 const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING !== 'false';
@@ -321,6 +322,25 @@ const respond = function (req, res, data, opts) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
   res.setHeader("Content-Type", "application/json");
+
+  // Prefix poster URLs with reverse proxy URL for local caching
+  if (POSTER_PROXY_PREFIX_URL && data) {
+    const prefixPoster = (url) => {
+      if (!url || url.startsWith(POSTER_PROXY_PREFIX_URL)) return url;
+      return `${POSTER_PROXY_PREFIX_URL}/${url}`;
+    };
+    if (data.meta?.poster) {
+      data.meta.poster = prefixPoster(data.meta.poster);
+    }
+    if (data.metas) {
+      for (const meta of data.metas) {
+        if (meta.poster) {
+          meta.poster = prefixPoster(meta.poster);
+        }
+      }
+    }
+  }
+
   res.send(data);
 };
 

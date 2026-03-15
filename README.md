@@ -98,6 +98,103 @@ Then run:
 docker compose up -d
 ```
 
+### 3. Poster Reverse Proxy Cache (Optional)
+
+Cache poster images locally using an nginx reverse proxy. Eliminates upstream latency on repeated requests and, combined with comprehensive cache warming, serves posters instantly from disk.
+
+Add a `poster-cache` service alongside your aiometadata container:
+
+```yaml
+  poster-cache:
+    image: nginx:alpine
+    container_name: poster-cache
+    restart: unless-stopped
+    volumes:
+      - ./poster-cache-nginx.conf:/etc/nginx/nginx.conf:ro
+      - poster_cache_data:/var/cache/nginx
+    expose:
+      - "8888"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.poster-cache.rule=Host(`poster-cache.example.com`)"
+      - "traefik.http.routers.poster-cache.entrypoints=websecure"
+      - "traefik.http.routers.poster-cache.tls.certresolver=letsencrypt"
+      - "traefik.http.services.poster-cache.loadbalancer.server.port=8888"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+Save the following as `poster-cache-nginx.conf` next to your `docker-compose.yml`:
+
+```nginx
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Cache storage on disk — adjust max_size to suit available space (default 2g)
+    proxy_cache_path /var/cache/nginx/posters
+                     levels=1:2
+                     keys_zone=poster_cache:10m
+                     max_size=2g
+                     inactive=30d
+                     use_temp_path=off;
+
+    # Restore double-slash after scheme when a reverse proxy (e.g. Traefik)
+    # collapses "https://" to "https:/".
+    map $request_uri $upstream_url {
+        ~^/(https?):/([^/].*)$  $1://$2;
+        ~^/(https?://.*)$       $1;
+        default                 "";
+    }
+
+    server {
+        listen 8888;
+
+        location = /health {
+            access_log off;
+            return 200 'ok';
+        }
+
+        location / {
+            resolver 127.0.0.11 valid=30s ipv6=off;
+
+            if ($upstream_url = "") {
+                return 400;
+            }
+
+            proxy_pass $upstream_url;
+            proxy_ssl_server_name on;
+
+            proxy_cache poster_cache;
+            proxy_cache_valid 200 30d;
+            proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+            proxy_cache_lock on;
+
+            add_header X-Cache-Status $upstream_cache_status;
+
+            proxy_set_header Host $proxy_host;
+            proxy_set_header Accept-Encoding "";
+        }
+    }
+}
+```
+
+Then set these environment variables on the aiometadata service:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `POSTER_PROXY_PREFIX_URL` | Public HTTPS URL for the proxy (used in responses so Stremio fetches through it) | `https://poster-cache.example.com` |
+| `POSTER_WARMUP_URL` | Internal Docker URL for server-side warming (optional, falls back to `POSTER_PROXY_PREFIX_URL`) | `http://poster-cache:8888` |
+| `POSTER_WARMUP_DELAY_MS` | Delay between poster HEAD requests during warming (default `50`) | `50` |
+
+If you're not using Traefik, remove the labels, expose port 8888 directly, and set `POSTER_PROXY_PREFIX_URL` to wherever your proxy is publicly accessible.
+
 ---
 
 ## ⚙️ Configuration

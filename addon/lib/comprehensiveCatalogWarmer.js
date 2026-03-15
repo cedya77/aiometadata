@@ -517,6 +517,7 @@ class ComprehensiveCatalogWarmer {
     let currentPage = 1;
     let totalItems = 0;
     const maxPages = this.config.maxPagesPerCatalog;
+    let posterWarmingChain = Promise.resolve(); // serializes fire-and-forget poster warming
 
     while (currentPage <= maxPages) {
       try {
@@ -623,6 +624,31 @@ class ComprehensiveCatalogWarmer {
           }, undefined, { enableErrorCaching: false, maxRetries: 1 });
 
           const rawMetaCount = result?.metas?.length || 0;
+
+          // Fire-and-forget poster pre-warming through the proxy cache.
+          // Chained so only one batch runs at a time (prevents concurrent pileup),
+          // but doesn't block catalog warming from advancing to the next page.
+          const posterWarmupUrl = (process.env.POSTER_WARMUP_URL || process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
+          if (posterWarmupUrl && rawMetaCount > 0) {
+            const posterUrls = result.metas
+              .map(m => m.poster)
+              .filter(Boolean);
+            if (posterUrls.length > 0) {
+              const posterDelay = parseInt(process.env.POSTER_WARMUP_DELAY_MS) || 50;
+              const pageCatalogId = catalogId;
+              posterWarmingChain = posterWarmingChain.then(async () => {
+                let warmed = 0;
+                for (const url of posterUrls) {
+                  try {
+                    await fetch(`${posterWarmupUrl}/${url}`, { method: 'HEAD' });
+                    warmed++;
+                  } catch (_) { /* ignore */ }
+                  if (posterDelay > 0) await new Promise(r => setTimeout(r, posterDelay));
+                }
+                this.log('debug', `[Poster Warming] Pre-warmed ${warmed} poster images for catalog ${pageCatalogId}`);
+              });
+            }
+          }
 
           if (rawMetaCount === 0) {
             this.log('debug', `Catalog ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} complete at page ${currentPage}`);
