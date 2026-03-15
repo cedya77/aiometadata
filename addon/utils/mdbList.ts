@@ -221,7 +221,7 @@ async function makeRateLimitedRequest<T>(
         const requestTracker = require('../lib/requestTracker.js');
         requestTracker.trackProviderCall('mdblist', responseTime, false);
         logger.error(`Request failed with permanent error, no retry: ${error.message} - ${context}`);
-        requestTracker.logError('error', `MDBList API permanent error`, { /* ... */ });
+        requestTracker.logError('error', `MDBList API permanent error`, { context, status: error.response?.status, message: error.message, responseTime });
         throw error;
       }
       
