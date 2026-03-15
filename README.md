@@ -153,6 +153,10 @@ http {
         default                 "";
     }
 
+    log_format cache '$remote_addr - [$time_local] "$request" $status '
+                     '$body_bytes_sent $upstream_cache_status';
+    access_log /var/log/nginx/access.log cache;
+
     server {
         listen 8888;
 
