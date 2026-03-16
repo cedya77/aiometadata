@@ -14,6 +14,7 @@ const kitsu = require('./kitsu');
 const { resolveAllIds } = require('./id-resolver');
 const { isAnime } = require("../utils/isAnime");
 const { performGeminiSearch } = require('../utils/gemini-service');
+const { performOpenRouterSearch } = require('../utils/openrouter-service');
 const { filterMetasByRegex } = require('../utils/regexFilter');
 const consola = require('consola');
 const { cacheWrapMetaSmart } = require('./getCache');
@@ -1090,19 +1091,33 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
  */
 async function performAiSearch(query, language, config) {
   const startTime = Date.now();
-  logger.info(`Starting AI search for query: "${query}"`);
-  
+  const aiProvider = config.search?.ai_provider || 'gemini';
+  const aiModel = config.search?.ai_model || (aiProvider === 'openrouter' ? 'google/gemini-2.5-flash' : 'gemini-2.5-flash-lite');
+  const aiWebSearch = config.search?.ai_web_search === true;
+
+  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${aiProvider === 'openrouter' ? 'always' : aiWebSearch})`);
+
   try {
     // Phase 1: AI Generation and Parsing
-    const geminiKey = config.apiKeys?.gemini;
-    const suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language);
-    
+    let suggestions;
+
+    if (aiProvider === 'openrouter') {
+      const openrouterKey = config.apiKeys?.openrouter;
+      // Always append :online for web search grounding (costs credits regardless)
+      const effectiveModel = aiModel && !aiModel.endsWith(':online')
+        ? `${aiModel}:online` : aiModel;
+      suggestions = await performOpenRouterSearch(openrouterKey, query, 'mixed', language, effectiveModel);
+    } else {
+      const geminiKey = config.apiKeys?.gemini;
+      suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language, aiModel, aiWebSearch);
+    }
+
     if (!suggestions || suggestions.length === 0) {
-      logger.info('Gemini returned no suggestions.');
+      logger.info('AI search returned no suggestions.');
       return [];
     }
-    
-    logger.debug(`Gemini returned ${suggestions.length} suggestions`);
+
+    logger.debug(`AI search returned ${suggestions.length} suggestions`);
     
     // Phase 2: Combined TMDB matching + enrichment (single parallel operation)
     // This eliminates the async barrier between separate match and enrich phases

@@ -322,7 +322,7 @@ export function IntegrationsSettings() {
     setIsTesting(true);
     // Conditionally include rpdb or topPoster based on selected provider
     const posterKeyToTest = config.posterRatingProvider === 'top' ? 'topPoster' : 'rpdb';
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', posterKeyToTest, 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', posterKeyToTest, 'mdblist'];
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -477,7 +477,7 @@ export function IntegrationsSettings() {
   const getButtonState = () => {
     // Conditionally include rpdb or topPoster based on selected provider
     const posterKeyToTest = config.posterRatingProvider === 'top' ? 'topPoster' : 'rpdb';
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'tmdb', 'tvdb', 'fanart', posterKeyToTest, 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', posterKeyToTest, 'mdblist'];
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -516,11 +516,18 @@ export function IntegrationsSettings() {
       
       {/* Inputs */}
       <div className="space-y-4 max-w-2xl">
-        <ApiKeyInput 
-          id="gemini" 
-          label="Google Gemini API Key" 
-          linkHref="https://aistudio.google.com/app/apikey" 
-          validationStatus={validationStatus.gemini || 'idle'} 
+        <ApiKeyInput
+          id="gemini"
+          label="Google Gemini API Key"
+          linkHref="https://aistudio.google.com/app/apikey"
+          validationStatus={validationStatus.gemini || 'idle'}
+          onKeyChange={handleKeyChange}
+        />
+        <ApiKeyInput
+          id="openrouter"
+          label="OpenRouter API Key"
+          linkHref="https://openrouter.ai/keys"
+          validationStatus={validationStatus.openrouter || 'idle'}
           onKeyChange={handleKeyChange}
         />
         <ApiKeyInput 

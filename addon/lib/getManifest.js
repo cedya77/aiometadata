@@ -1227,7 +1227,7 @@ async function getManifest(config) {
         id: 'gemini.search',
         type: 'other',
         provider: 'gemini.search',
-        enabled: engineEnabled['gemini.search'] !== false && config.search?.ai_enabled === true && !!config.apiKeys?.gemini,
+        enabled: engineEnabled['gemini.search'] !== false && config.search?.ai_enabled === true && (!!config.apiKeys?.gemini || !!config.apiKeys?.openrouter),
         suffix: 'AI Search'
       }
     ];

@@ -130,6 +130,7 @@ export interface AppConfig {
     rpdb: string;
     topPoster: string;
     mdblist: string;
+    openrouter: string;
     traktTokenId?: string;
     simklTokenId?: string;
     anilistTokenId?: string;
@@ -178,6 +179,11 @@ export interface AppConfig {
     engineEnabled?: {
       [engine: string]: boolean;
     };
+    // AI search provider and model
+    ai_provider?: 'gemini' | 'openrouter';
+    ai_model?: string;
+    // Enable web search: Gemini = google_search grounding tool, OpenRouter = :online suffix
+    ai_web_search?: boolean;
     // RPDB enable/disable per search engine
     engineRatingPosters?: {
       [engine: string]: boolean;

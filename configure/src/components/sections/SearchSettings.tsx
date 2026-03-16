@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Edit2, GripVertical, Star, Sparkles } from 'lucide-react';
+import { Edit2, GripVertical, Star, Sparkles, AlertTriangle } from 'lucide-react';
 import { allSearchProviders } from '@/data/catalogs';
+import { GEMINI_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL } from '@/data/ai-models';
+import type { AIModel } from '@/data/ai-models';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
@@ -110,6 +112,39 @@ export function SearchSettings() {
   const [editName, setEditName] = useState('');
   const [editType, setEditType] = useState('');
   const hasGeminiKey = !!config.apiKeys?.gemini;
+  const hasOpenRouterKey = !!config.apiKeys?.openrouter;
+  const hasAnyAiKey = hasGeminiKey || hasOpenRouterKey;
+  const [openRouterModels, setOpenRouterModels] = useState<AIModel[]>([]);
+  const [openRouterModelsLoading, setOpenRouterModelsLoading] = useState(false);
+  const openRouterKeyRef = React.useRef(config.apiKeys?.openrouter);
+
+  // Fetch OpenRouter model list when key is available
+  useEffect(() => {
+    const key = config.apiKeys?.openrouter;
+    if (!key || key === openRouterKeyRef.current && openRouterModels.length > 0) {
+      if (!key) setOpenRouterModels([]);
+      openRouterKeyRef.current = key;
+      return;
+    }
+    openRouterKeyRef.current = key;
+    let cancelled = false;
+    setOpenRouterModelsLoading(true);
+    fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${key}` },
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        const models: AIModel[] = (data?.data || [])
+          .filter((m: any) => m.id && m.name)
+          .map((m: any) => ({ id: m.id, name: m.name, grounding: false }))
+          .sort((a: AIModel, b: AIModel) => a.name.localeCompare(b.name));
+        setOpenRouterModels(models);
+      })
+      .catch(() => { if (!cancelled) setOpenRouterModels([]); })
+      .finally(() => { if (!cancelled) setOpenRouterModelsLoading(false); });
+    return () => { cancelled = true; };
+  }, [config.apiKeys?.openrouter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -139,7 +174,7 @@ export function SearchSettings() {
       enabledProviders.push({ id: 'tvdb.collections.search', type: 'collection', provider: 'tvdb.collections.search' });
     }
     // Add Gemini AI search if enabled (AI or explicit engine enable and key present)
-    if (config.search.engineEnabled?.['gemini.search'] !== false && config.search.ai_enabled && hasGeminiKey) {
+    if (config.search.engineEnabled?.['gemini.search'] !== false && config.search.ai_enabled && hasAnyAiKey) {
       enabledProviders.push({ id: 'gemini.search', type: 'ai', provider: 'gemini.search' });
     }
     
@@ -314,6 +349,9 @@ export function SearchSettings() {
       search: {
         ...prev.search,
         ai_enabled: checked,
+        // Set default provider/model if not already set
+        ai_provider: prev.search.ai_provider || 'gemini',
+        ai_model: prev.search.ai_model || DEFAULT_GEMINI_MODEL,
         engineEnabled: {
           ...prev.search.engineEnabled,
           'gemini.search': checked,
@@ -322,6 +360,28 @@ export function SearchSettings() {
           const currentOrder = Array.isArray(prev.search.searchOrder) ? prev.search.searchOrder : [];
           return Array.from(new Set([...currentOrder, ...DEFAULT_SEARCH_ORDER]));
         })(),
+      },
+    }));
+  };
+
+  const handleAiProviderChange = (provider: 'gemini' | 'openrouter') => {
+    const defaultModel = provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
+    setConfig(prev => ({
+      ...prev,
+      search: {
+        ...prev.search,
+        ai_provider: provider,
+        ai_model: defaultModel,
+      },
+    }));
+  };
+
+  const handleAiModelChange = (model: string) => {
+    setConfig(prev => ({
+      ...prev,
+      search: {
+        ...prev.search,
+        ai_model: model,
       },
     }));
   };
@@ -818,37 +878,155 @@ export function SearchSettings() {
                         <CardTitle>AI-Powered Search</CardTitle>
                     </div>
                     <CardDescription>
-                        Use Google Gemini to interpret natural language queries and find media using descriptive phrases instead of exact titles.
+                        Use AI to interpret natural language queries and find media using descriptive phrases instead of exact titles.
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="flex items-center justify-between">
-                    <div className="flex-1">
-                        {!config.apiKeys?.gemini?.trim() && (
-                            <p className="text-sm text-muted-foreground">
-                                A Gemini API key is required to enable AI search. Add your key in the Integrations settings.
-                            </p>
-                        )}
-                    </div>
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <div>
-                                    <Switch
-                                        id="ai-search-enabled"
-                                        checked={config.search.ai_enabled}
-                                        onCheckedChange={handleAiToggle}
-                                        disabled={!config.apiKeys?.gemini?.trim() && !config.search.ai_enabled}
-                                        aria-label="Enable AI-powered search"
-                                    />
-                                </div>
-                            </TooltipTrigger>
-                            {!config.apiKeys?.gemini?.trim() && (
-                                <TooltipContent>
-                                    <p>Add a Gemini API key in Integrations to enable AI search</p>
-                                </TooltipContent>
+                <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                            {!hasAnyAiKey && (
+                                <p className="text-sm text-muted-foreground">
+                                    A Gemini or OpenRouter API key is required to enable AI search. Add your key in the Integrations settings.
+                                </p>
                             )}
-                        </Tooltip>
-                    </TooltipProvider>
+                        </div>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div>
+                                        <Switch
+                                            id="ai-search-enabled"
+                                            checked={config.search.ai_enabled}
+                                            onCheckedChange={handleAiToggle}
+                                            disabled={!hasAnyAiKey && !config.search.ai_enabled}
+                                            aria-label="Enable AI-powered search"
+                                        />
+                                    </div>
+                                </TooltipTrigger>
+                                {!hasAnyAiKey && (
+                                    <TooltipContent>
+                                        <p>Add a Gemini or OpenRouter API key in Integrations to enable AI search</p>
+                                    </TooltipContent>
+                                )}
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+
+                    {config.search.ai_enabled && (
+                        <div className="space-y-4 pt-2 border-t">
+                            {/* Provider Selection */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <Label htmlFor="ai-provider" className="text-sm font-medium">Provider</Label>
+                                    <p className="text-xs text-muted-foreground">Choose your AI provider</p>
+                                </div>
+                                <Select
+                                    value={config.search.ai_provider || 'gemini'}
+                                    onValueChange={(value) => handleAiProviderChange(value as 'gemini' | 'openrouter')}
+                                >
+                                    <SelectTrigger id="ai-provider" className="w-[200px]">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="gemini" disabled={!hasGeminiKey}>
+                                            Google Gemini{!hasGeminiKey ? ' (no key)' : ''}
+                                        </SelectItem>
+                                        <SelectItem value="openrouter" disabled={!hasOpenRouterKey}>
+                                            OpenRouter{!hasOpenRouterKey ? ' (no key)' : ''}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Model Selection */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <Label htmlFor="ai-model" className="text-sm font-medium">Model</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        {(config.search.ai_provider || 'gemini') === 'openrouter'
+                                            ? 'Any OpenRouter model ID'
+                                            : (() => {
+                                                const selected = GEMINI_MODELS.find(m => m.id === config.search.ai_model);
+                                                return (selected?.grounding || config.search.ai_web_search) ? 'with Web Search' : 'without Web Search';
+                                            })()
+                                        }
+                                    </p>
+                                </div>
+                                {(config.search.ai_provider || 'gemini') === 'openrouter' ? (
+                                    <>
+                                        <Input
+                                            id="ai-model"
+                                            list="openrouter-models"
+                                            value={config.search.ai_model ?? ''}
+                                            onChange={(e) => handleAiModelChange(e.target.value)}
+                                            placeholder={openRouterModelsLoading ? 'Loading models...' : 'e.g. google/gemini-2.5-flash'}
+                                            className="w-[280px]"
+                                        />
+                                        <datalist id="openrouter-models">
+                                            {openRouterModels.map(model => (
+                                                <option key={model.id} value={model.id}>{model.name}</option>
+                                            ))}
+                                        </datalist>
+                                    </>
+                                ) : (
+                                    <Select
+                                        value={config.search.ai_model || DEFAULT_GEMINI_MODEL}
+                                        onValueChange={handleAiModelChange}
+                                    >
+                                        <SelectTrigger id="ai-model" className="w-[280px]">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {GEMINI_MODELS.map(model => (
+                                                <SelectItem key={model.id} value={model.id}>
+                                                    {model.name}{model.grounding ? ' (with Web Search)' : ''}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </div>
+
+                            {/* Web Search toggle (Gemini non-free-grounding models only) */}
+                            {/* OpenRouter always uses :online — no toggle needed */}
+                            {(() => {
+                                const provider = config.search.ai_provider || 'gemini';
+                                if (provider !== 'gemini') return null;
+                                const selected = GEMINI_MODELS.find(m => m.id === config.search.ai_model);
+                                if (selected?.grounding) return null; // already has free grounding
+
+                                return (
+                                    <>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <Label htmlFor="ai-web-search" className="text-sm font-medium">Web Search</Label>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Requires a paid Gemini API key. Free keys will get 429 errors.
+                                                </p>
+                                            </div>
+                                            <Switch
+                                                id="ai-web-search"
+                                                checked={!!config.search.ai_web_search}
+                                                onCheckedChange={(checked) => setConfig(prev => ({
+                                                    ...prev,
+                                                    search: { ...prev.search, ai_web_search: checked },
+                                                }))}
+                                            />
+                                        </div>
+                                        {!config.search.ai_web_search && (
+                                            <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-500/10 border border-yellow-500/20">
+                                                <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
+                                                <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                                                    This model cannot search the web on free tier — results may be less accurate for recent or niche content.
+                                                    If you have a paid Gemini key, enable "Web Search" above.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

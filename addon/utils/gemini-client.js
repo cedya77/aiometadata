@@ -60,7 +60,7 @@ const geminiDispatcher = createGeminiDispatcher();
 async function generateContent({ apiKey, model, prompt, useGrounding = false, timeout = 30000 }) {
   const url = `${GEMINI_BASE_URL}/models/${model}:generateContent`;
   const startTime = Date.now();
-  
+
   const body = {
     contents: [
       {
@@ -73,6 +73,9 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
     body.tools = [{ google_search: {} }];
   }
 
+  const headersTimeout = timeout;
+  const bodyTimeout = Math.min(timeout, 30000);
+
   try {
     const { statusCode, body: responseBody } = await request(url, {
       method: 'POST',
@@ -82,8 +85,8 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
       },
       body: JSON.stringify(body),
       dispatcher: geminiDispatcher,
-      headersTimeout: timeout,
-      bodyTimeout: timeout,
+      headersTimeout,
+      bodyTimeout,
     });
 
     const data = await responseBody.json();

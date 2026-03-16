@@ -3,9 +3,23 @@ const { generateContent } = require('./gemini-client');
 const consola = require('consola');
 
 
-const logger = consola.withTag('GeminiService');
+const logger = consola.withTag('AISearch');
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite-preview-09-2025";
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
+
+const GEMINI_MODELS = [
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', grounding: true },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', grounding: true },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', grounding: false },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', grounding: false },
+  { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', grounding: false },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', grounding: false },
+];
+
+function supportsGrounding(model) {
+  const entry = GEMINI_MODELS.find(m => m.id === model);
+  return entry?.grounding ?? false;
+}
 
 /**
  * Main orchestration function for AI-powered search.
@@ -16,7 +30,7 @@ const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite-preview-09-2025";
  * @param {string} language
  * @returns {Promise<Array<{type: string, title: string, year: number}>>} Array of suggestions.
  */
-async function performGeminiSearch(apiKey, query, type, language) {
+async function performGeminiSearch(apiKey, query, type, language, model, forceGrounding = false) {
   const startTime = Date.now();
 
   if (!apiKey) {
@@ -24,18 +38,24 @@ async function performGeminiSearch(apiKey, query, type, language) {
     return [];
   }
 
+  const selectedModel = model || DEFAULT_GEMINI_MODEL;
+  const useGrounding = forceGrounding || supportsGrounding(selectedModel);
+  const timeout = useGrounding ? 45000 : 30000;
+
+  logger.debug(`Using model: ${selectedModel}, grounding: ${useGrounding}, timeout: ${timeout}ms`);
+
   try {
     // Phase 1: AI Generation
     const generationStart = Date.now();
-    
-    const prompt = buildPrompt(query, type, 20);
-    
+
+    const prompt = buildPrompt(query, type, 20, useGrounding ? 'gemini' : false);
+
     const response = await generateContent({
       apiKey,
-      model: DEFAULT_GEMINI_MODEL,
+      model: selectedModel,
       prompt,
-      useGrounding: true,
-      timeout: 30000,
+      useGrounding,
+      timeout,
     });
 
     const rawText = response.text;
@@ -86,7 +106,7 @@ async function performGeminiSearch(apiKey, query, type, language) {
 
   } catch (error) {
     const keyHint = apiKey ? `...${apiKey.slice(-4)}` : 'none';
-    logger.error(`Error during AI search (key: ${keyHint}):`, error.message);
+    logger.error(`Error during AI search (model: ${selectedModel}, grounding: ${useGrounding}, key: ${keyHint}):`, error.message);
     if (error.statusCode) {
       logger.error(`HTTP status: ${error.statusCode}`);
     }
@@ -100,9 +120,10 @@ async function performGeminiSearch(apiKey, query, type, language) {
  * @param {string} query - The user's search query.
  * @param {'movie' | 'series'} type - The media type.
  * @param {number} numResults - The number of results to request (default 10).
+ * @param {'gemini'|'context'|false} searchMode - 'gemini' = call googleSearch tool, 'context' = web results injected into context (OpenRouter :online), false = no web search
  * @returns {string} The formatted prompt.
  */
-function buildPrompt(query, type, numResults = 10) {
+function buildPrompt(query, type, numResults = 10, searchMode = false) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.toLocaleString('en-US', { month: 'long' });
@@ -148,7 +169,11 @@ TODAY: ${currentDate}
 <query>${query}</query>
 
 === SEARCH REQUIREMENT ===
-MANDATORY: You MUST call googleSearch before responding. Convert the user query into targeted search queries. Do not guess or assume data.
+${searchMode === 'gemini'
+? 'MANDATORY: You MUST call googleSearch before responding. Convert the user query into targeted search queries. Do not guess or assume data.'
+: searchMode === 'context'
+? 'Web search results have been provided in your context. Use them to provide accurate, up-to-date results. Do not fabricate titles that do not exist. Do NOT attempt to call any tools or functions.'
+: 'Use your training knowledge to provide accurate results. Do not fabricate titles that do not exist.'}
 
 === DATA RULES ===
 1. "type" field: MUST be exactly "movie" or "series" 
@@ -170,7 +195,7 @@ JSON:`;
 function parseAIResponse(rawText, type) {
   // Handle undefined or null responses
   if (!rawText || typeof rawText !== 'string') {
-    logger.warn("Gemini returned no text response (undefined or null)");
+    logger.warn("AI returned no text response (undefined or null)");
     return [];
   }
   
@@ -266,5 +291,10 @@ function validateAndFilterEntries(parsed) {
 }
 
 module.exports = {
-  performGeminiSearch
+  performGeminiSearch,
+  buildPrompt,
+  parseAIResponse,
+  GEMINI_MODELS,
+  supportsGrounding,
+  DEFAULT_GEMINI_MODEL,
 };

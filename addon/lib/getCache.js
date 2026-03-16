@@ -1082,8 +1082,11 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
       ? (config.apiKeys?.topPoster || '') 
       : (config.apiKeys?.rpdb || '')) : '',
     usePosterProxy: !!config.usePosterProxy,
+    aiProvider: config.search?.ai_provider || 'gemini',
+    aiModel: config.search?.ai_model || '',
+    aiWebSearch: config.search?.ai_web_search || false,
   };
-  
+
   const searchConfigString = JSON.stringify(searchConfig);
   const configHash = hashConfig(searchConfigString);
   const key = `search:${configHash}:${searchKey}`;

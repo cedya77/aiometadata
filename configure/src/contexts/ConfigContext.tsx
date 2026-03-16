@@ -130,14 +130,15 @@ const initialConfig: AppConfig = {
     scrapeImdb: false,
     forceLatinCastNames: false,
   },
-  apiKeys: { 
-    gemini: "", 
+  apiKeys: {
+    gemini: "",
     tmdb: "",
     tvdb: "",
-    fanart: "", 
-    rpdb: "", 
+    fanart: "",
+    rpdb: "",
     topPoster: "",
-    mdblist: "" 
+    mdblist: "",
+    openrouter: "",
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   usePosterProxy: true,
@@ -166,6 +167,8 @@ const initialConfig: AppConfig = {
   search: {
     enabled: true,
     ai_enabled: false,
+    ai_provider: 'gemini',
+    ai_model: 'gemini-2.5-flash-lite',
     providers: {
       movie: 'tmdb.search',
       series: 'tvdb.search',
