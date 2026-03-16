@@ -201,4 +201,6 @@ export interface AppConfig {
   showDisabledCatalogs?: boolean;
   catalogModeOnly?: boolean;
   customPosterUrlPattern?: string;
+  customBackgroundUrlPattern?: string;
+  customLogoUrlPattern?: string;
 }

@@ -63,20 +63,24 @@ function isPosterRatingEnabled(config) {
 }
 
 /**
- * Resolve a custom poster URL pattern by replacing placeholders with actual IDs.
+ * Resolve a custom art URL pattern by replacing placeholders with actual IDs.
  * Returns the resolved URL, or null if the pattern is empty or a referenced placeholder has no value.
- * @param {string} pattern - URL pattern with placeholders like {tmdb_id}, {imdb_id}, {tvdb_id}, {type}
- * @param {object} ids - Object with tmdbId, imdbId, tvdbId properties
+ * @param {string} pattern - URL pattern with placeholders like {tmdb_id}, {imdb_id}, {tvdb_id}, {mal_id}, {kitsu_id}, {anilist_id}, {anidb_id}, {type}
+ * @param {object} ids - Object with tmdbId, imdbId, tvdbId, malId, kitsuId, anilistId, anidbId properties
  * @param {string} type - Content type (movie, series, anime)
  * @returns {string|null} Resolved URL or null
  */
-function resolveCustomPosterUrl(pattern, ids, type) {
+function resolveCustomArtUrl(pattern, ids, type) {
   if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return null;
 
   const placeholders = {
     '{tmdb_id}': ids?.tmdbId || '',
     '{imdb_id}': ids?.imdbId || '',
     '{tvdb_id}': ids?.tvdbId || '',
+    '{mal_id}': ids?.malId || '',
+    '{kitsu_id}': ids?.kitsuId || '',
+    '{anilist_id}': ids?.anilistId || '',
+    '{anidb_id}': ids?.anidbId || '',
     '{type}': type || '',
   };
 
@@ -3309,7 +3313,7 @@ module.exports = {
   getAnimePosterUrl,
   getKitsuLocalizedTitle,
   isPosterRatingEnabled,
-  resolveCustomPosterUrl
+  resolveCustomArtUrl
 };
 
 /**

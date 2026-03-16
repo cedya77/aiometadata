@@ -1288,7 +1288,10 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
     }*/
     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
- 
+    if (config.customPosterUrlPattern) metaConfig.customPosterUrlPattern = config.customPosterUrlPattern;
+    if (config.customBackgroundUrlPattern) metaConfig.customBackgroundUrlPattern = config.customBackgroundUrlPattern;
+    if (config.customLogoUrlPattern) metaConfig.customLogoUrlPattern = config.customLogoUrlPattern;
+
 const metaConfigString = stableStringify(metaConfig);
 const configHash = hashConfig(metaConfigString);
  

@@ -191,6 +191,8 @@ const initialConfig: AppConfig = {
   },
   streaming: [], // Added to satisfy AppConfig interface
   customPosterUrlPattern: '',
+  customBackgroundUrlPattern: '',
+  customLogoUrlPattern: '',
 };
 
 const defaultCatalogs = allCatalogDefinitions.map(c => ({

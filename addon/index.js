@@ -109,8 +109,8 @@ function shuffleMetas(metas = []) {
 }
 
 /**
- * Extract IDs from a catalog meta object for custom poster URL resolution.
- * Handles id formats: "tmdb:123", "tvdb:456", "tt1234567"
+ * Extract IDs from a catalog meta object for custom art URL resolution.
+ * Handles id formats: "tmdb:123", "tvdb:456", "tt1234567", "kitsu:123", "mal:123", "anilist:123", "anidb:123"
  */
 function extractIdsFromMeta(meta) {
   const ids = {};
@@ -119,6 +119,10 @@ function extractIdsFromMeta(meta) {
   const id = meta.id || '';
   if (id.startsWith('tmdb:')) ids.tmdbId = id.slice(5);
   else if (id.startsWith('tvdb:')) ids.tvdbId = id.slice(5);
+  else if (id.startsWith('kitsu:')) ids.kitsuId = id.slice(6);
+  else if (id.startsWith('mal:')) ids.malId = id.slice(4);
+  else if (id.startsWith('anilist:')) ids.anilistId = id.slice(8);
+  else if (id.startsWith('anidb:')) ids.anidbId = id.slice(6);
   else if (id.startsWith('tt')) ids.imdbId = id;
 
   // Some metas carry imdb_id as a separate property
@@ -3845,14 +3849,27 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       };
     }
 
-    // Custom poster URL pattern override for catalog items
-    if (config.customPosterUrlPattern && responseData?.metas && Array.isArray(responseData.metas)) {
-      const { resolveCustomPosterUrl } = require('./utils/parseProps');
+    // Custom art URL pattern overrides for catalog items
+    // Skip poster override for up next catalogs unless useShowPosterForUpNext is enabled
+    // (when disabled, up next uses episode thumbnails as posters which shouldn't be overridden)
+    const isUpNextCatalog = cleanId.includes('up_next') || cleanId.includes('upnext');
+    const upNextUsesShowPoster = isUpNextCatalog && catalogConfig?.metadata?.useShowPosterForUpNext === true;
+    if ((config.customPosterUrlPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
+      const { resolveCustomArtUrl } = require('./utils/parseProps');
       for (const meta of responseData.metas) {
         const ids = extractIdsFromMeta(meta);
-        const resolved = resolveCustomPosterUrl(config.customPosterUrlPattern, ids, meta.type || actualType);
-        if (resolved) {
-          meta.poster = resolved;
+        const type = meta.type || actualType;
+        if (config.customPosterUrlPattern && (!isUpNextCatalog || upNextUsesShowPoster)) {
+          const resolved = resolveCustomArtUrl(config.customPosterUrlPattern, ids, type);
+          if (resolved) meta.poster = resolved;
+        }
+        if (config.customBackgroundUrlPattern) {
+          const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, type);
+          if (resolved) meta.background = resolved;
+        }
+        if (config.customLogoUrlPattern) {
+          const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, type);
+          if (resolved) meta.logo = resolved;
         }
       }
     }

@@ -276,11 +276,13 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
       return { meta: null };
     }
 
-    // Custom poster URL pattern override
-    const customPosterUrl = Utils.resolveCustomPosterUrl(config.customPosterUrlPattern, allIds, meta.type || type);
-    if (customPosterUrl) {
-      meta.poster = customPosterUrl;
-    }
+    // Custom art URL pattern overrides
+    const customPosterUrl = Utils.resolveCustomArtUrl(config.customPosterUrlPattern, allIds, meta.type || type);
+    if (customPosterUrl) meta.poster = customPosterUrl;
+    const customBackgroundUrl = Utils.resolveCustomArtUrl(config.customBackgroundUrlPattern, allIds, meta.type || type);
+    if (customBackgroundUrl) meta.background = customBackgroundUrl;
+    const customLogoUrl = Utils.resolveCustomArtUrl(config.customLogoUrlPattern, allIds, meta.type || type);
+    if (customLogoUrl) meta.logo = customLogoUrl;
 
     if(isTraktUpNextId) {
       // Legacy support for external Trakt Up Next addon (tun_ prefix)
