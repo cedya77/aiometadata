@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.34.0](https://github.com/cedya77/aiometadata/compare/v1.33.3...v1.34.0) (2026-03-16)
+
+
+### Features
+
+* add search pagination support ([696ecd7](https://github.com/cedya77/aiometadata/commit/696ecd779e5c48d78931b03ce04c51bee8ec15d4))
+* AI search model selection and OpenRouter support ([ec3829d](https://github.com/cedya77/aiometadata/commit/ec3829d7d7cbc33875f15bf04fd7b719ea5cf289))
+* anime IMDB to TMDB resolution for watch tracking ([e7cffd7](https://github.com/cedya77/aiometadata/commit/e7cffd7eb1622cf6bd9b2ed8bd1feb11d38f82b7))
+* custom addon name and fix RPDB toggle shared state ([bcde593](https://github.com/cedya77/aiometadata/commit/bcde593b7bf58a3a2e643f6d671950bc9349e3f1))
+* custom poster URL pattern support ([6bab526](https://github.com/cedya77/aiometadata/commit/6bab526230ff4229796195a86edf81d74951823a))
+* extend custom art URL patterns to background, logo, and anime IDs ([3f6ae5e](https://github.com/cedya77/aiometadata/commit/3f6ae5e29a715cdcfc8d5b5b662e01c457654a1b))
+* poster reverse proxy prefix and cache warming ([0b7050a](https://github.com/cedya77/aiometadata/commit/0b7050a4d34719e42c00fac1f3827cfee2f81634))
+
+
+### Bug Fixes
+
+* RPDB toggle for movie/series no longer shares state ([bcde593](https://github.com/cedya77/aiometadata/commit/bcde593b7bf58a3a2e643f6d671950bc9349e3f1))
+* stop filtering exact search matches as obscure content ([d73d421](https://github.com/cedya77/aiometadata/commit/d73d4217f259f35935071185b6b0ff03f8bd3a11))
+* trakt token refresh bypass in checkin, proxy, and rating flows ([e680ca9](https://github.com/cedya77/aiometadata/commit/e680ca99045745aaa71d94abe0b102b5033bc002))
+* trakt up next caching and UI improvements ([e7cffd7](https://github.com/cedya77/aiometadata/commit/e7cffd7eb1622cf6bd9b2ed8bd1feb11d38f82b7))
+
 ## [1.33.3](https://github.com/cedya77/aiometadata/compare/v1.33.2...v1.33.3) (2026-03-10)
 
 
