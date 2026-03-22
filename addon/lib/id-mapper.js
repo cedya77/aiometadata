@@ -70,6 +70,8 @@ let animeTypeFromAnilistIdMap = new Map();
 let animeTypeFromKitsuIdMap = new Map();
 let animeTypeFromAnidbIdMap = new Map();
 const seriesLikeTypes = new Set(['tv', 'ova', 'ona', 'special']);
+// Cache for resolved ONA types: mal_id -> 'movie' | 'series'
+const onaTypeCache = new Map();
 
 async function getTmdbSeasonInfo(tmdbId, config = {}) {
   if (tmdbSeasonCache.has(tmdbId)) {
@@ -1107,6 +1109,47 @@ function getMappingByTmdbId(tmdbId, type) {
 function getAnimeTypeFromMapping(mapping) {
   if (!mapping?.type) return null;
   return seriesLikeTypes.has(mapping.type.toLowerCase()) ? 'series' : 'movie';
+}
+
+/**
+ * Resolve whether an ONA is a movie or series using Trakt + TMDB fallback.
+ * Returns 'movie' or 'series'. Results are cached in-memory.
+ * @param {number|string} malId - MAL ID of the ONA
+ * @param {Object} config - User config (for TMDB API key)
+ * @returns {Promise<'movie'|'series'>}
+ */
+async function resolveOnaType(malId, config = {}) {
+  const numericMalId = parseInt(malId, 10);
+  if (onaTypeCache.has(numericMalId)) {
+    return onaTypeCache.get(numericMalId);
+  }
+
+  // Step 1: Check Trakt anime movies dataset (zero-cost, in-memory)
+  if (malIdToTraktMovieMap.has(numericMalId)) {
+    logger.debug(`[ID Mapper] ONA mal:${numericMalId} is a movie (Trakt match)`);
+    onaTypeCache.set(numericMalId, 'movie');
+    return 'movie';
+  }
+
+  // Step 2: Check TMDB movie endpoint using the Fribb mapping's themoviedb_id
+  const mapping = animeIdMap.get(numericMalId);
+  if (mapping?.themoviedb_id) {
+    try {
+      const { movieInfo } = require('./getTmdb.js');
+      const result = await movieInfo({ id: mapping.themoviedb_id }, config);
+      if (result && result.id) {
+        logger.debug(`[ID Mapper] ONA mal:${numericMalId} is a movie (TMDB movie/${mapping.themoviedb_id} exists)`);
+        onaTypeCache.set(numericMalId, 'movie');
+        return 'movie';
+      }
+    } catch {
+      // TMDB movie endpoint failed (404 or error) — not a movie
+    }
+  }
+
+  // Default: treat as series
+  onaTypeCache.set(numericMalId, 'series');
+  return 'series';
 }
 
 function getAnimeTypeFromAnilistId(anilistId) {
@@ -2154,6 +2197,7 @@ module.exports = {
   getTraktAnimeMovieByMalId,
   getTraktAnimeMovieByTmdbId,
   getTraktAnimeMovieByImdbId,
+  resolveOnaType,
   forceUpdateIdMapper,
   forceUpdateKitsuImdbMapping,
   getIdMapperStats,

@@ -168,7 +168,8 @@ async function fetchAndSelectArt(mediaType, allIds, config) {
         if (!tmdbImages) return null;
         const imageTypeKey = type === 'background' ? 'backdrops' : type + 's'; // posters, logos
         const selectedImage = tmdb.selectTmdbImageByLang(tmdbImages[imageTypeKey], config);
-        return selectedImage ? `https://image.tmdb.org/t/p/original${selectedImage.file_path}` : null;
+        if (!selectedImage) return null;
+        return `https://image.tmdb.org/t/p/original${selectedImage.file_path}`;
     }
     return null;
   };

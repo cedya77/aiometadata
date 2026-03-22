@@ -136,8 +136,8 @@ export interface AppConfig {
     anilistTokenId?: string;
     customDescriptionBlurb?: string;
   };
-  /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
-  posterRatingProvider?: 'rpdb' | 'top';
+  /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
+  posterRatingProvider?: 'rpdb' | 'top' | 'custom';
   usePosterProxy: boolean;
   mdblistWatchTracking: boolean;
   anilistWatchTracking: boolean;
@@ -156,6 +156,7 @@ export interface AppConfig {
   hideWatchedMdblist?: boolean;
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
+  exclusionGenres?: string;
   catalogSetupComplete?: boolean;
   searchEnabled: boolean;
   sessionId: string;

@@ -276,14 +276,6 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
       return { meta: null };
     }
 
-    // Custom art URL pattern overrides
-    const customPosterUrl = Utils.resolveCustomArtUrl(config.customPosterUrlPattern, allIds, meta.type || type);
-    if (customPosterUrl) meta.poster = customPosterUrl;
-    const customBackgroundUrl = Utils.resolveCustomArtUrl(config.customBackgroundUrlPattern, allIds, meta.type || type);
-    if (customBackgroundUrl) meta.background = customBackgroundUrl;
-    const customLogoUrl = Utils.resolveCustomArtUrl(config.customLogoUrlPattern, allIds, meta.type || type);
-    if (customLogoUrl) meta.logo = customLogoUrl;
-
     if(isTraktUpNextId) {
       // Legacy support for external Trakt Up Next addon (tun_ prefix)
       if(meta.id && meta.id.startsWith('tt')) {
@@ -1213,9 +1205,9 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
-  
+
   let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
-  
+
   if (isAnime) {
     const artwork = await getAnimeArtwork(allIds, config, tmdbPosterUrl, tmdbBackgroundUrl, 'movie');
     poster = artwork.poster;
@@ -1359,7 +1351,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
-  
+
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
   if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {

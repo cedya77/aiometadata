@@ -252,11 +252,20 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           const kitsuId = item.id;
           const mapping = await idMapper.getMappingByKitsuId(kitsuId);
           const malId = mapping?.mal_id;
-          let tmdbId = type === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
-          let imdbId = type === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
-          let tvdbId = type === 'movie' ? (wikiMappings.getByImdbId(imdbId, type))?.tvdbId || null : mapping?.tvdb_id;
 
-          const imdbRating = imdbId ? await getImdbRating(imdbId, type) : 'N/A';
+          // Resolve actual type — ONAs can be movies or series
+          let itemType = type;
+          if (item.subtype?.toLowerCase() === 'ona' && malId) {
+            const resolvedType = await idMapper.resolveOnaType(malId, config);
+            itemType = resolvedType;
+          }
+          const isMovie = itemType === 'movie';
+
+          let tmdbId = isMovie ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
+          let imdbId = isMovie ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
+          let tvdbId = isMovie ? (wikiMappings.getByImdbId(imdbId, itemType))?.tvdbId || null : mapping?.tvdb_id;
+
+          const imdbRating = imdbId ? await getImdbRating(imdbId, itemType) : 'N/A';
           let id = imdbId || `kitsu:${kitsuId}`;
           const preferredProvider = config.providers?.anime || 'mal';
           if(preferredProvider === 'kitsu') {
@@ -264,17 +273,18 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           } else if(preferredProvider === 'mal') {
             id = `mal:${mapping?.mal_id}`;
           } 
-          if((config.mal?.useImdbIdForCatalogAndSearch && type === 'series')){
+          if((config.mal?.useImdbIdForCatalogAndSearch && !isMovie)){
             return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
               const { getMeta } = await import("../lib/getMeta");
-              return await getMeta(type, language, `kitsu:${kitsuId}`, config, config.userUUID, false);
-            }, undefined, {enableErrorCaching: true, maxRetries: 2}, type, false))?.meta || null;
+              return await getMeta(itemType, language, `kitsu:${kitsuId}`, config, config.userUUID, false);
+            }, undefined, {enableErrorCaching: true, maxRetries: 2}, itemType, false))?.meta || null;
           }
           
           
-          const background = mapping?.mal_id ? await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.coverImage?.original}, config) : item.coverImage?.original;
-          const poster = mapping?.mal_id ? await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series', malPosterUrl: item.posterImage?.original}, config) : item.posterImage?.original;
-          const logo = type === 'movie' ? tmdbId ? await moviedb.getTmdbMovieLogo(tmdbId, config) : null : await Utils.getAnimeLogo({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType: type === 'movie' ? 'movie' : 'series'}, config);
+          const mediaType = isMovie ? 'movie' : 'series';
+          const background = mapping?.mal_id ? await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType, malPosterUrl: item.coverImage?.original}, config) : item.coverImage?.original;
+          const poster = mapping?.mal_id ? await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType, malPosterUrl: item.posterImage?.original}, config) : item.posterImage?.original;
+          const logo = isMovie ? tmdbId ? await moviedb.getTmdbMovieLogo(tmdbId, config) : null : await Utils.getAnimeLogo({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType}, config);
           
           // Apply RPDB for series (non-movies)
           let finalPoster = poster || `${host}/missing_poster.png`;
@@ -288,17 +298,17 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
               proxyId = `tmdb:${tmdbId}`;
             }
             if (proxyId) {
-              finalPoster = Utils.buildPosterProxyUrl(host, 'series', proxyId, finalPoster, language, config);
+              finalPoster = Utils.buildPosterProxyUrl(host, mediaType, proxyId, finalPoster, language, config);
             }
           }
           
           return {
             id: `kitsu:${kitsuId}`,
-            type: type === 'movie' ? 'movie' : 'series',
-            name: Utils.getKitsuLocalizedTitle(item.titles, language) || item.canonicalTitle, 
+            type: mediaType,
+            name: Utils.getKitsuLocalizedTitle(item.titles, language) || item.canonicalTitle,
             poster: finalPoster,
             logo: logo || null,
-            background: type === 'movie' ? item.coverImage?.original : background || null,
+            background: isMovie ? item.coverImage?.original : background || null,
             description: Utils.addMetaProviderAttribution(item.synopsis || item.description || '', 'Kitsu', config),
             genres: [], // Kitsu genres would need to be fetched separately
             year: item.startDate ? item.startDate.substring(0, 4) : null,
@@ -818,7 +828,7 @@ async function performTmdbPeopleSearch(type, query, language, config, page = 1) 
 
     // Sort and paginate
     const sorted = Utils.sortSearchResults(Array.from(seen.values()), query);
-    const pageSize = 25;
+    const pageSize = 20;
     const startIndex = (page - 1) * pageSize;
     let pageResults = sorted.slice(startIndex, startIndex + pageSize);
 
@@ -1026,9 +1036,9 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     
     const fallbackImage = `${host}/missing_poster.png`;
     const logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo.file_path}` : null;
-    const backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg.file_path}` 
+    const backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg.file_path}`
       : details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null;
-    const posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster.file_path}` 
+    const posterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedPoster.file_path}`
       : details.poster_path ? `https://image.tmdb.org/t/p/original${details.poster_path}` : fallbackImage;
     
     const validPosterUrl = posterUrl && posterUrl !== 'null' && !posterUrl.includes('undefined') 

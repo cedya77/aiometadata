@@ -1,5 +1,4 @@
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -440,45 +439,6 @@ export function ArtProviderSettings() {
         </div>
       </div>
 
-      {/* Custom Art URL Patterns */}
-      <div>
-        <h3 className="text-xl font-semibold mb-4">Custom Art URLs</h3>
-        <Card>
-          <CardHeader>
-            <CardTitle>URL Patterns</CardTitle>
-            <CardDescription>
-              Override art sources with custom URL patterns. Supported placeholders: <code>{'{tmdb_id}'}</code>, <code>{'{imdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
-              When set, these override their respective providers. If a placeholder references an ID that is unavailable for an item, the normal art is used instead.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <label className="text-sm font-medium mb-1 block">Poster</label>
-              <Input
-                placeholder="https://example.com/poster/{tmdb_id}.jpg"
-                value={config.customPosterUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Background</label>
-              <Input
-                placeholder="https://example.com/background/{tmdb_id}.jpg"
-                value={config.customBackgroundUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customBackgroundUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Logo</label>
-              <Input
-                placeholder="https://example.com/logo/{tmdb_id}.png"
-                value={config.customLogoUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customLogoUrlPattern: e.target.value }))}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

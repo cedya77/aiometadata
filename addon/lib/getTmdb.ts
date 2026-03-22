@@ -753,7 +753,7 @@ export async function getTmdbMovieLogo(tmdbId: string, config: UserConfig) {
         return `https://image.tmdb.org/t/p/original${logo.file_path}`;
       }
     }
-    
+
     return null;
   } catch (error: any) {
     consola.warn(`[TMDB] Failed to get movie logo for TMDB ID ${tmdbId}:`, error.message);
@@ -763,18 +763,18 @@ export async function getTmdbMovieLogo(tmdbId: string, config: UserConfig) {
 
 export async function getTmdbSeriesLogo(tmdbId: string, config: UserConfig) {
   if (!tmdbId) return null;
-  
+
   try {
     const apiKey = getApiKey(config);
     const images = await makeTmdbRequest(`/tv/${tmdbId}/images`, apiKey, {}, 'GET', null, config);
-    
+
     if (images && images.logos && images.logos.length > 0) {
       const logo = selectTmdbImageByLang(images.logos, config);
       if (logo) {
         return `https://image.tmdb.org/t/p/original${logo.file_path}`;
       }
     }
-    
+
     return null;
   } catch (error: any) {
     consola.warn(`[TMDB] Failed to get series logo for TMDB ID ${tmdbId}:`, error.message);

@@ -3832,10 +3832,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
     }
 
-    if ((config.exclusionKeywords || config.regexExclusionFilter) && responseData?.metas && Array.isArray(responseData.metas)) {
+    if ((config.exclusionKeywords || config.regexExclusionFilter || config.exclusionGenres) && responseData?.metas && Array.isArray(responseData.metas)) {
       const { filterMetasByRegex } = require("./utils/regexFilter");
       const beforeCount = responseData.metas.length;
-      responseData.metas = filterMetasByRegex(responseData.metas, config.exclusionKeywords || '', config.regexExclusionFilter || '');
+      responseData.metas = filterMetasByRegex(responseData.metas, config.exclusionKeywords || '', config.regexExclusionFilter || '', config.exclusionGenres || '');
       const afterCount = responseData.metas.length;
       if (beforeCount !== afterCount) {
         consola.debug(`[Catalog Route] Content exclusion filter: filtered out ${beforeCount - afterCount} items`);
@@ -3849,12 +3849,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       };
     }
 
-    // Custom art URL pattern overrides for catalog items
+    // Custom art URL pattern overrides for catalog items (only when "Custom" poster rating provider is selected)
     // Skip poster override for up next catalogs unless useShowPosterForUpNext is enabled
     // (when disabled, up next uses episode thumbnails as posters which shouldn't be overridden)
-    const isUpNextCatalog = cleanId.includes('up_next') || cleanId.includes('upnext');
-    const upNextUsesShowPoster = isUpNextCatalog && catalogConfig?.metadata?.useShowPosterForUpNext === true;
-    if ((config.customPosterUrlPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
+    if (config.posterRatingProvider === 'custom' && (config.customPosterUrlPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
+      const isUpNextCatalog = cleanId.includes('up_next') || cleanId.includes('upnext');
+      const upNextUsesShowPoster = isUpNextCatalog && catalogConfig?.metadata?.useShowPosterForUpNext === true;
       const { resolveCustomArtUrl } = require('./utils/parseProps');
       for (const meta of responseData.metas) {
         const ids = extractIdsFromMeta(meta);
@@ -3938,7 +3938,27 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
-    } /*else if (result && result.meta) {
+    }
+
+    if (config.posterRatingProvider === 'custom' && result.meta) {
+      const { resolveCustomArtUrl } = require('./utils/parseProps');
+      const ids = extractIdsFromMeta(result.meta);
+      const metaType = result.meta.type || type;
+      if (config.customPosterUrlPattern) {
+        const resolved = resolveCustomArtUrl(config.customPosterUrlPattern, ids, metaType);
+        if (resolved) result.meta.poster = resolved;
+      }
+      if (config.customBackgroundUrlPattern) {
+        const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, metaType);
+        if (resolved) result.meta.background = resolved;
+      }
+      if (config.customLogoUrlPattern) {
+        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType);
+        if (resolved) result.meta.logo = resolved;
+      }
+    }
+
+    /*else if (result && result.meta) {
       // cache wrap the ratings
       if(result.meta.mal_id) {
         try {
@@ -4025,10 +4045,6 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       } catch (e) {
       }
     }
-    
-    // Note: Popular content warming is now handled globally by warmPopularContent()
-    // which runs every 6 hours in the background
-    
     
     // Use aggressive cache control for meta routes to ensure fresh data when config changes
     // Don't pass cacheOpts to let the respond function use the aggressive cache control

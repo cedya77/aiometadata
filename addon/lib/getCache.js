@@ -820,8 +820,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
-    exclusionKeywords: config.exclusionKeywords || null,
-    regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
@@ -1064,8 +1062,6 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
-    exclusionKeywords: config.exclusionKeywords || null,
-    regexExclusionFilter: config.regexExclusionFilter || null,
     // Add meta and art providers since they affect search results
     metaProviders: config.providers || {},
     artProviders: config.artProviders || {},
@@ -1291,10 +1287,6 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
     }*/
     metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-    if (config.customPosterUrlPattern) metaConfig.customPosterUrlPattern = config.customPosterUrlPattern;
-    if (config.customBackgroundUrlPattern) metaConfig.customBackgroundUrlPattern = config.customBackgroundUrlPattern;
-    if (config.customLogoUrlPattern) metaConfig.customLogoUrlPattern = config.customLogoUrlPattern;
-
 const metaConfigString = stableStringify(metaConfig);
 const configHash = hashConfig(metaConfigString);
  
@@ -1958,8 +1950,6 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
-    exclusionKeywords: config.exclusionKeywords || null,
-    regexExclusionFilter: config.regexExclusionFilter || null,
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,

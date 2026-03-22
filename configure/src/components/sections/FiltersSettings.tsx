@@ -42,6 +42,10 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, regexExclusionFilter: value }));
   };
 
+  const handleExclusionGenresChange = (value: string) => {
+    setConfig(prev => ({ ...prev, exclusionGenres: value }));
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -177,13 +181,27 @@ export function FiltersSettings() {
         <CardHeader>
           <CardTitle>Content Exclusion Filter</CardTitle>
           <CardDescription>
-            Exclude content by keywords or advanced patterns. Perfect for kid-safe filtering.
+            Hide content from catalogs and search results based on genres, title keywords, or description text.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Genre Exclusion */}
+          <div className="space-y-2">
+            <Label htmlFor="exclusion-genres">Exclude Genres</Label>
+            <Input
+              id="exclusion-genres"
+              placeholder="Horror, Documentary, Reality, War"
+              value={config.exclusionGenres || ''}
+              onChange={(e) => handleExclusionGenresChange(e.target.value)}
+            />
+            <p className="text-sm text-muted-foreground">
+              Comma-separated genre names. Any item tagged with a matching genre will be hidden.
+            </p>
+          </div>
+
           {/* Simple Keywords */}
           <div className="space-y-2">
-            <Label htmlFor="exclusion-keywords">Simple Keywords (Easy)</Label>
+            <Label htmlFor="exclusion-keywords">Exclude Keywords</Label>
             <Input
               id="exclusion-keywords"
               placeholder="naked, sex, porn, adult, horror, scary, violence"
@@ -191,7 +209,7 @@ export function FiltersSettings() {
               onChange={(e) => handleExclusionKeywordsChange(e.target.value)}
             />
             <p className="text-sm text-muted-foreground">
-              Comma-separated keywords. Example: "naked, sex, porn, adult"
+              Comma-separated words matched against the title and description of each item.
             </p>
           </div>
 
@@ -205,13 +223,12 @@ export function FiltersSettings() {
               onChange={(e) => handleRegexExclusionFilterChange(e.target.value)}
             />
             <p className="text-sm text-muted-foreground">
-              Advanced users only. Use | to separate patterns. Example: "naked|sex|porn"
+              Advanced users only. Matched against title and description. Use | to separate patterns.
             </p>
           </div>
 
           <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
-            <strong>Tip:</strong> Use simple keywords for easy filtering, or advanced regex for precise control. 
-            Both work together - content matching either will be excluded.
+            <strong>Tip:</strong> All filters work together — content matching any of them will be hidden from catalogs and search results.
           </div>
         </CardContent>
       </Card>

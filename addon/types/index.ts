@@ -29,8 +29,8 @@ export interface UserConfig {
   };
   /** Enable/disable AniList watch tracking (default: true when connected) */
   anilistWatchTracking?: boolean;
-  /** Poster rating provider: 'rpdb' for RatingPosterDB or 'top' for Top Poster API */
-  posterRatingProvider?: 'rpdb' | 'top';
+  /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
+  posterRatingProvider?: 'rpdb' | 'top' | 'custom';
   catalogs?: Catalog[];
   streaming?: StreamingConfig[];
   mal?: {
@@ -47,6 +47,7 @@ export interface UserConfig {
   hideWatchedMdblist?: boolean;
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
+  exclusionGenres?: string;
   tvdbSeasonType?: string;
   castCount?: number;
   blurThumbs?: boolean;

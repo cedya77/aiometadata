@@ -55,6 +55,9 @@ function isPosterRatingEnabled(config) {
     return false;
   }
   const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
+  if (provider === 'custom') {
+    return false; // Custom uses URL patterns, not rating poster APIs
+  }
   if (provider === 'top') {
     return !!(config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
   }
@@ -100,16 +103,20 @@ function resolveCustomArtUrl(pattern, ids, type) {
  */
 function getRatingPosterUrl(type, ids, language, config, fallbackUrl = null) {
   const provider = config.posterRatingProvider || 'rpdb';
-  
+
+  if (provider === 'custom') {
+    return null; // Custom uses URL patterns, not rating poster APIs
+  }
+
   if (provider === 'top' && config.apiKeys?.topPoster) {
     return getTopPosterPoster(type, ids, language, config.apiKeys.topPoster, fallbackUrl);
   }
-  
+
   // Default to RPDB
   if (config.apiKeys?.rpdb) {
     return getRpdbPoster(type, ids, language, config.apiKeys.rpdb);
   }
-  
+
   return null;
 }
 
@@ -118,11 +125,15 @@ function getRatingPosterUrl(type, ids, language, config, fallbackUrl = null) {
  */
 function getPosterRatingApiKey(config) {
   const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
-  
+
+  if (provider === 'custom') {
+    return null; // Custom uses URL patterns, not rating poster APIs
+  }
+
   if (provider === 'top' && config.apiKeys?.topPoster) {
     return config.apiKeys.topPoster;
   }
-  
+
   // Default to RPDB
   return config.apiKeys?.rpdb || null;
 }
@@ -1783,7 +1794,11 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
   if (!anime || !anime.mal_id) return null;
 
   const malId = anime.mal_id;
-  const stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
+  let stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
+  // ONAs can be movies or series — resolve via Trakt/TMDB
+  if (anime.type?.toLowerCase() === 'ona') {
+    stremioType = await idMapper.resolveOnaType(malId, config);
+  }
   const preferredProvider = config.providers?.anime || 'mal';
 
   const mapping = idMapper.getMappingByMalId(malId);
@@ -2141,8 +2156,11 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
     if (!anime || !anime.mal_id) return null;
 
     const malId = anime.mal_id;
-    const stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
-    
+    let stremioType = anime.type?.toLowerCase() === 'movie' ? 'movie' : 'series';
+    // ONAs can be movies or series — resolve via Trakt/TMDB
+    if (anime.type?.toLowerCase() === 'ona') {
+      stremioType = await idMapper.resolveOnaType(malId, config);
+    }
 
     const mapping = idMapper.getMappingByMalId(malId);
     let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
@@ -2382,7 +2400,7 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false) {
       const logo = logoImg?.file_path
         ? `https://image.tmdb.org/t/p/original${logoImg.file_path}`
         : null;
-      
+
       return { poster, background, logo };
     } catch (error) {
       logger.warn(`[getTmdbMovieArtBatch] Failed to fetch TMDB images for movie ${tmdbId}:`, error.message);
@@ -2724,7 +2742,7 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
       const logo = logoImg?.file_path
         ? `https://image.tmdb.org/t/p/original${logoImg.file_path}`
         : null;
-      
+
       return { poster, background, logo };
     } catch (error) {
       logger.warn(`[getTmdbSeriesArtBatch] Failed to fetch TMDB images for series ${tmdbId}:`, error.message);

@@ -559,9 +559,9 @@ export function IntegrationsSettings() {
               Choose which service to use for rating posters
             </p>
           </div>
-          <Select 
-            value={config.posterRatingProvider || 'rpdb'} 
-            onValueChange={(value) => setConfig(prev => ({ ...prev, posterRatingProvider: value as 'rpdb' | 'top' }))}
+          <Select
+            value={config.posterRatingProvider || 'rpdb'}
+            onValueChange={(value) => setConfig(prev => ({ ...prev, posterRatingProvider: value as 'rpdb' | 'top' | 'custom' }))}
           >
             <SelectTrigger id="posterRatingProvider" className="w-[200px]">
               <SelectValue placeholder="Select provider" />
@@ -569,6 +569,7 @@ export function IntegrationsSettings() {
             <SelectContent>
               <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
               <SelectItem value="top">TOP Posters API</SelectItem>
+              <SelectItem value="custom">Custom Art URLs</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -588,20 +589,54 @@ export function IntegrationsSettings() {
           />
         </div>
         
-        {config.posterRatingProvider !== 'top' ? (
-          <ApiKeyInput 
-            id="rpdb" 
-            label="RPDB API Key" 
-            linkHref="https://ratingposterdb.com/" 
-            validationStatus={validationStatus.rpdb || 'idle'} 
+        {config.posterRatingProvider === 'top' ? (
+          <ApiKeyInput
+            id="topPoster"
+            label="TOP Posters API Key"
+            linkHref="https://api.top-streaming.stream/user/dashboard"
+            validationStatus={validationStatus.topPoster || 'idle'}
             onKeyChange={handleKeyChange}
           />
+        ) : config.posterRatingProvider === 'custom' ? (
+          <div className="space-y-3 p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+            <div>
+              <Label className="text-lg font-medium">Custom Art URL Patterns</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                Override art with custom URL patterns. Placeholders: <code>{'{tmdb_id}'}</code>, <code>{'{imdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
+                If a placeholder references an unavailable ID, normal art is used instead.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Poster URL Pattern</label>
+              <Input
+                placeholder="https://example.com/poster/{imdb_id}.jpg"
+                value={config.customPosterUrlPattern || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Background URL Pattern</label>
+              <Input
+                placeholder="https://example.com/background/{tmdb_id}.jpg"
+                value={config.customBackgroundUrlPattern || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, customBackgroundUrlPattern: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Logo URL Pattern</label>
+              <Input
+                placeholder="https://example.com/logo/{tmdb_id}.png"
+                value={config.customLogoUrlPattern || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, customLogoUrlPattern: e.target.value }))}
+              />
+            </div>
+          </div>
         ) : (
-          <ApiKeyInput 
-            id="topPoster" 
-            label="TOP Posters API Key" 
-            linkHref="https://api.top-streaming.stream/user/dashboard" 
-            validationStatus={validationStatus.topPoster || 'idle'} 
+          <ApiKeyInput
+            id="rpdb"
+            label="RPDB API Key"
+            linkHref="https://ratingposterdb.com/"
+            validationStatus={validationStatus.rpdb || 'idle'}
             onKeyChange={handleKeyChange}
           />
         )}

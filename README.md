@@ -100,7 +100,7 @@ docker compose up -d
 
 ### 3. Poster Reverse Proxy Cache (Optional)
 
-Cache poster images locally using an nginx reverse proxy. Eliminates upstream latency on repeated requests and, combined with comprehensive cache warming, serves posters instantly from disk.
+Cache poster images locally using an nginx reverse proxy. Eliminates upstream latency on repeated requests and, combined with comprehensive cache warming, serves posters instantly from disk. Includes a `/stats` endpoint for monitoring cache size and image count.
 
 Add a `poster-cache` service alongside your aiometadata container:
 
@@ -111,7 +111,9 @@ Add a `poster-cache` service alongside your aiometadata container:
     restart: unless-stopped
     volumes:
       - ./poster-cache-nginx.conf:/etc/nginx/nginx.conf:ro
-      - poster_cache_data:/var/cache/nginx
+      - ./poster-cache-stats.sh:/stats.sh:ro
+      - ${DOCKER_DATA_DIR}/poster-cache:/var/cache/nginx
+    entrypoint: ["/bin/sh", "-c", "/stats.sh & exec nginx -g 'daemon off;'"]
     expose:
       - "8888"
     labels:
@@ -137,20 +139,28 @@ events {
 }
 
 http {
-    # Cache storage on disk — adjust max_size to suit available space (default 2g)
+    # Cache storage on disk — adjust max_size to suit available space
     proxy_cache_path /var/cache/nginx/posters
                      levels=1:2
                      keys_zone=poster_cache:10m
-                     max_size=2g
+                     max_size=10g
                      inactive=30d
                      use_temp_path=off;
 
     # Restore double-slash after scheme when a reverse proxy (e.g. Traefik)
     # collapses "https://" to "https:/".
+    # Input:  /https:/api.example.com/path  ->  https://api.example.com/path
+    # Input:  /https://api.example.com/path ->  https://api.example.com/path
     map $request_uri $upstream_url {
         ~^/(https?):/([^/].*)$  $1://$2;
         ~^/(https?://.*)$       $1;
         default                 "";
+    }
+
+    # Extract scheme + host from the upstream URL for resolving relative redirects
+    map $upstream_url $upstream_origin {
+        ~^(https?://[^/]+)  $1;
+        default             "";
     }
 
     log_format cache '$remote_addr - [$time_local] "$request" $status '
@@ -165,6 +175,12 @@ http {
             return 200 'ok';
         }
 
+        location = /stats {
+            access_log off;
+            default_type application/json;
+            alias /tmp/cache-stats.json;
+        }
+
         location / {
             resolver 127.0.0.11 valid=30s ipv6=off;
 
@@ -174,6 +190,13 @@ http {
 
             proxy_pass $upstream_url;
             proxy_ssl_server_name on;
+
+            # Rewrite relative upstream redirects into absolute URLs.
+            # Some upstreams (e.g. openposterdb) return relative 302 Location headers
+            # like "/c/abc/path" which the client would resolve against the proxy host.
+            # This rewrites them to point to the actual upstream origin.
+            #   e.g. Location: /c/abc/path → Location: https://openposterdb.com/c/abc/path
+            proxy_redirect / $upstream_origin/;
 
             proxy_cache poster_cache;
             proxy_cache_key $upstream_url;
@@ -190,10 +213,42 @@ http {
 }
 ```
 
+Save the following as `poster-cache-stats.sh` next to your `docker-compose.yml`:
+
+```sh
+#!/bin/sh
+# Periodically writes cache stats to a JSON file served by nginx
+CACHE_DIR="/var/cache/nginx/posters"
+STATS_FILE="/tmp/cache-stats.json"
+
+while true; do
+  if [ -d "$CACHE_DIR" ]; then
+    size_bytes=$(du -sb "$CACHE_DIR" 2>/dev/null | cut -f1)
+    size_human=$(du -sh "$CACHE_DIR" 2>/dev/null | cut -f1)
+    file_count=$(find "$CACHE_DIR" -type f 2>/dev/null | wc -l)
+  else
+    size_bytes=0
+    size_human="0"
+    file_count=0
+  fi
+  cat > "$STATS_FILE" <<EOF
+{"cached_images":${file_count},"disk_usage":"${size_human}","disk_usage_bytes":${size_bytes},"max_size":"10g","inactive":"30d"}
+EOF
+  sleep 30
+done
+```
+
+Make the stats script executable:
+
+```bash
+chmod +x poster-cache-stats.sh
+```
+
 Then set these environment variables on the aiometadata service:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
+| `DOCKER_DATA_DIR` | Base directory for persistent Docker data | `/opt/docker/data` |
 | `POSTER_PROXY_PREFIX_URL` | Public HTTPS URL for the proxy (used in responses so Stremio fetches through it) | `https://poster-cache.example.com` |
 | `POSTER_WARMUP_URL` | Internal Docker URL for server-side warming (optional, falls back to `POSTER_PROXY_PREFIX_URL`) | `http://poster-cache:8888` |
 | `POSTER_WARMUP_DELAY_MS` | Delay between poster HEAD requests during warming (default `50`) | `50` |

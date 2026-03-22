@@ -42,18 +42,28 @@ function parseInlineFlags(pattern) {
 }
 
 /**
- * Check if content should be excluded based on keywords or regex patterns
+ * Check if content should be excluded based on keywords, regex patterns, or genres
  * @param {Object} meta - The metadata object to check
  * @param {Array} keywordList - Pre-processed array of keywords (lowercase, trimmed)
  * @param {RegExp|null} compiledRegex - Pre-compiled regex pattern
+ * @param {Array} genreList - Pre-processed array of excluded genres (lowercase, trimmed)
  * @returns {boolean} - true if content should be excluded, false otherwise
  */
-function shouldExcludeContent(meta, keywordList, compiledRegex) {
+function shouldExcludeContent(meta, keywordList, compiledRegex, genreList) {
   if (!meta) {
     return false;
   }
 
-  // Check keyword filtering first (simple, user-friendly)
+  // Check genre exclusion
+  if (genreList && genreList.length > 0 && meta.genres && Array.isArray(meta.genres)) {
+    for (const genre of meta.genres) {
+      if (genreList.includes(genre.toLowerCase())) {
+        return true;
+      }
+    }
+  }
+
+  // Check keyword filtering (simple, user-friendly)
   if (keywordList && keywordList.length > 0) {
     const textToCheck = [
       meta.name,
@@ -75,17 +85,17 @@ function shouldExcludeContent(meta, keywordList, compiledRegex) {
     if (meta.name && compiledRegex.test(meta.name)) {
       return true;
     }
-    
+
     // Check description
     if (meta.description && compiledRegex.test(meta.description)) {
       return true;
     }
-    
+
     // Check original title if different from name
     if (meta.originalTitle && meta.originalTitle !== meta.name && compiledRegex.test(meta.originalTitle)) {
       return true;
     }
-    
+
     // Check alternative titles
     if (meta.alternativeTitles && Array.isArray(meta.alternativeTitles)) {
       for (const altTitle of meta.alternativeTitles) {
@@ -95,30 +105,36 @@ function shouldExcludeContent(meta, keywordList, compiledRegex) {
       }
     }
   }
-  
+
   return false;
 }
 
 /**
- * Filter an array of metadata objects based on keywords or regex exclusion patterns
+ * Filter an array of metadata objects based on keywords, regex exclusion patterns, or genres
  * @param {Array} metas - Array of metadata objects
  * @param {string} keywords - Comma-separated keywords to exclude
  * @param {string} regexPattern - Optional regex pattern for advanced users
+ * @param {string} genres - Optional comma-separated genres to exclude
  * @returns {Array} - Filtered array with excluded content removed
  */
-function filterMetasByRegex(metas, keywords, regexPattern) {
+function filterMetasByRegex(metas, keywords, regexPattern, genres) {
   if (!Array.isArray(metas)) {
     return metas;
   }
 
   // Skip filtering if no patterns provided
-  if ((!keywords || !keywords.trim()) && (!regexPattern || !regexPattern.trim())) {
+  if ((!keywords || !keywords.trim()) && (!regexPattern || !regexPattern.trim()) && (!genres || !genres.trim())) {
     return metas;
   }
 
   // Pre-process keywords once (instead of in every iteration)
-  const keywordList = keywords && keywords.trim() 
+  const keywordList = keywords && keywords.trim()
     ? keywords.split(',').map(k => k.trim().toLowerCase()).filter(k => k)
+    : [];
+
+  // Pre-process excluded genres once
+  const genreList = genres && genres.trim()
+    ? genres.split(',').map(g => g.trim().toLowerCase()).filter(g => g)
     : [];
 
   // Pre-compile regex once (instead of in every iteration)
@@ -134,16 +150,17 @@ function filterMetasByRegex(metas, keywords, regexPattern) {
   }
 
   const beforeCount = metas.length;
-  const filteredMetas = metas.filter(meta => !shouldExcludeContent(meta, keywordList, compiledRegex));
+  const filteredMetas = metas.filter(meta => !shouldExcludeContent(meta, keywordList, compiledRegex, genreList));
   const afterCount = filteredMetas.length;
-  
+
   if (beforeCount !== afterCount) {
     const patterns = [];
     if (keywordList.length > 0) patterns.push(`keywords: "${keywords}"`);
     if (compiledRegex) patterns.push(`regex: "${regexPattern}"`);
+    if (genreList.length > 0) patterns.push(`genres: "${genres}"`);
     console.log(`[Content Filter] Excluded ${beforeCount - afterCount} items matching ${patterns.join(' and ')}`);
   }
-  
+
   return filteredMetas;
 }
 
