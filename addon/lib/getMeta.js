@@ -1023,41 +1023,6 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     }
   }
 
-  // Process episode thumbnails with Top Poster API if enabled
-  if (imdbData.videos && Array.isArray(imdbData.videos) && config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
-    imdbData.videos = imdbData.videos.map(video => {
-      // Extract season and episode from video ID (format: "imdbId:season:episode")
-      const idParts = video.id?.split(':');
-      if (idParts && idParts.length >= 3) {
-        const season = parseInt(idParts[1], 10);
-        const episode = parseInt(idParts[2], 10);
-        
-        if (!isNaN(season) && !isNaN(episode)) {
-          // Pass blur option to Top Poster API when blurThumbs is enabled
-          const topPosterThumbnail = Utils.getTopPosterThumbnail(
-            config,
-            { tmdbId, imdbId },
-            season,
-            episode,
-            config.apiKeys.topPoster,
-            'w500', // Use w500 resolution
-            video.thumbnail || null,
-            { blur: config.blurThumbs || false }
-          );
-          
-          if (topPosterThumbnail) {
-            // Top Poster API handles blur, no need for local blur proxy
-            return {
-              ...video,
-              thumbnail: topPosterThumbnail
-            };
-          }
-        }
-      }
-      return video;
-    });
-  }
-
   return imdbData;
 }
 
@@ -1658,50 +1623,26 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
         }
 
-        // Use Top Poster API for episode thumbnails if enabled (Premium feature)
         let thumbnailUrl = null;
-        let usingTopPoster = false;
-        if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
-          // Pass blur option to Top Poster API when blurThumbs is enabled
-          const topPosterThumbnail = Utils.getTopPosterThumbnail(
-            config,
-            { tmdbId, imdbId },
-            ep.season_number,
-            ep.episode_number,
-            config.apiKeys.topPoster,
-            'w500', // Use w500 resolution to match TMDB default
-            ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : null,
-            { blur: config.blurThumbs || false }
-          );
-          if (topPosterThumbnail) {
-            thumbnailUrl = topPosterThumbnail;
-            usingTopPoster = true;
-          }
-        }
-        
-        // Fallback to TMDB thumbnail if Top Poster not available
-        if (!thumbnailUrl) {
+        {
           const isUnaired = !ep.air_date || createDateInTimezone(ep.air_date, config.timezone || 'UTC') > new Date();
           if (ep.still_path) {
             thumbnailUrl = `https://image.tmdb.org/t/p/w500${ep.still_path}`;
           } else if (isUnaired) {
-            // For unaired episodes: try season poster, then background, then null
             const season = seasonDetails.find(s => s.season_number === ep.season_number) || seasons?.find(s => s.season_number === ep.season_number);
             if (background) {
               thumbnailUrl = background;
-            }
-            else if (season?.poster_path) {
+            } else if (season?.poster_path) {
               thumbnailUrl = `https://image.tmdb.org/t/p/w500${season.poster_path}`;
             } else {
               thumbnailUrl = null;
             }
-          }  else {
-    thumbnailUrl = background || `${host}/missing_thumbnail.png`;
-}
+          } else {
+            thumbnailUrl = background || `${host}/missing_thumbnail.png`;
+          }
         }
-        
-        // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
-        const finalThumbnail = thumbnailUrl && config.blurThumbs && !usingTopPoster && thumbnailUrl !== `${host}/missing_thumbnail.png`
+
+        const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
         
@@ -2226,30 +2167,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
     videos = await Promise.all(
       episodeList.map(async (episode) => {
-          // Use Top Poster API for episode thumbnails if enabled (Premium feature)
           let thumbnailUrl = null;
-          let usingTopPoster = false;
-          if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
-            // Pass blur option to Top Poster API when blurThumbs is enabled
-            const topPosterThumbnail = Utils.getTopPosterThumbnail(
-              config,
-              { tmdbId, imdbId },
-              episode.seasonNumber,
-              episode.number,
-              config.apiKeys.topPoster,
-              'w500', // Use w500 resolution
-              episode.image ? (episode.image.startsWith('http') ? episode.image : `${TVDB_IMAGE_BASE}${episode.image}`) : null,
-              { blur: config.blurThumbs || false }
-            );
-            if (topPosterThumbnail) {
-              thumbnailUrl = topPosterThumbnail;
-              usingTopPoster = true;
-            }
-          }
-          
-          // Fallback to TVDB thumbnail if Top Poster not available
-          if (!thumbnailUrl) {
-            // Check if episode is unaired (not aired or air_date in future)
+          {
             const isUnaired = !episode.aired || (episode.aired && new Date(episode.aired) > new Date());
             if (episode.image) {
               thumbnailUrl = episode.image.startsWith('http') ? episode.image : `${TVDB_IMAGE_BASE}${episode.image}`;
@@ -2257,8 +2176,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               const season = officialSeasons.find(s => s.number === episode.seasonNumber);
               if (background) {
                 thumbnailUrl = background;
-              }
-              else if (season?.image) {
+              } else if (season?.image) {
                 thumbnailUrl = season.image.startsWith('http') ? season.image : `${TVDB_IMAGE_BASE}${season.image}`;
               } else {
                 thumbnailUrl = null;
@@ -2267,9 +2185,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               thumbnailUrl = background || `${host}/missing_thumbnail.png`;
             }
           }
-          
-          // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
-          const finalThumbnail = thumbnailUrl && config.blurThumbs && !usingTopPoster && thumbnailUrl !== `${host}/missing_thumbnail.png`
+
+          const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
               ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
               : thumbnailUrl;
           let episodeId;
@@ -2538,39 +2455,15 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   if(includeVideos){
     let specialCount = 1;
     (episodes || []).filter(episode => episode.type.toLowerCase().includes('special')).forEach(episode => {
-      // Use Top Poster API for episode thumbnails if enabled (Premium feature)
       let thumbnailUrl = null;
-      let usingTopPoster = false;
-      if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
-        // Pass blur option to Top Poster API when blurThumbs is enabled
-        const topPosterThumbnail = Utils.getTopPosterThumbnail(
-          config,
-          { tmdbId, imdbId },
-          0, // Special episodes are season 0
-          specialCount,
-          config.apiKeys.topPoster,
-          'w500', // Use w500 resolution
-          episode.image?.original || tvmazeShow.image?.original || null,
-          { blur: config.blurThumbs || false }
-        );
-        if (topPosterThumbnail) {
-          thumbnailUrl = topPosterThumbnail;
-          usingTopPoster = true;
-        }
-      }
-      
-      // Fallback to TVMaze thumbnail if Top Poster not available
-      if (!thumbnailUrl) {
-        // Check if episode is unaired (airstamp in future)
+      {
         const isUnaired = new Date(episode.airstamp) > new Date();
         if (episode.image?.original) {
           thumbnailUrl = episode.image.original;
         } else if (isUnaired) {
-          // For unaired episodes: try show image (poster), then background, then null
           if (background) {
             thumbnailUrl = background;
-          }
-          else if (tvmazeShow.image?.original) {
+          } else if (tvmazeShow.image?.original) {
             thumbnailUrl = tvmazeShow.image.original;
           } else {
             thumbnailUrl = null;
@@ -2579,14 +2472,13 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           thumbnailUrl = background || `${host}/missing_thumbnail.png`;
         }
       }
-      
-      // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
+
       let specialEpisode = {
         id: `${imdbId}:0:${specialCount}`,
         title: episode.name || `Episode ${specialCount}`,
         season: 0,
         episode: specialCount,
-        thumbnail: thumbnailUrl && config.blurThumbs && !usingTopPoster && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        thumbnail: thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
@@ -2611,33 +2503,11 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
       
       // Use Top Poster API for episode thumbnails if enabled (Premium feature)
       let thumbnailUrl = null;
-      let usingTopPoster = false;
-      if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && (tmdbId || imdbId)) {
-        // Pass blur option to Top Poster API when blurThumbs is enabled
-        const topPosterThumbnail = Utils.getTopPosterThumbnail(
-          config,
-          { tmdbId, imdbId },
-          actualSeason,
-          episode.number,
-          config.apiKeys.topPoster,
-          'w500', // Use w500 resolution
-          episode.image?.original || tvmazeShow.image?.original || null,
-          { blur: config.blurThumbs || false }
-        );
-        if (topPosterThumbnail) {
-          thumbnailUrl = topPosterThumbnail;
-          usingTopPoster = true;
-        }
-      }
-      
-      // Fallback to TVMaze thumbnail if Top Poster not available
-      if (!thumbnailUrl) {
-        // Check if episode is unaired (airstamp in future)
+      {
         const isUnaired = new Date(episode.airstamp) > new Date();
         if (episode.image?.original) {
           thumbnailUrl = episode.image.original;
         } else if (isUnaired) {
-          // For unaired episodes: try show image (poster), then background, then null
           if (tvmazeShow.image?.original) {
             thumbnailUrl = tvmazeShow.image.original;
           } else if (background) {
@@ -2649,14 +2519,13 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
           thumbnailUrl = background || `${host}/missing_thumbnail.png`;
         }
       }
-      
-      // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
+
       return {
         id: `${imdbId}:${actualSeason}:${episode.number}`,
         title: episode.name || `Episode ${episode.number}`,
         season: actualSeason,
         episode: episode.number,
-        thumbnail: thumbnailUrl && config.blurThumbs && !usingTopPoster && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        thumbnail: thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${process.env.HOST_NAME}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl,
         overview: episode.summary ? episode.summary.replace(/<[^>]*>?/gm, '') : '',
@@ -2867,40 +2736,12 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           episodeId = `kitsu:${kitsuId}:${ep.mal_id}`;
         } 
         
-        // Try to enhance with Kitsu data
         let thumbnailUrl = null;
-        let usingTopPoster = false;
         let episodeTitle = ep.title;
         let episodeSynopsis = ep.synopsis;
-        // Try to get thumbnail from TMDB or Top Poster
         const tmdbEpisode = tmdbEpisodeMap.get(ep.mal_id);
-        // Pre-calc airDate so we can decide if episode is upcoming
         let airDate = ep.airdate;
-        
-        // First try Top Poster if enabled
-        if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && tmdbEpisode) {
-          try {
-            // Pass blur option to Top Poster API when blurThumbs is enabled
-            const topPosterThumbnail = Utils.getTopPosterThumbnail(
-              config,
-              { tmdbId: tmdbEpisode.tmdbId, imdbId },
-              tmdbEpisode.seasonNumber,
-              tmdbEpisode.episodeNumber,
-              config.apiKeys.topPoster,
-              'w500',
-              thumbnailUrl,
-              { blur: config.blurThumbs || false }
-            );
-            if (topPosterThumbnail) {
-              thumbnailUrl = topPosterThumbnail;
-              usingTopPoster = true;
-            }
-          } catch (error) {
-            logger.debug(`[buildKitsuAnimeResponse] Failed to get Top Poster thumbnail: ${error.message}`);
-          }
-        }
-        
-        // Fallback to TMDB thumbnail if Top Poster not available or not enabled
+
         if (!thumbnailUrl && tmdbEpisode) {
           const key = `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}`;
           const tmdbThumbnail = tmdbThumbnailMap.get(key);
@@ -2950,9 +2791,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
           logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB overview fallback for Kitsu ${kitsuId} Ep ${ep.mal_id} because mapping is franchise fallback`);
         }
         episodeSynopsis = episodeSynopsis || ep.synopsis || '';
-        // Build final thumbnail; keep null for upcoming episodes if no background/season poster available
-        // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
-        const finalThumbnail = thumbnailUrl && config.blurThumbs && !usingTopPoster && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
 
@@ -3337,37 +3176,10 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           episodeId = `mal:${malId}:${ep.number}`
         }
         
-        // Try to get thumbnail from TMDB or Top Poster
         let thumbnailUrl = ep.thumbnail?.original || null;
-        let usingTopPoster = false;
         const tmdbEpisode = tmdbEpisodeMap.get(ep.number);
-        // Pre-calc airDate so we can decide if episode is upcoming
         let airDate = ep.airdate;
-        
-        // First try Top Poster if enabled
-        if (config.posterRatingProvider === 'top' && config.apiKeys?.topPoster && tmdbEpisode) {
-          try {
-            // Pass blur option to Top Poster API when blurThumbs is enabled
-            const topPosterThumbnail = Utils.getTopPosterThumbnail(
-              config,
-              { tmdbId: tmdbEpisode.tmdbId, imdbId },
-              tmdbEpisode.seasonNumber,
-              tmdbEpisode.episodeNumber,
-              config.apiKeys.topPoster,
-              'w500',
-              thumbnailUrl,
-              { blur: config.blurThumbs || false }
-            );
-            if (topPosterThumbnail) {
-              thumbnailUrl = topPosterThumbnail;
-              usingTopPoster = true;
-            }
-          } catch (error) {
-            logger.debug(`[buildKitsuAnimeResponse] Failed to get Top Poster thumbnail: ${error.message}`);
-          }
-        }
-        
-        // Fallback to TMDB thumbnail if Top Poster not available or not enabled
+
         if (!thumbnailUrl && tmdbEpisode) {
           const key = `${tmdbEpisode.seasonNumber}:${tmdbEpisode.episodeNumber}`;
           const tmdbThumbnail = tmdbThumbnailMap.get(key);
@@ -3418,12 +3230,10 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           logger.debug(`[buildKitsuAnimeResponse] Skipping TMDB overview fallback for Kitsu ${kitsuData.id} Ep ${ep.number} because mapping is franchise fallback`);
         }
         episodeOverview = episodeOverview || ep.synopsis || '';
-        // Build final thumbnail; keep null for upcoming episodes if no background/season poster available
-        // Only apply local blur proxy when NOT using Top Poster API (Top Poster handles blur itself)
-        const finalThumbnail = thumbnailUrl && config.blurThumbs && !usingTopPoster && thumbnailUrl !== `${host}/missing_thumbnail.png`
+        const finalThumbnail = thumbnailUrl && config.blurThumbs && thumbnailUrl !== `${host}/missing_thumbnail.png`
           ? `${host}/api/image/blur?url=${encodeURIComponent(thumbnailUrl)}`
           : thumbnailUrl;
-        
+
         return {
           id: episodeId,
           title: episodeTitle,

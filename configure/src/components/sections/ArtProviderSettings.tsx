@@ -1,4 +1,5 @@
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -134,7 +135,7 @@ export function ArtProviderSettings() {
         <div className="flex items-start gap-2 mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
           <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
           <p className="text-sm text-blue-800 dark:text-blue-200">
-            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance. <strong>When using rating posters (RPDB or Top Poster API), posters come from the rating provider rather than the art provider settings.</strong>
+            <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance. <strong>Art URL Overrides (configured below) take priority over art provider settings.</strong>
           </p>
         </div>
         
@@ -436,6 +437,116 @@ export function ArtProviderSettings() {
               </Select>
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      {/* Art URL Overrides */}
+      <div>
+        <h3 className="text-xl font-semibold mb-4">Art URL Overrides</h3>
+        <p className="text-muted-foreground mb-4">
+          Override artwork with custom URL patterns. Select a rating poster provider for pre-filled defaults, or use fully custom patterns.
+        </p>
+
+        <div className="space-y-4 max-w-2xl">
+          {/* Provider Selection */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+            <div className="flex-1">
+              <Label htmlFor="posterRatingProvider" className="text-base font-medium">Rating Poster Provider</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pre-fills poster patterns with the selected provider's URL. Choose Custom for fully manual patterns.
+              </p>
+            </div>
+            <Select
+              value={config.posterRatingProvider || 'rpdb'}
+              onValueChange={(value) => setConfig(prev => ({ ...prev, posterRatingProvider: value as 'rpdb' | 'top' | 'custom', customPosterUrlPattern: '', customBackgroundUrlPattern: '', customLogoUrlPattern: '', customThumbnailUrlPattern: '' }))}
+            >
+              <SelectTrigger id="posterRatingProvider" className="w-[200px]">
+                <SelectValue placeholder="Select provider" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
+                <SelectItem value="top">TOP Posters API</SelectItem>
+                <SelectItem value="custom">Custom Art URLs</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Proxy Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+            <div className="flex-1">
+              <Label htmlFor="usePosterProxy" className="text-base font-medium">Proxy Rating Posters</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                Route rating poster requests through this addon. Enables fallback posters when the rating API is down or missing a poster, but adds a small delay.
+              </p>
+            </div>
+            <Switch
+              id="usePosterProxy"
+              checked={!!config.usePosterProxy}
+              onCheckedChange={(checked) => setConfig(prev => ({ ...prev, usePosterProxy: checked }))}
+            />
+          </div>
+
+          {/* Pattern Fields */}
+          <div className="space-y-3 p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+            <div>
+              <Label className="text-base font-medium">URL Patterns</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                {config.posterRatingProvider === 'rpdb' || config.posterRatingProvider === 'top'
+                  ? 'Pre-filled with the default pattern for your selected provider. You can customize it if needed.'
+                  : 'Override art with custom URL patterns. If a placeholder references an unavailable value, normal art is used instead.'}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                ID placeholders: <code>{'{imdb_id}'}</code>, <code>{'{tmdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
+                API keys: <code>{'{rpdb_key}'}</code>, <code>{'{top_key}'}</code>, <code>{'{tmdb_key}'}</code>, <code>{'{mdblist_key}'}</code>, <code>{'{fanart_key}'}</code>.
+                Language: <code>{'{language}'}</code> (e.g. fr-FR), <code>{'{language_short}'}</code> (e.g. fr).
+                RPDB/TOP patterns automatically fall back to alternative IDs when the primary one is unavailable.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Poster URL Pattern</label>
+              <Input
+                placeholder="https://example.com/poster/{imdb_id}.jpg"
+                value={config.customPosterUrlPattern || (() => {
+                  const provider = config.posterRatingProvider || 'rpdb';
+                  if (provider === 'rpdb') return 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}';
+                  if (provider === 'top') return 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
+                  return '';
+                })()}
+                onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Background URL Pattern</label>
+              <Input
+                placeholder="https://example.com/background/{tmdb_id}.jpg"
+                value={config.customBackgroundUrlPattern || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, customBackgroundUrlPattern: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Logo URL Pattern</label>
+              <Input
+                placeholder="https://example.com/logo/{tmdb_id}.png"
+                value={config.customLogoUrlPattern || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, customLogoUrlPattern: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Episode Thumbnail URL Pattern</label>
+              <Input
+                placeholder="https://example.com/thumbnail/{imdb_id}/S{season}E{episode}.jpg"
+                value={config.customThumbnailUrlPattern || (() => {
+                  const provider = config.posterRatingProvider || 'rpdb';
+                  if (provider === 'top') return 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+                  return '';
+                })()}
+                onChange={(e) => setConfig(prev => ({ ...prev, customThumbnailUrlPattern: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Extra placeholders: <code>{'{season}'}</code>, <code>{'{episode}'}</code>, <code>{'{blur}'}</code> (true/false from blur thumbs setting), <code>{'{thumbnail}'}</code> (original thumbnail URL, encoded).
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

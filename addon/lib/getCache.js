@@ -824,12 +824,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
 
-    // Poster rating provider and API key (affects poster generation)
-    posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: enableRatingPosters ? (config.posterRatingProvider === 'top'
-      ? (config.apiKeys?.topPoster || '')
-      : (config.apiKeys?.rpdb || '')) : '',
-    usePosterProxy: !!config.usePosterProxy,
   };
 
   // Only include MDBList API key for MDBList catalogs
@@ -1072,12 +1066,6 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
     useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
-    // Poster rating provider and API key (affects poster generation)
-    posterRatingProvider: config.posterRatingProvider || 'rpdb',
-    posterRatingApiKey: ratingPostersEnabled ? (config.posterRatingProvider === 'top' 
-      ? (config.apiKeys?.topPoster || '') 
-      : (config.apiKeys?.rpdb || '')) : '',
-    usePosterProxy: !!config.usePosterProxy,
     aiProvider: config.search?.ai_provider || 'gemini',
     aiModel: config.search?.ai_model || '',
     aiWebSearch: config.search?.ai_web_search || false,
@@ -1129,14 +1117,6 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      englishArtOnly: config.artProviders?.englishArtOnly || false,
      
      timezone: config.timezone || 'UTC',
-     
-     // Poster rating provider (affects poster URLs)
-     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-     usePosterProxy: !!config.usePosterProxy,
-     apiKeys: { 
-       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
-       topPoster: config.apiKeys?.topPoster || ''
-     }
    };
    
    // Add context-specific settings based on meta type
@@ -1229,13 +1209,6 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      displayAgeRating: config.displayAgeRating || false,
      englishArtOnly: config.artProviders?.englishArtOnly || false,
      timezone: config.timezone || 'UTC',
-     // Poster rating provider (affects poster URLs)
-     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-     usePosterProxy: !!config.usePosterProxy,
-     apiKeys: { 
-       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
-       topPoster: config.apiKeys?.topPoster || ''
-     }
    };
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
@@ -1514,14 +1487,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      displayAgeRating: config.displayAgeRating || false,
      englishArtOnly: config.artProviders?.englishArtOnly || false,
      timezone: config.timezone || 'UTC',
-     posterRatingProvider: config.posterRatingProvider || 'rpdb',
-     usePosterProxy: !!config.usePosterProxy,
-     apiKeys: { 
-       rpdb: config.apiKeys?.rpdb || process.env.RPDB_API_KEY || '',
-       topPoster: config.apiKeys?.topPoster || ''
-     }
    };
-   
+
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
    //const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
@@ -1953,7 +1920,6 @@ async function cacheWrapStaticCatalog(userUUID, catalogKey, method, options = {}
     showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
-    usePosterProxy: !!config.usePosterProxy,
     // Anime-specific settings (for MAL catalogs)
     mal: config.mal || {}
   };

@@ -210,4 +210,5 @@ export interface AppConfig {
   customPosterUrlPattern?: string;
   customBackgroundUrlPattern?: string;
   customLogoUrlPattern?: string;
+  customThumbnailUrlPattern?: string;
 }

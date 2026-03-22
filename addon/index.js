@@ -3849,26 +3849,37 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       };
     }
 
-    // Custom art URL pattern overrides for catalog items (only when "Custom" poster rating provider is selected)
+    // Art URL pattern overrides for catalog items
     // Skip poster override for up next catalogs unless useShowPosterForUpNext is enabled
     // (when disabled, up next uses episode thumbnails as posters which shouldn't be overridden)
-    if (config.posterRatingProvider === 'custom' && (config.customPosterUrlPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
+    const posterPatternsEnabled = catalogConfig?.enableRatingPosters !== false;
+    const posterPattern = posterPatternsEnabled ? (config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? require('./utils/parseProps').getDefaultPosterPattern(config.posterRatingProvider) : null)) : null;
+    if ((posterPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
       const isUpNextCatalog = cleanId.includes('up_next') || cleanId.includes('upnext');
       const upNextUsesShowPoster = isUpNextCatalog && catalogConfig?.metadata?.useShowPosterForUpNext === true;
-      const { resolveCustomArtUrl } = require('./utils/parseProps');
+      const { resolveCustomArtUrl, getPosterRatingApiKey } = require('./utils/parseProps');
+      const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
       for (const meta of responseData.metas) {
         const ids = extractIdsFromMeta(meta);
         const type = meta.type || actualType;
-        if (config.customPosterUrlPattern && (!isUpNextCatalog || upNextUsesShowPoster)) {
-          const resolved = resolveCustomArtUrl(config.customPosterUrlPattern, ids, type);
-          if (resolved) meta.poster = resolved;
+        if (posterPattern && (!isUpNextCatalog || upNextUsesShowPoster)) {
+          if (proxyApiKey) {
+            // Poster proxy mode: wrap in proxy URL with original poster as fallback
+            const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+            if (proxyId) {
+              meta.poster = `${host}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`;
+            }
+          } else {
+            const resolved = resolveCustomArtUrl(posterPattern, ids, type, config);
+            if (resolved) meta.poster = resolved;
+          }
         }
         if (config.customBackgroundUrlPattern) {
-          const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, type);
+          const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, type, config);
           if (resolved) meta.background = resolved;
         }
         if (config.customLogoUrlPattern) {
-          const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, type);
+          const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, type, config);
           if (resolved) meta.logo = resolved;
         }
       }
@@ -3940,21 +3951,60 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       return respond(req, res, { meta: null });
     }
 
-    if (config.posterRatingProvider === 'custom' && result.meta) {
-      const { resolveCustomArtUrl } = require('./utils/parseProps');
+    {
+      const { resolveCustomArtUrl, getDefaultPosterPattern, getDefaultThumbnailPattern, getPosterRatingApiKey } = require('./utils/parseProps');
       const ids = extractIdsFromMeta(result.meta);
       const metaType = result.meta.type || type;
-      if (config.customPosterUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customPosterUrlPattern, ids, metaType);
-        if (resolved) result.meta.poster = resolved;
+      // Apply poster pattern unless enableRatingPostersForLibrary is explicitly disabled
+      if (config.enableRatingPostersForLibrary !== false) {
+        const metaPosterPattern = config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultPosterPattern(config.posterRatingProvider) : null);
+        if (metaPosterPattern) {
+          const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
+          if (proxyApiKey) {
+            const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+            if (proxyId) {
+              result.meta.poster = `${host}/poster/${metaType}/${proxyId}?fallback=${encodeURIComponent(result.meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`;
+            }
+          } else {
+            const resolved = resolveCustomArtUrl(metaPosterPattern, ids, metaType, config);
+            if (resolved) result.meta.poster = resolved;
+          }
+        }
       }
       if (config.customBackgroundUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, metaType);
+        const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, metaType, config);
         if (resolved) result.meta.background = resolved;
       }
       if (config.customLogoUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType);
+        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType, config);
         if (resolved) result.meta.logo = resolved;
+      }
+      // Apply thumbnail pattern to episode videos
+      const thumbnailPattern = config.customThumbnailUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultThumbnailPattern(config.posterRatingProvider) : null);
+      if (thumbnailPattern && result.meta.videos && Array.isArray(result.meta.videos)) {
+        for (const video of result.meta.videos) {
+          const idParts = video.id?.split(':');
+          if (idParts && idParts.length >= 3) {
+            const season = parseInt(idParts[idParts.length - 2], 10);
+            const episode = parseInt(idParts[idParts.length - 1], 10);
+            if (!isNaN(season) && !isNaN(episode)) {
+              // Unwrap blur proxy to get original thumbnail URL for {thumbnail} placeholder
+              let originalThumb = video.thumbnail || '';
+              if (originalThumb.includes('/api/image/blur?url=')) {
+                originalThumb = decodeURIComponent(originalThumb.split('/api/image/blur?url=')[1] || '');
+              }
+              const resolved = resolveCustomArtUrl(thumbnailPattern, ids, metaType, config, {
+                season,
+                episode,
+                blur: config.blurThumbs ? 'true' : 'false',
+                thumbnail: encodeURIComponent(originalThumb),
+              });
+              if (resolved) {
+                video.thumbnail = resolved;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -3993,58 +4043,6 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         }
       }
     }*/
-    
-    // Extract actual poster URL from RPDB proxy URL for meta route
-    // Only remove RPDB proxy if enableRatingPostersForLibrary is disabled
-    // Meta routes (continue watching/library) should keep RPDB if the option is enabled
-    if (config.enableRatingPostersForLibrary === false && result.meta.poster) {
-      //consola.debug('[Meta Route] original poster URL:', result.meta.poster);
-      const posterUrl = result.meta.poster;
-      let cleanPoster = posterUrl;
-      let isRatingPoster = false;
-
-      try {
-        const urlObj = new URL(posterUrl);
-
-        // Case 1: Proxy (e.g. /poster/movie/...)
-        if (posterUrl.includes('/poster/') && urlObj.searchParams.has('fallback')) {
-          const fallback = urlObj.searchParams.get('fallback');
-          if (fallback) {
-            cleanPoster = decodeURIComponent(fallback);
-            isRatingPoster = true;
-          }
-        }
-        
-        // Case 2: TopPoster Direct API
-        else if (urlObj.hostname.includes('top-streaming.stream') && urlObj.searchParams.has('fallback_url')) {
-          //consola.debug('[Meta Route] Extracting actual poster URL from TopPoster direct API:', urlObj.searchParams.get('fallback_url'));
-          const fallback = urlObj.searchParams.get('fallback_url');
-          if (fallback) {
-            cleanPoster = decodeURIComponent(fallback);
-            isRatingPoster = true;
-          }
-        }
-        
-        // Case 3: RPDB Direct API
-        else if (urlObj.hostname.includes('ratingposterdb.com')) {
-          isRatingPoster = true; 
-        }
-
-        // Apply fallback if detected
-        if (isRatingPoster) {
-          //consola.debug('[Meta Route] Applying actual poster URL:', cleanPoster);
-             if (result.meta._rawPosterUrl) {
-                 result.meta.poster = result.meta._rawPosterUrl;
-                 //consola.debug('[Meta Route] Using stashed raw poster URL:', result.meta._rawPosterUrl);
-             } 
-             else if (cleanPoster !== posterUrl) {
-                 result.meta.poster = cleanPoster;
-             }
-        }
-
-      } catch (e) {
-      }
-    }
     
     // Use aggressive cache control for meta routes to ensure fresh data when config changes
     // Don't pass cacheOpts to let the respond function use the aggressive cache control

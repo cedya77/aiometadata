@@ -48,34 +48,49 @@ function isRatingPostersEnabled(config) {
 }
 
 /**
- * Helper function to check if poster rating is enabled (RPDB or Top Poster)
+ * Helper function to check if poster rating is enabled (RPDB or Top Poster).
+ * Always returns false — poster rating URLs are now applied as post-processing
+ * via art URL patterns in the route handlers. This function is kept for backward
+ * compatibility with internal callers that conditionally apply rating posters.
  */
 function isPosterRatingEnabled(config) {
-  if (!isRatingPostersEnabled(config)) {
-    return false;
-  }
-  const provider = config.posterRatingProvider || 'rpdb'; // Default to RPDB for backward compatibility
-  if (provider === 'custom') {
-    return false; // Custom uses URL patterns, not rating poster APIs
-  }
-  if (provider === 'top') {
-    return !!(config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
-  }
-  // Default to RPDB
-  return !!(config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0);
+  return false;
 }
 
 /**
  * Resolve a custom art URL pattern by replacing placeholders with actual IDs.
  * Returns the resolved URL, or null if the pattern is empty or a referenced placeholder has no value.
- * @param {string} pattern - URL pattern with placeholders like {tmdb_id}, {imdb_id}, {tvdb_id}, {mal_id}, {kitsu_id}, {anilist_id}, {anidb_id}, {type}
+ *
+ * Composite placeholders for rating poster services:
+ *   {rating_id_type} — resolves to 'imdb', 'tmdb', or 'tvdb' (first available)
+ *   {rating_id}      — resolves to the matching ID in the format the service expects:
+ *                       imdb: 'tt1234567', tmdb/tvdb: 'movie-12345' or 'series-12345'
+ *
+ * @param {string} pattern - URL pattern with placeholders
  * @param {object} ids - Object with tmdbId, imdbId, tvdbId, malId, kitsuId, anilistId, anidbId properties
- * @param {string} type - Content type (movie, series, anime)
+ * @param {string} type - Content type (movie, series)
+ * @param {object} [config] - User config (for API key and language placeholders)
  * @returns {string|null} Resolved URL or null
  */
-function resolveCustomArtUrl(pattern, ids, type) {
+function resolveCustomArtUrl(pattern, ids, type, config, extra) {
   if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return null;
 
+  // For RPDB/TOP patterns, try ID fallback: imdb → tmdb → tvdb
+  const isRatingPosterService = pattern.includes('ratingposterdb.com') || pattern.includes('top-streaming.stream');
+  if (isRatingPosterService) {
+    return resolveRatingPosterUrl(pattern, ids, type, config, extra);
+  }
+
+  return resolvePattern(pattern, ids, type, config, extra);
+}
+
+/**
+ * Core pattern resolution — replaces placeholders and returns the URL or null.
+ */
+function resolvePattern(pattern, ids, type, config, extra) {
+  if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return null;
+
+  const lang = config?.language || 'en-US';
   const placeholders = {
     '{tmdb_id}': ids?.tmdbId || '',
     '{imdb_id}': ids?.imdbId || '',
@@ -85,6 +100,21 @@ function resolveCustomArtUrl(pattern, ids, type) {
     '{anilist_id}': ids?.anilistId || '',
     '{anidb_id}': ids?.anidbId || '',
     '{type}': type || '',
+    '{season}': extra?.season != null ? String(extra.season) : '',
+    '{episode}': extra?.episode != null ? String(extra.episode) : '',
+    '{language}': lang,
+    '{language_short}': lang.split('-')[0],
+    '{tmdb_key}': config?.apiKeys?.tmdb || '',
+    '{rpdb_key}': config?.apiKeys?.rpdb || '',
+    '{top_key}': config?.apiKeys?.topPoster || '',
+    '{mdblist_key}': config?.apiKeys?.mdblist || '',
+    '{fanart_key}': config?.apiKeys?.fanart || '',
+  };
+
+  // Optional placeholders — resolve to empty string without failing
+  const optionalPlaceholders = {
+    '{blur}': extra?.blur != null ? String(extra.blur) : '',
+    '{thumbnail}': extra?.thumbnail || '',
   };
 
   let url = pattern;
@@ -94,8 +124,76 @@ function resolveCustomArtUrl(pattern, ids, type) {
       url = url.split(placeholder).join(value);
     }
   }
+  for (const [placeholder, value] of Object.entries(optionalPlaceholders)) {
+    if (url.includes(placeholder)) {
+      url = url.split(placeholder).join(value);
+    }
+  }
 
   return url;
+}
+
+/**
+ * Resolve an RPDB/TOP rating poster URL with automatic ID fallback.
+ * The user's pattern uses {imdb_id} — if that ID is unavailable, we internally
+ * retry with tmdb then tvdb, adjusting the URL path and ID format accordingly.
+ */
+function resolveRatingPosterUrl(pattern, ids, type, config, extra) {
+  const typePrefix = type === 'movie' ? 'movie' : 'series';
+
+  // Try the pattern as-is first
+  const direct = resolvePattern(pattern, ids, type, config, extra);
+  if (direct) return direct;
+
+  // Build fallback variants by swapping the id type segment and placeholder
+  // RPDB/TOP URL structure: .../{id_type}/poster-default/{id}.jpg
+  const fallbacks = [];
+  if (pattern.includes('{imdb_id}')) {
+    // Original uses imdb — try tmdb then tvdb
+    if (ids?.tmdbId) fallbacks.push(pattern.replace('/imdb/', '/tmdb/').replace('{imdb_id}', `${typePrefix}-${ids.tmdbId}`));
+    if (ids?.tvdbId) fallbacks.push(pattern.replace('/imdb/', '/tvdb/').replace('{imdb_id}', `${typePrefix}-${ids.tvdbId}`));
+  } else if (pattern.includes('{tmdb_id}')) {
+    if (ids?.imdbId) fallbacks.push(pattern.replace('/tmdb/', '/imdb/').replace(`${typePrefix}-{tmdb_id}`, ids.imdbId).replace('{tmdb_id}', ids.imdbId));
+    if (ids?.tvdbId) fallbacks.push(pattern.replace('/tmdb/', '/tvdb/').replace('{tmdb_id}', ids.tvdbId));
+  } else if (pattern.includes('{tvdb_id}')) {
+    if (ids?.imdbId) fallbacks.push(pattern.replace('/tvdb/', '/imdb/').replace(`${typePrefix}-{tvdb_id}`, ids.imdbId).replace('{tvdb_id}', ids.imdbId));
+    if (ids?.tmdbId) fallbacks.push(pattern.replace('/tvdb/', '/tmdb/').replace('{tvdb_id}', ids.tmdbId));
+  }
+
+  for (const fb of fallbacks) {
+    const resolved = resolvePattern(fb, ids, type, config, extra);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+/** Default poster URL pattern for RPDB */
+const RPDB_DEFAULT_PATTERN = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}';
+/** Default poster URL pattern for TOP Posters */
+const TOP_DEFAULT_PATTERN = 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
+/** Default episode thumbnail URL pattern for TOP Posters */
+const TOP_DEFAULT_THUMBNAIL_PATTERN = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+
+/**
+ * Returns the default poster URL pattern for a given rating poster provider.
+ * @param {'rpdb'|'top'} provider
+ * @returns {string}
+ */
+function getDefaultPosterPattern(provider) {
+  if (provider === 'rpdb') return RPDB_DEFAULT_PATTERN;
+  if (provider === 'top') return TOP_DEFAULT_PATTERN;
+  return '';
+}
+
+/**
+ * Returns the default episode thumbnail URL pattern for a given provider.
+ * @param {'top'} provider
+ * @returns {string}
+ */
+function getDefaultThumbnailPattern(provider) {
+  if (provider === 'top') return TOP_DEFAULT_THUMBNAIL_PATTERN;
+  return '';
 }
 
 /**
@@ -3294,6 +3392,8 @@ module.exports = {
   getPosterRatingApiKey,
   buildPosterProxyUrl,
   isPosterRatingEnabled,
+  getDefaultPosterPattern,
+  getDefaultThumbnailPattern,
   parsePosterWithProvider,
   checkIfExists,
   sortSearchResults,

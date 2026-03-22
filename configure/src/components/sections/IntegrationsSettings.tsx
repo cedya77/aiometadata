@@ -2,8 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Eye, EyeOff, CheckCircle, XCircle, Loader2, LogIn, LogOut, AlertCircle } from 'lucide-react';
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
 import { toast } from 'sonner';
@@ -117,10 +115,6 @@ export function IntegrationsSettings() {
   // Track if we've already processed a request token to prevent infinite loops
   const processedTokenRef = useRef<string | null>(null);
 
-  const handlePosterProxyChange = (checked: boolean) => {
-    setConfig(prev => ({ ...prev, usePosterProxy: checked }));
-  };
-  
   // Handle TMDB authentication callback - create session using user's API key
   const handleRequestToken = useCallback(async (requestToken: string) => {
     // Prevent processing the same token multiple times
@@ -551,95 +545,20 @@ export function IntegrationsSettings() {
           validationStatus={validationStatus.fanart || 'idle'} 
           onKeyChange={handleKeyChange}
         />
-        {/* Poster Rating Provider Selection */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div className="flex-1">
-            <Label htmlFor="posterRatingProvider" className="text-lg font-medium">Poster Rating Provider</Label>
-            <p className="text-sm text-muted-foreground mt-1">
-              Choose which service to use for rating posters
-            </p>
-          </div>
-          <Select
-            value={config.posterRatingProvider || 'rpdb'}
-            onValueChange={(value) => setConfig(prev => ({ ...prev, posterRatingProvider: value as 'rpdb' | 'top' | 'custom' }))}
-          >
-            <SelectTrigger id="posterRatingProvider" className="w-[200px]">
-              <SelectValue placeholder="Select provider" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
-              <SelectItem value="top">TOP Posters API</SelectItem>
-              <SelectItem value="custom">Custom Art URLs</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* ADD: Proxy Toggle */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div className="flex-1">
-            <Label htmlFor="usePosterProxy" className="text-lg font-medium">Proxy Rating Posters</Label>
-            <p className="text-sm text-muted-foreground mt-1">
-              Route rating poster requests through this addon. This allows fallback posters to be used if the RPDB/Top Poster API is down or does not have a poster for that item. It can however cause a minimal slowdown due to having to contact AIOMetadata first.
-            </p>
-          </div>
-          <Switch
-            id="usePosterProxy"
-            checked={!!config.usePosterProxy}
-            onCheckedChange={handlePosterProxyChange}
-          />
-        </div>
-        
-        {config.posterRatingProvider === 'top' ? (
-          <ApiKeyInput
-            id="topPoster"
-            label="TOP Posters API Key"
-            linkHref="https://api.top-streaming.stream/user/dashboard"
-            validationStatus={validationStatus.topPoster || 'idle'}
-            onKeyChange={handleKeyChange}
-          />
-        ) : config.posterRatingProvider === 'custom' ? (
-          <div className="space-y-3 p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-            <div>
-              <Label className="text-lg font-medium">Custom Art URL Patterns</Label>
-              <p className="text-sm text-muted-foreground mt-1">
-                Override art with custom URL patterns. Placeholders: <code>{'{tmdb_id}'}</code>, <code>{'{imdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
-                If a placeholder references an unavailable ID, normal art is used instead.
-              </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Poster URL Pattern</label>
-              <Input
-                placeholder="https://example.com/poster/{imdb_id}.jpg"
-                value={config.customPosterUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Background URL Pattern</label>
-              <Input
-                placeholder="https://example.com/background/{tmdb_id}.jpg"
-                value={config.customBackgroundUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customBackgroundUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Logo URL Pattern</label>
-              <Input
-                placeholder="https://example.com/logo/{tmdb_id}.png"
-                value={config.customLogoUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customLogoUrlPattern: e.target.value }))}
-              />
-            </div>
-          </div>
-        ) : (
-          <ApiKeyInput
-            id="rpdb"
-            label="RPDB API Key"
-            linkHref="https://ratingposterdb.com/"
-            validationStatus={validationStatus.rpdb || 'idle'}
-            onKeyChange={handleKeyChange}
-          />
-        )}
+        <ApiKeyInput
+          id="rpdb"
+          label="RPDB API Key"
+          linkHref="https://ratingposterdb.com/"
+          validationStatus={validationStatus.rpdb || 'idle'}
+          onKeyChange={handleKeyChange}
+        />
+        <ApiKeyInput
+          id="topPoster"
+          label="TOP Posters API Key"
+          linkHref="https://api.top-streaming.stream/user/dashboard"
+          validationStatus={validationStatus.topPoster || 'idle'}
+          onKeyChange={handleKeyChange}
+        />
         <ApiKeyInput 
           id="mdblist" 
           label="MDBList API Key" 
