@@ -90,7 +90,7 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => onengineRatingPostersChange(provider.provider, !engineRatingPostersEnabled)}
+          onClick={() => onengineRatingPostersChange(provider.id, !engineRatingPostersEnabled)}
           className="px-2"
           title={engineRatingPostersEnabled ? 'Rating posters enabled' : 'Rating posters disabled'}
         >
@@ -519,19 +519,14 @@ export function SearchSettings() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <div>
                         <Label className="text-lg font-medium">Movies Search Engine:</Label>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                                Search name: {getSearchDisplayName('movie', config.search.providers.movie)}
-                            </div>
-                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.movie} onValueChange={(val) => handleProviderChange('movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     {movieSearchProviders.map(p => (
-                                      <SelectItem 
-                                        key={p.value} 
+                                      <SelectItem
+                                        key={p.value}
                                         value={p.value}
                                         disabled={p.value === 'tvdb.search' && !hasTvdbKey}
                                       >
@@ -541,25 +536,6 @@ export function SearchSettings() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSearchName('movie')}
-                                className="px-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                            </Button>
-                            {hasRPDBKey && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleengineRatingPostersChange('movie', !(config.search.engineRatingPosters?.['movie'] ?? true))}
-                                    className="px-2"
-                                    title={(config.search.engineRatingPosters?.['movie'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
-                                >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.['movie'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                                </Button>
-                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.movie] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.movie, checked)}
@@ -568,19 +544,14 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <div>
                         <Label className="text-lg font-medium">Series Search Engine:</Label>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                                Search name: {getSearchDisplayName('series', config.search.providers.series)}
-                            </div>
-                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.series} onValueChange={(val) => handleProviderChange('series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     {seriesSearchProviders.map(p => (
-                                      <SelectItem 
-                                        key={p.value} 
+                                      <SelectItem
+                                        key={p.value}
                                         value={p.value}
                                         disabled={p.value === 'tvdb.search' && !hasTvdbKey}
                                       >
@@ -590,25 +561,6 @@ export function SearchSettings() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSearchName('series')}
-                                className="px-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                            </Button>
-                            {hasRPDBKey && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleengineRatingPostersChange('series', !(config.search.engineRatingPosters?.['series'] ?? true))}
-                                    className="px-2"
-                                    title={(config.search.engineRatingPosters?.['series'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
-                                >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.['series'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                                </Button>
-                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.series] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.series, checked)}
@@ -617,12 +569,7 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <div>
                         <Label className="text-lg font-medium">Anime (Series) Search Engine:</Label>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                                Search name: {getSearchDisplayName('anime_series', config.search.providers.anime_series)}
-                            </div>
-                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.anime_series} onValueChange={(val) => handleProviderChange('anime_series', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -636,25 +583,6 @@ export function SearchSettings() {
                                       ))}
                                 </SelectContent>
                             </Select>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSearchName('anime_series')}
-                                className="px-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                            </Button>
-                            {hasRPDBKey && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleengineRatingPostersChange(config.search.providers.anime_series, !(config.search.engineRatingPosters?.[config.search.providers.anime_series] ?? true))}
-                                    className="px-2"
-                                    title={(config.search.engineRatingPosters?.[config.search.providers.anime_series] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
-                                >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.anime_series] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                                </Button>
-                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.anime_series] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_series, checked)}
@@ -663,12 +591,7 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <div>
                         <Label className="text-lg font-medium">Anime (Movies) Search Engine:</Label>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                                Search name: {getSearchDisplayName('anime_movie', config.search.providers.anime_movie)}
-                            </div>
-                        </div>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
                             <Select value={config.search.providers.anime_movie} onValueChange={(val) => handleProviderChange('anime_movie', val)}>
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -682,25 +605,6 @@ export function SearchSettings() {
                                       ))}
                                 </SelectContent>
                             </Select>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSearchName('anime_movie')}
-                                className="px-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                            </Button>
-                            {hasRPDBKey && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleengineRatingPostersChange(config.search.providers.anime_movie, !(config.search.engineRatingPosters?.[config.search.providers.anime_movie] ?? true))}
-                                    className="px-2"
-                                    title={(config.search.engineRatingPosters?.[config.search.providers.anime_movie] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
-                                >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.anime_movie] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                                </Button>
-                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.[config.search.providers.anime_movie] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange(config.search.providers.anime_movie, checked)}
@@ -721,15 +625,10 @@ export function SearchSettings() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <div>
-                            <Label className="text-lg font-medium">People Search (Movies) Engine:</Label>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                                Search name: {getSearchDisplayName('people_search_movie', config.search.providers.people_search_movie || 'tmdb.people.search')}
-                            </div>
-                        </div>
+                        <Label className="text-lg font-medium">People Search (Movies) Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
-                            <Select 
-                                value={config.search.providers.people_search_movie || 'tmdb.people.search'} 
+                            <Select
+                                value={config.search.providers.people_search_movie || 'tmdb.people.search'}
                                 onValueChange={(val) => handleProviderChange('people_search_movie', val)}
                             >
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -737,8 +636,8 @@ export function SearchSettings() {
                                     {peopleSearchProviders
                                       .filter(p => p.mediaType.includes('movie'))
                                       .map(p => (
-                                        <SelectItem 
-                                          key={p.value} 
+                                        <SelectItem
+                                          key={p.value}
                                           value={p.value}
                                           disabled={p.value === 'tvdb.people.search' && !hasTvdbKey}
                                         >
@@ -748,25 +647,6 @@ export function SearchSettings() {
                                       ))}
                                 </SelectContent>
                             </Select>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSearchName('people_search_movie')}
-                                className="px-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                            </Button>
-                            {hasRPDBKey && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleengineRatingPostersChange(config.search.providers.people_search_movie || 'tmdb.people.search', !(config.search.engineRatingPosters?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true))}
-                                    className="px-2"
-                                    title={(config.search.engineRatingPosters?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
-                                >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.people_search_movie || 'tmdb.people.search'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                                </Button>
-                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.['people_search_movie'] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange('people_search_movie', checked)}
@@ -775,15 +655,10 @@ export function SearchSettings() {
                         </div>
                     </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                        <div>
-                            <Label className="text-lg font-medium">People Search (Series) Engine:</Label>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                                Search name: {getSearchDisplayName('people_search_series', config.search.providers.people_search_series || 'tmdb.people.search')}
-                            </div>
-                        </div>
+                        <Label className="text-lg font-medium">People Search (Series) Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
-                            <Select 
-                                value={config.search.providers.people_search_series || 'tmdb.people.search'} 
+                            <Select
+                                value={config.search.providers.people_search_series || 'tmdb.people.search'}
                                 onValueChange={(val) => handleProviderChange('people_search_series', val)}
                             >
                                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -791,8 +666,8 @@ export function SearchSettings() {
                                     {peopleSearchProviders
                                       .filter(p => p.mediaType.includes('series'))
                                       .map(p => (
-                                        <SelectItem 
-                                          key={p.value} 
+                                        <SelectItem
+                                          key={p.value}
                                           value={p.value}
                                           disabled={p.value === 'tvdb.people.search' && !hasTvdbKey}
                                         >
@@ -802,25 +677,6 @@ export function SearchSettings() {
                                       ))}
                                 </SelectContent>
                             </Select>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSearchName('people_search_series')}
-                                className="px-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                            </Button>
-                            {hasRPDBKey && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleengineRatingPostersChange(config.search.providers.people_search_series || 'tmdb.people.search', !(config.search.engineRatingPosters?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true))}
-                                    className="px-2"
-                                    title={(config.search.engineRatingPosters?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true) ? 'Rating posters enabled' : 'Rating posters disabled'}
-                                >
-                                    <Star className={`h-4 w-4 ${(config.search.engineRatingPosters?.[config.search.providers.people_search_series || 'tmdb.people.search'] ?? true) ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
-                                </Button>
-                            )}
                             <Switch
                                 checked={config.search.engineEnabled?.['people_search_series'] ?? true}
                                 onCheckedChange={checked => handleEngineEnabledChange('people_search_series', checked)}
@@ -840,30 +696,12 @@ export function SearchSettings() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
-                            <div>
                             <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
-                                <div className="text-sm text-muted-foreground mt-0.5">
-                                    Search name: {getSearchDisplayName('tvdb.collections.search', 'tvdb.collections.search')}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3 w-full sm:w-[280px]">
-                                <div className="flex-1 text-sm text-muted-foreground border border-input rounded-md bg-stone-900 px-3 py-2 h-10 flex items-center">
-                                    {getSearchDisplayName('tvdb.collections.search', 'tvdb.collections.search')}
-                                </div>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleEditSearchName('tvdb.collections.search')}
-                                    className="px-2"
-                                >
-                                    <Edit2 className="h-4 w-4" />
-                                </Button>
-                                <Switch
-                                    checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? false}
-                                    onCheckedChange={checked => handleEngineEnabledChange('tvdb.collections.search', checked)}
-                                    aria-label="Enable TVDB Collections search"
-                                />
-                            </div>
+                            <Switch
+                                checked={config.search.engineEnabled?.['tvdb.collections.search'] ?? false}
+                                onCheckedChange={checked => handleEngineEnabledChange('tvdb.collections.search', checked)}
+                                aria-label="Enable TVDB Collections search"
+                            />
                         </div>
                     </CardContent>
                 </Card>
@@ -1058,7 +896,7 @@ export function SearchSettings() {
                                         getSearchCustomName={getSearchCustomName}
                                         getSearchDisplayType={getSearchDisplayType}
                                         hasRPDBKey={hasRPDBKey}
-                                        engineRatingPostersEnabled={config.search.engineRatingPosters?.[provider.provider] ?? true}
+                                        engineRatingPostersEnabled={config.search.engineRatingPosters?.[provider.id] ?? false}
                                     />
                                 ))}
                             </div>

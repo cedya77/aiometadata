@@ -37,7 +37,7 @@ const ADDON_VERSION = packageJson.version;
 const META_TTL = parseInt(process.env.META_TTL || 7 * 24 * 60 * 60, 10);
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
 const TMDB_TRENDING_TTL = parseInt(process.env.TMDB_TRENDING_TTL || 3 * 60 * 60, 10);
-const JIKAN_API_TTL = 1 * 24 * 60 * 60;
+const JIKAN_API_TTL = 30 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
@@ -1012,10 +1012,6 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
     cacheLogger.warn(`No config found for user ${userUUID}`);
     return { metas: [] };
   }
-  
-  // Get rating posters enablement state for this search type (movie/series)
-  const searchType = config._currentSearchType;
-  const ratingPostersEnabled = searchType ? (config.search?.engineRatingPosters?.[searchType] !== false) : true;
   
   // Search-specific config (only relevant parameters for search results)
   const defaultSearchOrder = [

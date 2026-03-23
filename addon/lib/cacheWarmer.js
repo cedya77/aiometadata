@@ -82,7 +82,7 @@ async function warmEssentialContent() {
     if (!shouldContinueWarming()) { isCurrentlyWarming = false; return; }
     await cacheWrapJikanApi('mal-studios', async () => {
       return await mal.getStudios(100);
-    }, 30 * 24 * 60 * 1000, { skipVersion: true }); // Cache for 30 days
+    }, 30 * 24 * 60 * 60, { skipVersion: true }); // Cache for 30 days
     warmingItemsCount++;
     
     // Warm MAL available seasons
@@ -397,7 +397,7 @@ async function warmFromUserActivity() {
 /**
  * Schedule essential warming at regular intervals
  */
-function scheduleEssentialWarming(intervalMinutes = 30) {
+function scheduleEssentialWarming(intervalMinutes = 720) {
   warmingIntervalMinutes = intervalMinutes;
   logger.info(`[API Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
   

@@ -37,10 +37,9 @@ function isRatingPostersEnabled(config) {
     return config._currentCatalogConfig.enableRatingPosters !== false;
   }
   
-  // Check search type-level RatingPosters setting (for search routes)
-  if (config._currentSearchType) {
-    // Default to true if not explicitly set to false
-    return config.search?.engineRatingPosters?.[config._currentSearchType] !== false;
+  // Check search catalog-level RatingPosters setting (for search routes)
+  if (config._currentSearchCatalogId) {
+    return config.search?.engineRatingPosters?.[config._currentSearchCatalogId] === true;
   }
   
   // Default to true if neither catalog nor search context is set

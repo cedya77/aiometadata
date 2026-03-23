@@ -3389,6 +3389,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
       }
       config._currentSearchEngine = searchEngine;
       config._currentSearchType = searchType;
+      config._currentSearchCatalogId = originalSearchId;
 
       // Compute search-specific page size based on the provider's actual results per page
       let searchPageSize = 20; // default (TMDB, Kitsu)
@@ -3851,7 +3852,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
     // Skip poster override for up next catalogs unless useShowPosterForUpNext is enabled
     // (when disabled, up next uses episode thumbnails as posters which shouldn't be overridden)
     const host = process.env.HOST_NAME.startsWith('http') ? process.env.HOST_NAME : `https://${process.env.HOST_NAME}`;
-    const posterPatternsEnabled = catalogConfig?.enableRatingPosters !== false;
+    const posterPatternsEnabled = config._currentSearchCatalogId
+      ? (config.search?.engineRatingPosters?.[config._currentSearchCatalogId] === true)
+      : (catalogConfig?.enableRatingPosters !== false);
     const posterPattern = posterPatternsEnabled ? (config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? require('./utils/parseProps').getDefaultPosterPattern(config.posterRatingProvider) : null)) : null;
     if ((posterPattern || config.customBackgroundUrlPattern || config.customLogoUrlPattern) && responseData?.metas && Array.isArray(responseData.metas)) {
       const isUpNextCatalog = cleanId.includes('up_next') || cleanId.includes('upnext');
