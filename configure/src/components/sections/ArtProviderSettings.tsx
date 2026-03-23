@@ -2,9 +2,10 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, RotateCcw } from 'lucide-react';
 
 const movieArtProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
@@ -458,7 +459,27 @@ export function ArtProviderSettings() {
             </div>
             <Select
               value={config.posterRatingProvider || 'rpdb'}
-              onValueChange={(value) => setConfig(prev => ({ ...prev, posterRatingProvider: value as 'rpdb' | 'top' | 'custom', customPosterUrlPattern: '', customBackgroundUrlPattern: '', customLogoUrlPattern: '', customThumbnailUrlPattern: '' }))}
+              onValueChange={(value) => {
+                const provider = value as 'rpdb' | 'top' | 'custom';
+                let posterPattern = '';
+                let thumbnailPattern = '';
+                
+                if (provider === 'rpdb') {
+                  posterPattern = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}';
+                } else if (provider === 'top') {
+                  posterPattern = 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
+                  thumbnailPattern = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+                }
+                
+                setConfig(prev => ({ 
+                  ...prev, 
+                  posterRatingProvider: provider, 
+                  customPosterUrlPattern: posterPattern, 
+                  customBackgroundUrlPattern: '', 
+                  customLogoUrlPattern: '', 
+                  customThumbnailUrlPattern: thumbnailPattern 
+                }));
+              }}
             >
               <SelectTrigger id="posterRatingProvider" className="w-[200px]">
                 <SelectValue placeholder="Select provider" />
@@ -503,15 +524,28 @@ export function ArtProviderSettings() {
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">Poster URL Pattern</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium block">Poster URL Pattern</label>
+                {(config.posterRatingProvider === 'rpdb' || config.posterRatingProvider === 'top') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      const pattern = config.posterRatingProvider === 'rpdb'
+                        ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}'
+                        : 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
+                      setConfig(prev => ({ ...prev, customPosterUrlPattern: pattern }));
+                    }}
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    Reset to Default
+                  </Button>
+                )}
+              </div>
               <Input
                 placeholder="https://example.com/poster/{imdb_id}.jpg"
-                value={config.customPosterUrlPattern || (() => {
-                  const provider = config.posterRatingProvider || 'rpdb';
-                  if (provider === 'rpdb') return 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}';
-                  if (provider === 'top') return 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
-                  return '';
-                })()}
+                value={config.customPosterUrlPattern || ''}
                 onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
               />
             </div>
@@ -532,14 +566,26 @@ export function ArtProviderSettings() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">Episode Thumbnail URL Pattern</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium block">Episode Thumbnail URL Pattern</label>
+                {(config.posterRatingProvider === 'top') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      const pattern = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+                      setConfig(prev => ({ ...prev, customThumbnailUrlPattern: pattern }));
+                    }}
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    Reset to Default
+                  </Button>
+                )}
+              </div>
               <Input
                 placeholder="https://example.com/thumbnail/{imdb_id}/S{season}E{episode}.jpg"
-                value={config.customThumbnailUrlPattern || (() => {
-                  const provider = config.posterRatingProvider || 'rpdb';
-                  if (provider === 'top') return 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
-                  return '';
-                })()}
+                value={config.customThumbnailUrlPattern || ''}
                 onChange={(e) => setConfig(prev => ({ ...prev, customThumbnailUrlPattern: e.target.value }))}
               />
               <p className="text-xs text-muted-foreground mt-1">
