@@ -164,6 +164,13 @@ class ComprehensiveCatalogWarmer {
 
   async shouldWarmup() {
     try {
+      const inProgress = await redis.get('catalog-warmup:in-progress');
+      if (inProgress) {
+        this.log('warn', `Previous warmup was interrupted (started at ${new Date(parseInt(inProgress)).toISOString()}) - will re-warm`);
+        await redis.del('catalog-warmup:in-progress');
+        return true;
+      }
+
       // Check if any UUID needs warming
       for (const uuid of this.config.uuids) {
         const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
@@ -589,11 +596,22 @@ class ComprehensiveCatalogWarmer {
             return formatter.format(new Date());
           };
           extraArgs.date = getTodayInTimezone(getUserTimezone());
-          extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number' 
-            ? catalogConfig.metadata.airingSoonDays 
+          extraArgs.days = typeof catalogConfig?.metadata?.airingSoonDays === 'number'
+            ? catalogConfig.metadata.airingSoonDays
             : 1;
         }
-        
+
+        if (catalogId === 'tvmaze.schedule') {
+          const getUserTimezone = () => config.timezone || process.env.TZ || 'UTC';
+          const getTodayInTimezone = (tz) => {
+            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+            return formatter.format(new Date());
+          };
+          const dateString = extraArgs.date || getTodayInTimezone(getUserTimezone());
+          extraArgs.date = dateString;
+          extraArgs.genre = !extraArgs.genre || extraArgs.genre === 'None' ? '' : extraArgs.genre.toUpperCase();
+        }
+
           const derivedPage = currentPage;
           const actualType = catalog.type;
           const catalogKey = `${catalogId}:${actualType}:${stableStringify(extraArgs || {})}`;
@@ -705,6 +723,8 @@ class ComprehensiveCatalogWarmer {
     this.isRunning = true;
     this.stats.isRunning = true;
     const startTime = Date.now();
+
+    await redis.set('catalog-warmup:in-progress', Date.now().toString());
 
     try {
       this.log('success', `Starting comprehensive catalog warmup for ${this.config.uuids.length} UUID(s)...`);
@@ -829,6 +849,7 @@ class ComprehensiveCatalogWarmer {
       this.isRunning = false;
       this.stats.isRunning = false;
       this.shouldStop = false; // Reset stop flag
+      await redis.del('catalog-warmup:in-progress').catch(() => {});
     }
   }
 

@@ -45,12 +45,6 @@ const MDBLIST_GENRES_TTL = 30 * 24 * 60 * 60; // Cache MDBList genres for 30 day
 const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60; // Cache StremThru genres for 7 days
 const ANILIST_CATALOG_TTL = parseInt(process.env.ANILIST_CATALOG_TTL || 1 * 60 * 60, 10); // Default 1 hour for AniList catalogs
 
-// Store current request context for catalog/search operations
-// This allows reconstruction to access the correct RPDB state
-let currentRequestContext = {
-  catalogConfig: null,
-  searchEngine: null
-};
 
 // Enhanced error caching strategy with self-healing
 const ERROR_TTL_STRATEGIES = {
@@ -987,25 +981,16 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog || isAuthCatalog;
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
   
-  // Set module-level context for this catalog request
-  // This allows reconstruction to access the correct RPDB state
-  currentRequestContext.catalogConfig = catalogFromConfig;
-
-  try {
-    // Check if the catalog is already cached before calling cacheWrap
-    // so we can log the full config detail on HITs (cacheWrap only logs the key)
-    if (redis) {
-      const versionedKey = `v${ADDON_VERSION}:${key}`;
-      const cached = await redis.get(versionedKey);
-      if (cached) {
-        cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
-      }
+  // Check if the catalog is already cached before calling cacheWrap
+  // so we can log the full config detail on HITs (cacheWrap only logs the key)
+  if (redis) {
+    const versionedKey = `v${ADDON_VERSION}:${key}`;
+    const cached = await redis.get(versionedKey);
+    if (cached) {
+      cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
     }
-    return await cacheWrap(key, method, cacheTTL, options);
-  } finally {
-    // Clear context after request completes
-    currentRequestContext.catalogConfig = null;
   }
+  return await cacheWrap(key, method, cacheTTL, options);
   }
 
 /**
@@ -1084,13 +1069,11 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
 }
 
 async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
-   // Load config from database
    let config;
    try {
      config = await loadConfigFromDatabase(userUUID);
    } catch (error) {
      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
-     // Return empty response for invalid UUIDs instead of crashing
      return { meta: null };
    }
    
@@ -1174,19 +1157,16 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
  * Caches individual components separately to prevent one bad component from affecting everything
  */
 async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, useShowPoster = false) {
-   // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
      return { meta: null };
    }
    
-   // Load config from database
    let config;
    try {
      config = await loadConfigFromDatabase(userUUID);
    } catch (error) {
      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
-     // Return empty response for invalid UUIDs instead of crashing
      return { meta: null };
    }
    
@@ -1195,11 +1175,9 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      return { meta: null };
    }
    
-   // Parse metaId to determine context
    const [prefix, sourceId] = metaId.split(':');
    const metaType = type;
    
-   // Create context-aware meta config object (same as cacheWrapMeta)
    const metaConfig = {
      language: config.language || 'en-US',
      castCount: config.castCount || 0,
@@ -1236,7 +1214,6 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
        background: resolveArtProvider('movie', 'background', config),
        logo: resolveArtProvider('movie', 'logo', config)
      };
-    // Keep keys identical to reconstructMetaFromComponents
     metaConfig.tmdb = {
      scrapeImdb: config.tmdb?.scrapeImdb || false,
      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
@@ -1263,7 +1240,6 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
 const metaConfigString = stableStringify(metaConfig);
 const configHash = hashConfig(metaConfigString);
  
- // Define component cache keys
   const componentCacheKeys = {
      basic: `meta-basic:${configHash}:${metaId}`,
      poster: `meta-poster:${configHash}:${metaId}`,
@@ -1280,12 +1256,6 @@ const configHash = hashConfig(metaConfigString);
      extras: `meta-extras:${configHash}:${metaId}`
    };
    
-   // Debug: Log cache keys for different content types
-   /*console.log(`📦 [Cache] DEBUG: Generated cache keys for ${metaId} (type: ${metaType}):`);
-   console.log(`📦 [Cache] DEBUG:   metaConfig: ${metaConfigString}`);
-   console.log(`📦 [Cache] DEBUG:   poster key: ${componentCacheKeys.poster}`);
-   console.log(`📦 [Cache] DEBUG:   background key: ${componentCacheKeys.background}`);*/
-   
    const result = await method();
    
    const meta = result?.meta || result;
@@ -1295,7 +1265,6 @@ const configHash = hashConfig(metaConfigString);
     return { meta: null };
   }
   
-  // Capture metadata for dashboard display (fire-and-forget)
   try {
     const requestTracker = require('./requestTracker');
     requestTracker.captureMetadataFromComponents(metaId, meta, meta.type).catch(() => {});
@@ -1335,7 +1304,6 @@ const configHash = hashConfig(metaConfigString);
      cacheComponent(componentCacheKeys.basic, basicMeta, ttl)
    );
    
-   // Poster
    if (meta.poster) {
     let rawPoster = meta.poster;
     
@@ -1363,7 +1331,6 @@ const configHash = hashConfig(metaConfigString);
     );
   }
    
-   // Background
    if (meta.background) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.background, { background: meta.background }, ttl)
@@ -1375,96 +1342,76 @@ const configHash = hashConfig(metaConfigString);
      );
    }
    
-   // Logo
    if (meta.logo) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.logo, { logo: meta.logo }, ttl)
      );
    }
    
-   // Videos (episodes for series)
    if (meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.videos, { videos: meta.videos }, ttl)
      );
    }
    
-   // Cast - only cache if castCount is not configured (unlimited cast)
-   // When castCount is configured, we don't cache cast to avoid serving wrong cast count
+   // Skip individual cast caching when castCount is configured (already in metaConfig hash)
    if (meta.app_extras?.cast && (!config.castCount || config.castCount === 0)) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.cast, { cast: meta.app_extras.cast }, ttl)
      );
    }
    
-   // Director details
    if (meta.app_extras?.directors) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.director, { directors: meta.app_extras.directors }, ttl)
      );
    }
    
-   // Writer details
    if (meta.app_extras?.writers) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.writer, { writers: meta.app_extras.writers }, ttl)
      );
    }
    
-   // Links
    if (meta.links && Array.isArray(meta.links)) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.links, { links: meta.links }, ttl)
      );
    }
    
-   // Trailers
-   if (meta.trailers) {
+   if (meta.trailers || meta.trailerStreams) {
+     const trailerData = {};
+     if (meta.trailers) trailerData.trailers = meta.trailers;
+     if (meta.trailerStreams) trailerData.trailerStreams = meta.trailerStreams;
      componentPromises.push(
-       cacheComponent(componentCacheKeys.trailers, { trailers: meta.trailers }, ttl)
+       cacheComponent(componentCacheKeys.trailers, trailerData, ttl)
      );
    }
    
-   // Trailer streams
-   if (meta.trailerStreams) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.trailers, { trailerStreams: meta.trailerStreams }, ttl)
-     );
-   }
-   
-   // App extras (combined)
    if (meta.app_extras) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.extras, { app_extras: meta.app_extras }, ttl)
      );
    }
    
-     // Cache all components in parallel
   await Promise.all(componentPromises);
-   
-   // Return the meta object wrapped in the expected format
    return { meta };
 }
 
 /**
  * Reconstruct meta object from cached components
- * This allows for partial cache hits and graceful degradation
- * @param {boolean} includeVideos - Whether videos component is required for this request
  */
 async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
-   // Validate metaId
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided: ${metaId}`);
      return { errorReason: 'invalid metaId' };
    }
    
-   // Load config from database
    let config;
    try {
      config = await loadConfigFromDatabase(userUUID);
   } catch (error) {
     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
-    // Return reason for invalid UUIDs instead of crashing
     return { errorReason: `load config failed: ${error.message}` };
   }
    
@@ -1473,11 +1420,9 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     return { errorReason: 'no config for user' };
   }
    
-   // Parse metaId to determine context
    const [prefix, sourceId] = metaId.split(':');
    const metaType = type;
    
-   // Create context-aware meta config object (same as cacheWrapMeta)
    const metaConfig = {
      language: config.language || 'en-US',
      castCount: config.castCount || 0,
@@ -1491,8 +1436,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
 
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
    const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   //const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
-   //const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
    if (isAnime) {
      metaConfig.metaProvider = config.providers?.anime || 'mal';
      metaConfig.artProvider = {
@@ -1538,8 +1481,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  const configHash = hashConfig(metaConfigString);
   const debugSig = shortSignature(`${userUUID}|${configHash}`);
   
-  // Define component cache keys
-  const componentCacheKeys = {
+   const componentCacheKeys = {
     basic: `meta-basic:${configHash}:${metaId}`,
      poster: `meta-poster:${configHash}:${metaId}`,
      rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
@@ -1555,21 +1497,16 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      extras: `meta-extras:${configHash}:${metaId}`
    };
    
-   // Try to fetch all components from cache using MGET (optimized single round trip)
   const componentNames = Object.keys(componentCacheKeys);
   const cacheKeys = Object.values(componentCacheKeys).map(key => `v${ADDON_VERSION}:${key}`);
   
   let componentResults = [];
   
-  // Short-circuit if no cache keys to fetch
   if (cacheKeys.length === 0) {
     componentResults = componentNames.map(componentName => ({ componentName, data: null }));
   } else {
     try {
-      // Use MGET to fetch all keys in a single network round trip
       const cachedValues = await redis.mget(...cacheKeys);
-    
-    // Map results back to component names
     componentResults = componentNames.map((componentName, index) => {
       const cached = cachedValues[index];
       if (cached) {
@@ -1588,7 +1525,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     });
     } catch (error) {
       cacheLogger.warn(`Error fetching components with MGET:`, error);
-      // Fallback: return empty results
       componentResults = componentNames.map(componentName => ({ componentName, data: null }));
     }
   }
@@ -1601,10 +1537,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     return { errorReason: 'no cached components' };
   }
    
-   // Reconstruct meta object from available components
    const reconstructedMeta = {};
-   
-   // Start with basic meta
+
   const basicComponent = availableComponents.find(c => c.componentName === 'basic');
   if (basicComponent) {
     Object.assign(reconstructedMeta, basicComponent.data);
@@ -1658,52 +1592,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   }
 
   
-   // Add other components
    availableComponents.forEach(({ componentName, data }) => {
-     if (componentName === 'basic') return; // Already handled
+     if (componentName === 'basic') return;
      
      if (componentName === 'poster') {
-       // Apply poster rating logic during reconstruction if enabled
-       // Use module-level context to get accurate enablement state
-       const posterRatingEnabled = currentRequestContext.catalogConfig?.enableRatingPosters !== false;
-       const host = process.env.HOST_NAME.startsWith('http')
-         ? process.env.HOST_NAME
-         : `https://${process.env.HOST_NAME}`;
-       
-       const isUpNextWithEpisodeThumbnail = (metaId.startsWith('upnext_') || metaId.startsWith('mdblist_upnext_')) && !useShowPoster;
-       const hasEpisodeThumbnailShape = reconstructedMeta.posterShape === 'landscape';
-       
-       if (posterRatingEnabled && reconstructedMeta.id && !isUpNextWithEpisodeThumbnail && !hasEpisodeThumbnailShape) {
-         // Apply poster rating proxy/direct URL to cached poster
-         const language = config.language || 'en-US';
-         const Utils = require("../utils/parseProps");
-         // Strip known prefixes used for special metas (upnext_, unwatched_, tun_, mdblist_upnext_)
-         let canonicalProxyId = reconstructedMeta.id.replace(/^(upnext_|unwatched_|tun_|mdblist_upnext_)/, '');
-         // Also strip any trailing episode identifier we append to upnext cache keys
-         // Examples: 'tmdb:123_trakt456' or 'tvdb:789_S1E02' -> keep only the canonical media id
-         canonicalProxyId = canonicalProxyId.replace(/_(trakt\d+|S\d+E\d+)$/i, '');
-         //cacheLogger.debug(`[Reconstruct] Rebuilding poster proxy URL for ${reconstructedMeta.id} (canonical: ${canonicalProxyId}), cached poster: ${data.poster?.substring(0, 100)}...`);
-         reconstructedMeta.poster = Utils.buildPosterProxyUrl(host, reconstructedMeta.type, canonicalProxyId, data.poster, language, config);
-       } else {
-        if (isUpNextWithEpisodeThumbnail || hasEpisodeThumbnailShape) {
-          cacheLogger.debug(`[Reconstruct] Preserving cached episode thumbnail for ${metaId}...`);
-        }
-        if (data.poster && data.poster.includes('/poster/')) {
-          try {
-            const urlObj = new URL(data.poster);
-            const fallback = urlObj.searchParams.get('fallback');
-            if (fallback) {
-              reconstructedMeta.poster = decodeURIComponent(fallback);
-            } else {
-              reconstructedMeta.poster = data.poster;
-            }
-          } catch(e) {
-            reconstructedMeta.poster = data.poster;
-          }
-        } else {
-          reconstructedMeta.poster = data.poster;
-        }
-      }
+       reconstructedMeta.poster = data.poster;
      } else if (componentName === 'rawPoster') {
        reconstructedMeta._rawPosterUrl = data._rawPosterUrl;
      } else if (componentName === 'background') {
@@ -1738,7 +1631,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     reconstructedMeta.poster = reconstructedMeta._rawPosterUrl;
   }
   
-  // Validate the reconstructed meta
   if (!reconstructedMeta.id || !reconstructedMeta.name || !reconstructedMeta.type) {
     cacheLogger.warn(`Reconstructed meta missing required fields for ${metaId}`);
     const metaReconstructionKey = `meta:reconstructed:${metaId}`;
@@ -1746,18 +1638,14 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     return { errorReason: 'missing required fields' };
   }
   
-  // Context-aware videos check: only require videos if the caller needs them
   if ((reconstructedMeta.type === 'series') && includeVideos) {
     const videosComponent = availableComponents.find(c => c.componentName === 'videos');
-    
-    // If videos are required but not found in cache, fail the reconstruction
     if (!videosComponent) {
       const metaReconstructionKey = `meta:reconstructed:${metaId}`;
       updateCacheHealth(metaReconstructionKey, 'miss', true);
       return { errorReason: 'required videos component missing' };
     }
     
-    // Also check if videos array is valid
     const videos = reconstructedMeta.videos;
     if (!videos || !Array.isArray(videos) || videos.length === 0) {
       const metaReconstructionKey = `meta:reconstructed:${metaId}`;
@@ -1766,7 +1654,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     }
   }
   
-  // Capture metadata for dashboard display (fire-and-forget)
   try {
     const requestTracker = require('./requestTracker');
     requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type).catch(() => {});
@@ -1782,7 +1669,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
 
 /**
  * meta cache wrapper that tries component reconstruction first, then falls back to full generation
- * This provides granular caching with graceful degradation
  * @param {boolean} includeVideos - Whether videos are required for this request (default: true)
  */
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
