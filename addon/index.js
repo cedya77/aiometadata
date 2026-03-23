@@ -125,8 +125,15 @@ function extractIdsFromMeta(meta) {
   else if (id.startsWith('anidb:')) ids.anidbId = id.slice(6);
   else if (id.startsWith('tt')) ids.imdbId = id;
 
-  // Some metas carry imdb_id as a separate property
+  // Pick up additional IDs from meta properties
   if (meta.imdb_id) ids.imdbId = meta.imdb_id;
+  if (meta._tmdbId && !ids.tmdbId) ids.tmdbId = meta._tmdbId;
+  if (meta._tvdbId && !ids.tvdbId) ids.tvdbId = meta._tvdbId;
+  if (meta._imdbId && !ids.imdbId) ids.imdbId = meta._imdbId;
+  if (meta._malId && !ids.malId) ids.malId = meta._malId;
+  if (meta._kitsuId && !ids.kitsuId) ids.kitsuId = meta._kitsuId;
+  if (meta._anilistId && !ids.anilistId) ids.anilistId = meta._anilistId;
+  if (meta._anidbId && !ids.anidbId) ids.anidbId = meta._anidbId;
 
   return ids;
 }

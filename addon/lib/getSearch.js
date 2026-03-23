@@ -166,6 +166,8 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
     runtime: type === 'movie' ? Utils.parseRunTime(extendedRecord.runtime) : Utils.parseRunTime(extendedRecord.averageRuntime),
     genres: extendedRecord.genres?.map(g => g.name) || [],
     imdbRating: imdbId ? await getImdbRating(imdbId, type) : 'N/A',
+    _tmdbId: tmdbId ? String(tmdbId) : undefined,
+    _tvdbId: tvdbId ? String(tvdbId) : undefined,
     status: extendedRecord.status?.name || extendedRecord.status,
     aliases: extendedRecord.aliases || [],
     translations: extendedRecord.translations?.nameTranslations?.map(t => t.name) || [],
@@ -634,6 +636,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         parsed.popularity = media.popularity;
         parsed.score = media.score;
         if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
+        if(allIds.tmdbId) parsed._tmdbId = String(allIds.tmdbId);
+        if(allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
         parsed.app_extras = { releaseDates: details.release_dates };
@@ -888,6 +892,8 @@ async function performTmdbPeopleSearch(type, query, language, config, page = 1) 
           background: backgroundPath,
           posterShape: 'regular',
           imdbRating: allIds?.imdbId ? await getImdbRating(allIds.imdbId, mediaType) : null,
+          _tmdbId: allIds?.tmdbId ? String(allIds.tmdbId) : undefined,
+          _tvdbId: allIds?.tvdbId ? String(allIds.tvdbId) : undefined,
           year: type === 'movie'
             ? (media.release_date?.substring(0, 4) || '')
             : (media.first_air_date?.substring(0, 4) || ''),
@@ -1069,10 +1075,12 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
     if (allIds.imdbId) parsed.imdb_id = allIds.imdbId;
+    if (allIds.tmdbId) parsed._tmdbId = String(allIds.tmdbId);
+    if (allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
     parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
     if (type === 'series') {
       parsed.runtime = Utils.parseRunTime(
-        details.episode_run_time?.[0] ?? 
+        details.episode_run_time?.[0] ??
         details.last_episode_to_air?.runtime ?? 
         details.next_episode_to_air?.runtime ?? 
         null
@@ -1732,7 +1740,9 @@ async function parseTvmazeResult(show, config) {
     genres: show.genres || [],
     logo: logoUrl,
     year: show.premiered ? show.premiered.substring(0, 4) : '',
-    imdbRating: imdbId ? (await getImdbRating(imdbId, 'series')) : show.rating?.average ? show.rating.average.toFixed(1) : 'N/A'
+    imdbRating: imdbId ? (await getImdbRating(imdbId, 'series')) : show.rating?.average ? show.rating.average.toFixed(1) : 'N/A',
+    _tmdbId: tmdbId ? String(tmdbId) : undefined,
+    _tvdbId: tvdbId ? String(tvdbId) : undefined,
   };
 }
 
@@ -1884,6 +1894,8 @@ async function performTraktSearch(type, query, language, config) {
             genres: media.genres || [],
             year: media.year || null,
             imdbRating: imdbRating,
+            _tmdbId: tmdbId ? String(tmdbId) : undefined,
+            _tvdbId: tvdbId ? String(tvdbId) : undefined,
             runtime: type === 'movie' ? Utils.parseRunTime(media.runtime) : null,
             status: type === 'series' ? (media.status || null) : null
           };
@@ -2047,6 +2059,8 @@ async function performMdbListSearch(type, query, language, config) {
         genres: media.genres.map(genre => genre.title) || [],
         year: media.year || null,
         imdbRating: media.ratings.find(rating => rating.source === 'imdb')?.value || null,
+        _tmdbId: media.ids?.tmdb ? String(media.ids.tmdb) : undefined,
+        _tvdbId: media.ids?.tvdb ? String(media.ids.tvdb) : undefined,
         runtime: type === 'movie' ? Utils.parseRunTime(media.runtime) : null,
         status: type === 'series' ? (media.status || null) : null,
       };
@@ -2299,9 +2313,11 @@ async function performTraktPeopleSearch(type, query, language, config) {
             genres: media.genres || [],
             year: media.year || null,
             imdbRating: imdbRating,
+            _tmdbId: tmdbId ? String(tmdbId) : undefined,
+            _tvdbId: tvdbId ? String(tvdbId) : undefined,
             runtime: type === 'movie' ? Utils.parseRunTime(media.runtime) : null,
             status: type === 'series' ? (media.status || null) : null,
-            _matchType: media.matchType 
+            _matchType: media.matchType
           };
 
           if (releaseDates) {

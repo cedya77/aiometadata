@@ -27,6 +27,20 @@ const wikiMappings = require('./wiki-mapper.js');
 const logger = consola.withTag('Meta');
 
 
+/** Extract all resolved IDs as underscore-prefixed properties for post-processing */
+function stampIds(allIds) {
+  if (!allIds) return {};
+  const stamps = {};
+  if (allIds.tmdbId) stamps._tmdbId = String(allIds.tmdbId);
+  if (allIds.tvdbId) stamps._tvdbId = String(allIds.tvdbId);
+  if (allIds.imdbId) stamps._imdbId = allIds.imdbId;
+  if (allIds.malId) stamps._malId = String(allIds.malId);
+  if (allIds.kitsuId) stamps._kitsuId = String(allIds.kitsuId);
+  if (allIds.anilistId) stamps._anilistId = String(allIds.anilistId);
+  if (allIds.anidbId) stamps._anidbId = String(allIds.anidbId);
+  return stamps;
+}
+
 const processLogo = (logoUrl) => {
   if (!logoUrl) return null;
   return logoUrl.replace(/^http:/, "https:");
@@ -1105,6 +1119,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     }
   }
 
+  Object.assign(imdbData, stampIds(allIds));
   return imdbData;
 }
 
@@ -1277,7 +1292,8 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailerStreams: finalTrailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], releaseDates: movieData.release_dates, certification: certification }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], releaseDates: movieData.release_dates, certification: certification },
+    ...stampIds(allIds),
   };
 }
 
@@ -1737,7 +1753,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits, castCount), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], seasonPosters: tmdbSeasonPosters, certification: certification }
+    app_extras: { cast: Utils.parseCast(credits, castCount), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], seasonPosters: tmdbSeasonPosters, certification: certification },
+    ...stampIds(allIds),
   };
   if (runtime) {
     meta.runtime = Utils.parseRunTime(runtime);
@@ -1904,7 +1921,8 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: links,
-    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], releaseDates: release_dates, certification: certification }
+    app_extras: { cast: Utils.parseCast(movieCredits, castCount, 'tvdb'), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], releaseDates: release_dates, certification: certification },
+    ...stampIds(allIds),
   };
 }
 
@@ -2333,7 +2351,8 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     trailerStreams: trailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], seasonPosters: seasonPosters, certification: certification }
+    app_extras: { cast: Utils.parseCast(tvdbCredits, castCount, 'tvdb'), directors: castCount !== 0 ? directorDetails : [], writers: castCount !== 0 ? writerDetails : [], seasonPosters: seasonPosters, certification: certification },
+    ...stampIds(allIds),
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));
   return meta;
@@ -2922,6 +2941,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     const meta = {
       id: stremioId,
       type: stremioType,
+      ...stampIds(mapping),
       description: Utils.addMetaProviderAttribution(malData.synopsis, 'MAL', config),
       name: malData.title_english || malData.title,
       imdb_id: imdbId,
@@ -3036,6 +3056,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
     const meta = {
       id: stremioId,
       type: stremioType,
+      ...stampIds(mapping),
       imdb_id: imdbId,
       name: kitsuTitle,
       description: Utils.addMetaProviderAttribution(
