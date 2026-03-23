@@ -828,7 +828,7 @@ class ConfigApi {
       }
 
       // Use getOrLoad for stampede protection - only one DB load per expired key
-      return await configCache.getOrLoad(userUUID, async () => {
+      const cachedConfig = await configCache.getOrLoad(userUUID, async () => {
         logger.debug(`❌ Config cache MISS for user ${userUUID.substring(0, 8)}..., loading from database`);
 
         // Load from database
@@ -874,6 +874,8 @@ class ConfigApi {
         logger.debug(`⚡ Config loaded and cached for user ${userUUID.substring(0, 8)}...`);
         return sanitizedConfig;
       });
+
+      return JSON.parse(JSON.stringify(cachedConfig));
     } catch (error) {
       logger.error('loadConfigFromDatabase error:', error);
       throw error;
