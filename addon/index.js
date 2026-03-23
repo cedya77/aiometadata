@@ -183,14 +183,13 @@ const POSTER_PROXY_PREFIX_URL = (process.env.POSTER_PROXY_PREFIX_URL || '').repl
 
 // Initialize cache warming for public instances (enabled by default)
 const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING !== 'false';
-const CACHE_WARMING_INTERVAL = parseInt(process.env.CACHE_WARMING_INTERVAL || '30', 10);
+const CACHE_WARMING_INTERVAL = parseInt(process.env.CACHE_WARMING_INTERVAL || '720', 10);
 
 if (ENABLE_CACHE_WARMING && !NO_CACHE) {
-  consola.info(`[Cache Warming] Initializing essential content warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
-  
+  consola.info(`[API Cache Warming] Initializing API cache warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
+
   // Schedule periodic warming (non-blocking)
-  scheduleEssentialWarming(CACHE_WARMING_INTERVAL);
-  
+  scheduleEssentialWarming(CACHE_WARMING_INTERVAL);  
   // Schedule popular content warming based on CACHE_WARM_INTERVAL_HOURS env (default 24h, minimum 12h)
   const POPULAR_WARM_INTERVAL_HOURS = Math.max(12, parseInt(process.env.CACHE_WARM_INTERVAL_HOURS || '24', 10));
   const POPULAR_WARM_CHECK_INTERVAL = 15 * 60 * 1000; // Check every 15 minutes
@@ -2818,16 +2817,15 @@ addon.post("/api/cache/warm", async (req, res) => {
   }
   
   try {
-    consola.info('[API] Manual essential content warming requested');
+    consola.info('[API] Manual API content warming requested');
     const results = await warmEssentialContent();
-    res.json({ 
-      success: true, 
-      message: 'Essential content warming completed',
-      results 
+    res.json({
+      success: true,
+      message: 'API content warming completed',
+      results
     });
-  } catch (error) {
-    consola.error('[API] Essential content warming failed:', error);
-    res.status(500).json({ 
+    } catch (error) {
+    consola.error('[API] API content warming failed:', error);    res.status(500).json({ 
       success: false, 
       error: error.message 
     });

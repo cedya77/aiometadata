@@ -5,11 +5,11 @@ const { getGenreList } = require('./getGenreList');
 const mal = require('./mal');
 const tvdb = require('./tvdb');
 const consola = require('consola');
-const logger = consola.withTag('Cache-Warming');
+const logger = consola.withTag('API-Cache-Warming');
 
 // Warming strategies
 const WARMING_STRATEGIES = {
-  ESSENTIAL: 'essential',
+  API_CONTENT: 'api_content',
   RELATED: 'related',
   USER_ACTIVITY: 'user_activity'
 };
@@ -20,7 +20,7 @@ let isCurrentlyWarming = false;
 let lastWarmingRun = null;
 let nextWarmingRun = null;
 let warmingItemsCount = 0;
-let warmingIntervalMinutes = 30; // Default interval
+let warmingIntervalMinutes = 720; // Default interval (12 hours)
 
 /**
  * Request to stop warming operations
@@ -28,10 +28,10 @@ let warmingIntervalMinutes = 30; // Default interval
 function stopWarming() {
   if (isCurrentlyWarming) {
     shouldStopWarming = true;
-    logger.info('[Cache Warming] Stop requested - will stop after current operation');
-    return { success: true, message: 'Essential warming will stop after current operation' };
+    logger.info('[API Cache Warming] Stop requested - will stop after current operation');
+    return { success: true, message: 'API cache warming will stop after current operation' };
   }
-  return { success: true, message: 'Essential warming is not currently running' };
+  return { success: true, message: 'API cache warming is not currently running' };
 }
 
 /**
@@ -42,7 +42,7 @@ function shouldContinueWarming() {
 }
 
 /**
- * Warm essential content that users commonly access
+ * Warm API content that users commonly access (genres, studios, seasons)
  */
 async function warmEssentialContent() {
   // Reset stop flag at start
@@ -50,7 +50,7 @@ async function warmEssentialContent() {
   isCurrentlyWarming = true;
   
   try {
-    logger.info('[Cache Warming] Warming essential content...');
+    logger.info('[API Cache Warming] Warming API content...');
     
     // Record start time for maintenance tracking
     const startTime = Date.now();
@@ -106,17 +106,17 @@ async function warmEssentialContent() {
     try {
       const redis = require('./redisClient');
       await redis.setex('maintenance:last_cache_warming', 86400 * 7, startTime.toString());
-      logger.success(`[Cache Warming] Maintenance task tracked: cache warming completed in ${duration}ms`);
+      logger.success(`[API Cache Warming] Maintenance task tracked: API cache warming completed in ${duration}ms`);
     } catch (trackingError) {
-      logger.warn('[Cache Warming] Failed to track maintenance task:', trackingError.message);
+      logger.warn('[API Cache Warming] Failed to track maintenance task:', trackingError.message);
     }
     
     initialWarmingComplete = true;
-    logger.success('[Cache Warming] Essential content warming completed');
+    logger.success('[API Cache Warming] API content warming completed');
   } catch (error) {
-    logger.error('[Cache Warming] Error warming essential content:', error.message);
+    logger.error('[API Cache Warming] Error warming API content:', error.message);
     if (error && error.stack) {
-      logger.error('[Cache Warming] Stack:', error.stack);
+      logger.error('[API Cache Warming] Stack:', error.stack);
     }
   } finally {
     isCurrentlyWarming = false;
@@ -220,10 +220,10 @@ async function ensureSystemConfig() {
     await database.saveUserConfig(systemUUID, systemPasswordHash, systemConfig);
     await database.trustUUID(systemUUID);
     
-    logger.success(`[Cache Warming] System config created with UUID: ${systemUUID}`);
+    logger.success(`[API Cache Warming] System config created with UUID: ${systemUUID}`);
     return systemUUID;
   } catch (error) {
-    logger.error('[Cache Warming] Failed to create system config:', error.message);
+    logger.error('[API Cache Warming] Failed to create system config:', error.message);
     throw error;
   }
 }
@@ -247,14 +247,14 @@ async function shouldWarmPopularContent() {
     const timeSinceLastWarm = Date.now() - lastWarmTime;
     
     if (timeSinceLastWarm >= WARM_INTERVAL_MS) {
-      logger.info(`[Cache Warming] ${Math.round(timeSinceLastWarm / 1000 / 60 / 60)}h since last popular warming (threshold: ${WARM_INTERVAL_MS / 1000 / 60 / 60}h)`);
+      logger.info(`[API Cache Warming] ${Math.round(timeSinceLastWarm / 1000 / 60 / 60)}h since last popular warming (threshold: ${WARM_INTERVAL_MS / 1000 / 60 / 60}h)`);
       return true;
     }
     
-    logger.info(`[Cache Warming] Popular content was warmed ${Math.round(timeSinceLastWarm / 1000 / 60)}min ago, skipping (next in ${Math.round((WARM_INTERVAL_MS - timeSinceLastWarm) / 1000 / 60)}min)`);
+    logger.info(`[API Cache Warming] Popular content was warmed ${Math.round(timeSinceLastWarm / 1000 / 60)}min ago, skipping (next in ${Math.round((WARM_INTERVAL_MS - timeSinceLastWarm) / 1000 / 60)}min)`);
     return false;
   } catch (error) {
-    logger.warn('[Cache Warming] Failed to check warming interval, proceeding with warming:', error.message);
+    logger.warn('[API Cache Warming] Failed to check warming interval, proceeding with warming:', error.message);
     return true; // Warm on error to be safe
   }
 }
@@ -268,7 +268,7 @@ async function markPopularContentWarmed() {
     const lastWarmKey = 'cache-warming:last-popular-warm';
     await redis.set(lastWarmKey, Date.now().toString());
   } catch (error) {
-    logger.warn('[Cache Warming] Failed to mark warming timestamp:', error.message);
+    logger.warn('[API Cache Warming] Failed to mark warming timestamp:', error.message);
   }
 }
 
@@ -280,13 +280,13 @@ async function warmPopularContent(force = false) {
     // Check cache warmup mode - skip if comprehensive only
     const warmupMode = process.env.CACHE_WARMUP_MODE || 'essential';
     if (warmupMode === 'comprehensive') {
-      logger.debug('[Cache Warming] Essential warming disabled (CACHE_WARMUP_MODE=comprehensive)');
+      logger.debug('[API Cache Warming] Essential warming disabled (CACHE_WARMUP_MODE=comprehensive)');
       return;
     }
     
     // Check if popular warming is disabled
     if (process.env.TMDB_POPULAR_WARMING_ENABLED === 'false') {
-      logger.debug('[Cache Warming] TMDB popular content warming is disabled');
+      logger.debug('[API Cache Warming] TMDB popular content warming is disabled');
       return;
     }
     
@@ -297,11 +297,11 @@ async function warmPopularContent(force = false) {
     
     const builtInApiKey = process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
     if (!builtInApiKey) {
-      logger.warn('[Cache Warming] BUILT_IN_TMDB_API_KEY not set, skipping popular content warming');
+      logger.warn('[API Cache Warming] BUILT_IN_TMDB_API_KEY not set, skipping popular content warming');
       return;
     }
 
-    logger.info('[Cache Warming] Warming popular content from TMDB...');
+    logger.info('[API Cache Warming] Warming popular content from TMDB...');
     
     // Ensure system config exists in database
     const systemUUID = await ensureSystemConfig();
@@ -333,13 +333,13 @@ async function warmPopularContent(force = false) {
               }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'movie', false);
               totalWarmed++;
             } catch (err) {
-              logger.debug(`[Cache Warming] Failed to warm movie ${movie.id}: ${err.message}`);
+              logger.debug(`[API Cache Warming] Failed to warm movie ${movie.id}: ${err.message}`);
             }
           }
         }
       }
     } catch (err) {
-      logger.warn(`[Cache Warming] Failed to fetch trending movies: ${err.message}`);
+      logger.warn(`[API Cache Warming] Failed to fetch trending movies: ${err.message}`);
     }
 
     // Warm trending series (day) - fetch 10 pages for better coverage
@@ -360,21 +360,21 @@ async function warmPopularContent(force = false) {
               }, undefined, { enableErrorCaching: false, maxRetries: 1 }, 'series', false);
               totalWarmed++;
             } catch (err) {
-              logger.debug(`[Cache Warming] Failed to warm series ${series.id}: ${err.message}`);
+              logger.debug(`[API Cache Warming] Failed to warm series ${series.id}: ${err.message}`);
             }
           }
         }
       }
     } catch (err) {
-      logger.warn(`[Cache Warming] Failed to fetch trending series: ${err.message}`);
+      logger.warn(`[API Cache Warming] Failed to fetch trending series: ${err.message}`);
     }
     
-    logger.success(`[Cache Warming] Popular content warming completed (${totalWarmed} items cached)`);
+    logger.success(`[API Cache Warming] Popular content warming completed (${totalWarmed} items cached)`);
     
     // Mark warming as complete
     await markPopularContentWarmed();
   } catch (error) {
-    logger.error('[Cache Warming] Error warming popular content:', error.message);
+    logger.error('[API Cache Warming] Error warming popular content:', error.message);
   }
 }
 
@@ -383,14 +383,14 @@ async function warmPopularContent(force = false) {
  */
 async function warmFromUserActivity() {
   try {
-    logger.info('[Cache Warming] Warming content from user activity...');
+    logger.info('[API Cache Warming] Warming content from user activity...');
     
     // This could analyze user activity logs and warm frequently accessed content
     // For now, just log that it's called
     
-    logger.success('[Cache Warming] User activity warming completed');
+    logger.success('[API Cache Warming] User activity warming completed');
   } catch (error) {
-    logger.error('[Cache Warming] Error warming from user activity:', error.message);
+    logger.error('[API Cache Warming] Error warming from user activity:', error.message);
   }
 }
 
@@ -399,7 +399,7 @@ async function warmFromUserActivity() {
  */
 function scheduleEssentialWarming(intervalMinutes = 30) {
   warmingIntervalMinutes = intervalMinutes;
-  logger.info(`[Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
+  logger.info(`[API Cache Warming] Scheduling periodic warming every ${intervalMinutes} minutes`);
   
   // Calculate initial next run time
   nextWarmingRun = Date.now() + (intervalMinutes * 60 * 1000);
@@ -407,15 +407,15 @@ function scheduleEssentialWarming(intervalMinutes = 30) {
   // Schedule recurring warming (initial warming is done separately)
   const intervalMs = intervalMinutes * 60 * 1000;
   setInterval(async () => {
-    logger.info('[Cache Warming] Running scheduled essential warming...');
+    logger.info('[API Cache Warming] Running scheduled essential warming...');
     
     // Track scheduled maintenance task
     try {
       const redis = require('./redisClient');
       await redis.setex('maintenance:last_cache_warming', 86400 * 7, Date.now().toString());
-      logger.success('[Cache Warming] Scheduled maintenance task tracked');
+      logger.success('[API Cache Warming] Scheduled maintenance task tracked');
     } catch (trackingError) {
-      logger.warn('[Cache Warming] Failed to track scheduled maintenance:', trackingError.message);
+      logger.warn('[API Cache Warming] Failed to track scheduled maintenance:', trackingError.message);
     }
     
     await warmEssentialContent();

@@ -387,6 +387,11 @@ This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifest
 - **Description**: Enable/disable TMDB popular content warming (trending movies/series)
 - **Example**: `TMDB_POPULAR_WARMING_ENABLED=false`
 
+### `CACHE_WARMING_INTERVAL`
+- **Default**: `720` (12 hours)
+- **Description**: Minutes between API cache warming cycles (genres, studios, etc.)
+- **Example**: `CACHE_WARMING_INTERVAL=1440` (24 hours)
+
 ### `CACHE_WARM_INTERVAL_HOURS`
 - **Default**: `24`
 - **Description**: Hours between TMDB popular content warming cycles

@@ -287,9 +287,9 @@ class MALCatalogWarmer {
   }
 
   async warmMetadata() {
-    // Studios and seasons are already warmed by the essential content warmer
+    // Studios and seasons are already warmed by the API content warmer
     // (see warmEssentialContent in cacheWarmer.js)
-    this.log('debug', 'Skipping metadata warming (handled by essential content warmer)');
+    this.log('debug', 'Skipping metadata warming (handled by API content warmer)');
     return 0;
   }
 
