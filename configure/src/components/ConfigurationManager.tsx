@@ -111,23 +111,26 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
     if (isFanartSelected && !requiredKeys.includes('fanart')) {
       requiredKeys.push('fanart');
     }
-    // Gemini key becomes required when AI search is enabled
-    if (config.search?.ai_enabled === true && !requiredKeys.includes('gemini')) {
-      requiredKeys.push('gemini');
+    if (config.search?.ai_enabled === true) {
+      const hasGemini = config.apiKeys?.gemini?.trim();
+      const hasOpenRouter = config.apiKeys?.openrouter?.trim();
+      if (!hasGemini && !hasOpenRouter) {
+        requiredKeys.push('gemini_or_openrouter');
+      }
     }
     const missingKeys = requiredKeys.filter(key => {
       if (key === 'tmdb') {
-        // TMDB is required unless there's a built-in key
         const hasUserKey = config.apiKeys.tmdb?.trim();
         return !hasUserKey && !hasBuiltInTmdb;
       }
+      if (key === 'gemini_or_openrouter') return true;
       return !config.apiKeys?.[key] || config.apiKeys[key].trim() === '';
     });
     if (missingKeys.length > 0) {
       return {
         valid: false,
         missingKeys,
-        message: `Missing required API keys: ${missingKeys.join(', ')}`
+        message: `Missing required API keys: ${missingKeys.map(k => k === 'gemini_or_openrouter' ? 'Gemini or OpenRouter' : k).join(', ')}`
       };
     }
     return { valid: true };
@@ -309,11 +312,13 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                 { key: 'tvdb', name: 'TVDB' },
                 { key: 'mdblist', name: 'MDBList' },
                 { key: 'fanart', name: 'Fanart' },
-                { key: 'gemini', name: 'Gemini AI' }
+                { key: 'ai_service', name: 'AI Service' }
               ].map(({ key, name }) => {
-                const hasUserKey = config.apiKeys?.[key]?.trim();
+                const hasUserKey = key === 'ai_service'
+                  ? !!(config.apiKeys?.gemini?.trim() || config.apiKeys?.openrouter?.trim())
+                  : !!config.apiKeys?.[key]?.trim();
                 const hasBuiltInKey = key === 'tmdb' ? hasBuiltInTmdb : (key === 'tvdb' ? hasBuiltInTvdb : false);
-                const isConfigured = hasUserKey || hasBuiltInKey;
+                const isConfigured = !!(hasUserKey || hasBuiltInKey);
                 
                 // Check if this key is actually being used
                 const isInUse = (() => {
@@ -362,8 +367,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                       return false;
                     });
                   }
-                  if (key === 'gemini') {
-                    // Gemini is in use when AI-powered search is enabled
+                  if (key === 'ai_service') {
                     return !!(config.search?.ai_enabled === true);
                   }
                   return false;
