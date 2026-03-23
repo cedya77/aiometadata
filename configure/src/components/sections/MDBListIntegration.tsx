@@ -328,7 +328,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         setSelectedPopularLists(new Set());
         
         toast.success("Popular lists loaded", {
-          description: `Found ${filteredLists.length} list(s) from ${displayName}`
+          description: `Found ${userLists.length} list(s) from ${displayName}`
         });
       }
     } catch (error) {
@@ -429,7 +429,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         setCustomUserLists(userLists);
         setSelectedCustomLists(new Set());
         toast.success("User lists loaded", {
-          description: `Found ${filteredLists.length} list(s) from ${customUsername}`
+          description: `Found ${userLists.length} list(s) from ${customUsername}`
         });
       }
     } catch (error) {
