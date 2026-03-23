@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.35.0](https://github.com/cedya77/aiometadata/compare/v1.34.0...v1.35.0) (2026-03-23)
+
+
+### Features
+
+* add API key placeholders ({rpdb_key}, {tmdb_key}, etc.) in URL patterns ([c2c2e67](https://github.com/cedya77/aiometadata/commit/c2c2e67df18baa8386ae1e90bcb5827f225b4a63))
+* add episode thumbnail URL pattern support ([c2c2e67](https://github.com/cedya77/aiometadata/commit/c2c2e67df18baa8386ae1e90bcb5827f225b4a63))
+* **configure:** move custom art URL fields into poster rating provider selector ([a00222e](https://github.com/cedya77/aiometadata/commit/a00222ea60e8e4a19b114365fcb33d7c38994fc0))
+* **id-mapper:** resolve ONA type via Trakt dataset and TMDB API ([a00222e](https://github.com/cedya77/aiometadata/commit/a00222ea60e8e4a19b114365fcb33d7c38994fc0))
+* move art URL overrides UI from Integrations to Art Providers tab ([c2c2e67](https://github.com/cedya77/aiometadata/commit/c2c2e67df18baa8386ae1e90bcb5827f225b4a63))
+* **regexFilter:** add genre exclusion to content exclusion filter ([a00222e](https://github.com/cedya77/aiometadata/commit/a00222ea60e8e4a19b114365fcb33d7c38994fc0))
+* unify poster rating into custom art URL patterns with post-processing ([c2c2e67](https://github.com/cedya77/aiometadata/commit/c2c2e67df18baa8386ae1e90bcb5827f225b4a63))
+
+
+### Bug Fixes
+
+* **getCache:** remove post-processing config from cache keys ([a00222e](https://github.com/cedya77/aiometadata/commit/a00222ea60e8e4a19b114365fcb33d7c38994fc0))
+* mobile drag-to-sort: add TouchSensor with activation constraints, touch-none on all drag handles ([640436c](https://github.com/cedya77/aiometadata/commit/640436cb3a536ba434bb8bf17868d1ec07381e4e))
+* move custom art URL overrides to post-processing outside cache ([a00222e](https://github.com/cedya77/aiometadata/commit/a00222ea60e8e4a19b114365fcb33d7c38994fc0))
+* **parseProps:** custom poster rating provider falling through to RPDB ([a00222e](https://github.com/cedya77/aiometadata/commit/a00222ea60e8e4a19b114365fcb33d7c38994fc0))
+
 ## [1.34.0](https://github.com/cedya77/aiometadata/compare/v1.33.3...v1.34.0) (2026-03-16)
 
 
