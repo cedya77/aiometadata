@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.35.1](https://github.com/cedya77/aiometadata/compare/v1.35.0...v1.35.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* improve ID propagation for rating posters translation ([15bd79e](https://github.com/cedya77/aiometadata/commit/15bd79e12c5c50fda64945fbb07d496eb0ae0a31))
+* resolve shared config state leaking across concurrent requests ([7682e53](https://github.com/cedya77/aiometadata/commit/7682e53aaf775254b86e6618dfc0180c1d10ece8))
+* search rating posters using wrong config keys and consolidate search UI controls ([0aaa8f8](https://github.com/cedya77/aiometadata/commit/0aaa8f828541647dd4150801a724509a586874de))
+* strip lang parameter for RPDB t0 free tier compatibility ([eaf38c8](https://github.com/cedya77/aiometadata/commit/eaf38c881e87fd2c8ab32d6b498d660f6407794e))
+
 ## [1.35.0](https://github.com/cedya77/aiometadata/compare/v1.34.0...v1.35.0) (2026-03-23)
 
 
