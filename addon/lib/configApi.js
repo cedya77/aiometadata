@@ -857,6 +857,11 @@ class ConfigApi {
           });
         }
 
+        // Default posterRatingProvider for configs that predate the field
+        if (!config.posterRatingProvider && (config.apiKeys?.rpdb || config.apiKeys?.topPoster)) {
+          config.posterRatingProvider = config.apiKeys?.topPoster ? 'top' : 'rpdb';
+        }
+
         // Strip instance-specific fields that shouldn't be returned from saved config
         const sanitizedConfig = {
           ...config,
