@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.36.0](https://github.com/cedya77/aiometadata/compare/v1.35.0...v1.36.0) (2026-03-23)
+
+
+### Features
+
+* **ui:** add 'Reset to Default' buttons for art URL patterns and improve provider-based prepopulation ([8779096](https://github.com/cedya77/aiometadata/commit/87790961102c9ad2c00cb11c0a7bb6e58b62e88b))
+
 ## [1.35.0](https://github.com/cedya77/aiometadata/compare/v1.34.0...v1.35.0) (2026-03-23)
 
 
