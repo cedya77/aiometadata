@@ -12,7 +12,7 @@ import { Edit2, GripVertical, Star, Sparkles, AlertTriangle } from 'lucide-react
 import { allSearchProviders } from '@/data/catalogs';
 import { GEMINI_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL } from '@/data/ai-models';
 import type { AIModel } from '@/data/ai-models';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -64,7 +64,7 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
       <div
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 hover:bg-accent rounded"
+        className="cursor-grab active:cursor-grabbing p-1 hover:bg-accent rounded touch-none"
       >
         <GripVertical className="h-4 w-4 text-muted-foreground" />
       </div>
@@ -147,10 +147,9 @@ export function SearchSettings() {
   }, [config.apiKeys?.openrouter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   // Get enabled search providers in order

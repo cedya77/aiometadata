@@ -68,7 +68,7 @@ export function SortableCatalogCard({ catalog, config, onChange, id }: SortableC
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="space-y-1 flex items-center gap-2">
               <button
-                className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-100 rounded"
+                className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-100 rounded touch-none"
                 {...attributes}
                 {...listeners}
               >
