@@ -129,6 +129,20 @@ function resolvePattern(pattern, ids, type, config, extra) {
     }
   }
 
+  if (url.includes('ratingposterdb.com') && (/(t0)-/.test(url) || /^(t0)-/.test(config?.apiKeys?.rpdb || ''))) {
+    try {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.searchParams.has('lang')) {
+        parsedUrl.searchParams.delete('lang');
+        url = parsedUrl.toString();
+      }
+    } catch (e) {
+      url = url.replace(/([?&])lang=[^&]*/g, (match, p1) => p1 === '?' ? '?' : '')
+               .replace(/\?&/g, '?')
+               .replace(/\?$/, '');
+    }
+  }
+
   return url;
 }
 
@@ -168,7 +182,7 @@ function resolveRatingPosterUrl(pattern, ids, type, config, extra) {
 }
 
 /** Default poster URL pattern for RPDB */
-const RPDB_DEFAULT_PATTERN = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}';
+const RPDB_DEFAULT_PATTERN = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true';
 /** Default poster URL pattern for TOP Posters */
 const TOP_DEFAULT_PATTERN = 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
 /** Default episode thumbnail URL pattern for TOP Posters */

@@ -465,7 +465,7 @@ export function ArtProviderSettings() {
                 let thumbnailPattern = '';
                 
                 if (provider === 'rpdb') {
-                  posterPattern = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}';
+                  posterPattern = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true';
                 } else if (provider === 'top') {
                   posterPattern = 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
                   thumbnailPattern = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
@@ -533,7 +533,7 @@ export function ArtProviderSettings() {
                     className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
                     onClick={() => {
                       const pattern = config.posterRatingProvider === 'rpdb'
-                        ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true&lang={language_short}'
+                        ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true'
                         : 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
                       setConfig(prev => ({ ...prev, customPosterUrlPattern: pattern }));
                     }}
