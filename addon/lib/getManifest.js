@@ -595,6 +595,7 @@ async function createMalCatalog(userCatalog, genres, showPrefix = false, prefixN
         { name: "genre", options: genreOptions, isRequired: userCatalog.showInHome ? false : true },
         { name: 'skip' }
       ],
+      showInHome: userCatalog.showInHome
     };
 
     if (!userCatalog.showInHome) {

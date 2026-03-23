@@ -310,25 +310,14 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         throw new Error("Invalid response format from MDBList API");
       }
 
-      let filteredLists = userLists;
-      
-      // For danaramapyjama, only include lists containing "wearers" in the name
-      if (username === 'danaramapyjama') {
-        filteredLists = userLists.filter((list: any) => 
-          list.name && (list.name.toLowerCase().includes('wearers') || list.name.toLowerCase().includes('digital bits'))
-        );
-      }
-
-      if (filteredLists.length === 0) {
+      if (userLists.length === 0) {
         toast.info("No lists found", {
-          description: username === 'danaramapyjama' 
-            ? `No "wearers" lists found for ${displayName}`
-            : `User "${displayName}" has no public lists available`
+          description: `User "${displayName}" has no public lists available`
         });
         setPopularLists([]);
       } else {
         // Add user info to each list
-        const listsWithUser = filteredLists.map((list: any) => ({
+        const listsWithUser = userLists.map((list: any) => ({
           ...list,
           user: displayName,
           username: username,
@@ -431,24 +420,13 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         throw new Error("Invalid response format from MDBList API");
       }
 
-      let filteredLists = userLists;
-      
-      // For danaramapyjama, only include lists containing "wearers" in the name
-      if (customUsername.trim().toLowerCase() === 'danaramapyjama') {
-        filteredLists = userLists.filter((list: any) => 
-          list.name && list.name.toLowerCase().includes('wearers')
-        );
-      }
-
-      if (filteredLists.length === 0) {
+      if (userLists.length === 0) {
         toast.info("No lists found", {
-          description: customUsername.trim().toLowerCase() === 'danaramapyjama'
-            ? `No "wearers" lists found for ${customUsername}`
-            : `User "${customUsername}" has no public lists available`
+          description: `User "${customUsername}" has no public lists available`
         });
         setCustomUserLists([]);
       } else {
-        setCustomUserLists(filteredLists);
+        setCustomUserLists(userLists);
         setSelectedCustomLists(new Set());
         toast.success("User lists loaded", {
           description: `Found ${filteredLists.length} list(s) from ${customUsername}`

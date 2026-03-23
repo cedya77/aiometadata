@@ -1217,12 +1217,7 @@ export function PresetManager() {
         throw new Error('Invalid response format from MDBList API.');
       }
 
-      let filteredLists = userLists;
-      if (curator.username === 'danaramapyjama') {
-        filteredLists = userLists.filter((list) => list.name && list.name.toLowerCase().includes('wearers'));
-      }
-
-      const listsWithCurator: CuratorSelectableList[] = filteredLists
+      const listsWithCurator: CuratorSelectableList[] = userLists
         .filter((list) => !!list.id && !!list.name)
         .map((list) => ({
           ...list,
