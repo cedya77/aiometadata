@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.35.2](https://github.com/cedya77/aiometadata/compare/v1.35.1...v1.35.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* allow enabling rating posters with custom url patterns ([645a773](https://github.com/cedya77/aiometadata/commit/645a7738d7a99f9caa7acdb9f6d1a23853c44430))
+
 ## [1.35.1](https://github.com/cedya77/aiometadata/compare/v1.35.0...v1.35.1) (2026-03-23)
 
 
