@@ -430,7 +430,7 @@ export function SearchSettings() {
 
   // Check if TVDB key and rating poster keys are available
   const hasTvdbKey = !!config.apiKeys?.tvdb?.trim() || hasBuiltInTvdb;
-  const hasRPDBKey = !!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster;
+  const hasRPDBKey = !!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster || !!config.customPosterUrlPattern;
   const isTraktSearchEnabled = traktSearchEnabled;
   const movieSearchProviders = allSearchProviders.filter(p => {
     if ((p.value === 'trakt.search' || p.value === 'trakt.people.search') && !isTraktSearchEnabled) {

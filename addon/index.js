@@ -3179,10 +3179,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   }
   const actualType = catalogConfig ? catalogConfig.type : type;
   
-  // Check if user has either RPDB or Top Poster API key
+  // Check if user has either RPDB, Top Poster API key, or a custom poster pattern
   const hasRatingPosterKey =
     (config.apiKeys?.rpdb && config.apiKeys.rpdb.trim().length > 0) ||
-    (config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0);
+    (config.apiKeys?.topPoster && config.apiKeys.topPoster.trim().length > 0) ||
+    (config.customPosterUrlPattern && config.customPosterUrlPattern.trim().length > 0);
 
   if (catalogConfig && !hasRatingPosterKey) {
     catalogConfig.enableRatingPosters = false;

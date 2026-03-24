@@ -481,7 +481,7 @@ const MDBListSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
               Choose which genre set to use for this specific list.
             </p>
           </div>
-          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -1002,7 +1002,7 @@ const LetterboxdSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catal
               How long to cache this catalog before refreshing. Range: 2 hours to 7 days.
             </p>
           </div>
-          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -1266,7 +1266,7 @@ const CustomManifestSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: C
               Number of items per page for this catalog. Default: 100. This should match the imported addon's page size for accurate pagination.
             </p>
           </div>
-          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -1975,7 +1975,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
             <TooltipContent><p>{catalog.showInHome && catalog.enabled ? 'Featured on Home Board' : 'Not on Home Board'}</p></TooltipContent>
           </Tooltip>
 
-          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster) && (
+          {(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern) && (
             <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -3576,7 +3576,7 @@ function CatalogsSettingsContent({
           onSetDisplayType={handleBulkSetDisplayType}
           onResetDisplayType={handleBulkResetDisplayType}
           onFindReplaceType={handleBulkFindReplaceType}
-          hasRatingPostersKey={!!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster}
+          hasRatingPostersKey={!!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster || !!config.customPosterUrlPattern}
           isLoading={isLoading}
           loadingAction={loadingAction}
         />
