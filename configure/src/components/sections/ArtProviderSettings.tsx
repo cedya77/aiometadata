@@ -461,24 +461,28 @@ export function ArtProviderSettings() {
               value={config.posterRatingProvider || 'rpdb'}
               onValueChange={(value) => {
                 const provider = value as 'rpdb' | 'top' | 'custom';
-                let posterPattern = '';
-                let thumbnailPattern = '';
-                
-                if (provider === 'rpdb') {
-                  posterPattern = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true';
+
+                if (provider === 'custom') {
+                  setConfig(prev => ({ ...prev, posterRatingProvider: provider }));
+                } else if (provider === 'rpdb') {
+                  setConfig(prev => ({
+                    ...prev,
+                    posterRatingProvider: provider,
+                    customPosterUrlPattern: 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true',
+                    customBackgroundUrlPattern: '',
+                    customLogoUrlPattern: '',
+                    customThumbnailUrlPattern: ''
+                  }));
                 } else if (provider === 'top') {
-                  posterPattern = 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
-                  thumbnailPattern = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
+                  setConfig(prev => ({
+                    ...prev,
+                    posterRatingProvider: provider,
+                    customPosterUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}',
+                    customBackgroundUrlPattern: '',
+                    customLogoUrlPattern: '',
+                    customThumbnailUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}'
+                  }));
                 }
-                
-                setConfig(prev => ({ 
-                  ...prev, 
-                  posterRatingProvider: provider, 
-                  customPosterUrlPattern: posterPattern, 
-                  customBackgroundUrlPattern: '', 
-                  customLogoUrlPattern: '', 
-                  customThumbnailUrlPattern: thumbnailPattern 
-                }));
               }}
             >
               <SelectTrigger id="posterRatingProvider" className="w-[200px]">
