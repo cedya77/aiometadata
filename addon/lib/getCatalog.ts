@@ -6,6 +6,7 @@ import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.j
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
+import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
@@ -168,6 +169,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.debug(`Routing to Simkl catalog handler for id: ${id}`);
       const simklResults = await getSimklCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
       return { metas: simklResults };
+    }
+    else if (id.startsWith('flixpatrol.')) {
+      logger.debug(`Routing to FlixPatrol catalog handler for id: ${id}`);
+      const flixpatrolResults = await getFlixPatrolCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      return { metas: flixpatrolResults };
     }
 
     else {
@@ -1581,27 +1587,31 @@ async function getTraktCatalog(
   userUUID: string, 
   includeVideos: boolean = false
 ): Promise<any[]> {
+  let _forceTokenRefresh = false;
+  let accessToken: string | null | undefined = undefined;
+
+  const ensureTraktAccessToken = async (): Promise<string | null> => {
+    if (!_forceTokenRefresh && accessToken !== undefined) {
+      return accessToken;
+    }
+
+    accessToken = await getTraktAccessToken(config, _forceTokenRefresh);
+    if (!accessToken) {
+      logger.warn(`Trakt not connected for user ${userUUID} (catalog: ${catalogId})`);
+    }
+    _forceTokenRefresh = false;
+    return accessToken;
+  };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
   try {
     logger.info(`Fetching Trakt catalog: ${catalogId}, Genre: ${genre}, Page: ${page}`);
-    
+
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-    
+
     const catalogConfig = config.catalogs?.find(c => c.id === catalogId);
     const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
     const sortDirection = catalogConfig?.sortDirection;
-    let accessToken: string | null | undefined = undefined;
-
-    const ensureTraktAccessToken = async (): Promise<string | null> => {
-      if (accessToken !== undefined) {
-        return accessToken;
-      }
-
-      accessToken = await getTraktAccessToken(config);
-      if (!accessToken) {
-        logger.warn(`Trakt not connected for user ${userUUID} (catalog: ${catalogId})`);
-      }
-      return accessToken;
-    };
     // Determine content type filter for API
     let traktType: 'movies' | 'shows' | undefined;
     if (type === 'movie') traktType = 'movies';
@@ -1939,12 +1949,20 @@ async function getTraktCatalog(
     return metas;
     
   } catch (err: any) {
+    if (attempt === 0 && err.response?.status === 401 && config.apiKeys?.traktTokenId) {
+      logger.warn(`[Trakt] 401 Unauthorized for catalog ${catalogId}, force-refreshing token and retrying`);
+      _forceTokenRefresh = true;
+      accessToken = undefined;
+      continue;
+    }
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`[Trakt] Error processing catalog ${catalogId}: ${err.message}`);
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, err.stack);
     return [];
   }
+  } // end retry loop
+  return [];
 }
 
 /**
@@ -2619,6 +2637,48 @@ async function getSimklCatalog(
     logger.error(`[Simkl] Error processing catalog ${catalogId}: ${err.message}`);
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, err.stack);
+    return [];
+  }
+}
+
+async function getFlixPatrolCatalog(
+  type: string,
+  catalogId: string,
+  genre: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  try {
+    if (page > 1) return [];
+
+    const parts = catalogId.split('.');
+    if (parts.length < 4) {
+      logger.error(`Invalid FlixPatrol catalog ID: ${catalogId}`);
+      return [];
+    }
+
+    const service = parts[1];
+    const countryCode = parts[2];
+    const mediaType = parts[3]; // 'movie', 'series', or 'all'
+
+    const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
+    const countrySlug = catalogConfig?.metadata?.countrySlug || countryCode;
+
+    logger.info(`[FlixPatrol] Fetching top 10: service=${service}, country=${countrySlug}, type=${mediaType}`);
+
+    let metas = await getFlixPatrolMetas(service, countrySlug, mediaType, language, config, includeVideos);
+    metas = applyAgeRatingFilter(metas, type, config);
+
+    logger.success(`[FlixPatrol] Processed ${metas.length} items for catalog ${catalogId}`);
+    return metas;
+
+  } catch (err: any) {
+    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
+    logger.error(`[FlixPatrol] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`Error at: ${errorLine}`);
     return [];
   }
 }

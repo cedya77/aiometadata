@@ -909,6 +909,9 @@ async function getManifest(config) {
       if (userCatalog.id.startsWith('letterboxd.')) {
         return true;
       }
+      if (userCatalog.id.startsWith('flixpatrol.')) {
+        return true;
+      }
       if (!catalogDef) {
         logger.debug(`Catalog ${userCatalog.id} failed filter: no catalog definition`);
         return false;
@@ -981,6 +984,21 @@ async function getManifest(config) {
           const result = await createLetterboxdCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`Letterboxd catalog result:`, result ? 'success' : 'failed');
           return result;
+      }
+      if (userCatalog.id.startsWith('flixpatrol.')) {
+          logger.debug(`Processing FlixPatrol catalog: ${userCatalog.id}`);
+          const catalogType = userCatalog.displayType || userCatalog.type;
+          const extra = userCatalog.showInHome
+            ? []
+            : [{ name: "genre", options: ["None"], isRequired: true }];
+          return {
+            id: userCatalog.id,
+            type: catalogType,
+            name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
+            pageSize: 10,
+            extra,
+            showInHome: userCatalog.showInHome
+          };
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
       let catalogOptions = [];

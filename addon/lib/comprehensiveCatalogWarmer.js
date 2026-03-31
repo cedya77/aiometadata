@@ -426,6 +426,7 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('trakt.') ||
         catalogId.startsWith('anilist.') ||
         catalogId.startsWith('letterboxd.') ||
+        catalogId.startsWith('flixpatrol.') ||
         catalogId.startsWith('stremthru.') ||
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||

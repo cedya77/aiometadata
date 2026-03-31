@@ -2389,6 +2389,22 @@ addon.post("/api/letterboxd/list", async (req, res) => {
   }
 });
 
+// POST /api/flixpatrol/probe - Check available sections for a service/country combo
+addon.post("/api/flixpatrol/probe", async (req, res) => {
+  try {
+    const { service, countrySlug } = req.body;
+    if (!service || !countrySlug) {
+      return res.status(400).json({ error: "service and countrySlug are required" });
+    }
+    const { probeFlixPatrolSections } = require('./utils/flixpatrolUtils');
+    const sections = await probeFlixPatrolSections(service, countrySlug);
+    res.json(sections);
+  } catch (error) {
+    consola.error("[FlixPatrol] Probe error:", error.message);
+    res.status(500).json({ error: error.message || "Failed to probe FlixPatrol" });
+  }
+});
+
 // --- AniList OAuth Routes ---
 const anilistTracker = require('./lib/anilistTracker');
 const noStoreOAuthHeaders = (req, res, next) => {
@@ -2952,7 +2968,7 @@ addon.get("/", function (_, res) {
     res.redirect("/configure"); 
 });
 // --- Basic Manifest Route ---
-addon.get("/stremio/manifest.json", function (req, res) {
+addon.get("/manifest.json", function (req, res) {
   const host = process.env.HOST_NAME.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
@@ -3314,7 +3330,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
   // This normalizes skip values so that different skip values mapping to the same
   // underlying page produce the same cache key (e.g. skip=17 and skip=20 both → page=1).
   let catalogPageSize;
-  if (cleanId.includes('mal.')) {
+  if (cleanId.startsWith('flixpatrol.')) {
+    catalogPageSize = 10;
+  } else if (cleanId.includes('mal.')) {
     catalogPageSize = 25;
   } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
     catalogPageSize = 50;
@@ -3874,14 +3892,22 @@ addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (r
         const type = meta.type || actualType;
         if (posterPattern && (!isUpNextCatalog || upNextUsesShowPoster)) {
           if (proxyApiKey) {
-            // Poster proxy mode: wrap in proxy URL with original poster as fallback
             const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
             if (proxyId) {
               meta.poster = `${host}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`;
             }
           } else {
             const resolved = resolveCustomArtUrl(posterPattern, ids, type, config);
-            if (resolved) meta.poster = resolved;
+            if (resolved) {
+              if (config.usePosterProxy) {
+                const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+                if (proxyId) {
+                  meta.poster = `${host}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&url=${encodeURIComponent(resolved)}`;
+                }
+              } else {
+                meta.poster = resolved;
+              }
+            }
           }
         }
         if (config.customBackgroundUrlPattern) {
@@ -4502,48 +4528,60 @@ addon.get("/api/detect-page-size", async function (req, res) {
 
 addon.get("/poster/:type/:id", async function (req, res) {
   const { type, id } = req.params;
-  const { fallback, lang, key } = req.query;
-  if (!key) {
+  const { fallback, lang, key, url: customUrl } = req.query;
+  if (!key && !customUrl) {
     return res.redirect(302, fallback);
   }
-  const etag = crypto.createHash('md5').update(`${type}:${id}:${key}:${lang}`).digest('hex');
+  const etag = crypto.createHash('md5').update(`${type}:${id}:${customUrl || key}:${lang}`).digest('hex');
   res.setHeader('ETag', `"${etag}"`);
   if (req.headers['if-none-match'] === `"${etag}"`) {
     return res.status(304).end();
   }
 
-  const [idSource, idValue] = id.startsWith('tt') ? ['imdb', id] : id.split(':');
-  const ids = {
-    tmdbId: idSource === 'tmdb' ? idValue : null,
-    tvdbId: idSource === 'tvdb' ? idValue : null,
-    imdbId: idSource === 'imdb' ? idValue : null,
-  };
-
   try {
-    // Determine which provider to use based on key format
-    // Top Poster API keys start with "TP-", RPDB keys have different formats
-    const isTopPoster = key.startsWith('TP-');
-    let posterUrl = null;
-    
-    if (isTopPoster) {
-      // Use Top Poster API with fallback_url parameter
-      // Top Poster API will automatically use fallback_url on any non-200 response
-      const config = { apiKeys: { topPoster: key }, posterRatingProvider: 'top' };
-      posterUrl = getRatingPosterUrl(type, ids, lang, config, fallback);
-    } else {
-      // Use RPDB (backward compatibility)
-      posterUrl = getRpdbPoster(type, ids, lang, key);
+    let posterUrl = customUrl || null;
+
+    if (!posterUrl) {
+      const [idSource, idValue] = id.startsWith('tt') ? ['imdb', id] : id.split(':');
+      const ids = {
+        tmdbId: idSource === 'tmdb' ? idValue : null,
+        tvdbId: idSource === 'tvdb' ? idValue : null,
+        imdbId: idSource === 'imdb' ? idValue : null,
+      };
+      const isTopPoster = key.startsWith('TP-');
+      if (isTopPoster) {
+        const config = { apiKeys: { topPoster: key }, posterRatingProvider: 'top' };
+        posterUrl = getRatingPosterUrl(type, ids, lang, config, fallback);
+      } else {
+        posterUrl = getRpdbPoster(type, ids, lang, key);
+      }
     }
 
-    if (posterUrl && await checkIfExists(posterUrl)) {
-      //console.log("Success! Pipe the image from rating provider directly to the user.");
+    if (!posterUrl) {
+      return res.redirect(302, fallback);
+    }
+
+    if (customUrl) {
+      const imageResponse = await axios({
+        method: 'get',
+        url: posterUrl,
+        responseType: 'stream',
+        timeout: 5000,
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: { 'User-Agent': `AIOMetadata/${require('../package.json').version}` }
+      });
+      const contentType = imageResponse.headers['content-type'];
+      res.setHeader('Content-Type', contentType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      imageResponse.data.pipe(res);
+    } else if (await checkIfExists(posterUrl)) {
       const imageResponse = await axios({
         method: 'get',
         url: posterUrl,
         responseType: 'stream'
       });
       res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800'); // Cache for 1 day
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
       imageResponse.data.pipe(res);
     } else {
       res.redirect(302, fallback);

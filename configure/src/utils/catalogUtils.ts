@@ -301,3 +301,67 @@ export function createCustomManifestCatalog(options: CustomManifestCatalogOption
     ...(displayType && { displayType }),
   };
 }
+
+// ============================================================================
+// FlixPatrol (Streaming Top 10) Catalog Creation
+// ============================================================================
+
+export interface FlixPatrolCatalogOptions {
+  service: { id: string; name: string };
+  country: { id: string; name: string; slug: string };
+  sections: { hasMovies: boolean; hasShows: boolean; hasOverall: boolean };
+  displayTypeOverrides?: { movie?: string; series?: string };
+}
+
+/**
+ * Creates FlixPatrol catalog configurations based on available sections.
+ * Split services get separate movie + series catalogs; combined services get a single "all" catalog.
+ */
+export function createFlixPatrolCatalogs(options: FlixPatrolCatalogOptions): CatalogConfig[] {
+  const { service, country, sections, displayTypeOverrides } = options;
+  const catalogs: CatalogConfig[] = [];
+
+  if (sections.hasMovies || sections.hasShows) {
+    if (sections.hasMovies) {
+      const displayType = getDisplayTypeOverride('movie', displayTypeOverrides);
+      catalogs.push({
+        id: `flixpatrol.${service.id}.${country.id}.movie`,
+        type: 'movie',
+        name: `Top 10 Movies on ${service.name} (${country.name})`,
+        enabled: true,
+        showInHome: true,
+        source: 'flixpatrol' as const,
+        enableRatingPosters: true,
+        ...(displayType && { displayType }),
+        metadata: { countrySlug: country.slug },
+      });
+    }
+    if (sections.hasShows) {
+      const displayType = getDisplayTypeOverride('series', displayTypeOverrides);
+      catalogs.push({
+        id: `flixpatrol.${service.id}.${country.id}.series`,
+        type: 'series',
+        name: `Top 10 TV Shows on ${service.name} (${country.name})`,
+        enabled: true,
+        showInHome: true,
+        source: 'flixpatrol' as const,
+        enableRatingPosters: true,
+        ...(displayType && { displayType }),
+        metadata: { countrySlug: country.slug },
+      });
+    }
+  } else if (sections.hasOverall) {
+    catalogs.push({
+      id: `flixpatrol.${service.id}.${country.id}.all`,
+      type: 'all',
+      name: `Top 10 on ${service.name} (${country.name})`,
+      enabled: true,
+      showInHome: true,
+      source: 'flixpatrol' as const,
+      enableRatingPosters: true,
+      metadata: { countrySlug: country.slug },
+    });
+  }
+
+  return catalogs;
+}

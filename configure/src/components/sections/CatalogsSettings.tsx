@@ -7,6 +7,7 @@ import { TMDBDiscoverBuilderDialog } from './TMDBDiscoverBuilderDialog';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
+import { StreamingTop10Integration } from './StreamingTop10Integration';
 import { QuickAddDialog } from '@/components/QuickAddDialog';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -17,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -274,6 +275,11 @@ const sourceBadgeStyles = {
   custom: "bg-pink-800/80 text-pink-200 border-pink-600/50 hover:bg-pink-800",
   trakt: "bg-red-800/80 text-red-200 border-red-600/50 hover:bg-red-800",
   anilist: "bg-cyan-800/80 text-cyan-200 border-cyan-600/50 hover:bg-cyan-800",
+  flixpatrol: "bg-emerald-800/80 text-emerald-200 border-emerald-600/50 hover:bg-emerald-800",
+};
+
+const sourceBadgeLabels: Record<string, string> = {
+  flixpatrol: 'TOP 10',
 };
 
 
@@ -2255,7 +2261,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
                 <TooltipContent>Clone and Edit as Built Catalog</TooltipContent>
               </Tooltip>
 
-          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'].includes(catalog.source) ||
+          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
             (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
             catalog.id.includes('.discover.')) && (
@@ -2271,7 +2277,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
         </TooltipProvider>
         <div className="flex-shrink-0">
           <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
-            {badgeSource.toUpperCase()}
+            {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
           </Badge>
         </div>
       </div>
@@ -2497,6 +2503,7 @@ function CatalogsSettingsContent({
   const [isLetterboxdOpen, setIsLetterboxdOpen] = useState(false);
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
+  const [isStreamingTop10Open, setIsStreamingTop10Open] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
@@ -3261,7 +3268,7 @@ function CatalogsSettingsContent({
   };
 
   const isRemovableCatalog = (catalog: CatalogConfig) => {
-    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd'];
+    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol'];
     if (removableSources.includes(catalog.source)) {
       return true;
     }
@@ -3500,10 +3507,25 @@ function CatalogsSettingsContent({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => setIsCustomManifestOpen(true)} 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsStreamingTop10Open(true)}
+                      aria-label="Streaming Top 10"
+                      className="h-9 w-9"
+                    >
+                      <Trophy className="w-5 h-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Streaming Top 10</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsCustomManifestOpen(true)}
                       aria-label="Import Custom Manifest"
                       className="h-9 w-9"
                     >
@@ -3552,6 +3574,10 @@ function CatalogsSettingsContent({
           <AniListIntegration
             isOpen={isAniListOpen}
             onClose={() => setIsAniListOpen(false)}
+          />
+          <StreamingTop10Integration
+            isOpen={isStreamingTop10Open}
+            onClose={() => setIsStreamingTop10Open(false)}
           />
         </div>
       </div>
@@ -3654,6 +3680,10 @@ function CatalogsSettingsContent({
       <CustomManifestIntegration
         isOpen={isCustomManifestOpen}
         onClose={() => setIsCustomManifestOpen(false)}
+      />
+      <StreamingTop10Integration
+        isOpen={isStreamingTop10Open}
+        onClose={() => setIsStreamingTop10Open(false)}
       />
       <QuickAddDialog
         isOpen={isQuickAddOpen}

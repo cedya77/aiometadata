@@ -431,7 +431,8 @@ function classifyResult(result, error = null, cacheKey = null) {
     cacheKey.includes('trakt_') ||
     cacheKey.includes('mdblist_') ||
     cacheKey.includes('stremthru-') ||
-    cacheKey.includes('cinemeta-')
+    cacheKey.includes('cinemeta-') ||
+    cacheKey.includes('flixpatrol-')
   );
   
   if (isExternalApi) {
