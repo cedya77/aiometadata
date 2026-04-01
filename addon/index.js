@@ -117,6 +117,7 @@ function extractIdsFromMeta(meta) {
   if (!meta) return ids;
 
   const id = meta.id || '';
+  if (id) ids.id = id;
   if (id.startsWith('tmdb:')) ids.tmdbId = id.slice(5);
   else if (id.startsWith('tvdb:')) ids.tvdbId = id.slice(5);
   else if (id.startsWith('kitsu:')) ids.kitsuId = id.slice(6);

@@ -517,7 +517,7 @@ export function ArtProviderSettings() {
                   : 'Override art with custom URL patterns. If a placeholder references an unavailable value, normal art is used instead.'}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                ID placeholders: <code>{'{imdb_id}'}</code>, <code>{'{tmdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
+                ID placeholders: <code>{'{id}'}</code>, <code>{'{imdb_id}'}</code>, <code>{'{tmdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
                 API keys: <code>{'{rpdb_key}'}</code>, <code>{'{top_key}'}</code>, <code>{'{tmdb_key}'}</code>, <code>{'{mdblist_key}'}</code>, <code>{'{fanart_key}'}</code>.
                 Language: <code>{'{language}'}</code> (e.g. fr-FR), <code>{'{language_short}'}</code> (e.g. fr).
                 RPDB/TOP patterns automatically fall back to alternative IDs when the primary one is unavailable.
