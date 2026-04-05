@@ -75,7 +75,7 @@ function resolveCustomArtUrl(pattern, ids, type, config, extra) {
   if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return null;
 
   // For RPDB/TOP patterns, try ID fallback: imdb → tmdb → tvdb
-  const isRatingPosterService = pattern.includes('ratingposterdb.com') || pattern.includes('top-streaming.stream');
+  const isRatingPosterService = pattern.includes('ratingposterdb.com') || pattern.includes('top-posters.com');
   if (isRatingPosterService) {
     return resolveRatingPosterUrl(pattern, ids, type, config, extra);
   }
@@ -108,6 +108,7 @@ function resolvePattern(pattern, ids, type, config, extra) {
     '{top_key}': config?.apiKeys?.topPoster || '',
     '{mdblist_key}': config?.apiKeys?.mdblist || '',
     '{fanart_key}': config?.apiKeys?.fanart || '',
+    '{user_agent}': extra?.userAgent || '',
   };
 
   // Optional placeholders — resolve to empty string without failing
@@ -184,9 +185,9 @@ function resolveRatingPosterUrl(pattern, ids, type, config, extra) {
 /** Default poster URL pattern for RPDB */
 const RPDB_DEFAULT_PATTERN = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true';
 /** Default poster URL pattern for TOP Posters */
-const TOP_DEFAULT_PATTERN = 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
+const TOP_DEFAULT_PATTERN = 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
 /** Default episode thumbnail URL pattern for TOP Posters */
-const TOP_DEFAULT_THUMBNAIL_PATTERN = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+const TOP_DEFAULT_THUMBNAIL_PATTERN = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
 
 /**
  * Returns the default poster URL pattern for a given rating poster provider.
@@ -1397,7 +1398,7 @@ function getRpdbPoster(type, ids, language, rpdbkey) {
 
 function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = null) {
     const { tmdbId, imdbId } = ids;
-    let baseUrl = `https://api.top-streaming.stream`;
+    let baseUrl = `https://api.top-posters.com`;
     let idType = null;
     let fullMediaId = null;
     
@@ -1424,8 +1425,8 @@ function getTopPosterPoster(type, ids, language, topPosterKey, fallbackUrl = nul
         return null;
     }
 
-    // Top Poster API format: /{api_key}/{id_type}/poster-default/{media_id}.jpg
-    const urlPath = `${baseUrl}/${topPosterKey}/${idType}/poster-default/${fullMediaId}.jpg`;
+    // Top Poster API format: /{api_key}/{id_type}/poster/{media_id}.jpg
+    const urlPath = `${baseUrl}/${topPosterKey}/${idType}/poster/${fullMediaId}.jpg`;
     
     // Build query parameters
     // Top Poster API expects ISO 639-1 format (2-letter language code, e.g., 'en', 'it', 'pt')
@@ -1459,8 +1460,8 @@ function getTopPosterThumbnail(config, ids, season, episode, topPosterKey, resol
         return fallbackUrl;
     }
     const { tmdbId, imdbId } = ids;
-    const { blur = false } = options;
-    let baseUrl = `https://api.top-streaming.stream`;
+    const { blur = false, userAgent = '' } = options;
+    let baseUrl = `https://api.top-posters.com`;
     let idType = null;
     let fullMediaId = null;
     
@@ -1482,16 +1483,16 @@ function getTopPosterThumbnail(config, ids, season, episode, topPosterKey, resol
     
     // Build query parameters
     const params = new URLSearchParams();
-    if (resolution && resolution !== 'original') {
-        params.append('resolution', resolution);
-    }
     if (fallbackUrl) {
         params.append('fallback_url', fallbackUrl);
     }
     if (blur) {
         params.append('blur', 'true');
     }
-    
+    if (userAgent) {
+      params.append('user_agent', userAgent);
+    }
+
     return params.toString() ? `${urlPath}?${params.toString()}` : urlPath;
 }
 

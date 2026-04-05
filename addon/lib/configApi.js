@@ -1310,7 +1310,7 @@ class ConfigApi {
       },
 
       topPoster: async (key) => {
-        const url = `https://api.top-streaming.stream/auth/verify/${key}`;
+        const url = `https://api.top-posters.com/auth/verify/${key}`;
         const response = await serviceRequest(url, { method: "GET" });
         return (
           response &&

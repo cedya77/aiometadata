@@ -3962,6 +3962,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     }
 
     {
+      const userAgent = req.headers['user-agent'] || '';
       const host = process.env.HOST_NAME.startsWith('http') ? process.env.HOST_NAME : `https://${process.env.HOST_NAME}`;
       const { resolveCustomArtUrl, getDefaultPosterPattern, getDefaultThumbnailPattern, getPosterRatingApiKey } = require('./utils/parseProps');
       const ids = extractIdsFromMeta(result.meta);
@@ -3977,17 +3978,17 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
               result.meta.poster = `${host}/poster/${metaType}/${proxyId}?fallback=${encodeURIComponent(result.meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`;
             }
           } else {
-            const resolved = resolveCustomArtUrl(metaPosterPattern, ids, metaType, config);
+            const resolved = resolveCustomArtUrl(metaPosterPattern, ids, metaType, config, { userAgent });
             if (resolved) result.meta.poster = resolved;
           }
         }
       }
       if (config.customBackgroundUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, metaType, config);
+        const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, metaType, config, { userAgent });
         if (resolved) result.meta.background = resolved;
       }
       if (config.customLogoUrlPattern) {
-        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType, config);
+        const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType, config, { userAgent });
         if (resolved) result.meta.logo = resolved;
       }
       // Apply thumbnail pattern to episode videos
@@ -4009,6 +4010,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
                 episode,
                 blur: config.blurThumbs ? 'true' : 'false',
                 thumbnail: encodeURIComponent(originalThumb),
+                userAgent,
               });
               if (resolved) {
                 video.thumbnail = resolved;
