@@ -19,7 +19,7 @@ const ALLOWED_DOMAINS = [
   'kitsu.io',
   'anilist.co',
   'anidb.net',
-  'top-streaming.stream'
+  'top-posters.com'
 ];
 
 // Allowed file extensions

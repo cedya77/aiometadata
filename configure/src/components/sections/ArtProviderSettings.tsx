@@ -467,8 +467,8 @@ export function ArtProviderSettings() {
                 if (provider === 'rpdb') {
                   posterPattern = 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true';
                 } else if (provider === 'top') {
-                  posterPattern = 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
-                  thumbnailPattern = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+                  posterPattern = 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
+                  thumbnailPattern = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
                 }
                 
                 setConfig(prev => ({ 
@@ -518,7 +518,7 @@ export function ArtProviderSettings() {
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 ID placeholders: <code>{'{imdb_id}'}</code>, <code>{'{tmdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
-                API keys: <code>{'{rpdb_key}'}</code>, <code>{'{top_key}'}</code>, <code>{'{tmdb_key}'}</code>, <code>{'{mdblist_key}'}</code>, <code>{'{fanart_key}'}</code>.
+                API keys/Extra: <code>{'{rpdb_key}'}</code>, <code>{'{top_key}'}</code>, <code>{'{tmdb_key}'}</code>, <code>{'{mdblist_key}'}</code>, <code>{'{fanart_key}'}</code>, <code>{'{user_agent}'}</code>.
                 Language: <code>{'{language}'}</code> (e.g. fr-FR), <code>{'{language_short}'}</code> (e.g. fr).
                 RPDB/TOP patterns automatically fall back to alternative IDs when the primary one is unavailable.
               </p>
@@ -534,7 +534,7 @@ export function ArtProviderSettings() {
                     onClick={() => {
                       const pattern = config.posterRatingProvider === 'rpdb'
                         ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true'
-                        : 'https://api.top-streaming.stream/{top_key}/imdb/poster-default/{imdb_id}.jpg?lang={language_short}';
+                        : 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
                       setConfig(prev => ({ ...prev, customPosterUrlPattern: pattern }));
                     }}
                   >
@@ -574,7 +574,7 @@ export function ArtProviderSettings() {
                     size="sm"
                     className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
                     onClick={() => {
-                      const pattern = 'https://api.top-streaming.stream/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?resolution=w500&blur={blur}&fallback_url={thumbnail}';
+                      const pattern = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
                       setConfig(prev => ({ ...prev, customThumbnailUrlPattern: pattern }));
                     }}
                   >
@@ -589,7 +589,7 @@ export function ArtProviderSettings() {
                 onChange={(e) => setConfig(prev => ({ ...prev, customThumbnailUrlPattern: e.target.value }))}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Extra placeholders: <code>{'{season}'}</code>, <code>{'{episode}'}</code>, <code>{'{blur}'}</code> (true/false from blur thumbs setting), <code>{'{thumbnail}'}</code> (original thumbnail URL, encoded).
+                Extra placeholders: <code>{'{season}'}</code>, <code>{'{episode}'}</code>, <code>{'{blur}'}</code> (true/false from blur thumbs setting), <code>{'{thumbnail}'}</code> (original thumbnail URL, encoded), <code>{'{user_agent}'}</code>.
               </p>
             </div>
           </div>

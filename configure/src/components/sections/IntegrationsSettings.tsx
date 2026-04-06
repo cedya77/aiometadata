@@ -551,7 +551,7 @@ export function IntegrationsSettings() {
         <ApiKeyInput
           id="topPoster"
           label="TOP Posters API Key"
-          linkHref="https://api.top-streaming.stream/user/dashboard"
+          linkHref="https://api.top-posters.com/user/dashboard"
           validationStatus={validationStatus.topPoster || 'idle'}
           onKeyChange={handleKeyChange}
         />

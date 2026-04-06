@@ -1316,7 +1316,7 @@ const configHash = hashConfig(metaConfigString);
         if (rawPoster.includes('/poster/') && urlObj.searchParams.has('fallback')) {
            rawPoster = decodeURIComponent(urlObj.searchParams.get('fallback'));
         }
-        else if (urlObj.hostname.includes('top-streaming.stream') && urlObj.searchParams.has('fallback_url')) {
+        else if (urlObj.hostname.includes('top-posters.com') && urlObj.searchParams.has('fallback_url')) {
            rawPoster = decodeURIComponent(urlObj.searchParams.get('fallback_url'));
         }
 
