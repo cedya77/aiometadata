@@ -12,7 +12,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="dark" storageKey="aio-addon-theme">
+        <ThemeProvider defaultTheme="system" storageKey="aio-addon-theme">
           <ConfigProvider>
             <App />
           </ConfigProvider>
