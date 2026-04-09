@@ -117,7 +117,7 @@ export function ProvidersSettings() {
       <div>
         <h2 className="text-2xl font-semibold">Metadata Providers</h2>
         <p className="text-muted-foreground mt-1">Choose your preferred source for metadata. Different providers may have better data for certain content.</p>
-        <p className="text-xs text-amber-400 mt-4 p-3 bg-amber-900/20 border border-amber-400/30 rounded-lg">
+        <p className="text-xs text-amber-700 dark:text-amber-400 mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-400/30 rounded-lg">
           <strong>Smart Fallback:</strong> If metadata for a title can't be found with your preferred provider (e.g., no TVDB entry for a TMDB movie), the addon will automatically use the item's original source to guarantee you get a result.
         </p>
       </div>
