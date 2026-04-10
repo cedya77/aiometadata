@@ -8,8 +8,6 @@ export default {
     './components/**/*.{ts,tsx}',
     './app/**/*.{ts,tsx}',
     './src/**/*.{ts,tsx}',
-    // --- ADD TREMOR PATH ---
-    './node_modules/@tremor/**/*.{js,ts,jsx,tsx}', 
    ],
   theme: {
     transparent: "transparent",

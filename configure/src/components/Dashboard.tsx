@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { AreaChart, Card as TremorCard, Title, Text, Color, BarList, Flex, Bold } from "@tremor/react";
 import {
   Card,
   CardContent,
@@ -84,7 +83,8 @@ import {
   ResponsiveContainer,
   BarChart as RechartsBarChart,
   Bar,
-  Legend,
+  Area,
+  AreaChart,
 } from "recharts";
 import { AnimatedNumber, FadeValue } from "./AnimatedNumber";
 
@@ -746,7 +746,7 @@ function DashboardAnalytics({ data, loading, isMobile }) {
       {/* Provider Response Time Chart */}
       <Card className="overflow-hidden border-none shadow-lg bg-background/50 backdrop-blur-sm">
         <CardHeader className="pb-4">
-          <Flex justifyContent="between" alignItems="center">
+          <div className="flex justify-between items-center">
             <div>
               <CardTitle className="text-xl font-bold tracking-tight">Provider Latency</CardTitle>
               <CardDescription>Response times per hour (lower is better)</CardDescription>
@@ -755,44 +755,57 @@ function DashboardAnalytics({ data, loading, isMobile }) {
               <Activity className="h-3 w-3 mr-2 text-emerald-500 animate-pulse" />
               LIVE METRICS
             </Badge>
-          </Flex>
+          </div>
         </CardHeader>
         <CardContent>
-          <AreaChart
-            className="h-80 mt-8"
-            data={slidingData}
-            index="displayHour" // <-- Use the string label "19:00"
-            categories={providerKeys}
-            colors={providerKeys.map(key => providerColorMap[key.toLowerCase()] || "slate")}
-            curveType="monotone"
-            stack={false}
-            showXAxis={true}
-            showYAxis={true}
-            yAxisWidth={65}
-            // Force the chart to show fewer labels on mobile to prevent overlap
-            startEndOnly={isMobile} 
-            valueFormatter={(number) => `${Math.floor(number)}ms`}
-            // Custom Tooltip for that "Vercel" look
-            customTooltip={({ payload, active, label }) => {
-              if (!active || !payload) return null;
-              return (
-                <div className="rounded-xl border bg-background/95 backdrop-blur-md p-3 shadow-2xl ring-1 ring-black/5 min-w-[140px]">
-                  <p className="text-[10px] font-black text-muted-foreground mb-2 uppercase tracking-widest">{label}:00 HRS</p>
-                  <div className="space-y-2">
-                    {payload.map((category: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
-                          <span className="text-xs font-semibold text-foreground capitalize">{category.dataKey}</span>
+          <ResponsiveContainer width="100%" height={320}>
+            <AreaChart data={slidingData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                dataKey="displayHour"
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                interval={isMobile ? 'preserveStartEnd' : 'preserveEnd'}
+              />
+              <YAxis
+                width={65}
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                tickFormatter={(n) => `${Math.floor(n)}ms`}
+              />
+              <Tooltip content={({ payload, active, label }) => {
+                if (!active || !payload) return null;
+                return (
+                  <div className="rounded-xl border bg-background/95 backdrop-blur-md p-3 shadow-2xl ring-1 ring-black/5 min-w-[140px]">
+                    <p className="text-[10px] font-black text-muted-foreground mb-2 uppercase tracking-widest">{label}:00 HRS</p>
+                    <div className="space-y-2">
+                      {payload.map((category: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
+                            <span className="text-xs font-semibold text-foreground capitalize">{category.dataKey}</span>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-primary">{category.value}ms</span>
                         </div>
-                        <span className="text-xs font-mono font-bold text-primary">{category.value}ms</span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            }}
-          />
+                );
+              }} />
+              {providerKeys.map((key) => (
+                <Area
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={providerColorMap[key.toLowerCase()] || '#64748b'}
+                  fill={providerColorMap[key.toLowerCase()] || '#64748b'}
+                  fillOpacity={0.1}
+                  strokeWidth={2}
+                  dot={false}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
 
@@ -2209,22 +2222,26 @@ function DashboardSystem({ data, loading }) {
                   <p className="text-sm font-bold">Watch Tracking Adoption</p>
                 </div>
                 
-                <BarList
-                  data={[
-                    { name: "AniList", value: systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-blue-500 mr-2" /> },
-                    { name: "MDBList", value: systemConfig.aggregatedStats?.features?.mdblistWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2" /> },
-                    { name: "Simkl", value: systemConfig.aggregatedStats?.features?.simklWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-red-500 mr-2" /> },
-                    { name: "Trakt", value: systemConfig.aggregatedStats?.features?.traktWatchTracking || 0, icon: () => <div className="w-2 h-2 rounded-full bg-red-600 mr-2" /> },
-                  ]}                  className="mt-2"
-                  valueFormatter={(number: number) => `${number}%`}
-                  color="blue"
-                />
+                <div className="mt-2 space-y-2">
+                  {[
+                    { name: "AniList", value: systemConfig.aggregatedStats?.features?.anilistWatchTracking || 0, color: "bg-blue-500" },
+                    { name: "MDBList", value: systemConfig.aggregatedStats?.features?.mdblistWatchTracking || 0, color: "bg-indigo-500" },
+                    { name: "Simkl", value: systemConfig.aggregatedStats?.features?.simklWatchTracking || 0, color: "bg-red-500" },
+                    { name: "Trakt", value: systemConfig.aggregatedStats?.features?.traktWatchTracking || 0, color: "bg-red-600" },
+                  ].map(item => (
+                    <div key={item.name} className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${item.color}`} />
+                      <span className="text-sm flex-1">{item.name}</span>
+                      <span className="text-sm text-muted-foreground">{item.value}%</span>
+                    </div>
+                  ))}
+                </div>
                 
-                <Flex className="mt-6 pt-4 border-t border-border">
-                  <Text className="truncate">
-                    <Bold>AniList</Bold> is currently the most popular tracker
-                  </Text>
-                </Flex>
+                <div className="flex mt-6 pt-4 border-t border-border">
+                  <p className="truncate text-sm text-muted-foreground">
+                    <span className="font-bold">AniList</span> is currently the most popular tracker
+                  </p>
+                </div>
               </div>
 
               {/* Rating Posters */}
