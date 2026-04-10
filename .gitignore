@@ -110,3 +110,10 @@ dist
 *.save
 *.save.*
 temp/
+
+# Local addon runtime data
+addon/data/.migration-completed
+addon/data/*.cache
+addon/data/db.sqlite
+addon/data/db.sqlite-shm
+addon/data/db.sqlite-wal

@@ -34,8 +34,11 @@ export interface CatalogConfig {
     privacy?: string;
     author?: string;
     description?: string;
+    mediatype?: string;
+    unified?: boolean;
     // AniList-specific metadata
     username?: string;
+    listSlug?: string;
     listName?: string;
     isCustomList?: boolean;
     // Trakt Up Next metadata

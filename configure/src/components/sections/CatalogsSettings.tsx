@@ -2145,8 +2145,12 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
                     } else if (catalog.source === 'mdblist') {
                       listUrl = (catalog as any).metadata?.url || null;
                       
-                      if (!listUrl && (catalog as any).metadata?.author && catalog.name) {
-                        // Construct URL from username and list name
+                      if (!listUrl && (catalog as any).metadata?.username && (catalog as any).metadata?.listSlug) {
+                        const username = (catalog as any).metadata.username;
+                        const listSlug = (catalog as any).metadata.listSlug;
+                        listUrl = `https://mdblist.com/lists/${username}/${listSlug}`;
+                      } else if (!listUrl && (catalog as any).metadata?.author && catalog.name) {
+                        // Fallback for legacy configs that only stored the public author/name pair.
                         const username = (catalog as any).metadata.author.toLowerCase().replace(/\s+/g, '');
                         const listSlug = catalog.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
                         listUrl = `https://mdblist.com/lists/${username}/${listSlug}`;

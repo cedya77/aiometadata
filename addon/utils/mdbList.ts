@@ -10,6 +10,7 @@ const { socksDispatcher } = require('fetch-socks');
 const { Agent, ProxyAgent } = require('undici');
 
 const logger = consola.withTag('MDBList');
+const MDBLIST_PUBLIC_LIST_URL_PATTERN = /^https?:\/\/(?:www\.)?mdblist\.com\/lists\/([^\/?#]+)\/([^\/?#]+)\/?$/i;
 
 /**
  * Sanitize URL by removing API key for safe logging
@@ -19,6 +20,177 @@ const logger = consola.withTag('MDBList');
 function sanitizeUrlForLogging(url: string): string {
   // Replace API key in query string with [REDACTED]
   return url.replace(/([?&]apikey=)[^&]+/gi, '$1[REDACTED]');
+}
+
+function normalizeMDBListUsername(value?: string): string | undefined {
+  if (!value || typeof value !== 'string') return undefined;
+
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '');
+  return normalized || undefined;
+}
+
+function normalizeMDBListSlug(value?: string): string | undefined {
+  if (!value || typeof value !== 'string') return undefined;
+
+  const slug = value.trim();
+  return slug || undefined;
+}
+
+function buildSyntheticMDBListUnifiedCatalogId(username: string, listSlug: string): string {
+  return `mdblist.${normalizeMDBListUsername(username) || username}.${normalizeMDBListSlug(listSlug) || listSlug}.unified`;
+}
+
+function parseMDBListCatalogUrl(listUrl?: string): { username: string; listSlug: string } | null {
+  if (!listUrl) return null;
+
+  const match = listUrl.trim().match(MDBLIST_PUBLIC_LIST_URL_PATTERN);
+  if (!match) return null;
+
+  return {
+    username: normalizeMDBListUsername(decodeURIComponent(match[1])) || match[1],
+    listSlug: decodeURIComponent(match[2]),
+  };
+}
+
+function parseSyntheticMDBListUnifiedCatalogId(catalogId?: string): { username: string; listSlug: string } | null {
+  if (!catalogId || !catalogId.startsWith('mdblist.') || !catalogId.endsWith('.unified')) {
+    return null;
+  }
+
+  const identityBody = catalogId.slice('mdblist.'.length, -'.unified'.length);
+  const firstSeparator = identityBody.indexOf('.');
+  if (firstSeparator === -1) {
+    return null;
+  }
+
+  const username = identityBody.slice(0, firstSeparator);
+  const listSlug = identityBody.slice(firstSeparator + 1);
+  if (!username || !listSlug) {
+    return null;
+  }
+
+  return {
+    username,
+    listSlug,
+  };
+}
+
+function resolveMDBListUnifiedCatalogIdentity(catalogConfig?: any, catalogId?: string): { username: string; listSlug: string; syntheticId: string } | null {
+  if (!catalogConfig || catalogConfig.type !== 'all') {
+    return null;
+  }
+
+  if (
+    catalogId === 'mdblist.watchlist' ||
+    catalogId === 'mdblist.upnext' ||
+    catalogId?.startsWith('mdblist.discover.') ||
+    catalogConfig.sourceUrl?.includes('/external/lists/')
+  ) {
+    return null;
+  }
+
+  const metadataUsername = normalizeMDBListUsername(catalogConfig.metadata?.username);
+  const metadataListSlug = normalizeMDBListSlug(catalogConfig.metadata?.listSlug);
+  if (metadataUsername && metadataListSlug) {
+    return {
+      username: metadataUsername,
+      listSlug: metadataListSlug,
+      syntheticId: buildSyntheticMDBListUnifiedCatalogId(metadataUsername, metadataListSlug),
+    };
+  }
+
+  const parsedUrl = parseMDBListCatalogUrl(catalogConfig.metadata?.url);
+  if (parsedUrl) {
+    return {
+      ...parsedUrl,
+      syntheticId: buildSyntheticMDBListUnifiedCatalogId(parsedUrl.username, parsedUrl.listSlug),
+    };
+  }
+
+  const parsedCatalogId = parseSyntheticMDBListUnifiedCatalogId(catalogId);
+  if (parsedCatalogId) {
+    return {
+      ...parsedCatalogId,
+      syntheticId: buildSyntheticMDBListUnifiedCatalogId(parsedCatalogId.username, parsedCatalogId.listSlug),
+    };
+  }
+
+  return null;
+}
+
+function attachStableMDBListOrder(items: any[]): any[] {
+  return items.map((item: any, index: number) => {
+    if (!item || typeof item !== 'object' || item._aiomOrder !== undefined) {
+      return item;
+    }
+
+    return {
+      ...item,
+      _aiomOrder: index,
+    };
+  });
+}
+
+function normalizeMDBListItemsPayload(data: any, catalogType?: string): any[] {
+  const hasMoviesShowsStructure =
+    data &&
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    ('movies' in data || 'shows' in data);
+
+  if (hasMoviesShowsStructure) {
+    if (catalogType === 'series') {
+      return attachStableMDBListOrder(data.shows || []);
+    }
+    if (catalogType === 'movie') {
+      return attachStableMDBListOrder(data.movies || []);
+    }
+
+    // Unified MDBList responses are safest when consumed in provider order.
+    // If the API falls back to separate movie/show buckets instead of a mixed array,
+    // we preserve each bucket's local ordering and assign a deterministic local ordinal
+    // from the combined response position rather than inventing a synthetic popularity score.
+    return attachStableMDBListOrder([
+      ...(data.movies || []),
+      ...(data.shows || [])
+    ]);
+  }
+
+  if (Array.isArray(data)) {
+    return attachStableMDBListOrder(data);
+  }
+
+  return attachStableMDBListOrder([
+    ...(data?.movies || []),
+    ...(data?.shows || [])
+  ]);
+}
+
+function buildMDBListItemsCacheKey(
+  apiKeyHash: string,
+  listId: string,
+  page: number,
+  sort?: string,
+  order?: string,
+  genre?: string,
+  unified?: boolean,
+  catalogType?: string,
+  pageSize?: number
+): string {
+  return `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize || ''}`;
+}
+
+function buildMDBListItemsBySlugCacheKey(
+  apiKeyHash: string,
+  username: string,
+  listSlug: string,
+  page: number,
+  sort?: string,
+  order?: string,
+  genre?: string,
+  pageSize?: number
+): string {
+  return `mdblist-api:items-by-slug:${apiKeyHash}:${normalizeMDBListUsername(username) || username}:${normalizeMDBListSlug(listSlug) || listSlug}:${page}:${sort || ''}:${order || ''}:${genre || ''}:true:all:${pageSize || ''}`;
 }
 
 
@@ -304,7 +476,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
   
   const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
   
-  const cacheKey = `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
+  const cacheKey = buildMDBListItemsCacheKey(apiKeyHash, listId, page, sort, order, genre, unified, catalogType, pageSize);
   
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
@@ -355,32 +527,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
         totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
       }
       
-      let items: any[];
-      
-      const hasMoviesShowsStructure = response.data && 
-                                      typeof response.data === 'object' && 
-                                      !Array.isArray(response.data) &&
-                                      ('movies' in response.data || 'shows' in response.data);
-      
-      if (hasMoviesShowsStructure) {
-        if (catalogType === 'series') {
-          items = response.data.shows || [];
-        } else if (catalogType === 'movie') {
-          items = response.data.movies || [];
-        } else {
-          items = [
-            ...(response.data?.movies || []),
-            ...(response.data?.shows || [])
-          ];
-        }
-      } else if (Array.isArray(response.data)) {
-        items = response.data;
-      } else {
-        items = [
-          ...(response.data?.movies || []),
-          ...(response.data?.shows || [])
-        ];
-      }
+      const items = normalizeMDBListItemsPayload(response.data, catalogType);
       
       // Smart pagination validation and logging
       if (listId === 'watchlist') {
@@ -424,6 +571,64 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
       };
     } catch (err: any) {
       logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
+      return { items: [] };
+    }
+  }, ttl, { skipVersion: true });
+}
+
+async function fetchMDBListItemsBySlug(
+  username: string,
+  listSlug: string,
+  apiKey: string,
+  language: string,
+  page: number,
+  sort?: string,
+  order?: string,
+  genre?: string,
+  cacheTTL?: number
+): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+  const cacheKey = buildMDBListItemsBySlugCacheKey(apiKeyHash, username, listSlug, page, sort, order, genre, pageSize);
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+
+  return await cacheWrapGlobal(cacheKey, async () => {
+    const offset = (page * pageSize) - pageSize;
+
+    try {
+      let url = `https://api.mdblist.com/lists/${encodeURIComponent(username)}/${encodeURIComponent(listSlug)}/items?limit=${pageSize}&offset=${offset}&apikey=${apiKey}&append_to_response=genre,poster&unified=true`;
+
+      if (sort && sort.trim() !== '') {
+        url += `&sort=${sort}`;
+      }
+      if (order && order.trim() !== '') {
+        url += `&order=${order}`;
+      }
+      if (genre && genre.toLowerCase() !== 'none') {
+        url += `&filter_genre=${genre}`;
+      }
+
+      logger.debug(`MDBList unified-by-slug request URL: ${sanitizeUrlForLogging(url)}`);
+
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, { dispatcher: mdblistDispatcher }),
+        apiKey,
+        `MDBList fetchMDBListItemsBySlug (${username}/${listSlug}, page: ${page}, pageSize: ${pageSize}, sort: ${sort}, order: ${order}, genre: ${genre})`
+      );
+
+      const totalItems = response.headers?.['x-total-items'] ? parseInt(response.headers['x-total-items']) : undefined;
+      const hasMore = response.headers?.['x-has-more'] === 'true';
+      const totalPages = totalItems ? Math.ceil(totalItems / pageSize) : undefined;
+      const items = normalizeMDBListItemsPayload(response.data, 'all');
+
+      return {
+        items,
+        totalItems,
+        hasMore,
+        totalPages
+      };
+    } catch (err: any) {
+      logger.error(`Error retrieving unified items for ${username}/${listSlug}, page ${page}:`, err.message);
       return { items: [] };
     }
   }, ttl, { skipVersion: true });
@@ -640,32 +845,7 @@ async function fetchMDBListExternalItems(
 
       const hasMore = response.headers?.['x-has-more'] === 'true';
 
-      let items: any[];
-
-      const hasMoviesShowsStructure = response.data && 
-                                      typeof response.data === 'object' && 
-                                      !Array.isArray(response.data) &&
-                                      ('movies' in response.data || 'shows' in response.data);
-      
-      if (hasMoviesShowsStructure) {
-        if (catalogType === 'series') {
-          items = response.data.shows || [];
-        } else if (catalogType === 'movie') {
-          items = response.data.movies || [];
-        } else {
-          items = [
-            ...(response.data?.movies || []),
-            ...(response.data?.shows || [])
-          ];
-        }
-      } else if (Array.isArray(response.data)) {
-        items = response.data;
-      } else {
-        items = [
-          ...(response.data?.movies || []),
-          ...(response.data?.shows || [])
-        ];
-      }
+      const items = normalizeMDBListItemsPayload(response.data, catalogType);
 
       return { items, hasMore };
     } catch (err: any) {
@@ -1651,6 +1831,10 @@ async function fetchMDBListCatalog(
 }
 
 export {
+  buildMDBListItemsBySlugCacheKey,
+  buildMDBListItemsCacheKey,
+  buildSyntheticMDBListUnifiedCatalogId,
+  fetchMDBListItemsBySlug,
   fetchMDBListItems,
   fetchMDBListExternalItems,
   fetchMDBListBatchMediaInfo,
@@ -1665,9 +1849,12 @@ export {
   testMdblistKey,
   fetchMDBListUpNext,
   parseMDBListUpNextItems,
+  parseMDBListCatalogUrl,
+  parseSyntheticMDBListUnifiedCatalogId,
+  resolveMDBListUnifiedCatalogIdentity,
+  normalizeMDBListItemsPayload,
   fetchMdbListSearchItems,
   checkinMovie,
   checkinEpisode,
   fetchMDBListCatalog
 };
-

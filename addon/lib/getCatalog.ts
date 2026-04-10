@@ -1,7 +1,7 @@
 require("dotenv").config();
 import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
-import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
+import { fetchMDBListItems, fetchMDBListItemsBySlug, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems, resolveMDBListUnifiedCatalogIdentity } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
@@ -60,22 +60,23 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
     'NC-17': 'TV-MA'
   };
   
-  const isTvRating = type === 'series';
-  const finalUserRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
-  const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
-  const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
-
-  if (userRatingIndex === -1) {
-    return metas;
-  }
-
   const filteredMetas = metas.filter(meta => {
+    const effectiveType = type === 'all' ? meta.type : type;
+    const isTvRating = effectiveType === 'series';
+    const finalUserRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+    const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+    const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
+
+    if (userRatingIndex === -1) {
+      return true;
+    }
+
     let cert: string | null = null;
     
     if (meta.app_extras?.certification) {
       cert = meta.app_extras.certification;
     } else {
-      logger.debug(`[StremThru] ${type} ${meta.name}: No certification data available`);
+      logger.debug(`[StremThru] ${effectiveType} ${meta.name}: No certification data available`);
     }
 
     // If rating is PG-13 or lower, exclude NR content as it could be inappropriate
@@ -745,6 +746,41 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     const genreSlug = convertGenreToSlug(genre);
     if (genreSlug !== genre) {
       logger.debug(`Converted genre "${genre}" to slug "${genreSlug}"`);
+    }
+
+    const unifiedSlugIdentity = resolveMDBListUnifiedCatalogIdentity(catalogConfig, id);
+    if (unifiedSlugIdentity) {
+      logger.info(`Fetching MDBList unified catalog by slug: ${unifiedSlugIdentity.username}/${unifiedSlugIdentity.listSlug}, Genre: ${genre}, Page: ${page}`);
+
+      const response = await fetchMDBListItemsBySlug(
+        unifiedSlugIdentity.username,
+        unifiedSlugIdentity.listSlug,
+        config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '',
+        language,
+        page,
+        sort,
+        order,
+        genreSlug,
+        catalogConfig?.cacheTTL
+      );
+
+      if (response.totalItems !== undefined && response.totalPages !== undefined) {
+        const pageInfo = `page ${page}/${response.totalPages}`;
+        const itemInfo = `${response.items.length} items`;
+        const totalInfo = `${response.totalItems} total`;
+        const statusInfo = response.hasMore ? 'more available' : 'end reached';
+
+        logger.debug(`MDBList unified-by-slug pagination - ${pageInfo}, ${itemInfo}, ${totalInfo}, ${statusInfo}`);
+
+        if (!response.hasMore && response.items.length === 0) {
+          logger.debug(`MDBList unified-by-slug early exit - no more items for ${unifiedSlugIdentity.syntheticId} at page ${page}`);
+          return [];
+        }
+      }
+
+      let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
+      metas = applyAgeRatingFilter(metas, type, config);
+      return metas;
     }
     
     // Handle different watchlist catalog IDs

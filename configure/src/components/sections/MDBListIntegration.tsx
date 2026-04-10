@@ -12,7 +12,7 @@ import { ChevronDown, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
-import { getMdbListType, createMDBListCatalog } from '@/utils/catalogUtils';
+import { getMdbListType, createMDBListCatalog, createMDBListCatalogsForImport, groupMDBListListsForImport } from '@/utils/catalogUtils';
 import type { CatalogConfig } from '@/contexts/ConfigContext';
 
 interface MDBListIntegrationProps {
@@ -40,6 +40,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
   const [topLists, setTopLists] = useState<any[]>([]);
   const [selectedTopLists, setSelectedTopLists] = useState<Set<string>>(new Set());
   const [isLoadingTopLists, setIsLoadingTopLists] = useState(false);
+  const [mixedListUnifiedSettings, setMixedListUnifiedSettings] = useState<Record<string, boolean>>({});
 
   const [externalLists, setExternalLists] = useState<any[]>([]);
   const [selectedExternalLists, setSelectedExternalLists] = useState<Set<string>>(new Set());
@@ -48,6 +49,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
+  const [singleListUnified, setSingleListUnified] = useState<boolean>(true);
 
   // User info state
   const [userInfo, setUserInfo] = useState<any>(null);
@@ -83,6 +85,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     if (!displayTypeOverrides) return undefined;
     return displayTypeOverrides[type];
   };
+
+  const initializeMixedListSettings = useCallback((lists: any[]) => {
+    const defaults: Record<string, boolean> = {};
+    lists.forEach((list: any) => {
+      if (getMdbListType(list) === 'all') {
+        defaults[list.id] = true;
+      }
+    });
+    setMixedListUnifiedSettings(prev => ({ ...prev, ...defaults }));
+  }, []);
   
   // Function to import selected top lists
   const importSelectedTopLists = useCallback(async () => {
@@ -100,21 +112,22 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = topLists.find(l => l.id === listId);
           if (!list) return;
 
-          const catalogId = `mdblist.${list.id}`;
+          const catalogsToAdd = createMDBListCatalogsForImport({
+            list,
+            unified: mixedListUnifiedSettings[list.id] ?? true,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            displayTypeOverrides: prev.displayTypeOverrides,
+          });
 
-          // Check if catalog already exists
-          if (!newCatalogs.some(c => c.id === catalogId)) {
-            const newCatalog = createMDBListCatalog({
-              list,
-              sort: defaultSort,
-              order: defaultOrder,
-              cacheTTL: defaultCacheTTL,
-              genreSelection: defaultGenreSelection,
-              displayTypeOverrides: prev.displayTypeOverrides,
-            });
-            newCatalogs.push(newCatalog);
-            newListsAddedCount++;
-          }
+          catalogsToAdd.forEach((newCatalog) => {
+            if (!newCatalogs.some(c => c.id === newCatalog.id)) {
+              newCatalogs.push(newCatalog);
+              newListsAddedCount++;
+            }
+          });
         });
 
         return {
@@ -135,7 +148,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         description: error instanceof Error ? error.message : "Unknown error occurred"
       });
     }
-  }, [selectedTopLists, topLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
+  }, [selectedTopLists, topLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection, mixedListUnifiedSettings]);
 
   const fetchExternalUserLists = useCallback(async () => {
     if (!tempKey) {
@@ -153,7 +166,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         throw new Error(`Failed to fetch lists (Status: ${response.status})`);
       }
 
-      const userLists = await response.json();
+      const rawUserLists = await response.json();
+      const userLists = groupMDBListListsForImport(Array.isArray(rawUserLists) ? rawUserLists : []);
       if (!Array.isArray(userLists)) {
         throw new Error("Invalid response format from MDBList API");
       }
@@ -250,17 +264,16 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             }
           } else {
             // Create a single catalog (either unified 'all' or specific 'movie'/'series')
-            const catalogId = `mdblist.${list.id}`;
-            if (!newCatalogs.some(c => c.id === catalogId)) {
-              const newCatalog = createMDBListCatalog({
-                list,
-                sort: defaultSort,
-                order: defaultOrder,
-                cacheTTL: defaultCacheTTL,
-                genreSelection: defaultGenreSelection,
-                displayTypeOverrides: prev.displayTypeOverrides,
-                sourceUrl,
-              });
+            const newCatalog = createMDBListCatalog({
+              list,
+              sort: defaultSort,
+              order: defaultOrder,
+              cacheTTL: defaultCacheTTL,
+              genreSelection: defaultGenreSelection,
+              displayTypeOverrides: prev.displayTypeOverrides,
+              sourceUrl,
+            });
+            if (!newCatalogs.some(c => c.id === newCatalog.id)) {
               newCatalogs.push(newCatalog);
             }
           }
@@ -305,7 +318,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         throw new Error(`Failed to fetch lists (Status: ${response.status})`);
       }
 
-      const userLists = await response.json();
+      const rawUserLists = await response.json();
+      const userLists = groupMDBListListsForImport(Array.isArray(rawUserLists) ? rawUserLists : []);
       if (!Array.isArray(userLists)) {
         throw new Error("Invalid response format from MDBList API");
       }
@@ -323,7 +337,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           username: username,
           userDescription: popularUsers.find(u => u.username === username)?.description || ""
         }));
-        
+        initializeMixedListSettings(listsWithUser);
         setPopularLists(listsWithUser);
         setSelectedPopularLists(new Set());
         
@@ -340,7 +354,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     } finally {
       setIsLoadingPopularLists(false);
     }
-  }, [tempKey]);
+  }, [tempKey, initializeMixedListSettings]);
 
   const handlePopularListSelection = (listId: string, checked: boolean) => {
     const newSelection = new Set(selectedPopularLists);
@@ -365,7 +379,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         throw new Error("Failed to fetch top lists");
       }
 
-      const topLists = await response.json();
+      const rawTopLists = await response.json();
+      const topLists = groupMDBListListsForImport(Array.isArray(rawTopLists) ? rawTopLists : []);
       if (!Array.isArray(topLists)) {
         throw new Error("Unexpected response format");
       }
@@ -377,6 +392,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         userDescription: `Top list by ${list.user_name || "Unknown"}`
       }));
 
+      initializeMixedListSettings(listsWithUser);
       setTopLists(listsWithUser);
       setSelectedTopLists(new Set());
 
@@ -392,7 +408,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     } finally {
       setIsLoadingTopLists(false);
     }
-  }, [tempKey]);
+  }, [tempKey, initializeMixedListSettings]);
 
   const fetchCustomUserLists = useCallback(async () => {
     if (!tempKey) {
@@ -415,7 +431,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         throw new Error(`Failed to fetch lists (Status: ${response.status})`);
       }
 
-      const userLists = await response.json();
+      const rawUserLists = await response.json();
+      const userLists = groupMDBListListsForImport(Array.isArray(rawUserLists) ? rawUserLists : []);
       if (!Array.isArray(userLists)) {
         throw new Error("Invalid response format from MDBList API");
       }
@@ -426,6 +443,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         });
         setCustomUserLists([]);
       } else {
+        initializeMixedListSettings(userLists);
         setCustomUserLists(userLists);
         setSelectedCustomLists(new Set());
         toast.success("User lists loaded", {
@@ -441,7 +459,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     } finally {
       setIsLoadingCustomUser(false);
     }
-  }, [tempKey, customUsername]);
+  }, [tempKey, customUsername, initializeMixedListSettings]);
 
   const handleCustomListSelection = (listId: string, checked: boolean) => {
     const newSelection = new Set(selectedCustomLists);
@@ -468,21 +486,22 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = customUserLists.find(l => l.id === listId);
           if (!list) return;
 
-          const catalogId = `mdblist.${list.id}`;
-          
-          // Check if catalog already exists
-          if (!newCatalogs.some(c => c.id === catalogId)) {
-            const newCatalog = createMDBListCatalog({
-              list,
-              sort: defaultSort,
-              order: defaultOrder,
-              cacheTTL: defaultCacheTTL,
-              genreSelection: defaultGenreSelection,
-              displayTypeOverrides: prev.displayTypeOverrides,
-            });
-            newCatalogs.push(newCatalog);
-            newListsAddedCount++;
-          }
+          const catalogsToAdd = createMDBListCatalogsForImport({
+            list,
+            unified: mixedListUnifiedSettings[list.id] ?? true,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            displayTypeOverrides: prev.displayTypeOverrides,
+          });
+
+          catalogsToAdd.forEach((newCatalog) => {
+            if (!newCatalogs.some(c => c.id === newCatalog.id)) {
+              newCatalogs.push(newCatalog);
+              newListsAddedCount++;
+            }
+          });
         });
 
         return {
@@ -504,7 +523,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         description: error instanceof Error ? error.message : "Unknown error occurred"
       });
     }
-  }, [selectedCustomLists, customUserLists, customUsername, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
+  }, [selectedCustomLists, customUserLists, customUsername, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection, mixedListUnifiedSettings]);
 
   const importSelectedPopularLists = useCallback(async () => {
     if (selectedPopularLists.size === 0) {
@@ -521,21 +540,22 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           const list = popularLists.find(l => l.id === listId);
           if (!list) return;
 
-          const catalogId = `mdblist.${list.id}`;
-          
-          // Check if catalog already exists
-          if (!newCatalogs.some(c => c.id === catalogId)) {
-            const newCatalog = createMDBListCatalog({
-              list,
-              sort: defaultSort,
-              order: defaultOrder,
-              cacheTTL: defaultCacheTTL,
-              genreSelection: defaultGenreSelection,
-              displayTypeOverrides: prev.displayTypeOverrides,
-            });
-            newCatalogs.push(newCatalog);
-            newListsAddedCount++;
-          }
+          const catalogsToAdd = createMDBListCatalogsForImport({
+            list,
+            unified: mixedListUnifiedSettings[list.id] ?? true,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            displayTypeOverrides: prev.displayTypeOverrides,
+          });
+
+          catalogsToAdd.forEach((newCatalog) => {
+            if (!newCatalogs.some(c => c.id === newCatalog.id)) {
+              newCatalogs.push(newCatalog);
+              newListsAddedCount++;
+            }
+          });
         });
 
         return {
@@ -557,7 +577,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         description: error instanceof Error ? error.message : "Unknown error occurred"
       });
     }
-  }, [selectedPopularLists, popularLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
+  }, [selectedPopularLists, popularLists, setConfig, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection, mixedListUnifiedSettings]);
 
   const validateApiKey = useCallback(async (isRefresh = false) => {
     if (!tempKey) {
@@ -592,46 +612,51 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         );
 
         // Process each list from the API
-        listsFromApi.forEach((list: any) => {
-          const type = getMdbListType(list);
-          const catalogId = `mdblist.${list.id}`;
-          const catalogKey = `${catalogId}-${type}`;
+        groupMDBListListsForImport(Array.isArray(listsFromApi) ? listsFromApi : []).forEach((list: any) => {
+          const candidateCatalogs = createMDBListCatalogsForImport({
+            list,
+            unified: mixedListUnifiedSettings[list.id] ?? true,
+            sort: defaultSort,
+            order: defaultOrder,
+            cacheTTL: defaultCacheTTL,
+            genreSelection: defaultGenreSelection,
+            displayTypeOverrides: prev.displayTypeOverrides,
+          });
+          const candidateKeys = candidateCatalogs.map(catalog => `${catalog.id}-${catalog.type}`);
+          const splitEntries = Array.isArray(list?._groupedEntries) ? list._groupedEntries : [];
+          const splitExists = splitEntries.length > 0 && splitEntries.every((entry: any) => {
+            const entryType = entry.mediatype === 'movie' ? 'movie' : 'series';
+            return existingMdbListIds.has(`mdblist.${entry.id}-${entryType}`);
+          });
           
           // Check if catalog already exists
-          if (!existingMdbListIds.has(catalogKey)) {
+          if (!candidateKeys.every(key => existingMdbListIds.has(key)) && !splitExists) {
             // Add new catalog at the end
-            const newCatalog = createMDBListCatalog({
-              list,
-              sort: defaultSort,
-              order: defaultOrder,
-              cacheTTL: defaultCacheTTL,
-              genreSelection: defaultGenreSelection,
-              displayTypeOverrides: prev.displayTypeOverrides,
+            candidateCatalogs.forEach((newCatalog) => {
+              newCatalogs.push(newCatalog);
+              newListsAddedCount++;
             });
-            newCatalogs.push(newCatalog);
-            newListsAddedCount++;
           } else {
-            // Catalog exists, update its properties but keep position
-            const existingCatalogIndex = newCatalogs.findIndex(c => c.id === catalogId && c.type === type);
-            if (existingCatalogIndex !== -1) {
-              const existingCatalog = newCatalogs[existingCatalogIndex];
-              // Only restore if it was disabled
-              if (!existingCatalog.enabled) {
-                newCatalogs[existingCatalogIndex] = {
-                  ...existingCatalog,
-                  enabled: true,
-                  showInHome: true,
-                  name: list.name, // Update name in case it changed
-                };
-                restoredListsCount++;
-              } else {
-                // Just update the name in case it changed
-                newCatalogs[existingCatalogIndex] = {
-                  ...existingCatalog,
-                  name: list.name,
-                };
+            candidateCatalogs.forEach((newCatalog) => {
+              const existingCatalogIndex = newCatalogs.findIndex(c => c.id === newCatalog.id && c.type === newCatalog.type);
+              if (existingCatalogIndex !== -1) {
+                const existingCatalog = newCatalogs[existingCatalogIndex];
+                if (!existingCatalog.enabled) {
+                  newCatalogs[existingCatalogIndex] = {
+                    ...existingCatalog,
+                    enabled: true,
+                    showInHome: true,
+                    name: newCatalog.name,
+                  };
+                  restoredListsCount++;
+                } else {
+                  newCatalogs[existingCatalogIndex] = {
+                    ...existingCatalog,
+                    name: newCatalog.name,
+                  };
+                }
               }
-            }
+            });
           }
         });
 
@@ -670,7 +695,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     } finally {
       setIsChecking(false);
     }
-  }, [setConfig, tempKey, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection]);
+  }, [setConfig, tempKey, defaultSort, defaultOrder, defaultCacheTTL, defaultGenreSelection, mixedListUnifiedSettings]);
 
   const handleSave = () => {
     if (isValid) {
@@ -696,7 +721,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       const response = await fetch(`/api/mdblist/lists/${encodeURIComponent(username)}/${encodeURIComponent(listname)}?apikey=${tempKey}`);
       if (!response.ok) throw new Error(`Error fetching list (Status: ${response.status})`);
 
-      const lists = await response.json();
+      const rawLists = await response.json();
+      const lists = groupMDBListListsForImport(Array.isArray(rawLists) ? rawLists : []);
       if (!Array.isArray(lists) || lists.length === 0) {
         throw new Error("No lists found in the response.");
       }
@@ -707,8 +733,9 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         let skippedCount = 0;
 
         lists.forEach((list: any) => {
-          const newCatalog = createMDBListCatalog({
+          const catalogsToAdd = createMDBListCatalogsForImport({
             list,
+            unified: singleListUnified,
             sort: defaultSort,
             order: defaultOrder,
             cacheTTL: defaultCacheTTL,
@@ -717,14 +744,14 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             listUrl: customListUrl,
           });
 
-          // Prevent duplicates
-          if (prev.catalogs.some(c => c.id === newCatalog.id)) {
-            skippedCount++;
-            return;
-          }
-          
-          newCatalogs.push(newCatalog);
-          addedCount++;
+          catalogsToAdd.forEach((newCatalog) => {
+            if (prev.catalogs.some(c => c.id === newCatalog.id)) {
+              skippedCount++;
+              return;
+            }
+            newCatalogs.push(newCatalog);
+            addedCount++;
+          });
         });
 
         if (addedCount === 0) {
@@ -1336,12 +1363,17 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                           onCheckedChange={(checked) => handleCustomListSelection(list.id, checked)}
                         />
                         <div className="flex-1 min-w-0">
+                          {(() => {
+                            const listType = getMdbListType(list);
+                            const isMixedType = listType === 'all';
+                            return (
+                              <>
                           <Label htmlFor={`custom-${list.id}`} className="font-medium cursor-pointer">
                             {list.name}
                           </Label>
                           <div className="flex items-center gap-2 mt-1">
                             <Badge variant="outline" className="text-xs capitalize">
-                              {list.mediatype}
+                              {listType}
                             </Badge>
                             <Badge variant="secondary" className="text-xs">
                               by {customUsername}
@@ -1357,6 +1389,30 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                               {list.description}
                             </p>
                           )}
+                          {isMixedType && (
+                            <div className="flex items-center justify-between mt-2 p-2 border rounded-md bg-muted/50">
+                              <div className="space-y-0.5">
+                                <Label htmlFor={`mixed-custom-${list.id}`} className="text-sm font-medium">
+                                  Unified Format
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  {(mixedListUnifiedSettings[list.id] ?? true)
+                                    ? "Creates one catalog with all items (movies and shows mixed)"
+                                    : "Separate movie and series catalogs"}
+                                </p>
+                              </div>
+                              <Switch
+                                id={`mixed-custom-${list.id}`}
+                                checked={mixedListUnifiedSettings[list.id] ?? true}
+                                onCheckedChange={(checked) => {
+                                  setMixedListUnifiedSettings(prev => ({ ...prev, [list.id]: checked }));
+                                }}
+                              />
+                            </div>
+                          )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
@@ -1387,9 +1443,26 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="single-list-unified" className="text-sm font-medium">
+                        Unified Format
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Mixed MDBList lists can be imported as one mixed catalog or split into movies and series.
+                      </p>
+                    </div>
+                    <Switch
+                      id="single-list-unified"
+                      checked={singleListUnified}
+                      onCheckedChange={setSingleListUnified}
+                    />
+                  </div>
                 <div className="flex items-center space-x-2">
                   <Input id="customListUrl" value={customListUrl} onChange={(e) => setCustomListUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" />
                   <Button onClick={handleAddCustomList} variant="outline">Add</Button>
+                </div>
                 </div>
               </CardContent>
             </Card>
@@ -1527,12 +1600,17 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                           onCheckedChange={(checked) => handlePopularListSelection(list.id, checked)}
                         />
                         <div className="flex-1 min-w-0">
+                          {(() => {
+                            const listType = getMdbListType(list);
+                            const isMixedType = listType === 'all';
+                            return (
+                              <>
                           <Label htmlFor={list.id} className="font-medium cursor-pointer">
                             {list.name}
                           </Label>
                           <div className="flex items-center gap-2 mt-1">
                             <Badge variant="outline" className="text-xs capitalize">
-                              {list.mediatype}
+                              {listType}
                             </Badge>
                             <Badge variant="secondary" className="text-xs">
                               by {list.user}
@@ -1548,6 +1626,30 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                               {list.description}
                             </p>
                           )}
+                          {isMixedType && (
+                            <div className="flex items-center justify-between mt-2 p-2 border rounded-md bg-muted/50">
+                              <div className="space-y-0.5">
+                                <Label htmlFor={`mixed-popular-${list.id}`} className="text-sm font-medium">
+                                  Unified Format
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  {(mixedListUnifiedSettings[list.id] ?? true)
+                                    ? "Creates one catalog with all items (movies and shows mixed)"
+                                    : "Separate movie and series catalogs"}
+                                </p>
+                              </div>
+                              <Switch
+                                id={`mixed-popular-${list.id}`}
+                                checked={mixedListUnifiedSettings[list.id] ?? true}
+                                onCheckedChange={(checked) => {
+                                  setMixedListUnifiedSettings(prev => ({ ...prev, [list.id]: checked }));
+                                }}
+                              />
+                            </div>
+                          )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
@@ -1637,12 +1739,17 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                             }}
                           />
                           <div className="flex-1 min-w-0">
+                            {(() => {
+                              const listType = getMdbListType(list);
+                              const isMixedType = listType === 'all';
+                              return (
+                                <>
                             <Label htmlFor={`top-${list.id}`} className="font-medium cursor-pointer">
                               {list.name}
                             </Label>
                             <div className="flex items-center gap-2 mt-1">
                               <Badge variant="outline" className="text-xs capitalize">
-                                {list.mediatype}
+                                {listType}
                               </Badge>
                               <Badge variant="secondary" className="text-xs">
                                 by {list.user}
@@ -1658,6 +1765,30 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                                 {list.description}
                               </p>
                             )}
+                            {isMixedType && (
+                              <div className="flex items-center justify-between mt-2 p-2 border rounded-md bg-muted/50">
+                                <div className="space-y-0.5">
+                                  <Label htmlFor={`mixed-top-${list.id}`} className="text-sm font-medium">
+                                    Unified Format
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">
+                                    {(mixedListUnifiedSettings[list.id] ?? true)
+                                      ? "Creates one catalog with all items (movies and shows mixed)"
+                                      : "Separate movie and series catalogs"}
+                                  </p>
+                                </div>
+                                <Switch
+                                  id={`mixed-top-${list.id}`}
+                                  checked={mixedListUnifiedSettings[list.id] ?? true}
+                                  onCheckedChange={(checked) => {
+                                    setMixedListUnifiedSettings(prev => ({ ...prev, [list.id]: checked }));
+                                  }}
+                                />
+                              </div>
+                            )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))}
@@ -1770,8 +1901,8 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                                   <Label htmlFor={`unified-switch-${list.id}`} className="text-sm font-medium">Unified Format</Label>
                                   <p className="text-xs text-muted-foreground">
                                     {externalUnifiedSettings[list.id] ?? true
-                                      ? "One catalog for all media types"
-                                      : "Separate catalogs for movies & series"}
+                                      ? "Creates one catalog with all items (movies and shows mixed)"
+                                      : "Separate movie and series catalogs"}
                                   </p>
                                 </div>
                                 <Switch
@@ -1828,4 +1959,3 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     </Dialog>
   );
 }
-

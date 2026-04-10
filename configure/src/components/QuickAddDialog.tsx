@@ -12,10 +12,12 @@ import { toast } from "sonner";
 import { parseQuickAddUrl, ParsedUrl } from '@/utils/urlParser';
 import { 
   createMDBListCatalog, 
+  createMDBListCatalogsForImport,
   createTraktCatalog, 
   createLetterboxdCatalog, 
   createCustomManifestCatalog,
-  getMdbListType 
+  getMdbListType,
+  groupMDBListListsForImport
 } from '@/utils/catalogUtils';
 import { apiCache } from '@/utils/apiCache';
 
@@ -30,6 +32,7 @@ interface SelectableItem {
   type?: 'movie' | 'series' | 'all';
   itemCount?: number;
   author?: string;
+  supportsUnified?: boolean;
 }
 
 type QuickAddStep = 'input' | 'selection' | 'loading';
@@ -48,6 +51,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
   const [items, setItems] = useState<SelectableItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [searchFilter, setSearchFilter] = useState('');
+  const [mixedListUnifiedSettings, setMixedListUnifiedSettings] = useState<Record<string, boolean>>({});
   
   // Store raw list data for proper catalog creation
   const [rawListData, setRawListData] = useState<Map<string, any>>(new Map());
@@ -65,6 +69,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
       setItems([]);
       setSelectedItems(new Set());
       setSearchFilter('');
+      setMixedListUnifiedSettings({});
       setRawListData(new Map());
       setManifest(null);
       setIsLoading(false);
@@ -178,12 +183,25 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
           throw new Error(`Failed to fetch list (Status: ${response.status})`);
         }
 
-        const [list] = await response.json();
-        const catalogId = `mdblist.${list.id}`;
-        
-        if (catalogExists(catalogId)) {
-          toast.info(`List "${list.name}" is already in your catalog list.`);
-          onClose();
+        const rawLists = await response.json();
+        const [list] = groupMDBListListsForImport(Array.isArray(rawLists) ? rawLists : []);
+        if (!list) {
+          throw new Error('List not found');
+        }
+
+        if (getMdbListType(list) === 'all') {
+          setRawListData(new Map([[String(list.id), list]]));
+          setItems([{
+            id: String(list.id),
+            name: list.name,
+            type: 'all',
+            itemCount: list.items,
+            author: list.user_name || parsedUrl.username,
+            supportsUnified: true,
+          }]);
+          setSelectedItems(new Set([String(list.id)]));
+          setMixedListUnifiedSettings({ [String(list.id)]: true });
+          setStep('selection');
           return;
         }
 
@@ -192,6 +210,12 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
           cacheTTL: catalogTTL,
           displayTypeOverrides: config.displayTypeOverrides,
         });
+
+        if (catalogExists(newCatalog.id)) {
+          toast.info(`List "${list.name}" is already in your catalog list.`);
+          onClose();
+          return;
+        }
 
         setConfig(prev => ({
           ...prev,
@@ -216,7 +240,8 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
           throw new Error(`Failed to fetch lists (Status: ${response.status})`);
         }
 
-        const userLists = await response.json();
+        const rawUserLists = await response.json();
+        const userLists = groupMDBListListsForImport(Array.isArray(rawUserLists) ? rawUserLists : []);
         if (!Array.isArray(userLists) || userLists.length === 0) {
           toast.info("No lists found", {
             description: `User "${parsedUrl.username}" has no public lists available`
@@ -230,6 +255,13 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
           listDataMap.set(String(list.id), list);
         });
         setRawListData(listDataMap);
+        const initialUnifiedSettings: Record<string, boolean> = {};
+        userLists.forEach((list: any) => {
+          if (getMdbListType(list) === 'all') {
+            initialUnifiedSettings[String(list.id)] = true;
+          }
+        });
+        setMixedListUnifiedSettings(initialUnifiedSettings);
 
         // Convert to selectable items
         const selectableItems: SelectableItem[] = userLists.map((list: any) => ({
@@ -238,6 +270,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
           type: getMdbListType(list),
           itemCount: list.items,
           author: list.user_name || parsedUrl.username,
+          supportsUnified: getMdbListType(list) === 'all',
         }));
 
         setItems(selectableItems);
@@ -265,9 +298,6 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
       const listsToAdd: CatalogConfig[] = [];
       
       for (const itemId of selectedItems) {
-        const catalogId = `mdblist.${itemId}`;
-        if (catalogExists(catalogId)) continue;
-
         // Use raw list data if available, otherwise fall back to item data
         const rawList = rawListData.get(itemId);
         const item = items.find(i => i.id === itemId);
@@ -275,18 +305,19 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
         if (!rawList && !item) continue;
 
         // Create catalog using raw list data for proper type detection
-        const newCatalog = createMDBListCatalog({
+        const newCatalogs = createMDBListCatalogsForImport({
           list: rawList || {
             id: itemId,
             name: item?.name,
             items: item?.itemCount,
             user_name: item?.author,
           },
+          unified: mixedListUnifiedSettings[itemId] ?? true,
           cacheTTL: catalogTTL,
           displayTypeOverrides: config.displayTypeOverrides,
-        });
+        }).filter(catalog => !catalogExists(catalog.id));
 
-        listsToAdd.push(newCatalog);
+        listsToAdd.push(...newCatalogs);
       }
 
       if (listsToAdd.length > 0) {
@@ -807,6 +838,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                   setItems([]);
                   setSelectedItems(new Set());
                   setSearchFilter('');
+                  setMixedListUnifiedSettings({});
                   setManifest(null);
                 }}
               >
@@ -856,7 +888,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                   filteredItems.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted/50"
+                      className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-muted/50"
                     >
                       <Switch
                         id={`item-${item.id}`}
@@ -884,6 +916,27 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                             </span>
                           )}
                         </div>
+                        {item.supportsUnified && (
+                          <div className="flex items-center justify-between mt-2 p-2 border rounded-md bg-muted/50">
+                            <div className="space-y-0.5">
+                              <Label htmlFor={`unified-quickadd-${item.id}`} className="text-sm font-medium">
+                                Unified Format
+                              </Label>
+                              <p className="text-xs text-muted-foreground">
+                                {(mixedListUnifiedSettings[item.id] ?? true)
+                                  ? "Creates one catalog with all items (movies and shows mixed)"
+                                  : "Separate movie and series catalogs"}
+                              </p>
+                            </div>
+                            <Switch
+                              id={`unified-quickadd-${item.id}`}
+                              checked={mixedListUnifiedSettings[item.id] ?? true}
+                              onCheckedChange={(checked) => {
+                                setMixedListUnifiedSettings(prev => ({ ...prev, [item.id]: checked }));
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))

@@ -6,6 +6,8 @@
 import { CatalogConfig } from '@/contexts/ConfigContext';
 import { GenreSelection } from '@/data/genres';
 
+const MDBLIST_LIST_URL_PATTERN = /^https?:\/\/(?:www\.)?mdblist\.com\/lists\/([^\/?#]+)\/([^\/?#]+)\/?$/i;
+
 /**
  * Determines the catalog type based on MDBList list metadata
  * @param list - MDBList list object with mediatype, movies, shows, items properties
@@ -36,6 +38,140 @@ export function getMdbListType(list: any): 'movie' | 'series' | 'all' {
   return 'all';
 }
 
+function normalizeMDBListUsername(value?: string): string | undefined {
+  if (!value || typeof value !== 'string') return undefined;
+
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '');
+  return normalized || undefined;
+}
+
+function slugifyMDBListListName(value?: string): string | undefined {
+  if (!value || typeof value !== 'string') return undefined;
+
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return slug || undefined;
+}
+
+export function parseMDBListCatalogUrl(listUrl?: string): { username: string; listSlug: string } | null {
+  if (!listUrl) return null;
+
+  const match = listUrl.trim().match(MDBLIST_LIST_URL_PATTERN);
+  if (!match) return null;
+
+  return {
+    username: normalizeMDBListUsername(decodeURIComponent(match[1])) || match[1],
+    listSlug: decodeURIComponent(match[2]),
+  };
+}
+
+export function getMDBListCatalogIdentity(list: any, listUrl?: string): { username?: string; listSlug?: string } {
+  const parsedUrl = parseMDBListCatalogUrl(listUrl);
+  const username =
+    parsedUrl?.username ||
+    normalizeMDBListUsername(list.user_name) ||
+    normalizeMDBListUsername(list.user);
+  const listSlug =
+    parsedUrl?.listSlug ||
+    (typeof list.slug === 'string' && list.slug.trim() ? list.slug.trim() : undefined) ||
+    slugifyMDBListListName(list.name);
+
+  return {
+    username,
+    listSlug,
+  };
+}
+
+export function buildSyntheticMDBListUnifiedCatalogId(username: string, listSlug: string): string {
+  return `mdblist.${normalizeMDBListUsername(username) || username}.${listSlug}.unified`;
+}
+
+export function getMDBListCatalogId(list: any, sourceUrl?: string, listUrl?: string): string {
+  const type = getMdbListType(list);
+  const { username, listSlug } = getMDBListCatalogIdentity(list, listUrl);
+  const isExternalList = !!sourceUrl && sourceUrl.includes('/external/lists/');
+
+  if (type === 'all' && !isExternalList && username && listSlug) {
+    return buildSyntheticMDBListUnifiedCatalogId(username, listSlug);
+  }
+
+  return `mdblist.${list.id}`;
+}
+
+function getMDBListGroupingIdentity(list: any): string {
+  const { username, listSlug } = getMDBListCatalogIdentity(list);
+
+  if (username && listSlug) {
+    return `${username}:${listSlug}`;
+  }
+
+  if (list.slug) {
+    return String(list.slug);
+  }
+
+  return `${list.user_name || list.user || 'unknown'}:${list.name || list.id}`;
+}
+
+/**
+ * MDBList exposes some mixed dynamic lists as two sibling list metadata entries
+ * (one movie, one show) that share the same public username/slug. We collapse
+ * those pairs into a single synthetic mixed definition for import flows so the
+ * catalog can later resolve through the unified items endpoint.
+ */
+export function groupMDBListListsForImport(lists: any[]): any[] {
+  const grouped = new Map<string, any[]>();
+
+  lists.forEach((list: any) => {
+    const key = getMDBListGroupingIdentity(list);
+    const entries = grouped.get(key);
+    if (entries) {
+      entries.push(list);
+    } else {
+      grouped.set(key, [list]);
+    }
+  });
+
+  return Array.from(grouped.values()).map((entries) => {
+    if (entries.length === 1) {
+      return entries[0];
+    }
+
+    const hasMovie = entries.some(entry => entry.mediatype === 'movie');
+    const hasShow = entries.some(entry => entry.mediatype === 'show');
+
+    if (!hasMovie || !hasShow) {
+      return entries[0];
+    }
+
+    const first = entries[0];
+    const totals = entries.reduce((acc, entry) => {
+      const itemCount = Number(entry.items ?? 0);
+      if (entry.mediatype === 'movie') {
+        acc.movies += Number(entry.movies ?? itemCount);
+      } else if (entry.mediatype === 'show') {
+        acc.shows += Number(entry.shows ?? entry.items_show ?? itemCount);
+      }
+      acc.items += itemCount;
+      return acc;
+    }, { items: 0, movies: 0, shows: 0 });
+
+    return {
+      ...first,
+      id: `unified:${getMDBListGroupingIdentity(first)}`,
+      mediatype: undefined,
+      items: totals.items,
+      movies: totals.movies,
+      shows: totals.shows,
+      items_show: totals.shows,
+      _groupedEntries: entries,
+    };
+  });
+}
+
 /**
  * Gets the display type override based on catalog type and user preferences
  */
@@ -64,6 +200,10 @@ export interface MDBListCatalogOptions {
   listUrl?: string; // URL to the list on mdblist.com
 }
 
+export interface MDBListCatalogImportOptions extends MDBListCatalogOptions {
+  unified?: boolean;
+}
+
 /**
  * Creates an MDBList catalog configuration
  * @param options - Configuration options for the MDBList catalog
@@ -83,18 +223,17 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
 
   const type = getMdbListType(list);
   const displayType = getDisplayTypeOverride(type, displayTypeOverrides);
+  const identity = getMDBListCatalogIdentity(list, listUrl);
+  const catalogId = getMDBListCatalogId(list, sourceUrl, listUrl);
 
   // Construct list URL if not provided but we have username/list info
   let finalListUrl = listUrl;
-  if (!finalListUrl && list.user_name && list.name) {
-    // Construct URL from username and list name/slug
-    const username = list.user_name.toLowerCase().replace(/\s+/g, '');
-    const listSlug = list.slug || list.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    finalListUrl = `https://mdblist.com/lists/${username}/${listSlug}`;
+  if (!finalListUrl && identity.username && identity.listSlug) {
+    finalListUrl = `https://mdblist.com/lists/${identity.username}/${identity.listSlug}`;
   }
 
   return {
-    id: `mdblist.${list.id}`,
+    id: catalogId,
     type,
     name: list.name,
     enabled: true,
@@ -109,11 +248,63 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
     ...(sourceUrl && { sourceUrl }),
     metadata: {
       ...(list.items !== undefined && { itemCount: list.items }),
-      ...(list.user_name ? { author: list.user_name } : {}),
+      ...(list.user_name || identity.username ? { author: list.user_name || identity.username } : {}),
       ...(finalListUrl && { url: finalListUrl }),
+      ...(identity.username && { username: identity.username }),
+      ...(identity.listSlug && { listSlug: identity.listSlug }),
       ...(list.mediatype && { mediatype: list.mediatype }),
+      ...(type === 'all' && identity.username && identity.listSlug ? { unified: true } : {}),
     },
   };
+}
+
+export function createMDBListCatalogsForImport(options: MDBListCatalogImportOptions): CatalogConfig[] {
+  const { list, unified = true } = options;
+  const listType = getMdbListType(list);
+
+  if (listType !== 'all' || unified) {
+    return [createMDBListCatalog(options)];
+  }
+
+  const groupedEntries = Array.isArray(list?._groupedEntries) ? list._groupedEntries : [];
+  const splitEntries = groupedEntries.filter((entry: any) => entry?.mediatype === 'movie' || entry?.mediatype === 'show');
+
+  if (splitEntries.length > 0) {
+    return splitEntries.map((entry: any) => createMDBListCatalog({
+      ...options,
+      list: entry,
+    }));
+  }
+
+  const movieCatalog = createMDBListCatalog({
+    ...options,
+    list: {
+      ...list,
+      id: `${list.id}.movies`,
+      name: `${list.name} (Movies)`,
+      mediatype: 'movie',
+      items: Number(list.movies ?? 0),
+      movies: Number(list.movies ?? 0),
+      shows: 0,
+      items_show: 0,
+    },
+  });
+
+  const seriesCatalog = createMDBListCatalog({
+    ...options,
+    list: {
+      ...list,
+      id: `${list.id}.series`,
+      name: `${list.name} (Series)`,
+      mediatype: 'show',
+      items: Number(list.shows ?? list.items_show ?? 0),
+      movies: 0,
+      shows: Number(list.shows ?? list.items_show ?? 0),
+      items_show: Number(list.shows ?? list.items_show ?? 0),
+    },
+  });
+
+  return [movieCatalog, seriesCatalog];
 }
 
 // ============================================================================

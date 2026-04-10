@@ -69,7 +69,9 @@ function sanitizeMetadata(metadata: CatalogConfig['metadata']): CatalogConfig['m
   if (metadata.isWatchlist !== undefined) safe.isWatchlist = metadata.isWatchlist;
   if (metadata.isCustomList !== undefined) safe.isCustomList = metadata.isCustomList;
   if ((metadata as any).mediatype) safe.mediatype = (metadata as any).mediatype;
+  if ((metadata as any).unified !== undefined) safe.unified = (metadata as any).unified;
   if (metadata.username) safe.username = metadata.username;
+  if ((metadata as any).listSlug) safe.listSlug = (metadata as any).listSlug;
   if (metadata.listName) safe.listName = metadata.listName;
   if (metadata.author) safe.author = metadata.author;
   if (metadata.listId) safe.listId = metadata.listId;
