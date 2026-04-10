@@ -1,31 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { cn } from "@/lib/utils";
+import { Loader2 } from "lucide-react";
 
-import { GeneralSettings } from './sections/GeneralSettings';
-import { IntegrationsSettings } from './sections/IntegrationsSettings';
-import { ProvidersSettings } from './sections/ProvidersSettings';
-import { ArtProviderSettings } from './sections/ArtProviderSettings';
-import { FiltersSettings } from './sections/FiltersSettings';
-import { CatalogsSettings } from './sections/CatalogsSettings';
-import { SearchSettings } from './sections/SearchSettings';
-import { PresetManager } from './sections/PresetManager';
-import { ConfigurationManager } from './ConfigurationManager';
-import { Dashboard } from './Dashboard';
-import RatingPage from './RatingPage';
+const PresetManager = lazy(() => import('./sections/PresetManager').then(m => ({ default: m.PresetManager })));
+const GeneralSettings = lazy(() => import('./sections/GeneralSettings').then(m => ({ default: m.GeneralSettings })));
+const IntegrationsSettings = lazy(() => import('./sections/IntegrationsSettings').then(m => ({ default: m.IntegrationsSettings })));
+const ProvidersSettings = lazy(() => import('./sections/ProvidersSettings').then(m => ({ default: m.ProvidersSettings })));
+const ArtProviderSettings = lazy(() => import('./sections/ArtProviderSettings').then(m => ({ default: m.ArtProviderSettings })));
+const FiltersSettings = lazy(() => import('./sections/FiltersSettings').then(m => ({ default: m.FiltersSettings })));
+const SearchSettings = lazy(() => import('./sections/SearchSettings').then(m => ({ default: m.SearchSettings })));
+const CatalogsSettings = lazy(() => import('./sections/CatalogsSettings').then(m => ({ default: m.CatalogsSettings })));
+const ConfigurationManager = lazy(() => import('./ConfigurationManager').then(m => ({ default: m.ConfigurationManager })));
+
+const Dashboard = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })));
+const RatingPage = lazy(() => import('./RatingPage'));
 
 const settingsPages = [
-  { value: 'presets', title: 'Presets', component: <PresetManager /> },
-  { value: 'general', title: 'General', component: <GeneralSettings /> },
-  { value: 'integrations', title: 'Integrations', component: <IntegrationsSettings /> },
-  { value: 'providers', title: 'Meta Providers', component: <ProvidersSettings /> },
-  { value: 'art-providers', title: 'Art Providers', component: <ArtProviderSettings /> },
-  { value: 'filters', title: 'Filters', component: <FiltersSettings /> },
-  { value: 'search', title: 'Search', component: <SearchSettings /> },
-  { value: 'catalogs', title: 'Catalogs', component: <CatalogsSettings /> },
-  { value: 'configuration', title: 'Configuration', component: <ConfigurationManager /> },
+  { value: 'presets', title: 'Presets', component: PresetManager },
+  { value: 'general', title: 'General', component: GeneralSettings },
+  { value: 'integrations', title: 'Integrations', component: IntegrationsSettings },
+  { value: 'providers', title: 'Meta Providers', component: ProvidersSettings },
+  { value: 'art-providers', title: 'Art Providers', component: ArtProviderSettings },
+  { value: 'filters', title: 'Filters', component: FiltersSettings },
+  { value: 'search', title: 'Search', component: SearchSettings },
+  { value: 'catalogs', title: 'Catalogs', component: CatalogsSettings },
+  { value: 'configuration', title: 'Configuration', component: ConfigurationManager },
 ];
 type SettingsPageValue = (typeof settingsPages)[number]['value'];
 const SETTINGS_LAYOUT_NAVIGATE_EVENT = 'settings-layout:navigate';
@@ -122,7 +124,11 @@ export function SettingsLayout() {
               <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
                 {page.title}
               </AccordionTrigger>
-              <AccordionContent className="pt-2 pb-6">{page.component}</AccordionContent>
+              <AccordionContent className="pt-2 pb-6">
+                <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+                  <page.component />
+                </Suspense>
+              </AccordionContent>
             </AccordionItem>
           ))}
         </Accordion>
@@ -168,7 +174,9 @@ export function SettingsLayout() {
         </TabsList>
       {settingsPages.map((page) => (
         <TabsContent key={page.value} value={page.value} className="mt-6 animate-fade-in">
-          {page.component}
+          <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <page.component />
+          </Suspense>
         </TabsContent>
       ))}
       </Tabs>

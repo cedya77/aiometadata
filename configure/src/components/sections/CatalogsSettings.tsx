@@ -1,16 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { MDBListIntegration } from './MDBListIntegration';
-import { TraktIntegration } from './TraktIntegration';
-import { SimklIntegration } from './SimklIntegration';
-import { TMDBIntegration } from './TMDBIntegration';
-import { TMDBDiscoverBuilderDialog } from './TMDBDiscoverBuilderDialog';
-import { LetterboxdIntegration } from './LetterboxdIntegration';
-import { AniListIntegration } from './AniListIntegration';
-import { CustomManifestIntegration } from './CustomManifestIntegration';
-import { QuickAddDialog } from '@/components/QuickAddDialog';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,6 +40,16 @@ interface CustomizeTemplate {
   name: string;
   formState: Record<string, any>;
 }
+
+const TMDBDiscoverBuilderDialog = lazy(() => import('./TMDBDiscoverBuilderDialog').then(m => ({ default: m.TMDBDiscoverBuilderDialog })));
+const MDBListIntegration = lazy(() => import('./MDBListIntegration').then(m => ({ default: m.MDBListIntegration })));
+const TraktIntegration = lazy(() => import('./TraktIntegration').then(m => ({ default: m.TraktIntegration })));
+const SimklIntegration = lazy(() => import('./SimklIntegration').then(m => ({ default: m.SimklIntegration })));
+const TMDBIntegration = lazy(() => import('./TMDBIntegration').then(m => ({ default: m.TMDBIntegration })));
+const AniListIntegration = lazy(() => import('./AniListIntegration').then(m => ({ default: m.AniListIntegration })));
+const LetterboxdIntegration = lazy(() => import('./LetterboxdIntegration').then(m => ({ default: m.LetterboxdIntegration })));
+const CustomManifestIntegration = lazy(() => import('./CustomManifestIntegration').then(m => ({ default: m.CustomManifestIntegration })));
+const QuickAddDialog = lazy(() => import('@/components/QuickAddDialog').then(m => ({ default: m.QuickAddDialog })));
 
 const DEFAULT_CATALOG_TEMPLATES: Record<string, (catalog: any) => CustomizeTemplate> = {
   'tmdb.top': (c) => ({
@@ -3533,26 +3534,28 @@ function CatalogsSettingsContent({
           </p>
           
           {/* Dialog components */}
-          <MDBListIntegration
-            isOpen={isMdbListOpen}
-            onClose={() => setIsMdbListOpen(false)}
-          />
-          <TraktIntegration
-            isOpen={isTraktOpen}
-            onClose={() => setIsTraktOpen(false)}
-          />
-          <SimklIntegration
-            isOpen={isSimklOpen}
-            onClose={() => setIsSimklOpen(false)}
-          />
-          <LetterboxdIntegration
-            isOpen={isLetterboxdOpen}
-            onClose={() => setIsLetterboxdOpen(false)}
-          />
-          <AniListIntegration
-            isOpen={isAniListOpen}
-            onClose={() => setIsAniListOpen(false)}
-          />
+          <Suspense fallback={null}>
+            <MDBListIntegration
+              isOpen={isMdbListOpen}
+              onClose={() => setIsMdbListOpen(false)}
+            />
+            <TraktIntegration
+              isOpen={isTraktOpen}
+              onClose={() => setIsTraktOpen(false)}
+            />
+            <SimklIntegration
+              isOpen={isSimklOpen}
+              onClose={() => setIsSimklOpen(false)}
+            />
+            <LetterboxdIntegration
+              isOpen={isLetterboxdOpen}
+              onClose={() => setIsLetterboxdOpen(false)}
+            />
+            <AniListIntegration
+              isOpen={isAniListOpen}
+              onClose={() => setIsAniListOpen(false)}
+            />
+          </Suspense>
         </div>
       </div>
 
@@ -3631,44 +3634,46 @@ function CatalogsSettingsContent({
         setSelectedProviders={setTempSelectedProviders}
         onSave={handleCloseStreamingDialog}
       />
-      <MDBListIntegration
-        isOpen={isMdbListOpen}
-        onClose={() => setIsMdbListOpen(false)}
-      />
-      <TraktIntegration
-        isOpen={isTraktOpen}
-        onClose={() => setIsTraktOpen(false)}
-      />
-      <SimklIntegration
-        isOpen={isSimklOpen}
-        onClose={() => setIsSimklOpen(false)}
-      />
-      <TMDBIntegration
-        isOpen={isTmdbListOpen}
-        onClose={() => setIsTmdbListOpen(false)}
-      />
-      <LetterboxdIntegration
-        isOpen={isLetterboxdOpen}
-        onClose={() => setIsLetterboxdOpen(false)}
-      />
-      <CustomManifestIntegration
-        isOpen={isCustomManifestOpen}
-        onClose={() => setIsCustomManifestOpen(false)}
-      />
-      <QuickAddDialog
-        isOpen={isQuickAddOpen}
-        onClose={() => setIsQuickAddOpen(false)}
-      />
-      <TMDBDiscoverBuilderDialog
-        isOpen={isTmdbDiscoverBuilderOpen}
-        onClose={() => {
-          setIsTmdbDiscoverBuilderOpen(false);
-          setEditingDiscoverCatalog(null);
-          setCustomizeTemplate(null);
-        }}
-        editingCatalog={editingDiscoverCatalog}
-        customizeTemplate={customizeTemplate}
-      />
+      <Suspense fallback={null}>
+        <MDBListIntegration
+          isOpen={isMdbListOpen}
+          onClose={() => setIsMdbListOpen(false)}
+        />
+        <TraktIntegration
+          isOpen={isTraktOpen}
+          onClose={() => setIsTraktOpen(false)}
+        />
+        <SimklIntegration
+          isOpen={isSimklOpen}
+          onClose={() => setIsSimklOpen(false)}
+        />
+        <TMDBIntegration
+          isOpen={isTmdbListOpen}
+          onClose={() => setIsTmdbListOpen(false)}
+        />
+        <LetterboxdIntegration
+          isOpen={isLetterboxdOpen}
+          onClose={() => setIsLetterboxdOpen(false)}
+        />
+        <CustomManifestIntegration
+          isOpen={isCustomManifestOpen}
+          onClose={() => setIsCustomManifestOpen(false)}
+        />
+        <QuickAddDialog
+          isOpen={isQuickAddOpen}
+          onClose={() => setIsQuickAddOpen(false)}
+        />
+        <TMDBDiscoverBuilderDialog
+          isOpen={isTmdbDiscoverBuilderOpen}
+          onClose={() => {
+            setIsTmdbDiscoverBuilderOpen(false);
+            setEditingDiscoverCatalog(null);
+            setCustomizeTemplate(null);
+          }}
+          editingCatalog={editingDiscoverCatalog}
+          customizeTemplate={customizeTemplate}
+        />
+      </Suspense>
 
       {/* Bulk Delete Confirmation Dialog */}
       <ConfirmDialog
