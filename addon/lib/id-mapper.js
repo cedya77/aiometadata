@@ -1142,12 +1142,17 @@ async function resolveOnaType(malId, config = {}) {
         onaTypeCache.set(numericMalId, 'movie');
         return 'movie';
       }
-    } catch {
-      // TMDB movie endpoint failed (404 or error) — not a movie
+    } catch (err) {
+      const status = err?.response?.status || err?.status;
+      if (status === 404) {
+        logger.debug(`[ID Mapper] ONA mal:${numericMalId} TMDB movie/${mapping.themoviedb_id} not found (404)`);
+      } else {
+        logger.warn(`[ID Mapper] ONA mal:${numericMalId} TMDB lookup failed (${status || err?.message}), skipping cache`);
+        return 'series';
+      }
     }
   }
 
-  // Default: treat as series
   onaTypeCache.set(numericMalId, 'series');
   return 'series';
 }

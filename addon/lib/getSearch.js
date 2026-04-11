@@ -255,11 +255,13 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           const mapping = await idMapper.getMappingByKitsuId(kitsuId);
           const malId = mapping?.mal_id;
 
-          // Resolve actual type — ONAs can be movies or series
           let itemType = type;
-          if (item.subtype?.toLowerCase() === 'ona' && malId) {
-            const resolvedType = await idMapper.resolveOnaType(malId, config);
-            itemType = resolvedType;
+          if (item.subtype?.toLowerCase() === 'ona') {
+            if (malId) {
+              itemType = await idMapper.resolveOnaType(malId, config);
+            } else if (item.episodeCount === 1) {
+              itemType = 'movie';
+            }
           }
           const isMovie = itemType === 'movie';
 

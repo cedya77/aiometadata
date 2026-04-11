@@ -254,7 +254,7 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
         'filter[subtype]': subtype,
         'page[limit]': limit,
         'page[offset]': offset,
-        'fields[anime]': 'canonicalTitle,titles,abbreviatedTitles,coverImage,posterImage,synopsis,description,startDate,status,episodeCount,episodeLength,ageRating'
+        'fields[anime]': 'canonicalTitle,titles,abbreviatedTitles,coverImage,posterImage,synopsis,description,startDate,status,subtype,episodeCount,episodeLength,ageRating'
       };
       if(ageRating.toLowerCase() !== 'none') {
         params['filter[ageRating]'] = ageRating;
