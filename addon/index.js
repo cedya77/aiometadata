@@ -4005,7 +4005,16 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
             }
           } else {
             const resolved = resolveCustomArtUrl(metaPosterPattern, ids, metaType, config, { userAgent });
-            if (resolved) result.meta.poster = resolved;
+            if (resolved) {
+              if (config.usePosterProxy) {
+                const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+                if (proxyId) {
+                  result.meta.poster = `${host}/poster/${metaType}/${proxyId}?fallback=${encodeURIComponent(result.meta.poster || '')}&url=${encodeURIComponent(resolved)}`;
+                }
+              } else {
+                result.meta.poster = resolved;
+              }
+            }
           }
         }
       }
