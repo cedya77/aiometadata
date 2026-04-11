@@ -3248,7 +3248,7 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1') {
   
   // If englishArtOnly is enabled, force English language selection
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
-  const targetCountry = config.language.split('-')[1]?.toUpperCase() || 'US';
+  const targetCountry = config.language?.split('-')[1]?.toUpperCase() || 'US';
   // Sort by vote_average descending
   return (
     images.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||
