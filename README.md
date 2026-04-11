@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
     volumes:
       - ${DOCKER_DATA_DIR}/aiometadata/cache:/data
-    command: redis-server --appendonly yes --save 60 1
+    command: redis-server --appendonly yes --save 3600 1
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
