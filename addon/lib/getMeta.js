@@ -781,9 +781,10 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
   logger.debug(`[AnimeMeta] Starting process for ${stremioId}. Preferred: ${preferredProvider}`);
 
   if (type === 'movie') {
+    logger.debug(`[AnimeMeta] Processing movie ${stremioId} with allIds: ${JSON.stringify(allIds)}`);
     if (allIds?.malId) {
       allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
-      allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
+      allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb || allIds.tmdbId;
       allIds.tvdbId = (wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
     }
   }
@@ -1765,9 +1766,10 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 async function buildTvdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const tvdbId = movieData.id;
   const { allIds } = enrichmentData;
-  const kitsuId = allIds?.kitsuId;
+  let kitsuId = allIds?.kitsuId;
   let imdbId = allIds?.imdbId;
   let tmdbId = allIds?.tmdbId;
+  kitsuId = kitsuId || idMapper.getMappingByTmdbId(tmdbId, 'movie')?.kitsu_id;
 
   const { year, image: tvdbPosterPath, remoteIds, characters } = movieData;
   const langCode = language.split('-')[0];
