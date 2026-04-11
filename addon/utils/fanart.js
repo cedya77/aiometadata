@@ -11,29 +11,29 @@ const clientCache = new Map();
  * @returns {FanartTvApi|null} An initialized client, or null if no key is provided.
  */
 function getFanartClient(config) {
-  const apiKey = config.apiKeys?.fanart || process.env.FANART_API_KEY;
-  //console.log(`[Fanart] Attempting to get client with API key ending in ...${process.env.FANART_API_KEY}`);
-  //console.log(`[Fanart] Attempting to get client with API key ending in ...${apiKey}`);
+  const projectKey = process.env.FANART_API_PROJECT_KEY || process.env.FANART_API_KEY;
+  const personalKey = config.apiKeys?.fanart;
+  const apiKey = projectKey || personalKey;
   if (!apiKey) {
     return null;
   }
-  //console.log(`[Fanart] Initializing client with API key ending in ...${apiKey.slice(-4)}`);
 
-  if (clientCache.has(apiKey)) {
-    return clientCache.get(apiKey);
+  const cacheKey = `${apiKey}:${personalKey || ''}`;
+  if (clientCache.has(cacheKey)) {
+    return clientCache.get(cacheKey);
   }
 
   try {
-    const newClient = new FanartTvApi({
-      apiKey: apiKey,
-      version: 'v3.2'
-    });
+    const opts = { apiKey, version: 'v3.2' };
+    if (projectKey && personalKey) {
+      opts.clientKey = personalKey;
+    }
+    const newClient = new FanartTvApi(opts);
 
-    clientCache.set(apiKey, newClient);
-    //console.log(`[Fanart] Caching new client for API key ending in ...${apiKey.slice(-4)}`);
+    clientCache.set(cacheKey, newClient);
     return newClient;
   } catch (error) {
-    console.error(`[Fanart] Failed to initialize client for key ending in ...${apiKey.slice(-4)}:`, error.message);
+    console.error(`[Fanart] Failed to initialize client:`, error.message);
     return null;
   }
 }
