@@ -1,5 +1,5 @@
 require("dotenv").config();
-const FanartTvApi = require('fanart.tv-api');
+const FanartTvApi = require('@fanart-tv/api');
 const { cacheWrapGlobal } = require('../lib/getCache');
 const FANART_IMAGE_BASE = 'https://assets.fanart.tv/fanart/movies/';
 
@@ -25,7 +25,8 @@ function getFanartClient(config) {
 
   try {
     const newClient = new FanartTvApi({
-      apiKey: apiKey
+      apiKey: apiKey,
+      version: 'v3.2'
     });
 
     clientCache.set(apiKey, newClient);
