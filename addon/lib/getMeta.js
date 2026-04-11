@@ -4,7 +4,6 @@ const moviedb = require("./getTmdb");
 const tvdb = require("./tvdb");
 const imdb = require("./imdb");
 const tvmaze = require("./tvmaze");
-const { getLogo } = require("./getLogo");
 const { getImdbRating } = require("./getImdbRating");
 const { to3LetterCode } = require('./language-map');
 const jikan = require('./mal');
