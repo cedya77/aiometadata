@@ -66,7 +66,7 @@ function isPosterRatingEnabled(config) {
  *                       imdb: 'tt1234567', tmdb/tvdb: 'movie-12345' or 'series-12345'
  *
  * @param {string} pattern - URL pattern with placeholders
- * @param {object} ids - Object with tmdbId, imdbId, tvdbId, malId, kitsuId, anilistId, anidbId properties
+ * @param {object} ids - Object with id, tmdbId, imdbId, tvdbId, malId, kitsuId, anilistId, anidbId properties
  * @param {string} type - Content type (movie, series)
  * @param {object} [config] - User config (for API key and language placeholders)
  * @returns {string|null} Resolved URL or null
@@ -91,6 +91,7 @@ function resolvePattern(pattern, ids, type, config, extra) {
 
   const lang = config?.language || 'en-US';
   const placeholders = {
+    '{id}': ids?.id || '',
     '{tmdb_id}': ids?.tmdbId || '',
     '{imdb_id}': ids?.imdbId || '',
     '{tvdb_id}': ids?.tvdbId || '',
