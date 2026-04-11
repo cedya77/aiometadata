@@ -859,5 +859,9 @@ module.exports = {
   getWatchProviders,
   selectTmdbImageByLang,
   movieImages,
-  tvImages
+  tvImages,
+  getMemoryStats: () => ({
+    accountDetailsCache: accountDetailsCache.size,
+    scrapedImdbIdCache: scrapedImdbIdCache.size,
+  }),
 };

@@ -251,6 +251,10 @@ class QueueManager {
       }
     }
   }
+
+  getQueueCount(): number {
+    return this.queues.size;
+  }
 }
 
 
@@ -2419,7 +2423,7 @@ export {
   makeAuthenticatedRateLimitedTraktRequest,
   makeAuthenticatedRateLimitedTraktWriteRequest,
   getTraktAccessToken,
-  getTraktWatchedIds
+  getTraktWatchedIds,
 };
 
 /**
@@ -3092,6 +3096,15 @@ export async function checkinSeries(
   }
 }
 
+function getTraktMemoryStats() {
+  return {
+    rateLimitQueues: queueManager.getQueueCount(),
+    writeChains: writeChains.size,
+    lastWriteAtByToken: lastWriteAtByToken.size,
+    refreshLocks: refreshLocks.size,
+  };
+}
+
 export {
   fetchTraktMostFavoritedItems,
   fetchTraktTrendingItems,
@@ -3099,5 +3112,6 @@ export {
   fetchTraktSearchItems,
   fetchTraktPersonSearch,
   fetchTraktPersonCredits,
-  traktDispatcher
+  traktDispatcher,
+  getTraktMemoryStats,
 };

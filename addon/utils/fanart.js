@@ -306,4 +306,5 @@ module.exports = {
   getBestMovieLogo,
   getBestTVLogo,
   selectFanartImageByLang,
+  getMemoryStats: () => ({ clientCache: clientCache.size }),
 };

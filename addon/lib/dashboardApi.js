@@ -3,10 +3,10 @@ const process = require("process");
 const consola = require('consola');
 const logger = consola.withTag('DashboardAPI');
 
-const { getCacheHealth } = require('./getCache');
+const { getCacheHealth, getMemoryStats: getCacheMemoryStats } = require('./getCache');
 const { getCacheCleanupScheduler } = require('./cacheCleanupScheduler');
 const { getAnimeListXmlStats } = require('./anime-list-mapper');
-const { getIdMapperStats, getKitsuImdbStats } = require('./id-mapper');
+const { getIdMapperStats, getKitsuImdbStats, getMemoryStats: getIdMapperMemoryStats } = require('./id-mapper');
 const { getWikiMapperStats } = require('./wiki-mapper');
 const { getImdbRatingsStatsForDashboard, getRatingsStats } = require('./imdbRatings');
 const { getWarmupStats: getEssentialWarmupStats } = require('./cacheWarmer');
@@ -1178,6 +1178,44 @@ class DashboardAPI {
         requestsPerMin: 0,
       };
     }
+  }
+
+  // Get detailed heap profile with all in-memory cache sizes
+  getHeapProfile() {
+    const mem = process.memoryUsage();
+
+    const caches = {};
+    try { caches.cache = getCacheMemoryStats(); } catch {}
+    try { caches.idMapper = getIdMapperMemoryStats(); } catch {}
+    try { caches.tmdb = require('./getTmdb').getMemoryStats(); } catch {}
+    try { caches.tvdb = require('./tvdb').getMemoryStats(); } catch {}
+    try { caches.mal = require('./mal').getMemoryStats(); } catch {}
+    try { caches.fanart = require('../utils/fanart').getMemoryStats(); } catch {}
+    try { caches.trakt = require('../utils/traktUtils').getTraktMemoryStats(); } catch {}
+    try {
+      const anilist = require('./anilist');
+      caches.anilist = anilist.getCacheStats ? anilist.getCacheStats() : { cache: 0 };
+    } catch {}
+    try {
+      const configCache = require('./configCache');
+      caches.configCache = { entries: configCache.cache.size, pendingLoads: configCache.pendingLoads.size };
+    } catch {}
+
+    return {
+      process: {
+        rss: mem.rss,
+        heapTotal: mem.heapTotal,
+        heapUsed: mem.heapUsed,
+        external: mem.external,
+        arrayBuffers: mem.arrayBuffers,
+      },
+      v8: {
+        maxOldSpace: parseInt(process.env.NODE_OPTIONS?.match(/--max-old-space-size=(\d+)/)?.[1] || '0', 10),
+        heapUsedPct: mem.heapTotal > 0 ? Math.round((mem.heapUsed / mem.heapTotal) * 100) : 0,
+      },
+      caches,
+      timestamp: Date.now(),
+    };
   }
 
   // Get current requests per minute (rolling average over last 5 minutes)

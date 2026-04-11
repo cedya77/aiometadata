@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/accordion";
 import { useAdmin } from "@/contexts/AdminContext";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
-import { 
+import {
   useDashboardOverview,
   useDashboardAnalytics,
   useDashboardContent,
@@ -27,6 +27,7 @@ import {
   useDashboardSystem,
   useDashboardOperations,
   useDashboardUsers,
+  useDashboardMemory,
   useClearCache,
   useExecuteMaintenanceTask,
   useClearErrorLogs,
@@ -2669,7 +2670,10 @@ function DashboardSystem({ data, loading }) {
 
 // Operational Tools Component
 // Data is now fetched via TanStack Query at the Dashboard level (5s polling when tab is active)
-function DashboardOperations({ data, loading }) {
+function DashboardOperations({ data, loading, activeTab }) {
+  const memoryQuery = useDashboardMemory({ activeTab });
+  const memoryData = memoryQuery.data as any;
+
   // TanStack Query mutations for actions (auth handled internally by mutation hooks)
   const clearCacheMutation = useClearCache();
   const executeTaskMutation = useExecuteMaintenanceTask();
@@ -2996,6 +3000,102 @@ function DashboardOperations({ data, loading }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Memory Profiler */}
+      {memoryData && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              <div>
+                <CardTitle>Heap Profile</CardTitle>
+                <CardDescription>V8 heap and in-memory cache sizes (live)</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {/* Process Memory */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm mb-4">
+              {[
+                { label: "RSS", value: memoryData.process?.rss },
+                { label: "Heap Used", value: memoryData.process?.heapUsed },
+                { label: "Heap Total", value: memoryData.process?.heapTotal },
+                { label: "External", value: memoryData.process?.external },
+                { label: "ArrayBuffers", value: memoryData.process?.arrayBuffers },
+              ].map((item) => (
+                <div key={item.label}>
+                  <span className="text-muted-foreground">{item.label}</span>
+                  <p className="text-lg font-semibold">{formatBytes(item.value)}</p>
+                </div>
+              ))}
+            </div>
+
+            {memoryData.v8?.maxOldSpace > 0 && (
+              <div className="mb-4">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Heap Used / Max Old Space</span>
+                  <span className="font-medium">
+                    {formatBytes(memoryData.process?.heapUsed)} / {memoryData.v8.maxOldSpace} MB
+                  </span>
+                </div>
+                <Progress
+                  value={Math.round((memoryData.process?.heapUsed / (memoryData.v8.maxOldSpace * 1024 * 1024)) * 100)}
+                  className={`h-2 ${
+                    memoryData.process?.heapUsed / (memoryData.v8.maxOldSpace * 1024 * 1024) > 0.9
+                      ? "[&>div]:bg-red-600"
+                      : memoryData.process?.heapUsed / (memoryData.v8.maxOldSpace * 1024 * 1024) > 0.75
+                        ? "[&>div]:bg-orange-600"
+                        : ""
+                  }`}
+                />
+              </div>
+            )}
+
+            {/* In-Memory Caches */}
+            <div className="border-t pt-3">
+              <p className="text-sm font-medium mb-3">In-Memory Caches</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                {memoryData.caches && Object.entries(memoryData.caches).map(([module, stats]: [string, any]) => {
+                  if (!stats || typeof stats !== 'object') return null;
+                  const entries = Object.entries(stats).filter(([, v]) => typeof v !== 'object' || v === null);
+                  if (entries.length === 0) return null;
+                  const sectionLabels: Record<string, string> = {
+                    cache: 'Cache',
+                    idMapper: 'ID Mapper',
+                    tmdb: 'TMDB',
+                    tvdb: 'TVDB',
+                    mal: 'MAL',
+                    fanart: 'Fanart',
+                    trakt: 'Trakt',
+                    anilist: 'AniList',
+                    configCache: 'Config Cache',
+                  };
+                  return (
+                    <div key={module} className="border rounded-lg p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                        {sectionLabels[module] || module}
+                      </p>
+                      <div className="space-y-1">
+                        {entries.map(([key, value]: [string, any]) => {
+                          const isLarge = typeof value === 'number' && value > 1000;
+                          return (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-muted-foreground truncate mr-2">{key}</span>
+                              <span className={`font-mono tabular-nums ${isLarge ? 'text-orange-600 font-semibold' : ''}`}>
+                                {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Maintenance Tasks */}
       <Card>
@@ -4353,6 +4453,7 @@ export function Dashboard() {
               <DashboardOperations
                 data={dashboardData.operations}
                 loading={dashboardData.loading}
+                activeTab={activeTab}
               />
             </TabsContent>
 

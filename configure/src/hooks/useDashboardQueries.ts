@@ -317,6 +317,38 @@ export function useDashboardOperations(options: DashboardQueryOptions = {}) {
 }
 
 /**
+ * Memory profiler data - heap stats, cache sizes (admin only)
+ * Polls every 10s when operations tab is active
+ */
+export function useDashboardMemory(options: DashboardQueryOptions = {}) {
+  const { isAdmin, logout, adminKey } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const isVisible = usePageVisibility();
+  const { activeTab = 'overview', enabled = true } = options;
+
+  const isActiveTab = activeTab === 'operations';
+  const shouldPoll = isVisible && isActiveTab && isAdmin;
+
+  return useQuery({
+    queryKey: ['dashboard', 'memory'] as const,
+    queryFn: async () => {
+      try {
+        return await fetchDashboardData('/api/dashboard/memory', getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+          throw error;
+        }
+        throw error;
+      }
+    },
+    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
+    refetchInterval: shouldPoll ? POLLING_INTERVALS.SYSTEM : false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
  * Users data - user stats, activity (admin only)
  * Polls every 30s when users tab is active
  */

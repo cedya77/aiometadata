@@ -873,5 +873,6 @@ module.exports = {
   getAnimeByStudio,
   getAnimeBySeason,
   getAvailableSeasons,
-  fetchDiscover
+  fetchDiscover,
+  getMemoryStats: () => ({ etagCache: etagCache.size }),
 };

@@ -1375,8 +1375,19 @@ export {
   getMovieLogo,
   getCollectionsList,
   getCollectionDetails,
-  getCollectionTranslations
+  getCollectionTranslations,
+  getMemoryStats,
 };
+
+function getMemoryStats() {
+  let userTokenEntries = 0;
+  for (const inner of userTokenCaches.values()) userTokenEntries += inner.size;
+  return {
+    tokenCache: tokenCache.size,
+    userTokenCaches: userTokenCaches.size,
+    userTokenEntries,
+  };
+}
 
 // CommonJS compatibility
 module.exports = {
@@ -1407,5 +1418,6 @@ module.exports = {
   getMovieLogo,
   getCollectionsList,
   getCollectionDetails,
-  getCollectionTranslations
+  getCollectionTranslations,
+  getMemoryStats,
 };

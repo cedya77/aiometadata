@@ -2144,6 +2144,25 @@ function getIdMapperStats() {
   };
 }
 
+function getMemoryStats() {
+  return {
+    animeIdMap: animeIdMap.size,
+    tvdbIdToAnimeListMap: tvdbIdToAnimeListMap.size,
+    tmdbIdToAnimeListMap: tmdbIdToAnimeListMap.size,
+    tvdbIdMap: tvdbIdMap.size,
+    kitsuIdMap: kitsuIdMap.size,
+    anidbIdMap: anidbIdMap.size,
+    anilistIdMap: anilistIdMap.size,
+    imdbIdMap: imdbIdMap.size,
+    simklIdMap: simklIdMap.size,
+    onaTypeCache: onaTypeCache.size,
+    kitsuToImdbCache: kitsuToImdbCache.size,
+    franchiseMapCache: franchiseMapCache.size,
+    tmdbFranchiseInfoCache: tmdbFranchiseInfoCache.size,
+    tmdbSeasonCache: tmdbSeasonCache.size,
+  };
+}
+
 /**
  * Get stats for the Kitsu-IMDB Mapping (for dashboard display)
  * @returns {Object} Stats object with count, updateInterval, and initialized status
@@ -2202,5 +2221,6 @@ module.exports = {
   forceUpdateKitsuImdbMapping,
   getIdMapperStats,
   getKitsuImdbStats,
+  getMemoryStats,
   isInitialized: () => isInitialized
 };

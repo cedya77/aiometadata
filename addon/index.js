@@ -4243,7 +4243,7 @@ addon.post("/stremio/:userUUID/rating", async function (req, res) {
     if (type.toLowerCase() === 'movie') {
       if (allIds?.malId) {
         allIds.imdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.imdb;
-        allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb;
+        allIds.tmdbId = idMapper.getTraktAnimeMovieByMalId(allIds.malId)?.externals.tmdb || allIds.tmdbId;
         allIds.tvdbId = (wikiMappings.getByImdbId(allIds.imdbId, 'movie'))?.tvdbId || null;
       }
     }
@@ -5596,6 +5596,16 @@ addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch operations data' });
+  }
+});
+
+addon.get("/api/dashboard/memory", requireDashboardAdmin, (req, res) => {
+  try {
+    const dashboardApi = getDashboardAPI();
+    res.json(dashboardApi.getHeapProfile());
+  } catch (error) {
+    consola.error('[Dashboard API] Memory profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch memory profile' });
   }
 });
 

@@ -1979,5 +1979,9 @@ module.exports = {
   cacheWrapTvmazeApi,
   cacheWrapAniListCatalog,
   generateAniListCatalogCacheKey,
-  stableStringify
+  stableStringify,
+  getMemoryStats: () => ({
+    inFlightRequests: inFlightRequests.size,
+    keyAccessCounts: cacheHealth.keyAccessCounts.size,
+  }),
 };
