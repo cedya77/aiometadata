@@ -882,120 +882,6 @@ class ConfigApi {
     }
   }
 
-  // Get all ID mapping corrections (admin endpoint)
-  async getCorrections(req, res) {
-    try {
-      const { loadCorrections } = require('./id-mapper');
-      await loadCorrections();
-      
-      const fs = require('fs').promises;
-      const path = require('path');
-      const correctionsPath = path.join(process.cwd(), 'addon', 'data', 'id-mapping-corrections.json');
-      
-      try {
-        const correctionsData = await fs.readFile(correctionsPath, 'utf-8');
-        const corrections = JSON.parse(correctionsData);
-        
-        res.json({
-          success: true,
-          corrections
-        });
-      } catch (error) {
-        if (error.code === 'ENOENT') {
-          res.json({
-            success: true,
-            corrections: []
-          });
-        } else {
-          throw error;
-        }
-      }
-    } catch (error) {
-      logger.error('Get corrections error:', error);
-      res.status(500).json({ error: 'Failed to get corrections' });
-    }
-  }
-
-  // Add a new ID mapping correction (admin endpoint)
-  async addCorrection(req, res) {
-    try {
-      const { addonPassword } = req.body;
-      
-      // Check addon password if one is set
-      if (process.env.ADDON_PASSWORD && process.env.ADDON_PASSWORD.length > 0) {
-        if (!addonPassword || addonPassword !== process.env.ADDON_PASSWORD) {
-          return res.status(401).json({ error: 'Invalid addon password. Contact the addon administrator.' });
-        }
-      }
-
-      const { type, sourceId, correctedField, correctedId, reason } = req.body;
-      
-      if (!type || !sourceId || !correctedField || !correctedId) {
-        return res.status(400).json({ 
-          error: 'Missing required fields: type, sourceId, correctedField, correctedId' 
-        });
-      }
-
-      const { addCorrection } = require('./id-mapper');
-      const success = await addCorrection({
-        type,
-        sourceId,
-        correctedField,
-        correctedId,
-        reason
-      });
-
-      if (success) {
-        res.json({
-          success: true,
-          message: 'Correction added successfully'
-        });
-      } else {
-        res.status(500).json({ error: 'Failed to add correction' });
-      }
-    } catch (error) {
-      logger.error('Add correction error:', error);
-      res.status(500).json({ error: 'Failed to add correction' });
-    }
-  }
-
-  // Remove an ID mapping correction (admin endpoint)
-  async removeCorrection(req, res) {
-    try {
-      const { addonPassword } = req.body;
-      
-      // Check addon password if one is set
-      if (process.env.ADDON_PASSWORD && process.env.ADDON_PASSWORD.length > 0) {
-        if (!addonPassword || addonPassword !== process.env.ADDON_PASSWORD) {
-          return res.status(401).json({ error: 'Invalid addon password. Contact the addon administrator.' });
-        }
-      }
-
-      const { type, sourceId, correctedField } = req.body;
-      
-      if (!type || !sourceId || !correctedField) {
-        return res.status(400).json({ 
-          error: 'Missing required fields: type, sourceId, correctedField' 
-        });
-      }
-
-      const { removeCorrection } = require('./id-mapper');
-      const success = await removeCorrection(type, sourceId, correctedField);
-
-      if (success) {
-        res.json({
-          success: true,
-          message: 'Correction removed successfully'
-        });
-      } else {
-        res.status(404).json({ error: 'Correction not found' });
-      }
-    } catch (error) {
-      logger.error('Remove correction error:', error);
-      res.status(500).json({ error: 'Failed to remove correction' });
-    }
-  }
-
   buildApiKeyValidationSummary(details) {
     const summary = {
       totalCount: 0,
@@ -1402,8 +1288,5 @@ module.exports = {
   getAddonInfo: configApi.getAddonInfo.bind(configApi),
   isTrusted: configApi.isTrusted.bind(configApi),
   loadConfigFromDatabase: configApi.loadConfigFromDatabase.bind(configApi),
-  getCorrections: configApi.getCorrections.bind(configApi),
-  addCorrection: configApi.addCorrection.bind(configApi),
-  removeCorrection: configApi.removeCorrection.bind(configApi),
   testApiKeys: configApi.testApiKeys.bind(configApi)
 };
