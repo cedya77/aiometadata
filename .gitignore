@@ -114,3 +114,7 @@ dist
 *.save
 *.save.*
 temp/
+
+# Runtime generated files
+addon/data/*
+!addon/data/id-mapping-corrections.json
