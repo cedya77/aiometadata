@@ -1659,8 +1659,6 @@ export {
   getMediaRatingFromMDBList,
   fetchMDBListGenres,
   convertGenreToSlug,
-  markMovieAsWatched,
-  markEpisodeAsWatched,
   makeRateLimitedMDBListRequest,
   testMdblistKey,
   fetchMDBListUpNext,

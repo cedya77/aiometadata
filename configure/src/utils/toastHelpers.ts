@@ -154,13 +154,3 @@ export function showBulkActionError(action: string, error?: Error) {
     }
   );
 }
-
-/**
- * Show warning toast for missing API keys
- */
-export function showMissingApiKeyWarning(source: string, count: number) {
-  toast.warning(
-    `${count} ${source.toUpperCase()} catalog${count === 1 ? '' : 's'} skipped (missing ${source.toUpperCase()} API key)`,
-    { duration: 4000 }
-  );
-}

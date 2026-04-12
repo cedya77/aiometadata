@@ -247,20 +247,6 @@ export async function initializeRatings(): Promise<void> {
 }
 
 /**
- * Get whether ratings are loaded
- */
-export function isRatingsLoaded(): boolean {
-  return ratingsLoaded;
-}
-
-/**
- * Get the count of loaded ratings
- */
-export function getRatingsCount(): number {
-  return ratingsCount;
-}
-
-/**
  * Get IMDb ratings statistics
  */
 export function getRatingsStats() {

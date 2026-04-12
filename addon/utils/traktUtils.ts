@@ -2414,8 +2414,6 @@ export {
   fetchTraktListItemsById,
   fetchTraktGenres,
   parseTraktItems,
-  getTraktListDetails,
-  getTraktListDetailsById,
   fetchTraktUpNextEpisodes,
   fetchTraktCalendarShows,
   fetchTraktUnwatchedEpisodes,

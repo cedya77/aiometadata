@@ -1164,10 +1164,7 @@ async function fetchSimklDvdReleases(
 export {
   fetchSimklUserStats,
   fetchSimklWatchlistItems,
-  fetchSimklWatchedItems,
-  fetchSimklWatchingItems,
   parseSimklItems,
-  makeRateLimitedSimklRequest,
   makeAuthenticatedSimklRequest,
   getSimklToken,
   fetchSimklTrendingItems,
