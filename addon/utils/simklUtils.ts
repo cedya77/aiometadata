@@ -28,7 +28,7 @@ function sanitizeUrlForLogging(url: string): string {
   return url.replace(/(Authorization: Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
 }
 
-const simklDispatcher = new Agent({ connect: { timeout: 30000 } });
+const simklDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
 
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.

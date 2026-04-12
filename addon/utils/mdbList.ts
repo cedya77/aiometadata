@@ -56,14 +56,14 @@ if (!mdblistDispatcher) {
     try {
       // ProxyAgent may need to be imported if not already
       const { ProxyAgent } = require('undici');
-      mdblistDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      mdblistDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
       logger.info('[MDBList] Using global HTTP proxy.');
     } catch (error: any) {
       logger.error(`[MDBList] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+      mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
     }
   } else {
-    mdblistDispatcher = new Agent({ connect: { timeout: 30000 } });
+    mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
     logger.info('[MDBList] undici agent is enabled for direct connections.');
   }
 }

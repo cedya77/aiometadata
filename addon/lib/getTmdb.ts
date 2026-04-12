@@ -79,14 +79,14 @@ if (SOCKS_PROXY_URL) {
 if (!dispatcher) {
   if (HTTP_PROXY_URL) {
     try {
-      dispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      dispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
       console.log('[TMDB] Using global HTTP proxy.');
     } catch (error: any) {
       console.error(`[TMDB] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      dispatcher = new Agent({ connect: { timeout: 10000 } });
+      dispatcher = new Agent({ allowH2: false, connect: { timeout: 10000 } });
     }
   } else {
-    dispatcher = new Agent({ connect: { timeout: 10000 } });
+    dispatcher = new Agent({ allowH2: false, connect: { timeout: 10000 } });
     console.log('[TMDB] undici agent is enabled for direct connections.');
   }
 }

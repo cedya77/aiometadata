@@ -18,7 +18,7 @@ const getProxyUrl = () => {
 
 const proxyUrl = getProxyUrl();
 if (proxyUrl) {
-  const dispatcher = new ProxyAgent({ uri: proxyUrl });
+  const dispatcher = new ProxyAgent({ uri: proxyUrl, allowH2: false });
   setGlobalDispatcher(dispatcher);
 }
 

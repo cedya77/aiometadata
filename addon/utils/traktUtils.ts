@@ -31,8 +31,8 @@ function sanitizeUrlForLogging(url: string): string {
 
 const TRAKT_PROXY_URL = process.env.TRAKT_PROXY_URL;
 const traktDispatcher = TRAKT_PROXY_URL 
-  ? new ProxyAgent({ uri: TRAKT_PROXY_URL, requestTls: { timeout: 30000 } })
-  : new Agent({ connect: { timeout: 30000 } });
+  ? new ProxyAgent({ uri: TRAKT_PROXY_URL, allowH2: false, requestTls: { timeout: 30000 } })
+  : new Agent({ allowH2: false, connect: { timeout: 30000 } });
 
 
 /**

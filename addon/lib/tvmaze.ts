@@ -16,17 +16,19 @@ let tvmazeAgent: Agent | ProxyAgent;
 
 if (HTTP_PROXY_URL) {
   try {
-    tvmazeAgent = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+    tvmazeAgent = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
     console.log('[TVmaze] Using global HTTP proxy.');
   } catch (error: any) {
     console.error(`[TVmaze] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
     tvmazeAgent = new Agent({
+      allowH2: false,
       connections: 2,
       keepAliveTimeout: 10 * 1000,
     });
   }
 } else {
   tvmazeAgent = new Agent({
+    allowH2: false,
     connections: 2,
     keepAliveTimeout: 10 * 1000,
   });

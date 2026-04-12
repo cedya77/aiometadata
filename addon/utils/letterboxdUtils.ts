@@ -9,7 +9,7 @@ const buildInfo = require('../lib/buildInfo');
 
 const logger = consola.withTag('Letterboxd');
 
-const letterboxdDispatcher = new Agent({ connect: { timeout: 30000 } });
+const letterboxdDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
 
 // Rate limiting configuration for Letterboxd API (through StremThru)
 const RATE_LIMIT_CONFIG = {
