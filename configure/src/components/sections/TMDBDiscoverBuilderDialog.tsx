@@ -34,6 +34,7 @@ type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
+  | 'today'
   | 'last_month'
   | 'last_year'
   | 'last_5_years'

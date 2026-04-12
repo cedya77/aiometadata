@@ -3,7 +3,7 @@ import { useConfig } from "@/contexts/ConfigContext";
 import { Card } from "@/components/ui/card";
 
 export function SearchToggle() {
-  const { searchEnabled, setSearchEnabled } = useConfig();
+  const { config, setConfig } = useConfig();
 
   return (
     <Card className="flex flex-row items-center justify-between p-6">
@@ -13,7 +13,12 @@ export function SearchToggle() {
           Allow searching for movies and TV shows
         </p>
       </div>
-      <Switch checked={searchEnabled} onCheckedChange={setSearchEnabled} />
+      <Switch
+        checked={config.searchEnabled}
+        onCheckedChange={(checked) =>
+          setConfig((prev) => ({ ...prev, searchEnabled: checked }))
+        }
+      />
     </Card>
   );
 }

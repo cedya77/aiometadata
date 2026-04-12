@@ -223,7 +223,7 @@ interface Movie {
 }
 
 export default function Home() {
-  const { language, setLanguage } = useConfig();
+  const { config, setConfig } = useConfig();
   const [backgroundUrl, setBackgroundUrl] = useState("");
 
   useEffect(() => {
@@ -288,7 +288,13 @@ export default function Home() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
             <div className="w-full sm:w-64">
-              <Select value={language} onValueChange={setLanguage} defaultValue="en-US">
+              <Select
+                value={config.language}
+                onValueChange={(language) =>
+                  setConfig((prev) => ({ ...prev, language }))
+                }
+                defaultValue="en-US"
+              >
                 <SelectTrigger className="bg-white/10 border-white/20 text-white">
                   <SelectValue placeholder="Select language" />
                 </SelectTrigger>

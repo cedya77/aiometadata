@@ -19,6 +19,7 @@ const emptyApiKeys: AppConfig['apiKeys'] = {
   rpdb: '',
   topPoster: '',
   mdblist: '',
+  openrouter: '',
   traktTokenId: '',
   simklTokenId: '',
   anilistTokenId: '',

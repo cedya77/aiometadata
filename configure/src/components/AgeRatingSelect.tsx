@@ -11,12 +11,16 @@ import { useConfig } from "@/contexts/ConfigContext";
 import { Info } from "lucide-react";
 
 export function AgeRatingSelect() {
-  const { ageRating, setAgeRating } = useConfig();
+  const { config, setConfig } = useConfig();
+  const ageRating = config.ageRating;
 
   const selectedRating = ageRatings.find(rating => rating.id === ageRating);
 
   const handleChange = (value: string) => {
-    setAgeRating(value === "NONE" ? undefined : value);
+    setConfig((prev) => ({
+      ...prev,
+      ageRating: value === "NONE" ? "None" : value,
+    }));
   };
 
   return (
@@ -28,7 +32,10 @@ export function AgeRatingSelect() {
           Not available for trending catalogs
         </div>
       </div>
-      <Select value={ageRating || "NONE"} onValueChange={handleChange}>
+      <Select
+        value={!ageRating || ageRating === "None" ? "NONE" : ageRating}
+        onValueChange={handleChange}
+      >
         <SelectTrigger>
           <SelectValue>
             {selectedRating && (

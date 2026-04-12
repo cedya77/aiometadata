@@ -5,12 +5,14 @@ import { AgeRatingSelect } from "@/components/AgeRatingSelect";
 import { SearchToggle } from "@/components/SearchToggle";
 
 const Others = () => {
-  const { hideEpisodeThumbnails, setHideEpisodeThumbnails } = useConfig();
-  const { includeAdult, setIncludeAdult } = useConfig();
-  const { provideImdbId, setProvideImdbId } = useConfig();
-  const { tmdbPrefix, setTmdbPrefix } = useConfig();
-  const { hideInCinemaTag, setHideInCinemaTag } = useConfig();
-  const { castCount, setCastCount } = useConfig();
+  const { config, setConfig } = useConfig();
+
+  const setBooleanField = (
+    key: "includeAdult" | "blurThumbs" | "showPrefix" | "displayAgeRating",
+    value: boolean
+  ) => {
+    setConfig((prev) => ({ ...prev, [key]: value }));
+  };
 
   return (
     <main className="md:p-12 px-2 py-12">
@@ -26,70 +28,71 @@ const Others = () => {
           <div className="space-y-0.5">
             <h1 className="text-sm font-semibold mb-1">Enable adult content</h1>
             <p className="text-gray-500 text-sm">
-              Include adult content in search results
+              Include adult content in search results.
             </p>
           </div>
-          <Switch checked={includeAdult} onCheckedChange={setIncludeAdult} />
+          <Switch
+            checked={config.includeAdult}
+            onCheckedChange={(checked) => setBooleanField("includeAdult", checked)}
+          />
         </Card>
         <Card className="flex flex-row items-center justify-between p-6">
           <div className="space-y-0.5">
-            <label className="text-sm font-semibold mb-1">Hide Episode Thumbnails</label>
+            <label className="text-sm font-semibold mb-1">Blur thumbnails</label>
             <p className="text-gray-500 text-sm">
-              Avoid spoilers by hiding episode preview images
+              Blur image-heavy artwork in the configure UI.
             </p>
           </div>
-          <Switch checked={hideEpisodeThumbnails} onCheckedChange={setHideEpisodeThumbnails} />
+          <Switch
+            checked={config.blurThumbs}
+            onCheckedChange={(checked) => setBooleanField("blurThumbs", checked)}
+          />
         </Card>
         <Card className="flex flex-row items-center justify-between p-4 sm:p-6 hover:shadow-lg transition-shadow cursor-pointer">
           <div className="space-y-0.5">
-            <h1 className="text-sm font-semibold mb-1">
-              Provide IMDB metadata
-            </h1>
+            <h1 className="text-sm font-semibold mb-1">Show provider prefix</h1>
             <p className="text-gray-500 text-sm">
-              Include IMDB IDs in metadata for better integration with other
-              addons.
+              Prefix catalog names so provider origin is more obvious.
             </p>
           </div>
-          <Switch checked={provideImdbId} onCheckedChange={() => setProvideImdbId(!provideImdbId)} />
+          <Switch
+            checked={config.showPrefix}
+            onCheckedChange={(checked) => setBooleanField("showPrefix", checked)}
+          />
         </Card>
         <Card className="flex flex-row items-center justify-between p-4 sm:p-6 hover:shadow-lg transition-shadow cursor-pointer">
           <div className="space-y-0.5">
-            <h1 className="text-sm font-semibold mb-1">Use TMDB prefix</h1>
+            <h1 className="text-sm font-semibold mb-1">Show age ratings</h1>
             <p className="text-gray-500 text-sm">
-              Add "TMDB -" prefix to all catalog names for better organization.
+              Display age-rating metadata when available.
             </p>
           </div>
-          <Switch checked={tmdbPrefix} onCheckedChange={() => setTmdbPrefix(!tmdbPrefix)} />
-        </Card>
-        <Card className="flex flex-row items-center justify-between p-6">
-          <div className="space-y-0.5">
-            <h1 className="text-sm font-semibold mb-1">Hide 'In Cinema' tag</h1>
-            <p className="text-gray-500 text-sm">
-              Hide the 'In Cinema' tag from posters
-            </p>
-          </div>
-          <Switch checked={hideInCinemaTag} onCheckedChange={setHideInCinemaTag} />
+          <Switch
+            checked={config.displayAgeRating}
+            onCheckedChange={(checked) => setBooleanField("displayAgeRating", checked)}
+          />
         </Card>
         <Card className="flex flex-row items-center justify-between p-6">
           <div className="space-y-0.5">
             <h1 className="text-sm font-semibold mb-1">Cast count to show</h1>
             <p className="text-gray-500 text-sm">
-              Number of cast members to display (0, 5, 10, 15, or Unlimited)
+              Number of cast members to display.
             </p>
           </div>
           <select
             className="border rounded px-2 py-1 text-sm"
-            value={castCount === undefined ? "Unlimited" : castCount}
-            onChange={e => {
-              const value = e.target.value;
-              setCastCount(value === "Unlimited" ? undefined : Number(value));
+            value={config.castCount}
+            onChange={(e) => {
+              setConfig((prev) => ({
+                ...prev,
+                castCount: Number(e.target.value),
+              }));
             }}
           >
             <option value={0}>0</option>
             <option value={5}>5</option>
             <option value={10}>10</option>
             <option value={15}>15</option>
-            <option value="Unlimited">Unlimited</option>
           </select>
         </Card>
         <Card className="p-6">

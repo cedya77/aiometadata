@@ -13,12 +13,12 @@ import { regions, streamingServices } from "@/data/streamings";
 
 export default function Streaming() {
   const [selectedCountry, setSelectedCountry] = useState("Brazil");
-  const { streaming, setStreaming } = useConfig();
+  const { config, setConfig } = useConfig();
   const [tempSelectedServices, setTempSelectedServices] = useState<string[]>([]);
 
   useEffect(() => {
-    setTempSelectedServices(streaming);
-  }, [streaming]);
+    setTempSelectedServices(config.streaming);
+  }, [config.streaming]);
 
   const toggleService = (serviceId: string) => {
     setTempSelectedServices(prev => 
@@ -33,11 +33,11 @@ export default function Streaming() {
   };
 
   const handleSave = () => {
-    setStreaming(tempSelectedServices);
+    setConfig((prev) => ({ ...prev, streaming: tempSelectedServices }));
   };
 
   const handleCancel = () => {
-    setTempSelectedServices(streaming);
+    setTempSelectedServices(config.streaming);
   };
 
   return (

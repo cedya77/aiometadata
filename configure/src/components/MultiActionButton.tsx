@@ -13,22 +13,34 @@ import { useConfig } from "@/contexts/ConfigContext";
 
 export function MultiActionButton() {
   const { toast } = useToast();
-  const config = useConfig();
+  const { config } = useConfig();
   const [currentAction, setCurrentAction] = useState<number>(0);
 
+  const addonConfig = {
+    rpdbkey: config.apiKeys.rpdb,
+    geminikey: config.apiKeys.gemini,
+    mdblistkey: config.apiKeys.mdblist,
+    includeAdult: config.includeAdult,
+    language: config.language,
+    sessionId: config.sessionId,
+    ageRating: config.ageRating,
+    searchEnabled: config.searchEnabled,
+    catalogs: config.catalogs,
+  };
+
   const handleInstall = () => {
-    const url = generateAddonUrl(config);
+    const url = generateAddonUrl(addonConfig);
     window.location.href = url.replace(/^https?:\/\//, "stremio://");
   };
 
   const handleInstallWeb = () => {
-    const addonUrl = generateAddonUrl(config);
+    const addonUrl = generateAddonUrl(addonConfig);
     const webUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(addonUrl)}`;
     window.open(webUrl, "_blank");
   };
 
   const handleCopyUrl = async () => {
-    await navigator.clipboard.writeText(generateAddonUrl(config));
+    await navigator.clipboard.writeText(generateAddonUrl(addonConfig));
     toast({
       title: "URL Copied",
       description: "The URL has been copied to your clipboard",
