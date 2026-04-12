@@ -1,11 +1,11 @@
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY . .
 RUN npm run build && npm run build:backend
 
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache ca-certificates wget
 COPY package*.json package-lock.json* ./

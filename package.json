@@ -41,7 +41,7 @@
   "author": "cedya",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=22.19.0 <23"
+    "node": ">=24.0.0 <25"
   },
   "bugs": {
     "url": "https://github.com/cedya77/aiometadata/issues"
