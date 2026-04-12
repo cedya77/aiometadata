@@ -3065,7 +3065,7 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
 
 
 // --- Catalog Route under /stremio/:userUUID prefix ---
-addon.get("/stremio/:userUUID/catalog/:type/:id/:extra?.json", async function (req, res) {
+addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (req, res) {
   const { userUUID, type, id, extra } = req.params;
   const config = await loadConfigFromDatabase(userUUID);
   
@@ -4155,9 +4155,9 @@ addon.get("/stremio/:userUUID/stream/:type/:id.json", async function (req, res) 
 });
 
 // --- Subtitle Route (for watch tracking) ---
-// Route pattern matches Stremio's subtitle URL format: /:id/:extra?.json
+// Route pattern matches Stremio's subtitle URL format: /:id{/:extra}.json
 // where extra contains filename, videoSize, and videoHash parameters
-addon.get("/stremio/:userUUID/subtitles/:type/:id/:extra?.json", async function (req, res) {
+addon.get("/stremio/:userUUID/subtitles/:type/:id{/:extra}.json", async function (req, res) {
   const { userUUID, type, id } = req.params;
   
   // Debug logging for all watch tracking attempts with media ID and user UUID
@@ -5352,7 +5352,7 @@ addon.get('/api/cache/test-essential', async (req, res) => {
   }
 });
 
-addon.get('api/cache/invalidation-status/:userUUID', async (req, res) => {
+addon.get('/api/cache/invalidation-status/:userUUID', async (req, res) => {
   try {
     const { userUUID } = req.params;
     
