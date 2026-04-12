@@ -102,7 +102,7 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.2",
     "@types/express": "^5.0.6",
@@ -110,8 +110,8 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint": "^10.2.0",
+    "eslint-plugin-react-hooks": "7.1.0-canary-705268dc-20260409",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
     "nodemon": "^3.1.14",

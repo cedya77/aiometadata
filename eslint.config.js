@@ -97,8 +97,8 @@ module.exports = tseslint.config(
       "react-refresh": reactRefreshPlugin,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
       ...relaxedTsRules,
+      "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": [
         "warn",
