@@ -1,5 +1,4 @@
 require("dotenv").config();
-const { MovieDb } = require("moviedb-promise");
 const { getGenreList } = require("./getGenreList");
 const Utils = require("../utils/parseProps");
 const tvdb = require("./tvdb");
