@@ -10,9 +10,12 @@ import { FaGithub, FaChevronRight, FaBell } from 'react-icons/fa';
 
 interface ChangelogModalProps {
   version: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
-export function ChangelogModal({ version }: ChangelogModalProps) {
+export function ChangelogModal({ version, open, onOpenChange, hideTrigger = false }: ChangelogModalProps) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [allReleases, setAllReleases] = React.useState<any[]>([]);
@@ -249,21 +252,24 @@ export function ChangelogModal({ version }: ChangelogModalProps) {
     },
     [compareVersions, version]
   );
+  const dialogProps = typeof open === 'boolean' ? { open, onOpenChange } : {};
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2 text-xs sm:text-sm">
-          <FaBell className="h-4 w-4" />
-          <span className="hidden sm:inline">What's New</span>
-          <span className="sm:hidden">Updates</span>
-          {newerReleases.length > 0 && (
-            <span className="ml-1 bg-[#01b4e4] text-white text-xs px-1.5 py-0.5 rounded-full">
-              {newerReleases.length}
-            </span>
-          )}
-        </Button>
-      </DialogTrigger>
+    <Dialog {...dialogProps}>
+      {!hideTrigger ? (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2 text-xs sm:text-sm">
+            <FaBell className="h-4 w-4" />
+            <span className="hidden sm:inline">What's New</span>
+            <span className="sm:hidden">Updates</span>
+            {newerReleases.length > 0 && (
+              <span className="ml-1 bg-[#01b4e4] text-white text-xs px-1.5 py-0.5 rounded-full">
+                {newerReleases.length}
+              </span>
+            )}
+          </Button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col w-[95vw] h-[90vh] sm:w-auto sm:h-auto">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center justify-between">

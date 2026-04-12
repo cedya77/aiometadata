@@ -1,14 +1,13 @@
-import { useState, useEffect, useMemo, type KeyboardEvent } from "react";
+import { lazy, Suspense, useState, useEffect, useMemo, type KeyboardEvent } from "react";
 import { useConfig } from "@/contexts/ConfigContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, AlertTriangle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff, List } from "lucide-react";
 import { toast } from "sonner";
-import { InstallDialog } from "@/components/InstallDialog";
-import { ConfigImportExport } from "@/components/ConfigImportExport";
 import { Switch } from "@/components/ui/switch";
 
 interface ConfigurationManagerProps {
@@ -18,6 +17,24 @@ interface ConfigurationManagerProps {
 interface SavedConfig {
   userUUID: string;
   installUrl: string;
+}
+
+const LazyInstallDialog = lazy(() =>
+  import("@/components/InstallDialog").then((module) => ({ default: module.InstallDialog }))
+);
+const LazyConfigImportExport = lazy(() =>
+  import("@/components/ConfigImportExport").then((module) => ({ default: module.ConfigImportExport }))
+);
+
+function ConfigurationSectionFallback() {
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/20 p-5">
+      <div className="text-sm font-medium text-muted-foreground">Loading configuration tools...</div>
+      <Skeleton className="h-4 w-40" />
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-24 w-full" />
+    </div>
+  );
 }
 
 export function ConfigurationManager({ children }: ConfigurationManagerProps) {
@@ -765,10 +782,16 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
       )}
       
       {/* Import/Export Section */}
-      <ConfigImportExport />
+      <Suspense fallback={<ConfigurationSectionFallback />}>
+        <LazyConfigImportExport />
+      </Suspense>
       
       {children}
-      <InstallDialog isOpen={isInstallOpen} onClose={() => setIsInstallOpen(false)} manifestUrl={installUrl} />
+      {isInstallOpen ? (
+        <Suspense fallback={null}>
+          <LazyInstallDialog isOpen={isInstallOpen} onClose={() => setIsInstallOpen(false)} manifestUrl={installUrl} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { AreaChart, Card as TremorCard, Title, Text, Color, BarList, Flex, Bold } from "@tremor/react";
 import {
   Card,
@@ -34,7 +34,6 @@ import {
   useClearUserData,
   type DashboardTab,
 } from "@/hooks/useDashboardQueries";
-import { UserManagementModal } from "./UserManagementModal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -88,6 +87,10 @@ import {
   Legend,
 } from "recharts";
 import { AnimatedNumber, FadeValue } from "./AnimatedNumber";
+
+const LazyUserManagementModal = lazy(() =>
+  import("./UserManagementModal").then((module) => ({ default: module.UserManagementModal }))
+);
 
 const formatBytes = (bytes: number): string => {
   if (!bytes || bytes === 0) return "0 MB";
@@ -3802,11 +3805,15 @@ function DashboardUsers({ data, loading }) {
       </Dialog>
 
       {/* User Management Modal */}
-      <UserManagementModal
-        isOpen={showUserManagement}
-        onClose={() => setShowUserManagement(false)}
-        adminKey={adminKey}
-      />
+      {showUserManagement ? (
+        <Suspense fallback={null}>
+          <LazyUserManagementModal
+            isOpen={showUserManagement}
+            onClose={() => setShowUserManagement(false)}
+            adminKey={adminKey}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }
