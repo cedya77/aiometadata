@@ -216,6 +216,16 @@ function shouldTrackSimkl(config) {
   return true;
 }
 
+function shouldTrackPublicMetaDB(config) {
+  if (!config?.apiKeys?.publicmetadb) {
+    return false;
+  }
+  if (!config.publicmetadbWatchTracking) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Check if Trakt watch tracking should be enabled for this request
  * @param {Object} config - User configuration
@@ -293,6 +303,16 @@ function handleSubtitleRequest(type, id, config, userUUID) {
     if (shouldTrackTrakt(config)) {
       checkinTrakt(parsedId, config).catch(error => {
         logger.error(`[Watch Tracking] Trakt tracking failed for ${id}: ${error.message}`, {
+          stack: error.stack,
+          parsedId: parsedId
+        });
+      });
+    }
+
+    // PublicMetaDB tracking (fire-and-forget)
+    if (shouldTrackPublicMetaDB(config)) {
+      checkinPublicMetaDB(parsedId, config).catch(error => {
+        logger.error(`[Watch Tracking] PublicMetaDB tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
         });
@@ -612,6 +632,46 @@ async function checkinTrakt(parsedId, config) {
     logger.debug(`[Trakt Checkin] Unsupported content type for tracking: ${parsedId.type}`);
   } catch (error) {
     logger.error(`[Trakt Checkin] Unexpected tracking error: ${error.message}`, {
+      stack: error.stack
+    });
+  }
+}
+
+async function checkinPublicMetaDB(parsedId, config) {
+  try {
+    const { checkinMovie, checkinEpisode } = require('../utils/publicmetadbUtils');
+    const apiKey = config.apiKeys?.publicmetadb;
+
+    if (!apiKey) {
+      logger.debug('[PublicMetaDB Checkin] Skipping - missing API key');
+      return;
+    }
+
+    if (parsedId.type === 'movie') {
+      const ids = normalizeIdsForMovie(parsedId);
+      if (!ids) {
+        logger.debug(`[PublicMetaDB Checkin] No valid identifiers for movie provider ${parsedId.provider}`);
+        return;
+      }
+      logger.debug(`[PublicMetaDB Checkin] Checking in movie (${buildIdSummary(ids)})`);
+      await checkinMovie(ids, apiKey);
+      return;
+    }
+
+    if (parsedId.type === 'series') {
+      const resolution = await resolveSeriesIds(parsedId, config);
+      if (!resolution) {
+        logger.debug(`[PublicMetaDB Checkin] Unable to resolve identifiers for series provider ${parsedId.provider}`);
+        return;
+      }
+      logger.debug(`[PublicMetaDB Checkin] Checking in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`);
+      await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey);
+      return;
+    }
+
+    logger.debug(`[PublicMetaDB Checkin] Unsupported content type: ${parsedId.type}`);
+  } catch (error) {
+    logger.error(`[PublicMetaDB Checkin] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }

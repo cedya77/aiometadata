@@ -2798,6 +2798,49 @@ addon.get("/api/anilist/lists/by-username/:username", async (req, res) => {
   }
 });
 
+// --- PublicMetaDB Proxy Routes ---
+addon.get("/api/publicmetadb/validate", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    if (!apikey) return res.status(400).json({ error: "apikey is required" });
+    const { validateKey } = require('./utils/publicmetadbUtils');
+    const valid = await validateKey(apikey);
+    res.json({ valid });
+  } catch (error) {
+    consola.error("[PublicMetaDB Proxy] Validation error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+addon.get("/api/publicmetadb/lists", async (req, res) => {
+  try {
+    const { apikey, page, perPage } = req.query;
+    if (!apikey) return res.status(400).json({ error: "apikey is required" });
+    const { fetchLists } = require('./utils/publicmetadbUtils');
+    const data = await fetchLists(apikey, parseInt(page) || 1, parseInt(perPage) || 50);
+    res.json(data);
+  } catch (error) {
+    consola.error("[PublicMetaDB Proxy] Lists error:", error.message);
+    const status = error.message?.includes('401') ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+addon.get("/api/publicmetadb/lists/:listId/items", async (req, res) => {
+  try {
+    const { apikey, page, perPage } = req.query;
+    const { listId } = req.params;
+    if (!apikey) return res.status(400).json({ error: "apikey is required" });
+    const { fetchListItems } = require('./utils/publicmetadbUtils');
+    const data = await fetchListItems(apikey, listId, parseInt(page) || 1, parseInt(perPage) || 100);
+    res.json(data);
+  } catch (error) {
+    consola.error("[PublicMetaDB Proxy] List items error:", error.message);
+    const status = error.message?.includes('401') ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
 // --- Admin Configuration Routes ---
 addon.get("/api/config/stats", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;

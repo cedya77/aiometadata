@@ -139,6 +139,7 @@ const initialConfig: AppConfig = {
     topPoster: "",
     mdblist: "",
     openrouter: "",
+    publicmetadb: "",
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   usePosterProxy: true,
@@ -146,6 +147,7 @@ const initialConfig: AppConfig = {
   anilistWatchTracking: true,
   simklWatchTracking: true,
   traktWatchTracking: true,
+  publicmetadbWatchTracking: false,
   enableRatingPostersForLibrary: true, // Default to enabled - keep Rating Posters for library items
   showRateMeButton: false, // Default to disabled - user must enable to show rate button
   ageRating: 'None',

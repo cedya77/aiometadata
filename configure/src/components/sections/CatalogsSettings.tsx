@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
 import { SimklIntegration } from './SimklIntegration';
+import { PublicMetaDBIntegration } from './PublicMetaDBIntegration';
 import { TMDBIntegration } from './TMDBIntegration';
 import { TMDBDiscoverBuilderDialog } from './TMDBDiscoverBuilderDialog';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
@@ -18,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -2261,7 +2262,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
                 <TooltipContent>Clone and Edit as Built Catalog</TooltipContent>
               </Tooltip>
 
-          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol'].includes(catalog.source) ||
+          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol', 'publicmetadb'].includes(catalog.source) ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
             (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
             catalog.id.includes('.discover.')) && (
@@ -2496,6 +2497,7 @@ function CatalogsSettingsContent({
   const [isMdbListOpen, setIsMdbListOpen] = useState(false);
   const [isTraktOpen, setIsTraktOpen] = useState(false);
   const [isSimklOpen, setIsSimklOpen] = useState(false);
+  const [isPublicMetaDBOpen, setIsPublicMetaDBOpen] = useState(false);
   const [isTmdbListOpen, setIsTmdbListOpen] = useState(false);
   const [isTmdbDiscoverBuilderOpen, setIsTmdbDiscoverBuilderOpen] = useState(false);
   const [editingDiscoverCatalog, setEditingDiscoverCatalog] = useState<CatalogConfig | null>(null);
@@ -3268,7 +3270,7 @@ function CatalogsSettingsContent({
   };
 
   const isRemovableCatalog = (catalog: CatalogConfig) => {
-    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol'];
+    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol', 'publicmetadb'];
     if (removableSources.includes(catalog.source)) {
       return true;
     }
@@ -3447,10 +3449,25 @@ function CatalogsSettingsContent({
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => setIsTmdbListOpen(true)} 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsPublicMetaDBOpen(true)}
+                      aria-label="PublicMetaDB Integration"
+                      className="h-9 w-9"
+                    >
+                      <Database className="w-5 h-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>PublicMetaDB Integration</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsTmdbListOpen(true)}
                       aria-label="TMDB Lists"
                       className="h-9 w-9"
                     >
@@ -3567,6 +3584,10 @@ function CatalogsSettingsContent({
             isOpen={isSimklOpen}
             onClose={() => setIsSimklOpen(false)}
           />
+          <PublicMetaDBIntegration
+            isOpen={isPublicMetaDBOpen}
+            onClose={() => setIsPublicMetaDBOpen(false)}
+          />
           <LetterboxdIntegration
             isOpen={isLetterboxdOpen}
             onClose={() => setIsLetterboxdOpen(false)}
@@ -3668,6 +3689,10 @@ function CatalogsSettingsContent({
       <SimklIntegration
         isOpen={isSimklOpen}
         onClose={() => setIsSimklOpen(false)}
+      />
+      <PublicMetaDBIntegration
+        isOpen={isPublicMetaDBOpen}
+        onClose={() => setIsPublicMetaDBOpen(false)}
       />
       <TMDBIntegration
         isOpen={isTmdbListOpen}

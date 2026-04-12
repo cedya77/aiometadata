@@ -26,9 +26,11 @@ export interface UserConfig {
     simklTokenId?: string;
     /** AniList OAuth token ID stored in oauth_tokens table */
     anilistTokenId?: string;
+    publicmetadb?: string;
   };
   /** Enable/disable AniList watch tracking (default: true when connected) */
   anilistWatchTracking?: boolean;
+  publicmetadbWatchTracking?: boolean;
   /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
   posterRatingProvider?: 'rpdb' | 'top' | 'custom';
   catalogs?: Catalog[];

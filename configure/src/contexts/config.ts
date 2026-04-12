@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol' | 'publicmetadb'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -134,6 +134,7 @@ export interface AppConfig {
     traktTokenId?: string;
     simklTokenId?: string;
     anilistTokenId?: string;
+    publicmetadb?: string;
     customDescriptionBlurb?: string;
   };
   /** Poster rating provider: 'rpdb' for RatingPosterDB, 'top' for Top Poster API, or 'custom' for custom URL patterns */
@@ -143,6 +144,7 @@ export interface AppConfig {
   anilistWatchTracking: boolean;
   simklWatchTracking: boolean;
   traktWatchTracking: boolean;
+  publicmetadbWatchTracking: boolean;
   /** If true, keep RPDB posters for items in Continue Watching and Library (default: true). When disabled, RPDB posters are removed since catalog context is unavailable. */
   enableRatingPostersForLibrary?: boolean;
   /** If true, display a "⭐ Rate Me" genre button in meta pages that links to the rating page */

@@ -365,3 +365,26 @@ export function createFlixPatrolCatalogs(options: FlixPatrolCatalogOptions): Cat
 
   return catalogs;
 }
+
+export function createPublicMetaDBUpNextCatalog(): CatalogConfig {
+  return {
+    id: 'publicmetadb.upnext',
+    type: 'series',
+    name: 'PublicMetaDB Up Next',
+    enabled: true,
+    showInHome: true,
+    source: 'publicmetadb' as const,
+    metadata: { useShowPosterForUpNext: false },
+  };
+}
+
+export function createPublicMetaDBListCatalog(list: { id: string; name: string }, mediaType: 'movie' | 'series' | 'all' = 'all'): CatalogConfig {
+  return {
+    id: `publicmetadb.list.${list.id}`,
+    type: mediaType,
+    name: list.name,
+    enabled: true,
+    showInHome: true,
+    source: 'publicmetadb' as const,
+  };
+}

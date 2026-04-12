@@ -7,6 +7,7 @@ import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommend
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
+import { fetchResume, parseResumeItems, fetchListItems, parseListItems } from "../utils/publicmetadbUtils.js";
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
@@ -174,6 +175,11 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.debug(`Routing to FlixPatrol catalog handler for id: ${id}`);
       const flixpatrolResults = await getFlixPatrolCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: flixpatrolResults };
+    }
+    else if (id.startsWith('publicmetadb.')) {
+      logger.debug(`Routing to PublicMetaDB catalog handler for id: ${id}`);
+      const pmdbResults = await getPublicMetaDBCatalog(type, id, page, language, config, userUUID);
+      return { metas: pmdbResults };
     }
 
     else {
@@ -2679,6 +2685,51 @@ async function getFlixPatrolCatalog(
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`[FlixPatrol] Error processing catalog ${catalogId}: ${err.message}`);
     logger.error(`Error at: ${errorLine}`);
+    return [];
+  }
+}
+
+async function getPublicMetaDBCatalog(
+  type: string,
+  catalogId: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string
+): Promise<any[]> {
+  try {
+    const apiKey = config.apiKeys?.publicmetadb;
+    if (!apiKey) {
+      logger.warn('[PublicMetaDB] No API key configured');
+      return [];
+    }
+
+    const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
+    const useShowPoster = catalogConfig?.metadata?.useShowPosterForUpNext ?? false;
+
+    if (catalogId === 'publicmetadb.upnext') {
+      if (page > 1) return [];
+      const items = await fetchResume(apiKey);
+      let metas = await parseResumeItems(items, type, language, config, useShowPoster);
+      metas = applyAgeRatingFilter(metas, type, config);
+      logger.success(`[PublicMetaDB] Up Next: ${metas.length} items`);
+      return metas;
+    }
+
+    if (catalogId.startsWith('publicmetadb.list.')) {
+      const listId = catalogId.replace('publicmetadb.list.', '');
+      const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+      const data = await fetchListItems(apiKey, listId, page, pageSize);
+      let metas = await parseListItems(data.items || [], type, language, config);
+      metas = applyAgeRatingFilter(metas, type, config);
+      logger.success(`[PublicMetaDB] List ${listId}: ${metas.length} items (page ${page})`);
+      return metas;
+    }
+
+    logger.warn(`[PublicMetaDB] Unknown catalog: ${catalogId}`);
+    return [];
+  } catch (err: any) {
+    logger.error(`[PublicMetaDB] Error processing catalog ${catalogId}: ${err.message}`);
     return [];
   }
 }

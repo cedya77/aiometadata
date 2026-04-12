@@ -216,7 +216,7 @@ export function IntegrationsSettings() {
 
   // Check if any keys have changed since last successful validation
   useEffect(() => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
 
     let changed = false;
     for (const key of apiKeyFields) {
@@ -314,7 +314,7 @@ export function IntegrationsSettings() {
   
   const handleTestAllKeys = async () => {
     setIsTesting(true);
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
     
     // Build the list of keys to test, excluding unchanged successfully validated ones
     const keysToTest: Record<string, string> = {};
@@ -467,7 +467,7 @@ export function IntegrationsSettings() {
   
   // Determine button state and text
   const getButtonState = () => {
-    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist'];
+    const apiKeyFields: (keyof AppConfig['apiKeys'])[] = ['gemini', 'openrouter', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'publicmetadb'];
     const hasAnyKeys = apiKeyFields.some(key => config.apiKeys[key] && config.apiKeys[key]!.trim() !== "");
     
     if (!hasAnyKeys) {
@@ -555,11 +555,18 @@ export function IntegrationsSettings() {
           validationStatus={validationStatus.topPoster || 'idle'}
           onKeyChange={handleKeyChange}
         />
-        <ApiKeyInput 
-          id="mdblist" 
-          label="MDBList API Key" 
-          linkHref="https://mdblist.com/preferences/#api_key_uid" 
-          validationStatus={validationStatus.mdblist || 'idle'} 
+        <ApiKeyInput
+          id="mdblist"
+          label="MDBList API Key"
+          linkHref="https://mdblist.com/preferences/#api_key_uid"
+          validationStatus={validationStatus.mdblist || 'idle'}
+          onKeyChange={handleKeyChange}
+        />
+        <ApiKeyInput
+          id="publicmetadb"
+          label="PublicMetaDB API Key"
+          linkHref="https://publicmetadb.com"
+          validationStatus={validationStatus.publicmetadb || 'idle'}
           onKeyChange={handleKeyChange}
         />
       </div>

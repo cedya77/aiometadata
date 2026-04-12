@@ -5,7 +5,7 @@ const packageJson = require('../../package.json');
 const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error']);
 const isKnownKeyValidationStatus = (status) =>
   typeof status === 'string' && KEY_VALIDATION_STATUS_SET.has(status);
-const TESTABLE_API_KEY_FIELDS = new Set(['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'openrouter']);
+const TESTABLE_API_KEY_FIELDS = new Set(['gemini', 'tmdb', 'tvdb', 'fanart', 'rpdb', 'topPoster', 'mdblist', 'openrouter', 'publicmetadb']);
 const TEST_API_KEY_MAX_LENGTH = (() => {
   const parsed = parseInt(process.env.TEST_API_KEY_MAX_LENGTH || '128', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 128;
@@ -1209,6 +1209,11 @@ class ConfigApi {
       mdblist: async (key) => {
         const { testMdblistKey } = require('../utils/mdbList');
         return await testMdblistKey(key);
+      },
+
+      publicmetadb: async (key) => {
+        const { validateKey } = require('../utils/publicmetadbUtils');
+        return await validateKey(key);
       },
 
       openrouter: async (key) => {

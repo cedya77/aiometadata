@@ -615,6 +615,28 @@ async function createMalCatalog(userCatalog, genres, showPrefix = false, prefixN
   }
 }
 
+function createPublicMetaDBCatalog(userCatalog, showPrefix = false, prefixName = "AIOMetadata") {
+  try {
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    const catalogName = userCatalog.name || 'PublicMetaDB';
+    const extra = [{ name: "skip" }];
+    if (!userCatalog.showInHome) {
+      extra.unshift({ name: "genre", options: ["None"], isRequired: true });
+    }
+    return {
+      id: userCatalog.id,
+      type: catalogType,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${catalogName}`,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE) || 20,
+      extra,
+      showInHome: userCatalog.showInHome ?? false
+    };
+  } catch (error) {
+    logger.error(`Error creating PublicMetaDB catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createSimklCatalog(userCatalog, showPrefix = false, prefixName = "AIOMetadata") {
   try {
     logger.info(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -839,6 +861,7 @@ async function getManifest(config) {
   const isMDBList = (id) => id.startsWith("mdblist.");
   const isTrakt = (id) => id.startsWith("trakt.");
   const isSimkl = (id) => id.startsWith("simkl.");
+  const isPublicMetaDB = (id) => id.startsWith("publicmetadb.");
   const options = { years, genres_movie: genres_movie_names, genres_series: genres_series_names, filterLanguages };
 
   // Pre-fetch MDBList genres once to avoid repeated API calls
@@ -912,6 +935,9 @@ async function getManifest(config) {
       if (userCatalog.id.startsWith('flixpatrol.')) {
         return true;
       }
+      if (isPublicMetaDB(userCatalog.id)) {
+        return true;
+      }
       if (!catalogDef) {
         logger.debug(`Catalog ${userCatalog.id} failed filter: no catalog definition`);
         return false;
@@ -937,6 +963,11 @@ async function getManifest(config) {
           logger.debug(`Processing Simkl catalog: ${userCatalog.id}`);
           const result = await createSimklCatalog(userCatalog, showPrefix, prefixName);
           logger.debug(`Simkl catalog result:`, result ? 'success' : 'failed');
+          return result;
+      }
+      if (isPublicMetaDB(userCatalog.id)) {
+          logger.debug(`Processing PublicMetaDB catalog: ${userCatalog.id}`);
+          const result = createPublicMetaDBCatalog(userCatalog, showPrefix, prefixName);
           return result;
       }
       if (userCatalog.id.startsWith('tmdb.list.')) {
