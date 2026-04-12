@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const sqlite3 = require('sqlite3').verbose();
+const BetterSqlite3 = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -13,6 +13,18 @@ class Database {
     this.db = null;
     this.type = null;
     this.initialized = false;
+  }
+
+  executeSQLiteStatement(statement, method, params = []) {
+    if (params == null) {
+      return statement[method]();
+    }
+
+    if (Array.isArray(params)) {
+      return params.length > 0 ? statement[method](params) : statement[method]();
+    }
+
+    return statement[method](params);
   }
 
   // Helper method to hash passwords with bcrypt
@@ -76,21 +88,18 @@ class Database {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new sqlite3.Database(fullPath);
+    this.db = new BetterSqlite3(fullPath, {
+      timeout: 5000,
+    });
     this.type = 'sqlite';
 
-    return new Promise((resolve, reject) => {
-      this.db.serialize(() => {
-        this.db.run('PRAGMA foreign_keys = ON');
-        this.db.run('PRAGMA journal_mode = WAL');
-        this.db.run('PRAGMA busy_timeout = 5000');
-        this.db.run('PRAGMA synchronous = NORMAL');
-        this.db.run('PRAGMA cache_size = 10000');
-        this.db.run('PRAGMA temp_store = MEMORY');
-        this.db.run('PRAGMA mmap_size = 268435456'); // 256MB
-        resolve();
-      });
-    });
+    this.db.pragma('foreign_keys = ON');
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('busy_timeout = 5000');
+    this.db.pragma('synchronous = NORMAL');
+    this.db.pragma('cache_size = 10000');
+    this.db.pragma('temp_store = MEMORY');
+    this.db.pragma('mmap_size = 268435456');
   }
 
   async initializePostgreSQL(uri) {
@@ -215,12 +224,12 @@ class Database {
     }
 
     if (this.type === 'sqlite') {
-      return new Promise((resolve, reject) => {
-        this.db.run(query, params, function(err) {
-          if (err) reject(err);
-          else resolve({ lastID: this.lastID, changes: this.changes });
-        });
-      });
+      const statement = this.db.prepare(query);
+      const result = this.executeSQLiteStatement(statement, 'run', params);
+      return {
+        lastID: Number(result.lastInsertRowid),
+        changes: result.changes,
+      };
     } else {
       const result = await this.db.query(query, params);
       return result;
@@ -233,12 +242,8 @@ class Database {
     }
 
     if (this.type === 'sqlite') {
-      return new Promise((resolve, reject) => {
-        this.db.get(query, params, (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        });
-      });
+      const statement = this.db.prepare(query);
+      return this.executeSQLiteStatement(statement, 'get', params) || null;
     } else {
       const result = await this.db.query(query, params);
       return result.rows[0] || null;
@@ -251,12 +256,8 @@ class Database {
     }
 
     if (this.type === 'sqlite') {
-      return new Promise((resolve, reject) => {
-        this.db.all(query, params, (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        });
-      });
+      const statement = this.db.prepare(query);
+      return this.executeSQLiteStatement(statement, 'all', params);
     } else {
       const result = await this.db.query(query, params);
       return result.rows;
@@ -629,9 +630,10 @@ class Database {
   async close() {
     if (this.db) {
       if (this.type === 'sqlite') {
-        return new Promise((resolve) => {
-          this.db.close(resolve);
-        });
+        this.db.close();
+        this.db = null;
+        this.initialized = false;
+        return;
       } else {
         await this.db.end();
       }
