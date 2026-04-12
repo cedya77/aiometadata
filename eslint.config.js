@@ -54,16 +54,6 @@ module.exports = tseslint.config(
     rules: legacyJsRules,
   },
   {
-    files: ["postcss.config.js"],
-    extends: [js.configs.recommended],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: "module",
-      globals: globals.node,
-    },
-    rules: legacyJsRules,
-  },
-  {
     files: ["addon/**/*.{js,cjs,mjs}", "scripts/**/*.{js,cjs,mjs}"],
     extends: [js.configs.recommended],
     languageOptions: {
@@ -84,7 +74,7 @@ module.exports = tseslint.config(
     rules: legacyJsRules,
   },
   {
-    files: ["addon/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}", "*.ts"],
+    files: ["addon/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}", "*.{ts,mts,cts}"],
     extends: [...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
