@@ -402,32 +402,6 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
             </Card>
           )}
 
-          {/* Watch Tracking */}
-          {isValid && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Watch Tracking</CardTitle>
-                <CardDescription>
-                  Automatically log plays to your PublicMetaDB account when you watch content
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="pmdb-tracking" className="text-sm font-medium">Mark as Watched</Label>
-                    <p className="text-xs text-muted-foreground">Automatically log plays when you watch content</p>
-                  </div>
-                  <Switch
-                    id="pmdb-tracking"
-                    checked={config.publicmetadbWatchTracking}
-                    onCheckedChange={(checked) =>
-                      setConfig(prev => ({ ...prev, publicmetadbWatchTracking: checked }))
-                    }
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         <DialogFooter className="sm:justify-between">

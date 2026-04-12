@@ -306,6 +306,10 @@ export function GeneralSettings() {
     setConfig(prevConfig => ({ ...prevConfig, traktWatchTracking: checked }));
   };
 
+  const handlePublicMetaDBTrackingChange = (checked: boolean) => {
+    setConfig(prevConfig => ({ ...prevConfig, publicmetadbWatchTracking: checked }));
+  };
+
   const handleEnableRatingPostersForLibraryChange = (checked: boolean) => {
     setConfig(prevConfig => ({ ...prevConfig, enableRatingPostersForLibrary: checked }));
   };
@@ -501,6 +505,19 @@ export function GeneralSettings() {
             id="trakt-watch-tracking"
             checked={!!config.traktWatchTracking}
             onCheckedChange={handleTraktTrackingChange}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
+          <div>
+            <Label htmlFor="publicmetadb-watch-tracking" className="text-lg font-medium">PublicMetaDB Watch Tracking</Label>
+            <p className="text-sm text-muted-foreground">
+              Automatically log plays to your PublicMetaDB account when you watch content (requires API key in Integrations & API Keys).
+            </p>
+          </div>
+          <Switch
+            id="publicmetadb-watch-tracking"
+            checked={!!config.publicmetadbWatchTracking}
+            onCheckedChange={handlePublicMetaDBTrackingChange}
           />
         </div>
         <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">

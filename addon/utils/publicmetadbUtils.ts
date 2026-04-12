@@ -330,15 +330,15 @@ async function checkinMovie(ids: Record<string, any>, apiKey: string): Promise<b
       tmdbId = resolved?.tmdbId ? parseInt(resolved.tmdbId, 10) : null;
     }
     if (!tmdbId) {
-      logger.debug(`[Checkin] Could not resolve TMDB ID for movie: ${JSON.stringify(ids)}`);
+      logger.debug(`[Watch Tracking] Could not resolve TMDB ID for movie: ${JSON.stringify(ids)}`);
       return false;
     }
 
     await markWatched(apiKey, tmdbId, 'movie');
-    logger.info(`[Checkin] Movie marked as watched: tmdb:${tmdbId}`);
+    logger.info(`[Watch Tracking] Movie marked as watched: tmdb:${tmdbId}`);
     return true;
   } catch (err: any) {
-    logger.error(`[Checkin] Movie check-in failed: ${err.message}`);
+    logger.error(`[Watch Tracking] Movie check-in failed: ${err.message}`);
     return false;
   }
 }
@@ -356,15 +356,15 @@ async function checkinEpisode(
       tmdbId = resolved?.tmdbId ? parseInt(resolved.tmdbId, 10) : null;
     }
     if (!tmdbId) {
-      logger.debug(`[Checkin] Could not resolve TMDB ID for series: ${JSON.stringify(ids)}`);
+      logger.debug(`[Watch Tracking] Could not resolve TMDB ID for series: ${JSON.stringify(ids)}`);
       return false;
     }
 
     await markWatched(apiKey, tmdbId, 'tv', season, episode);
-    logger.info(`[Checkin] Episode marked as watched: tmdb:${tmdbId} S${season}E${episode}`);
+    logger.info(`[Watch Tracking] Episode marked as watched: tmdb:${tmdbId} S${season}E${episode}`);
     return true;
   } catch (err: any) {
-    logger.error(`[Checkin] Episode check-in failed: ${err.message}`);
+    logger.error(`[Watch Tracking] Episode check-in failed: ${err.message}`);
     return false;
   }
 }

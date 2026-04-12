@@ -560,7 +560,7 @@ async function checkinSimkl(parsedId, config) {
         return;
       }
 
-      logger.debug(`[Simkl Checkin] Checking in movie (${buildIdSummary(ids)})`);
+      logger.debug(`[Simkl Checkin] Tracking movie (${buildIdSummary(ids)})`);
       await checkinMovie(ids, accessToken);
       return;
     }
@@ -605,7 +605,7 @@ async function checkinTrakt(parsedId, config) {
         return;
       }
 
-      logger.debug(`[Trakt Checkin] Checking in movie (${buildIdSummary(ids)})`);
+      logger.debug(`[Trakt Checkin] Tracking movie (${buildIdSummary(ids)})`);
       await checkinMovie(ids, accessToken);
       return;
     }
@@ -638,17 +638,17 @@ async function checkinPublicMetaDB(parsedId, config) {
     const apiKey = config.apiKeys?.publicmetadb;
 
     if (!apiKey) {
-      logger.debug('[PublicMetaDB Checkin] Skipping - missing API key');
+      logger.debug('[PublicMetaDB Watch Tracking] Skipping - missing API key');
       return;
     }
 
     if (parsedId.type === 'movie') {
       const ids = normalizeIdsForMovie(parsedId);
       if (!ids) {
-        logger.debug(`[PublicMetaDB Checkin] No valid identifiers for movie provider ${parsedId.provider}`);
+        logger.debug(`[PublicMetaDB Watch Tracking] No valid identifiers for movie provider ${parsedId.provider}`);
         return;
       }
-      logger.debug(`[PublicMetaDB Checkin] Checking in movie (${buildIdSummary(ids)})`);
+      logger.debug(`[PublicMetaDB Watch Tracking] Tracking movie (${buildIdSummary(ids)})`);
       await checkinMovie(ids, apiKey);
       return;
     }
@@ -656,17 +656,17 @@ async function checkinPublicMetaDB(parsedId, config) {
     if (parsedId.type === 'series') {
       const resolution = await resolveSeriesIds(parsedId, config);
       if (!resolution) {
-        logger.debug(`[PublicMetaDB Checkin] Unable to resolve identifiers for series provider ${parsedId.provider}`);
+        logger.debug(`[PublicMetaDB Watch Tracking] Unable to resolve identifiers for series provider ${parsedId.provider}`);
         return;
       }
-      logger.debug(`[PublicMetaDB Checkin] Checking in episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`);
+      logger.debug(`[PublicMetaDB Watch Tracking] Tracking episode (${buildIdSummary(resolution.ids)}) S${resolution.season}E${resolution.episode}`);
       await checkinEpisode(resolution.ids, resolution.season, resolution.episode, apiKey);
       return;
     }
 
-    logger.debug(`[PublicMetaDB Checkin] Unsupported content type: ${parsedId.type}`);
+    logger.debug(`[PublicMetaDB Watch Tracking] Unsupported content type: ${parsedId.type}`);
   } catch (error) {
-    logger.error(`[PublicMetaDB Checkin] Unexpected tracking error: ${error.message}`, {
+    logger.error(`[PublicMetaDB Watch Tracking] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }
