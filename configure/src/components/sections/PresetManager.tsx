@@ -1996,7 +1996,7 @@ export function PresetManager() {
                           <ul className="space-y-1 text-xs text-muted-foreground">
                             {preset.highlights.map((highlight) => (
                               <li key={highlight} className="flex items-start gap-2">
-                                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-primary flex-shrink-0" />
+                                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-primary shrink-0" />
                                 <span>{highlight}</span>
                               </li>
                             ))}
@@ -2567,7 +2567,7 @@ export function PresetManager() {
                         onClick={() => togglePopularStreamingService(service)}
                       >
                         {popularStreamingServiceIcons[service.key] ? (
-                          <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-sm border border-border/50 bg-background">
+                          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-border/50 bg-background">
                             <img
                               src={popularStreamingServiceIcons[service.key] as string}
                               alt={`${service.label} icon`}
@@ -2576,7 +2576,7 @@ export function PresetManager() {
                             />
                           </span>
                         ) : (
-                          <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm border border-border/50 bg-muted text-[10px] font-semibold text-muted-foreground">
+                          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-border/50 bg-muted text-[10px] font-semibold text-muted-foreground">
                             ?
                           </span>
                         )}

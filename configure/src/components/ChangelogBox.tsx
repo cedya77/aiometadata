@@ -271,7 +271,7 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
         </DialogTrigger>
       ) : null}
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col w-[95vw] h-[90vh] sm:w-auto sm:h-auto">
-        <DialogHeader className="flex-shrink-0">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-between">
             <span className="text-foreground">What's New?</span>
             {newerReleases.length > 0 && (
@@ -330,12 +330,12 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
                 >
                   <CardHeader className="pb-2">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4">
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span className="text-sm sm:text-base font-semibold break-all text-blue-600 dark:text-blue-400">
                           {release.tag_name}
                         </span>
                       </div>
-                      <div className="flex-shrink-0">
+                      <div className="shrink-0">
                         <span className="text-xs text-muted-foreground">
                           {new Date(release.published_at).toLocaleDateString()}
                         </span>

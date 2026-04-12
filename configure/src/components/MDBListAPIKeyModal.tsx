@@ -96,7 +96,7 @@ export function MDBListAPIKeyModal({
                   size="icon"
                   onClick={() => setShowKey(!showKey)}
                   aria-label={showKey ? 'Hide key' : 'Show key'}
-                  className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                  className="text-muted-foreground hover:text-foreground shrink-0"
                   disabled={isLoading}
                 >
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

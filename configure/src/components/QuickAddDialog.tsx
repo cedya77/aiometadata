@@ -754,7 +754,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                 {/* Error Message */}
                 {error && (
                   <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                     <p className="text-sm text-destructive">{error}</p>
                   </div>
                 )}
@@ -810,7 +810,7 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
                   setManifest(null);
                 }}
               >
-                ← Back to URL input
+                â† Back to URL input
               </Button>
 
               {/* Selection Header */}

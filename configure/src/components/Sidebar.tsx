@@ -48,7 +48,7 @@ export function Sidebar({ isOpen, setIsOpen, currentPage, setCurrentPage }: Side
                       setIsOpen(false);
                     }}
                     className={cn(
-                      "flex items-center w-full px-6 py-2 mt-4 text-gray-500 hover:bg-gray-700 hover:bg-opacity-25 hover:text-gray-100",
+                      "flex items-center w-full px-6 py-2 mt-4 text-gray-500 hover:bg-gray-700/25 hover:text-gray-100",
                       currentPage === item.id &&
                         "bg-gray-700 text-gray-100"
                     )}

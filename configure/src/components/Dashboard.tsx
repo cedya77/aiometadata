@@ -118,6 +118,21 @@ const tremorColorMap: Record<string, string> = {
   rose: "#f43f5e",
 };
 
+const providerCategoryStyles = {
+  Movies: {
+    icon: "text-blue-500",
+    bars: ["bg-blue-500", "bg-blue-400", "bg-blue-300"],
+  },
+  Series: {
+    icon: "text-emerald-500",
+    bars: ["bg-emerald-500", "bg-emerald-400", "bg-emerald-300"],
+  },
+  Anime: {
+    icon: "text-pink-500",
+    bars: ["bg-pink-500", "bg-pink-400", "bg-pink-300"],
+  },
+} as const;
+
 function Flex({
   children,
   className = "",
@@ -689,7 +704,7 @@ function DashboardOverview({ data, systemData, loading }) {
                   key={index}
                   className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 text-destructive"
                 >
-                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <AlertCircle className="h-4 w-4 shrink-0" />
                   <span className="text-sm">{issue}</span>
                 </div>
               ))}
@@ -2088,7 +2103,7 @@ function DashboardContent({ data, loading }) {
                               ? "default"
                               : "secondary"
                           }
-                          className="flex-shrink-0"
+                          className="shrink-0"
                         >
                           {content.type}
                         </Badge>
@@ -2338,14 +2353,17 @@ function DashboardSystem({ data, loading }) {
       {/* Provider Preferences Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { title: "Movies", icon: Monitor, data: systemConfig.aggregatedStats?.metaProviders?.movie, color: "blue" },
-          { title: "Series", icon: TrendingUp, data: systemConfig.aggregatedStats?.metaProviders?.series, color: "emerald" },
-          { title: "Anime", icon: Zap, data: systemConfig.aggregatedStats?.metaProviders?.anime, color: "pink" },
-        ].map((category) => (
+          { title: "Movies", icon: Monitor, data: systemConfig.aggregatedStats?.metaProviders?.movie },
+          { title: "Series", icon: TrendingUp, data: systemConfig.aggregatedStats?.metaProviders?.series },
+          { title: "Anime", icon: Zap, data: systemConfig.aggregatedStats?.metaProviders?.anime },
+        ].map((category) => {
+          const styles = providerCategoryStyles[category.title];
+
+          return (
           <Card key={category.title} className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{category.title} Providers</CardTitle>
-              <category.icon className={`h-4 w-4 text-${category.color}-500`} />
+              <category.icon className={`h-4 w-4 ${styles.icon}`} />
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-3">
@@ -2357,10 +2375,7 @@ function DashboardSystem({ data, loading }) {
                     </div>
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          index === 0 ? `bg-${category.color}-500` :
-                          index === 1 ? `bg-${category.color}-400` : `bg-${category.color}-300`
-                        }`}
+                        className={`h-full rounded-full transition-all duration-500 ${styles.bars[index] || styles.bars[2]}`}
                         style={{ width: `${provider.percentage}%` }}
                       />
                     </div>
@@ -2371,7 +2386,7 @@ function DashboardSystem({ data, loading }) {
               </div>
             </CardContent>
           </Card>
-        ))}
+        )})}
       </div>
 
       {/* Language Distribution & Feature Usage Row */}
@@ -2724,7 +2739,7 @@ function DashboardSystem({ data, loading }) {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                        className={`w-3 h-3 rounded-full shrink-0 ${
                           provider.status === "healthy"
                             ? "bg-green-500"
                             : provider.status === "degraded"
@@ -2746,7 +2761,7 @@ function DashboardSystem({ data, loading }) {
                               ? "destructive"
                               : "outline"
                       }
-                      className="flex-shrink-0"
+                      className="shrink-0"
                     >
                       {provider.status === "unknown" ? "No data" : provider.status}
                     </Badge>
@@ -3158,7 +3173,7 @@ function DashboardOperations({ data, loading, activeTab }) {
                   >
                     <div className="flex items-center space-x-3 flex-1 min-w-0">
                       <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                        className={`w-3 h-3 rounded-full shrink-0 ${
                           error.level === "error"
                             ? "bg-red-500"
                             : error.level === "warning"
@@ -3174,7 +3189,7 @@ function DashboardOperations({ data, loading, activeTab }) {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2 flex-shrink-0">
+                    <div className="flex items-center space-x-2 shrink-0">
                       <Badge
                         variant={
                           error.level === "error" ? "destructive" : "secondary"
@@ -3405,7 +3420,7 @@ function DashboardOperations({ data, loading, activeTab }) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2 min-w-0 flex-1">
                       <div
-                        className={`w-3 h-3 rounded-full flex-shrink-0 mt-1 ${
+                        className={`w-3 h-3 rounded-full shrink-0 mt-1 ${
                           task.status === "completed"
                             ? "bg-green-500"
                             : task.status === "running"
@@ -3429,7 +3444,7 @@ function DashboardOperations({ data, loading, activeTab }) {
                               ? "outline"
                               : "destructive"
                       }
-                      className="flex-shrink-0"
+                      className="shrink-0"
                     >
                       {task.status}
                     </Badge>
