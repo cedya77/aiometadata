@@ -20,6 +20,9 @@
     "prestart:backend:ts": "npm run generate:build-info",
     "start:backend:ts": "ts-node addon/server.ts",
     "lint": "eslint .",
+    "lint:backend": "eslint addon scripts",
+    "lint:frontend": "eslint configure/src",
+    "lint:repo": "eslint eslint.config.js postcss.config.js tailwind.config.ts vite.config.ts",
     "preview": "vite preview",
     "start": "npm run start:backend"
   },

@@ -74,8 +74,13 @@ git checkout -b feature/your-feature-name
 # Run tests
 npm test
 
-# Run linter
+# Run all lint scopes
 npm run lint
+
+# Or run one scope while iterating
+npm run lint:backend
+npm run lint:frontend
+npm run lint:repo
 ```
 
 4. **Building**:
@@ -86,8 +91,20 @@ npm run build
 ## Code Style
 
 We use ESLint and Prettier for code formatting. Configuration can be found in:
-- `.eslintrc.js`
+- `eslint.config.js`
 - `.prettierrc`
+
+Current lint posture:
+
+- backend JS stays on a lighter legacy ruleset
+- TypeScript-only rules are scoped to TS files
+- `any`, `require(...)`, and strict hook dependency enforcement are intentionally relaxed where the codebase is not ready yet
+
+Future stricter target:
+
+- re-enable stronger TS rules once backend migration work reduces `any` and legacy CommonJS usage
+- tighten hook dependency enforcement after the frontend state/effect flows are cleaned up
+- keep `npm run lint` focused on actionable defects rather than style churn
 
 ## Hot Reload
 
