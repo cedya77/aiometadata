@@ -3,7 +3,7 @@
       "target": "ES2022",
       "lib": ["ES2023"],
       "module": "CommonJS",
-      "moduleResolution": "node",
+      "moduleResolution": "bundler",
       "skipLibCheck": true,
       "allowJs": true,
       "outDir": "./dist/server",
