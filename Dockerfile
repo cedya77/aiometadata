@@ -1,11 +1,11 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY . .
 RUN npm run build && npm run build:backend
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache ca-certificates wget
 COPY package*.json package-lock.json* ./
@@ -20,4 +20,4 @@ EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD sh -c 'wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3232}/health || exit 1'
 
-ENTRYPOINT ["node", "dist/server.js"]
+ENTRYPOINT ["node", "dist/server/server.js"]

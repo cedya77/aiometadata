@@ -1,6 +1,6 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
-import packageJson from "../../package.json";
+const buildInfo = require('../lib/buildInfo');
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapMDBListGenres, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
@@ -1480,7 +1480,7 @@ async function checkinMovie(idInput: Record<string, string | number>, apiKey: st
       movie: {
         ids: idInput
       },
-      app_version: `AIOMetadata ${packageJson.version}`,
+      app_version: `AIOMetadata ${buildInfo.version}`,
       app_date: new Date().toISOString().split('T')[0]
     };
 
@@ -1533,7 +1533,7 @@ async function checkinEpisode(
           }
         }
       },
-      app_version: `AIOMetadata ${packageJson.version}`,
+      app_version: `AIOMetadata ${buildInfo.version}`,
       app_date: new Date().toISOString().split('T')[0]
     };
 

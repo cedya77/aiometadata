@@ -4,7 +4,7 @@ This guide will help you set up your development environment and understand the 
 
 ## Prerequisites
 
-- Node.js 20.x or higher
+- Node.js 22.x
 - npm 9.x or higher
 - Git
 - MongoDB (local or Atlas)
@@ -108,7 +108,7 @@ We use ESLint and Prettier for code formatting. Configuration can be found in:
       "request": "launch",
       "name": "Debug Server",
       "program": "${workspaceFolder}/addon/server.js",
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"]
+      "outFiles": ["${workspaceFolder}/dist/server/**/*.js"]
     }
   ]
 }

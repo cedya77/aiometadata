@@ -5,7 +5,7 @@ import { getMeta } from "../lib/getMeta.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const { Agent } = require('undici');
-const packageJson = require('../../package.json');
+const buildInfo = require('../lib/buildInfo');
 
 const logger = consola.withTag('Letterboxd');
 
@@ -138,7 +138,7 @@ export async function extractLetterboxdIdentifier(url: string): Promise<string> 
       () => httpHead(requestUrl, {
         dispatcher: letterboxdDispatcher,
         headers: {
-          'User-Agent': `AIOMetadata/${packageJson.version}`,
+          'User-Agent': `AIOMetadata/${buildInfo.version}`,
           'Accept-Language': 'en-US,en;q=0.9'
         }
       }),

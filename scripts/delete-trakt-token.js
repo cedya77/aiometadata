@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const database = require('../dist/lib/database.js');
+const database = require('../dist/server/lib/database.js');
 
 const tokenId = '059d387f-531d-4a47-ae65-2d26b5e21d94';
 

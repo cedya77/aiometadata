@@ -1,5 +1,6 @@
 const express = require("express");
 const favicon = require('serve-favicon');
+const fs = require('fs');
 const path = require("path");
 const crypto = require('crypto');
 const addon = express();
@@ -55,8 +56,9 @@ const axios = require('axios');
 const getCountryISO3 = require('country-iso-2-to-3');
 const jikan = require('./lib/mal');
 const tvmaze = require('./lib/tvmaze');
-const packageJson = require('../package.json');
-const ADDON_VERSION = packageJson.version;
+const buildInfo = require('./lib/buildInfo');
+const { clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
+const ADDON_VERSION = buildInfo.version;
 const sharp = require('sharp');
 const idMapper = require('./lib/id-mapper');
 const wikiMappings = require('./lib/wiki-mapper.js');
@@ -2975,7 +2977,7 @@ addon.get("/manifest.json", function (req, res) {
     : `https://${process.env.HOST_NAME}`;
     const basicManifest = {
         id: "com.aio.metadata",
-        version: packageJson.version,
+        version: buildInfo.version,
         name: "AIO Metadata",
         description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
         logo: `${host}/logo.png`,
@@ -4578,7 +4580,7 @@ addon.get("/poster/:type/:id", async function (req, res) {
         responseType: 'stream',
         timeout: 5000,
         validateStatus: (status) => status >= 200 && status < 300,
-        headers: { 'User-Agent': `AIOMetadata/${require('../package.json').version}` }
+        headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
       });
       const contentType = imageResponse.headers['content-type'];
       res.setHeader('Content-Type', contentType || 'image/jpeg');
@@ -4744,7 +4746,7 @@ addon.get('/resize-image', async function (req, res) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+    res.sendFile(clientIndexPath);
   });
 
 // Rating Page Route - MUST be before static middleware
@@ -4759,11 +4761,8 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   
-  const indexPath = path.join(__dirname, '../dist/index.html');
-  const fs = require('fs');
-  
   try {
-    let html = fs.readFileSync(indexPath, 'utf8');
+    let html = fs.readFileSync(clientIndexPath, 'utf8');
     
     let metaTitle = '';
     let metaPoster = '';
@@ -4913,19 +4912,16 @@ addon.get("/rating", (req, res) => {
   res.redirect(`/stremio/${user}/rating?${params.toString()}`);
 });
 
-addon.use(favicon(path.join(__dirname, '../public/favicon.png')));
-addon.use('/configure', express.static(path.join(__dirname, '../dist')));
-addon.use(express.static(path.join(__dirname, '../public')));
-addon.use(express.static(path.join(__dirname, '../dist')));
+addon.use(favicon(path.join(publicDir, 'favicon.png')));
+addon.use('/configure', express.static(clientDistDir));
+addon.use(express.static(publicDir));
+addon.use(express.static(clientDistDir));
 
 // Dedicated Dashboard Page Route
 addon.get("/dashboard", (req, res) => {
   // Serve the same HTML but with dashboard-specific handling
-  const indexPath = path.join(__dirname, '../dist/index.html');
-  const fs = require('fs');
-  
   try {
-    let html = fs.readFileSync(indexPath, 'utf8');
+    let html = fs.readFileSync(clientIndexPath, 'utf8');
     
     // Inject dashboard-specific meta tags and title
     html = html.replace(

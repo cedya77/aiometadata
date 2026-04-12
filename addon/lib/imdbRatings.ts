@@ -4,7 +4,7 @@ import { Readable } from 'stream';
 import { request } from 'undici';
 import consola from 'consola';
 import redis from './redisClient';
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 
 const logger = consola.withTag('IMDB Ratings');
 
@@ -58,7 +58,7 @@ export async function downloadAndCacheIMDbRatings(): Promise<boolean> {
       if (savedEtag) {
         const headResponse = await request(IMDB_RATINGS_URL, {
           method: 'HEAD',
-          headers: { 'User-Agent': `AIOMetadata/${packageJson.version}` }
+          headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
         });
         const remoteEtag = headResponse.headers.etag;
 

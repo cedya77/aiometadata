@@ -5,7 +5,7 @@ const { getGenresFromMDBList, fetchMDBListGenres } = require("../utils/mdbList")
 const { getGenresFromStremThruCatalog, fetchStremThruCatalog } = require("../utils/stremthru");
 const { fetchTraktGenres } = require("../utils/traktUtils");
 const { getGenresBySelection } = require("../static/genres");
-const packageJson = require("../../package.json");
+const buildInfo = require("./buildInfo");
 const catalogsTranslations = require("../static/translations.json");
 const CATALOG_TYPES = require("../static/catalog-types.json");
 const jikan = require('./mal');
@@ -1351,8 +1351,8 @@ async function getManifest(config) {
   }
   
   const manifest = {
-    id: packageJson.name,
-    version: packageJson.version,
+    id: buildInfo.name,
+    version: buildInfo.version,
     logo: manifestLogoUrl,
     background: `${host}/background.png`,
     name: addonName,

@@ -2,16 +2,22 @@
   "name": "aio-metadata",
   "version": "1.35.2",
   "description": "Metadata provider for Stremio",
-  "main": "dist/server.js",
+  "main": "dist/server/server.js",
   "scripts": {
+    "generate:build-info": "node scripts/generate-build-info.js",
+    "predev:server": "npm run generate:build-info",
     "dev": "vite",
     "dev:server": "nodemon addon/server.js",
+    "predev:server:ts": "npm run generate:build-info",
     "dev:server:ts": "nodemon --exec ts-node addon/server.ts",
+    "prebuild": "npm run generate:build-info",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "prebuild:backend": "npm run generate:build-info",
     "build:backend": "tsc -p tsconfig.backend.json",
     "build:backend:watch": "tsc -p tsconfig.backend.json --watch",
-    "start:backend": "node dist/server.js",
+    "start:backend": "node dist/server/server.js",
+    "prestart:backend:ts": "npm run generate:build-info",
     "start:backend:ts": "ts-node addon/server.ts",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -31,6 +37,9 @@
   ],
   "author": "cedya",
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "bugs": {
     "url": "https://github.com/cedya77/aiometadata/issues"
   },

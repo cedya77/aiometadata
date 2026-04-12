@@ -1,14 +1,14 @@
 require('dotenv').config();
 const swaggerStats = require('swagger-stats');
-const packageJson = require("../../package.json");
+const buildInfo = require("../lib/buildInfo");
 
 class Analytics {
   static instance;
   constructor() {
     if (!Analytics.instance) {
       this.middleware = swaggerStats.getMiddleware({
-        name: packageJson.name,
-        version: packageJson.version,
+        name: buildInfo.name,
+        version: buildInfo.version,
         timelineBucketDuration: 60000,
         uriPath: '/stats/ui',
         authentication: true,
@@ -18,7 +18,7 @@ class Analytics {
         swaggerSpec: {
           info: {
             title: 'TMDB Addon API',
-            version: packageJson.version
+            version: buildInfo.version
           }
         }
       });

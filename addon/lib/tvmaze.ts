@@ -1,6 +1,6 @@
 import { httpGet } from '../utils/httpClient.js';
 import { cacheWrapTvmazeApi } from './getCache.js';
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 import { Agent, ProxyAgent } from 'undici';
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
@@ -37,7 +37,7 @@ if (HTTP_PROXY_URL) {
 const DEFAULT_HTTP_CONFIG = {
   timeout: DEFAULT_TIMEOUT,
   headers: {
-    'User-Agent': `AIOMetadata/${packageJson.version}`
+    'User-Agent': `AIOMetadata/${buildInfo.version}`
   },
   dispatcher: tvmazeAgent,
 };

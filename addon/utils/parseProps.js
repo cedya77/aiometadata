@@ -14,7 +14,7 @@ const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
 const wikiMappings = require('../lib/wiki-mapper.js');
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
-const packageJson = require('../../package.json');
+const buildInfo = require('../lib/buildInfo');
 // Dynamic import to avoid circular dependency
 
 const host = process.env.HOST_NAME.startsWith('http')
@@ -1503,7 +1503,7 @@ async function checkIfExists(url) {
       maxRedirects: 5, 
       validateStatus: (status) => status >= 200 && status < 300, 
       timeout: 3000, 
-      headers: { 'User-Agent': `AIOMetadata/${packageJson.version}` }
+      headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
     });
     
     // Additional robustness checks

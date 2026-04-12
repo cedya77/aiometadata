@@ -6,7 +6,7 @@
       "moduleResolution": "node",
       "skipLibCheck": true,
       "allowJs": true,
-      "outDir": "./dist",
+      "outDir": "./dist/server",
       "rootDir": "./addon",
       "declaration": true,
       "declarationMap": true,

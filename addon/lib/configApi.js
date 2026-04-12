@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error']);
 const isKnownKeyValidationStatus = (status) =>
   typeof status === 'string' && KEY_VALIDATION_STATUS_SET.has(status);
@@ -1226,7 +1226,7 @@ class ConfigApi {
         try {
           const response = await request(url, {
             ...options,
-            headers: { "User-Agent": `AIOMetadata/${packageJson.version}`, ...options.headers },
+            headers: { "User-Agent": `AIOMetadata/${buildInfo.version}`, ...options.headers },
             signal: AbortSignal.timeout(5000),
           });
 

@@ -621,7 +621,7 @@ async function fetchTraktUpNextEpisodes(
             'Content-Type': 'application/json',
             'trakt-api-version': '2',
             'trakt-api-key': TRAKT_CLIENT_ID,
-            'User-Agent': `AIOMetadata/${packageJson.version}`
+            'User-Agent': `AIOMetadata/${buildInfo.version}`
           },
           params: { 'extended': 'full' }
         }),
@@ -693,7 +693,7 @@ async function fetchTraktUpNextEpisodes(
               'Content-Type': 'application/json',
               'trakt-api-version': '2',
               'trakt-api-key': TRAKT_CLIENT_ID,
-              'User-Agent': `AIOMetadata/${packageJson.version}`
+              'User-Agent': `AIOMetadata/${buildInfo.version}`
             },
             params: { 'extended': 'full' }
           }),
@@ -1126,7 +1126,7 @@ async function fetchTraktUnwatchedEpisodes(
   return { items, watched_at: currentWatchedAt };
 }
 
-const packageJson = require('../../package.json');
+const buildInfo = require('../lib/buildInfo');
 const TRAKT_CLIENT_ID = process.env.TRAKT_CLIENT_ID || '';
 const TRAKT_REDIRECT_URI = (() => {
   const uri = process.env.TRAKT_REDIRECT_URI || `${process.env.HOST_NAME}/api/auth/trakt/callback`;

@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
   base: '/',
   publicDir: 'configure/public',
   build: {
-    outDir: 'dist',
+    outDir: 'dist/client',
     emptyOutDir: true,
   },
   resolve: {
