@@ -10,6 +10,7 @@ import { initializeRatings } from './lib/imdbRatings.js';
 import { runCacheCleanup } from './cache-cleanup.js';
 import { runCachePathMigration } from './lib/cache-path-migration.js';
 import { performVersionCleanup } from './lib/versionCleanup.js';
+import { waitForRedisReady } from './lib/redisReady.js';
 import database from './lib/database.js';
 import consola from 'consola';
 
@@ -38,11 +39,11 @@ async function startServer(): Promise<void> {
   await database.initialize();
   consola.success('Database initialization complete.');
 
-  const redis = require('./lib/redisClient');
-  if (redis && redis.status === 'end') {
-    consola.info('Connecting Redis...');
-    await redis.connect();
-    consola.success('Redis connected.');
+  const redisReady = await waitForRedisReady();
+  if (redisReady) {
+    consola.success('Redis ready.');
+  } else {
+    consola.info('Redis caching disabled.');
   }
   
   // Cache path migration
