@@ -155,7 +155,7 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
         <div className="space-y-6 py-4">
           {/* Information Alert */}
           <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
             <p className="text-sm text-blue-800 dark:text-blue-200">
               This integration uses <strong>StremThru</strong> as an intermediary to access Letterboxd data.
               StremThru has a developer account with Letterboxd to provide this functionality.

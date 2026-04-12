@@ -60,20 +60,16 @@ function parseMediaId(id) {
   }
 
   const provider = isPrefixedId ? prefix : 'imdb';
-  let numericId = '';
-  let season = null;
-  let episode = null;
 
   if (provider === 'imdb') {
     if (rest.length === 0) {
-      numericId = prefix;
-      return { type: 'movie', provider, id: numericId };
+      return { type: 'movie', provider, id: prefix };
     }
 
     if (rest.length === 2) {
       const [seasonStr, episodeStr] = rest;
-      season = parseInt(seasonStr, 10);
-      episode = parseInt(episodeStr, 10);
+      const season = parseInt(seasonStr, 10);
+      const episode = parseInt(episodeStr, 10);
       if (Number.isNaN(season) || season < 1 || season > 999) {
         logger.debug(`[Watch Tracking] Invalid season value in IMDb ID: season=${seasonStr}`);
         return null;
@@ -82,8 +78,7 @@ function parseMediaId(id) {
         logger.debug(`[Watch Tracking] Invalid episode value in IMDb ID: episode=${episodeStr}`);
         return null;
       }
-      numericId = prefix;
-      return { type: 'series', provider, id: numericId, season, episode };
+      return { type: 'series', provider, id: prefix, season, episode };
     }
 
     logger.debug(`[Watch Tracking] Invalid IMDb media ID structure: ${cleanId}`);
@@ -95,7 +90,7 @@ function parseMediaId(id) {
     return null;
   }
 
-  numericId = rest[0];
+  const numericId = rest[0];
   if (!numericId || !/^\d+$/.test(numericId)) {
     logger.debug(`[Watch Tracking] Invalid numeric identifier for provider ${provider}: ${numericId}`);
     return null;
@@ -112,12 +107,12 @@ function parseMediaId(id) {
 
   if (rest.length === 2 && provider === 'kitsu') {
     const [episodeStr] = rest.slice(1);
-    episode = parseInt(episodeStr, 10);
+    const episode = parseInt(episodeStr, 10);
     if (Number.isNaN(episode) || episode < 1 || episode > 9999) {
       logger.debug(`[Watch Tracking] Invalid episode value for Kitsu provider: ${episodeStr}`);
       return null;
     }
-    season = 1;
+    const season = 1;
     return { type: 'series', provider, id: numericId, season, episode };
   }
 
@@ -128,8 +123,8 @@ function parseMediaId(id) {
     }
 
     const [seasonStr, episodeStr] = rest.slice(1);
-    season = parseInt(seasonStr, 10);
-    episode = parseInt(episodeStr, 10);
+    const season = parseInt(seasonStr, 10);
+    const episode = parseInt(episodeStr, 10);
     if (Number.isNaN(season) || season < 1 || season > 999) {
       logger.debug(`[Watch Tracking] Invalid season value for provider ${provider}: ${seasonStr}`);
       return null;

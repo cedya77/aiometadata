@@ -190,11 +190,5 @@ export function startCacheCleanupScheduler(dashboardApi: DashboardAPI): CacheCle
   return null;
 }
 
-export function stopCacheCleanupScheduler(): void {
-  if (schedulerInstance) {
-    schedulerInstance.stop();
-  }
-}
-
 export { CacheCleanupScheduler };
 export type { DashboardAPI, SchedulerStatus };

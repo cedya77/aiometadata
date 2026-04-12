@@ -5,11 +5,11 @@ import { getMeta } from "../lib/getMeta.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const { Agent } = require('undici');
-const packageJson = require('../../package.json');
+const buildInfo = require('../lib/buildInfo');
 
 const logger = consola.withTag('Letterboxd');
 
-const letterboxdDispatcher = new Agent({ connect: { timeout: 30000 } });
+const letterboxdDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
 
 // Rate limiting configuration for Letterboxd API (through StremThru)
 const RATE_LIMIT_CONFIG = {
@@ -138,7 +138,7 @@ export async function extractLetterboxdIdentifier(url: string): Promise<string> 
       () => httpHead(requestUrl, {
         dispatcher: letterboxdDispatcher,
         headers: {
-          'User-Agent': `AIOMetadata/${packageJson.version}`,
+          'User-Agent': `AIOMetadata/${buildInfo.version}`,
           'Accept-Language': 'en-US,en;q=0.9'
         }
       }),

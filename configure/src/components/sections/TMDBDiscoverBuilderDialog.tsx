@@ -34,6 +34,7 @@ type SimklDiscoverMediaType = 'movies' | 'shows' | 'anime';
 type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
+  | 'today'
   | 'last_month'
   | 'last_year'
   | 'last_5_years'
@@ -2590,7 +2591,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
 
         {!activeSourceApiKey && discoverSource !== 'anilist' && discoverSource !== 'mal' && discoverSource !== 'simkl' && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-            <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 shrink-0" />
             <div className="space-y-1">
               <p className="text-sm font-medium">Using Server {sourceLabel} Key Fallback</p>
               <p className="text-xs text-muted-foreground">
@@ -4316,7 +4317,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
                                   className="flex items-center justify-between gap-2 text-sm"
                                 >
                                   <span className="truncate">{tag}</span>
-                                  <div className="flex gap-1 flex-shrink-0">
+                                  <div className="flex gap-1 shrink-0">
                                     <Button
                                       type="button"
                                       variant="ghost"

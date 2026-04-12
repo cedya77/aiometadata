@@ -643,7 +643,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
                             {option.vip && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <span role="img" aria-label="VIP" className="ml-1">💎</span>
+                                  <span role="img" aria-label="VIP" className="ml-1">ðŸ’Ž</span>
                                 </TooltipTrigger>
                                 <TooltipContent side="right" className="max-w-xs whitespace-normal">
                                   VIP Only: Requires Trakt VIP subscription
@@ -2276,7 +2276,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
             </Tooltip>
           )}
         </TooltipProvider>
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
             {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
           </Badge>
@@ -2771,7 +2771,7 @@ function CatalogsSettingsContent({
             const catalogId = `streaming.${serviceId}`;
             const existingCatalogIndex = newCatalogs.findIndex(c => c.id === catalogId && c.type === type);
             if (existingCatalogIndex !== -1) {
-              console.log('🔗 [Streaming] Enabling existing catalog:', catalogId);
+              console.log('ðŸ”— [Streaming] Enabling existing catalog:', catalogId);
               const [catalog] = newCatalogs.splice(existingCatalogIndex, 1);
               newCatalogs.push({
                 ...catalog,
@@ -3171,7 +3171,7 @@ function CatalogsSettingsContent({
           return c;
         })
       }));
-      toast.success(`Replaced "${find}" → "${replace}" for ${count} catalog${count === 1 ? '' : 's'}`);
+      toast.success(`Replaced "${find}" â†’ "${replace}" for ${count} catalog${count === 1 ? '' : 's'}`);
     } catch (error) {
       showBulkActionError('find and replace type', error as Error);
     } finally {
@@ -3363,12 +3363,12 @@ function CatalogsSettingsContent({
             >
               {hideDisabledCatalogs ? (
                 <>
-                  <Eye className="h-4 w-4 flex-shrink-0" />
+                  <Eye className="h-4 w-4 shrink-0" />
                   <span>Show All</span>
                 </>
               ) : (
                 <>
-                  <EyeOff className="h-4 w-4 flex-shrink-0" />
+                  <EyeOff className="h-4 w-4 shrink-0" />
                   <span className="hidden sm:inline">Hide Disabled</span>
                   <span className="sm:hidden">Hide Disabled</span>
                 </>

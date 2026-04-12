@@ -43,6 +43,7 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
    npm test
    npm run lint
    ```
+   Use `npm run lint:backend`, `npm run lint:frontend`, or `npm run lint:repo` when you only need one scope during local iteration.
 5. Commit your changes:
    ```bash
    git commit -m "feat: add some feature"
@@ -129,4 +130,4 @@ Contributors will be recognized in:
 - Release notes
 - Our contributors page
 
-Thank you for contributing to TMDB Addon! 
+Thank you for contributing to AIOMetadata! 

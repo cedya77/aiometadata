@@ -3,7 +3,7 @@ import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken } from "../utils/traktUtils.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken, fetchTraktUpNextEpisodes, fetchTraktUnwatchedEpisodes, fetchTraktTrendingItems, fetchTraktPopularItems } from "../utils/traktUtils.js";
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
@@ -1674,7 +1674,7 @@ async function getTraktCatalog(
         logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
         
         const fetchStart = Date.now();
-        const result = await require('../utils/traktUtils.js').fetchTraktUpNextEpisodes(token, cachedTimestamp);
+        const result = await fetchTraktUpNextEpisodes(token, cachedTimestamp);
         const fetchTime = Date.now() - fetchStart;
         logger.info(`Up Next: fetchTraktUpNextEpisodes took ${fetchTime}ms`);
         
@@ -1727,7 +1727,7 @@ async function getTraktCatalog(
         const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
         const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
 
-        const result = await require('../utils/traktUtils.js').fetchTraktUnwatchedEpisodes(token, cachedTimestamp);
+        const result = await fetchTraktUnwatchedEpisodes(token, cachedTimestamp);
 
         let allItems: any[];
         if (result.items.length === 0 && cachedData?.items) {
@@ -1802,19 +1802,19 @@ async function getTraktCatalog(
       response = await fetchTraktMostFavoritedItems(favType as 'movies' | 'shows', favPeriod as any, page, pageSize, genreSlug, catalogConfig?.cacheTTL);
     } else if (catalogId === 'trakt.trending.movies') {
       logger.debug('Fetching Trakt trending movies');
-      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
+      const result = await fetchTraktTrendingItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.trending.shows') {
       logger.debug('Fetching Trakt trending shows');
-      const result = await require('../utils/traktUtils.js').fetchTraktTrendingItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
+      const result = await fetchTraktTrendingItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.popular.movies') {
       logger.debug('Fetching Trakt popular movies');
-      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
+      const result = await fetchTraktPopularItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.popular.shows') {
       logger.debug('Fetching Trakt popular shows');
-      const result = await require('../utils/traktUtils.js').fetchTraktPopularItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
+      const result = await fetchTraktPopularItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist

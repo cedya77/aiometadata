@@ -1,6 +1,6 @@
 import { httpGet } from '../utils/httpClient.js';
 import { cacheWrapTvmazeApi } from './getCache.js';
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 import { Agent, ProxyAgent } from 'undici';
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
@@ -16,17 +16,19 @@ let tvmazeAgent: Agent | ProxyAgent;
 
 if (HTTP_PROXY_URL) {
   try {
-    tvmazeAgent = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+    tvmazeAgent = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
     console.log('[TVmaze] Using global HTTP proxy.');
   } catch (error: any) {
     console.error(`[TVmaze] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
     tvmazeAgent = new Agent({
+      allowH2: false,
       connections: 2,
       keepAliveTimeout: 10 * 1000,
     });
   }
 } else {
   tvmazeAgent = new Agent({
+    allowH2: false,
     connections: 2,
     keepAliveTimeout: 10 * 1000,
   });
@@ -37,7 +39,7 @@ if (HTTP_PROXY_URL) {
 const DEFAULT_HTTP_CONFIG = {
   timeout: DEFAULT_TIMEOUT,
   headers: {
-    'User-Agent': `AIOMetadata/${packageJson.version}`
+    'User-Agent': `AIOMetadata/${buildInfo.version}`
   },
   dispatcher: tvmazeAgent,
 };

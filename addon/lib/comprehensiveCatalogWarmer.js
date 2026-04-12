@@ -8,7 +8,7 @@ const redis = require('./redisClient');
 const consola = require('consola');
 const { loadConfigFromDatabase } = require('./configApi.js');
 const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens');
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 const crypto = require('crypto');
 
 const logger = consola.create({
@@ -859,7 +859,7 @@ class ComprehensiveCatalogWarmer {
       return false;
     }
 
-    const currentVersion = packageJson.version;
+    const currentVersion = buildInfo.version;
     const versionKey = 'catalog-warmup:last-version';
     
     try {

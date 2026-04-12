@@ -1,34 +1,76 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ComponentType, type LazyExoticComponent } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from '@/hooks/use-breakpoint';
-import { cn } from "@/lib/utils";
 
-import { GeneralSettings } from './sections/GeneralSettings';
-import { IntegrationsSettings } from './sections/IntegrationsSettings';
-import { ProvidersSettings } from './sections/ProvidersSettings';
-import { ArtProviderSettings } from './sections/ArtProviderSettings';
-import { FiltersSettings } from './sections/FiltersSettings';
-import { CatalogsSettings } from './sections/CatalogsSettings';
-import { SearchSettings } from './sections/SearchSettings';
-import { PresetManager } from './sections/PresetManager';
-import { ConfigurationManager } from './ConfigurationManager';
-import { Dashboard } from './Dashboard';
-import RatingPage from './RatingPage';
+const LazyPresetManager = lazy(() =>
+  import('./sections/PresetManager').then((module) => ({ default: module.PresetManager }))
+);
+const LazyGeneralSettings = lazy(() =>
+  import('./sections/GeneralSettings').then((module) => ({ default: module.GeneralSettings }))
+);
+const LazyIntegrationsSettings = lazy(() =>
+  import('./sections/IntegrationsSettings').then((module) => ({ default: module.IntegrationsSettings }))
+);
+const LazyProvidersSettings = lazy(() =>
+  import('./sections/ProvidersSettings').then((module) => ({ default: module.ProvidersSettings }))
+);
+const LazyArtProviderSettings = lazy(() =>
+  import('./sections/ArtProviderSettings').then((module) => ({ default: module.ArtProviderSettings }))
+);
+const LazyFiltersSettings = lazy(() =>
+  import('./sections/FiltersSettings').then((module) => ({ default: module.FiltersSettings }))
+);
+const LazyCatalogsSettings = lazy(() =>
+  import('./sections/CatalogsSettings').then((module) => ({ default: module.CatalogsSettings }))
+);
+const LazySearchSettings = lazy(() =>
+  import('./sections/SearchSettings').then((module) => ({ default: module.SearchSettings }))
+);
+const LazyConfigurationManager = lazy(() =>
+  import('./ConfigurationManager').then((module) => ({ default: module.ConfigurationManager }))
+);
+const LazyDashboard = lazy(() =>
+  import('./Dashboard').then((module) => ({ default: module.Dashboard }))
+);
+const LazyRatingPage = lazy(() => import('./RatingPage'));
 
 const settingsPages = [
-  { value: 'presets', title: 'Presets', component: <PresetManager /> },
-  { value: 'general', title: 'General', component: <GeneralSettings /> },
-  { value: 'integrations', title: 'Integrations', component: <IntegrationsSettings /> },
-  { value: 'providers', title: 'Meta Providers', component: <ProvidersSettings /> },
-  { value: 'art-providers', title: 'Art Providers', component: <ArtProviderSettings /> },
-  { value: 'filters', title: 'Filters', component: <FiltersSettings /> },
-  { value: 'search', title: 'Search', component: <SearchSettings /> },
-  { value: 'catalogs', title: 'Catalogs', component: <CatalogsSettings /> },
-  { value: 'configuration', title: 'Configuration', component: <ConfigurationManager /> },
-];
+  { value: 'presets', title: 'Presets', Component: LazyPresetManager },
+  { value: 'general', title: 'General', Component: LazyGeneralSettings },
+  { value: 'integrations', title: 'Integrations', Component: LazyIntegrationsSettings },
+  { value: 'providers', title: 'Meta Providers', Component: LazyProvidersSettings },
+  { value: 'art-providers', title: 'Art Providers', Component: LazyArtProviderSettings },
+  { value: 'filters', title: 'Filters', Component: LazyFiltersSettings },
+  { value: 'search', title: 'Search', Component: LazySearchSettings },
+  { value: 'catalogs', title: 'Catalogs', Component: LazyCatalogsSettings },
+  { value: 'configuration', title: 'Configuration', Component: LazyConfigurationManager },
+] as const;
 type SettingsPageValue = (typeof settingsPages)[number]['value'];
+type SettingsPage = (typeof settingsPages)[number];
 const SETTINGS_LAYOUT_NAVIGATE_EVENT = 'settings-layout:navigate';
+
+function SectionFallback({ title }: { title: string }) {
+  return (
+    <div className="rounded-lg border bg-muted/20 p-5 space-y-3">
+      <div className="text-sm font-medium text-muted-foreground">Loading {title.toLowerCase()}...</div>
+      <Skeleton className="h-4 w-40" />
+      <Skeleton className="h-16 w-full" />
+      <Skeleton className="h-24 w-full" />
+    </div>
+  );
+}
+
+function renderSettingsPage(page: SettingsPage) {
+  const ActiveComponent = page.Component as LazyExoticComponent<ComponentType>;
+
+  return (
+    <Suspense fallback={<SectionFallback title={page.title} />}>
+      <ActiveComponent />
+    </Suspense>
+  );
+}
 
 /**
  * A responsive layout component that displays settings in Tabs on desktop
@@ -87,7 +129,9 @@ export function SettingsLayout() {
   if (isRatingMode) {
     return (
       <div className="w-full">
-        <RatingPage />
+        <Suspense fallback={<SectionFallback title="rating" />}>
+          <LazyRatingPage />
+        </Suspense>
       </div>
     );
   }
@@ -96,7 +140,9 @@ export function SettingsLayout() {
   if (isDashboardMode) {
     return (
       <div className="w-full">
-        <Dashboard />
+        <Suspense fallback={<SectionFallback title="dashboard" />}>
+          <LazyDashboard />
+        </Suspense>
       </div>
     );
   }
@@ -122,7 +168,9 @@ export function SettingsLayout() {
               <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
                 {page.title}
               </AccordionTrigger>
-              <AccordionContent className="pt-2 pb-6">{page.component}</AccordionContent>
+              <AccordionContent className="pt-2 pb-6">
+                {activeMobileSection === page.value ? renderSettingsPage(page) : null}
+              </AccordionContent>
             </AccordionItem>
           ))}
         </Accordion>
@@ -168,7 +216,7 @@ export function SettingsLayout() {
         </TabsList>
       {settingsPages.map((page) => (
         <TabsContent key={page.value} value={page.value} className="mt-6 animate-fade-in">
-          {page.component}
+          {activeDesktopTab === page.value ? renderSettingsPage(page) : null}
         </TabsContent>
       ))}
       </Tabs>

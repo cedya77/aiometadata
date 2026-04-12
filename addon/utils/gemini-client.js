@@ -31,10 +31,11 @@ const getGeminiProxyUrl = () => {
 const createGeminiDispatcher = () => {
   const proxyUrl = getGeminiProxyUrl();
   if (proxyUrl) {
-    return new ProxyAgent({ uri: proxyUrl });
+    return new ProxyAgent({ uri: proxyUrl, allowH2: false });
   }
   // No proxy configured - use direct connection
   return new Agent({
+    allowH2: false,
     keepAliveTimeout: 30000,      // Keep connections alive for 30s
     keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
     connections: 50,              // Max concurrent connections

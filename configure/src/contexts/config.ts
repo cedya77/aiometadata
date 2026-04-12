@@ -53,6 +53,9 @@ export interface CatalogConfig {
     // TMDB-specific metadata
     listId?: string;
     listDescription?: string;
+    mediatype?: string;
+    traktEndpoint?: string;
+    countrySlug?: string;
     discover?: {
       version?: number;
       source?: 'tmdb' | 'tvdb' | 'anilist' | 'simkl' | 'mal' | 'mdblist';

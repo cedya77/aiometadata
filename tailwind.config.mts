@@ -1,44 +1,9 @@
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  // 1. Enable class-based dark mode
+import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
+
+export default {
   darkMode: ["class"],
-  
-  // 2. Make sure the content path includes the configure directory
-  content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-    './configure/src/**/*.{js,ts,jsx,tsx}', // Your path is correct here
-  ],
-  // Ensure dynamically generated classes are not purged
-  safelist: [
-    // text colors used dynamically by getMetricColor
-    'text-green-600',
-    'text-yellow-600',
-    'text-orange-600',
-    'text-red-600',
-    // background tiles used in provider/secondary sections
-    'bg-green-50',
-    'bg-blue-50',
-    'bg-yellow-50',
-    'bg-orange-50',
-    'bg-red-50',
-    // dark mode counterparts
-    'dark:text-green-300',
-    'dark:text-blue-300',
-    'dark:text-yellow-300',
-    'dark:text-orange-300',
-    'dark:text-red-300',
-    'dark:bg-green-950',
-    'dark:bg-blue-950',
-    'dark:bg-yellow-950',
-    'dark:bg-orange-950',
-    'dark:bg-red-950'
-  ],
-  prefix: "", // You can add a prefix if needed, but empty is standard
-  
-  // 3. Define the theme with all the necessary CSS variables from shadcn/ui
+  content: ["./index.html", "./configure/src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     container: {
       center: true,
@@ -104,7 +69,5 @@ module.exports = {
       },
     },
   },
-  
-  // 4. Add the tailwindcss-animate plugin
-  plugins: [require("tailwindcss-animate")],
-}
+  plugins: [tailwindcssAnimate],
+} satisfies Config;

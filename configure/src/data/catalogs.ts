@@ -1,8 +1,8 @@
-interface CatalogDefinition {
+export interface CatalogDefinition {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime';
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom'; 
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'streaming' | 'stremthru' | 'custom' | 'trakt' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol'; 
   isEnabledByDefault?: boolean;
   showOnHomeByDefault?: boolean;
 }
@@ -120,3 +120,5 @@ export const allCatalogDefinitions: CatalogDefinition[] = [
   ...authCatalogs,
   ...streamingCatalogs.map(({ regions, icon, ...rest }) => rest),
 ]; 
+
+export type Catalog = CatalogDefinition;

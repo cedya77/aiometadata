@@ -1,12 +1,12 @@
 import redis from './redisClient';
-import packageJson from '../../package.json';
+const buildInfo = require('./buildInfo');
 import consola from 'consola';
 
 const { deleteKeysByPattern } = require('./redisUtils');
 
 const logger = consola.withTag('Version-Cleanup');
 
-const CURRENT_VERSION = packageJson.version;
+const CURRENT_VERSION = buildInfo.version;
 const VERSION_KEY = 'system:app_version';
 
 const VERSIONED_KEY_REGEX = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?):/;

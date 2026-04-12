@@ -1,12 +1,27 @@
-import Kitsu from 'kitsu';
 import axios, { AxiosResponse } from 'axios';
 import { cacheWrapGlobal } from './getCache.js';
 import consola from 'consola';
 
 const logger = consola.withTag('Kitsu');
 
-// Initialize Kitsu client
-const kitsu = new Kitsu();
+type KitsuClient = {
+  fetch: (model: string, config?: any) => Promise<any>;
+  get: (model: string, config?: any) => Promise<any>;
+};
+
+let kitsuClientPromise: Promise<KitsuClient> | null = null;
+
+// kitsu v11 is ESM-first, while the backend still compiles to CommonJS.
+const loadKitsu = () =>
+  Function('return import("kitsu")')() as Promise<{ default: new () => KitsuClient }>;
+
+async function getKitsuClient(): Promise<KitsuClient> {
+  if (!kitsuClientPromise) {
+    kitsuClientPromise = loadKitsu().then(({ default: Kitsu }) => new Kitsu());
+  }
+
+  return kitsuClientPromise;
+}
 
 const normalizeToFlat = (item: any): any => {
   if (!item.attributes) {
@@ -247,6 +262,8 @@ async function searchByName(query: string, subtypes: string[] = [], ageRating: s
   const startTime = Date.now();
 
   try {
+    const kitsu = await getKitsuClient();
+
     // Loop over all provided subtypes
     for (const subtype of subtypes.length ? subtypes : ['tv']) {
       let params: any = {
@@ -432,6 +449,7 @@ async function _fetchEpisodesRecursively(
   params: { page: { limit: number } }, 
   offset: number = 0
 ): Promise<KitsuEpisode[]> {
+  const kitsu = await getKitsuClient();
   const currentParams = { 
     ...params, 
     page: { ...params.page, offset } 
@@ -475,6 +493,7 @@ async function fetchRelationshipList(url?: string, attributeKey: 'name' | 'title
   const startTime = Date.now();
 
   try {
+    const kitsu = await getKitsuClient();
     const response = await kitsu.get(`anime/${kitsuId}`, {
       params: {
         include: 'episodes,categories,characters.character,mediaRelationships.destination'

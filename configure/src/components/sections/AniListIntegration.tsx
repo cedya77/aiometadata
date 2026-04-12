@@ -609,19 +609,19 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             <CardContent>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
                   <span>Automatically track anime episodes you watch</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
                   <span>Progress syncs to your AniList profile</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />
-                  <span>Anime status automatically updates (Watching → Completed)</span>
+                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
+                  <span>Anime status automatically updates (Watching â†’ Completed)</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
                   <span>Import your anime lists as browsable catalogs</span>
                 </li>
               </ul>

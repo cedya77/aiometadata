@@ -131,7 +131,7 @@ function processAndIndexData(data) {
         }
       }
     } catch (e) {
-      throw new Error(`Failed to parse anime list JSON: ${e.message}`);
+      throw new Error(`Failed to parse anime list JSON: ${e.message}`, { cause: e });
     }
   }
 
@@ -224,11 +224,11 @@ async function downloadAndProcessAnimeList(force = false) {
       const headers = (await httpHead(REMOTE_MAPPING_URL)).headers;
       const remoteEtag = headers.etag;
 
-      logger.debug(`[ID Mapper] [Fribb\'s Anime-List] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
+      logger.debug(`[ID Mapper] [Fribb's Anime-List] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
         try {
-          logger.debug('[ID Mapper] [Fribb\'s Anime-List] No changes detected. Loading from local disk cache...');
+          logger.debug("[ID Mapper] [Fribb's Anime-List] No changes detected. Loading from local disk cache...");
           const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
           processAndIndexData(fileContent);
           // Update last check timestamp even when using cache
@@ -237,16 +237,16 @@ async function downloadAndProcessAnimeList(force = false) {
           }
           return { success: true, message: 'Loaded from cache (no changes)', count: animeIdMap.size };
         } catch (e) {
-          logger.warn('[ID Mapper] [Fribb\'s Anime-List] ETag matched, but local cache was unreadable. Forcing re-download.');
+          logger.warn("[ID Mapper] [Fribb's Anime-List] ETag matched, but local cache was unreadable. Forcing re-download.");
         }
       }
     } else if (force) {
-      logger.debug('[ID Mapper] [Fribb\'s Anime-List] Force update requested. Bypassing ETag check.');
+      logger.debug("[ID Mapper] [Fribb's Anime-List] Force update requested. Bypassing ETag check.");
     } else {
-      logger.debug('[ID Mapper] [Fribb\'s Anime-List] Redis cache is disabled. Proceeding to download.');
+      logger.debug("[ID Mapper] [Fribb's Anime-List] Redis cache is disabled. Proceeding to download.");
     }
 
-    logger.debug('[ID Mapper] [Fribb\'s Anime-List] Downloading full list...');
+    logger.debug("[ID Mapper] [Fribb's Anime-List] Downloading full list...");
     const response = await httpGet(REMOTE_MAPPING_URL);
     let dataToCache;
     let dataForProcessing;
@@ -258,7 +258,7 @@ async function downloadAndProcessAnimeList(force = false) {
         try {
              dataForProcessing = JSON.parse(response.data);
         } catch (e) {
-             throw new Error("Invalid JSON received from remote");
+             throw new Error("Invalid JSON received from remote", { cause: e });
         }
     } else {
         // It came back as an object/array (application/json header)
@@ -280,16 +280,16 @@ async function downloadAndProcessAnimeList(force = false) {
     return { success: true, message: 'Downloaded and updated', count: animeIdMap.size };
 
   } catch (error) {
-    logger.error(`[ID Mapper] [Fribb\'s Anime-List] An error occurred during remote download: ${error.message}`);
+    logger.error(`[ID Mapper] [Fribb's Anime-List] An error occurred during remote download: ${error.message}`);
     logger.debug('[ID Mapper] Attempting to fall back to local disk cache...');
     
     try {
       const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
-      logger.debug('[ID Mapper] [Fribb\'s Anime-List] Successfully loaded data from local cache on fallback.');
+      logger.debug("[ID Mapper] [Fribb's Anime-List] Successfully loaded data from local cache on fallback.");
       processAndIndexData(fileContent); 
       return { success: true, message: 'Loaded from local cache (fallback)', count: animeIdMap.size };
     } catch (fallbackError) {
-      logger.error('[ID Mapper] [Fribb\'s Anime-List] CRITICAL: Fallback to local cache also failed. Mapper will be empty.');
+      logger.error("[ID Mapper] [Fribb's Anime-List] CRITICAL: Fallback to local cache also failed. Mapper will be empty.");
       return { success: false, message: `Failed to update: ${error.message}`, count: 0 };
     }
   }
@@ -1531,7 +1531,7 @@ async function resolveKitsuIdForEpisodeByTvdb(tvdbId, seasonNumber, episodeNumbe
     };
     
   } catch (error) {
-    logger.error(`[ID Mapper] Error in episode-level mapping for TMDB ${tmdbId} S${seasonNumber}E${episodeNumber}:`, error);
+    logger.error(`[ID Mapper] Error in episode-level mapping for TVDB ${tvdbId} S${seasonNumber}E${episodeNumber}:`, error);
     return null;
   }
 }
@@ -2212,7 +2212,6 @@ module.exports = {
   getKitsuToImdbMappingsByImdbId,
   enrichMalEpisodes,
   resolveKitsuIdForEpisodeByTvdb,
-  resolveKitsuIdForEpisodeByTmdb,
   resolveTmdbEpisodeFromKitsu,
   getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb,
   getAllMappings,

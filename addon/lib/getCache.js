@@ -1,6 +1,6 @@
 // FILE: lib/getCache.js
 
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 const redis = require('./redisClient');
 const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
@@ -31,7 +31,7 @@ function parsePositiveIntEnv(envValue, defaultValue, minValue = 1, maxValue = 10
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
-const ADDON_VERSION = packageJson.version;
+const ADDON_VERSION = buildInfo.version;
 
 // --- Time To Live (TTL) constants in seconds ---
 const META_TTL = parseInt(process.env.META_TTL || 7 * 24 * 60 * 60, 10);
@@ -1504,7 +1504,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   const componentNames = Object.keys(componentCacheKeys);
   const cacheKeys = Object.values(componentCacheKeys).map(key => `v${ADDON_VERSION}:${key}`);
   
-  let componentResults = [];
+  let componentResults;
   
   if (cacheKeys.length === 0) {
     componentResults = componentNames.map(componentName => ({ componentName, data: null }));

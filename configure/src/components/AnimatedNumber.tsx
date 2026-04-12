@@ -32,8 +32,8 @@ export function AnimatedNumber({
   const [displayValue, setDisplayValue] = useState(value);
   const [isAnimating, setIsAnimating] = useState(false);
   const prevValueRef = useRef(value);
-  const animationRef = useRef<number>();
-  const startTimeRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
   const startValueRef = useRef<number>(value);
 
   useEffect(() => {
@@ -74,7 +74,7 @@ export function AnimatedNumber({
     animationRef.current = requestAnimationFrame(animate);
 
     return () => {
-      if (animationRef.current) {
+      if (animationRef.current !== null) {
         cancelAnimationFrame(animationRef.current);
       }
     };
@@ -121,7 +121,7 @@ export function FadeValue({
 }) {
   const [displayValue, setDisplayValue] = useState(value);
   const [isFading, setIsFading] = useState(false);
-  const prevValueRef = useRef(value);
+  const prevValueRef = useRef<React.ReactNode>(value);
 
   useEffect(() => {
     if (prevValueRef.current === value) return;

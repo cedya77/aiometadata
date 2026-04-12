@@ -61,14 +61,14 @@ if (MAL_SOCKS_PROXY_URL) {
 if (!malDispatcher) {
   if (HTTP_PROXY_URL) {
     try {
-      malDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString() });
+      malDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
       logger.info('Using global HTTP proxy for Jikan API.');
     } catch (error) {
       logger.warn(`Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      malDispatcher = new Agent({ connect: { timeout: 30000 } });
+      malDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
     }
   } else {
-    malDispatcher = new Agent({ connect: { timeout: 30000 } });
+    malDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
     logger.info('undici agent is enabled for direct connections.');
   }
 }

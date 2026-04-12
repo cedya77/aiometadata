@@ -1,22 +1,23 @@
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { ThemeToggle } from '../ThemeToggle';
 import { useConfig } from '../../contexts/ConfigContext';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
-import { InstallDialog } from '../InstallDialog';
 import { toast } from 'sonner';
-import { compressToEncodedURIComponent } from 'lz-string';
-import { LogIn, LogOut, Eye, EyeOff, BarChart3, Pencil, Check, X } from 'lucide-react';
+import { Bell, LogIn, LogOut, Eye, EyeOff, BarChart3, Pencil, Check, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ChangelogModal } from '../ChangelogBox';
+
+const LazyChangelogModal = lazy(() =>
+  import('../ChangelogBox').then((module) => ({ default: module.ChangelogModal }))
+);
+
 export function Header() {
-  const { addonVersion, config, setConfig, resetConfig, auth, setAuth, hasBuiltInTvdb, hasBuiltInTmdb } = useConfig();
+  const { addonVersion, config, setConfig, resetConfig, auth, setAuth } = useConfig();
   const isLoggedIn = auth.authenticated;
-  const [isInstallOpen, setIsInstallOpen] = useState(false);
-  const [manifestUrl, setManifestUrl] = useState('');
   const [authTransitioning, setAuthTransitioning] = useState(false);
-  
+  const [shouldLoadChangelog, setShouldLoadChangelog] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -111,72 +112,6 @@ export function Header() {
       setRequireAddonPassword(false);
     }
   }, [uuidInput]);
-
-  const openInstall = () => {
-    const tmdbKey = config.apiKeys.tmdb?.trim();
-    const tvdbKey = config.apiKeys.tvdb?.trim();
-    const hasTmdbAvailable = tmdbKey || hasBuiltInTmdb;
-    if (!hasTmdbAvailable) {
-      toast.error('TMDB API Key is Required', {
-        description:
-          "Please go to the 'Integrations' tab and enter your TMDB API key. This is the primary data source for the addon.",
-        duration: 5000,
-      });
-      return;
-    }
-    
-    // Only require TVDB key if it's actually selected as a provider
-    const isTvdbUsedInProviders = 
-      config.providers?.movie === 'tvdb' ||
-      config.providers?.series === 'tvdb' ||
-      config.providers?.anime === 'tvdb';
-      
-    const isTvdbUsedInArt = ['movie', 'series', 'anime'].some(contentType => {
-      const provider = config.artProviders?.[contentType];
-      if (typeof provider === 'string') {
-        return provider === 'tvdb';
-      }
-      if (typeof provider === 'object' && provider !== null) {
-        return provider.poster === 'tvdb' || 
-               provider.background === 'tvdb' || 
-               provider.logo === 'tvdb';
-      }
-      return false;
-    });
-    
-    const isTvdbUsed = isTvdbUsedInProviders || isTvdbUsedInArt;
-    const hasTvdbAvailable = tvdbKey || hasBuiltInTvdb;
-      
-    if (!hasTvdbAvailable && isTvdbUsed) {
-      toast.error('TVDB API Key Required', {
-        description:
-          "You've selected TVDB as a provider, but haven't entered your TVDB API key. Please add it in the 'Integrations' tab or choose a different provider.",
-        duration: 5000,
-      });
-      return;
-    }
-
-    const configToSerialize = {
-      language: config.language,
-      includeAdult: config.includeAdult,
-      blurThumbs: config.blurThumbs,
-      showPrefix: config.showPrefix,
-      providers: config.providers,
-      tvdbSeasonType: config.tvdbSeasonType,
-      apiKeys: config.apiKeys,
-      ageRating: config.ageRating,
-      catalogs: config.catalogs.filter((c) => c.enabled),
-      castCount: config.castCount,
-      search: config.search,
-    };
-    const compressedConfig = compressToEncodedURIComponent(
-      JSON.stringify(configToSerialize)
-    );
-    const host = `${window.location.protocol}//${window.location.host}`;
-    const generatedManifestUrl = `${host}/stremio/preview/${compressedConfig}/manifest.json`;
-    setManifestUrl(generatedManifestUrl);
-    setIsInstallOpen(true);
-  };
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -298,7 +233,29 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <ChangelogModal version={`v${addonVersion}`} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 text-xs sm:text-sm"
+            onClick={() => {
+              setShouldLoadChangelog(true);
+              setIsChangelogOpen(true);
+            }}
+          >
+            <Bell className="h-4 w-4" />
+            <span className="hidden sm:inline">What's New</span>
+            <span className="sm:hidden">Updates</span>
+          </Button>
+          {shouldLoadChangelog ? (
+            <Suspense fallback={null}>
+              <LazyChangelogModal
+                version={`v${addonVersion}`}
+                open={isChangelogOpen}
+                onOpenChange={setIsChangelogOpen}
+                hideTrigger
+              />
+            </Suspense>
+          ) : null}
         <button
           onClick={() => {
             window.open('https://buymeacoffee.com/cedya', '_blank');

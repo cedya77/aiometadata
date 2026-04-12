@@ -516,7 +516,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
         <div className="space-y-6">
           {!isValid && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-              <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <p className="text-sm font-medium">TMDB API Key Required</p>
                 <p className="text-xs text-muted-foreground">
@@ -539,7 +539,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                 <CardContent>
                   {tmdbAuthError && !sessionId && (
                     <div className="mb-3 p-2 rounded-md bg-destructive/10 border border-destructive/20 flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
+                      <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
                       <span className="text-sm text-destructive">{tmdbAuthError}</span>
                     </div>
                   )}

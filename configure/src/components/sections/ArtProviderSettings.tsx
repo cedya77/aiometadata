@@ -134,7 +134,7 @@ export function ArtProviderSettings() {
         
         {/* Search Notice */}
         <div className="flex items-start gap-2 mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
           <p className="text-sm text-blue-800 dark:text-blue-200">
             <strong>Note:</strong> Art provider settings apply to catalogs and detail pages, but not to search results. Search uses the selected search engine's poster sources for faster performance. <strong>Art URL Overrides (configured below) take priority over art provider settings.</strong>
           </p>
@@ -343,7 +343,7 @@ export function ArtProviderSettings() {
         {/* Warning when IMDb settings are affecting anime art providers */}
         {(config.mal?.useImdbIdForCatalogAndSearch || config.providers?.forceAnimeForDetectedImdb) && (
           <div className="flex items-start gap-2 mb-4 p-4 bg-amber-50 dark:bg-amber-950 border-2 border-amber-400 dark:border-amber-600 rounded-lg">
-            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <div className="text-sm text-amber-800 dark:text-amber-200">
               <p className="font-semibold mb-1">⚠️ Important: Anime Art Providers Limited</p>
               <p>
@@ -358,7 +358,7 @@ export function ArtProviderSettings() {
         )}
         
         <div className="flex items-start gap-2 mb-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
           <p className="text-sm text-blue-800 dark:text-blue-200">
             These settings apply only to anime using MAL, AniList, Kitsu, or AniDB as metadata ID. Anime using IMDB IDs will use the Movie or Series art providers instead depending on the type.
           </p>

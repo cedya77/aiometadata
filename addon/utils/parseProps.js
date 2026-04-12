@@ -6,6 +6,7 @@ const tvdb = require('../lib/tvdb');
 const tmdb = require('../lib/getTmdb');
 const imdb = require('../lib/imdb');
 const kitsu = require('../lib/kitsu');
+const jikan = require('../lib/mal');
 const { resolveAllIds } = require('../lib/id-resolver');
 const idMapper = require('../lib/id-mapper');
 const { selectFanartImageByLang } = require('./fanart');
@@ -14,7 +15,7 @@ const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
 const wikiMappings = require('../lib/wiki-mapper.js');
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
-const packageJson = require('../../package.json');
+const buildInfo = require('../lib/buildInfo');
 // Dynamic import to avoid circular dependency
 
 const host = process.env.HOST_NAME.startsWith('http')
@@ -323,6 +324,7 @@ function normalize(str) {
     .toLowerCase()
     .replace(/\s*&\s*/g, ' and ')
     // Convert dashes, underscores, slashes to spaces
+    // eslint-disable-next-line no-useless-escape
     .replace(/[\u2010-\u2015–—−_\/]+/g, ' ')
     // Remove all other non-alphanumeric characters
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
@@ -493,18 +495,20 @@ function sortSearchResults(results, query) {
 
     // Stage 3: Case-by-Case Rules
     switch (item.matchReason) {
-      case "Exact":
+      case "Exact": {
         const isRecent = item.year >= RULES.CURRENT_YEAR - RULES.LQ_EXACT.RECENT_YEAR_SPAN;
         const hasBasicEngagement = item.voteCount >= RULES.LQ_EXACT.MIN_VOTES || item.score >= RULES.LQ_EXACT.MIN_POPULARITY;
         const hasAnyRecentEngagement = isRecent && (item.voteCount > 0 || item.score > 0);
         return hasBasicEngagement || hasAnyRecentEngagement;
+      }
 
-      case "StartsWith":
+      case "StartsWith": {
         const isCurrentYear = item.year === RULES.CURRENT_YEAR;
         if (isCurrentYear) {
           return item.voteCount >= RULES.STARTS_WITH.CURRENT_YEAR_MIN_VOTES || item.score >= RULES.STARTS_WITH.CURRENT_YEAR_MIN_POPULARITY;
         }
         return item.voteCount >= RULES.STARTS_WITH.MIN_VOTES || item.score >= RULES.STARTS_WITH.MIN_POPULARITY;
+      }
 
       case "Contains":
         return item.voteCount >= RULES.CONTAINS.MIN_VOTES && item.similarity >= RULES.CONTAINS.MIN_SIMILARITY;
@@ -1267,13 +1271,10 @@ function parseAnimeRelationsLink(relationsData, type, userUUID) {
 
 
 async function getAnimeGenres() {
-  const url = `${JIKAN_API_BASE}/genres/anime`;
-  return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
-    .catch(e => {
-      logger.error(`Could not fetch anime genres from Jikan`, e.message);
-      return [];
-    });
+  return jikan.getAnimeGenres().catch((e) => {
+    logger.error(`Could not fetch anime genres from Jikan`, e.message);
+    return [];
+  });
 }
 
 
@@ -1503,7 +1504,7 @@ async function checkIfExists(url) {
       maxRedirects: 5, 
       validateStatus: (status) => status >= 200 && status < 300, 
       timeout: 3000, 
-      headers: { 'User-Agent': `AIOMetadata/${packageJson.version}` }
+      headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
     });
     
     // Additional robustness checks
@@ -1523,8 +1524,6 @@ async function checkIfExists(url) {
   } catch (error) {
     if (error.response?.status === 404) {
         return false;
-    }
-    if (error.code && error.code !== 'ERR_BAD_REQUEST') {
     }
     return false;
   }
@@ -1592,9 +1591,6 @@ async function getAnimeBg({ tvdbId, tmdbId, malId, imdbId, malPosterUrl, mediaTy
   // logger.debug(`[getAnimeBg] Fetching background for ${mediaType} with TVDB ID: ${tvdbId}, TMDB ID: ${tmdbId}, MAL ID: ${malId}`);
   const artProvider = resolveArtProvider('anime', 'background', config);
   const mapping = malId ? idMapper.getMappingByMalId(malId) : null;
-  tvdbId = tvdbId 
-  tmdbId = tmdbId 
-  imdbId = imdbId 
   // Check art provider preference
   
   
@@ -3445,7 +3441,6 @@ module.exports = {
   getTvdbCertification,
   getAnimePosterUrl,
   getKitsuLocalizedTitle,
-  isPosterRatingEnabled,
   resolveCustomArtUrl
 };
 
@@ -3464,6 +3459,7 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
   let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.tmdb : mapping?.themoviedb_id;
   let imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
   let tvdbId = stremioType === 'movie' ? (wikiMappings.getByImdbId(imdbId, stremioType))?.tvdbId || null : mapping?.tvdb_id;
+  let poster;
 
   if (useAniList && anilistArtworkMap.has(malId)) {
     const anilistData = anilistArtworkMap.get(malId);
@@ -3568,12 +3564,11 @@ async function getAnimePosterUrl(malId, mapping, stremioType, config, language, 
   
   // Check if poster rating is enabled (RPDB or Top Poster API)
   if (isPosterRatingEnabled(config)) {
-    let proxyId = null;
-    proxyId = (imdbId ? `${imdbId}`: (tmdbId ? `tmdb:${tmdbId}` :  tvdbId ? `tvdb:${tvdbId}` : null));
+    const proxyId = (imdbId ? `${imdbId}` : (tmdbId ? `tmdb:${tmdbId}` : tvdbId ? `tvdb:${tvdbId}` : null));
 
-      if (proxyId) {
-        finalPosterUrl = buildPosterProxyUrl(host, stremioType, proxyId, finalPosterUrl, language, config);
-      }
+    if (proxyId) {
+      finalPosterUrl = buildPosterProxyUrl(host, stremioType, proxyId, finalPosterUrl, language, config);
+    }
   }
 
   return finalPosterUrl;

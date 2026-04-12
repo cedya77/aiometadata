@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 
 interface LoadingScreenProps {
   message?: string;
@@ -69,49 +68,6 @@ export function LoadingScreen({
             )}
           </CardContent>
         </Card>
-      </div>
-    </div>
-  );
-}
-
-// Alternative minimal loading component
-export function MinimalLoadingScreen({ message = "Loading..." }: { message?: string }) {
-  return (
-    <div className="min-h-screen w-full bg-background flex items-center justify-center">
-      <div className="text-center">
-        <div className="relative mb-4">
-          <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
-        </div>
-        <p className="text-muted-foreground">{message}</p>
-      </div>
-    </div>
-  );
-}
-
-// Fancy gradient loading component
-export function GradientLoadingScreen({ message = "Loading configuration..." }: { message?: string }) {
-  return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center">
-      <div className="text-center">
-        <div className="relative mb-6">
-          <div className="w-12 h-12 bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full animate-pulse" />
-          <div className="absolute inset-0 w-12 h-12 bg-gradient-to-r from-primary/20 to-transparent rounded-full animate-ping" />
-        </div>
-        <h3 className="text-lg font-medium mb-2">{message}</h3>
-        <div className="flex justify-center space-x-1">
-          {[...Array(3)].map((_, i) => (
-            <div
-              key={i}
-              className={cn(
-                "w-2 h-2 bg-primary rounded-full animate-bounce",
-                i === 0 && "animate-bounce",
-                i === 1 && "animate-bounce",
-                i === 2 && "animate-bounce"
-              )}
-              style={{ animationDelay: `${i * 150}ms` }}
-            />
-          ))}
-        </div>
       </div>
     </div>
   );

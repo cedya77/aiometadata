@@ -27,9 +27,10 @@ const getOpenRouterProxyUrl = () => {
 const createOpenRouterDispatcher = () => {
   const proxyUrl = getOpenRouterProxyUrl();
   if (proxyUrl) {
-    return new ProxyAgent({ uri: proxyUrl });
+    return new ProxyAgent({ uri: proxyUrl, allowH2: false });
   }
   return new Agent({
+    allowH2: false,
     keepAliveTimeout: 30000,
     keepAliveMaxTimeout: 60000,
     connections: 50,

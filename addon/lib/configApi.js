@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { request, Agent, ProxyAgent } = require("undici");
 const database = require('./database');
-const packageJson = require('../../package.json');
+const buildInfo = require('./buildInfo');
 const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error']);
 const isKnownKeyValidationStatus = (status) =>
   typeof status === 'string' && KEY_VALIDATION_STATUS_SET.has(status);
@@ -18,7 +18,7 @@ const createGeminiDispatcher = () => {
   const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
   if (geminiProxy) {
     try {
-      return new ProxyAgent({ uri: new URL(geminiProxy).toString() });
+      return new ProxyAgent({ uri: new URL(geminiProxy).toString(), allowH2: false });
     } catch (error) {
       console.warn("Invalid Gemini proxy URL:", geminiProxy);
     }
@@ -27,13 +27,14 @@ const createGeminiDispatcher = () => {
   const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
   if (globalProxy) {
     try {
-      return new ProxyAgent({ uri: new URL(globalProxy).toString() });
+      return new ProxyAgent({ uri: new URL(globalProxy).toString(), allowH2: false });
     } catch (error) {
       console.warn("Invalid global proxy URL:", globalProxy);
     }
   }
   // No proxy configured - use direct connection
   return new Agent({
+    allowH2: false,
     keepAliveTimeout: 10000,
     connections: 10,
   });
@@ -1112,7 +1113,7 @@ class ConfigApi {
         try {
           const response = await request(url, {
             ...options,
-            headers: { "User-Agent": `AIOMetadata/${packageJson.version}`, ...options.headers },
+            headers: { "User-Agent": `AIOMetadata/${buildInfo.version}`, ...options.headers },
             signal: AbortSignal.timeout(5000),
           });
 

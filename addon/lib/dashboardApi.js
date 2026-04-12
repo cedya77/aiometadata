@@ -12,6 +12,7 @@ const { getImdbRatingsStatsForDashboard, getRatingsStats } = require('./imdbRati
 const { getWarmupStats: getEssentialWarmupStats } = require('./cacheWarmer');
 const { getWarmupStats: getMALWarmupStats } = require('./malCatalogWarmer');
 const { getWarmupStats: getCatalogWarmupStats } = require('./comprehensiveCatalogWarmer');
+const { getTraktMemoryStats } = require('../utils/traktUtils');
 
 class DashboardAPI {
   constructor(cache, idMapper, config, database, requestTracker) {
@@ -1191,7 +1192,7 @@ class DashboardAPI {
     try { caches.tvdb = require('./tvdb').getMemoryStats(); } catch {}
     try { caches.mal = require('./mal').getMemoryStats(); } catch {}
     try { caches.fanart = require('../utils/fanart').getMemoryStats(); } catch {}
-    try { caches.trakt = require('../utils/traktUtils').getTraktMemoryStats(); } catch {}
+    try { caches.trakt = getTraktMemoryStats(); } catch {}
     try {
       const anilist = require('./anilist');
       caches.anilist = anilist.getCacheStats ? anilist.getCacheStats() : { cache: 0 };
@@ -1920,7 +1921,7 @@ class DashboardAPI {
           await new Promise((resolve) => setTimeout(resolve, 3000));
           break;
           
-        case "expired":
+        case "expired": {
           // Clear keys that are close to expiration (TTL < 1 hour)
           const expiredKeys = [];
           
@@ -1951,6 +1952,7 @@ class DashboardAPI {
             deletedCount = expiredKeys.length;
           }
           break;
+        }
           
         case "metadata":
           // Clear metadata-related keys using SCAN with MATCH

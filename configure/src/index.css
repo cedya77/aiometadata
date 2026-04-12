@@ -1,6 +1,20 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@config "../../tailwind.config.mts";
+
+/*
+  Tailwind CSS v4 changed the default border color to `currentcolor`.
+  Keep the previous app baseline until component-by-component cleanup.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
  
 @layer base {
   :root {
@@ -58,26 +72,12 @@
   }
 }
 
-@layer utilities {
-  /* Checkbox ripple effect */
-  @keyframes checkbox-ripple {
-    0% {
-      transform: scale(0);
-      opacity: 0.5;
-    }
-    100% {
-      transform: scale(2);
-      opacity: 0;
-    }
-  }
+@utility checkbox-ripple {
+  position: relative;
+  overflow: visible;
 
-  .checkbox-ripple {
-    position: relative;
-    overflow: visible;
-  }
-
-  .checkbox-ripple::after {
-    content: '';
+  &::after {
+    content: "";
     position: absolute;
     top: 50%;
     left: 50%;
@@ -90,11 +90,36 @@
     pointer-events: none;
   }
 
-  .checkbox-ripple.ripple-active::after {
+  &.ripple-active::after {
     animation: checkbox-ripple 0.6s ease-out;
   }
+}
 
-  /* Fade-in animation for selection counter */
+@utility ripple-active {
+  &.checkbox-ripple::after {
+    animation: checkbox-ripple 0.6s ease-out;
+  }
+}
+
+@utility animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@utility animate-slide-down {
+  animation: slide-down 0.2s ease-out;
+}
+
+@layer utilities {
+  @keyframes checkbox-ripple {
+    0% {
+      transform: scale(0);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
   @keyframes fade-in {
     from {
       opacity: 0;
@@ -105,12 +130,6 @@
       transform: translateY(0);
     }
   }
-
-  .animate-fade-in {
-    animation: fade-in 0.2s ease-out;
-  }
-
-  /* Slide-down animation for BulkActionBar */
   @keyframes slide-down {
     from {
       opacity: 0;
@@ -121,12 +140,6 @@
       transform: translateY(0);
     }
   }
-
-  .animate-slide-down {
-    animation: slide-down 0.2s ease-out;
-  }
-
-  /* Respect prefers-reduced-motion */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -141,6 +154,7 @@
     }
   }
 }
+
 /* --- FIX FOR TREMOR/RECHARTS GRAPH VISIBILITY --- */
 
 /* 1. Make the numbers on the X and Y axis light gray in dark mode */

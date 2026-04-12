@@ -36,7 +36,7 @@ function StarRating({ value, onChange, max = 10 }: StarRatingProps) {
   };
 
   const Star = ({ fill }: { fill: 0 | 50 | 100 }) => (
-    <div className="relative w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0">
+    <div className="relative w-8 h-8 sm:w-10 sm:h-10 shrink-0">
       <div className="transition-transform duration-150 hover:scale-110">
         <svg viewBox="0 0 24 24" className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground/40 dark:text-muted-foreground/30">
           <path d="M12 .587l3.668 7.431L24 9.748l-6 5.847L19.335 24 12 19.897 4.665 24 6 15.595 0 9.748l8.332-1.73z" fill="none" stroke="currentColor" strokeWidth="1.2" />
@@ -62,7 +62,7 @@ function StarRating({ value, onChange, max = 10 }: StarRatingProps) {
         onMouseMove={(e) => handleMove(e, i)}
         onMouseLeave={handleLeave}
         onClick={(e) => handleClick(e, i)}
-        className="inline-flex items-center justify-center px-1 sm:px-1.5 cursor-pointer touch-manipulation flex-shrink-0"
+        className="inline-flex items-center justify-center px-1 sm:px-1.5 cursor-pointer touch-manipulation shrink-0"
         role="button"
         aria-label={`Rate ${i} star${i > 1 ? "s" : ""}`}
       >
@@ -74,7 +74,7 @@ function StarRating({ value, onChange, max = 10 }: StarRatingProps) {
   return <div className="flex items-center justify-center gap-1 sm:gap-1.5 flex-nowrap w-full overflow-x-auto scrollbar-hide py-2">{stars}</div>;
 }
 
-export default function RatingPage(): JSX.Element {
+export default function RatingPage(): React.JSX.Element {
   const [uuid, setUuid] = useState<string>((window as any).RATING_USER || "");
   const [stremioId, setStremioId] = useState<string>((window as any).RATING_ID || "");
   const [type, setType] = useState<string>((window as any).RATING_TYPE || "Series");
@@ -398,7 +398,7 @@ export default function RatingPage(): JSX.Element {
                                   <img 
                                     src="https://trakt.tv/assets/logos/logomark.square.gradient-b644b16c38ff775861b4b1f58c1230f6a097a2466ab33ae00445a505c33fcb91.svg" 
                                     alt="Trakt" 
-                                    className="w-5 h-5 flex-shrink-0"
+                                    className="w-5 h-5 shrink-0"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
                                     }}
@@ -420,7 +420,7 @@ export default function RatingPage(): JSX.Element {
                                   <img 
                                     src="https://anilist.co/img/logo_al.png" 
                                     alt="AniList" 
-                                    className="w-5 h-5 flex-shrink-0"
+                                    className="w-5 h-5 shrink-0"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
                                     }}
@@ -442,7 +442,7 @@ export default function RatingPage(): JSX.Element {
                                   <img 
                                     src="https://mdblist.com/static/mdblist.png" 
                                     alt="MDBList" 
-                                    className="w-5 h-5 flex-shrink-0"
+                                    className="w-5 h-5 shrink-0"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
                                     }}
