@@ -2934,8 +2934,8 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
         consola.info(`[Cache] Cleared ${deleted} keys matching pattern: ${key}`);
         res.json({
           success: true,
-          message: `Cleared ${keys.length} cache keys matching pattern: ${key}`,
-          keysCleared: keys.length
+          message: `Cleared ${deleted} cache keys matching pattern: ${key}`,
+          keysCleared: deleted
         });
       } else {
         res.json({
@@ -3704,10 +3704,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
             metas = searchResult.metas || [];
             break;
           }
-          default:
+          default: {
             const skipValue = extraArgs.skip ? parseInt(extraArgs.skip) : undefined;
             metas = (await getCatalog(actualType, language, page, cleanId, genreName, config, userUUID, false, skipValue)).metas;
             break;
+          }
       }
       return { metas: metas || [] };
     }, undefined, cacheOptions);
@@ -5291,7 +5292,7 @@ addon.post('/api/cache/invalidate-user/:userUUID', async (req, res) => {
       res.json({
         success: true,
         message: `Cache invalidated for user ${userUUID}`,
-        cacheEntriesCleared: keys.length
+        cacheEntriesCleared: deleted
       });
     } else {
       res.json({

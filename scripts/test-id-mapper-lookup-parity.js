@@ -59,14 +59,14 @@ function parseAnimeListRaw(raw, filePath) {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new Error(`Failed to parse JSON in ${filePath}: ${error.message}`);
+    throw new Error(`Failed to parse JSON in ${filePath}: ${error.message}`, { cause: error });
   }
 
   if (typeof parsed === 'string') {
     try {
       parsed = JSON.parse(parsed);
     } catch (error) {
-      throw new Error(`Failed to parse double-encoded JSON in ${filePath}: ${error.message}`);
+      throw new Error(`Failed to parse double-encoded JSON in ${filePath}: ${error.message}`, { cause: error });
     }
   }
 

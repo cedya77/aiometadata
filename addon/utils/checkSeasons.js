@@ -64,7 +64,7 @@ async function checkSeasonsAndReport(tmdbId, imdbId, resp, name) {
 
   // 2. Number of seasons from Stremio
   const stremioUrl = `https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`;
-  let stremioSeasons = 0;
+  let stremioSeasons;
   let stremioName = name;
   try {
     const stremioResp = await axios.get(stremioUrl);

@@ -1001,7 +1001,7 @@ async function getManifest(config) {
           };
       }
       const catalogDef = getCatalogDefinition(userCatalog.id);
-      let catalogOptions = [];
+      let catalogOptions;
 
       if (userCatalog.id.startsWith('tvdb.') && !userCatalog.id.includes('collections')) {
         const excludedGenres = ['awards show', 'podcast', 'game show', 'news'];

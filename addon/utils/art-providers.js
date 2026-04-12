@@ -117,29 +117,30 @@ async function fetchAndSelectArt(mediaType, allIds, config) {
     }
   });
 
-  const { tmdb: tmdbImages, fanart: fanartImages, tvdb: tvdbData, imdb: imdbArt } = fetchedData;
+  const { tmdb: tmdbImages, fanart: fanartImages, tvdb: tvdbData, imdb: imdbArt, tvmaze: tvmazeImages } = fetchedData;
 
   // STEP 4: Select the final art URL for each type based on preference and availability.
   const select = (type, provider) => {
     switch (provider) {
-        case 'fanart':
-            if (!fanartImages) return null;
-            
-            // This is where the logic from the old getBest... functions now lives.
-            let imageArray;
-            if (mediaType === 'movie') {
-              if (type === 'logo') imageArray = fanartImages.hdmovielogo;
-              else if (type === 'poster') imageArray = fanartImages.movieposter;
-              else if (type === 'background') imageArray = fanartImages.moviebackground;
-            } else { // series
-              if (type === 'logo') imageArray = fanartImages.hdtvlogo;
-              else if (type === 'poster') imageArray = fanartImages.tvposter;
-              else if (type === 'background') imageArray = fanartImages.showbackground;
-            }
-            
-            const bestImage = fanart.selectFanartImageByLang(imageArray, config);
-            return bestImage ? bestImage.url : null;
-      case 'tvdb':
+      case 'fanart': {
+        if (!fanartImages) return null;
+
+        // This is where the logic from the old getBest... functions now lives.
+        let imageArray;
+        if (mediaType === 'movie') {
+          if (type === 'logo') imageArray = fanartImages.hdmovielogo;
+          else if (type === 'poster') imageArray = fanartImages.movieposter;
+          else if (type === 'background') imageArray = fanartImages.moviebackground;
+        } else { // series
+          if (type === 'logo') imageArray = fanartImages.hdtvlogo;
+          else if (type === 'poster') imageArray = fanartImages.tvposter;
+          else if (type === 'background') imageArray = fanartImages.showbackground;
+        }
+
+        const bestImage = fanart.selectFanartImageByLang(imageArray, config);
+        return bestImage ? bestImage.url : null;
+      }
+      case 'tvdb': {
         if (!tvdbData || !tvdbData.artworks) return null;
         
         let artwork;
@@ -156,20 +157,24 @@ async function fetchAndSelectArt(mediaType, allIds, config) {
         
         // Return the full URL if an artwork was found
         return artwork?.image ? artwork.image : null;
+      }
       case 'imdb':
         if (!imdbArt) return null;
         if (type === 'logo' && imdbArt.logo) return imdbArt.logo;
-      case 'tvmaze':
+        return null;
+      case 'tvmaze': {
         if (!tvmazeImages) return null;
         const tvmazeImageTypeKey = type === 'background' ? 'backdrops' : type + 's'; // posters, logos
         const tvmazeSelectedImage = tvmaze.selectTvmazeImageByLang(tvmazeImages[tvmazeImageTypeKey], config);
         return tvmazeSelectedImage ? tvmazeSelectedImage.url : null;
-      case 'tmdb':
+      }
+      case 'tmdb': {
         if (!tmdbImages) return null;
         const imageTypeKey = type === 'background' ? 'backdrops' : type + 's'; // posters, logos
         const selectedImage = tmdb.selectTmdbImageByLang(tmdbImages[imageTypeKey], config);
         if (!selectedImage) return null;
         return `https://image.tmdb.org/t/p/original${selectedImage.file_path}`;
+      }
     }
     return null;
   };

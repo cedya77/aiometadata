@@ -43,7 +43,7 @@ function convertTvdbToCinemetaGenres(tvdbGenres, mediaType) {
 
     const lowerTvdbGenre = tvdbGenre.name.toLowerCase();
     
-    if (tvdbToTMDBMap.hasOwnProperty(lowerTvdbGenre)) {
+    if (Object.prototype.hasOwnProperty.call(tvdbToTMDBMap, lowerTvdbGenre)) {
       const mapping = tvdbToTMDBMap[lowerTvdbGenre];
 
       if (mapping === null) {

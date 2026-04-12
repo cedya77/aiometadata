@@ -375,25 +375,26 @@ class Database {
     const conditions = [];
     const params = [];
     let paramIndex = 1;
+    const nextParam = () => `$${paramIndex++}`;
 
     // Add content type parameter first
     params.push(contentType);
-    const contentTypeCondition = this.type === 'sqlite' ? 'content_type = ?' : `content_type = $${paramIndex++}`;
+    const contentTypeCondition = this.type === 'sqlite' ? 'content_type = ?' : `content_type = ${nextParam()}`;
 
     if (tmdbId) {
-      conditions.push(this.type === 'sqlite' ? 'tmdb_id = ?' : `tmdb_id = $${paramIndex++}`);
+      conditions.push(this.type === 'sqlite' ? 'tmdb_id = ?' : `tmdb_id = ${nextParam()}`);
       params.push(tmdbId);
     }
     if (tvdbId) {
-      conditions.push(this.type === 'sqlite' ? 'tvdb_id = ?' : `tvdb_id = $${paramIndex++}`);
+      conditions.push(this.type === 'sqlite' ? 'tvdb_id = ?' : `tvdb_id = ${nextParam()}`);
       params.push(tvdbId);
     }
     if (imdbId) {
-      conditions.push(this.type === 'sqlite' ? 'imdb_id = ?' : `imdb_id = $${paramIndex++}`);
+      conditions.push(this.type === 'sqlite' ? 'imdb_id = ?' : `imdb_id = ${nextParam()}`);
       params.push(imdbId);
     }
     if (tvmazeId) {
-      conditions.push(this.type === 'sqlite' ? 'tvmaze_id = ?' : `tvmaze_id = $${paramIndex++}`);
+      conditions.push(this.type === 'sqlite' ? 'tvmaze_id = ?' : `tvmaze_id = ${nextParam()}`);
       params.push(tvmazeId);
     }
 
@@ -511,7 +512,11 @@ class Database {
   // Delete user and all associated data
   async deleteUser(userUUID) {
     try {
-      await this.deleteUserConfig(userUUID);
+      const query = this.type === 'sqlite'
+        ? 'DELETE FROM user_configs WHERE user_uuid = ?'
+        : 'DELETE FROM user_configs WHERE user_uuid = $1';
+      const result = await this.runQuery(query, [userUUID]);
+      const userDeleted = this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
       
       // Delete from trusted_uuids table
       const deleteTrustedQuery = this.type === 'sqlite'
@@ -520,6 +525,7 @@ class Database {
       await this.runQuery(deleteTrustedQuery, [userUUID]);
       
       logger.info(`Successfully deleted user ${userUUID} and all associated data`);
+      return userDeleted;
     } catch (error) {
       logger.error(`Error deleting user ${userUUID}:`, error);
       throw error;
@@ -786,22 +792,6 @@ class Database {
     } catch (error) {
       logger.error('Error resetting user password:', error);
       return null;
-    }
-  }
-
-  // Delete user
-  async deleteUser(userUUID) {
-    try {
-      const query = this.type === 'sqlite'
-        ? 'DELETE FROM user_configs WHERE user_uuid = ?'
-        : 'DELETE FROM user_configs WHERE user_uuid = $1';
-
-      const result = await this.runQuery(query, [userUUID]);
-      
-      return this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
-    } catch (error) {
-      logger.error('Error deleting user:', error);
-      return false;
     }
   }
 

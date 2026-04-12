@@ -237,19 +237,21 @@ async function main() {
       case 'scenarios':
         calculator.calculateScenarios();
         break;
-      case 'detailed':
+      case 'detailed': {
         const entryCount = parseInt(args[0]) || 1000000;
         const dbType = args[1] || 'sqlite';
         calculator.calculateDetailed(entryCount, dbType);
         calculator.showRecommendations(entryCount);
         break;
-      case 'memory':
+      }
+      case 'memory': {
         const count = parseInt(args[0]) || 1000000;
         const memory = calculator.calculateMemoryUsage(count);
         console.log(`\n🧠 Memory Usage for ${count.toLocaleString()} entries:\n`);
         console.log(`SQLite:     ${memory.sqlite.memory} MB (recommended: ${memory.sqlite.recommended} MB)`);
         console.log(`PostgreSQL: ${memory.postgresql.memory} MB (recommended: ${memory.postgresql.recommended} MB)`);
         break;
+      }
       default:
         showHelp();
     }

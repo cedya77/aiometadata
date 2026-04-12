@@ -59,59 +59,48 @@ async function httpRequest(url, options = {}) {
     }
   }
 
-  try {
-    const { statusCode, headers, body } = await request(url, requestOptions);
+  const { statusCode, headers: responseHeaders, body } = await request(url, requestOptions);
 
-    const contentType =
-      headers['content-type'] ||
-      headers['Content-Type'] ||
-      '';
+  const contentType =
+    responseHeaders['content-type'] ||
+    responseHeaders['Content-Type'] ||
+    '';
 
-    if (statusCode >= 200 && statusCode < 300) {
-      // HEAD usually has no body; don't try to parse
-      if (method === 'HEAD') {
-        return {
-          data: null,
-          status: statusCode,
-          headers
-        };
-      }
-
-      const text = await body.text();
-
-      let responseData = null;
-
-      // Only parse as JSON if the server says it is JSON
-      if (contentType.includes('application/json')) {
-        responseData = text ? JSON.parse(text) : null;
-      } else {
-        // For HTML / plain text / whatever else, just return raw text
-        responseData = text;
-      }
-
+  if (statusCode >= 200 && statusCode < 300) {
+    // HEAD usually has no body; don't try to parse
+    if (method === 'HEAD') {
       return {
-        data: responseData,
+        data: null,
         status: statusCode,
-        headers
+        headers: responseHeaders
       };
-    } else if (statusCode === 304) {
-      const error = new Error(`Not Modified`);
-      error.response = {
-        status: 304,
-        headers
-      };
-      throw error;
-    } else {
-      const errorText = await body.text();
-      const error = new Error(`Request failed with status code ${statusCode}`);
-      error.response = {
-        status: statusCode,
-        data: errorText,
-        headers
-      };
-      throw error;
     }
-  } catch (error) {
+
+    const text = await body.text();
+    const responseData = contentType.includes('application/json')
+      ? (text ? JSON.parse(text) : null)
+      : text;
+
+    return {
+      data: responseData,
+      status: statusCode,
+      headers: responseHeaders
+    };
+  } else if (statusCode === 304) {
+    const error = new Error(`Not Modified`);
+    error.response = {
+      status: 304,
+      headers: responseHeaders
+    };
+    throw error;
+  } else {
+    const errorText = await body.text();
+    const error = new Error(`Request failed with status code ${statusCode}`);
+    error.response = {
+      status: statusCode,
+      data: errorText,
+      headers: responseHeaders
+    };
     throw error;
   }
 }

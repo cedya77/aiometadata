@@ -1920,7 +1920,7 @@ class DashboardAPI {
           await new Promise((resolve) => setTimeout(resolve, 3000));
           break;
           
-        case "expired":
+        case "expired": {
           // Clear keys that are close to expiration (TTL < 1 hour)
           const expiredKeys = [];
           
@@ -1951,6 +1951,7 @@ class DashboardAPI {
             deletedCount = expiredKeys.length;
           }
           break;
+        }
           
         case "metadata":
           // Clear metadata-related keys using SCAN with MATCH

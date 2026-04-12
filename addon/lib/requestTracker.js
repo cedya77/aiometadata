@@ -255,7 +255,7 @@ class RequestTracker {
 
       // Track meta requests
       if (path.includes("/meta/")) {
-        const metaMatch = path.match(/\/meta\/([^\/]+)\/([^\/]+)/);
+        const metaMatch = path.match(/\/meta\/([^/]+)\/([^/]+)/);
         if (metaMatch) {
           let [, type, id] = metaMatch;
 
@@ -1524,7 +1524,7 @@ class RequestTracker {
 
     // Get basic browser info (just browser name, not version)
     const userAgent = req.get("User-Agent") || "unknown";
-    let browserType = "unknown";
+    let browserType;
     if (userAgent.includes("Chrome")) browserType = "chrome";
     else if (userAgent.includes("Firefox")) browserType = "firefox";
     else if (userAgent.includes("Safari")) browserType = "safari";

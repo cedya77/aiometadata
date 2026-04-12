@@ -1504,7 +1504,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   const componentNames = Object.keys(componentCacheKeys);
   const cacheKeys = Object.values(componentCacheKeys).map(key => `v${ADDON_VERSION}:${key}`);
   
-  let componentResults = [];
+  let componentResults;
   
   if (cacheKeys.length === 0) {
     componentResults = componentNames.map(componentName => ({ componentName, data: null }));

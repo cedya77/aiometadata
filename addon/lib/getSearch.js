@@ -59,7 +59,7 @@ function getDefaultProvider(type) {
 
 function sanitizeQuery(query) {
   if (!query) return '';
-  return query.replace(/[\[\]()!?]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
+  return query.replace(/[()[\]!?]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
 }
 
 function isImdbId(query) {
@@ -175,27 +175,28 @@ async function parseTvdbSearchResult(type, extendedRecord, language, config) {
 }
 
 async function performAnimeSearch(type, query, language, config, page = 1) {
-  let searchResults = [];
+  let searchResults;
   switch(type){
     case 'movie':
       logger.debug('Performing anime search for movie:', query);
       searchResults = await jikan.searchAnime('movie', query, 25, config, page);
       break;
-    case 'series':
+    case 'series': {
       const desiredTvTypes = config.mal?.useImdbIdForCatalogAndSearch ?  new Set(['tv', 'ona']) : new Set(['tv', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
         return typeof item?.type === 'string' && desiredTvTypes.has(item.type.toLowerCase());
       });
       break;
-    default:
+    }
+    default: {
       const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona', 'tv special']);
       searchResults = await jikan.searchAnime('anime', query, 25, config, page);
       searchResults = searchResults.filter(item => {
-    return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
-  });
+        return typeof item?.type === 'string' && desiredTypes.has(item.type.toLowerCase());
+      });
       break;
-
+    }
   }
   
   // Early return if no search results
@@ -1704,7 +1705,7 @@ async function performTvmazeSearch(query, language, config, searchPersons = true
 
 function sanitizeTvmazeQuery(query) {
   if (!query) return '';
-  return query.replace(/[\[\]()]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
+  return query.replace(/[()[\]]/g, ' ').replace(/[:.-]/g, ' ').trim().replace(/\s\s+/g, ' ');
 }
 
 async function parseTvmazeResult(show, config) {

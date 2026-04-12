@@ -974,7 +974,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
   const { tmdbId, tvdbId, imdbId } = allIds || {};
   const { poster: imdbPosterUrl, background: imdbBackgroundUrl, logo: imdbLogoUrl } = imdbData;
 
-  let poster, background, logoUrl, landscapePosterUrl;
+  let poster, background, logoUrl;
 
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -983,13 +983,11 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     poster = artwork.poster;
     background = artwork.background;
     logoUrl = artwork.logo;
-    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, landscapePosterUrl] = await Promise.all([
+    [poster, background, logoUrl] = await Promise.all([
       Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
       Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
-      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
-      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: landscapePosterUrl }, config, true)
+      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config)
     ]);
   }
 
@@ -1030,7 +1028,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
         const certificationLink = {
           name: certification,
           category: 'Genres',
-          url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${language}`
+          url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${config.language}`
         };
         if (!Array.isArray(imdbData.links)) imdbData.links = [];
         imdbData.links.unshift(certificationLink);
@@ -1052,7 +1050,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
   const { tmdbId, tvdbId, imdbId } = allIds || {};
   const { poster: imdbPosterUrl, background: imdbBackgroundUrl, logo: imdbLogoUrl } = imdbData;
 
-  let poster, background, logoUrl, landscapePosterUrl;
+  let poster, background, logoUrl;
 
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
   // check if stremioId starts with one of the animeIdProviders
@@ -1061,13 +1059,11 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     poster = artwork.poster;
     background = artwork.background;
     logoUrl = artwork.logo;
-    landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
-    [poster, background, logoUrl, landscapePosterUrl] = await Promise.all([
+    [poster, background, logoUrl] = await Promise.all([
       Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackPosterUrl: imdbPosterUrl }, config),
       Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: imdbBackgroundUrl }, config),
-      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config),
-      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackBackgroundUrl: landscapePosterUrl }, config, true)
+      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'imdb', fallbackLogoUrl: imdbLogoUrl }, config)
     ]);
   }
 
@@ -1098,7 +1094,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
       const certificationLink = {
         name: certification,
         category: 'Genres',
-        url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
+        url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${config.language}`
       };
       if (!Array.isArray(imdbData.links)) imdbData.links = [];
       imdbData.links.unshift(certificationLink);
@@ -1237,7 +1233,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
 
   let overview = movieData.overview;
   overview = Utils.processOverviewTranslations(movieData.translations, language, overview);
-  finalTitle = Utils.processTitleTranslations(
+  const finalTitle = Utils.processTitleTranslations(
     movieData.translations,
     language,
     title,
@@ -1640,7 +1636,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           episodeId = `tmdb:${tmdbId}:${ep.season_number}:${ep.episode_number}`;
         }
 
-        let thumbnailUrl = null;
+        let thumbnailUrl;
         {
           const isUnaired = !ep.air_date || createDateInTimezone(ep.air_date, config.timezone || 'UTC') > new Date();
           if (ep.still_path) {
@@ -2187,7 +2183,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     
     videos = await Promise.all(
       episodeList.map(async (episode) => {
-          let thumbnailUrl = null;
+          let thumbnailUrl;
           {
             const isUnaired = !episode.aired || (episode.aired && new Date(episode.aired) > new Date());
             if (episode.image) {
@@ -2476,7 +2472,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   if(includeVideos){
     let specialCount = 1;
     (episodes || []).filter(episode => episode.type.toLowerCase().includes('special')).forEach(episode => {
-      let thumbnailUrl = null;
+      let thumbnailUrl;
       {
         const isUnaired = new Date(episode.airstamp) > new Date();
         if (episode.image?.original) {
@@ -2523,7 +2519,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
       const actualSeason = seasonMap.get(episode.season) || episode.season;
       
       // Use Top Poster API for episode thumbnails if enabled (Premium feature)
-      let thumbnailUrl = null;
+      let thumbnailUrl;
       {
         const isUnaired = new Date(episode.airstamp) > new Date();
         if (episode.image?.original) {
@@ -2631,9 +2627,6 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       else idProvider = 'kitsu';
     }
 
-    if (idProvider === 'kitsu' && kitsuId) {
-      primaryId = `kitsu:${kitsuId}`;
-    }
     const posterUrl = malData.images?.jpg?.large_image_url;
 
     // Use AniList poster if available and configured
@@ -2788,7 +2781,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
               thumbnailUrl = null;
             }
           } else {
-            thumbnailUrl = background || `${host}/missing_thumbnail.png`;
+            thumbnailUrl = bestBackgroundUrl || `${host}/missing_thumbnail.png`;
           }
         }
         

@@ -53,7 +53,9 @@ crush: (string, maxSubstringLength=50)=>
         while(true) // loop while string can be crushed more
         {
             // get the next character that is not in the string
-            for (;replaceCharacterPos-- && string.includes(replaceCharacters[replaceCharacterPos]);){}
+            for (;replaceCharacterPos-- && string.includes(replaceCharacters[replaceCharacterPos]);){
+                // Advance until we find a replacement character that is not already in the string.
+            }
             if (replaceCharacterPos < 0)
                 break; // ran out of replacement characters
             let replaceCharacter = replaceCharacters[replaceCharacterPos];

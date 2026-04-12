@@ -195,9 +195,8 @@ class RedisIdCache {
       const { deleteKeysByPattern } = require('./redisUtils');
       const deleted = await deleteKeysByPattern('id_map:*');
       
-      const keyCount = allKeys.length;
-      logger.success(`[Redis ID Cache] Cleared ${keyCount} keys.`);
-      return keyCount;
+      logger.success(`[Redis ID Cache] Cleared ${deleted} keys.`);
+      return deleted;
     } catch (error) {
       logger.error(`[Redis ID Cache] Error clearing cache:`, error.message);
       return 0;
