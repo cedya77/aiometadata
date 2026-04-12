@@ -2800,31 +2800,6 @@ addon.get("/api/anilist/lists/by-username/:username", async (req, res) => {
   }
 });
 
-// --- ID Mapping Correction Routes (Admin only) ---
-addon.get("/api/corrections", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  configApi.getCorrections(req, res);
-});
-
-addon.post("/api/corrections/add", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  configApi.addCorrection(req, res);
-});
-
-addon.post("/api/corrections/remove", (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  configApi.removeCorrection(req, res);
-});
-
 // --- Admin Configuration Routes ---
 addon.get("/api/config/stats", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;

@@ -2228,27 +2228,6 @@ function DashboardContent({ data, loading }) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Correction Requests</CardTitle>
-            <CardDescription>
-              User feedback and correction submissions
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-8">
-              <div className="text-3xl font-bold text-blue-600 mb-2">
-                {contentQuality.correctionRequests}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Pending corrections
-              </p>
-              <Button className="mt-4" variant="outline">
-                View All
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
       */}
 
