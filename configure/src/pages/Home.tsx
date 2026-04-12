@@ -1,5 +1,4 @@
 import { useConfig } from "@/contexts/ConfigContext";
-import { KoFiDialog } from "react-kofi";
 import {
   Select,
   SelectContent,
@@ -10,6 +9,7 @@ import {
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import packageJson from "../../../package.json";
+import { SupportButton } from "@/components/SupportButton";
 
 
 const languages = [
@@ -305,16 +305,7 @@ export default function Home() {
                 </SelectContent>
               </Select>
             </div>
-            <KoFiDialog
-              color="#01b4e4"
-              textColor="#fff"
-              id="mrcanelas"
-              label="Support me"
-              padding={6}
-              iframe={false}
-              buttonRadius="6px"
-              className="w-full sm:w-auto"
-            />
+            <SupportButton className="w-full sm:w-auto" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-left">
             <div className="bg-white/10 rounded-lg p-6 backdrop-blur-sm">

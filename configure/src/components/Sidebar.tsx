@@ -1,9 +1,7 @@
 import MultiActionButton from "@/components/MultiActionButton";
 import { Home, GalleryVerticalEnd, Puzzle, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { KoFiDialog } from "react-kofi";
-import "react-kofi/dist/styles.css";
-import "@/styles/kofi-dialog.css";
+import { SupportButton } from "@/components/SupportButton";
 
 type Page = "home" | "catalogs" | "integrations" | "others";
 
@@ -65,16 +63,7 @@ export function Sidebar({ isOpen, setIsOpen, currentPage, setCurrentPage }: Side
 
           <div className="p-6 grid place-items-center space-y-3">
             <MultiActionButton />
-            <KoFiDialog
-              color="#01b4e4"
-              textColor="#fff"
-              id="mrcanelas"
-              label="Support me"
-              padding={6}
-              iframe={false}
-              buttonRadius="6px"
-              className="w-full"
-            />
+            <SupportButton className="w-full" />
           </div>
         </div>
       </div>

@@ -74,7 +74,7 @@ function StarRating({ value, onChange, max = 10 }: StarRatingProps) {
   return <div className="flex items-center justify-center gap-1 sm:gap-1.5 flex-nowrap w-full overflow-x-auto scrollbar-hide py-2">{stars}</div>;
 }
 
-export default function RatingPage(): JSX.Element {
+export default function RatingPage(): React.JSX.Element {
   const [uuid, setUuid] = useState<string>((window as any).RATING_USER || "");
   const [stremioId, setStremioId] = useState<string>((window as any).RATING_ID || "");
   const [type, setType] = useState<string>((window as any).RATING_TYPE || "Series");

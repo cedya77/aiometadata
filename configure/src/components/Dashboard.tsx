@@ -1,5 +1,4 @@
 import React, { lazy, Suspense, useState, useEffect, useRef } from "react";
-import { AreaChart, Card as TremorCard, Title, Text, Color, BarList, Flex, Bold } from "@tremor/react";
 import {
   Card,
   CardContent,
@@ -77,6 +76,8 @@ import {
 import {
   LineChart as RechartsLineChart,
   Line,
+  AreaChart as RechartsAreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -91,6 +92,217 @@ import { AnimatedNumber, FadeValue } from "./AnimatedNumber";
 const LazyUserManagementModal = lazy(() =>
   import("./UserManagementModal").then((module) => ({ default: module.UserManagementModal }))
 );
+
+const tremorColorMap: Record<string, string> = {
+  slate: "#64748b",
+  gray: "#6b7280",
+  zinc: "#71717a",
+  neutral: "#737373",
+  stone: "#78716c",
+  red: "#ef4444",
+  orange: "#f97316",
+  amber: "#f59e0b",
+  yellow: "#eab308",
+  lime: "#84cc16",
+  green: "#22c55e",
+  emerald: "#10b981",
+  teal: "#14b8a6",
+  cyan: "#06b6d4",
+  sky: "#0ea5e9",
+  blue: "#3b82f6",
+  indigo: "#6366f1",
+  violet: "#8b5cf6",
+  purple: "#a855f7",
+  fuchsia: "#d946ef",
+  pink: "#ec4899",
+  rose: "#f43f5e",
+};
+
+function Flex({
+  children,
+  className = "",
+  justifyContent = "start",
+  alignItems = "stretch",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  justifyContent?: "start" | "between" | "end" | "center";
+  alignItems?: "start" | "center" | "end" | "stretch";
+}) {
+  const justifyClassName =
+    justifyContent === "between"
+      ? "justify-between"
+      : justifyContent === "end"
+        ? "justify-end"
+        : justifyContent === "center"
+          ? "justify-center"
+          : "justify-start";
+  const alignClassName =
+    alignItems === "center"
+      ? "items-center"
+      : alignItems === "end"
+        ? "items-end"
+        : alignItems === "start"
+          ? "items-start"
+          : "items-stretch";
+
+  return <div className={`flex ${justifyClassName} ${alignClassName} ${className}`.trim()}>{children}</div>;
+}
+
+function Text({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <p className={className}>{children}</p>;
+}
+
+function Bold({ children }: { children: React.ReactNode }) {
+  return <strong>{children}</strong>;
+}
+
+function AreaChart({
+  className,
+  data,
+  index,
+  categories,
+  colors,
+  showXAxis,
+  showYAxis,
+  yAxisWidth,
+  startEndOnly,
+  valueFormatter,
+  customTooltip,
+}: {
+  className?: string;
+  data: Array<Record<string, any>>;
+  index: string;
+  categories: string[];
+  colors: string[];
+  curveType?: string;
+  stack?: boolean;
+  showXAxis?: boolean;
+  showYAxis?: boolean;
+  yAxisWidth?: number;
+  startEndOnly?: boolean;
+  valueFormatter?: (value: number) => string;
+  customTooltip?: ({
+    active,
+    payload,
+    label,
+  }: {
+    active?: boolean;
+    payload?: readonly any[];
+    label?: string | number;
+  }) => React.ReactNode;
+}) {
+  return (
+    <div className={className}>
+      <ResponsiveContainer width="100%" height="100%">
+        <RechartsAreaChart data={data}>
+          <defs>
+            {categories.map((category, indexValue) => {
+              const colorName = colors[indexValue] || "slate";
+              const color = tremorColorMap[colorName] || colorName;
+              const gradientId = `dashboard-area-${category.replace(/\W+/g, "-")}`;
+
+              return (
+                <linearGradient key={gradientId} id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={color} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={color} stopOpacity={0.03} />
+                </linearGradient>
+              );
+            })}
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.35} />
+          {showXAxis ? (
+            <XAxis
+              dataKey={index}
+              interval={startEndOnly ? "preserveStartEnd" : 0}
+              tick={{ fontSize: 12, fill: "#94a3b8" }}
+              stroke="#334155"
+            />
+          ) : null}
+          {showYAxis ? (
+            <YAxis
+              width={yAxisWidth}
+              tick={{ fontSize: 12, fill: "#94a3b8" }}
+              stroke="#334155"
+              tickFormatter={(value) => (valueFormatter ? valueFormatter(Number(value)) : String(value))}
+            />
+          ) : null}
+          <Tooltip
+            content={
+              customTooltip
+                ? ({ active, payload, label }) => customTooltip({ active, payload, label })
+                : undefined
+            }
+          />
+          {categories.map((category, indexValue) => {
+            const colorName = colors[indexValue] || "slate";
+            const color = tremorColorMap[colorName] || colorName;
+            const gradientId = `dashboard-area-${category.replace(/\W+/g, "-")}`;
+
+            return (
+              <Area
+                key={category}
+                type="monotone"
+                dataKey={category}
+                stroke={color}
+                fill={`url(#${gradientId})`}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+            );
+          })}
+        </RechartsAreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function BarList({
+  data,
+  className = "",
+  valueFormatter = (value: number) => String(value),
+}: {
+  data: Array<{ name: string; value: number; icon?: React.ComponentType | (() => React.ReactNode) }>;
+  className?: string;
+  valueFormatter?: (value: number) => string;
+  color?: string;
+}) {
+  const maxValue = Math.max(...data.map((item) => item.value), 1);
+
+  return (
+    <div className={`space-y-3 ${className}`.trim()}>
+      {data.map((item) => {
+        const Icon = item.icon;
+        const percentage = Math.max((item.value / maxValue) * 100, item.value > 0 ? 6 : 0);
+
+        return (
+          <div key={item.name} className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <div className="flex items-center gap-2 truncate font-medium">
+                {Icon ? <Icon /> : null}
+                <span className="truncate">{item.name}</span>
+              </div>
+              <span className="shrink-0 font-mono text-muted-foreground">{valueFormatter(item.value)}</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted">
+              <div
+                className="h-2 rounded-full bg-blue-500 transition-[width]"
+                style={{ width: `${percentage}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const formatBytes = (bytes: number): string => {
   if (!bytes || bytes === 0) return "0 MB";
@@ -4282,6 +4494,7 @@ export function Dashboard() {
           <DashboardOperations
             data={dashboardData.operations}
             loading={dashboardData.loading}
+            activeTab={activeTab}
           />
         ),
       },
