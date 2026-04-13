@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
 import { SimklIntegration } from './SimklIntegration';
@@ -19,7 +20,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy, MoreHorizontal } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -1694,7 +1696,6 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
   onCustomize?: (catalog: CatalogConfig) => void;
   onDuplicateDiscover?: (catalog: CatalogConfig) => void;
 }) => {
-  console.log('catalog:', catalog.id, catalog.source); 
   const { setConfig, config } = useConfig();
   const { toggleSelection, isSelected, selectionCount } = useSelection(); 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
@@ -1841,6 +1842,16 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
     });
   };
 
+  const hasRatingPosters = !!(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern);
+  const hasSettings = catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' ||
+    (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')) ||
+    !!(config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist);
+  const isDiscover = catalog.id.includes('.discover.') && !!catalog.metadata?.discover?.formState;
+  const canDelete = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol', 'publicmetadb'].includes(catalog.source) ||
+    (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
+    (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
+    catalog.id.includes('.discover.');
+
   return (
     <Card
       ref={setNodeRef}
@@ -1851,6 +1862,8 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         "transition-all duration-200 ease-out",
         // Dragging state
         isDragging && "opacity-80 scale-[1.02] shadow-2xl ring-2 ring-primary/50",
+        // Hover lift
+        !isDragging && "hover:-translate-y-[1px] hover:shadow-md",
         // Disabled state
         !catalog.enabled && "opacity-60",
         // Selected state with smooth background transition
@@ -1952,12 +1965,105 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         </div>
       </div>
 
-      {/* Row 2: Action buttons + Source badge */}
-      <div className="flex items-center flex-wrap gap-1 sm:gap-2 mt-3 md:mt-0 md:ml-auto justify-start md:justify-end">
+      {/* Row 2 (Mobile): Compact actions with overflow menu */}
+      <div className="flex md:hidden items-center gap-2 mt-3 justify-between">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-9 w-9 active:scale-90 transition-transform">
+            {catalog.enabled ? (
+              <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
+            ) : (
+              <EyeOff className="h-5 w-5 text-muted-foreground" />
+            )}
+          </Button>
+          <Badge variant="outline" className={`font-semibold text-xs ${badgeStyle}`}>
+            {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
+          </Badge>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9">
+              <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
+              <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
+              {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
+            </DropdownMenuItem>
+            {hasRatingPosters && (
+              <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
+                <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                {catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={handleToggleRandomize} disabled={!catalog.enabled}>
+              <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
+              {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleMoveToTop}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
+                <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
+              </svg>
+              Move to Top
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleMoveToBottom}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
+                <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
+              </svg>
+              Move to Bottom
+            </DropdownMenuItem>
+            {hasSettings && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowSettings(true)}>
+                  <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
+                  Settings
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
+              <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
+              Rename
+            </DropdownMenuItem>
+            {isDiscover && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onEditDiscover?.(catalog)}>
+                  <Wand2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                  Edit Filters
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onDuplicateDiscover?.(catalog)}>
+                  <Copy className="h-4 w-4 mr-2 text-muted-foreground" />
+                  Duplicate
+                </DropdownMenuItem>
+              </>
+            )}
+            {onCustomize && (
+              <DropdownMenuItem onClick={() => onCustomize(catalog)}>
+                <Wand2 className="h-4 w-4 mr-2 text-blue-400" />
+                Clone as Built Catalog
+              </DropdownMenuItem>
+            )}
+            {canDelete && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleDelete} className="text-red-400 focus:text-red-400">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Row 2 (Desktop): Full action buttons + Source badge */}
+      <div className="hidden md:flex items-center flex-wrap gap-2 md:ml-auto justify-end">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={handleToggleEnabled}>
+              <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="active:scale-90 transition-transform">
                 {catalog.enabled ? (
                   <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
                 ) : (
@@ -1975,7 +2081,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 size="icon"
                 onClick={handleToggleShowInHome}
                 disabled={!catalog.enabled}
-                className="disabled:opacity-20 disabled:cursor-not-allowed"
+                className="disabled:opacity-20 disabled:cursor-not-allowed active:scale-90 transition-transform"
               >
                 <Home className={`h-5 w-5 transition-colors ${catalog.showInHome && catalog.enabled ? 'text-blue-500 dark:text-blue-400' : 'text-muted-foreground'}`} />
               </Button>
@@ -1991,7 +2097,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 size="icon"
                 onClick={handleToggleRatingPosters}
                 disabled={!catalog.enabled}
-                className="disabled:opacity-20 disabled:cursor-not-allowed"
+                className="disabled:opacity-20 disabled:cursor-not-allowed active:scale-90 transition-transform"
               >
                 <Star className={`h-5 w-5 transition-colors ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
               </Button>
@@ -2007,7 +2113,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 size="icon"
                 onClick={handleToggleRandomize}
                 disabled={!catalog.enabled}
-                className="disabled:opacity-20 disabled:cursor-not-allowed"
+                className="disabled:opacity-20 disabled:cursor-not-allowed active:scale-90 transition-transform"
                 aria-label="Toggle random order"
               >
                 <Shuffle className={`h-5 w-5 transition-colors ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-500 dark:text-purple-400' : 'text-muted-foreground'}`} />
@@ -2020,7 +2126,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={handleMoveToTop} aria-label="Move to Top" className="h-8 w-8">
+              <Button variant="ghost" size="icon" onClick={handleMoveToTop} aria-label="Move to Top" className="h-8 w-8 active:scale-90 transition-transform">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
                   <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
                 </svg>
@@ -2030,7 +2136,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={handleMoveToBottom} aria-label="Move to Bottom" className="h-8 w-8">
+              <Button variant="ghost" size="icon" onClick={handleMoveToBottom} aria-label="Move to Bottom" className="h-8 w-8 active:scale-90 transition-transform">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
                   <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
                 </svg>
@@ -2046,7 +2152,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             (config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist)) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`}>
+                <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} aria-label={`${catalog.source} Settings`} className="active:scale-90 transition-transform">
                   <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
               </TooltipTrigger>
@@ -2240,6 +2346,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                   size="icon"
                   onClick={() => onEditDiscover?.(catalog)}
                   aria-label="Edit Catalog"
+                  className="active:scale-90 transition-transform"
                 >
                   <Wand2 className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
@@ -2253,6 +2360,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                   size="icon"
                   onClick={() => onDuplicateDiscover?.(catalog)}
                   aria-label="Duplicate Catalog"
+                  className="active:scale-90 transition-transform"
                 >
                   <Copy className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
@@ -2270,6 +2378,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                       size="icon"
                       onClick={() => onCustomize(catalog)}
                       aria-label="Customize as Discover Catalog"
+                      className="active:scale-90 transition-transform"
                     >
                       <Wand2 className="h-5 w-5 text-blue-500 hover:text-blue-600" />
                     </Button>
@@ -2284,7 +2393,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             catalog.id.includes('.discover.')) && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog">
+                <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog" className="active:scale-90 transition-transform">
                   <Trash2 className="h-5 w-5 text-red-500" />
                 </Button>
               </TooltipTrigger>
@@ -2563,6 +2672,9 @@ function CatalogsSettingsContent({
   );
 
 
+  const isInitialMount = useRef(true);
+  useEffect(() => { isInitialMount.current = false; }, []);
+
   const [hasChosenCatalogSetup, setHasChosenCatalogSetup] = useState(
     () => config.catalogSetupComplete === true
   );
@@ -2611,6 +2723,9 @@ function CatalogsSettingsContent({
       ...prev,
       catalogs: [...prev.catalogs, newCatalog],
     }));
+    toast.success('Catalog duplicated', {
+      description: `${newCatalog.name} added to your catalog list`
+    });
   };
   
   const handleLoadDefaults = () => {
@@ -3710,9 +3825,20 @@ function CatalogsSettingsContent({
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
-            {filteredCatalogs.map((catalog) => (
-              <SortableCatalogItem
+            <AnimatePresence mode="popLayout" initial={false}>
+            {filteredCatalogs.map((catalog, index) => (
+              <motion.div
                 key={`${catalog.id}-${catalog.type}`}
+                layout
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
+                transition={{
+                  duration: 0.2,
+                  delay: isInitialMount.current ? Math.min(index * 0.015, 0.5) : 0,
+                }}
+              >
+              <SortableCatalogItem
                 catalog={catalog}
                 onEditDiscover={(cat) => {
                   setEditingDiscoverCatalog(cat);
@@ -3721,7 +3847,9 @@ function CatalogsSettingsContent({
                 onCustomize={DEFAULT_CATALOG_TEMPLATES[catalog.id] ? handleCustomize : undefined}
                 onDuplicateDiscover={handleDuplicateDiscover}
               />
+              </motion.div>
             ))}
+            </AnimatePresence>
             </div>
           </SortableContext>
         </DndContext>

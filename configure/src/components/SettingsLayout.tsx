@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ComponentType, type LazyExoticComponent } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 
@@ -82,6 +83,15 @@ export function SettingsLayout() {
   const [activeDesktopTab, setActiveDesktopTab] = useState<SettingsPageValue>('presets');
   const [activeMobileSection, setActiveMobileSection] = useState<SettingsPageValue | undefined>(undefined);
   const layoutRootRef = useRef<HTMLDivElement | null>(null);
+  const slideDirection = useRef(0);
+  const prevTabIndex = useRef(0);
+
+  const handleTabChange = useCallback((value: string) => {
+    const newIndex = settingsPages.findIndex(p => p.value === value);
+    slideDirection.current = newIndex > prevTabIndex.current ? 1 : -1;
+    prevTabIndex.current = newIndex;
+    setActiveDesktopTab(value as SettingsPageValue);
+  }, []);
 
   const scrollLayoutToTop = useCallback(() => {
     if (layoutRootRef.current) {
@@ -101,6 +111,9 @@ export function SettingsLayout() {
       const isKnownTab = settingsPages.some((page) => page.value === nextTab);
       if (!isKnownTab) return;
 
+      const newIndex = settingsPages.findIndex(p => p.value === nextTab);
+      slideDirection.current = newIndex > prevTabIndex.current ? 1 : -1;
+      prevTabIndex.current = newIndex;
       setActiveDesktopTab(nextTab);
       setActiveMobileSection(nextTab);
 
@@ -147,51 +160,71 @@ export function SettingsLayout() {
     );
   }
 
-  // --- RENDER ACCORDION ON MOBILE ---
+  // --- RENDER PUSH-POP NAVIGATION ON MOBILE ---
   if (isMobile) {
+    const activePage = settingsPages.find(p => p.value === activeMobileSection);
+
     return (
-      <div ref={layoutRootRef} className="w-full space-y-6">
-        <Accordion
-          type="single"
-          collapsible
-          className="w-full"
-          value={activeMobileSection}
-          onValueChange={(value) => setActiveMobileSection(value ? (value as SettingsPageValue) : undefined)}
-        >
-          {settingsPages.map((page, index) => (
-            <AccordionItem 
-              value={page.value} 
-              key={page.value}
-              // FIX: Use theme-aware border
-              className={index === settingsPages.length - 1 ? "border-b-0" : "border-b"}
+      <div ref={layoutRootRef} className="w-full overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          {!activeMobileSection ? (
+            <motion.div
+              key="menu"
+              initial={{ opacity: 0, x: -60 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -60 }}
+              transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+              className="space-y-1"
             >
-              <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
-                {page.title}
-              </AccordionTrigger>
-              <AccordionContent className="pt-2 pb-6">
-                {activeMobileSection === page.value ? renderSettingsPage(page) : null}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-        
-        {/* Buy Me a Coffee Button */}
-        <div className="flex justify-center pt-4">
-          <button
-            onClick={() => {
-              window.open('https://buymeacoffee.com/cedya', '_blank');
-            }}
-            aria-label="Buy me a coffee"
-            title="Buy me a coffee"
-            className="inline-block"
-          >
-            <img
-              src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
-              alt="Buy Me A Coffee"
-              className="h-12 w-auto hover:opacity-90 transition-opacity"
-            />
-          </button>
-        </div>
+              <div className="rounded-xl border border-white/[0.06] bg-card/80 backdrop-blur-sm overflow-hidden">
+                {settingsPages.map((page, index) => (
+                  <button
+                    key={page.value}
+                    onClick={() => setActiveMobileSection(page.value)}
+                    className={`flex items-center justify-between w-full px-4 py-3.5 text-left transition-colors active:bg-white/[0.04] ${
+                      index < settingsPages.length - 1 ? 'border-b border-white/[0.04]' : ''
+                    }`}
+                  >
+                    <span className="text-[15px] font-medium text-foreground">{page.title}</span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-center pt-6">
+                <button
+                  onClick={() => window.open('https://buymeacoffee.com/cedya', '_blank')}
+                  aria-label="Buy me a coffee"
+                  className="inline-block"
+                >
+                  <img
+                    src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+                    alt="Buy Me A Coffee"
+                    className="h-12 w-auto hover:opacity-90 transition-opacity"
+                  />
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={activeMobileSection}
+              initial={{ opacity: 0, x: 60 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 60 }}
+              transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+            >
+              <button
+                onClick={() => setActiveMobileSection(undefined)}
+                className="flex items-center gap-1 mb-4 -ml-1 py-1.5 px-2 rounded-lg text-muted-foreground active:bg-white/[0.04] transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="text-sm font-medium">Settings</span>
+              </button>
+              <h2 className="text-xl font-semibold mb-4">{activePage?.title}</h2>
+              {activePage && renderSettingsPage(activePage)}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -200,25 +233,46 @@ export function SettingsLayout() {
     <div ref={layoutRootRef} className="w-full">
       <Tabs
         value={activeDesktopTab}
-        onValueChange={(value) => setActiveDesktopTab(value as SettingsPageValue)}
+        onValueChange={handleTabChange}
         className="w-full"
       >
-        <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-2 bg-muted">
+        <TabsList className="relative inline-flex h-11 items-center justify-center rounded-full p-[3px] text-muted-foreground w-full bg-muted/70 shadow-[inset_0_1px_4px_rgba(0,0,0,0.2),inset_0_0_1px_rgba(0,0,0,0.15)] border border-white/[0.04]">
           {settingsPages.map((page) => (
-            <TabsTrigger 
-              key={page.value} 
-              value={page.value} 
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            <TabsTrigger
+              key={page.value}
+              value={page.value}
+              className="relative z-10 inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-[13px] rounded-full bg-transparent transition-all duration-200 text-muted-foreground/70 hover:text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              {page.title}
+              {activeDesktopTab === page.value && (
+                <motion.div
+                  layoutId="activeTabPill"
+                  className="absolute inset-0 rounded-full bg-[hsl(240_6%_12%)] shadow-[0_1px_3px_rgba(0,0,0,0.3),0_1px_1px_rgba(0,0,0,0.2)] border border-white/[0.06]"
+                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                />
+              )}
+              <span className="relative z-10">{page.title}</span>
             </TabsTrigger>
           ))}
         </TabsList>
-      {settingsPages.map((page) => (
-        <TabsContent key={page.value} value={page.value} className="mt-6 animate-fade-in">
-          {activeDesktopTab === page.value ? renderSettingsPage(page) : null}
-        </TabsContent>
-      ))}
+        <div className="mt-4 rounded-2xl border border-white/[0.06] bg-card/60 backdrop-blur-sm p-6 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false} custom={slideDirection.current}>
+            <motion.div
+              key={activeDesktopTab}
+              custom={slideDirection.current}
+              variants={{
+                enter: (dir: number) => ({ opacity: 0, x: dir * 40 }),
+                center: { opacity: 1, x: 0 },
+                exit: (dir: number) => ({ opacity: 0, x: dir * -40 }),
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
+            >
+              {renderSettingsPage(settingsPages.find(p => p.value === activeDesktopTab)!)}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </Tabs>
     </div>
   );
