@@ -334,11 +334,15 @@ async function checkinMovie(ids: Record<string, any>, apiKey: string): Promise<b
       return false;
     }
 
-    await markWatched(apiKey, tmdbId, 'movie');
+    const result = await markWatched(apiKey, tmdbId, 'movie');
+    if (!result?.success) {
+      logger.warn(`[Watch Tracking] Movie watch not confirmed: tmdb:${tmdbId}`);
+      return false;
+    }
     logger.info(`[Watch Tracking] Movie marked as watched: tmdb:${tmdbId}`);
     return true;
   } catch (err: any) {
-    logger.error(`[Watch Tracking] Movie check-in failed: ${err.message}`);
+    logger.error(`[Watch Tracking] Movie tracking failed: ${err.message}`);
     return false;
   }
 }
@@ -360,11 +364,15 @@ async function checkinEpisode(
       return false;
     }
 
-    await markWatched(apiKey, tmdbId, 'tv', season, episode);
+    const result = await markWatched(apiKey, tmdbId, 'tv', season, episode);
+    if (!result?.success) {
+      logger.warn(`[Watch Tracking] Episode watch not confirmed: tmdb:${tmdbId} S${season}E${episode}`);
+      return false;
+    }
     logger.info(`[Watch Tracking] Episode marked as watched: tmdb:${tmdbId} S${season}E${episode}`);
     return true;
   } catch (err: any) {
-    logger.error(`[Watch Tracking] Episode check-in failed: ${err.message}`);
+    logger.error(`[Watch Tracking] Episode tracking failed: ${err.message}`);
     return false;
   }
 }

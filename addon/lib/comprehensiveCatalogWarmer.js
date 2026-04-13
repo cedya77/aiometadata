@@ -431,6 +431,7 @@ class ComprehensiveCatalogWarmer {
         catalogId.startsWith('custom.') ||
         catalogId.startsWith('streaming.') ||
         catalogId.startsWith('simkl.') ||
+        catalogId.startsWith('publicmetadb.') ||
         catalogId.startsWith('tmdb.discover') ||
         catalogId.startsWith('tvdb.discover') ||
         catalogId.startsWith('mal.discover')  ||
@@ -572,7 +573,7 @@ class ComprehensiveCatalogWarmer {
             }
           }
         }
-        if (catalogId === 'trakt.upnext') {
+        if (catalogId === 'trakt.upnext' || catalogId === 'publicmetadb.upnext') {
           extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
               ? catalogConfig.metadata.useShowPosterForUpNext
               : false;
@@ -737,7 +738,7 @@ class ComprehensiveCatalogWarmer {
         try {
           const config = await database.getUserConfig(uuid);
           if (config) {
-            const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext' && c.id !== 'mdblist.upnext');
+            const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.id !== 'trakt.upnext' && c.id !== 'mdblist.upnext' && c.id !== 'publicmetadb.upnext');
             userConfigs[uuid] = { config, enabledCatalogs };
             grandTotalCatalogs += enabledCatalogs.length;
             
