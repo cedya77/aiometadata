@@ -383,13 +383,15 @@ class MALCatalogWarmer {
             // getTopAnimeByType(type, page, config)
             // getTopAnimeByFilter(filter, page, config)
             // getTopAnimeByDateRange(startDate, endDate, page, genreId, config)
-            const animeResults = catalog.hasGenreId 
+            const isVolatile = catalog.catalogId === 'mal.airing' || catalog.catalogId === 'mal.upcoming';
+            const ttl = isVolatile ? 24 * 60 * 60 : null;
+            const animeResults = catalog.hasGenreId
               ? await cacheWrapJikanApi(`mal-${catalog.name}-${page}-${warmingConfig.sfw}`, async () => {
                   return await fn(...args, page, null, warmingConfig);  // Has genreId param
-                }, null, { skipVersion: true })
+                }, ttl, { skipVersion: true })
               : await cacheWrapJikanApi(`mal-${catalog.name}-${page}-${warmingConfig.sfw}`, async () => {
                   return await fn(...args, page, warmingConfig);        // No genreId param
-                }, null, { skipVersion: true });
+                }, ttl, { skipVersion: true });
             const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
             return { metas };
           }, { enableErrorCaching: false, maxRetries: 1 });

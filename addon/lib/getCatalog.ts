@@ -1458,10 +1458,17 @@ function sanitizeTmdbDiscoverParams(
   }
 
   // Certification filters should be sent as a pair
+  const hasCertValue = !!sanitized.certification || !!sanitized['certification.gte'] || !!sanitized['certification.lte'];
   if (!!sanitized.certification && !sanitized.certification_country) {
     delete sanitized.certification;
   }
-  if (!!sanitized.certification_country && !sanitized.certification) {
+  if (!!sanitized['certification.gte'] && !sanitized.certification_country) {
+    delete sanitized['certification.gte'];
+  }
+  if (!!sanitized['certification.lte'] && !sanitized.certification_country) {
+    delete sanitized['certification.lte'];
+  }
+  if (!!sanitized.certification_country && !hasCertValue) {
     delete sanitized.certification_country;
   }
 

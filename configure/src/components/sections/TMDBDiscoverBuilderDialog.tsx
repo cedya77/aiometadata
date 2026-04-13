@@ -719,6 +719,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
   const [releaseRegion, setReleaseRegion] = useState('');
   const [certificationCountry, setCertificationCountry] = useState('');
   const [certificationValue, setCertificationValue] = useState('');
+  const [certificationMode, setCertificationMode] = useState<'exact' | 'lte' | 'gte'>('exact');
 
   const [watchRegion, setWatchRegion] = useState('');
   const [watchProviders, setWatchProviders] = useState<SelectionItem[]>([]);
@@ -980,6 +981,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     releaseRegion,
     certificationCountry,
     certificationValue,
+    certificationMode,
     selectedPeople,
     peopleJoinMode,
     withCompanies,
@@ -1214,6 +1216,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
     if (fs.originCountry) setOriginCountry(fs.originCountry);
     if (fs.certificationCountry) setCertificationCountry(fs.certificationCountry);
     if (fs.certificationValue) setCertificationValue(fs.certificationValue);
+    if (fs.certificationMode) setCertificationMode(fs.certificationMode);
   
     // TMDB-only
     if (typeof fs.includeAdult === 'boolean') setIncludeAdult(fs.includeAdult);
@@ -2117,7 +2120,13 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
 
     if (catalogType === 'movie' && certificationCountry && certificationValue) {
       params.certification_country = certificationCountry;
-      params.certification = certificationValue;
+      if (certificationMode === 'lte') {
+        params['certification.lte'] = certificationValue;
+      } else if (certificationMode === 'gte') {
+        params['certification.gte'] = certificationValue;
+      } else {
+        params.certification = certificationValue;
+      }
     }
 
     if (catalogType === 'movie' && selectedPeople.length > 0) {
@@ -2210,9 +2219,10 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
         originCountry,
         certificationCountry,
         certificationValue,
+        certificationMode,
       });
     }
-  
+
     // TMDB-only
     if (discoverSource === 'tmdb') {
       Object.assign(state, {
@@ -3624,7 +3634,7 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
                     </div>
 
                     {(discoverSource === 'tmdb' ? catalogType === 'movie' : true) && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                           {discoverSource === 'tmdb' ? (
                             <LabelWithTooltip tooltip="Pick the country first. Certification values depend on this country and can differ between regions.">
@@ -3680,6 +3690,27 @@ export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, cus
                             </SelectContent>
                           </Select>
                         </div>
+                        {discoverSource === 'tmdb' && (
+                          <div className="space-y-2">
+                            <LabelWithTooltip tooltip="Exact: only this rating. Maximum: this rating and below. Minimum: this rating and above.">
+                              Filter Mode
+                            </LabelWithTooltip>
+                            <Select
+                              value={certificationMode}
+                              onValueChange={(value) => setCertificationMode(value as 'exact' | 'lte' | 'gte')}
+                              disabled={!certificationValue}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="exact">Exact</SelectItem>
+                                <SelectItem value="lte">Maximum (up to)</SelectItem>
+                                <SelectItem value="gte">Minimum (at least)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

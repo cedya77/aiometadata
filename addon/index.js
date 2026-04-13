@@ -3509,12 +3509,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
             if (cleanId === 'mal.airing') {
               const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
                 return await jikan.getAiringNow(page, config);
-              }, null, { skipVersion: true });
+              }, 24 * 60 * 60, { skipVersion: true });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (cleanId === 'mal.upcoming') {
               const animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
                 return await jikan.getUpcoming(page, config);
-              }, null, { skipVersion: true });
+              }, 24 * 60 * 60, { skipVersion: true });
               metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             } else if (cleanId === 'mal.top_movies') {
               const animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {

@@ -238,7 +238,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.airing': {
         const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
           return await jikan.getAiringNow(page, config);
-        }, null, { skipVersion: true });
+        }, 24 * 60 * 60, { skipVersion: true });
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
@@ -246,7 +246,7 @@ class ComprehensiveCatalogWarmer {
       case 'mal.upcoming': {
         const animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
           return await jikan.getUpcoming(page, config);
-        });
+        }, 24 * 60 * 60);
         metas = await parseAnimeCatalogMetaBatch(animeResults, config, language, true);
         break;
       }
