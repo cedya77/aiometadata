@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 import { apiCache } from '@/utils/apiCache';
 import { X } from 'lucide-react';
 
-interface TMDBDiscoverBuilderDialogProps {
+interface DiscoverBuilderDialogProps {
   isOpen: boolean;
   onClose: () => void;
   editingCatalog?: CatalogConfig | null;
@@ -659,7 +659,7 @@ function LabelWithTooltip({
   );
 }
 
-export function TMDBDiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customizeTemplate }: TMDBDiscoverBuilderDialogProps) {
+export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customizeTemplate }: DiscoverBuilderDialogProps) {
   const { config, setConfig, catalogTTL, auth } = useConfig();
   const tmdbApiKey = config.apiKeys?.tmdb?.trim() || '';
   const tvdbApiKey = config.apiKeys?.tvdb?.trim() || '';

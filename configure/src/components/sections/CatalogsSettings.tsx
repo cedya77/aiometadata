@@ -4,7 +4,7 @@ import { TraktIntegration } from './TraktIntegration';
 import { SimklIntegration } from './SimklIntegration';
 import { PublicMetaDBIntegration } from './PublicMetaDBIntegration';
 import { TMDBIntegration } from './TMDBIntegration';
-import { TMDBDiscoverBuilderDialog } from './TMDBDiscoverBuilderDialog';
+import { DiscoverBuilderDialog } from './DiscoverBuilderDialog';
 import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -1688,10 +1688,11 @@ const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
 };
 
 import { Layers } from 'lucide-react';
-const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: { 
+const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicateDiscover }: {
   catalog: CatalogConfig & { source?: string };
   onEditDiscover?: (catalog: CatalogConfig) => void;
   onCustomize?: (catalog: CatalogConfig) => void;
+  onDuplicateDiscover?: (catalog: CatalogConfig) => void;
 }) => {
   console.log('catalog:', catalog.id, catalog.source); 
   const { setConfig, config } = useConfig();
@@ -2231,6 +2232,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
           {/* Edit button for discover catalogs with formState */}
           {catalog.id.includes('.discover.') &&
             catalog.metadata?.discover?.formState && (
+            <>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -2244,6 +2246,20 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize }: {
               </TooltipTrigger>
               <TooltipContent>Edit catalog filters</TooltipContent>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onDuplicateDiscover?.(catalog)}
+                  aria-label="Duplicate Catalog"
+                >
+                  <Copy className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Duplicate catalog</TooltipContent>
+            </Tooltip>
+            </>
           )}
 
           <Tooltip>
@@ -2557,6 +2573,44 @@ function CatalogsSettingsContent({
       setCustomizeTemplate(getTemplate(catalog));
       setIsTmdbDiscoverBuilderOpen(true);
     }
+  };
+
+  const handleDuplicateDiscover = (catalog: CatalogConfig) => {
+    const sanitizedName = (catalog.name + ' (Copy)')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'catalog';
+    const uniqueSuffix = Date.now().toString(36);
+    const source = catalog.metadata?.discover?.source || catalog.source || 'tmdb';
+    const SOURCE_PREFIXES: Record<string, string> = {
+      tmdb: 'tmdb.discover', tvdb: 'tvdb.discover', simkl: 'simkl.discover',
+      mal: 'mal.discover', anilist: 'anilist.discover', mdblist: 'mdblist.discover',
+    };
+    const sourcePrefix = SOURCE_PREFIXES[source] ?? 'tmdb.discover';
+    const catalogType = catalog.type || 'movie';
+    const newId = `${sourcePrefix}.${catalogType}.${sanitizedName}.${uniqueSuffix}`;
+
+    const newCatalog: CatalogConfig = {
+      ...catalog,
+      id: newId,
+      name: catalog.name + ' (Copy)',
+      metadata: catalog.metadata ? {
+        ...catalog.metadata,
+        discover: catalog.metadata.discover ? {
+          ...catalog.metadata.discover,
+          formState: catalog.metadata.discover.formState ? {
+            ...catalog.metadata.discover.formState,
+            catalogName: catalog.name + ' (Copy)',
+          } : undefined,
+        } : undefined,
+      } : undefined,
+    };
+
+    setConfig(prev => ({
+      ...prev,
+      catalogs: [...prev.catalogs, newCatalog],
+    }));
   };
   
   const handleLoadDefaults = () => {
@@ -3657,14 +3711,15 @@ function CatalogsSettingsContent({
           <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
             {filteredCatalogs.map((catalog) => (
-              <SortableCatalogItem 
-                key={`${catalog.id}-${catalog.type}`} 
+              <SortableCatalogItem
+                key={`${catalog.id}-${catalog.type}`}
                 catalog={catalog}
                 onEditDiscover={(cat) => {
                   setEditingDiscoverCatalog(cat);
                   setIsTmdbDiscoverBuilderOpen(true);
                 }}
                 onCustomize={DEFAULT_CATALOG_TEMPLATES[catalog.id] ? handleCustomize : undefined}
+                onDuplicateDiscover={handleDuplicateDiscover}
               />
             ))}
             </div>
@@ -3714,7 +3769,7 @@ function CatalogsSettingsContent({
         isOpen={isQuickAddOpen}
         onClose={() => setIsQuickAddOpen(false)}
       />
-      <TMDBDiscoverBuilderDialog
+      <DiscoverBuilderDialog
         isOpen={isTmdbDiscoverBuilderOpen}
         onClose={() => {
           setIsTmdbDiscoverBuilderOpen(false);

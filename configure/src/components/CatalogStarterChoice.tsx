@@ -15,7 +15,7 @@ interface CatalogStarterChoiceProps {
  *
  * Presents two paths:
  *  1) "Start with Defaults" — loads allCatalogDefinitions with their default enabled/showInHome states
- *  2) "Start from Scratch" — keeps catalogs empty and opens the TMDBDiscoverBuilderDialog
+ *  2) "Start from Scratch" — keeps catalogs empty and opens the DiscoverBuilderDialog
  *
  * Usage in CatalogsSettings:
  *   if (isNewConfig) {
