@@ -1577,7 +1577,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                         ep.air_date,
                         commonImdbId,
                         cinemetaVideos,
-                        tmdbSeasonName
+                        tmdbSeasonName,
+                        season.episodes?.length || 0
                       );
                       
                       if (imdbEpisodeId) {
