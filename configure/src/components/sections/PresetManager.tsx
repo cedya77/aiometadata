@@ -1862,7 +1862,7 @@ export function PresetManager() {
                 <p className="text-sm text-muted-foreground">
                   For optimal Stremio behavior, use{' '}
                   <a
-                    href="https://cinebye.dinsden.top/"
+                    href="https://cinebye.elfhosted.com/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group relative inline-flex items-center gap-1 text-primary underline underline-offset-4 transition"

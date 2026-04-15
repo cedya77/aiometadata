@@ -1447,7 +1447,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
     
     const validImdbSeasons = new Set();
-    const validTmdbSeasonsSet = new Set();
+    const validTmdbSeasonNumbers = new Set();
     if (cinemetaVideos && cinemetaVideos.length > 0) {
       const episodesBySeason = cinemetaVideos.reduce((acc, ep) => {
         if (ep.season > 0) { // Ignore season 0 specials
@@ -1466,27 +1466,28 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     }
     for (const season of tmdbSeasons) {
       if (season.season_number > 0 && season.air_date) {
-        validTmdbSeasonsSet.add(season.season_number);
+        validTmdbSeasonNumbers.add(season.season_number);
       }
     }
     const imdbSeasons = Array.from(validImdbSeasons);
-    const validTmdbSeasons = Array.from(validTmdbSeasonsSet);
+    const validTmdbSeasons = tmdbSeasons.filter(season => validTmdbSeasonNumbers.has(season.season_number));
 
     logger.debug(`[TMDB] Filtered IMDB seasons to valid ones: ${imdbSeasons.length}`);
     // get season posters
     const tmdbSeasonNames = validTmdbSeasons.map(season => {
       // For anime, include series name for better specificity
       const seasonPattern = /^season\s+\d+$/i;
+      const seasonName = season?.name || `Season ${season?.season_number}`;
       if (validTmdbSeasons.length === 1) {
         return seriesData.name;
       }
       else {
-        if (seasonPattern.test(season.name)) {
+        if (seasonPattern.test(seasonName)) {
           // Generic season name like "Season 1", add series name
-          return `${seriesData.name} ${season.name}`;
+          return `${seriesData.name} ${seasonName}`;
         } else {
           // Season name already has more specific info, use as is
-          return season.name;
+          return seasonName;
         }
       }
     });
@@ -1508,7 +1509,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       }));
       
       resolvedImdbResults = await Promise.all(imdbResults);
-      allTmdbSeasonsMapToSameImdb = resolvedImdbResults.every(id => id === resolvedImdbResults[0]);
+      const firstResolvedImdbId = resolvedImdbResults[0];
+      allTmdbSeasonsMapToSameImdb = !!firstResolvedImdbId && resolvedImdbResults.every(id => id && id === firstResolvedImdbId);
     }
     logger.debug(`[TMDB] TMDB seasons: ${validTmdbSeasons.length}, IMDB seasons: ${imdbSeasons.length}`);
     
@@ -1575,7 +1577,8 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
                         ep.air_date,
                         commonImdbId,
                         cinemetaVideos,
-                        tmdbSeasonName
+                        tmdbSeasonName,
+                        season.episodes?.length || 0
                       );
                       
                       if (imdbEpisodeId) {

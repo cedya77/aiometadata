@@ -432,7 +432,7 @@ export function BulkActionBar({
             )}
 
             {/* More dropdown */}
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button
                   size="sm"
@@ -474,7 +474,7 @@ export function BulkActionBar({
               </DropdownMenuContent>
             </DropdownMenu>
             {onSetDisplayType && (
-              <Dialog open={showDisplayTypeDialog} onOpenChange={setShowDisplayTypeDialog} modal={false}>
+              <Dialog open={showDisplayTypeDialog} onOpenChange={setShowDisplayTypeDialog}>
                 <DialogContent className="sm:max-w-[320px]">
                   <DialogHeader>
                     <DialogTitle>Set Display Type</DialogTitle>

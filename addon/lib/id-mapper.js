@@ -5,6 +5,7 @@ const redis = require('./redisClient');
 const kitsu = require('./kitsu');
 const { LRUCache } = require('lru-cache');
 const consola = require('consola');
+const { resolveOneToOneSeasonEpisodeFallback } = require('./oneToOneSeasonEpisodeFallback');
 
 
 const logger = consola.withTag('ID-Mapper');
@@ -1916,7 +1917,8 @@ async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
   tmdbAirDate,
   commonImdbId,
   cinemetaVideos,
-  tmdbSeasonName
+  tmdbSeasonName,
+  tmdbSeasonEpisodeCount = 0
 ) {
   try {
     // Get all episodes from the common IMDB ID
@@ -1959,6 +1961,19 @@ async function getImdbEpisodeIdFromTmdbEpisodeWhenAllSeasonsMapToSameImdb(
 
     if (imdbEpisode) {
       return `${commonImdbId}:${imdbEpisode.season}:${imdbEpisode.episode}`;
+    }
+
+    const oneToOneSeasonFallback = resolveOneToOneSeasonEpisodeFallback(
+      mappedImdbSeasons,
+      tmdbEpisodeNumber,
+      tmdbSeasonEpisodeCount
+    );
+
+    if (oneToOneSeasonFallback) {
+      logger.debug(
+        `[ID Mapper] Falling back to 1:1 season mapping for TMDB S${tmdbSeasonNumber}E${tmdbEpisodeNumber} -> IMDB S${oneToOneSeasonFallback.season}E${oneToOneSeasonFallback.episode}`
+      );
+      return `${commonImdbId}:${oneToOneSeasonFallback.season}:${oneToOneSeasonFallback.episode}`;
     }
 
     logger.warn(`[ID Mapper] No IMDB episode found for TMDB S${tmdbSeasonNumber}E${tmdbEpisodeNumber} (air date: ${tmdbAirDate})`);
