@@ -1,4 +1,4 @@
-const { request, setGlobalDispatcher, ProxyAgent } = require("undici");
+const { request, setGlobalDispatcher, ProxyAgent, Agent, interceptors } = require("undici");
 const buildInfo = require('../lib/buildInfo');
 
 // Global proxy configuration - applies to all undici requests
@@ -17,10 +17,15 @@ const getProxyUrl = () => {
 };
 
 const proxyUrl = getProxyUrl();
-if (proxyUrl) {
-  const dispatcher = new ProxyAgent({ uri: proxyUrl, allowH2: false });
-  setGlobalDispatcher(dispatcher);
-}
+const baseDispatcher = proxyUrl
+  ? new ProxyAgent({ uri: proxyUrl, allowH2: false })
+  : new Agent();
+
+const dispatcher = baseDispatcher.compose(
+  interceptors.dns({ maxTTL: 60_000 })
+);
+
+setGlobalDispatcher(dispatcher);
 
 /**
  * HTTP client wrapper optimized for MAXIMUM SPEED.
