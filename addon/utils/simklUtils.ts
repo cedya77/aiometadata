@@ -1,11 +1,10 @@
-import { httpGet, httpPost } from "./httpClient.js";
+import { httpGet, httpPost, createDispatcher } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 import * as Utils from "./parseProps.js";
 import { progress } from "framer-motion";
 const consola = require('consola');
-const { Agent } = require('undici');
 const crypto = require('crypto');
 const database = require('../lib/database.js');
 const requestTracker = require('../lib/requestTracker.js');
@@ -28,7 +27,10 @@ function sanitizeUrlForLogging(url: string): string {
   return url.replace(/(Authorization: Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
 }
 
-const simklDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+const simklDispatcher = createDispatcher({
+  label: 'Simkl',
+  agentOptions: { connect: { timeout: 30_000 } },
+});
 
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.

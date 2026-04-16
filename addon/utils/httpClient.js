@@ -1,31 +1,93 @@
 const { request, setGlobalDispatcher, ProxyAgent, Agent, interceptors } = require("undici");
 const buildInfo = require('../lib/buildInfo');
 
-// Global proxy configuration - applies to all undici requests
-// Prefers HTTPS_PROXY since most API calls are HTTPS, falls back to HTTP_PROXY
-const getProxyUrl = () => {
-  const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-  if (proxy) {
-    try {
-      return new URL(proxy).toString();
-    } catch (error) {
-      console.warn('Invalid proxy URL in HTTP_PROXY/HTTPS_PROXY:', proxy);
-      return null;
+// Shared DNS interceptor, caches lookups up to their TTL (max 60s).
+// Applied to every dispatcher created by createDispatcher() and to the global dispatcher.
+const dnsInterceptor = interceptors.dns({ maxTTL: 60_000 });
+
+/**
+ * Creates an undici Dispatcher with DNS caching and optional proxy support.
+ *
+ * Priority when resolving the proxy:
+ *   1. SOCKS proxy (socksProxyEnvVar)
+ *   2. HTTP/HTTPS proxy (proxyEnvVars, checked left-to-right)
+ *   3. Direct connection
+ *
+ * @param {object} [options={}]
+ * @param {string[]} [options.proxyEnvVars=['HTTPS_PROXY','HTTP_PROXY']]
+ *   Env-var names to check for an HTTP/HTTPS proxy URL, in priority order.
+ *   Pass [] to skip proxy lookup and always use a direct connection.
+ * @param {string}  [options.socksProxyEnvVar]
+ *   Env-var name for a SOCKS4/5 proxy URL (requires the `fetch-socks` package).
+ *   Checked before proxyEnvVars.
+ * @param {object}  [options.agentOptions={}]
+ *   Extra options forwarded to `new Agent()` for direct connections
+ *   (e.g. { connections: 2, keepAliveTimeout: 10_000 }).
+ * @param {object}  [options.proxyOptions={}]
+ *   Extra options forwarded to `new ProxyAgent()` when a proxy is used
+ *   (e.g. { requestTls: { timeout: 30_000 } }).
+ * @param {string}  [options.label]
+ *   Service name used in log output (e.g. 'TVmaze').
+ * @returns {import('undici').Dispatcher} Dispatcher with DNS caching applied.
+ */
+function createDispatcher({
+  proxyEnvVars = ['HTTPS_PROXY', 'HTTP_PROXY'],
+  socksProxyEnvVar,
+  agentOptions = {},
+  proxyOptions = {},
+  label,
+} = {}) {
+  const tag = label ? `[${label}]` : '[HTTP]';
+
+  // 1. SOCKS proxy
+  if (socksProxyEnvVar) {
+    const socksUrl = process.env[socksProxyEnvVar];
+    if (socksUrl) {
+      try {
+        const proxyUrlObj = new URL(socksUrl);
+        if (proxyUrlObj.protocol === 'socks5:' || proxyUrlObj.protocol === 'socks4:') {
+          const { socksDispatcher } = require('fetch-socks');
+          const d = socksDispatcher({
+            type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
+            host: proxyUrlObj.hostname,
+            port: parseInt(proxyUrlObj.port),
+            userId: proxyUrlObj.username,
+            password: proxyUrlObj.password,
+          });
+          console.log(`${tag} SOCKS proxy enabled (${socksProxyEnvVar}).`);
+          return d.compose(dnsInterceptor);
+        } else {
+          console.warn(`${tag} Unsupported SOCKS protocol: ${proxyUrlObj.protocol}. Falling back.`);
+        }
+      } catch (error) {
+        console.warn(`${tag} Invalid ${socksProxyEnvVar}. Falling back. Error: ${error.message}`);
+      }
     }
   }
-  return null;
-};
 
-const proxyUrl = getProxyUrl();
-const baseDispatcher = proxyUrl
-  ? new ProxyAgent({ uri: proxyUrl, allowH2: false })
-  : new Agent();
+  // 2. HTTP/HTTPS proxy, try each env var in order
+  for (const envVar of proxyEnvVars) {
+    const proxyUrl = process.env[envVar];
+    if (!proxyUrl) continue;
+    try {
+      const d = new ProxyAgent({ uri: new URL(proxyUrl).toString(), allowH2: false, ...proxyOptions });
+      console.log(`${tag} Using proxy from ${envVar}.`);
+      return d.compose(dnsInterceptor);
+    } catch (error) {
+      console.warn(`${tag} Invalid proxy URL in ${envVar}. Falling back. Error: ${error.message}`);
+    }
+  }
 
-const dispatcher = baseDispatcher.compose(
-  interceptors.dns({ maxTTL: 60_000 })
-);
+  // 3. Direct connection
+  const d = new Agent({ ...agentOptions });
+  if (label) console.log(`${tag} Direct connection.`);
+  return d.compose(dnsInterceptor);
+}
 
-setGlobalDispatcher(dispatcher);
+// Global dispatcher, all httpGet/httpPost/httpRequest calls use this unless
+// a per-call dispatcher is passed explicitly.
+const globalDispatcher = createDispatcher({ label: 'Global' });
+setGlobalDispatcher(globalDispatcher);
 
 /**
  * HTTP client wrapper optimized for MAXIMUM SPEED.
@@ -185,5 +247,6 @@ module.exports = {
   httpRequest,
   httpGet,
   httpPost,
-  httpHead
+  httpHead,
+  createDispatcher,
 };

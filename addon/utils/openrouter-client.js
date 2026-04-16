@@ -1,44 +1,20 @@
-const { request, Agent, ProxyAgent } = require('undici');
+const { request } = require('undici');
+const { createDispatcher } = require('./httpClient.js');
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
-// OpenRouter dispatcher configuration
-// Priority: OPENROUTER_HTTPS_PROXY/OPENROUTER_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
-const getOpenRouterProxyUrl = () => {
-  const orProxy = process.env.OPENROUTER_HTTPS_PROXY ?? process.env.OPENROUTER_HTTP_PROXY;
-  if (orProxy) {
-    try {
-      return new URL(orProxy).toString();
-    } catch (error) {
-      console.warn('Invalid OpenRouter proxy URL:', orProxy);
-    }
-  }
-  const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-  if (globalProxy) {
-    try {
-      return new URL(globalProxy).toString();
-    } catch (error) {
-      console.warn('Invalid global proxy URL:', globalProxy);
-    }
-  }
-  return null;
-};
-
-const createOpenRouterDispatcher = () => {
-  const proxyUrl = getOpenRouterProxyUrl();
-  if (proxyUrl) {
-    return new ProxyAgent({ uri: proxyUrl, allowH2: false });
-  }
-  return new Agent({
-    allowH2: false,
-    keepAliveTimeout: 30000,
-    keepAliveMaxTimeout: 60000,
+// OpenRouter dispatcher
+// priority: OPENROUTER_HTTPS_PROXY/OPENROUTER_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct
+const openrouterDispatcher = createDispatcher({
+  label: 'OpenRouter',
+  proxyEnvVars: ['OPENROUTER_HTTPS_PROXY', 'OPENROUTER_HTTP_PROXY', 'HTTPS_PROXY', 'HTTP_PROXY'],
+  agentOptions: {
+    keepAliveTimeout: 30_000,
+    keepAliveMaxTimeout: 60_000,
     connections: 50,
     pipelining: 1,
-  });
-};
-
-const openrouterDispatcher = createOpenRouterDispatcher();
+  },
+});
 
 /**
  * Generate content using OpenRouter API (OpenAI-compatible).

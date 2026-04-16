@@ -1,5 +1,5 @@
-import { fetch, Agent, ProxyAgent } from 'undici';
-import { socksDispatcher } from 'fetch-socks';
+import { fetch } from 'undici';
+import { createDispatcher } from '../utils/httpClient.js';
 import { scrapeSingleImdbResultByTitle, getMetaFromImdbIo } from './imdb';
 import requestTracker from './requestTracker';
 import consola from 'consola';
@@ -49,47 +49,13 @@ function selectTmdbImageByLang(images: TmdbImage[] | undefined, config: UserConf
   return best || fallbackEn || fallbackAny || undefined;
 }
 
-// TMDB dispatcher configuration
-const SOCKS_PROXY_URL = process.env.TMDB_SOCKS_PROXY_URL;
-const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-let dispatcher: any;
-
-if (SOCKS_PROXY_URL) {
-  try {
-    const proxyUrlObj = new URL(SOCKS_PROXY_URL);
-    if (proxyUrlObj.protocol === 'socks5:' || proxyUrlObj.protocol === 'socks4:') {
-      dispatcher = socksDispatcher({
-        type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
-        host: proxyUrlObj.hostname,
-        port: parseInt(proxyUrlObj.port),
-        userId: proxyUrlObj.username,
-        password: proxyUrlObj.password,
-      });
-      consola.info(`[TMDB] SOCKS proxy is enabled for undici via fetch-socks.`);
-    } else {
-      console.error(`[TMDB] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
-      dispatcher = null;
-    }
-  } catch (error: any) {
-    console.error(`[TMDB] Invalid SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
-    dispatcher = null;
-  }
-}
-
-if (!dispatcher) {
-  if (HTTP_PROXY_URL) {
-    try {
-      dispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
-      console.log('[TMDB] Using global HTTP proxy.');
-    } catch (error: any) {
-      console.error(`[TMDB] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      dispatcher = new Agent({ allowH2: false, connect: { timeout: 10000 } });
-    }
-  } else {
-    dispatcher = new Agent({ allowH2: false, connect: { timeout: 10000 } });
-    console.log('[TMDB] undici agent is enabled for direct connections.');
-  }
-}
+// TMDB dispatcher
+// priority: TMDB_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct
+const dispatcher = createDispatcher({
+  label: 'TMDB',
+  socksProxyEnvVar: 'TMDB_SOCKS_PROXY_URL',
+  agentOptions: { connect: { timeout: 10_000 } },
+});
 
 // Simple cache for scraped IDs to avoid re-scraping
 const scrapedImdbIdCache = new Map<string, string>();

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const { request, Agent, ProxyAgent } = require("undici");
+const { request } = require("undici");
+const { createDispatcher } = require('../utils/httpClient');
 const database = require('./database');
 const buildInfo = require('./buildInfo');
 const KEY_VALIDATION_STATUS_SET = new Set(['valid', 'invalid', 'timeout', 'error']);
@@ -11,36 +12,13 @@ const TEST_API_KEY_MAX_LENGTH = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 128;
 })();
 
-// Gemini dispatcher configuration for API key testing
-// Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
-const createGeminiDispatcher = () => {
-  // First check for Gemini-specific proxy
-  const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
-  if (geminiProxy) {
-    try {
-      return new ProxyAgent({ uri: new URL(geminiProxy).toString(), allowH2: false });
-    } catch (error) {
-      console.warn("Invalid Gemini proxy URL:", geminiProxy);
-    }
-  }
-  // Fall back to global proxy
-  const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-  if (globalProxy) {
-    try {
-      return new ProxyAgent({ uri: new URL(globalProxy).toString(), allowH2: false });
-    } catch (error) {
-      console.warn("Invalid global proxy URL:", globalProxy);
-    }
-  }
-  // No proxy configured - use direct connection
-  return new Agent({
-    allowH2: false,
-    keepAliveTimeout: 10000,
-    connections: 10,
-  });
-};
-
-const geminiDispatcher = createGeminiDispatcher();
+// Gemini dispatcher
+// priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct
+const geminiDispatcher = createDispatcher({
+  label: 'Gemini',
+  proxyEnvVars: ['GEMINI_HTTPS_PROXY', 'GEMINI_HTTP_PROXY', 'HTTPS_PROXY', 'HTTP_PROXY'],
+  agentOptions: { keepAliveTimeout: 10_000, connections: 10 },
+});
 const consola = require('consola');
 
 const logger = consola.withTag('ConfigApi');

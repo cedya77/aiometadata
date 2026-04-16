@@ -1,4 +1,4 @@
-import { httpGet, httpPost } from "./httpClient.js";
+import { httpGet, httpPost, createDispatcher } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
 const buildInfo = require('../lib/buildInfo');
 import { getMeta } from "../lib/getMeta.js";
@@ -6,8 +6,6 @@ import { cacheWrapMetaSmart, cacheWrapMDBListGenres, cacheWrapGlobal } from "../
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const crypto = require('crypto');
-const { socksDispatcher } = require('fetch-socks');
-const { Agent, ProxyAgent } = require('undici');
 
 const logger = consola.withTag('MDBList');
 
@@ -22,51 +20,13 @@ function sanitizeUrlForLogging(url: string): string {
 }
 
 
-// MDBList dispatcher configuration
-// Priority: MDBLIST_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
-const MDBLIST_SOCKS_PROXY_URL = process.env.MDBLIST_SOCKS_PROXY_URL;
-const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-let mdblistDispatcher: any;
-
-if (MDBLIST_SOCKS_PROXY_URL) {
-  try {
-    const proxyUrlObj = new URL(MDBLIST_SOCKS_PROXY_URL);
-    if (proxyUrlObj.protocol === 'socks5:' || proxyUrlObj.protocol === 'socks4:') {
-      mdblistDispatcher = socksDispatcher({
-        type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
-        host: proxyUrlObj.hostname,
-        port: parseInt(proxyUrlObj.port),
-        userId: proxyUrlObj.username,
-        password: proxyUrlObj.password,
-      });
-      logger.info(`[MDBList] SOCKS proxy is enabled for MDBList API via fetch-socks.`);
-    } else {
-      logger.error(`[MDBList] Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
-      mdblistDispatcher = null; // Will be set below
-    }
-  } catch (error: any) {
-    logger.error(`[MDBList] Invalid MDBLIST_SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
-    mdblistDispatcher = null; // Will be set below
-  }
-}
-
-// Fallback to HTTP proxy or direct connection
-if (!mdblistDispatcher) {
-  if (HTTP_PROXY_URL) {
-    try {
-      // ProxyAgent may need to be imported if not already
-      const { ProxyAgent } = require('undici');
-      mdblistDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
-      logger.info('[MDBList] Using global HTTP proxy.');
-    } catch (error: any) {
-      logger.error(`[MDBList] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
-    }
-  } else {
-    mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
-    logger.info('[MDBList] undici agent is enabled for direct connections.');
-  }
-}
+// MDBList dispatcher
+// priority: MDBLIST_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct
+const mdblistDispatcher = createDispatcher({
+  label: 'MDBList',
+  socksProxyEnvVar: 'MDBLIST_SOCKS_PROXY_URL',
+  agentOptions: { connect: { timeout: 30_000 } },
+});
 
 /**
  * Checks if an error is a "permanent" client-side error that should not be retried.

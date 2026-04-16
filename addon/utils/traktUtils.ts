@@ -1,10 +1,9 @@
-import { httpGet, httpPost } from "./httpClient.js";
+import { httpGet, httpPost, createDispatcher } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
 const crypto = require('crypto');
-import {Agent, ProxyAgent } from 'undici';
 const database = require('../lib/database.js');
 const redis = require('../lib/redisClient');
 
@@ -29,10 +28,12 @@ function sanitizeUrlForLogging(url: string): string {
   return url.replace(/(Authorization: Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
 }
 
-const TRAKT_PROXY_URL = process.env.TRAKT_PROXY_URL;
-const traktDispatcher = TRAKT_PROXY_URL 
-  ? new ProxyAgent({ uri: TRAKT_PROXY_URL, allowH2: false, requestTls: { timeout: 30000 } })
-  : new Agent({ allowH2: false, connect: { timeout: 30000 } });
+const traktDispatcher = createDispatcher({
+  label: 'Trakt',
+  proxyEnvVars: ['TRAKT_PROXY_URL'],
+  agentOptions: { connect: { timeout: 30_000 } },
+  proxyOptions: { requestTls: { timeout: 30_000 } },
+});
 
 
 /**

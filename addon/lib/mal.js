@@ -1,7 +1,5 @@
 require("dotenv").config();
-const { httpGet } = require('../utils/httpClient');
-const { socksDispatcher } = require('fetch-socks');
-const { Agent, ProxyAgent } = require('undici');
+const { httpGet, createDispatcher } = require('../utils/httpClient');
 const consola = require('consola');
 const redis = require('./redisClient');
 const logger = consola.withTag('MAL');
@@ -29,49 +27,13 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000); // Run every hour
 
-// MAL/Jikan dispatcher configuration
-// Priority: MAL_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
-const MAL_SOCKS_PROXY_URL = process.env.MAL_SOCKS_PROXY_URL;
-const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-let malDispatcher;
-
-if (MAL_SOCKS_PROXY_URL) {
-  try {
-    const proxyUrlObj = new URL(MAL_SOCKS_PROXY_URL);
-    if (proxyUrlObj.protocol === 'socks5:' || proxyUrlObj.protocol === 'socks4:') {
-      malDispatcher = socksDispatcher({
-        type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
-        host: proxyUrlObj.hostname,
-        port: parseInt(proxyUrlObj.port),
-        userId: proxyUrlObj.username,
-        password: proxyUrlObj.password,
-      });
-      logger.info(`SOCKS proxy is enabled for Jikan API via fetch-socks.`);
-    } else {
-      logger.warn(`Unsupported proxy protocol: ${proxyUrlObj.protocol}. Falling back.`);
-      malDispatcher = null; // Will be set below
-    }
-  } catch (error) {
-    logger.warn(`Invalid MAL_SOCKS_PROXY_URL. Falling back. Error: ${error.message}`);
-    malDispatcher = null; // Will be set below
-  }
-}
-
-// Fallback to HTTP proxy or direct connection
-if (!malDispatcher) {
-  if (HTTP_PROXY_URL) {
-    try {
-      malDispatcher = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
-      logger.info('Using global HTTP proxy for Jikan API.');
-    } catch (error) {
-      logger.warn(`Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      malDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
-    }
-  } else {
-    malDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
-    logger.info('undici agent is enabled for direct connections.');
-  }
-}
+// MAL/Jikan dispatcher
+// priority: MAL_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct
+const malDispatcher = createDispatcher({
+  label: 'MAL',
+  socksProxyEnvVar: 'MAL_SOCKS_PROXY_URL',
+  agentOptions: { connect: { timeout: 30_000 } },
+});
 
 // --- Rate limit configuration ---
 // Jikan limits: 3 requests/second, 60 requests/minute

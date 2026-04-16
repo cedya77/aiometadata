@@ -1,15 +1,18 @@
 
-import { httpGet, httpHead } from "./httpClient.js";
+import { httpGet, httpHead, createDispatcher } from "./httpClient.js";
 import { cacheWrapMetaSmart } from "../lib/getCache.js";
 import { getMeta } from "../lib/getMeta.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
-const { Agent } = require('undici');
 const buildInfo = require('../lib/buildInfo');
 
 const logger = consola.withTag('Letterboxd');
 
-const letterboxdDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+const letterboxdDispatcher = createDispatcher({
+  label: 'Letterboxd',
+  proxyEnvVars: [],
+  agentOptions: { connect: { timeout: 30_000 } },
+});
 
 // Rate limiting configuration for Letterboxd API (through StremThru)
 const RATE_LIMIT_CONFIG = {

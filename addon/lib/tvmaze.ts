@@ -1,7 +1,6 @@
-import { httpGet } from '../utils/httpClient.js';
+import { httpGet, createDispatcher } from '../utils/httpClient.js';
 import { cacheWrapTvmazeApi } from './getCache.js';
 const buildInfo = require('./buildInfo');
-import { Agent, ProxyAgent } from 'undici';
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
 const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
 const MAX_RETRIES = 3;
@@ -9,31 +8,11 @@ const RETRY_DELAY = 1000; // 1 second base delay for network errors
 const RATE_LIMIT_FALLBACK_DELAY = 10000; // 10 seconds fallback if Retry-After header is missing
 const RETRY_AFTER_BUFFER = 1000; // Add 1 second buffer to Retry-After value
 
-// TVmaze dispatcher configuration
-// Priority: HTTPS_PROXY/HTTP_PROXY > direct connection
-const HTTP_PROXY_URL = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
-let tvmazeAgent: Agent | ProxyAgent;
-
-if (HTTP_PROXY_URL) {
-  try {
-    tvmazeAgent = new ProxyAgent({ uri: new URL(HTTP_PROXY_URL).toString(), allowH2: false });
-    console.log('[TVmaze] Using global HTTP proxy.');
-  } catch (error: any) {
-    console.error(`[TVmaze] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-    tvmazeAgent = new Agent({
-      allowH2: false,
-      connections: 2,
-      keepAliveTimeout: 10 * 1000,
-    });
-  }
-} else {
-  tvmazeAgent = new Agent({
-    allowH2: false,
-    connections: 2,
-    keepAliveTimeout: 10 * 1000,
-  });
-  console.log('[TVmaze] undici agent is enabled for direct connections (2 max connections to avoid IP blocking).');
-}
+// TVmaze dispatcher
+const tvmazeAgent = createDispatcher({
+  label: 'TVmaze',
+  agentOptions: { connections: 2, keepAliveTimeout: 10_000 },
+});
 
 // Default HTTP client config with User-Agent as recommended by TVmaze
 const DEFAULT_HTTP_CONFIG = {
