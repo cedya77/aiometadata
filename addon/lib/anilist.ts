@@ -1030,17 +1030,26 @@ class AniListAPI {
       mediaFilters.push('status: $status');
     }
 
-    // Season
-    if (params.season) {
+    let resolvedSeason = params.season;
+    let resolvedSeasonYear = params.seasonYear;
+    if (resolvedSeason === 'CURRENT') {
+      const now = new Date();
+      const month = now.getUTCMonth() + 1;
+      if (month >= 4 && month <= 6) resolvedSeason = 'SPRING';
+      else if (month >= 7 && month <= 9) resolvedSeason = 'SUMMER';
+      else if (month >= 10 && month <= 12) resolvedSeason = 'FALL';
+      else resolvedSeason = 'WINTER';
+      resolvedSeasonYear = now.getUTCFullYear();
+    }
+    if (resolvedSeason) {
       variableDeclarations.push('$season: MediaSeason');
-      variables.season = params.season;
+      variables.season = resolvedSeason;
       mediaFilters.push('season: $season');
     }
 
-    // Season Year
-    if (params.seasonYear) {
+    if (resolvedSeasonYear) {
       variableDeclarations.push('$seasonYear: Int');
-      variables.seasonYear = Number(params.seasonYear);
+      variables.seasonYear = Number(resolvedSeasonYear);
       mediaFilters.push('seasonYear: $seasonYear');
     }
 

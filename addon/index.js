@@ -1766,33 +1766,38 @@ addon.get("/api/tvdb/discover/reference", async (req, res) => {
 });
 
 
-// GET /api/anilist/discover/reference - Get AniList tags for discover builder
 addon.get("/api/anilist/discover/reference", async (req, res) => {
   try {
     const { httpPost } = require('./utils/httpClient');
+    const { cacheWrapGlobal } = require('./lib/getCache');
 
-    const query = `
-      query {
-        MediaTagCollection {
-          name
-          category
-          isAdult
+    const data = await cacheWrapGlobal('anilist-discover-reference', async () => {
+      const query = `
+        query {
+          GenreCollection
+          MediaTagCollection {
+            name
+            category
+            isAdult
+          }
         }
-      }
-    `;
+      `;
 
-    const response = await httpPost('https://graphql.anilist.co', { query }, {
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      timeout: 15000
-    });
+      const response = await httpPost('https://graphql.anilist.co', { query }, {
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        timeout: 15000
+      });
 
-    const allTags = response.data?.data?.MediaTagCollection || [];
-    // Filter out adult-only tags by default; the builder has its own adult toggle
-    const tags = allTags
-      .filter((t) => !t.isAdult)
-      .map((t) => ({ name: t.name, category: t.category }));
+      const genres = response.data?.data?.GenreCollection || [];
+      const allTags = response.data?.data?.MediaTagCollection || [];
+      const tags = allTags
+        .filter((t) => !t.isAdult)
+        .map((t) => ({ name: t.name, category: t.category }));
 
-    res.json({ tags });
+      return { genres, tags };
+    }, 24 * 60 * 60);
+
+    res.json(data);
   } catch (error) {
     console.error('[AniList Discover] Failed to fetch reference data:', error.message);
     res.status(500).json({ error: error.message || 'Failed to fetch AniList reference data' });

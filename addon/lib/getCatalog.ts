@@ -216,18 +216,34 @@ async function getMalDiscoverCatalog(
 
     const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
-    const rawParams = discoverMetadata?.params || {};
+    const rawParams = { ...(discoverMetadata?.params || {}) };
     const customCacheTTL = catalogConfig?.cacheTTL || null;
+
+    let seasonCacheSuffix = '';
+    if (rawParams.season) {
+      let resolvedSeason = rawParams.season;
+      let resolvedYear = rawParams.seasonYear;
+      if (resolvedSeason === 'CURRENT') {
+        const now = new Date();
+        const month = now.getUTCMonth() + 1;
+        if (month >= 4 && month <= 6) resolvedSeason = 'SPRING';
+        else if (month >= 7 && month <= 9) resolvedSeason = 'SUMMER';
+        else if (month >= 10 && month <= 12) resolvedSeason = 'FALL';
+        else resolvedSeason = 'WINTER';
+        resolvedYear = now.getUTCFullYear();
+      }
+      seasonCacheSuffix = `-${resolvedSeason}${resolvedYear || ''}`;
+    }
 
     if (genreName && genreName.toLowerCase() !== 'none') {
       const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
         return await jikan.getAnimeGenres();
       }, null, { skipVersion: true });
-    
+
       const selectedGenre = allAnimeGenres.find(
         (g: any) => g.name.toLowerCase() === genreName.toLowerCase()
       );
-    
+
       if (selectedGenre) {
         const genreId = String(selectedGenre.mal_id);
         const existing = rawParams.genres ? String(rawParams.genres).split(',').map((s: string) => s.trim()) : [];
@@ -239,7 +255,7 @@ async function getMalDiscoverCatalog(
     }
 
     const response = await cacheWrapJikanApi(
-      `mal-discover-${catalogId}-page${page}-genre${genreName || 'All'}`,
+      `mal-discover-${catalogId}-page${page}-genre${genreName || 'All'}${seasonCacheSuffix}`,
       async () => jikan.fetchDiscover(rawParams, page),
       customCacheTTL || 30 * 60
     );
@@ -284,9 +300,21 @@ async function getAniListDiscoverCatalog(
 
     const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
     const discoverMetadata = catalogConfig?.metadata?.discover || {};
-    const rawParams = discoverMetadata?.params || {};
+    const rawParams = { ...(discoverMetadata?.params || {}) };
     const customCacheTTL = catalogConfig?.cacheTTL || null;
     const pageSize = 50;
+
+    if (rawParams.season === 'CURRENT') {
+      const now = new Date();
+      const month = now.getUTCMonth() + 1;
+      let resolvedSeason = 'WINTER';
+      if (month >= 4 && month <= 6) resolvedSeason = 'SPRING';
+      else if (month >= 7 && month <= 9) resolvedSeason = 'SUMMER';
+      else if (month >= 10 && month <= 12) resolvedSeason = 'FALL';
+      rawParams.season = resolvedSeason;
+      rawParams.seasonYear = now.getUTCFullYear();
+      logger.info(`[AniList Discover] Resolved CURRENT → ${resolvedSeason} ${rawParams.seasonYear} for ${catalogId}`);
+    }
 
     if (genre && genre.toLowerCase() !== 'none') {
       if (rawParams.genre_in) {

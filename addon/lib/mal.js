@@ -818,14 +818,48 @@ async function fetchDiscover(params = {}, page = 1) {
     queryParams.max_score = Number(params.max_score);
   }
 
-  // start_date: YYYY-MM-DD (aired after)
-  if (params.start_date) {
-    queryParams.start_date = params.start_date;
+  let resolvedStartDate = params.start_date;
+  let resolvedEndDate = params.end_date;
+  let resolvedStatus = queryParams.status;
+  if (params.season) {
+    const isCurrent = params.season === 'CURRENT';
+    let season = params.season;
+    let year = params.seasonYear ? Number(params.seasonYear) : null;
+    if (isCurrent) {
+      const now = new Date();
+      const month = now.getUTCMonth() + 1;
+      if (month >= 4 && month <= 6) season = 'SPRING';
+      else if (month >= 7 && month <= 9) season = 'SUMMER';
+      else if (month >= 10 && month <= 12) season = 'FALL';
+      else season = 'WINTER';
+      year = now.getUTCFullYear();
+    }
+    const seasonRanges = {
+      WINTER: ['01-01', '03-31'],
+      SPRING: ['04-01', '06-30'],
+      SUMMER: ['07-01', '09-30'],
+      FALL: ['10-01', '12-31'],
+    };
+    if (seasonRanges[season] && year) {
+      const [startMonthDay, endMonthDay] = seasonRanges[season];
+      resolvedStartDate = `${year}-${startMonthDay}`;
+      if (isCurrent) {
+        resolvedEndDate = undefined;
+        if (!resolvedStatus) resolvedStatus = 'airing';
+      } else {
+        resolvedEndDate = `${year}-${endMonthDay}`;
+      }
+    }
   }
 
-  // end_date: YYYY-MM-DD (aired before)
-  if (params.end_date) {
-    queryParams.end_date = params.end_date;
+  if (resolvedStartDate) {
+    queryParams.start_date = resolvedStartDate;
+  }
+  if (resolvedEndDate) {
+    queryParams.end_date = resolvedEndDate;
+  }
+  if (resolvedStatus) {
+    queryParams.status = resolvedStatus;
   }
 
   // sfw filter

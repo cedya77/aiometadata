@@ -210,6 +210,15 @@ const ANILIST_STATUS_OPTIONS = [
 ] as const;
 
 const ANILIST_SEASON_OPTIONS = [
+  { value: 'CURRENT', label: 'This Season' },
+  { value: 'WINTER', label: 'Winter' },
+  { value: 'SPRING', label: 'Spring' },
+  { value: 'SUMMER', label: 'Summer' },
+  { value: 'FALL', label: 'Fall' },
+] as const;
+
+const MAL_SEASON_OPTIONS = [
+  { value: 'CURRENT', label: 'This Season' },
   { value: 'WINTER', label: 'Winter' },
   { value: 'SPRING', label: 'Spring' },
   { value: 'SUMMER', label: 'Summer' },
@@ -225,8 +234,9 @@ const ANILIST_COUNTRY_OPTIONS = [
 
 const ANILIST_GENRES = [
   'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy',
-  'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological',
-  'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller',
+  'Hentai', 'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery',
+  'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports',
+  'Supernatural', 'Thriller',
 ] as const;
 
 const SIMKL_MEDIA_OPTIONS: Array<{ value: SimklDiscoverMediaType; label: string }> = [
@@ -779,6 +789,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
   const [anilistExcludeTags, setAnilistExcludeTags] = useState<string[]>([]);
   const [anilistTagSearch, setAnilistTagSearch] = useState('');
   const [anilistAvailableTags, setAnilistAvailableTags] = useState<string[]>([]);
+  const [anilistAvailableGenres, setAnilistAvailableGenres] = useState<string[]>([]);
   const [anilistScoreRange, setAnilistScoreRange] = useState<[number, number]>([0, 100]);
   const [anilistPopularityMin, setAnilistPopularityMin] = useState<number>(0);
   const [anilistEpisodesRange, setAnilistEpisodesRange] = useState<[number, number]>([0, 200]);
@@ -809,6 +820,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
   const [malMaxScore, setMalMaxScore] = useState<number>(10);
   const [malStartDate, setMalStartDate] = useState('');
   const [malEndDate, setMalEndDate] = useState('');
+  const [malSeason, setMalSeason] = useState('');
+  const [malSeasonYear, setMalSeasonYear] = useState('');
   const [malSfw, setMalSfw] = useState(true);
 
   // MDBList Discover state
@@ -1032,6 +1045,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     malMaxScore,
     malStartDate,
     malEndDate,
+    malSeason,
+    malSeasonYear,
     malSfw,
     mdblistSortDirection,
     mdblistScoreMin,
@@ -1047,6 +1062,11 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     mdblistGenres,
     mdblistGenreMode,
   ]);
+
+  const anilistGenreList = useMemo(
+    () => (anilistAvailableGenres.length > 0 ? anilistAvailableGenres : (ANILIST_GENRES as readonly string[])),
+    [anilistAvailableGenres]
+  );
 
   const activeFilterCount = useMemo(() => {
     const baseKeys = discoverSource === 'tmdb'
@@ -1142,6 +1162,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setAnilistExcludeTags([]);
     setAnilistTagSearch('');
     setAnilistAvailableTags([]);
+    setAnilistAvailableGenres([]);
     setAnilistScoreRange([0, 100]);
     setAnilistPopularityMin(0);
     setAnilistEpisodesRange([0, 200]);
@@ -1168,6 +1189,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setMalMaxScore(10);
     setMalStartDate('');
     setMalEndDate('');
+    setMalSeason('');
+    setMalSeasonYear('');
     setMalSfw(true);
 
     setMdblistSortDirection('desc');
@@ -1311,6 +1334,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     if (typeof fs.malMaxScore === 'number') setMalMaxScore(fs.malMaxScore);
     if (fs.malStartDate) setMalStartDate(fs.malStartDate);
     if (fs.malEndDate) setMalEndDate(fs.malEndDate);
+    if (fs.malSeason) setMalSeason(fs.malSeason);
+    if (fs.malSeasonYear) setMalSeasonYear(fs.malSeasonYear);
     if (typeof fs.malSfw === 'boolean') setMalSfw(fs.malSfw);
 
     // MDBList
@@ -1369,8 +1394,10 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     if (typeof fs.malMaxScore === 'number') setMalMaxScore(fs.malMaxScore);
     if (fs.malStartDate) setMalStartDate(fs.malStartDate);
     if (fs.malEndDate) setMalEndDate(fs.malEndDate);
+    if (fs.malSeason) setMalSeason(fs.malSeason);
+    if (fs.malSeasonYear) setMalSeasonYear(fs.malSeasonYear);
     if (typeof fs.malSfw === 'boolean') setMalSfw(fs.malSfw);
-  
+
     // AniList fields
     if (fs.anilistFormats) setAnilistFormats(fs.anilistFormats);
     if (fs.anilistStatus) setAnilistStatus(fs.anilistStatus);
@@ -1516,6 +1543,9 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
           if (cancelled) return;
           if (Array.isArray(data.tags)) {
             setAnilistAvailableTags(data.tags.map((t: any) => typeof t === 'string' ? t : t.name));
+          }
+          if (Array.isArray(data.genres)) {
+            setAnilistAvailableGenres(data.genres.filter((g: any) => typeof g === 'string'));
           }
           setReferences(null);
           return;
@@ -2019,8 +2049,15 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
       }
       if (malMinScore > 0) malParams.min_score = malMinScore;
       if (malMaxScore < 10) malParams.max_score = malMaxScore;
-      if (malStartDate) malParams.start_date = malStartDate;
-      if (malEndDate) malParams.end_date = malEndDate;
+      if (malSeason) {
+        malParams.season = malSeason;
+        if (malSeason !== 'CURRENT' && malSeasonYear) {
+          malParams.seasonYear = malSeasonYear;
+        }
+      } else {
+        if (malStartDate) malParams.start_date = malStartDate;
+        if (malEndDate) malParams.end_date = malEndDate;
+      }
       if (malSfw) malParams.sfw = true;
       return malParams;
     }
@@ -2312,6 +2349,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
         malMaxScore,
         malStartDate,
         malEndDate,
+        malSeason,
+        malSeasonYear,
         malSfw,
       });
     }
@@ -2760,7 +2799,14 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                       </div>
                       <div className="space-y-2">
                         <Label>Season</Label>
-                        <Select value={anilistSeason || NONE_VALUE} onValueChange={(v) => setAnilistSeason(v === NONE_VALUE ? '' : v)}>
+                        <Select
+                          value={anilistSeason || NONE_VALUE}
+                          onValueChange={(v) => {
+                            const next = v === NONE_VALUE ? '' : v;
+                            setAnilistSeason(next);
+                            if (next === 'CURRENT') setAnilistSeasonYear('');
+                          }}
+                        >
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value={NONE_VALUE}>Any</SelectItem>
@@ -2770,7 +2816,16 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="anilist-season-year">Season Year</Label>
-                        <Input id="anilist-season-year" type="number" min={1900} max={2100} placeholder="Any" value={anilistSeasonYear} onChange={(e) => setAnilistSeasonYear(e.target.value)} />
+                        <Input
+                          id="anilist-season-year"
+                          type="number"
+                          min={1900}
+                          max={2100}
+                          placeholder={anilistSeason === 'CURRENT' ? 'Auto (current year)' : 'Any'}
+                          value={anilistSeason === 'CURRENT' ? '' : anilistSeasonYear}
+                          disabled={anilistSeason === 'CURRENT'}
+                          onChange={(e) => setAnilistSeasonYear(e.target.value)}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Country of Origin</Label>
@@ -3083,13 +3138,51 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                         </div>
                       </div>
 
-                      {/* Date range */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Season</Label>
+                          <Select
+                            value={malSeason || NONE_VALUE}
+                            onValueChange={(v) => {
+                              const next = v === NONE_VALUE ? '' : v;
+                              setMalSeason(next);
+                              if (next === 'CURRENT') setMalSeasonYear('');
+                              if (next) {
+                                setMalStartDate('');
+                                setMalEndDate('');
+                              }
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NONE_VALUE}>Any</SelectItem>
+                              {MAL_SEASON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mal-season-year">Season Year</Label>
+                          <Input
+                            id="mal-season-year"
+                            type="number"
+                            min={1900}
+                            max={2100}
+                            placeholder={malSeason === 'CURRENT' ? 'Auto (current year)' : 'Any'}
+                            value={malSeason === 'CURRENT' ? '' : malSeasonYear}
+                            disabled={!malSeason || malSeason === 'CURRENT'}
+                            onChange={(e) => setMalSeasonYear(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="mal-start-date">Aired After</Label>
                           <Input
                             id="mal-start-date" type="date"
                             value={malStartDate}
+                            disabled={!!malSeason}
+                            placeholder={malSeason ? 'Set by season filter' : undefined}
                             onChange={(e) => setMalStartDate(e.target.value)}
                           />
                         </div>
@@ -3098,6 +3191,8 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                           <Input
                             id="mal-end-date" type="date"
                             value={malEndDate}
+                            disabled={!!malSeason}
+                            placeholder={malSeason ? 'Set by season filter' : undefined}
                             onChange={(e) => setMalEndDate(e.target.value)}
                           />
                         </div>
@@ -4193,7 +4288,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                             <SelectValue placeholder="Select genre to include" />
                           </SelectTrigger>
                           <SelectContent>
-                            {ANILIST_GENRES.filter(g => !anilistIncludeGenres.includes(g)).map(genre => (
+                            {anilistGenreList.filter(g => !anilistIncludeGenres.includes(g)).map(genre => (
                               <SelectItem key={genre} value={genre}>
                                 {genre}
                               </SelectItem>
@@ -4237,7 +4332,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                             <SelectValue placeholder="Select genre to exclude" />
                           </SelectTrigger>
                           <SelectContent>
-                            {ANILIST_GENRES.filter(g => !anilistExcludeGenres.includes(g)).map(genre => (
+                            {anilistGenreList.filter(g => !anilistExcludeGenres.includes(g)).map(genre => (
                               <SelectItem key={genre} value={genre}>
                                 {genre}
                               </SelectItem>
