@@ -12,7 +12,7 @@ import { ChevronDown, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 import { getGenresBySelection, GenreSelection } from '@/data/genres';
-import { getMdbListType, createMDBListCatalog } from '@/utils/catalogUtils';
+import { getMdbListType, createMDBListCatalog, isDynamicMixedList, createMDBListUnifiedDynamicCatalog } from '@/utils/catalogUtils';
 import type { CatalogConfig } from '@/contexts/ConfigContext';
 
 interface MDBListIntegrationProps {
@@ -48,6 +48,14 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
   const [userListSort, setUserListSort] = useState<'ranked' | 'name' | 'created'>('ranked');
   const [watchlistUnified, setWatchlistUnified] = useState<boolean>(true);
+
+  const [dynamicMixedPrompt, setDynamicMixedPrompt] = useState<{
+    open: boolean;
+    lists: any[];
+    username: string;
+    listSlug: string;
+    listUrl: string;
+  } | null>(null);
 
   // User info state
   const [userInfo, setUserInfo] = useState<any>(null);
@@ -679,6 +687,65 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
     }
   };
 
+  const addCustomListAsSplit = (lists: any[], listUrl: string, listName: string) => {
+    setConfig(prev => {
+      const newCatalogs: CatalogConfig[] = [];
+      let addedCount = 0;
+
+      lists.forEach((list: any) => {
+        const newCatalog = createMDBListCatalog({
+          list,
+          sort: defaultSort,
+          order: defaultOrder,
+          cacheTTL: defaultCacheTTL,
+          genreSelection: defaultGenreSelection,
+          displayTypeOverrides: prev.displayTypeOverrides,
+          listUrl,
+        });
+
+        if (prev.catalogs.some(c => c.id === newCatalog.id)) return;
+        newCatalogs.push(newCatalog);
+        addedCount++;
+      });
+
+      if (addedCount === 0) {
+        toast.info(`List "${listName}" is already in your catalog list.`);
+        return prev;
+      }
+
+      return { ...prev, catalogs: [...prev.catalogs, ...newCatalogs] };
+    });
+
+    if (lists.length === 1) {
+      toast.success("List Added", { description: `The list "${listName}" has been added to your catalogs.` });
+    } else {
+      toast.success("Lists Added", { description: `${lists.length} catalog(s) from "${listName}" have been added to your catalogs.` });
+    }
+  };
+
+  const addCustomListAsUnified = (lists: any[], username: string, listSlug: string, listUrl: string, listName: string) => {
+    setConfig(prev => {
+      const newCatalog = createMDBListUnifiedDynamicCatalog({
+        lists,
+        username,
+        listSlug,
+        cacheTTL: defaultCacheTTL,
+        genreSelection: defaultGenreSelection,
+        displayTypeOverrides: prev.displayTypeOverrides,
+        listUrl,
+      });
+
+      if (prev.catalogs.some(c => c.id === newCatalog.id)) {
+        toast.info(`List "${listName}" is already in your catalog list.`);
+        return prev;
+      }
+
+      return { ...prev, catalogs: [...prev.catalogs, newCatalog] };
+    });
+
+    toast.success("List Added", { description: `Unified catalog for "${listName}" has been added.` });
+  };
+
   const handleAddCustomList = async () => {
     if (!tempKey) {
         toast.error("Please enter your MDBList API key first.");
@@ -700,50 +767,21 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
       if (!Array.isArray(lists) || lists.length === 0) {
         throw new Error("No lists found in the response.");
       }
-      
-      setConfig(prev => {
-        let newCatalogs: CatalogConfig[] = [];
-        let addedCount = 0;
-        let skippedCount = 0;
-
-        lists.forEach((list: any) => {
-          const newCatalog = createMDBListCatalog({
-            list,
-            sort: defaultSort,
-            order: defaultOrder,
-            cacheTTL: defaultCacheTTL,
-            genreSelection: defaultGenreSelection,
-            displayTypeOverrides: prev.displayTypeOverrides,
-            listUrl: customListUrl,
-          });
-
-          // Prevent duplicates
-          if (prev.catalogs.some(c => c.id === newCatalog.id)) {
-            skippedCount++;
-            return;
-          }
-          
-          newCatalogs.push(newCatalog);
-          addedCount++;
-        });
-
-        if (addedCount === 0) {
-          toast.info(`List "${lists[0]?.name || 'Unknown'}" is already in your catalog list.`);
-          return prev;
-        }
-        
-        return { 
-          ...prev, 
-          catalogs: [...prev.catalogs, ...newCatalogs],
-        };
-      });
 
       const listName = lists[0]?.name || 'List';
-      if (lists.length === 1) {
-        toast.success("List Added", { description: `The list "${listName}" has been added to your catalogs.` });
-      } else {
-        toast.success("Lists Added", { description: `${lists.length} catalog(s) from "${listName}" have been added to your catalogs.` });
+
+      if (isDynamicMixedList(lists)) {
+        setDynamicMixedPrompt({
+          open: true,
+          lists,
+          username,
+          listSlug: listname,
+          listUrl: customListUrl,
+        });
+        return;
       }
+
+      addCustomListAsSplit(lists, customListUrl, listName);
       setCustomListUrl("");
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -1825,6 +1863,61 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             </div>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog
+        open={!!dynamicMixedPrompt?.open}
+        onOpenChange={(open) => {
+          if (!open) setDynamicMixedPrompt(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dynamic Mixed List</DialogTitle>
+            <DialogDescription>
+              "{dynamicMixedPrompt?.lists?.[0]?.name}" is a dynamic list that contains both movies and shows.
+              MDBList splits these into separate sub-lists. How do you want to import it?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2">
+            <Button
+              onClick={() => {
+                if (!dynamicMixedPrompt) return;
+                addCustomListAsUnified(
+                  dynamicMixedPrompt.lists,
+                  dynamicMixedPrompt.username,
+                  dynamicMixedPrompt.listSlug,
+                  dynamicMixedPrompt.listUrl,
+                  dynamicMixedPrompt.lists[0]?.name || 'List'
+                );
+                setDynamicMixedPrompt(null);
+                setCustomListUrl("");
+              }}
+            >
+              Unified — single combined catalog
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!dynamicMixedPrompt) return;
+                addCustomListAsSplit(
+                  dynamicMixedPrompt.lists,
+                  dynamicMixedPrompt.listUrl,
+                  dynamicMixedPrompt.lists[0]?.name || 'List'
+                );
+                setDynamicMixedPrompt(null);
+                setCustomListUrl("");
+              }}
+            >
+              Split — separate movies and series catalogs
+            </Button>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

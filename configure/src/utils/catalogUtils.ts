@@ -116,6 +116,72 @@ export function createMDBListCatalog(options: MDBListCatalogOptions): CatalogCon
   };
 }
 
+/**
+ * Detects a dynamic mixed list: multiple entries, all with `dynamic: true`,
+ * spanning both movie and show mediatypes (the API splits them by type).
+ */
+export function isDynamicMixedList(lists: any[]): boolean {
+  if (!Array.isArray(lists) || lists.length < 2) return false;
+  if (!lists.every((l) => l?.dynamic === true)) return false;
+  const mediatypes = new Set(lists.map((l) => l?.mediatype).filter(Boolean));
+  return mediatypes.has('movie') && mediatypes.has('show');
+}
+
+export interface MDBListUnifiedDynamicOptions {
+  lists: any[];
+  username: string;
+  listSlug: string;
+  cacheTTL?: number;
+  genreSelection?: GenreSelection;
+  displayTypeOverrides?: { movie?: string; series?: string };
+  listUrl?: string;
+}
+
+/**
+ * Creates a single unified catalog for a dynamic mixed MDBList, fetching
+ * items via the by-name endpoint so both movies and shows come back together.
+ */
+export function createMDBListUnifiedDynamicCatalog(
+  options: MDBListUnifiedDynamicOptions
+): CatalogConfig {
+  const {
+    lists,
+    username,
+    listSlug,
+    cacheTTL = 86400,
+    genreSelection = 'standard',
+    displayTypeOverrides,
+    listUrl,
+  } = options;
+
+  const totalItems = lists.reduce((sum, l) => sum + (l?.items || 0), 0);
+  const baseList = lists[0] || {};
+  const displayName = baseList.name || listSlug;
+  const displayType = getDisplayTypeOverride('all', displayTypeOverrides);
+
+  return {
+    id: `mdblist.${username}.${listSlug}`,
+    type: 'all',
+    name: displayName,
+    enabled: true,
+    showInHome: true,
+    source: 'mdblist',
+    sourceUrl: `https://api.mdblist.com/lists/${encodeURIComponent(username)}/${encodeURIComponent(listSlug)}/items`,
+    sort: 'default',
+    order: 'asc',
+    cacheTTL,
+    genreSelection,
+    enableRatingPosters: true,
+    ...(displayType && { displayType }),
+    metadata: {
+      itemCount: totalItems,
+      ...(baseList.user_name ? { author: baseList.user_name } : { author: username }),
+      ...(listUrl && { url: listUrl }),
+      mediatype: 'mixed',
+    },
+  };
+}
+
 // ============================================================================
 // Trakt Catalog Creation
 // ============================================================================

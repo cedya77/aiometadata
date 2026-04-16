@@ -741,9 +741,11 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       return metas;
     }
     
-    // Handle external lists via sourceUrl
-    if (catalogConfig?.sourceUrl && catalogConfig.sourceUrl.includes('/external/lists/')) {
-      logger.info(`Fetching MDBList external list from sourceUrl: ${catalogConfig.sourceUrl}`);
+    const isExternalListUrl = catalogConfig?.sourceUrl?.includes('/external/lists/');
+    const isByNameItemsUrl = catalogConfig?.sourceUrl
+      && /api\.mdblist\.com\/lists\/[^/]+\/[^/]+\/items/.test(catalogConfig.sourceUrl);
+    if (catalogConfig?.sourceUrl && (isExternalListUrl || isByNameItemsUrl)) {
+      logger.info(`Fetching MDBList list from sourceUrl: ${catalogConfig.sourceUrl}`);
 
       const sort = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.sort;
       const order = catalogConfig?.sort === 'default' ? undefined : catalogConfig?.order;
@@ -772,7 +774,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
 
       metas = applyAgeRatingFilter(metas, type, config);
-      
+
       return metas;
     }
 

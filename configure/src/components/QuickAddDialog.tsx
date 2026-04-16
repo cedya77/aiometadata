@@ -10,12 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Loader2, Plus, AlertCircle, Link, Search } from 'lucide-react';
 import { toast } from "sonner";
 import { parseQuickAddUrl, ParsedUrl } from '@/utils/urlParser';
-import { 
-  createMDBListCatalog, 
-  createTraktCatalog, 
-  createLetterboxdCatalog, 
+import {
+  createMDBListCatalog,
+  createTraktCatalog,
+  createLetterboxdCatalog,
   createCustomManifestCatalog,
-  getMdbListType 
+  getMdbListType,
+  isDynamicMixedList,
+  createMDBListUnifiedDynamicCatalog,
 } from '@/utils/catalogUtils';
 import { apiCache } from '@/utils/apiCache';
 
@@ -54,6 +56,14 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
   
   // For manifest catalogs
   const [manifest, setManifest] = useState<any>(null);
+
+  const [dynamicMixedPrompt, setDynamicMixedPrompt] = useState<{
+    open: boolean;
+    lists: any[];
+    username: string;
+    listSlug: string;
+    listUrl: string;
+  } | null>(null);
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -173,36 +183,60 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
         const response = await fetch(
           `/api/mdblist/lists/${encodeURIComponent(parsedUrl.username)}/${encodeURIComponent(parsedUrl.listSlug)}?apikey=${apiKey}`
         );
-        
+
         if (!response.ok) {
           throw new Error(`Failed to fetch list (Status: ${response.status})`);
         }
 
-        const [list] = await response.json();
-        const catalogId = `mdblist.${list.id}`;
-        
-        if (catalogExists(catalogId)) {
-          toast.info(`List "${list.name}" is already in your catalog list.`);
+        const lists = await response.json();
+        if (!Array.isArray(lists) || lists.length === 0) {
+          throw new Error('No lists returned from MDBList');
+        }
+
+        const listUrl = `https://mdblist.com/lists/${parsedUrl.username}/${parsedUrl.listSlug}`;
+        const listName = lists[0]?.name || 'List';
+
+        if (isDynamicMixedList(lists)) {
+          setDynamicMixedPrompt({
+            open: true,
+            lists,
+            username: parsedUrl.username,
+            listSlug: parsedUrl.listSlug,
+            listUrl,
+          });
+          return;
+        }
+
+        const newCatalogs: any[] = [];
+        for (const list of lists) {
+          const catalogId = `mdblist.${list.id}`;
+          if (catalogExists(catalogId) || newCatalogs.some(c => c.id === catalogId)) continue;
+          newCatalogs.push(createMDBListCatalog({
+            list,
+            cacheTTL: catalogTTL,
+            displayTypeOverrides: config.displayTypeOverrides,
+            listUrl,
+          }));
+        }
+
+        if (newCatalogs.length === 0) {
+          toast.info(`List "${listName}" is already in your catalog list.`);
           onClose();
           return;
         }
 
-        const newCatalog = createMDBListCatalog({
-          list,
-          cacheTTL: catalogTTL,
-          displayTypeOverrides: config.displayTypeOverrides,
-        });
-
         setConfig(prev => ({
           ...prev,
-          catalogs: [...prev.catalogs, newCatalog],
+          catalogs: [...prev.catalogs, ...newCatalogs],
         }));
 
-        toast.success("List Added", { 
-          description: `The list "${list.name}" has been added to your catalogs.` 
+        toast.success("List Added", {
+          description: newCatalogs.length === 1
+            ? `The list "${listName}" has been added to your catalogs.`
+            : `${newCatalogs.length} catalog(s) from "${listName}" have been added.`
         });
         onClose();
-        
+
       } else if (parsedUrl.type === 'user-profile' && parsedUrl.username) {
         // User profile - fetch lists and show selection
         const response = await fetch(
@@ -918,6 +952,86 @@ export function QuickAddDialog({ isOpen, onClose }: QuickAddDialogProps) {
           </DialogClose>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog
+        open={!!dynamicMixedPrompt?.open}
+        onOpenChange={(open) => {
+          if (!open) setDynamicMixedPrompt(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dynamic Mixed List</DialogTitle>
+            <DialogDescription>
+              "{dynamicMixedPrompt?.lists?.[0]?.name}" is a dynamic list that contains both movies and shows.
+              MDBList splits these into separate sub-lists. How do you want to import it?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-2">
+            <Button
+              onClick={() => {
+                if (!dynamicMixedPrompt) return;
+                const { lists, username, listSlug, listUrl } = dynamicMixedPrompt;
+                const listName = lists[0]?.name || 'List';
+                const newCatalog = createMDBListUnifiedDynamicCatalog({
+                  lists,
+                  username,
+                  listSlug,
+                  cacheTTL: catalogTTL,
+                  displayTypeOverrides: config.displayTypeOverrides,
+                  listUrl,
+                });
+
+                if (catalogExists(newCatalog.id)) {
+                  toast.info(`List "${listName}" is already in your catalog list.`);
+                } else {
+                  setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+                  toast.success("List Added", { description: `Unified catalog for "${listName}" has been added.` });
+                }
+                setDynamicMixedPrompt(null);
+                onClose();
+              }}
+            >
+              Unified — single combined catalog
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!dynamicMixedPrompt) return;
+                const { lists, listUrl } = dynamicMixedPrompt;
+                const listName = lists[0]?.name || 'List';
+                const newCatalogs: any[] = [];
+                for (const list of lists) {
+                  const catalogId = `mdblist.${list.id}`;
+                  if (catalogExists(catalogId) || newCatalogs.some(c => c.id === catalogId)) continue;
+                  newCatalogs.push(createMDBListCatalog({
+                    list,
+                    cacheTTL: catalogTTL,
+                    displayTypeOverrides: config.displayTypeOverrides,
+                    listUrl,
+                  }));
+                }
+
+                if (newCatalogs.length === 0) {
+                  toast.info(`List "${listName}" is already in your catalog list.`);
+                } else {
+                  setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, ...newCatalogs] }));
+                  toast.success("Lists Added", { description: `${newCatalogs.length} catalog(s) from "${listName}" have been added.` });
+                }
+                setDynamicMixedPrompt(null);
+                onClose();
+              }}
+            >
+              Split — separate movies and series catalogs
+            </Button>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
