@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Card,
   CardContent,
@@ -10,12 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { useAdmin } from "@/contexts/AdminContext";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import {
@@ -72,6 +67,8 @@ import {
   Trash2,
   Square,
   Play,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   LineChart as RechartsLineChart,
@@ -4295,6 +4292,7 @@ export function Dashboard() {
   const { isMobile } = useBreakpoint();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [activeMobileSection, setActiveMobileSection] = useState<DashboardTab | undefined>(undefined);
 
   // Access level state management - tracks current access level based on AdminContext state
   const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
@@ -4505,44 +4503,69 @@ export function Dashboard() {
     );
   }
 
-  // Mobile layout with accordion
+  // Mobile layout with push/pop navigation
   if (isMobile) {
+    const activePage = dashboardPages.find(p => p.value === activeMobileSection);
+
     return (
-      <div className="w-full p-4">
-        <div className="flex flex-col items-start justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-            <p className="text-sm text-muted-foreground">
-              Monitor your addon's performance, health, and usage statistics
-            </p>
-          </div>
-          <AdminStatusBadge />
-        </div>
-
-
-        <Accordion 
-          type="single" 
-          collapsible 
-          className="w-full"
-          onValueChange={(value) => value && setActiveTab(value as DashboardTab)}
-        >
-          {dashboardPages.map((page, index) => (
-            <AccordionItem
-              value={page.value}
-              key={page.value}
-              className={
-                index === dashboardPages.length - 1 ? "border-b-0" : "border-b"
-              }
+      <div className="w-full p-4 overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          {!activeMobileSection ? (
+            <motion.div
+              key="menu"
+              initial={{ opacity: 0, x: -60 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -60 }}
+              transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
             >
-              <AccordionTrigger className="text-lg font-medium hover:no-underline py-4">
-                {page.title}
-              </AccordionTrigger>
-              <AccordionContent className="pt-2 pb-6">
-                {page.component}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+              <div className="flex flex-col items-start justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Monitor your addon's performance, health, and usage statistics
+                  </p>
+                </div>
+                <AdminStatusBadge />
+              </div>
+
+              <div className="rounded-xl border border-white/[0.06] bg-card/80 backdrop-blur-sm overflow-hidden">
+                {dashboardPages.map((page, index) => (
+                  <button
+                    key={page.value}
+                    onClick={() => {
+                      setActiveTab(page.value as DashboardTab);
+                      setActiveMobileSection(page.value as DashboardTab);
+                    }}
+                    className={`flex items-center justify-between w-full px-4 py-3.5 text-left transition-colors active:bg-white/[0.04] ${
+                      index < dashboardPages.length - 1 ? 'border-b border-white/[0.04]' : ''
+                    }`}
+                  >
+                    <span className="text-[15px] font-medium text-foreground">{page.title}</span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={activeMobileSection}
+              initial={{ opacity: 0, x: 60 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 60 }}
+              transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+            >
+              <button
+                onClick={() => setActiveMobileSection(undefined)}
+                className="flex items-center gap-1 mb-4 -ml-1 py-1.5 px-2 rounded-lg text-muted-foreground active:bg-white/[0.04] transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="text-sm font-medium">Dashboard</span>
+              </button>
+              <h2 className="text-xl font-semibold mb-4">{activePage?.title}</h2>
+              {activePage?.component}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -4572,55 +4595,34 @@ export function Dashboard() {
         </div>
       )}
 
-      <Tabs defaultValue="overview" className="w-full" onValueChange={(value) => setActiveTab(value as DashboardTab)}>
-        <TabsList className="inline-flex h-10 items-center justify-center rounded-md p-1 text-muted-foreground w-full gap-x-1 bg-muted overflow-x-auto">
-          <TabsTrigger
-            value="overview"
-            className="text-xs sm:text-sm whitespace-nowrap"
-          >
-            Overview
-          </TabsTrigger>
-          <TabsTrigger
-            value="analytics"
-            className="text-xs sm:text-sm whitespace-nowrap"
-          >
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger
-            value="content"
-            className="text-xs sm:text-sm whitespace-nowrap"
-          >
-            Content
-          </TabsTrigger>
-          <TabsTrigger
-            value="performance"
-            className="text-xs sm:text-sm whitespace-nowrap"
-          >
-            Perf
-          </TabsTrigger>
-          <TabsTrigger
-            value="system"
-            className="text-xs sm:text-sm whitespace-nowrap"
-          >
-            System
-          </TabsTrigger>
-          {/* Ops and Users tabs only visible for admin users */}
-          {accessLevel === 'admin' && (
-            <>
-              <TabsTrigger
-                value="operations"
-                className="text-xs sm:text-sm whitespace-nowrap"
-              >
-                Ops
-              </TabsTrigger>
-              <TabsTrigger
-                value="users"
-                className="text-xs sm:text-sm whitespace-nowrap"
-              >
-                Users
-              </TabsTrigger>
-            </>
-          )}
+      <Tabs value={activeTab} className="w-full" onValueChange={(value) => setActiveTab(value as DashboardTab)}>
+        <TabsList className="relative inline-flex h-11 items-center justify-center rounded-full p-[3px] text-muted-foreground w-full bg-muted/70 shadow-[inset_0_1px_4px_rgba(0,0,0,0.2),inset_0_0_1px_rgba(0,0,0,0.15)] border border-white/[0.04] overflow-x-auto">
+          {[
+            { value: "overview", label: "Overview" },
+            { value: "analytics", label: "Analytics" },
+            { value: "content", label: "Content" },
+            { value: "performance", label: "Perf" },
+            { value: "system", label: "System" },
+            ...(accessLevel === 'admin' ? [
+              { value: "operations", label: "Ops" },
+              { value: "users", label: "Users" },
+            ] : []),
+          ].map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              className="relative z-10 inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-[13px] rounded-full bg-transparent transition-all duration-200 text-muted-foreground/70 hover:text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {activeTab === tab.value && (
+                <motion.div
+                  layoutId="activeDashboardTabPill"
+                  className="absolute inset-0 rounded-full bg-[hsl(240_6%_12%)] shadow-[0_1px_3px_rgba(0,0,0,0.3),0_1px_1px_rgba(0,0,0,0.2)] border border-white/[0.06]"
+                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                />
+              )}
+              <span className="relative z-10">{tab.label}</span>
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="overview" className="mt-6">
