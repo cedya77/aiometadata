@@ -1501,8 +1501,11 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      extras: `meta-extras:${configHash}:${metaId}`
    };
    
-  const componentNames = Object.keys(componentCacheKeys);
-  const cacheKeys = Object.values(componentCacheKeys).map(key => `v${ADDON_VERSION}:${key}`);
+  const componentEntries = Object.entries(componentCacheKeys).filter(([componentName]) => {
+    return includeVideos || componentName !== 'videos';
+  });
+  const componentNames = componentEntries.map(([componentName]) => componentName);
+  const cacheKeys = componentEntries.map(([, key]) => `v${ADDON_VERSION}:${key}`);
   
   let componentResults;
   
@@ -1609,8 +1612,8 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
        reconstructedMeta.landscapePoster = data.landscapePoster;
      } else if (componentName === 'logo') {
        reconstructedMeta.logo = data.logo;
-     } else if (componentName === 'videos') {
-       reconstructedMeta.videos = data.videos;
+      } else if (componentName === 'videos' && includeVideos) {
+        reconstructedMeta.videos = data.videos;
      } else if (componentName === 'cast') {
        if (!reconstructedMeta.app_extras) reconstructedMeta.app_extras = {};
        reconstructedMeta.app_extras.cast = data.cast;
@@ -1640,6 +1643,10 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     const metaReconstructionKey = `meta:reconstructed:${metaId}`;
     updateCacheHealth(metaReconstructionKey, 'miss', true);
     return { errorReason: 'missing required fields' };
+  }
+
+  if (reconstructedMeta.type === 'series' && !includeVideos && !Array.isArray(reconstructedMeta.videos)) {
+    reconstructedMeta.videos = [];
   }
   
   if ((reconstructedMeta.type === 'series') && includeVideos) {
