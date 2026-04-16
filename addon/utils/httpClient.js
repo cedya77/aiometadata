@@ -1,9 +1,10 @@
 const { request, setGlobalDispatcher, ProxyAgent, Agent, interceptors } = require("undici");
 const buildInfo = require('../lib/buildInfo');
 
-// Shared DNS interceptor, caches lookups up to their TTL (max 60s).
-// Applied to every dispatcher created by createDispatcher() and to the global dispatcher.
-const dnsInterceptor = interceptors.dns({ maxTTL: 60_000 });
+// Create a fresh DNS interceptor per direct dispatcher.
+function createDnsInterceptor() {
+  return interceptors.dns({ maxTTL: 60_000 });
+}
 
 /**
  * Creates an undici Dispatcher with DNS caching and optional proxy support.
@@ -28,7 +29,8 @@ const dnsInterceptor = interceptors.dns({ maxTTL: 60_000 });
  *   (e.g. { requestTls: { timeout: 30_000 } }).
  * @param {string}  [options.label]
  *   Service name used in log output (e.g. 'TVmaze').
- * @returns {import('undici').Dispatcher} Dispatcher with DNS caching applied.
+ * @returns {import('undici').Dispatcher}
+ *   Dispatcher with DNS caching applied.
  */
 function createDispatcher({
   proxyEnvVars = ['HTTPS_PROXY', 'HTTP_PROXY'],
@@ -50,12 +52,12 @@ function createDispatcher({
           const d = socksDispatcher({
             type: proxyUrlObj.protocol === 'socks5:' ? 5 : 4,
             host: proxyUrlObj.hostname,
-            port: parseInt(proxyUrlObj.port),
+            port: Number(proxyUrlObj.port),
             userId: proxyUrlObj.username,
             password: proxyUrlObj.password,
           });
           console.log(`${tag} SOCKS proxy enabled (${socksProxyEnvVar}).`);
-          return d.compose(dnsInterceptor);
+          return d.compose(createDnsInterceptor());
         } else {
           console.warn(`${tag} Unsupported SOCKS protocol: ${proxyUrlObj.protocol}. Falling back.`);
         }
@@ -72,7 +74,7 @@ function createDispatcher({
     try {
       const d = new ProxyAgent({ uri: new URL(proxyUrl).toString(), allowH2: false, ...proxyOptions });
       console.log(`${tag} Using proxy from ${envVar}.`);
-      return d.compose(dnsInterceptor);
+      return d.compose(createDnsInterceptor());
     } catch (error) {
       console.warn(`${tag} Invalid proxy URL in ${envVar}. Falling back. Error: ${error.message}`);
     }
@@ -81,7 +83,7 @@ function createDispatcher({
   // 3. Direct connection
   const d = new Agent({ ...agentOptions });
   if (label) console.log(`${tag} Direct connection.`);
-  return d.compose(dnsInterceptor);
+  return d.compose(createDnsInterceptor());
 }
 
 // Global dispatcher, all httpGet/httpPost/httpRequest calls use this unless
