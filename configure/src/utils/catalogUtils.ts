@@ -454,3 +454,21 @@ export function createPublicMetaDBListCatalog(list: { id: string; name: string }
     source: 'publicmetadb' as const,
   };
 }
+
+export function createPublicMetaDBPickCatalog(pick: { id: string; name: string; filters?: { media_types?: string[] } }): CatalogConfig {
+  let type: 'movie' | 'series' | 'all' = 'all';
+  const mediaTypes = pick.filters?.media_types;
+  if (mediaTypes?.length === 1) {
+    if (mediaTypes[0] === 'movie') type = 'movie';
+    else if (mediaTypes[0] === 'tv') type = 'series';
+  }
+
+  return {
+    id: `publicmetadb.pick.${pick.id}`,
+    type,
+    name: pick.name,
+    enabled: true,
+    showInHome: true,
+    source: 'publicmetadb' as const,
+  };
+}

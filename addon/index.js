@@ -2112,7 +2112,7 @@ addon.post("/api/anilist/discover/preview", async (req, res) => {
       score: item.media.averageScore,
     }));
 
-    return res.json({ results, total_results: response?.total || 0 });
+    return res.json({ results, total_results: 0 });
   } catch (error) {
     consola.error("[AniList Discover Preview] Error:", error.message);
     return res.status(500).json({ error: error.message });
@@ -2843,6 +2843,35 @@ addon.get("/api/publicmetadb/lists/:listId/items", async (req, res) => {
     res.json(data);
   } catch (error) {
     consola.error("[PublicMetaDB Proxy] List items error:", error.message);
+    const status = error.message?.includes('401') ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+addon.get("/api/publicmetadb/picks", async (req, res) => {
+  try {
+    const { apikey } = req.query;
+    if (!apikey) return res.status(400).json({ error: "apikey is required" });
+    const { fetchPicks } = require('./utils/publicmetadbUtils');
+    const data = await fetchPicks(apikey);
+    res.json(data);
+  } catch (error) {
+    consola.error("[PublicMetaDB Proxy] Picks error:", error.message);
+    const status = error.message?.includes('401') ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+addon.get("/api/publicmetadb/picks/:pickId/items", async (req, res) => {
+  try {
+    const { apikey, page } = req.query;
+    const { pickId } = req.params;
+    if (!apikey) return res.status(400).json({ error: "apikey is required" });
+    const { fetchPickItems } = require('./utils/publicmetadbUtils');
+    const data = await fetchPickItems(apikey, pickId, parseInt(page) || 1);
+    res.json(data);
+  } catch (error) {
+    consola.error("[PublicMetaDB Proxy] Pick items error:", error.message);
     const status = error.message?.includes('401') ? 401 : 500;
     res.status(status).json({ error: error.message });
   }

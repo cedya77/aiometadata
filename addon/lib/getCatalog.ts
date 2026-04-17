@@ -7,7 +7,7 @@ import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommend
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
-import { fetchResume, parseResumeItems, fetchListItems, parseListItems } from "../utils/publicmetadbUtils.js";
+import { fetchResume, parseResumeItems, fetchListItems, parseListItems, fetchPickItems, parsePickItems } from "../utils/publicmetadbUtils.js";
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
@@ -2760,6 +2760,16 @@ async function getPublicMetaDBCatalog(
       let metas = await parseListItems(data.items || [], type, language, config);
       metas = applyAgeRatingFilter(metas, type, config);
       logger.success(`[PublicMetaDB] List ${listId}: ${metas.length} items (page ${page})`);
+      return metas;
+    }
+
+    if (catalogId.startsWith('publicmetadb.pick.')) {
+      const pickId = catalogId.replace('publicmetadb.pick.', '');
+      if (page > 5) return [];
+      const data = await fetchPickItems(apiKey, pickId, page);
+      let metas = await parsePickItems(data.items || [], type, language, config);
+      metas = applyAgeRatingFilter(metas, type, config);
+      logger.success(`[PublicMetaDB] Pick ${pickId}: ${metas.length} items (page ${page})`);
       return metas;
     }
 

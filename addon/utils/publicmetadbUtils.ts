@@ -193,6 +193,14 @@ async function fetchListItems(apiKey: string, listId: string, page: number = 1, 
   return makeRequest(`/api/external/lists/${listId}/items?page=${page}&perPage=${perPage}`, apiKey);
 }
 
+async function fetchPicks(apiKey: string): Promise<any> {
+  return makeRequest('/api/external/catalogs', apiKey);
+}
+
+async function fetchPickItems(apiKey: string, pickId: string, page: number = 1): Promise<any> {
+  return makeRequest(`/api/external/catalogs/${pickId}/items?page=${page}`, apiKey);
+}
+
 async function markWatched(
   apiKey: string,
   tmdbId: number,
@@ -320,6 +328,41 @@ async function parseListItems(
   return metas.filter(Boolean);
 }
 
+async function parsePickItems(
+  items: any[],
+  type: string,
+  language: string,
+  config: UserConfig
+): Promise<any[]> {
+  logger.info(`Parsing ${items.length} pick items`);
+
+  const metas = await Promise.all(
+    items.map(async (item: any) => {
+      try {
+        const stremioType = item.media_type === 'movie' ? 'movie' : 'series';
+        if (type !== 'all' && type !== stremioType) return null;
+
+        const stremioId = `tmdb:${item.tmdb_id}`;
+        const cacheId = `pmdb_pick_${stremioId}`;
+
+        const result = await cacheWrapMetaSmart(
+          (config as any).userUUID,
+          cacheId,
+          async () => getMeta(stremioType, language, stremioId, config, (config as any).userUUID, false),
+          undefined, { enableErrorCaching: true, maxRetries: 2 }, stremioType as any, false
+        );
+
+        return result?.meta || null;
+      } catch (err: any) {
+        logger.warn(`Failed to parse pick item tmdb:${item.tmdb_id}: ${err.message}`);
+        return null;
+      }
+    })
+  );
+
+  return metas.filter(Boolean);
+}
+
 // --- Watch tracking (called from subtitleHandler) ---
 
 async function checkinMovie(ids: Record<string, any>, apiKey: string): Promise<boolean> {
@@ -386,9 +429,12 @@ export {
   fetchResume,
   fetchLists,
   fetchListItems,
+  fetchPicks,
+  fetchPickItems,
   markWatched,
   parseResumeItems,
   parseListItems,
+  parsePickItems,
   checkinMovie,
   checkinEpisode,
   getMemoryStats,

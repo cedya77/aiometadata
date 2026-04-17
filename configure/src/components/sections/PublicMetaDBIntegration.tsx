@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
-import { createPublicMetaDBUpNextCatalog, createPublicMetaDBListCatalog } from '@/utils/catalogUtils';
+import { createPublicMetaDBUpNextCatalog, createPublicMetaDBListCatalog, createPublicMetaDBPickCatalog } from '@/utils/catalogUtils';
 
 interface PublicMetaDBIntegrationProps {
   isOpen: boolean;
@@ -24,6 +24,9 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
   const [lists, setLists] = useState<any[]>([]);
   const [selectedLists, setSelectedLists] = useState<Set<string>>(new Set());
   const [isLoadingLists, setIsLoadingLists] = useState(false);
+  const [picks, setPicks] = useState<any[]>([]);
+  const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set());
+  const [isLoadingPicks, setIsLoadingPicks] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -81,6 +84,8 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
     setIsValid(false);
     setLists([]);
     setSelectedLists(new Set());
+    setPicks([]);
+    setSelectedPicks(new Set());
     toast.success("PublicMetaDB disconnected. All PublicMetaDB catalogs have been removed.");
   };
 
@@ -185,6 +190,83 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
       .filter(c => c.id.startsWith('publicmetadb.list.'))
       .map(c => c.id.replace('publicmetadb.list.', ''))
   );
+
+  const addedPickIds = new Set(
+    config.catalogs
+      .filter(c => c.id.startsWith('publicmetadb.pick.'))
+      .map(c => c.id.replace('publicmetadb.pick.', ''))
+  );
+
+  const loadPicks = useCallback(async () => {
+    const key = config.apiKeys.publicmetadb;
+    if (!key) return;
+    setIsLoadingPicks(true);
+    try {
+      const res = await fetch(`/api/publicmetadb/picks?apikey=${encodeURIComponent(key)}`);
+      const data = await res.json();
+      const items = data.items || [];
+      setPicks(items);
+      setSelectedPicks(new Set());
+      if (items.length === 0) {
+        toast.info("No picks found", { description: "You have no picks on your PublicMetaDB account." });
+      } else {
+        toast.success("Picks loaded", { description: `Found ${items.length} pick(s)` });
+      }
+    } catch {
+      toast.error("Failed to load picks", { description: "Could not reach the PublicMetaDB API." });
+    } finally {
+      setIsLoadingPicks(false);
+    }
+  }, [config.apiKeys.publicmetadb]);
+
+  const handlePickSelection = (pickId: string, checked: boolean) => {
+    const next = new Set(selectedPicks);
+    if (checked) next.add(pickId);
+    else next.delete(pickId);
+    setSelectedPicks(next);
+  };
+
+  const [isImportingPicks, setIsImportingPicks] = useState(false);
+
+  const importSelectedPicks = useCallback(async () => {
+    if (selectedPicks.size === 0) {
+      toast.error("Please select at least one pick to import.");
+      return;
+    }
+
+    setIsImportingPicks(true);
+    try {
+      const picksToImport: any[] = [];
+      for (const pickId of selectedPicks) {
+        const pick = picks.find(p => p.id === pickId);
+        if (!pick) continue;
+        if (config.catalogs.some(c => c.id === `publicmetadb.pick.${pick.id}`)) continue;
+        picksToImport.push(pick);
+      }
+
+      if (picksToImport.length === 0) {
+        toast.info("Selected picks are already in your catalogs.");
+        return;
+      }
+
+      setConfig(prev => ({
+        ...prev,
+        catalogs: [
+          ...prev.catalogs,
+          ...picksToImport.map(pick => createPublicMetaDBPickCatalog(pick)),
+        ],
+      }));
+
+      toast.success("Picks imported successfully", {
+        description: `${picksToImport.length} pick(s) added to your catalogs`
+      });
+      setSelectedPicks(new Set());
+    } catch {
+      toast.error("Failed to import picks");
+    } finally {
+      setIsImportingPicks(false);
+    }
+  }, [selectedPicks, picks, setConfig, config.catalogs]);
 
   const hasUpNext = config.catalogs.some(c => c.id === 'publicmetadb.upnext');
 
@@ -393,6 +475,113 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
                           <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing...</>
                         ) : (
                           <>Import {selectedLists.size} Selected List{selectedLists.size !== 1 ? 's' : ''}</>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Picks */}
+          {isValid && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Picks</CardTitle>
+                <CardDescription>
+                  Personalized recommendation lists based on your taste profile
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  onClick={loadPicks}
+                  disabled={isLoadingPicks}
+                  variant="outline"
+                >
+                  {isLoadingPicks ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    "Load My Picks"
+                  )}
+                </Button>
+
+                {picks.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3 p-3 border rounded-lg bg-muted/30">
+                      <Switch
+                        id="select-all-pmdb-picks"
+                        checked={selectedPicks.size === picks.filter(p => !addedPickIds.has(p.id)).length && picks.filter(p => !addedPickIds.has(p.id)).length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedPicks(new Set(picks.filter(p => !addedPickIds.has(p.id)).map(p => p.id)));
+                          } else {
+                            setSelectedPicks(new Set());
+                          }
+                        }}
+                      />
+                      <Label htmlFor="select-all-pmdb-picks" className="font-medium cursor-pointer">
+                        Select all picks
+                      </Label>
+                      <Badge variant="outline" className="ml-auto">
+                        {selectedPicks.size}/{picks.filter(p => !addedPickIds.has(p.id)).length}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                      {picks.map((pick) => {
+                        const alreadyAdded = addedPickIds.has(pick.id);
+                        return (
+                          <div key={pick.id} className={`flex items-start space-x-3 p-3 border rounded-lg ${alreadyAdded ? 'opacity-50' : ''}`}>
+                            <Switch
+                              id={`pmdb-pick-${pick.id}`}
+                              checked={selectedPicks.has(pick.id) || alreadyAdded}
+                              disabled={alreadyAdded}
+                              onCheckedChange={(checked) => handlePickSelection(pick.id, checked)}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <Label htmlFor={`pmdb-pick-${pick.id}`} className="font-medium cursor-pointer">
+                                {pick.name}
+                              </Label>
+                              <div className="flex items-center gap-2 mt-1">
+                                {pick.seed_type && (
+                                  <Badge variant="outline" className="text-xs capitalize">
+                                    {pick.seed_type}
+                                  </Badge>
+                                )}
+                                {pick.filters?.media_types?.length > 0 && (
+                                  <Badge variant="outline" className="text-xs capitalize">
+                                    {pick.filters.media_types.map((t: string) => t === 'tv' ? 'series' : t).join(', ')}
+                                  </Badge>
+                                )}
+                                {alreadyAdded && (
+                                  <Badge variant="secondary" className="text-xs">Added</Badge>
+                                )}
+                              </div>
+                              {pick.description && (
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                  {pick.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {selectedPicks.size > 0 && (
+                      <Button
+                        onClick={importSelectedPicks}
+                        className="w-full"
+                        disabled={isImportingPicks}
+                      >
+                        {isImportingPicks ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing...</>
+                        ) : (
+                          <>Import {selectedPicks.size} Selected Pick{selectedPicks.size !== 1 ? 's' : ''}</>
                         )}
                       </Button>
                     )}
