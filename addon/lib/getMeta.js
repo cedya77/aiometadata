@@ -45,46 +45,131 @@ const processLogo = (logoUrl) => {
   return logoUrl.replace(/^http:/, "https:");
 };
 
-/**
- * Creates a Date object from a date string (YYYY-MM-DD or ISO format) at noon in the user's timezone
- * @param {string} dateString - Date string in YYYY-MM-DD format or ISO format (e.g., 1999-10-20T00:00:00+00:00)
- * @param {string} timezone - IANA timezone string (e.g., 'America/New_York', 'UTC')
- * @returns {Date} - Date object representing noon in the specified timezone
- */
-const createDateInTimezone = (dateString, timezone = 'UTC') => {
-  if (!dateString) return null;
-  
+const COUNTRY_TIMEZONES = {
+  us: 'America/New_York', usa: 'America/New_York',
+  gb: 'Europe/London', uk: 'Europe/London',
+  jp: 'Asia/Tokyo', jpn: 'Asia/Tokyo',
+  kr: 'Asia/Seoul', kor: 'Asia/Seoul',
+  cn: 'Asia/Shanghai', chn: 'Asia/Shanghai',
+  tw: 'Asia/Taipei', twn: 'Asia/Taipei',
+  hk: 'Asia/Hong_Kong', hkg: 'Asia/Hong_Kong',
+  ca: 'America/Toronto', can: 'America/Toronto',
+  mx: 'America/Mexico_City', mex: 'America/Mexico_City',
+  br: 'America/Sao_Paulo', bra: 'America/Sao_Paulo',
+  ar: 'America/Argentina/Buenos_Aires', arg: 'America/Argentina/Buenos_Aires',
+  au: 'Australia/Sydney', aus: 'Australia/Sydney',
+  nz: 'Pacific/Auckland', nzl: 'Pacific/Auckland',
+  de: 'Europe/Berlin', deu: 'Europe/Berlin', ger: 'Europe/Berlin',
+  fr: 'Europe/Paris', fra: 'Europe/Paris',
+  es: 'Europe/Madrid', esp: 'Europe/Madrid',
+  it: 'Europe/Rome', ita: 'Europe/Rome',
+  nl: 'Europe/Amsterdam', nld: 'Europe/Amsterdam',
+  se: 'Europe/Stockholm', swe: 'Europe/Stockholm',
+  no: 'Europe/Oslo', nor: 'Europe/Oslo',
+  dk: 'Europe/Copenhagen', dnk: 'Europe/Copenhagen',
+  fi: 'Europe/Helsinki', fin: 'Europe/Helsinki',
+  ru: 'Europe/Moscow', rus: 'Europe/Moscow',
+  in: 'Asia/Kolkata', ind: 'Asia/Kolkata',
+  th: 'Asia/Bangkok', tha: 'Asia/Bangkok',
+  id: 'Asia/Jakarta', idn: 'Asia/Jakarta',
+  ph: 'Asia/Manila', phl: 'Asia/Manila',
+  vn: 'Asia/Ho_Chi_Minh', vnm: 'Asia/Ho_Chi_Minh',
+  tr: 'Europe/Istanbul', tur: 'Europe/Istanbul',
+  za: 'Africa/Johannesburg', zaf: 'Africa/Johannesburg',
+  eg: 'Africa/Cairo', egy: 'Africa/Cairo',
+  ae: 'Asia/Dubai', are: 'Asia/Dubai',
+  il: 'Asia/Jerusalem', isr: 'Asia/Jerusalem',
+  ie: 'Europe/Dublin', irl: 'Europe/Dublin',
+  pt: 'Europe/Lisbon', prt: 'Europe/Lisbon',
+  pl: 'Europe/Warsaw', pol: 'Europe/Warsaw',
+  cz: 'Europe/Prague', cze: 'Europe/Prague',
+  at: 'Europe/Vienna', aut: 'Europe/Vienna',
+  ch: 'Europe/Zurich', che: 'Europe/Zurich',
+  be: 'Europe/Brussels', bel: 'Europe/Brussels',
+  gr: 'Europe/Athens', grc: 'Europe/Athens',
+  ro: 'Europe/Bucharest', rou: 'Europe/Bucharest',
+  hu: 'Europe/Budapest', hun: 'Europe/Budapest',
+};
+
+const resolveCountryTimezone = (country) => {
+  if (!country) return null;
+  const key = String(country).trim().toLowerCase();
+  return COUNTRY_TIMEZONES[key] || null;
+};
+
+const parseAirsTime = (airsTime) => {
+  if (!airsTime || typeof airsTime !== 'string') return null;
+  const trimmed = airsTime.trim();
+  const m12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)$/i);
+  if (m12) {
+    let h = Number(m12[1]);
+    const m = Number(m12[2]);
+    const isPm = /p/i.test(m12[3]);
+    if (h === 12) h = 0;
+    if (isPm) h += 12;
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) return { hour: h, minute: m };
+  }
+  const m24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    const h = Number(m24[1]);
+    const m = Number(m24[2]);
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) return { hour: h, minute: m };
+  }
+  return null;
+};
+
+const getTimezoneOffsetMinutes = (utcDate, timezone) => {
   try {
-    const dateOnly = dateString.split('T')[0].split(' ')[0];
-    // Parse the date string (YYYY-MM-DD)
-    const [year, month, day] = dateOnly.split('-').map(Number);
-    
-    // Create a date at noon UTC as a starting point
-    const noonUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    
-    // Get what time it is in the target timezone when it's noon UTC
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
-      hour: '2-digit',
-      minute: '2-digit',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
       hour12: false
     });
-    
-    const localTimeAtNoonUTC = formatter.format(noonUTC);
-    const [localHour, localMinute] = localTimeAtNoonUTC.split(':').map(Number);
-    
-    // Calculate how many hours we need to adjust from noon UTC to get noon in target timezone
-    // If it's 7:00 in target timezone when it's noon UTC, we need to go back 5 hours
-    const hoursDiff = 12 - localHour;
-    const minutesDiff = 0 - localMinute;
-    const totalMsDiff = (hoursDiff * 60 + minutesDiff) * 60 * 1000;
-    
-    // Adjust the UTC time to get noon in the target timezone
-    return new Date(noonUTC.getTime() + totalMsDiff);
+    const parts = formatter.formatToParts(utcDate);
+    const lookup = {};
+    for (const p of parts) { lookup[p.type] = p.value; }
+    const hour = lookup.hour === '24' ? '00' : lookup.hour;
+    const asUTC = Date.UTC(
+      Number(lookup.year), Number(lookup.month) - 1, Number(lookup.day),
+      Number(hour), Number(lookup.minute), Number(lookup.second)
+    );
+    return (asUTC - utcDate.getTime()) / 60000;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * Resolve a release-date string to a stable UTC Date anchored at the show's actual
+ * airing moment. If origin TZ/country + airsTime are available, uses them; otherwise
+ * anchors at noon UTC (stable — independent of the requesting user's timezone).
+ *
+ * opts: { originCountry?, originTimezone?, airsTime?, defaultHour? }
+ */
+const resolveReleaseTimestamp = (dateString, opts = {}) => {
+  if (!dateString) return null;
+  try {
+    const dateOnly = String(dateString).split('T')[0].split(' ')[0];
+    const parts = dateOnly.split('-').map(Number);
+    if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+    const [year, month, day] = parts;
+
+    const timezone = opts.originTimezone || resolveCountryTimezone(opts.originCountry);
+    if (!timezone) {
+      return new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    }
+
+    const airTime = parseAirsTime(opts.airsTime);
+    const hour = airTime ? airTime.hour : (typeof opts.defaultHour === 'number' ? opts.defaultHour : 20);
+    const minute = airTime ? airTime.minute : 0;
+
+    const candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+    const offsetMinutes = getTimezoneOffsetMinutes(candidate, timezone);
+    return new Date(candidate.getTime() - offsetMinutes * 60000);
   } catch (error) {
-    logger.warn(`Error creating date in timezone ${timezone} for ${dateString}: ${error.message}`);
-    // Fallback to UTC if timezone parsing fails
-    return new Date(dateString + 'T12:00:00.000Z');
+    logger.warn(`Error resolving release timestamp for ${dateString}: ${error.message}`);
+    return null;
   }
 };
 
@@ -434,7 +519,7 @@ async function processCollectionEntities(movieEntities, seriesEntities, langCode
             episode: ep.number,
             overview: ep.overview,
             thumbnail: ep.image ? (ep.image.startsWith('http') ? ep.image : `${TVDB_IMAGE_BASE}${ep.image}`) : `${host}/missing_thumbnail.png`,
-            released: ep.aired ? createDateInTimezone(ep.aired, config.timezone || 'UTC').toISOString() : null,
+            released: ep.aired ? resolveReleaseTimestamp(ep.aired, { originCountry: seriesData.originalCountry, airsTime: seriesData.airsTime }).toISOString() : null,
             available: ep.aired ? new Date(ep.aired) < new Date() : false
           });
         }
@@ -508,7 +593,7 @@ async function processMovieEntity(entity, langCode3, config) {
       episode: 0, // Will be set by caller
       overview: translatedOverview,
       thumbnail: tvdbPosterUrl,
-      released: movie.first_release?.Date ? createDateInTimezone(movie.first_release.Date, config.timezone || 'UTC').toISOString() : null,
+      released: movie.first_release?.Date ? resolveReleaseTimestamp(movie.first_release.Date, { originCountry: movie.originalCountry }).toISOString() : null,
       available: movie.first_release?.Date ? new Date(movie.first_release.Date) < new Date() : false
     },
     genres: movie.genres?.map(g => g.name) || []
@@ -1085,7 +1170,7 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     const movieData = await moviedb.movieInfo({ id: tmdbId, language: config.language, append_to_response: "release_dates,videos", include_video_language: videoLanguages }, config);
     if (movieData) {
     imdbData.app_extras = imdbData.app_extras || {};
-    imdbData.released = movieData.release_date ? createDateInTimezone(movieData.release_date, config.timezone || 'UTC') : null;
+    imdbData.released = movieData.release_date ? resolveReleaseTimestamp(movieData.release_date, { originCountry: movieData.production_countries?.[0]?.iso_3166_1 }) : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
     const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates); 
     imdbData.app_extras.certification = certification;
@@ -1274,7 +1359,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     director: castCount !== 0 ? Utils.parseDirector(credits).join(', ') : '',
     writer: castCount !== 0 ? Utils.parseWriter(credits).join(', ') : '',
     year: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
-    released: movieData.release_date ? createDateInTimezone(movieData.release_date, config.timezone || 'UTC') : null,
+    released: movieData.release_date ? resolveReleaseTimestamp(movieData.release_date, { originCountry: movieData.production_countries?.[0]?.iso_3166_1 }) : null,
     releaseInfo: movieData.release_date ? movieData.release_date.substring(0, 4) : "",
     runtime: Utils.parseRunTime(movieData.runtime),
     country: Utils.parseCoutry(movieData.production_countries),
@@ -1640,7 +1725,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
         let thumbnailUrl;
         {
-          const isUnaired = !ep.air_date || createDateInTimezone(ep.air_date, config.timezone || 'UTC') > new Date();
+          const isUnaired = !ep.air_date || resolveReleaseTimestamp(ep.air_date, { originCountry: seriesData.origin_country?.[0] }) > new Date();
           if (ep.still_path) {
             thumbnailUrl = `https://image.tmdb.org/t/p/w500${ep.still_path}`;
           } else if (isUnaired) {
@@ -1666,7 +1751,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           title: ep.name || `Episode ${ep.episode_number}`,
           season: ep.season_number,
           episode: ep.episode_number,
-          released: ep.air_date ? createDateInTimezone(ep.air_date, config.timezone || 'UTC').toISOString() : null,
+          released: ep.air_date ? resolveReleaseTimestamp(ep.air_date, { originCountry: seriesData.origin_country?.[0] }).toISOString() : null,
           overview: ep.overview,
           thumbnail: finalThumbnail,
           runtime: Utils.parseRunTime(ep.runtime),
@@ -1737,7 +1822,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     description: Utils.addMetaProviderAttribution(overview, 'TMDB', config),
     year: seriesData.first_air_date ? seriesData.first_air_date.substring(0, 4) : "",
     releaseInfo: releaseInfo,
-    released: seriesData.first_air_date ? createDateInTimezone(seriesData.first_air_date, config.timezone || 'UTC').toISOString() : null,
+    released: seriesData.first_air_date ? resolveReleaseTimestamp(seriesData.first_air_date, { originCountry: seriesData.origin_country?.[0] }).toISOString() : null,
     status: seriesData.status,
     imdbRating,
     poster: Utils.isPosterRatingEnabled(config) ? posterProxyUrl : poster,
@@ -1905,7 +1990,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     writer: castCount !== 0 ? writers.join(', ') : '',
     year: year,
     releaseInfo: year,
-    released: movieData.first_release.date ? createDateInTimezone(movieData.first_release.date, config.timezone || 'UTC').toISOString() : null,
+    released: movieData.first_release.date ? resolveReleaseTimestamp(movieData.first_release.date, { originCountry: movieData.originalCountry }).toISOString() : null,
     runtime: Utils.parseRunTime(movieData.runtime),
     country: movieData.originalCountry,
     imdbRating,
@@ -2279,7 +2364,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
               episode: episode.number,
               thumbnail: finalThumbnail,
               overview: episode.overview,
-              released: episode.aired ? createDateInTimezone(episode.aired, config.timezone || 'UTC') : null,
+              released: episode.aired ? resolveReleaseTimestamp(episode.aired, { originCountry: tvdbShow.originalCountry, airsTime: tvdbShow.airsTime }) : null,
               available: episode.aired ? new Date(episode.aired) < new Date() : false,
               runtime: Utils.parseRunTime(episode.runtime),
           };
@@ -2336,7 +2421,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     year: year,
     releaseInfo: tvdbReleaseInfo,
-    released: tvdbShow.firstAired ? createDateInTimezone(tvdbShow.firstAired, config.timezone || 'UTC') : null,
+    released: tvdbShow.firstAired ? resolveReleaseTimestamp(tvdbShow.firstAired, { originCountry: tvdbShow.originalCountry, airsTime: tvdbShow.airsTime }) : null,
     runtime: Utils.parseRunTime(tvdbShow.averageRuntime),
     status: tvdbShow.status?.name,
     country: tvdbShow.originalCountry,
@@ -2590,7 +2675,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     description: Utils.addMetaProviderAttribution(summary ? summary.replace(/<[^>]*>?/gm, '') : '', 'TVmaze', config),
     year: premiered ? premiered.substring(0, 4) : "",
     releaseInfo: Utils.parseYear(tvmazeShow.status, premiered, tvmazeShow.ended),
-    released: premiered ? createDateInTimezone(premiered, config.timezone || 'UTC') : null,
+    released: premiered ? resolveReleaseTimestamp(premiered, { originCountry: tvmazeShow.network?.country?.code || tvmazeShow.webChannel?.country?.code, airsTime: tvmazeShow.schedule?.time }) : null,
     runtime: tvmazeShow.runtime ? Utils.parseRunTime(tvmazeShow.runtime) : Utils.parseRunTime(tvmazeShow.averageRuntime),
     status: tvmazeShow.status,
     country: tvmazeShow.network?.country?.name || null,
@@ -2767,7 +2852,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
         }
         // If still no thumbnail: treat unaired (upcoming) episodes specially and fallback to season poster -> background -> null
         if (!thumbnailUrl) {
-          const isUnaired = !airDate || createDateInTimezone(airDate, config.timezone || 'UTC') > new Date();
+          const isUnaired = !airDate || resolveReleaseTimestamp(airDate, { originCountry: 'jp' }) > new Date();
           if (isUnaired) {
             if (bestBackgroundUrl) {
               logger.debug(`[buildAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuId} Ep ${ep.mal_id}`);
@@ -2946,7 +3031,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       slug: Utils.parseSlug('series', malData.title_english || malData.title, imdbId, malData.mal_id),
       genres: malData.genres?.map(g => g.name) || [],
       year: malData.year || malData.aired?.from?.substring(0, 4),
-      released: (malData.aired?.from || malData.start_date) ? createDateInTimezone(malData.aired?.from || malData.start_date, config.timezone || 'UTC') : null,
+      released: (malData.aired?.from || malData.start_date) ? resolveReleaseTimestamp(malData.aired?.from || malData.start_date, { originCountry: 'jp' }) : null,
       runtime: Utils.parseRunTime(malData.duration),
       status: malData.status,
       imdbRating,
@@ -3065,7 +3150,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       year: kitsuData.attributes.startDate
         ? kitsuData.attributes.startDate.substring(0, 4) : null,
       released: kitsuData.attributes.startDate
-        ? createDateInTimezone(kitsuData.attributes.startDate, config.timezone || 'UTC')
+        ? resolveReleaseTimestamp(kitsuData.attributes.startDate, { originCountry: 'jp' })
         : null,
       releaseInfo: kitsuReleaseInfo,
       runtime: Utils.parseRunTime(kitsuData.attributes.episodeLength),
@@ -3207,7 +3292,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
         }
         // If still no thumbnail: treat unaired (upcoming) episodes specially and fallback to season poster -> background -> null
         if (!thumbnailUrl) {
-          const isUnaired = !airDate || createDateInTimezone(airDate, config.timezone || 'UTC') > new Date();
+          const isUnaired = !airDate || resolveReleaseTimestamp(airDate, { originCountry: 'jp' }) > new Date();
           if (isUnaired) {
             if (bestBackgroundUrl) {
               logger.debug(`[buildKitsuAnimeResponse] Using series background as fallback thumbnail for upcoming Kitsu ${kitsuData.id} Ep ${ep.number}`);
@@ -3256,7 +3341,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
           id: episodeId,
           title: episodeTitle,
           released: airDate
-            ? createDateInTimezone(airDate, config.timezone || 'UTC')
+            ? resolveReleaseTimestamp(airDate, { originCountry: 'jp' })
             : null,
           overview: episodeOverview,
           thumbnail: finalThumbnail || (airDate && new Date(airDate) < new Date() ? `${host}/missing_thumbnail.png` : null),
