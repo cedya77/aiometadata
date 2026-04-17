@@ -29,9 +29,17 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   // Determine channel from version
-  const currentChannel = React.useMemo(() => {
+  const currentChannel = React.useMemo((): 'stable' | 'nightly' | 'testing' => {
+    if (version.includes('testing')) return 'testing';
     return version.startsWith('v') ? 'stable' : 'nightly';
   }, [version]);
+
+  const testingBuildDate = React.useMemo(() => {
+    if (currentChannel !== 'testing') return null;
+    const match = version.match(/testing[.\-](\d{4})(\d{2})(\d{2})/);
+    if (!match) return null;
+    return `${match[1]}-${match[2]}-${match[3]}T00:00:00Z`;
+  }, [version, currentChannel]);
 
   // Version comparison function
   const compareVersions = React.useCallback(
@@ -98,6 +106,23 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
     []
   );
 
+  const fetchTestingCommits = React.useCallback(async () => {
+    const response = await fetch(
+      `https://api.github.com/repos/cedya77/aiometadata/commits?sha=dev&per_page=50`
+    );
+    if (!response.ok) throw new Error('Failed to fetch commits');
+    const commits = await response.json();
+    return commits.map((c: any) => ({
+      id: c.sha,
+      tag_name: c.sha.slice(0, 7),
+      name: c.commit.message.split('\n')[0],
+      body: c.commit.message.split('\n').slice(1).join('\n').trim(),
+      published_at: c.commit.committer?.date || c.commit.author?.date,
+      html_url: c.html_url,
+      author: c.commit.author?.name || c.author?.login,
+    }));
+  }, []);
+
   // Initial fetch and setup
   React.useEffect(() => {
     if (!version || version.toLowerCase() === 'unknown') {
@@ -115,6 +140,39 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
     setCurrentPage(1);
     setHasMorePages(true);
     setShowUpdates(false);
+
+    if (currentChannel === 'testing') {
+      fetchTestingCommits()
+        .then((commits) => {
+          setAllReleases(commits);
+          setHasMorePages(false);
+
+          if (!testingBuildDate) {
+            setCurrentReleases(commits);
+            setVisibleCount(Math.min(10, commits.length));
+            return;
+          }
+
+          const newer: any[] = [];
+          const currentAndOlder: any[] = [];
+          const buildTime = new Date(testingBuildDate).getTime();
+
+          commits.forEach((commit: any) => {
+            if (new Date(commit.published_at).getTime() > buildTime) {
+              newer.push(commit);
+            } else {
+              currentAndOlder.push(commit);
+            }
+          });
+
+          setNewerReleases(newer);
+          setCurrentReleases(currentAndOlder);
+          setVisibleCount(Math.min(10, currentAndOlder.length));
+        })
+        .catch(() => setError('Failed to load dev commits.'))
+        .finally(() => setLoading(false));
+      return;
+    }
 
     // Fetch initial releases
     fetchReleases(1)
@@ -153,6 +211,8 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
   }, [
     version,
     currentChannel,
+    testingBuildDate,
+    fetchTestingCommits,
     fetchReleases,
     filterReleasesByChannel,
     compareVersions,
@@ -245,12 +305,14 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
   const hasMoreContent =
     displayReleases.length > visibleCount || (hasMorePages && !fetchingMore);
 
-  // Check if a release is newer than current version
+  const newerIds = React.useMemo(() => new Set(newerReleases.map((r: any) => r.id)), [newerReleases]);
+
   const isNewerVersion = React.useCallback(
-    (releaseVersion: string) => {
+    (releaseVersion: string, releaseId?: string) => {
+      if (currentChannel === 'testing' && releaseId) return newerIds.has(releaseId);
       return compareVersions(releaseVersion, version) > 0;
     },
-    [compareVersions, version]
+    [currentChannel, newerIds, compareVersions, version]
   );
   const dialogProps = typeof open === 'boolean' ? { open, onOpenChange } : {};
 
@@ -273,11 +335,13 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col w-[95vw] h-[90vh] sm:w-auto sm:h-auto">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-between">
-            <span className="text-foreground">What's New?</span>
+            <span className="text-foreground">
+              {currentChannel === 'testing' ? 'Recent Dev Commits' : "What's New?"}
+            </span>
             {newerReleases.length > 0 && (
               <span className="text-primary font-bold text-sm">
-                {newerReleases.length} update
-                {newerReleases.length > 1 ? 's' : ''} available
+                {newerReleases.length} {currentChannel === 'testing' ? 'commit' : 'update'}
+                {newerReleases.length > 1 ? 's' : ''} since your build
               </span>
             )}
           </DialogTitle>
@@ -314,7 +378,7 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
                     size="sm"
                     onClick={handleShowUpdates}
                   >
-                    Show {newerReleases.length} available update
+                    Show {newerReleases.length} {currentChannel === 'testing' ? 'new commit' : 'available update'}
                     {newerReleases.length > 1 ? 's' : ''}
                   </Button>
                 </div>
@@ -325,17 +389,27 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
                   key={release.id || release.tag_name}
                   className={cn(
                     'border bg-card border-border relative',
-                    isNewerVersion(release.tag_name) && 'border-primary/30'
+                    isNewerVersion(release.tag_name, release.id) && 'border-primary/30'
                   )}
                 >
                   <CardHeader className="pb-2">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4">
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm sm:text-base font-semibold break-all text-blue-600 dark:text-blue-400">
-                          {release.tag_name}
-                        </span>
+                        {currentChannel === 'testing' ? (
+                          <>
+                            <code className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">{release.tag_name}</code>
+                            <span className="text-sm font-semibold text-foreground">{release.name}</span>
+                          </>
+                        ) : (
+                          <span className="text-sm sm:text-base font-semibold break-all text-blue-600 dark:text-blue-400">
+                            {release.tag_name}
+                          </span>
+                        )}
                       </div>
-                      <div className="shrink-0">
+                      <div className="shrink-0 flex items-center gap-2">
+                        {currentChannel === 'testing' && release.author && (
+                          <span className="text-xs text-muted-foreground">{release.author}</span>
+                        )}
                         <span className="text-xs text-muted-foreground">
                           {new Date(release.published_at).toLocaleDateString()}
                         </span>
@@ -380,7 +454,7 @@ export function ChangelogModal({ version, open, onOpenChange, hideTrigger = fals
                             .split('\n')
                             .filter(line => line.trim() !== '')
                             .join('\n')
-                        : 'No changelog provided.'}
+                        : currentChannel === 'testing' ? '' : 'No changelog provided.'}
                     </ReactMarkdown>
                   </CardContent>
                   <CardFooter>
