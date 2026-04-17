@@ -171,7 +171,7 @@ export function Header() {
             />
           </button>
           <div className="text-left">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {isEditingName ? (
                 <div className="flex items-center gap-1.5">
                   <Input
@@ -217,12 +217,12 @@ export function Header() {
                       setNameInput(config.addonName || 'AIOMetadata');
                       setIsEditingName(true);
                     }}
-                    className="p-1 text-muted-foreground hover:text-foreground"
+                    className="p-1 text-muted-foreground hover:text-foreground shrink-0"
                     aria-label="Edit addon name"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  <span className="text-sm text-muted-foreground">v{addonVersion}</span>
+                  <span className="text-sm text-muted-foreground shrink-0 max-w-[120px] sm:max-w-none truncate" title={`v${addonVersion}`}>v{addonVersion}</span>
                 </>
               )}
             </div>
