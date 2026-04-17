@@ -289,8 +289,8 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <div className="flex items-center gap-3">
             <DialogTitle>PublicMetaDB Integration</DialogTitle>
           </div>
@@ -299,7 +299,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-6 py-4 overflow-y-auto flex-1 min-h-0 pr-1">
           {/* API Key */}
           <Card>
             <CardHeader>
@@ -429,7 +429,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                    <div className="grid grid-cols-1 gap-3 max-h-64 overflow-y-auto border rounded-lg p-3 bg-muted/20">
                       {lists.map((list) => {
                         const alreadyAdded = addedListIds.has(list.id);
                         return (
@@ -531,7 +531,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto border rounded-lg p-3 bg-muted/20">
+                    <div className="grid grid-cols-1 gap-3 max-h-64 overflow-y-auto border rounded-lg p-3 bg-muted/20">
                       {picks.map((pick) => {
                         const alreadyAdded = addedPickIds.has(pick.id);
                         return (
@@ -593,7 +593,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
 
         </div>
 
-        <DialogFooter className="sm:justify-between">
+        <DialogFooter className="sm:justify-between shrink-0">
           <div />
           <div className="flex space-x-2">
             <DialogClose asChild>

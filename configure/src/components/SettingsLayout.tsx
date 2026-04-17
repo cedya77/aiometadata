@@ -236,12 +236,12 @@ export function SettingsLayout() {
         onValueChange={handleTabChange}
         className="w-full"
       >
-        <TabsList className="relative inline-flex h-11 items-center justify-center rounded-full p-[3px] text-muted-foreground w-full bg-muted/70 shadow-[inset_0_1px_4px_rgba(0,0,0,0.2),inset_0_0_1px_rgba(0,0,0,0.15)] border border-white/[0.04]">
+        <TabsList className="relative inline-flex h-12 items-center justify-center rounded-full p-1 text-muted-foreground w-full bg-muted/70 shadow-[inset_0_1px_4px_rgba(0,0,0,0.2),inset_0_0_1px_rgba(0,0,0,0.15)] border border-white/[0.04]">
           {settingsPages.map((page) => (
             <TabsTrigger
               key={page.value}
               value={page.value}
-              className="relative z-10 inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-[13px] rounded-full bg-transparent transition-all duration-200 text-muted-foreground/70 hover:text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="relative z-10 inline-flex items-center justify-center whitespace-nowrap px-4 py-2 text-[15px] rounded-full bg-transparent transition-all duration-200 text-muted-foreground/70 hover:text-muted-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {activeDesktopTab === page.value && (
                 <motion.div
