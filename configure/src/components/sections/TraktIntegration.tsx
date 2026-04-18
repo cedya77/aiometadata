@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ExternalLink, CheckCircle2, XCircle, Trash2, Plus, Loader2, ChevronDown } from 'lucide-react';
+import { ExternalLink, CheckCircle2, XCircle, Trash2, Plus, Loader2, ChevronDown, Link2, BarChart3, Bookmark, UserSearch, TrendingUp, Flame, Heart, Star, Wand2, Crown, PlayCircle, Clock, CalendarClock, ListPlus, FolderCheck } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 import { createTraktCatalog } from '@/utils/catalogUtils';
@@ -1022,9 +1022,14 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
         <div className="space-y-6">
           {/* Connection Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Connection Status</CardTitle>
+          <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+            <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                <Link2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <CardTitle>Connection Status</CardTitle>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {!isConnected ? (
@@ -1091,14 +1096,17 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
                     {/* Trakt User Stats Card */}
                     {isConnected && username && (
-                      <Card className="mb-4">
+                      <Card className="mb-4 bg-gradient-to-br from-red-500/8 via-card/80 to-card/80 border-red-400/15">
                         <CardHeader className="cursor-pointer" onClick={() => setStatsCollapsed(!statsCollapsed)}>
-                          <div className="flex items-center justify-between">
-                            <div>
+                          <div className="flex items-center gap-4">
+                            <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                              <BarChart3 className="h-5 w-5" />
+                            </div>
+                            <div className="flex-1 space-y-1.5">
                               <CardTitle>Trakt Stats</CardTitle>
                               <CardDescription>Overview of your Trakt activity</CardDescription>
                             </div>
-                            <ChevronDown 
+                            <ChevronDown
                               className={`w-5 h-5 transition-transform ${statsCollapsed ? 'rotate-180' : ''}`}
                             />
                           </div>
@@ -1222,10 +1230,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Watchlist */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Watchlist</CardTitle>
-                <CardDescription>Import your Trakt watchlist</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <Bookmark className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Watchlist</CardTitle>
+                  <CardDescription>Import your Trakt watchlist</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -1299,10 +1312,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Import Lists from Trakt User */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Import Lists from Trakt User</CardTitle>
-                <CardDescription>Load all public lists from any Trakt user</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <UserSearch className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Import Lists from Trakt User</CardTitle>
+                  <CardDescription>Load all public lists from any Trakt user</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -1420,10 +1438,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Trending & Popular Lists */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Trending & Popular Lists</CardTitle>
-                <CardDescription>Discover and import curated lists from the Trakt community</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Trending & Popular Lists</CardTitle>
+                  <CardDescription>Discover and import curated lists from the Trakt community</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -1592,10 +1615,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
           )}
 
             {isConnected && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Trending & Popular Catalogs</CardTitle>
-                  <CardDescription>Import Trakt trending or popular movies/shows as single catalogs</CardDescription>
+              <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                    <Flame className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <CardTitle>Trending & Popular Catalogs</CardTitle>
+                    <CardDescription>Import Trakt trending or popular movies/shows as single catalogs</CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2">
@@ -1647,10 +1675,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Liked Lists */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Your Liked Lists</CardTitle>
-                <CardDescription>Import lists you've liked on Trakt</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <Heart className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Your Liked Lists</CardTitle>
+                  <CardDescription>Import lists you've liked on Trakt</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button 
@@ -1776,10 +1809,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Your Favorites */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Favorites</CardTitle>
-                <CardDescription>Import your favorite movies or shows</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <Star className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Favorites</CardTitle>
+                  <CardDescription>Import your favorite movies or shows</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -1886,10 +1924,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Recommendations */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Recommendations</CardTitle>
-                <CardDescription>Get personalized recommendations for movies or shows</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <Wand2 className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Recommendations</CardTitle>
+                  <CardDescription>Get personalized recommendations for movies or shows</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
@@ -1951,10 +1994,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
             {/* Most Favorited */}
             {isConnected && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Most Favorited</CardTitle>
-                  <CardDescription>Top favorited movies or shows over a selected period</CardDescription>
+              <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                    <Crown className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <CardTitle>Most Favorited</CardTitle>
+                    <CardDescription>Top favorited movies or shows over a selected period</CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2024,10 +2072,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
             {/* Up Next */}
             {isConnected && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Up Next</CardTitle>
-                  <CardDescription>Shows the next episode you should watch for each tracked show</CardDescription>
+              <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                    <PlayCircle className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <CardTitle>Up Next</CardTitle>
+                    <CardDescription>Shows the next episode you should watch for each tracked show</CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2">
@@ -2083,10 +2136,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
             {/* My Recently Aired */}
             {isConnected && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>My Recently Aired</CardTitle>
-                  <CardDescription>All unwatched aired episodes for your in-progress shows</CardDescription>
+              <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <CardTitle>My Recently Aired</CardTitle>
+                    <CardDescription>All unwatched aired episodes for your in-progress shows</CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2">
@@ -2123,10 +2181,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
             {/* Airing Today */}
             {isConnected && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Airing Soon</CardTitle>
-                  <CardDescription>Shows airing in the next 24 hours from your tracked shows</CardDescription>
+              <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                    <CalendarClock className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <CardTitle>Airing Soon</CardTitle>
+                    <CardDescription>Shows airing in the next 24 hours from your tracked shows</CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2">
@@ -2165,10 +2228,15 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
 
           {/* Custom Lists */}
           {isConnected && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Custom Lists</CardTitle>
-                <CardDescription>Import public Trakt lists</CardDescription>
+            <Card className="bg-gradient-to-br from-red-500/10 via-card/80 to-card/80 border-red-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-red-500/15 text-red-300 flex items-center justify-center ring-1 ring-red-400/20">
+                  <ListPlus className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Custom Lists</CardTitle>
+                  <CardDescription>Import public Trakt lists</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">

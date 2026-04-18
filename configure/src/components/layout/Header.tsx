@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { ThemeToggle } from '../ThemeToggle';
 import { useConfig } from '../../contexts/ConfigContext';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -314,7 +313,6 @@ export function Header() {
             <LogIn className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         )}
-        <ThemeToggle />
         </div>
       </div>
 

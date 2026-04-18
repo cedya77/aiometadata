@@ -4084,7 +4084,7 @@ function AdminLoginModal({
     return (
       <Dialog open={isOpen} onOpenChange={() => {}}>
         <DialogContent 
-          className="sm:max-w-md mx-4" 
+          className="sm:max-w-md" 
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
@@ -4118,7 +4118,7 @@ function AdminLoginModal({
     return (
       <Dialog open={isOpen} onOpenChange={() => {}}>
         <DialogContent 
-          className="sm:max-w-md mx-4"
+          className="sm:max-w-md"
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
@@ -4182,7 +4182,7 @@ function AdminLoginModal({
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
       <DialogContent 
-        className="sm:max-w-md mx-4"
+        className="sm:max-w-md"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >

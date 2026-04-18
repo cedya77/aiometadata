@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ExternalLink, CheckCircle2, XCircle, Loader2, ChevronDown, Plus } from 'lucide-react';
+import { ExternalLink, CheckCircle2, XCircle, Loader2, ChevronDown, Plus, Link2, BarChart3, Bookmark, TrendingUp } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 
@@ -287,9 +287,14 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
 
         <div className="space-y-6">
           {/* Connection Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Connection Status</CardTitle>
+          <Card className="bg-gradient-to-br from-slate-500/10 via-card/80 to-card/80 border-slate-400/20">
+            <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <div className="shrink-0 h-10 w-10 rounded-lg bg-slate-500/15 text-slate-300 flex items-center justify-center ring-1 ring-slate-400/20">
+                <Link2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <CardTitle>Connection Status</CardTitle>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {!isConnected ? (
@@ -355,14 +360,19 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
 
                   {/* Simkl User Stats Card */}
                   {isConnected && username && (
-                    <Card className="mb-4">
+                    <Card className="mb-4 bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
                       <CardHeader className="cursor-pointer" onClick={() => setStatsCollapsed(!statsCollapsed)}>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <CardTitle>Simkl Stats</CardTitle>
-                            <CardDescription>Overview of your Simkl activity</CardDescription>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-start gap-4 flex-1">
+                            <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
+                              <BarChart3 className="h-5 w-5" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <CardTitle>Simkl Stats</CardTitle>
+                              <CardDescription>Overview of your Simkl activity</CardDescription>
+                            </div>
                           </div>
-                          <ChevronDown 
+                          <ChevronDown
                             className={`w-5 h-5 transition-transform ${statsCollapsed ? 'rotate-180' : ''}`}
                           />
                         </div>
@@ -495,10 +505,15 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
 
                   
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Watchlist Catalogs</CardTitle>
-                      <CardDescription>Add watchlist catalogs for movies, shows, and anime by status</CardDescription>
+                  <Card className="bg-gradient-to-br from-violet-500/10 via-card/80 to-card/80 border-violet-400/20">
+                    <CardHeader className="flex-row items-start gap-4 space-y-0">
+                      <div className="shrink-0 h-10 w-10 rounded-lg bg-violet-500/15 text-violet-300 flex items-center justify-center ring-1 ring-violet-400/20">
+                        <Bookmark className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 space-y-1.5">
+                        <CardTitle>Watchlist Catalogs</CardTitle>
+                        <CardDescription>Add watchlist catalogs for movies, shows, and anime by status</CardDescription>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="space-y-3">
@@ -657,10 +672,15 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                 </div>
               )}
               {}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Trending & Calendar</CardTitle>
-                  <CardDescription>Add trending catalogs or view upcoming releases</CardDescription>
+              <Card className="bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 border-amber-400/20">
+                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-amber-500/15 text-amber-300 flex items-center justify-center ring-1 ring-amber-400/20">
+                    <TrendingUp className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <CardTitle>Trending & Calendar</CardTitle>
+                    <CardDescription>Add trending catalogs or view upcoming releases</CardDescription>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2">

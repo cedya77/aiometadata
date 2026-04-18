@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, KeyRound, PlayCircle, Library, Sparkles } from 'lucide-react';
 import { toast } from "sonner";
 import { createPublicMetaDBUpNextCatalog, createPublicMetaDBListCatalog, createPublicMetaDBPickCatalog } from '@/utils/catalogUtils';
 
@@ -299,14 +299,19 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4 overflow-y-auto flex-1 min-h-0 pr-1">
+        <div className="space-y-6 py-4 overflow-y-auto flex-1 min-h-0 pr-3">
           {/* API Key */}
-          <Card>
-            <CardHeader>
-              <CardTitle>PublicMetaDB API Key</CardTitle>
-              <CardDescription>
-                Enter your PublicMetaDB API key to access your lists and watch tracking
-              </CardDescription>
+          <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
+            <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <CardTitle>PublicMetaDB API Key</CardTitle>
+                <CardDescription>
+                  Enter your PublicMetaDB API key to access your lists and watch tracking
+                </CardDescription>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -329,12 +334,17 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
 
           {/* Up Next */}
           {isValid && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Up Next</CardTitle>
-                <CardDescription>
-                  Shows the next episode to watch based on your PublicMetaDB watch progress
-                </CardDescription>
+            <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
+                  <PlayCircle className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Up Next</CardTitle>
+                  <CardDescription>
+                    Shows the next episode to watch based on your PublicMetaDB watch progress
+                  </CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button
@@ -384,12 +394,17 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
 
           {/* Your Lists */}
           {isValid && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Your Lists</CardTitle>
-                <CardDescription>
-                  Browse and import your PublicMetaDB lists as catalogs
-                </CardDescription>
+            <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
+                  <Library className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Your Lists</CardTitle>
+                  <CardDescription>
+                    Browse and import your PublicMetaDB lists as catalogs
+                  </CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button
@@ -486,12 +501,17 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
 
           {/* Picks */}
           {isValid && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Picks</CardTitle>
-                <CardDescription>
-                  Personalized recommendation lists based on your taste profile
-                </CardDescription>
+            <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
+              <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <CardTitle>Picks</CardTitle>
+                  <CardDescription>
+                    Personalized recommendation lists based on your taste profile
+                  </CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Button

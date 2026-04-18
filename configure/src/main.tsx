@@ -10,7 +10,7 @@ import { ThemeProvider } from './components/ThemeProvider'
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="dark" storageKey="aio-addon-theme">
+      <ThemeProvider>
         <ConfigProvider>
           <App />
         </ConfigProvider>
