@@ -1923,19 +1923,19 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none" aria-label="Drag to reorder">
           <GripVertical />
         </button>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className={`font-medium transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            <p className={`font-medium transition-colors break-words min-w-0 ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
             <button
               onClick={() => setShowEditDialog(true)}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground shrink-0"
             >
               <Pencil size={14} />
             </button>
           </div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex flex-wrap items-center gap-2 mt-1">
             {/* Show itemCount and author only on screens >= sm for trakt and mdblist */}
-            <div className="hidden sm:inline-flex gap-2">
+            <div className="hidden sm:inline-flex gap-2 flex-wrap">
               {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.itemCount !== undefined && (
                 <Badge variant="outline" className="text-xs">
                   {(catalog as any).metadata.itemCount} items

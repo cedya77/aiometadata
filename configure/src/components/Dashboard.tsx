@@ -4131,13 +4131,18 @@ function AdminLoginModal({
               Enter your admin key to access all dashboard features.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!isLoading && !adminKeyNotConfigured) handleLogin();
+            }}
+          >
             {error && (
               <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md text-sm text-red-700 dark:text-red-300">
                 {error}
               </div>
             )}
-            {/* Show warning if ADMIN_KEY is not configured but guest mode is enabled */}
             {adminKeyNotConfigured && guestModeEnabled && (
               <div className="p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md text-sm text-amber-700 dark:text-amber-300">
                 <p className="font-medium mb-1">Admin Access Unavailable</p>
@@ -4148,20 +4153,21 @@ function AdminLoginModal({
               <Label htmlFor="admin-key-modal">Admin Key</Label>
               <Input
                 id="admin-key-modal"
+                name="password"
+                autoComplete="current-password"
                 type="password"
                 value={inputAdminKey}
                 onChange={(e) => setInputAdminKey(e.target.value)}
                 placeholder="Enter admin key"
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 autoFocus
                 disabled={adminKeyNotConfigured}
               />
             </div>
             <div className="flex justify-between gap-2">
-              <Button variant="outline" onClick={handleBackToOptions}>
+              <Button type="button" variant="outline" onClick={handleBackToOptions}>
                 Back
               </Button>
-              <Button onClick={handleLogin} disabled={isLoading || adminKeyNotConfigured}>
+              <Button type="submit" disabled={isLoading || adminKeyNotConfigured}>
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -4172,7 +4178,7 @@ function AdminLoginModal({
                 )}
               </Button>
             </div>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
     );

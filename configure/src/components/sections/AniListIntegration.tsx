@@ -793,17 +793,18 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
                       return (
                         <div
                           key={list.name}
-                          className="flex items-center justify-between p-3 hover:bg-muted/50"
+                          className="flex items-center justify-between gap-2 p-3 hover:bg-muted/50"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <Switch
                               checked={selectedPublicLists.has(list.name)}
                               onCheckedChange={(checked) => handlePublicListSelection(list.name, checked)}
                               disabled={alreadyImported}
+                              className="shrink-0"
                             />
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{list.name}</span>
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium break-words">{list.name}</span>
                                 {list.isCustomList && (
                                   <Badge variant="secondary" className="text-xs">
                                     Custom
@@ -900,17 +901,18 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
                       return (
                         <div
                           key={list.name}
-                          className="flex items-center justify-between p-3 hover:bg-muted/50"
+                          className="flex items-center justify-between gap-2 p-3 hover:bg-muted/50"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <Switch
                               checked={selectedLists.has(list.name)}
                               onCheckedChange={(checked) => handleListSelection(list.name, checked)}
                               disabled={alreadyImported}
+                              className="shrink-0"
                             />
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{list.name}</span>
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium break-words">{list.name}</span>
                                 {list.isCustomList && (
                                   <Badge variant="secondary" className="text-xs">
                                     Custom

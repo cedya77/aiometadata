@@ -459,7 +459,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
                               <Label htmlFor={`pmdb-list-${list.id}`} className="font-medium cursor-pointer">
                                 {list.name}
                               </Label>
-                              <div className="flex items-center gap-2 mt-1">
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
                                 {list.type && (
                                   <Badge variant="outline" className="text-xs capitalize">
                                     {list.type}
@@ -566,7 +566,7 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
                               <Label htmlFor={`pmdb-pick-${pick.id}`} className="font-medium cursor-pointer">
                                 {pick.name}
                               </Label>
-                              <div className="flex items-center gap-2 mt-1">
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
                                 {pick.seed_type && (
                                   <Badge variant="outline" className="text-xs capitalize">
                                     {pick.seed_type}

@@ -270,7 +270,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <img 
@@ -338,10 +338,10 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-                      <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+                      <div className="min-w-0">
                         <p className="font-medium text-green-900 dark:text-green-100">Connected to Simkl</p>
                         {loadingUsername ? (
                           <div className="flex items-center gap-2 mt-1">
@@ -349,11 +349,11 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                             <p className="text-xs text-muted-foreground">Loading...</p>
                           </div>
                         ) : username ? (
-                          <p className="text-xs text-muted-foreground">@{username}</p>
+                          <p className="text-xs text-muted-foreground truncate">@{username}</p>
                         ) : null}
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={disconnecting}>
+                    <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={disconnecting} className="shrink-0">
                       {disconnecting ? 'Disconnecting...' : 'Disconnect'}
                     </Button>
                   </div>
@@ -683,11 +683,10 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Button
                       onClick={() => handleAddTrendingCatalog('movies')}
                       variant="outline"
-                      className="flex-1"
                       disabled={config.catalogs.some(c => c.id === 'simkl.trending.movies')}
                     >
                       <Plus className="mr-2 h-4 w-4" />
@@ -696,18 +695,16 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                     <Button
                       onClick={() => handleAddTrendingCatalog('shows')}
                       variant="outline"
-                      className="flex-1"
                       disabled={config.catalogs.some(c => c.id === 'simkl.trending.shows')}
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Trending Shows
                     </Button>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <Button
                       onClick={() => handleAddTrendingCatalog('anime')}
                       variant="outline"
-                      className="flex-1"
                       disabled={config.catalogs.some(c => c.id === 'simkl.trending.anime')}
                     >
                       <Plus className="mr-2 h-4 w-4" />
@@ -728,7 +725,6 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                         toast.success("Added Simkl Anime Airing Soon");
                       }}
                       variant="outline"
-                      className="flex-1"
                       disabled={config.catalogs.some(c => c.id === 'simkl.calendar.anime')}
                     >
                       <Plus className="mr-2 h-4 w-4" />
@@ -749,18 +745,17 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                         toast.success("Added Simkl TV Airing Soon");
                       }}
                       variant="outline"
-                      className="flex-1"
                       disabled={config.catalogs.some(c => c.id === 'simkl.calendar.series')}
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Airing Soon (Series)
                     </Button>
                   </div>
-                  <div className="flex gap-2">
+                  <div>
                     <Button
                       onClick={handleAddDvdReleasesCatalog}
                       variant="outline"
-                      className="flex-1"
+                      className="w-full"
                       disabled={config.catalogs.some(c => c.id === 'simkl.dvd.movies')}
                     >
                       <Plus className="mr-2 h-4 w-4" />

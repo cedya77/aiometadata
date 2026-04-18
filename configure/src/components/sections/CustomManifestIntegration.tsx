@@ -439,7 +439,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                             <Label htmlFor={catalogKey} className="font-medium cursor-pointer">
                               {catalog.name}
                             </Label>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
                               <Badge variant="outline" className="text-xs capitalize">
                                 {catalog.type}
                               </Badge>
@@ -485,7 +485,7 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
                     <div key={catalog.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div>
                         <h4 className="font-medium">{catalog.name}</h4>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
                           <Badge variant="outline" className="text-xs capitalize">
                             {catalog.type}
                           </Badge>

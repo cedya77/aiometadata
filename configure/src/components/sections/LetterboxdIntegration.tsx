@@ -277,10 +277,10 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
                     .map(catalog => (
                       <div
                         key={catalog.id}
-                        className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
+                        className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium">{catalog.name}</div>
+                          <div className="font-medium break-words">{catalog.name}</div>
                           {catalog.metadata?.itemCount && (
                             <div className="text-xs text-muted-foreground">
                               {catalog.metadata.itemCount} items
@@ -290,6 +290,7 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="shrink-0"
                           onClick={() => {
                             setConfig(prev => ({
                               ...prev,

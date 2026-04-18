@@ -1009,7 +1009,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
   const unwatchedCatalog = config.catalogs.find(c => c.id === "trakt.unwatched");
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <img src="https://trakt.tv/assets/logos/logomark.square.gradient-b644b16c38ff775861b4b1f58c1230f6a097a2466ab33ae00445a505c33fcb91.svg" alt="Trakt Logo" className="h-7 w-auto" />
@@ -1400,7 +1400,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                             <Label htmlFor={`trakt-${String(list.ids.trakt)}`} className="font-medium cursor-pointer">
                               {list.name}
                             </Label>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
                               <Badge variant="outline" className="text-xs capitalize">
                                 {list.type}
                               </Badge>
@@ -2340,7 +2340,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                             <div key={catalog.id} className="flex items-center justify-between p-3 border rounded-lg">
                               <div className="flex-1">
                                 <h4 className="font-medium">{catalog.name}</h4>
-                                <div className="flex items-center gap-2 mt-1">
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
                                   {(catalog as any).metadata?.itemCount !== undefined && (
                                     <Badge variant="outline" className="text-xs">
                                       {(catalog as any).metadata.itemCount} items

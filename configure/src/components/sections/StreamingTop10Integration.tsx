@@ -215,10 +215,10 @@ export function StreamingTop10Integration({ isOpen, onClose }: StreamingTop10Int
                   {existingCatalogs.map(catalog => (
                     <div
                       key={catalog.id}
-                      className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
+                      className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30"
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium">{catalog.name}</div>
+                        <div className="font-medium break-words">{catalog.name}</div>
                         <div className="text-xs text-muted-foreground">
                           10 items per refresh
                         </div>
@@ -226,6 +226,7 @@ export function StreamingTop10Integration({ isOpen, onClose }: StreamingTop10Int
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="shrink-0"
                         onClick={() => {
                           setConfig(prev => ({
                             ...prev,

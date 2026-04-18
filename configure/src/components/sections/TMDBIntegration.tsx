@@ -544,16 +544,17 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                     </div>
                   )}
                   {sessionId ? (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                        <span className="text-sm font-medium">Authenticated with TMDB</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                        <span className="text-sm font-medium truncate">Authenticated with TMDB</span>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleTmdbLogout}
                         disabled={tmdbAuthLoading}
+                        className="shrink-0"
                       >
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
@@ -620,7 +621,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                     {(hasWatchlistMovies || hasWatchlistSeries) && (
                       <div className="space-y-2 border-t pt-4">
                         {hasWatchlistMovies && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30">
                             <span className="font-medium">TMDB Watchlist</span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Movies</span>
@@ -635,7 +636,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                           </div>
                         )}
                         {hasWatchlistSeries && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30">
                             <span className="font-medium">TMDB Watchlist</span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Series</span>
@@ -689,7 +690,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                     {(hasFavoritesMovies || hasFavoritesSeries) && (
                       <div className="space-y-2 border-t pt-4">
                         {hasFavoritesMovies && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30">
                             <span className="font-medium">TMDB Favorites</span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Movies</span>
@@ -704,7 +705,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                           </div>
                         )}
                         {hasFavoritesSeries && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30">
                             <span className="font-medium">TMDB Favorites</span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">Series</span>
@@ -832,11 +833,11 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                     {tmdbListCatalogs.map((catalog) => (
                       <div
                         key={catalog.id}
-                        className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
+                        className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-muted/30"
                       >
-                        <div className="space-y-0.5">
-                          <span className="font-medium">{catalog.name}</span>
-                          <p className="text-xs text-muted-foreground">
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <span className="font-medium break-words">{catalog.name}</span>
+                          <p className="text-xs text-muted-foreground break-words">
                             Type: {catalog.type === 'all' ? 'Unified' : catalog.type}
                             {catalog.metadata?.listDescription && ` • ${catalog.metadata.listDescription}`}
                           </p>
@@ -845,6 +846,7 @@ export function TMDBIntegration({ isOpen, onClose }: TMDBIntegrationProps) {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRemoveList(catalog.id)}
+                          className="shrink-0"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

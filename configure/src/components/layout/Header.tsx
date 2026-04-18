@@ -342,11 +342,13 @@ export function Header() {
               )}
               <div className="space-y-2">
                 <Label htmlFor="uuid">UUID</Label>
-                <Input 
-                  id="uuid" 
-                  value={uuidInput} 
-                  onChange={(e) => setUuidInput(e.target.value)} 
-                  placeholder="Your UUID" 
+                <Input
+                  id="uuid"
+                  name="username"
+                  autoComplete="username"
+                  value={uuidInput}
+                  onChange={(e) => setUuidInput(e.target.value)}
+                  placeholder="Your UUID"
                   disabled={!!uuidFromUrl}
                   className={uuidFromUrl ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}
                 />
@@ -354,12 +356,14 @@ export function Header() {
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? "text" : "password"} 
-                    value={passwordInput} 
-                    onChange={(e) => setPasswordInput(e.target.value)} 
-                    placeholder="Your password" 
+                  <Input
+                    id="password"
+                    name="password"
+                    autoComplete="current-password"
+                    type={showPassword ? "text" : "password"}
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="Your password"
                   />
                   <Button
                     type="button" // Important: prevent form submission
@@ -377,6 +381,8 @@ export function Header() {
                   <Label htmlFor="addonPassword">Addon Password</Label>
                   <Input
                     id="addonPassword"
+                    name="addon-password"
+                    autoComplete="off"
                     type="password"
                     value={addonPasswordInput}
                     onChange={e => setAddonPasswordInput(e.target.value)}

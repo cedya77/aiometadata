@@ -987,23 +987,23 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
               <CardHeader className="cursor-pointer" onClick={() => setUserInfoCollapsed(!userInfoCollapsed)}>
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 flex-1">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     {userInfo?.avatar_url ? (
-                      <img src={userInfo.avatar_url} alt="Avatar" className="h-10 w-10 rounded-full ring-1 ring-sky-400/20" />
+                      <img src={userInfo.avatar_url} alt="Avatar" className="shrink-0 h-10 w-10 rounded-full ring-1 ring-sky-400/20" />
                     ) : (
                       <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                         <BarChart3 className="h-5 w-5" />
                       </div>
                     )}
-                    <div>
+                    <div className="min-w-0">
                       <CardTitle>Account & Limits</CardTitle>
-                      <CardDescription>
+                      <CardDescription className="truncate">
                         {userInfo ? `${userInfo.username || 'User'}${userInfo.plan ? ` \u2022 ${userInfo.plan} plan` : ''}` : 'Your MDBList account info and usage limits'}
                       </CardDescription>
                     </div>
                   </div>
                   <ChevronDown
-                    className={`w-5 h-5 transition-transform ${userInfoCollapsed ? 'rotate-180' : ''}`}
+                    className={`shrink-0 w-5 h-5 transition-transform ${userInfoCollapsed ? 'rotate-180' : ''}`}
                   />
                 </div>
               </CardHeader>
@@ -1400,10 +1400,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                           onCheckedChange={(checked) => handleCustomListSelection(list.id, checked)}
                         />
                         <div className="flex-1 min-w-0">
-                          <Label htmlFor={`custom-${list.id}`} className="font-medium cursor-pointer">
+                          <Label htmlFor={`custom-${list.id}`} className="font-medium cursor-pointer break-words">
                             {list.name}
                           </Label>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
                             <Badge variant="outline" className="text-xs capitalize">
                               {list.mediatype}
                             </Badge>
@@ -1606,10 +1606,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                           onCheckedChange={(checked) => handlePopularListSelection(list.id, checked)}
                         />
                         <div className="flex-1 min-w-0">
-                          <Label htmlFor={list.id} className="font-medium cursor-pointer">
+                          <Label htmlFor={list.id} className="font-medium cursor-pointer break-words">
                             {list.name}
                           </Label>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
                             <Badge variant="outline" className="text-xs capitalize">
                               {list.mediatype}
                             </Badge>
@@ -1721,10 +1721,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                             }}
                           />
                           <div className="flex-1 min-w-0">
-                            <Label htmlFor={`top-${list.id}`} className="font-medium cursor-pointer">
+                            <Label htmlFor={`top-${list.id}`} className="font-medium cursor-pointer break-words">
                               {list.name}
                             </Label>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
                               <Badge variant="outline" className="text-xs capitalize">
                                 {list.mediatype}
                               </Badge>
@@ -1829,10 +1829,10 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                             onCheckedChange={(checked) => handleExternalListSelection(list.id, checked)}
                           />
                           <div className="flex-1 min-w-0">
-                            <Label htmlFor={`external-${list.id}`} className="font-medium cursor-pointer">
+                            <Label htmlFor={`external-${list.id}`} className="font-medium cursor-pointer break-words">
                               {list.name}
                             </Label>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
                               <Badge variant="outline" className="text-xs capitalize">
                                 {listType}
                               </Badge>
