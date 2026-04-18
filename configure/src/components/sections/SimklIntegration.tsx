@@ -288,11 +288,11 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
         <div className="space-y-6">
           {/* Connection Status */}
           <Card className="bg-gradient-to-br from-slate-500/10 via-card/80 to-card/80 border-slate-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-slate-500/15 text-slate-300 flex items-center justify-center ring-1 ring-slate-400/20">
                 <Link2 className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>Connection Status</CardTitle>
               </div>
             </CardHeader>
@@ -506,11 +506,11 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                   
 
                   <Card className="bg-gradient-to-br from-violet-500/10 via-card/80 to-card/80 border-violet-400/20">
-                    <CardHeader className="flex-row items-start gap-4 space-y-0">
+                    <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                       <div className="shrink-0 h-10 w-10 rounded-lg bg-violet-500/15 text-violet-300 flex items-center justify-center ring-1 ring-violet-400/20">
                         <Bookmark className="h-5 w-5" />
                       </div>
-                      <div className="flex-1 space-y-1.5">
+                      <div className="flex-1 min-w-0 space-y-1.5">
                         <CardTitle>Watchlist Catalogs</CardTitle>
                         <CardDescription>Add watchlist catalogs for movies, shows, and anime by status</CardDescription>
                       </div>
@@ -673,11 +673,11 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
               )}
               {}
               <Card className="bg-gradient-to-br from-amber-500/10 via-card/80 to-card/80 border-amber-400/20">
-                <CardHeader className="flex-row items-start gap-4 space-y-0">
+                <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                   <div className="shrink-0 h-10 w-10 rounded-lg bg-amber-500/15 text-amber-300 flex items-center justify-center ring-1 ring-amber-400/20">
                     <TrendingUp className="h-5 w-5" />
                   </div>
-                  <div className="flex-1 space-y-1.5">
+                  <div className="flex-1 min-w-0 space-y-1.5">
                     <CardTitle>Trending & Calendar</CardTitle>
                     <CardDescription>Add trending catalogs or view upcoming releases</CardDescription>
                   </div>
@@ -777,7 +777,7 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
         </div>
 
         <DialogFooter>
-          <Button onClick={onClose} variant="outline">
+          <Button onClick={onClose} variant="outline" className="w-full sm:w-auto">
             Close
           </Button>
         </DialogFooter>

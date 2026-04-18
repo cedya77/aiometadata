@@ -302,11 +302,11 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
         <div className="space-y-6 py-4 overflow-y-auto flex-1 min-h-0 pr-3">
           {/* API Key */}
           <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
                 <KeyRound className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>PublicMetaDB API Key</CardTitle>
                 <CardDescription>
                   Enter your PublicMetaDB API key to access your lists and watch tracking
@@ -335,11 +335,11 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
           {/* Up Next */}
           {isValid && (
             <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
                   <PlayCircle className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Up Next</CardTitle>
                   <CardDescription>
                     Shows the next episode to watch based on your PublicMetaDB watch progress
@@ -395,11 +395,11 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
           {/* Your Lists */}
           {isValid && (
             <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
                   <Library className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Your Lists</CardTitle>
                   <CardDescription>
                     Browse and import your PublicMetaDB lists as catalogs
@@ -502,11 +502,11 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
           {/* Picks */}
           {isValid && (
             <Card className="bg-gradient-to-br from-zinc-500/10 via-card/80 to-card/80 border-zinc-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-500/15 text-zinc-200 flex items-center justify-center ring-1 ring-zinc-400/20">
                   <Sparkles className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Picks</CardTitle>
                   <CardDescription>
                     Personalized recommendation lists based on your taste profile
@@ -613,20 +613,17 @@ export function PublicMetaDBIntegration({ isOpen, onClose }: PublicMetaDBIntegra
 
         </div>
 
-        <DialogFooter className="sm:justify-between shrink-0">
-          <div />
-          <div className="flex space-x-2">
-            <DialogClose asChild>
-              <Button variant="ghost">Cancel</Button>
-            </DialogClose>
-            {isValid ? (
-              <Button onClick={handleSave}>Save & Close</Button>
-            ) : (
-              <Button onClick={validateKey} disabled={!tempKey || isChecking}>
-                {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking...</>) : ("Validate Key")}
-              </Button>
-            )}
-          </div>
+        <DialogFooter className="shrink-0 gap-2 sm:gap-0">
+          <DialogClose asChild>
+            <Button variant="ghost" className="w-full sm:w-auto">Cancel</Button>
+          </DialogClose>
+          {isValid ? (
+            <Button onClick={handleSave} className="w-full sm:w-auto">Save & Close</Button>
+          ) : (
+            <Button onClick={validateKey} disabled={!tempKey || isChecking} className="w-full sm:w-auto">
+              {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking...</>) : ("Validate Key")}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

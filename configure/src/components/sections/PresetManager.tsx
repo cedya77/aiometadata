@@ -1890,8 +1890,8 @@ export function PresetManager() {
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold">Step {wizardStep} of 5</p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+            <p className="text-sm font-semibold shrink-0">Step {wizardStep} of 5</p>
             <p className="text-xs text-muted-foreground">{activeStepMeta?.hint}</p>
           </div>
           <div className="grid gap-2 md:grid-cols-5">
@@ -1972,7 +1972,7 @@ export function PresetManager() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex flex-1 min-w-0 items-start gap-3">
                             <div className={cn(
-                              'flex h-10 w-10 items-center justify-center rounded-lg bg-muted transition-colors',
+                              'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted transition-colors',
                               isSelected && 'bg-primary/15 text-primary'
                             )}>
                               {preset.icon}
@@ -2013,7 +2013,12 @@ export function PresetManager() {
                       <p className="text-sm font-medium">Not sure what to choose?</p>
                       <p className="text-xs text-muted-foreground">Answer a few questions and we will choose for you.</p>
                     </div>
-                    <Button type="button" variant="outline" className="sm:min-w-64" onClick={startGuidedPresetFlow}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-10 whitespace-normal py-2 text-center leading-tight sm:min-w-64"
+                      onClick={startGuidedPresetFlow}
+                    >
                       I don't know what I want, guide me!
                     </Button>
                   </div>
@@ -2023,7 +2028,7 @@ export function PresetManager() {
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-                  <div className="space-y-0.5">
+                  <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-sm font-medium">Guided preset selection</p>
                     <p className="text-xs text-muted-foreground">A few quick answers and we will set the right preset.</p>
                     {(guidedAnswers.animeFan || guidedAnswers.groupedSeasons) && !showEasyGuideSuccess && (
@@ -2036,7 +2041,7 @@ export function PresetManager() {
                     )}
                   </div>
                   {!showEasyGuideSuccess && (
-                    <Badge variant="outline" className="text-[11px]">
+                    <Badge variant="outline" className="shrink-0 text-[11px] whitespace-nowrap">
                       Question {Math.min(guidedQuestionIndex + 1, 3)} of 3
                     </Badge>
                   )}
@@ -2180,7 +2185,7 @@ export function PresetManager() {
           <CardContent className="space-y-6">
             <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
               <div className="flex items-center justify-between gap-4">
-                <div className="space-y-1">
+                <div className="min-w-0 flex-1 space-y-1">
                   <Label htmlFor="include-adult" className="text-base font-medium">Include adult content</Label>
                   <p className="text-sm text-muted-foreground">
                     Recommended off, strictly filters out not safe for work content.
@@ -2188,6 +2193,7 @@ export function PresetManager() {
                 </div>
                 <Switch
                   id="include-adult"
+                  className="shrink-0"
                   checked={includeAdult}
                   onCheckedChange={setIncludeAdult}
                 />
@@ -2197,7 +2203,7 @@ export function PresetManager() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-1.5">
                       <Label htmlFor="override-movie" className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Movies label</Label>
                       <TooltipProvider delayDuration={150}>
@@ -2221,6 +2227,7 @@ export function PresetManager() {
                   </div>
                   <Switch
                     id="override-movie"
+                    className="shrink-0"
                     checked={overrideMovieType}
                     onCheckedChange={setOverrideMovieType}
                   />
@@ -2236,7 +2243,7 @@ export function PresetManager() {
 
               <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-1.5">
                       <Label htmlFor="override-series" className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Series label</Label>
                       <TooltipProvider delayDuration={150}>
@@ -2260,6 +2267,7 @@ export function PresetManager() {
                   </div>
                   <Switch
                     id="override-series"
+                    className="shrink-0"
                     checked={overrideSeriesType}
                     onCheckedChange={setOverrideSeriesType}
                   />
@@ -2660,7 +2668,7 @@ export function PresetManager() {
                   </Select>
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <Label htmlFor="streaming-released-only" className="text-sm font-medium">
                       Released only
                     </Label>
@@ -2670,6 +2678,7 @@ export function PresetManager() {
                   </div>
                   <Switch
                     id="streaming-released-only"
+                    className="shrink-0"
                     checked={streamingReleasedOnly}
                     onCheckedChange={setStreamingReleasedOnly}
                   />
@@ -2860,8 +2869,8 @@ export function PresetManager() {
       <Card className="border-dashed border-border bg-muted/20">
         <CardContent className="p-4 md:p-5 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-foreground">Wizard summary</p>
-            <Badge variant="outline" className="text-xs">
+            <p className="text-sm font-medium text-foreground min-w-0 truncate">Wizard summary</p>
+            <Badge variant="outline" className="shrink-0 text-xs whitespace-nowrap">
               {selectedPreset ? 'Configured' : 'Needs preset'}
             </Badge>
           </div>

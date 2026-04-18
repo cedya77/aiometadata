@@ -57,51 +57,62 @@ function SortableSearchProviderItem({ provider, onEditSearchName, onEngineEnable
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 p-3 border border-border rounded-lg bg-background ${
+      className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 border border-border rounded-lg bg-background ${
         isDragging ? 'opacity-50' : ''
       }`}
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 hover:bg-accent rounded touch-none"
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="flex-1 text-sm">
-        <div className="font-medium">
-          {searchName}
-        </div>
-          <div className="text-xs text-muted-foreground flex items-center gap-2">
-          <span>{providerLabel}</span>
-          <span className="text-muted-foreground/60">•</span>
-          <span className="capitalize">{displayType}</span>
-          </div>
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onEditSearchName(provider.id)}
-        className="px-2"
-      >
-        <Edit2 className="h-4 w-4" />
-      </Button>
-      {hasRPDBKey && provider.provider !== 'tvdb.collections.search' && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onengineRatingPostersChange(provider.id, !engineRatingPostersEnabled)}
-          className="px-2"
-          title={engineRatingPostersEnabled ? 'Rating posters enabled' : 'Rating posters disabled'}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div
+          {...attributes}
+          {...listeners}
+          className="shrink-0 cursor-grab active:cursor-grabbing p-1 hover:bg-accent rounded touch-none"
         >
-          <Star className={`h-4 w-4 ${engineRatingPostersEnabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0 text-sm">
+          <div className="font-medium break-words sm:truncate">
+            {searchName}
+          </div>
+          <div className="text-xs text-muted-foreground flex items-center gap-2">
+            <span className="truncate">{providerLabel}</span>
+            <span className="text-muted-foreground/60 shrink-0">•</span>
+            <span className="capitalize truncate">{displayType}</span>
+          </div>
+        </div>
+        <Switch
+          className="shrink-0 sm:hidden"
+          checked={true}
+          onCheckedChange={checked => onEngineEnabledChange(provider.provider, checked)}
+          aria-label="Enable this engine"
+        />
+      </div>
+      <div className="flex items-center gap-2 sm:gap-3 justify-end sm:ml-auto">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onEditSearchName(provider.id)}
+          className="shrink-0 px-2"
+        >
+          <Edit2 className="h-4 w-4" />
         </Button>
-      )}
-      <Switch
-        checked={true}
-        onCheckedChange={checked => onEngineEnabledChange(provider.provider, checked)}
-        aria-label="Enable this engine"
-      />
+        {hasRPDBKey && provider.provider !== 'tvdb.collections.search' && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onengineRatingPostersChange(provider.id, !engineRatingPostersEnabled)}
+            className="shrink-0 px-2"
+            title={engineRatingPostersEnabled ? 'Rating posters enabled' : 'Rating posters disabled'}
+          >
+            <Star className={`h-4 w-4 ${engineRatingPostersEnabled ? 'text-yellow-500 dark:text-yellow-400' : 'text-muted-foreground'}`} />
+          </Button>
+        )}
+        <Switch
+          className="shrink-0 hidden sm:inline-flex"
+          checked={true}
+          onCheckedChange={checked => onEngineEnabledChange(provider.provider, checked)}
+          aria-label="Enable this engine"
+        />
+      </div>
     </div>
   );
 }
@@ -496,14 +507,15 @@ export function SearchSettings() {
       </div>
 
       <Card>
-        <CardContent className="p-4 pt-6 flex items-center justify-between">
-            <div>
-                <Label htmlFor="search-enabled" className="text-lg font-medium">Enable Search functionality</Label>
+        <CardContent className="p-4 pt-6 flex items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+                <Label htmlFor="search-enabled" className="text-base sm:text-lg font-medium">Enable Search functionality</Label>
             </div>
-            <Switch 
+            <Switch
               id="search-enabled"
-              checked={config.search.enabled} 
-              onCheckedChange={handleSearchEnabledChange} 
+              className="shrink-0"
+              checked={config.search.enabled}
+              onCheckedChange={handleSearchEnabledChange}
             />
         </CardContent>
       </Card>
@@ -719,8 +731,8 @@ export function SearchSettings() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex-1">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
                             {!hasAnyAiKey && (
                                 <p className="text-sm text-muted-foreground">
                                     A Gemini or OpenRouter API key is required to enable AI search. Add your key in the Integrations settings.
@@ -730,7 +742,7 @@ export function SearchSettings() {
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div>
+                                    <div className="shrink-0">
                                         <Switch
                                             id="ai-search-enabled"
                                             checked={config.search.ai_enabled}
@@ -752,8 +764,8 @@ export function SearchSettings() {
                     {config.search.ai_enabled && (
                         <div className="space-y-4 pt-2 border-t">
                             {/* Provider Selection */}
-                            <div className="flex items-center justify-between">
-                                <div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                                <div className="min-w-0">
                                     <Label htmlFor="ai-provider" className="text-sm font-medium">Provider</Label>
                                     <p className="text-xs text-muted-foreground">Choose your AI provider</p>
                                 </div>
@@ -761,7 +773,7 @@ export function SearchSettings() {
                                     value={config.search.ai_provider || 'gemini'}
                                     onValueChange={(value) => handleAiProviderChange(value as 'gemini' | 'openrouter')}
                                 >
-                                    <SelectTrigger id="ai-provider" className="w-[200px]">
+                                    <SelectTrigger id="ai-provider" className="w-full sm:w-[200px]">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -776,8 +788,8 @@ export function SearchSettings() {
                             </div>
 
                             {/* Model Selection */}
-                            <div className="flex items-center justify-between">
-                                <div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                                <div className="min-w-0">
                                     <Label htmlFor="ai-model" className="text-sm font-medium">Model</Label>
                                     <p className="text-xs text-muted-foreground">
                                         {(config.search.ai_provider || 'gemini') === 'openrouter'
@@ -797,7 +809,7 @@ export function SearchSettings() {
                                             value={config.search.ai_model ?? ''}
                                             onChange={(e) => handleAiModelChange(e.target.value)}
                                             placeholder={openRouterModelsLoading ? 'Loading models...' : 'e.g. google/gemini-2.5-flash'}
-                                            className="w-[280px]"
+                                            className="w-full sm:w-[280px]"
                                         />
                                         <datalist id="openrouter-models">
                                             {openRouterModels.map(model => (
@@ -810,7 +822,7 @@ export function SearchSettings() {
                                         value={config.search.ai_model || DEFAULT_GEMINI_MODEL}
                                         onValueChange={handleAiModelChange}
                                     >
-                                        <SelectTrigger id="ai-model" className="w-[280px]">
+                                        <SelectTrigger id="ai-model" className="w-full sm:w-[280px]">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -834,8 +846,8 @@ export function SearchSettings() {
 
                                 return (
                                     <>
-                                        <div className="flex items-center justify-between">
-                                            <div>
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="min-w-0 flex-1">
                                                 <Label htmlFor="ai-web-search" className="text-sm font-medium">Web Search</Label>
                                                 <p className="text-xs text-muted-foreground">
                                                     Requires a paid Gemini API key. Free keys will get 429 errors.
@@ -843,6 +855,7 @@ export function SearchSettings() {
                                             </div>
                                             <Switch
                                                 id="ai-web-search"
+                                                className="shrink-0"
                                                 checked={!!config.search.ai_web_search}
                                                 onCheckedChange={(checked) => setConfig(prev => ({
                                                     ...prev,

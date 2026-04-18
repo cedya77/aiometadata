@@ -509,11 +509,11 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
         <div className="space-y-6 py-4">
           {/* Connection Status */}
           <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                 <Link2 className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>Connection Status</CardTitle>
                 <CardDescription>Link your AniList account to sync watch progress.</CardDescription>
               </div>
@@ -586,11 +586,11 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
           {/* Token Input */}
           {!isConnected && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <KeyRound className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Enter Token ID</CardTitle>
                   <CardDescription>
                     Paste the Token ID you received after authorizing with AniList.
@@ -614,11 +614,11 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
 
           {/* Features Info */}
           <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                 <Sparkles className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>Features</CardTitle>
                 <CardDescription>What gets enabled once you're connected.</CardDescription>
               </div>
@@ -647,11 +647,11 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
 
           {/* Trending Anime Catalog */}
           <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                 <TrendingUp className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>Trending Anime</CardTitle>
                 <CardDescription>
                   Add a catalog of currently trending anime from AniList (no account required).
@@ -706,11 +706,11 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
 
           {/* Import Public User Lists Section */}
           <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                 <UserSearch className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>Import Lists by Username</CardTitle>
                 <CardDescription>
                   Fetch and import anime lists from any AniList user (public lists only).
@@ -847,11 +847,11 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
 
           {/* Import Your Lists Section  */}
           <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                 <Bookmark className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>Import Your Lists</CardTitle>
                 <CardDescription>
                   Load your own AniList anime lists and import them as browsable catalogs in Stremio.
@@ -954,7 +954,7 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} className="w-full sm:w-auto">
             Close
           </Button>
         </DialogFooter>

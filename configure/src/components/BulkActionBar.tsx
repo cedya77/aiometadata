@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -109,21 +110,28 @@ export function BulkActionBar({
   const findReplaceMatchCount = findTypeValue.trim()
     ? selectedCatalogs.filter(c => (c.displayType || c.type) === findTypeValue.trim()).length
     : 0;
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 767px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
   if (selectionCount === 0) {
     return null;
   }
 
-  return (
+  const bar = (
     <div
       className={cn(
-        // Desktop: sticky at top
         "md:sticky md:top-0 z-10 bg-background border-b shadow-md",
-        // Mobile: fixed at bottom (bottom sheet pattern)
         "fixed bottom-0 left-0 right-0 md:relative",
-        // Slide-down animation with 200ms ease-out
         "animate-slide-down",
         "px-4 py-3 md:py-3",
-        // Ensure proper spacing on mobile
         "pb-safe"
       )}
       role="region"
@@ -596,4 +604,9 @@ export function BulkActionBar({
       </div>
     </div>
   );
+
+  if (isMobile && typeof document !== 'undefined') {
+    return createPortal(bar, document.body);
+  }
+  return bar;
 }

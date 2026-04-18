@@ -960,11 +960,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
         <div className="space-y-6 py-4">
           {/* API Key Section */}
           <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-            <CardHeader className="flex-row items-start gap-4 space-y-0">
+            <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
               <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                 <KeyRound className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 min-w-0 space-y-1.5">
                 <CardTitle>MDBList API Key</CardTitle>
                 <CardDescription>
                   Enter your MDBList API key to access public and private lists
@@ -1111,11 +1111,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
 
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <Settings className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Default Settings</CardTitle>
                   <CardDescription>
                     Configure default sort and cache settings for newly imported lists
@@ -1225,11 +1225,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* Up Next Catalog Section */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <PlayCircle className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Up Next</CardTitle>
                   <CardDescription>Shows the next episode to watch for each show in your MDBList watched list</CardDescription>
                 </div>
@@ -1308,11 +1308,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* Custom User Lists Section */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <UserSearch className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Import Lists from Any User</CardTitle>
                   <CardDescription>
                     Enter any MDBList username to browse and import their public lists
@@ -1442,11 +1442,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* Legacy: Add Single List by URL */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <Link2 className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Add Single List by URL</CardTitle>
                   <CardDescription>
                     Use this only for single lists. For multiple lists, use the "Import Lists from Any User" section above.
@@ -1465,11 +1465,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* Import My Watchlist Section */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <Bookmark className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Import My Watchlist</CardTitle>
                   <CardDescription>
                     Import your personal MDBList watchlist as a catalog. This will create a catalog that shows items from your watchlist.
@@ -1516,11 +1516,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* Popular Lists Section */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <Sparkles className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Popular Lists from Featured Curators</CardTitle>
                   <CardDescription>
                     Quick access to curated lists from popular MDBList curators
@@ -1648,11 +1648,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* Top Lists Section */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <TrendingUp className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Community Top Lists</CardTitle>
                   <CardDescription>
                     Browse the most popular and trending lists from the MDBList community
@@ -1763,11 +1763,11 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
           {/* External Lists Section */}
           {isValid && (
             <Card className="bg-gradient-to-br from-sky-500/10 via-card/80 to-card/80 border-sky-400/20">
-              <CardHeader className="flex-row items-start gap-4 space-y-0">
+              <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
                 <div className="shrink-0 h-10 w-10 rounded-lg bg-sky-500/15 text-sky-300 flex items-center justify-center ring-1 ring-sky-400/20">
                   <Download className="h-5 w-5" />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   <CardTitle>Import My External Lists</CardTitle>
                   <CardDescription>
                     Import your external lists from Trakt, IMDb, Letterboxd, etc.
@@ -1891,21 +1891,21 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
             </Card>
           )}
         </div>
-        <DialogFooter className="sm:justify-between">
-            <div>
-              {isValid && (
-                <Button variant="outline" onClick={() => validateApiKey(true)} disabled={isChecking}>
-                  {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Refreshing...</>) : ("Refresh My Lists")}
-                </Button>
-              )}
-            </div>
+        <DialogFooter className="sm:justify-between gap-2 sm:gap-0">
+            {isValid ? (
+              <Button variant="outline" onClick={() => validateApiKey(true)} disabled={isChecking} className="w-full sm:w-auto">
+                {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Refreshing...</>) : ("Refresh My Lists")}
+              </Button>
+            ) : (
+              <div className="hidden sm:block" />
+            )}
 
-            <div className="flex space-x-2">
-                <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0 sm:space-x-2">
+                <DialogClose asChild><Button variant="ghost" className="w-full sm:w-auto">Cancel</Button></DialogClose>
                 {isValid ? (
-                  <Button onClick={handleSave}>Save & Close</Button>
+                  <Button onClick={handleSave} className="w-full sm:w-auto">Save & Close</Button>
                 ) : (
-                  <Button onClick={() => validateApiKey(false)} disabled={!tempKey || isChecking}>
+                  <Button onClick={() => validateApiKey(false)} disabled={!tempKey || isChecking} className="w-full sm:w-auto">
                     {isChecking ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking...</>) : ("Check Key & Import My Lists")}
                   </Button>
                 )}
