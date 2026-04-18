@@ -183,7 +183,7 @@ export function LetterboxdIntegration({ isOpen, onClose }: LetterboxdIntegration
                 <p className="text-xs text-muted-foreground">
                   Supported formats:
                 </p>
-                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1">
+                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1 break-all">
                   <li>Regular list: https://letterboxd.com/username/list/list-name</li>
                   <li>Watchlist: https://letterboxd.com/username/watchlist/</li>
                 </ul>

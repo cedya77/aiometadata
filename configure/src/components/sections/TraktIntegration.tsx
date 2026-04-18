@@ -1241,7 +1241,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="watchlist-sort-by">Sort By</Label>
                     <Select value={watchlistSortBy} onValueChange={setWatchlistSortBy}>
@@ -1325,7 +1325,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="trakt-username">Trakt Username</Label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       id="trakt-username"
                       placeholder="e.g., garycrawfordgc"
@@ -1336,11 +1336,13 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                           fetchTraktUserLists();
                         }
                       }}
+                      className="min-w-0"
                     />
                     <Button
                       onClick={fetchTraktUserLists}
                       disabled={isLoadingTraktUser || !traktUsername.trim()}
                       variant="outline"
+                      className="w-full sm:w-auto shrink-0"
                     >
                       {isLoadingTraktUser ? (
                         <>
@@ -1820,7 +1822,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="favorite-sort-by">Sort By</Label>
                     <Select value={favoriteSortBy} onValueChange={setFavoriteSortBy}>
@@ -2274,7 +2276,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="custom-list-sort-by">Sort By</Label>
                     <Select value={customListSortBy} onValueChange={setCustomListSortBy}>

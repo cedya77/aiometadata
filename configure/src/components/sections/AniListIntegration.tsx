@@ -598,13 +598,14 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Input
                     placeholder="Paste your Token ID here"
                     value={tempTokenId}
                     onChange={(e) => setTempTokenId(e.target.value)}
+                    className="min-w-0"
                   />
-                  <Button onClick={handleSave} disabled={!tempTokenId.trim()}>
+                  <Button onClick={handleSave} disabled={!tempTokenId.trim()} className="w-full sm:w-auto shrink-0">
                     Save
                   </Button>
                 </div>
@@ -719,7 +720,7 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Username Input */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <Input
                   placeholder="Enter AniList username..."
                   value={publicUsername}
@@ -729,11 +730,13 @@ export function AniListIntegration({ isOpen, onClose }: AniListIntegrationProps)
                       fetchPublicUserLists();
                     }
                   }}
+                  className="min-w-0"
                 />
                 <Button
                   onClick={fetchPublicUserLists}
                   disabled={!publicUsername.trim() || isLoadingPublicLists}
                   variant="outline"
+                  className="w-full sm:w-auto shrink-0"
                 >
                   {isLoadingPublicLists ? (
                     <>

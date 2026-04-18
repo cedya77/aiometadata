@@ -1125,7 +1125,7 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Default Sort Options</Label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="sort-select">Sort By</Label>
                     <Select value={defaultSort} onValueChange={(value: any) => setDefaultSort(value)}>
@@ -1339,9 +1339,9 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 </p>
               </div>
               
-              <div className="flex items-center space-x-2">
-                <Input 
-                  placeholder="Enter MDBList username (e.g., tvgeniekodi)" 
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:space-x-2 sm:gap-0">
+                <Input
+                  placeholder="Enter MDBList username (e.g., tvgeniekodi)"
                   value={customUsername}
                   onChange={(e) => setCustomUsername(e.target.value)}
                   onKeyDown={(e) => {
@@ -1349,11 +1349,13 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                       fetchCustomUserLists();
                     }
                   }}
+                  className="min-w-0"
                 />
-                <Button 
-                  onClick={fetchCustomUserLists} 
-                  disabled={isLoadingCustomUser || !customUsername.trim()} 
+                <Button
+                  onClick={fetchCustomUserLists}
+                  disabled={isLoadingCustomUser || !customUsername.trim()}
                   variant="outline"
+                  className="w-full sm:w-auto shrink-0"
                 >
                   {isLoadingCustomUser ? (
                     <>
@@ -1454,9 +1456,9 @@ export function MDBListIntegration({ isOpen, onClose }: MDBListIntegrationProps)
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center space-x-2">
-                  <Input id="customListUrl" value={customListUrl} onChange={(e) => setCustomListUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" />
-                  <Button onClick={handleAddCustomList} variant="outline">Add</Button>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:space-x-2 sm:gap-0">
+                  <Input id="customListUrl" value={customListUrl} onChange={(e) => setCustomListUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" className="min-w-0" />
+                  <Button onClick={handleAddCustomList} variant="outline" className="w-full sm:w-auto">Add</Button>
                 </div>
               </CardContent>
             </Card>

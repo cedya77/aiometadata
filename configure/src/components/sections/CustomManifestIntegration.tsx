@@ -289,14 +289,15 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   placeholder="https://example.com/manifest.json"
                   value={manifestUrl}
                   onChange={(e) => setManifestUrl(e.target.value)}
                   disabled={isLoading}
+                  className="min-w-0"
                 />
-                <Button onClick={fetchManifest} disabled={isLoading || !manifestUrl.trim()}>
+                <Button onClick={fetchManifest} disabled={isLoading || !manifestUrl.trim()} className="w-full sm:w-auto shrink-0">
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Load Manifest"}
                 </Button>
               </div>
