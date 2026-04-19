@@ -75,9 +75,14 @@ function findChart(data: CrawlerData, service: string, mediaType: string): Crawl
 
   let chart = data.charts.find(c => c.catalog_id === catalogId) || null;
 
+  if (!chart && mediaType === 'all') {
+    chart = data.charts.find(c => c.catalog_id === `${service}.overall-from-amazon-channels`) || null;
+  }
 
   if (!chart && mediaType !== 'all') {
-    chart = data.charts.find(c => c.catalog_id === `${service}.overall`) || null;
+    chart = data.charts.find(c => c.catalog_id === `${service}.overall`)
+      || data.charts.find(c => c.catalog_id === `${service}.overall-from-amazon-channels`)
+      || null;
   }
 
   return chart;
@@ -87,10 +92,12 @@ function findChart(data: CrawlerData, service: string, mediaType: string): Crawl
 export async function probeFlixPatrolSections(service: string, countrySlug: string): Promise<{ hasMovies: boolean; hasShows: boolean; hasOverall: boolean }> {
   try {
     const data = await fetchRegionData(countrySlug);
+    const hasOverallChart = (id: string) =>
+      data.charts.some(c => c.catalog_id === id && c.entries.length > 0);
     return {
-      hasMovies: data.charts.some(c => c.catalog_id === `${service}.movies` && c.entries.length > 0),
-      hasShows: data.charts.some(c => c.catalog_id === `${service}.series` && c.entries.length > 0),
-      hasOverall: data.charts.some(c => c.catalog_id === `${service}.overall` && c.entries.length > 0),
+      hasMovies: hasOverallChart(`${service}.movies`),
+      hasShows: hasOverallChart(`${service}.series`),
+      hasOverall: hasOverallChart(`${service}.overall`) || hasOverallChart(`${service}.overall-from-amazon-channels`),
     };
   } catch {
     return { hasMovies: false, hasShows: false, hasOverall: false };
