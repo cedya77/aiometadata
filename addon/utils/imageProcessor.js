@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const axios = require('axios');
-const url = require('url');
+const { Transform } = require('stream');
+const { pipeline } = require('stream/promises');
 
 // Whitelisted domains for image processing
 const ALLOWED_DOMAINS = [
@@ -25,8 +26,10 @@ const ALLOWED_DOMAINS = [
 // Allowed file extensions
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
 
-// Maximum file size (50MB)
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+// Maximum file size (15MB)
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_INPUT_PIXELS = 10000 * 10000;
+const REQUEST_TIMEOUT_MS = 10000;
 
 /**
  * Validate image URL for security
@@ -70,37 +73,8 @@ function validateImageUrl(imageUrl) {
   }
 }
 
-async function blurImage(imageUrl) {
-  if (!validateImageUrl(imageUrl)) {
-    throw new Error('Invalid or unauthorized image URL');
-  }
-  
-  try {
-    const response = await axios.get(imageUrl, {
-      responseType: 'arraybuffer',
-      timeout: 10000, // 10 second timeout
-      maxContentLength: MAX_FILE_SIZE,
-      maxBodyLength: MAX_FILE_SIZE
-    });
-
-    const contentType = response.headers['content-type'];
-    if (!contentType || !contentType.startsWith('image/')) {
-      throw new Error('Invalid content type');
-    }
-
-    if (response.data.length > MAX_FILE_SIZE) {
-      throw new Error('File too large');
-    }
-
-    const processedImageBuffer = await sharp(response.data)
-      .blur(80)
-      .toBuffer();
-
-    return processedImageBuffer;
-  } catch (error) {
-    console.error('[ImageProcessor] Error processing image:', error.message);
-    throw error;
-  }
+async function blurImage(imageUrl, outputStream) {
+  return streamProcessedImage(imageUrl, outputStream, (transformer) => transformer.blur(80));
 }
 
 /**
@@ -112,16 +86,11 @@ async function blurImage(imageUrl) {
  * @param {number} options.blur - Blur amount (default: 0)
  * @param {number} options.brightness - Brightness adjustment (default: 1)
  * @param {number} options.contrast - Contrast adjustment (default: 1)
- * @returns {Promise<Buffer|null>} Processed image buffer
+ * @param {import('stream').Writable} outputStream - Destination stream
+ * @returns {Promise<{bytesWritten:number, info:Object|null}>} Stream result
  */
-async function convertBannerToBackground(bannerUrl, options = {}) {
-  // Validate URL before processing
-  if (!validateImageUrl(bannerUrl)) {
-    throw new Error('Invalid or unauthorized image URL');
-  }
-  
-  try {
-      const {
+async function convertBannerToBackground(bannerUrl, options = {}, outputStream) {
+  const {
     width = 1920,
     height = 1080,
     blur = 0,
@@ -130,37 +99,16 @@ async function convertBannerToBackground(bannerUrl, options = {}) {
     position = 'center'
   } = options;
 
-    const response = await axios.get(bannerUrl, {
-      responseType: 'arraybuffer',
-      timeout: 10000,
-      maxContentLength: MAX_FILE_SIZE,
-      maxBodyLength: MAX_FILE_SIZE
-    });
-
-    const contentType = response.headers['content-type'];
-    if (!contentType || !contentType.startsWith('image/')) {
-      throw new Error('Invalid content type');
-    }
-
-    if (response.data.length > MAX_FILE_SIZE) {
-      throw new Error('File too large');
-    }
-
-    let sharpInstance = sharp(response.data);
-
-    // Resize to target dimensions with cover mode (maintains aspect ratio)
-    // For banner images, use 'top' position to avoid cutting off important content
-    sharpInstance = sharpInstance.resize(width, height, {
+  return streamProcessedImage(bannerUrl, outputStream, (transformer) => {
+    let sharpInstance = transformer.resize(width, height, {
       fit: 'cover',
-      position: position
+      position
     });
 
-    // Apply blur if specified
     if (blur > 0) {
       sharpInstance = sharpInstance.blur(blur);
     }
 
-    // Apply brightness and contrast adjustments
     if (brightness !== 1 || contrast !== 1) {
       sharpInstance = sharpInstance.modulate({
         brightness,
@@ -168,90 +116,113 @@ async function convertBannerToBackground(bannerUrl, options = {}) {
       });
     }
 
-    const processedImageBuffer = await sharpInstance.toBuffer();
-    return processedImageBuffer;
+    return sharpInstance;
+  });
+}
 
-  } catch (error) {
-    console.error('[ImageProcessor] Error converting banner to background:', error);
-    return null;
+function ensureOutputStream(outputStream) {
+  if (!outputStream || typeof outputStream.write !== 'function') {
+    throw new Error('Output stream is required for image processing');
   }
 }
 
-/**
- * Create a gradient overlay on top of an image
- * @param {string} imageUrl - Base image URL
- * @param {Object} options - Gradient options
- * @param {string} options.gradient - Gradient type ('dark', 'light', 'custom')
- * @param {number} options.opacity - Gradient opacity (0-1)
- * @returns {Promise<Buffer|null>} Processed image buffer
- */
-async function addGradientOverlay(imageUrl, options = {}) {
-  // Validate URL before processing
+function createInputSizeLimiter(maxBytes) {
+  let totalBytes = 0;
+
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      totalBytes += chunk.length;
+
+      if (totalBytes > maxBytes) {
+        callback(new Error('File too large'));
+        return;
+      }
+
+      callback(null, chunk);
+    }
+  });
+}
+
+function createOutputCounter() {
+  let bytesWritten = 0;
+
+  return {
+    bytes() {
+      return bytesWritten;
+    },
+    stream: new Transform({
+      transform(chunk, _encoding, callback) {
+        bytesWritten += chunk.length;
+        callback(null, chunk);
+      }
+    })
+  };
+}
+
+async function fetchImageStream(imageUrl) {
   if (!validateImageUrl(imageUrl)) {
     throw new Error('Invalid or unauthorized image URL');
   }
-  
+
+  const response = await axios.get(imageUrl, {
+    responseType: 'stream',
+    timeout: REQUEST_TIMEOUT_MS,
+    maxContentLength: MAX_FILE_SIZE,
+    maxBodyLength: MAX_FILE_SIZE
+  });
+
+  const contentType = response.headers['content-type'];
+  if (!contentType || !contentType.startsWith('image/')) {
+    response.data.destroy();
+    throw new Error('Invalid content type');
+  }
+
+  const contentLength = Number.parseInt(response.headers['content-length'] || '', 10);
+  if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE) {
+    response.data.destroy();
+    throw new Error('File too large');
+  }
+
+  return response;
+}
+
+function createSharpStream() {
+  return sharp({
+    sequentialRead: true,
+    limitInputPixels: MAX_INPUT_PIXELS
+  });
+}
+
+async function streamProcessedImage(imageUrl, outputStream, configureTransformer) {
+  ensureOutputStream(outputStream);
+
+  const response = await fetchImageStream(imageUrl);
+  const inputLimiter = createInputSizeLimiter(MAX_FILE_SIZE);
+  const outputCounter = createOutputCounter();
+  const transformer = configureTransformer(createSharpStream()).jpeg();
+  let outputInfo = null;
+
+  transformer.once('info', (info) => {
+    outputInfo = info;
+  });
+
   try {
-    const { gradient = 'dark', opacity = 0.7 } = options;
+    await pipeline(
+      response.data,
+      inputLimiter,
+      transformer,
+      outputCounter.stream,
+      outputStream
+    );
 
-    const response = await axios.get(imageUrl, {
-      responseType: 'arraybuffer',
-      timeout: 10000,
-      maxContentLength: MAX_FILE_SIZE,
-      maxBodyLength: MAX_FILE_SIZE
-    });
-
-    const contentType = response.headers['content-type'];
-    if (!contentType || !contentType.startsWith('image/')) {
-      throw new Error('Invalid content type');
-    }
-
-    if (response.data.length > MAX_FILE_SIZE) {
-      throw new Error('File too large');
-    }
-
-    let gradientOverlay;
-    switch (gradient) {
-      case 'dark':
-        gradientOverlay = {
-          width: 1920,
-          height: 1080,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: opacity }
-        };
-        break;
-      case 'light':
-        gradientOverlay = {
-          width: 1920,
-          height: 1080,
-          channels: 4,
-          background: { r: 255, g: 255, b: 255, alpha: opacity }
-        };
-        break;
-      default:
-        gradientOverlay = {
-          width: 1920,
-          height: 1080,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: opacity }
-        };
-    }
-
-    const overlay = sharp({
-      create: gradientOverlay
-    });
-
-    const processedImageBuffer = await sharp(response.data)
-      .resize(1920, 1080, { fit: 'cover', position: 'center' })
-      .composite([{ input: await overlay.toBuffer(), blend: 'multiply' }])
-      .toBuffer();
-
-    return processedImageBuffer;
-
+    return {
+      bytesWritten: outputCounter.bytes(),
+      info: outputInfo
+    };
   } catch (error) {
-    console.error('[ImageProcessor] Error adding gradient overlay:', error);
-    return null;
+    response.data.destroy(error);
+    throw error;
   }
 }
 
-module.exports = { blurImage, convertBannerToBackground, addGradientOverlay, validateImageUrl }; 
+module.exports = { blurImage, convertBannerToBackground, validateImageUrl };

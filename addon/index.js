@@ -49,7 +49,7 @@ const { getTrending } = require("./lib/getTrending");
 const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
-const { blurImage } = require('./utils/imageProcessor');
+const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
 const { TraktClient } = require('./lib/trakt');
 const { SimklClient } = require('./lib/simkl');
 const axios = require('axios');
@@ -4669,12 +4669,15 @@ addon.get("/api/image/blur", async function (req, res) {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   
   try {
-    const blurredImageBuffer = await blurImage(imageUrl);
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.send(blurredImageBuffer);
+    await blurImage(imageUrl, res);
   } catch (error) {
     consola.error('Error in blur route:', error);
+    if (res.headersSent) {
+      res.destroy(error);
+      return;
+    }
     res.status(500).send('Error processing image');
   }
 });
@@ -4685,8 +4688,6 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
   if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
   
   try {
-    const { convertBannerToBackground } = require('./utils/imageProcessor');
-    
     // Parse options from query parameters
     const options = {
       width: parseInt(req.query.width) || 1920,
@@ -4697,43 +4698,15 @@ addon.get("/api/image/banner-to-background", async function (req, res) {
       position: req.query.position || 'center' // Add position parameter
     };
     
-    const processedImage = await convertBannerToBackground(imageUrl, options);
-    if (processedImage) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); // Cache for 1 day
-      res.send(processedImage);
-    } else {
-      res.status(500).send('Failed to process image');
-    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    await convertBannerToBackground(imageUrl, options, res);
   } catch (error) {
     consola.error(`Error converting banner to background for ${imageUrl}:`, error.message);
-    res.status(500).send('Internal server error');
-  }
-});
-
-// Add gradient overlay to image
-addon.get("/api/image/gradient-overlay", async function (req, res) {
-  const imageUrl = req.query.url;
-  if (!imageUrl) { return res.status(400).send('Image URL not provided'); }
-  
-  try {
-    const { addGradientOverlay } = require('./utils/imageProcessor');
-    
-    const options = {
-      gradient: req.query.gradient || 'dark',
-      opacity: parseFloat(req.query.opacity) || 0.7
-    };
-    
-    const processedImage = await addGradientOverlay(imageUrl, options);
-    if (processedImage) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      res.send(processedImage);
-    } else {
-      res.status(500).send('Failed to process image');
+    if (res.headersSent) {
+      res.destroy(error);
+      return;
     }
-  } catch (error) {
-    consola.error(`Error adding gradient overlay for ${imageUrl}:`, error.message);
     res.status(500).send('Internal server error');
   }
 });
