@@ -103,7 +103,7 @@ function processAndIndexXmlData(xmlData) {
  * avoiding a full download if the local cache is up-to-date.
  * @param {boolean} force - If true, bypass ETag check and force re-download
  */
-async function downloadAndProcessAnimeList(force = false) {
+async function downloadAndProcessAnimeList(force = false, skipReloadOnUnchangedEtag = false) {
   const useRedisCache = redis && redis.status === 'ready';
 
   try {
@@ -116,6 +116,18 @@ async function downloadAndProcessAnimeList(force = false) {
         logger.debug(`Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
         if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
+          if (skipReloadOnUnchangedEtag && isInitialized) {
+            logger.info('No changes detected during scheduled refresh. Keeping existing in-memory mappings.');
+            try {
+              await redis.setex('anime_list:last_update', 86400 * 7, Date.now().toString());
+              logger.debug('Maintenance task tracked: anime-list scheduled no-op');
+            } catch (trackingError) {
+              logger.warn('Failed to track maintenance task:', trackingError.message);
+            }
+
+            return { success: true, message: 'Unchanged (scheduled no-op)', count: animeListMap.size };
+          }
+
           try {
             logger.info('No changes detected. Loading from local disk cache...');
             const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
@@ -228,7 +240,7 @@ async function initializeAnimeListMapper() {
     updateInterval = setInterval(async () => {
       logger.info(`Running scheduled update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
       try {
-        await downloadAndProcessAnimeList();
+        await downloadAndProcessAnimeList(false, true);
         logger.info('Scheduled update completed successfully.');
       } catch (error) {
         logger.error('Scheduled update failed:', error.message);
