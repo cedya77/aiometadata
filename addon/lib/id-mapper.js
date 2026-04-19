@@ -155,6 +155,7 @@ function processAndIndexData(data) {
   animeTypeFromAnilistIdMap.clear();
   animeTypeFromKitsuIdMap.clear();
   animeTypeFromAnidbIdMap.clear();
+  onaTypeCache.clear();
   
   for (const item of animeList) {
     if (item.mal_id) {
