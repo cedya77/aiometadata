@@ -5,6 +5,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const redisIdCache = require('./redis-id-cache');
+const { normalizeCustomArtPatternsInConfig } = require('../utils/parseProps');
 const consola = require('consola');
 const logger = consola.withTag('Database');
 
@@ -283,6 +284,7 @@ class Database {
 
     let configJson;
     if (normalizedConfig && typeof normalizedConfig === 'object' && !Array.isArray(normalizedConfig)) {
+      normalizedConfig = normalizeCustomArtPatternsInConfig(normalizedConfig);
       const configForHash = { ...normalizedConfig };
       delete configForHash.configHash;
       const configHash = crypto.createHash('md5').update(JSON.stringify(configForHash)).digest('hex').substring(0, 16);
@@ -335,9 +337,11 @@ class Database {
     if (!row) return null;
     
     try {
-      return typeof row.config_data === 'string' 
-        ? JSON.parse(row.config_data) 
+      const config = typeof row.config_data === 'string'
+        ? JSON.parse(row.config_data)
         : row.config_data;
+
+      return normalizeCustomArtPatternsInConfig(config);
     } catch (error) {
       logger.error('Error parsing config data:', error);
       return null;

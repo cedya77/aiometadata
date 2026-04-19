@@ -28,6 +28,47 @@ const logger = consola.withTag('ParseProps');
 // Check if debug is enabled (CONSOLA_LEVEL >= 4)
 const isDebugEnabled = consola.level >= 4;
 
+const CUSTOM_ART_PATTERN_KEYS = [
+  'customPosterUrlPattern',
+  'customBackgroundUrlPattern',
+  'customLogoUrlPattern',
+  'customThumbnailUrlPattern',
+];
+
+function normalizeEncodedCustomArtPattern(pattern) {
+  if (typeof pattern !== 'string' || !pattern.includes('%7B')) return pattern;
+
+  return pattern.replace(/%7B[a-z0-9_]+%7D/gi, (match) => {
+    try {
+      return decodeURIComponent(match);
+    } catch {
+      return match;
+    }
+  });
+}
+
+function normalizeCustomArtPatternsInConfig(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return config;
+  }
+
+  let nextConfig = config;
+
+  for (const key of CUSTOM_ART_PATTERN_KEYS) {
+    const currentValue = nextConfig[key];
+    const normalizedValue = normalizeEncodedCustomArtPattern(currentValue);
+
+    if (normalizedValue !== currentValue) {
+      if (nextConfig === config) {
+        nextConfig = { ...config };
+      }
+      nextConfig[key] = normalizedValue;
+    }
+  }
+
+  return nextConfig;
+}
+
 /**
  * Helper function to check if RPDB is enabled for the current context
  * Checks per-catalog settings if available, otherwise defaults to true
@@ -3441,7 +3482,8 @@ module.exports = {
   getTvdbCertification,
   getAnimePosterUrl,
   getKitsuLocalizedTitle,
-  resolveCustomArtUrl
+  resolveCustomArtUrl,
+  normalizeCustomArtPatternsInConfig
 };
 
 /**
