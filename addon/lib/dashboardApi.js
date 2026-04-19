@@ -1732,81 +1732,130 @@ class DashboardAPI {
   async checkExpiredKeysCount() {
     try {
       if (!this.cache) {
-        return { count: 0, error: "Cache not available" };
+        return { count: 0, totalKeys: 0, noTtlCount: 0, error: "Cache not available" };
       }
 
-      let cursor = '0';
-      let expiredCount = 0;
-      let totalKeys = 0;
-      let noTtlCount = 0;
+      const scanResult = await this.scanExpiringKeys();
 
-      do {
-        const reply = await this.cache.scan(cursor, 'COUNT', 1000);
-        cursor = reply[0];
-        const keys = reply[1];
-        
-        if (keys.length > 0) {
-          totalKeys += keys.length;
-          
-          // Pipeline TTL commands for performance
-          const pipeline = this.cache.pipeline();
-          keys.forEach(key => pipeline.ttl(key));
-          const ttls = await pipeline.exec();
-          
-          ttls.forEach(([err, ttl]) => {
-            if (!err) {
-              if (ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
-                expiredCount++;
-              } else if (ttl === -1) {
-                noTtlCount++;
-              }
-            }
-          });
-        }
-      } while (cursor !== '0');
-
-      if (noTtlCount > 1000) {
-        logger.warn(`[Cache Cleanup] Found ${noTtlCount} keys with no TTL (potential leaks)`);
+      if (scanResult.noTtlCount > 1000) {
+        logger.warn(`[Cache Cleanup] Found ${scanResult.noTtlCount} keys with no TTL (potential leaks)`);
       }
 
-      return { count: expiredCount, totalKeys, noTtlCount };
+      return {
+        count: scanResult.expiringCount,
+        totalKeys: scanResult.totalKeys,
+        noTtlCount: scanResult.noTtlCount
+      };
     } catch (error) {
       logger.error("[Cache Cleanup Scheduler] Error checking expired keys:", error);
-      return { count: 0, error: error.message };
+      return { count: 0, totalKeys: 0, noTtlCount: 0, error: error.message };
     }
+  }
+
+  async scanExpiringKeys(options = {}) {
+    const {
+      deleteKeys = false,
+      scanCount = 1000,
+      deleteBatchSize = 100
+    } = options;
+
+    if (!this.cache) {
+      throw new Error("Cache not available");
+    }
+
+    let cursor = '0';
+    let expiringCount = 0;
+    let totalKeys = 0;
+    let noTtlCount = 0;
+    let deletedCount = 0;
+
+    do {
+      const reply = await this.cache.scan(cursor, 'COUNT', scanCount);
+      cursor = reply[0];
+      const keys = reply[1];
+
+      if (keys.length === 0) {
+        continue;
+      }
+
+      totalKeys += keys.length;
+
+      const pipeline = this.cache.pipeline();
+      keys.forEach(key => pipeline.ttl(key));
+      const ttls = await pipeline.exec();
+
+      const expiringKeysBatch = [];
+      ttls.forEach(([err, ttl], index) => {
+        if (err) {
+          return;
+        }
+
+        if (ttl > 0 && ttl < 3600) {
+          expiringCount++;
+
+          if (deleteKeys) {
+            const expiringKey = keys[index];
+            if (expiringKey) {
+              expiringKeysBatch.push(expiringKey);
+            }
+          }
+        } else if (ttl === -1) {
+          noTtlCount++;
+        }
+      });
+
+      if (deleteKeys && expiringKeysBatch.length > 0) {
+        for (let i = 0; i < expiringKeysBatch.length; i += deleteBatchSize) {
+          const batch = expiringKeysBatch.slice(i, i + deleteBatchSize);
+          await this.cache.del(...batch);
+          deletedCount += batch.length;
+        }
+      }
+    } while (cursor !== '0');
+
+    return {
+      expiringCount,
+      totalKeys,
+      noTtlCount,
+      deletedCount
+    };
   }
 
   // Smart cache cleanup scheduler
   async runScheduledCacheCleanup() {
     try {
-      //logger.debug("[Cache Cleanup Scheduler] Starting scheduled cleanup check...");
-      
-      // Check if cleanup is needed
-      const checkResult = await this.checkExpiredKeysCount();
-      
-      if (checkResult.error) {
-        logger.error("[Cache Cleanup Scheduler] Failed to check keys:", checkResult.error);
-        return;
+      const cleanupResult = await this.scanExpiringKeys({ deleteKeys: true });
+
+      if (cleanupResult.noTtlCount > 1000) {
+        logger.warn(`[Cache Cleanup] Found ${cleanupResult.noTtlCount} keys with no TTL (potential leaks)`);
       }
 
-      if (checkResult.count === 0) {
-        //logger.debug("[Cache Cleanup Scheduler] No expired keys found, skipping cleanup");
-        return;
+      if (cleanupResult.deletedCount === 0) {
+        return {
+          success: true,
+          skipped: true,
+          message: `No expiring keys found out of ${cleanupResult.totalKeys} total keys`,
+          clearedCount: 0,
+          remainingCount: cleanupResult.totalKeys,
+          noTtlCount: cleanupResult.noTtlCount
+        };
       }
 
-      //logger.debug(`[Cache Cleanup Scheduler] Found ${checkResult.count} expired keys out of ${checkResult.totalKeys} total keys`);
-      
-      // Run the actual cleanup
-      const cleanupResult = await this.clearExpiredCacheEntries();
-      
-      if (cleanupResult.success) {
-        //logger.debug(`[Cache Cleanup Scheduler] Scheduled cleanup completed: ${cleanupResult.message}`);
-      } else {
-        logger.error(`[Cache Cleanup Scheduler] Scheduled cleanup failed: ${cleanupResult.message}`);
-      }
-      
+      await this.cache.set("maintenance:last_cache_cleanup", Date.now().toString());
+
+      const finalKeyCount = await this.cache.dbsize();
+      return {
+        success: true,
+        skipped: false,
+        message: `Expired cache cleanup completed. Cleared ${cleanupResult.deletedCount} expiring keys. ${finalKeyCount} keys remain.`,
+        clearedCount: cleanupResult.deletedCount,
+        remainingCount: finalKeyCount,
+        scannedKeyCount: cleanupResult.totalKeys,
+        noTtlCount: cleanupResult.noTtlCount
+      };
     } catch (error) {
       logger.error("[Cache Cleanup Scheduler] Error in scheduled cleanup:", error);
+      return { success: false, skipped: false, message: error.message };
     }
   }
 
@@ -1817,49 +1866,27 @@ class DashboardAPI {
         throw new Error("Cache not available");
       }
 
-      //logger.debug("[Maintenance Task] Starting expired cache cleanup...");
-      
-      let cursor = '0';
-      const expiredKeys = [];
-      
-      do {
-        const reply = await this.cache.scan(cursor, 'COUNT', 1000);
-        cursor = reply[0];
-        const keys = reply[1];
-        
-        if (keys.length > 0) {
-          const pipeline = this.cache.pipeline();
-          keys.forEach(key => pipeline.ttl(key));
-          const ttls = await pipeline.exec();
-          
-          ttls.forEach(([err, ttl], index) => {
-            if (!err && ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
-              expiredKeys.push(keys[index]);
-            }
-          });
-        }
-      } while (cursor !== '0');
+      const cleanupResult = await this.scanExpiringKeys({ deleteKeys: true });
 
-      //logger.debug(`[Maintenance Task] Found ${expiredKeys.length} expired keys to clear`);
-
-      // Delete expired keys in batches to avoid overwhelming Redis
-      if (expiredKeys.length > 0) {
-        const batchSize = 100;
-        for (let i = 0; i < expiredKeys.length; i += batchSize) {
-          const batch = expiredKeys.slice(i, i + batchSize);
-          await this.cache.del(...batch);
-          //logger.debug(`[Maintenance Task] Cleared batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(expiredKeys.length / batchSize)}`);
-        }
+      if (cleanupResult.noTtlCount > 1000) {
+        logger.warn(`[Cache Cleanup] Found ${cleanupResult.noTtlCount} keys with no TTL (potential leaks)`);
       }
 
       // Update maintenance task status
       await this.cache.set("maintenance:last_cache_cleanup", Date.now().toString());
 
       const finalKeyCount = await this.cache.dbsize();
-      const message = `Expired cache cleanup completed. Cleared ${expiredKeys.length} expired keys. ${finalKeyCount} keys remain.`;
+      const message = `Expired cache cleanup completed. Cleared ${cleanupResult.deletedCount} expiring keys. ${finalKeyCount} keys remain.`;
 
       //logger.debug(`[Maintenance Task] ${message}`);
-      return { success: true, message, clearedCount: expiredKeys.length, remainingCount: finalKeyCount };
+      return {
+        success: true,
+        message,
+        clearedCount: cleanupResult.deletedCount,
+        remainingCount: finalKeyCount,
+        scannedKeyCount: cleanupResult.totalKeys,
+        noTtlCount: cleanupResult.noTtlCount
+      };
     } catch (error) {
       logger.error("[Maintenance Task] Error clearing expired cache entries:", error);
       return { success: false, message: error.message };
@@ -1922,35 +1949,8 @@ class DashboardAPI {
           break;
           
         case "expired": {
-          // Clear keys that are close to expiration (TTL < 1 hour)
-          const expiredKeys = [];
-          
-          do {
-            const reply = await this.cache.scan(cursor, 'COUNT', 1000);
-            cursor = reply[0];
-            const keys = reply[1];
-            
-            if (keys.length > 0) {
-              const pipeline = this.cache.pipeline();
-              keys.forEach(key => pipeline.ttl(key));
-              const ttls = await pipeline.exec();
-              
-              ttls.forEach(([err, ttl], index) => {
-                if (!err && ttl > 0 && ttl < 3600) { // Less than 1 hour remaining
-                  expiredKeys.push(keys[index]);
-                }
-              });
-            }
-          } while (cursor !== '0');
-
-          if (expiredKeys.length > 0) {
-            const batchSize = 100;
-            for (let i = 0; i < expiredKeys.length; i += batchSize) {
-              const batch = expiredKeys.slice(i, i + batchSize);
-              await this.cache.del(...batch);
-            }
-            deletedCount = expiredKeys.length;
-          }
+          const cleanupResult = await this.scanExpiringKeys({ deleteKeys: true });
+          deletedCount = cleanupResult.deletedCount;
           break;
         }
           

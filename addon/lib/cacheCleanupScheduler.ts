@@ -10,8 +10,7 @@ const logger = consola.create({
 });
 
 interface DashboardAPI {
-  checkExpiredKeysCount(): Promise<{ count: number; totalKeys: number; error?: string }>;
-  runScheduledCacheCleanup(): Promise<any>;
+  runScheduledCacheCleanup(): Promise<{ success: boolean; skipped?: boolean; message?: string }>;
 }
 
 interface SchedulerStatus {
@@ -61,44 +60,14 @@ class CacheCleanupScheduler {
     }
   }
 
-  private async shouldRunCleanup(): Promise<boolean> {
-    try {
-      // Check if we're in quiet hours
-      if (this.isQuietHours()) {
-        this.log('info', 'Skipping cache cleanup during quiet hours');
-        return false;
-      }
-
-      // Check if cleanup is needed (has expired keys)
-      const checkResult = await this.dashboardApi.checkExpiredKeysCount();
-      
-      if (checkResult.error) {
-        this.log('error', `Failed to check expired keys: ${checkResult.error}`);
-        return false;
-      }
-
-      if (checkResult.count === 0) {
-        this.log('info', `No expired keys found (${checkResult.totalKeys} total keys), skipping cleanup`);
-        return false;
-      }
-
-      this.log('info', `Found ${checkResult.count} expired keys out of ${checkResult.totalKeys} total keys - cleanup needed`);
-      return true;
-    } catch (error) {
-      this.log('error', `Error checking if cleanup should run: ${(error as Error).message}`);
-      return false;
-    }
-  }
-
   private async runCleanup(): Promise<void> {
     if (this.isRunning) {
       this.log('warn', 'Cache cleanup already running, skipping');
       return;
     }
 
-    // Check if cleanup should run (quiet hours, expired keys check)
-    const shouldRun = await this.shouldRunCleanup();
-    if (!shouldRun) {
+    if (this.isQuietHours()) {
+      this.log('info', 'Skipping cache cleanup during quiet hours');
       return;
     }
 
@@ -109,11 +78,11 @@ class CacheCleanupScheduler {
       this.log('info', 'Starting scheduled cache cleanup...');
       
       const result = await this.dashboardApi.runScheduledCacheCleanup();
-      
-      if (result) {
-        this.log('success', 'Scheduled cache cleanup completed successfully');
+
+      if (result?.success) {
+        this.log(result.skipped ? 'info' : 'success', result.message || 'Scheduled cache cleanup completed');
       } else {
-        this.log('info', 'Scheduled cache cleanup completed (no action needed)');
+        this.log('error', result?.message || 'Scheduled cache cleanup failed');
       }
       
     } catch (error) {
@@ -184,6 +153,11 @@ export function getCacheCleanupScheduler(dashboardApi?: DashboardAPI): CacheClea
 export function startCacheCleanupScheduler(dashboardApi: DashboardAPI): CacheCleanupScheduler | null {
   const scheduler = getCacheCleanupScheduler(dashboardApi);
   if (scheduler) {
+    if (process.env.CACHE_CLEANUP_AUTO_ENABLED === 'false') {
+      logger.info('Automatic cache cleanup scheduler disabled via CACHE_CLEANUP_AUTO_ENABLED=false');
+      return scheduler;
+    }
+
     scheduler.start();
     return scheduler;
   }
