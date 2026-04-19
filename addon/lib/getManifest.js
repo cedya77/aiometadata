@@ -832,17 +832,37 @@ async function getManifest(config) {
           return await jikan.getAvailableSeasons();
         }, 7 * 24 * 60 * 60, { skipVersion: true }); // Cache for 7 days (seasons only change quarterly)
         
-        // Build season options from API data
-        const seasonOptions = [];
-        const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
-        
+        // Build season options so the real current season is the default (first).
+        // Past seasons follow newest-first; future seasons (Jikan lists them too)
+        // are appended at the end in ascending order.
+        const seasonNames = ['Winter', 'Spring', 'Summer', 'Fall'];
+        const seasonOrder = { winter: 0, spring: 1, summer: 2, fall: 3 };
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        const currentSeasonIndex =
+          currentMonth <= 2 ? 0 : currentMonth <= 5 ? 1 : currentMonth <= 8 ? 2 : 3;
+        const currentRank = currentYear * 4 + currentSeasonIndex;
+
+        const entries = [];
         for (const yearData of seasonsData) {
-          const availableSeasons = yearData.seasons || [];
-          for (const season of availableSeasons) {
-            const capitalizedSeason = season.charAt(0).toUpperCase() + season.slice(1);
-            seasonOptions.push(`${capitalizedSeason} ${yearData.year}`);
+          for (const season of yearData.seasons || []) {
+            const idx = seasonOrder[season.toLowerCase()];
+            if (idx === undefined) continue;
+            entries.push({ year: yearData.year, idx, rank: yearData.year * 4 + idx });
           }
         }
+
+        const pastOrCurrent = entries
+          .filter(e => e.rank <= currentRank)
+          .sort((a, b) => b.rank - a.rank);
+        const future = entries
+          .filter(e => e.rank > currentRank)
+          .sort((a, b) => a.rank - b.rank);
+
+        const seasonOptions = [...pastOrCurrent, ...future].map(
+          e => `${seasonNames[e.idx]} ${e.year}`
+        );
         
         // Store for later use
         global.availableSeasons = seasonOptions;

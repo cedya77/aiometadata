@@ -1790,7 +1790,23 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
       ...prev,
       catalogs: prev.catalogs.map(c =>
         (c.id === catalog.id && c.type === catalog.type)
-          ? { ...c, name: trimmedName, displayType: trimmedType }
+          ? {
+              ...c,
+              name: trimmedName,
+              displayType: trimmedType,
+              ...(c.metadata?.discover?.formState && {
+                metadata: {
+                  ...c.metadata,
+                  discover: {
+                    ...c.metadata.discover,
+                    formState: {
+                      ...c.metadata.discover.formState,
+                      catalogName: trimmedName,
+                    },
+                  },
+                },
+              }),
+            }
           : c
       )
     }));
