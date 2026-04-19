@@ -3133,9 +3133,6 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
  * @param {number} options.blur - Blur amount (default: 0)
  * @param {number} options.brightness - Brightness adjustment (default: 1)
  * @param {number} options.contrast - Contrast adjustment (default: 1)
- * @param {boolean} options.addGradient - Whether to add gradient overlay (default: false)
- * @param {string} options.gradientType - Gradient type: 'dark' or 'light' (default: 'dark')
- * @param {number} options.gradientOpacity - Gradient opacity 0-1 (default: 0.6)
  * @returns {string} Processed background image URL
  */
 function convertBannerToBackgroundUrl(bannerUrl, options = {}) {
@@ -3146,10 +3143,7 @@ function convertBannerToBackgroundUrl(bannerUrl, options = {}) {
     height = 1080,
     blur = 0,
     brightness = 1,
-    contrast = 1,
-    addGradient = false,
-    gradientType = 'dark',
-    gradientOpacity = 0.6
+    contrast = 1
   } = options;
 
   const host = process.env.HOST_NAME.startsWith('http')
@@ -3166,17 +3160,7 @@ function convertBannerToBackgroundUrl(bannerUrl, options = {}) {
     contrast: contrast.toString()
   });
 
-  let endpoint = '/api/image/banner-to-background';
-  
-  // If gradient is requested, use the gradient overlay endpoint
-  if (addGradient) {
-    endpoint = '/api/image/gradient-overlay';
-    params.delete('width', 'height', 'blur', 'brightness', 'contrast');
-    params.set('gradient', gradientType);
-    params.set('opacity', gradientOpacity.toString());
-  }
-
-  return `${host}${endpoint}?${params.toString()}`;
+  return `${host}/api/image/banner-to-background?${params.toString()}`;
 }
 
 /**
@@ -3199,8 +3183,6 @@ function processBackgroundImage(imageUrl, imageType = 'background', options = {}
     return convertBannerToBackgroundUrl(imageUrl, {
       blur: 2, // Slight blur for better text readability
       brightness: 0.9, // Slightly darker
-      addGradient: true, // Add dark gradient overlay
-      gradientOpacity: 0.5,
       ...options
     });
   }
@@ -3210,8 +3192,6 @@ function processBackgroundImage(imageUrl, imageType = 'background', options = {}
     return convertBannerToBackgroundUrl(imageUrl, {
       blur: 3, // More blur for posters
       brightness: 0.8, // Darker for better contrast
-      addGradient: true,
-      gradientOpacity: 0.6,
       ...options
     });
   }

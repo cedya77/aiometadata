@@ -6,9 +6,12 @@ import consola from 'consola';
 import nameToImdb from "name-to-imdb";
 import timingMetrics from './timing-metrics';
 import { cacheWrapGlobal } from './getCache';
+import { LRUCache } from 'lru-cache';
 import { UserConfig } from '../types/index';
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
+const ACCOUNT_DETAILS_CACHE_MAX = 2000;
+const ACCOUNT_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // HTTP status codes that should NOT be retried
 const NON_RETRYABLE_CODES = new Set([400, 401, 403, 404, 422]);
@@ -289,17 +292,43 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
   }
 }
 
-const accountDetailsCache = new Map();
+const accountDetailsCache = new LRUCache<string, any>({
+  max: ACCOUNT_DETAILS_CACHE_MAX,
+  ttl: ACCOUNT_DETAILS_CACHE_TTL_MS,
+});
+const accountDetailsInflight = new Map<string, Promise<any>>();
+
+function getAccountDetailsCacheKey(sessionId: string, apiKey: string): string {
+  return `${apiKey}:${sessionId}`;
+}
+
 async function getAccountDetails(sessionId: string, apiKey: string) {
     if (!sessionId) throw new Error("Session ID is required for account actions.");
-    if (accountDetailsCache.has(sessionId)) {
-        return accountDetailsCache.get(sessionId);
+    const cacheKey = getAccountDetailsCacheKey(sessionId, apiKey);
+    const cached = accountDetailsCache.get(cacheKey);
+    if (cached) {
+        return cached;
     }
-    const details = await makeTmdbRequest('/account', apiKey, { session_id: sessionId }, 'GET', null, {} as UserConfig);
-    if (details) {
-        accountDetailsCache.set(sessionId, details);
+
+    const existingRequest = accountDetailsInflight.get(cacheKey);
+    if (existingRequest) {
+        return existingRequest;
     }
-    return details;
+
+    const request = (async () => {
+      try {
+        const details = await makeTmdbRequest('/account', apiKey, { session_id: sessionId }, 'GET', null, {} as UserConfig);
+        if (details) {
+            accountDetailsCache.set(cacheKey, details);
+        }
+        return details;
+      } finally {
+        accountDetailsInflight.delete(cacheKey);
+      }
+    })();
+
+    accountDetailsInflight.set(cacheKey, request);
+    return request;
 }
 function getApiKey(config: UserConfig): string {
     const key = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
@@ -862,6 +891,7 @@ module.exports = {
   tvImages,
   getMemoryStats: () => ({
     accountDetailsCache: accountDetailsCache.size,
+    accountDetailsInflight: accountDetailsInflight.size,
     scrapedImdbIdCache: scrapedImdbIdCache.size,
   }),
 };

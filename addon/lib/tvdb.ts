@@ -463,8 +463,8 @@ interface TokenCache {
 }
 
 // Global caches
-const tokenCache = new Map<string, TokenCache>(); // Global cache for self-hosted instances
-const userTokenCaches = new Map<string, Map<string, TokenCache>>(); // Per-user cache for public instances
+const tokenCache = new Map<string, TokenCache>(); // One token per unique TVDB API key
+const tokenInflight = new Map<string, Promise<string | null>>(); // Deduplicate concurrent logins per key
 
 async function getAuthToken(apiKey: string | undefined, userUUID: string | null = null): Promise<string | null> {
   const key = apiKey || GLOBAL_TVDB_KEY;
@@ -473,56 +473,42 @@ async function getAuthToken(apiKey: string | undefined, userUUID: string | null 
     return null;
   }
 
-  // For public instances (with userUUID), use per-user cache
-  if (userUUID) {
-    if (!userTokenCaches.has(userUUID)) {
-      userTokenCaches.set(userUUID, new Map());
-    }
-    
-    const userCache = userTokenCaches.get(userUUID)!;
-    const cached = userCache.get(key);
-    if (cached && Date.now() < cached.expiry) {
+  const cached = tokenCache.get(key);
+  if (cached) {
+    if (Date.now() < cached.expiry) {
       return cached.token;
     }
+    tokenCache.delete(key);
+  }
 
+  const existingLogin = tokenInflight.get(key);
+  if (existingLogin) {
+    return existingLogin;
+  }
+
+  const loginPromise = (async (): Promise<string | null> => {
     try {
       const response = await tvdbHttpRequest(`${TVDB_API_URL}/login`, { method: 'POST', data: { apikey: key } });
       const token = response.data.data?.token;
       if (!token) {
-        logger.error(`No token in login response for user ${userUUID}`);
+        logger.error(`No token in login response for key ...${key.slice(-4)}`);
         return null;
       }
+
       const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
-      
-      userCache.set(key, { token, expiry });
+      tokenCache.set(key, { token, expiry });
       return token;
     } catch (error) {
-      logger.error(`Failed to get TVDB auth token for user ${userUUID} with key ...${key.slice(-4)}:`, (error as Error).message);
+      const userSuffix = userUUID ? ` (user ${userUUID})` : '';
+      logger.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}${userSuffix}:`, (error as Error).message);
       return null;
+    } finally {
+      tokenInflight.delete(key);
     }
-  }
+  })();
 
-  // For self-hosted instances (no userUUID), use global cache
-  const cached = tokenCache.get(key);
-  if (cached && Date.now() < cached.expiry) {
-    return cached.token;
-  }
-
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/login`, { method: 'POST', data: { apikey: key } });
-    const token = response.data.data?.token;
-    if (!token) {
-      logger.error(`No token in global login response`);
-      return null;
-    }
-    const expiry = Date.now() + (28 * 24 * 60 * 60 * 1000);
-    
-    tokenCache.set(key, { token, expiry });
-    return token;
-  } catch (error) {
-    logger.error(`Failed to get TVDB auth token for key ...${key.slice(-4)}:`, (error as Error).message);
-    return null;
-  }
+  tokenInflight.set(key, loginPromise);
+  return loginPromise;
 }
 
 function _filterTvdbSearchResults(results: TvdbSearchResult[], query: string): TvdbSearchResult[] {
@@ -1380,12 +1366,11 @@ export {
 };
 
 function getMemoryStats() {
-  let userTokenEntries = 0;
-  for (const inner of userTokenCaches.values()) userTokenEntries += inner.size;
   return {
     tokenCache: tokenCache.size,
-    userTokenCaches: userTokenCaches.size,
-    userTokenEntries,
+    tokenInflight: tokenInflight.size,
+    userTokenCaches: 0,
+    userTokenEntries: 0,
   };
 }
 

@@ -31,7 +31,13 @@ const moviesTmdbToAll = new Map<number, IdMap>();
 let isInitialized = false;
 let updateInterval: ReturnType<typeof setInterval> | null = null;
 
-async function downloadCsv(url: string, cachePath: string, etagKey: string, maxRetries: number = 3): Promise<string> {
+async function downloadCsv(
+  url: string,
+  cachePath: string,
+  etagKey: string,
+  maxRetries: number = 3,
+  skipReloadOnUnchangedEtag: boolean = false
+): Promise<string | null> {
   // Check ETag first
   if (redis && redis.status === 'ready') {
     try {
@@ -42,6 +48,10 @@ async function downloadCsv(url: string, cachePath: string, etagKey: string, maxR
           if (statusCode === 200 && headers.etag) {
             const remoteEtag = headers.etag;
             if (savedEtag === remoteEtag) {
+              if (skipReloadOnUnchangedEtag && isInitialized) {
+                console.log(`[Wiki Mapper] No changes detected during scheduled refresh. Keeping existing in-memory data for ${cachePath}`);
+                return null;
+              }
               console.log(`[Wiki Mapper] Using cache: ${cachePath}`);
               return fs.readFileSync(cachePath, 'utf8');
             }
@@ -244,6 +254,29 @@ async function refreshMappings(): Promise<void> {
   }
 }
 
+async function refreshMappingsForScheduledRun(): Promise<void> {
+  const [seriesCsv, moviesCsv] = await Promise.all([
+    downloadCsv(REMOTE_SERIES_URL, SERIES_CACHE, 'tv_mappings_etag', 3, true),
+    downloadCsv(REMOTE_MOVIES_URL, MOVIES_CACHE, 'movie_mappings_etag', 3, true)
+  ]);
+
+  if (seriesCsv) {
+    loadMappings(seriesCsv, { imdb: seriesImdbToAll, tvdb: seriesTvdbToAll, tmdb: seriesTmdbToAll, tvmaze: seriesTvmazeToAll });
+  }
+
+  if (moviesCsv) {
+    loadMappings(moviesCsv, { imdb: moviesImdbToAll, tvdb: moviesTvdbToAll, tmdb: moviesTmdbToAll });
+  }
+
+  if (!seriesCsv && !moviesCsv) {
+    console.log('[Wiki Mapper] Scheduled refresh found no changes. Skipping in-memory rebuild.');
+  }
+
+  if (redis && redis.status === 'ready') {
+    await redis.set('maintenance:last_wiki_mapper_update', Date.now().toString());
+  }
+}
+
 async function initialize() {
   if (isInitialized) return;
 
@@ -258,7 +291,7 @@ async function initialize() {
       updateInterval = setInterval(async () => {
         console.log(`[Wiki Mapper] Running scheduled update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
         try {
-          await refreshMappings();
+          await refreshMappingsForScheduledRun();
           console.log('[Wiki Mapper] Scheduled update completed successfully.');
         } catch (error: any) {
           console.error(`[Wiki Mapper] Scheduled update failed: ${error.message}`);

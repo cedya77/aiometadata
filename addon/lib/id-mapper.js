@@ -155,6 +155,7 @@ function processAndIndexData(data) {
   animeTypeFromAnilistIdMap.clear();
   animeTypeFromKitsuIdMap.clear();
   animeTypeFromAnidbIdMap.clear();
+  onaTypeCache.clear();
   
   for (const item of animeList) {
     if (item.mal_id) {
@@ -216,7 +217,7 @@ function processAndIndexData(data) {
  * avoiding a full download if the local cache is up-to-date.
  * @param {boolean} force - If true, bypass ETag check and force re-download
  */
-async function downloadAndProcessAnimeList(force = false) {
+async function downloadAndProcessAnimeList(force = false, skipReloadOnUnchangedEtag = false) {
   const useRedisCache = redis; 
 
   try {
@@ -228,6 +229,14 @@ async function downloadAndProcessAnimeList(force = false) {
       logger.debug(`[ID Mapper] [Fribb's Anime-List] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
+        if (skipReloadOnUnchangedEtag && isInitialized) {
+          logger.debug("[ID Mapper] [Fribb's Anime-List] No changes detected during scheduled refresh. Keeping existing in-memory data.");
+          if (useRedisCache) {
+            await redis.set('maintenance:last_id_mapper_update', Date.now().toString());
+          }
+          return { success: true, message: 'Unchanged (scheduled no-op)', count: animeIdMap.size };
+        }
+
         try {
           logger.debug("[ID Mapper] [Fribb's Anime-List] No changes detected. Loading from local disk cache...");
           const fileContent = await fs.readFile(LOCAL_CACHE_PATH, 'utf-8');
@@ -301,7 +310,7 @@ async function downloadAndProcessAnimeList(force = false) {
  * It uses Redis and ETags to check if the remote file has changed,
  * avoiding a full download if the local cache is up-to-date.
  */
-async function downloadAndProcessTraktAnimeMovies() {
+async function downloadAndProcessTraktAnimeMovies(skipReloadOnUnchangedEtag = false) {
   const useRedisCache = redis; 
 
   try {
@@ -313,6 +322,11 @@ async function downloadAndProcessTraktAnimeMovies() {
       logger.debug(`[ID Mapper] [Trakt-Anime-Movies] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
+        if (skipReloadOnUnchangedEtag && isTraktAnimeMoviesInitialized) {
+          logger.debug('[ID Mapper] [Trakt-Anime-Movies] No changes detected during scheduled refresh. Keeping existing in-memory data.');
+          return;
+        }
+
         try {
           logger.debug('[ID Mapper] [Trakt-Anime-Movies] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_TRAKT_ANIME_MOVIES_PATH, 'utf-8');
@@ -397,7 +411,7 @@ function processAndIndexTraktAnimeMovies(moviesArray) {
  * avoiding a full download if the local cache is up-to-date.
  * @param {boolean} force - If true, bypass ETag check and force re-download
  */
-async function downloadAndProcessKitsuToImdbMapping(force = false) {
+async function downloadAndProcessKitsuToImdbMapping(force = false, skipReloadOnUnchangedEtag = false) {
   const useRedisCache = redis; 
 
   try {
@@ -409,6 +423,14 @@ async function downloadAndProcessKitsuToImdbMapping(force = false) {
       logger.debug(`[ID Mapper] [Kitsu-IMDB] Saved ETag: ${savedEtag} | Remote ETag: ${remoteEtag}`);
 
       if (savedEtag && remoteEtag && savedEtag === remoteEtag) {
+        if (skipReloadOnUnchangedEtag && isKitsuToImdbInitialized) {
+          logger.debug('[ID Mapper] [Kitsu-IMDB] No changes detected during scheduled refresh. Keeping existing in-memory data.');
+          if (useRedisCache) {
+            await redis.set('maintenance:last_kitsu_imdb_update', Date.now().toString());
+          }
+          return { success: true, message: 'Unchanged (scheduled no-op)', count: kitsuToImdbMappingCount };
+        }
+
         try {
           logger.debug('[ID Mapper] [Kitsu-IMDB] No changes detected. Loading from local disk cache...');
           const fileContent = await fs.readFile(LOCAL_KITSU_TO_IMDB_MAPPING_PATH, 'utf-8');
@@ -492,9 +514,9 @@ async function initializeMapper() {
       logger.debug(`[ID Mapper] Running scheduled update (every ${UPDATE_INTERVAL_HOURS} hours)...`);
       try {
         await Promise.all([
-          downloadAndProcessAnimeList(),
-          downloadAndProcessKitsuToImdbMapping(),
-          downloadAndProcessTraktAnimeMovies()
+          downloadAndProcessAnimeList(false, true),
+          downloadAndProcessKitsuToImdbMapping(false, true),
+          downloadAndProcessTraktAnimeMovies(true)
         ]);
         logger.debug('[ID Mapper] Scheduled update completed successfully.');
       } catch (error) {
