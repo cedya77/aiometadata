@@ -35,7 +35,9 @@ type SearchEntity = 'person' | 'company' | 'keyword';
 type JoinMode = 'or' | 'and';
 type DatePresetKey =
   | 'today'
+  | 'this_month'
   | 'last_month'
+  | 'this_year'
   | 'last_year'
   | 'last_5_years'
   | 'last_10_years'
@@ -45,7 +47,14 @@ type DatePresetKey =
   | 'era_1980s'
   | 'clear'
   | 'custom';
-type RelativeDatePresetKey = 'today' | 'last_month' | 'last_year' | 'last_5_years' | 'last_10_years';
+type RelativeDatePresetKey =
+  | 'today'
+  | 'this_month'
+  | 'last_month'
+  | 'this_year'
+  | 'last_year'
+  | 'last_5_years'
+  | 'last_10_years';
 
 interface TmdbGenre {
   id: number;
@@ -158,7 +167,9 @@ const JOIN_MODE_OPTIONS = [
 ];
 
 const DATE_PRESET_OPTIONS: Array<{ value: Exclude<DatePresetKey, 'custom'>; label: string }> = [
+  { value: 'this_month', label: 'This Month' },
   { value: 'last_month', label: 'Last Month' },
+  { value: 'this_year', label: 'This Year' },
   { value: 'last_year', label: 'Last Year' },
   { value: 'last_5_years', label: 'Last 5 Years' },
   { value: 'last_10_years', label: 'Last 10 Years' },
@@ -171,7 +182,9 @@ const DATE_PRESET_OPTIONS: Array<{ value: Exclude<DatePresetKey, 'custom'>; labe
 
 const RELATIVE_DATE_PRESET_KEYS: RelativeDatePresetKey[] = [
   'today',
+  'this_month',
   'last_month',
+  'this_year',
   'last_year',
   'last_5_years',
   'last_10_years',
@@ -502,9 +515,19 @@ function getDateRangeFromPreset(preset: Exclude<DatePresetKey, 'custom'>): { fro
   const fromDate = new Date(now);
 
   switch (preset) {
+    case 'this_month': {
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return {
+        from: formatLocalDateForInput(firstOfMonth),
+        to: formatLocalDateForInput(lastOfMonth),
+      };
+    }
     case 'last_month':
       fromDate.setDate(fromDate.getDate() - 30);
       return { from: formatLocalDateForInput(fromDate), to };
+    case 'this_year':
+      return { from: `${now.getFullYear()}-01-01`, to: `${now.getFullYear()}-12-31` };
     case 'last_year':
       fromDate.setFullYear(fromDate.getFullYear() - 1);
       return { from: formatLocalDateForInput(fromDate), to };

@@ -2,7 +2,9 @@ const TMDB_DISCOVER_DATE_TOKEN_PREFIX = '__tmdb_date__';
 
 const RELATIVE_DATE_PRESET_KEYS = new Set([
   'today',
+  'this_month',
   'last_month',
+  'this_year',
   'last_year',
   'last_5_years',
   'last_10_years'
@@ -16,7 +18,7 @@ const TMDB_DYNAMIC_DATE_FIELDS = new Set([
   'first_air_date.lte'
 ]);
 const DATE_TOKEN_PATTERN = new RegExp(
-  `^${TMDB_DISCOVER_DATE_TOKEN_PREFIX}:(today|last_month|last_year|last_5_years|last_10_years):(from|to)$`
+  `^${TMDB_DISCOVER_DATE_TOKEN_PREFIX}:(today|this_month|last_month|this_year|last_year|last_5_years|last_10_years):(from|to)$`
 );
 
 function parseDateToken(value) {
@@ -72,6 +74,18 @@ function formatUtcDate(date) {
 function getDateRangeFromRelativePreset(preset, timezone, nowInput) {
   const now = nowInput instanceof Date ? nowInput : new Date();
   const { year, month, day } = getDatePartsInTimezone(now, timezone || 'UTC');
+
+  if (preset === 'this_month') {
+    const firstOfMonth = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
+    const lastOfMonth = new Date(Date.UTC(year, month, 0, 12, 0, 0));
+    return { from: formatUtcDate(firstOfMonth), to: formatUtcDate(lastOfMonth) };
+  }
+  if (preset === 'this_year') {
+    const firstOfYear = new Date(Date.UTC(year, 0, 1, 12, 0, 0));
+    const lastOfYear = new Date(Date.UTC(year, 11, 31, 12, 0, 0));
+    return { from: formatUtcDate(firstOfYear), to: formatUtcDate(lastOfYear) };
+  }
+
   const toDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
   const fromDate = new Date(toDate.getTime());
 
