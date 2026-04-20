@@ -310,7 +310,7 @@ npm run dev
 
 ## 🤝 Contributing
 
-We welcome community contributions! However, to keep review times manageable, we have specific guidelines. **Please read the [CONTRIBUTING.md](docs/CONTRIBUTING.md) guide before opening issues or pull requests.**
+We welcome community contributions! However, to keep review times manageable, we have specific guidelines. **Please read the [CONTRIBUTING.md](docs/contributing.md) guide before opening issues or pull requests.**
 
 ---
 
