@@ -1,0 +1,48 @@
+name: 🎬 Metadata / Mapping Issue
+description: Report wrong posters, mismatched IDs (MAL vs TMDB), or missing catalog data.
+labels: ["metadata", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Since AIOMetadata aggregates from multiple sources (TMDB, TVDB, MAL, AniList, etc.), sometimes IDs don't match up perfectly or posters are missing. Use this template to help us fix the mapping or fallback logic!
+  - type: checkboxes
+    id: upstream_check
+    attributes:
+      label: Upstream Provider Verification
+      description: We do not control the actual metadata on upstream sites. If the poster, episode mapping, or information is wrong directly on TMDB, TVDB, or MAL, you must submit a fix directly to them, not here!
+      options:
+        - label: I confirm that the metadata is correct on the upstream provider (e.g. TMDB, TVDB) and the issue relies solely with AIOMetadata mapping or forwarding it wrong.
+          required: true
+  - type: input
+    id: title_id
+    attributes:
+      label: Media Title & ID
+      description: Please provide the exact name of the media and any related IDs (e.g., TMDB ID: 12345, MAL ID: 6789)
+      placeholder: Attack on Titan (MAL: 16498)
+    validations:
+      required: true
+  - type: dropdown
+    id: media_type
+    attributes:
+      label: Media Type
+      description: Is this a movie, series, or anime?
+      options:
+        - Movie
+        - Series
+        - Anime
+    validations:
+      required: true
+  - type: textarea
+    id: issue_desc
+    attributes:
+      label: What is wrong with the metadata?
+      description: Explain the discrepancy. Are the episodes shifted? Is the poster in the wrong language? Is the search throwing an error?
+      placeholder: "The TVDB episode 4 is mapping to MAL episode 5..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should the correct metadata be?
+      description: If you know the correct linkages or posters, please provide links here.
