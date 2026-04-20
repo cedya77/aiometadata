@@ -18,8 +18,8 @@ body:
     id: title_id
     attributes:
       label: Media Title & ID
-      description: Please provide the exact name of the media and any related IDs (e.g., TMDB ID: 12345, MAL ID: 6789)
-      placeholder: Attack on Titan (MAL: 16498)
+      description: "Please provide the exact name of the media and any related IDs (e.g., TMDB ID: 12345, MAL ID: 6789)"
+      placeholder: "Attack on Titan (MAL: 16498)"
     validations:
       required: true
   - type: dropdown
