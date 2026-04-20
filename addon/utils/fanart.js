@@ -1,9 +1,13 @@
 require("dotenv").config();
 const FanartTvApi = require('@fanart-tv/api');
+const { LRUCache } = require('lru-cache');
 const { cacheWrapGlobal } = require('../lib/getCache');
 const FANART_IMAGE_BASE = 'https://assets.fanart.tv/fanart/movies/';
 
-const clientCache = new Map();
+const clientCache = new LRUCache({
+  max: parseInt(process.env.FANART_CLIENT_CACHE_MAX, 10) || 2000,
+  ttl: 24 * 60 * 60 * 1000,
+});
 
 /**
  * Gets a configured and initialized FanartTvApi client.

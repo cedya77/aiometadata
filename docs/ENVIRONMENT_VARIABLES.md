@@ -375,6 +375,22 @@ This feature warms **ALL** enabled catalogs (TMDB, MAL, MDBList, Custom Manifest
 
 ---
 
+## In-Memory Cache Limits
+
+These caps bound the per-process heap used by module-level caches. The defaults are sized for a typical public instance; raise them on high-traffic deployments with many unique user API keys, lower them on memory-constrained hosts.
+
+### `FANART_CLIENT_CACHE_MAX`
+- **Default**: `2000`
+- **Description**: Maximum number of Fanart.tv client instances kept in memory. The cache is keyed by the user's personal Fanart key, so each unique personal key consumes one slot. Entries expire after 24 hours. The default is sized for popular public instances; lower it on memory-constrained self-hosts.
+- **Example**: `FANART_CLIENT_CACHE_MAX=500`
+
+### `TMDB_SCRAPED_IMDB_CACHE_MAX`
+- **Default**: `10000`
+- **Description**: Maximum number of TMDB-ID → IMDb-ID mappings cached from the IMDb scraper fallback. LRU eviction, 24-hour TTL.
+- **Example**: `TMDB_SCRAPED_IMDB_CACHE_MAX=20000`
+
+---
+
 ## Cache Warming Configuration (TMDB/TVDB)
 
 ### `ENABLE_CACHE_WARMING`

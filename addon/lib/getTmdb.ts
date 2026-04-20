@@ -94,8 +94,10 @@ if (!dispatcher) {
   }
 }
 
-// Simple cache for scraped IDs to avoid re-scraping
-const scrapedImdbIdCache = new Map<string, string>();
+const scrapedImdbIdCache = new LRUCache<string, string>({
+  max: parseInt(process.env.TMDB_SCRAPED_IMDB_CACHE_MAX || '', 10) || 10000,
+  ttl: 24 * 60 * 60 * 1000,
+});
 
 interface TmdbRequestError extends Error {
     statusCode?: number;
@@ -119,12 +121,6 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
   let attempt = 0;
   const maxRetries = 3;
   let lastError: any;
-
-  // Periodic cleanup for the memory cache
-  if (scrapedImdbIdCache.size > 10000) {
-      scrapedImdbIdCache.clear();
-      consola.debug('[TMDB] Scraped ID cache cleared (size limit reached)');
-  }
 
   while(attempt < maxRetries) {
     attempt++;
