@@ -48,6 +48,13 @@ const logger = consola.withTag('ConfigApi');
 const configCache = require('./configCache');
 const { deleteKeysByPattern } = require('./redisUtils');
 
+const MAX_CATALOGS = (() => {
+  const raw = process.env.MAX_CATALOGS;
+  if (!raw) return null;
+  const max = Number.parseInt(raw, 10);
+  return (Number.isFinite(max) && max > 0) ? max : null;
+})();
+
 class ConfigApi {
   constructor() {
     this.initialized = false;
@@ -129,25 +136,16 @@ class ConfigApi {
     return { valid: true };
   }
 
-  // Optional cap on catalog count per user. Opt-in via MAX_CATALOGS env var.
-  // Leaving MAX_CATALOGS unset (the default) preserves the previous unbounded
-  // behaviour — nothing is enforced. When set to a positive integer, saves
-  // with more than N catalogs are rejected. Some users have accumulated 800+
-  // catalogs in the past; every manifest request iterates the full array, so
-  // outliers cost 10× the baseline CPU/RAM per request.
   validateCatalogCount(config) {
-    const raw = process.env.MAX_CATALOGS;
-    if (!raw) return { valid: true };
-    const max = Number.parseInt(raw, 10);
-    if (!Number.isFinite(max) || max <= 0) return { valid: true };
+    if (!MAX_CATALOGS) return { valid: true };
     const catalogs = config && config.catalogs;
     if (!Array.isArray(catalogs)) return { valid: true };
-    if (catalogs.length <= max) return { valid: true };
+    if (catalogs.length <= MAX_CATALOGS) return { valid: true };
     return {
       valid: false,
       count: catalogs.length,
-      max,
-      message: `Too many catalogs (${catalogs.length}); the maximum allowed on this instance is ${max}. Remove some catalogs and try again.`,
+      max: MAX_CATALOGS,
+      message: `Too many catalogs (${catalogs.length}); the maximum allowed on this instance is ${MAX_CATALOGS}. Remove some catalogs and try again.`,
     };
   }
 
