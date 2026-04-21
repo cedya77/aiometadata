@@ -396,8 +396,7 @@ async function handleTvdbCollection(collectionId, language, config, userUUID) {
       const details = await tvdb.getCollectionDetails(collectionId, config);
       if (!details || !Array.isArray(details.entities)) return { meta: null };
 
-      const langCode = language.split('-')[0];
-      const langCode3 = await to3LetterCode(langCode, config);
+      const langCode3 = await to3LetterCode(language, config);
 
       // Get translation with fallback
       let translation = await tvdb.getCollectionTranslations(collectionId, langCode3, config);
@@ -1855,8 +1854,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   kitsuId = kitsuId || idMapper.getMappingByTmdbId(tmdbId, 'movie')?.kitsu_id;
 
   const { year, image: tvdbPosterPath, remoteIds, characters } = movieData;
-  const langCode = language.split('-')[0];
-  const langCode3 = await to3LetterCode(langCode, config);
+  const langCode3 = await to3LetterCode(language, config);
   const nameTranslations = movieData.translations?.nameTranslations || [];
   const overviewTranslations = movieData.translations?.overviewTranslations || [];
   const translatedName = nameTranslations.find(t => t.language === langCode3)?.name
@@ -2105,8 +2103,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     else idProvider = 'imdb';
   }
   
-  const langCode = language.split('-')[0];
-  const langCode3 = await to3LetterCode(langCode, config);
+  const langCode3 = await to3LetterCode(language, config);
   const nameTranslations = tvdbShow.translations?.nameTranslations || [];
   const overviewTranslations = tvdbShow.translations?.overviewTranslations || [];
   const translatedName = nameTranslations.find(t => t.language === langCode3)?.name

@@ -49,7 +49,7 @@ async function loadLanguageData(config: UserConfig): Promise<LanguageData> {
                      'eng';
         return [lang.iso_639_1, { 
           name: lang.english_name, 
-          code3: lang.iso_639_1 === "pt" ? lang.iso_639_1 : code3 
+          code3: lang.iso_639_1 === "pt" ? "por" : code3 
         }];
       })
     );
@@ -85,12 +85,18 @@ async function getLanguageListForConfig(config: UserConfig): Promise<AvailableLa
 }
 
 /**
- * Converts a 2-letter based language code (e.g., 'pt-BR') to the 3-letter code for TVDB.
- * @param langCode2 The 2-letter code (e.g., 'pt').
+ * Converts a language code (e.g., 'pt-BR', 'pt-PT', or 'en') to the 3-letter code for TVDB.
+ * @param langCode The language code (e.g., 'pt-BR' or 'pt').
  * @param config The user configuration object.
  * @returns The 3-letter code, defaulting to 'eng'.
  */
-async function to3LetterCode(langCode2: string, config: UserConfig): Promise<string> {
+async function to3LetterCode(langCode: string, config: UserConfig): Promise<string> {
+  if (!langCode) return 'eng';
+
+  if (langCode === 'pt-BR') return 'pt';
+  if (langCode === 'pt-PT') return 'por';
+
+  const langCode2 = langCode.split('-')[0];
   const data = await loadLanguageData(config);
   const details = data.languageMap.get(langCode2);
   return details?.code3 || 'eng'; // Default to English if not found

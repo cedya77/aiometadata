@@ -384,7 +384,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const langParts = language.split('-');
   const langCode2 = langParts[0];
   const countryCode2 = langParts[1] || langCode2; 
-  const langCode3 = await to3LetterCode(langCode2, config);
+  const langCode3 = await to3LetterCode(language, config);
   const countryCode3 = to3LetterCountryCode(countryCode2);
   const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating as string, countryCode3, type === 'movie' ? 'movie' : 'episode');
   
@@ -532,7 +532,7 @@ async function getTvdbCollectionsCatalog(type: string, id: string, page: number,
       const hasMovies = extended.entities.some((e: any) => e.movieId);
       if (!hasMovies) return null;
       
-      const langCode3 = await to3LetterCode(langCode, config);
+      const langCode3 = await to3LetterCode(language, config);
       let translation = await tvdb.getCollectionTranslations(col.id, langCode3, config);
 
       const name = translation && translation.name ? translation.name : extended.name;

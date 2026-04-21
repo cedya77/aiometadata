@@ -92,8 +92,7 @@ const findArtwork = (artworks, type, lang, config) => {
 async function parseTvdbSearchResult(type, extendedRecord, language, config) {
   if (!extendedRecord || !extendedRecord.id || !extendedRecord.name) return null;
 
-  const langCode = language.split('-')[0];
-  const langCode3 = await to3LetterCode(langCode, config);
+  const langCode3 = await to3LetterCode(language, config);
   const overviewTranslations = extendedRecord.translations?.overviewTranslations || [];
   const nameTranslations = extendedRecord.translations?.nameTranslations || [];
   const translatedName = nameTranslations.find(t => t.language === langCode3)?.name
@@ -1232,8 +1231,7 @@ async function performAiSearch(query, language, config) {
 async function performTvdbCollectionsSearch(query, language, config) {
   const sanitizedQuery = sanitizeQuery(query);
   if (!sanitizedQuery) return [];
-  const langCode = language.split('-')[0];
-  const langCode3 = await to3LetterCode(langCode, config);
+  const langCode3 = await to3LetterCode(language, config);
 
   logger.info(`Starting TVDB collections search for: "${sanitizedQuery}"`);
 

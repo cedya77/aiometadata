@@ -766,7 +766,7 @@ async function _fetchEpisodesBySeasonType(tvdbId: string, seasonType: string, la
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return null;
 
-  const langCode3 = await to3LetterCode(language.split('-')[0], config);
+  const langCode3 = await to3LetterCode(language, config);
   
   let allEpisodes: TvdbEpisode[] = [];
   let page = 0;
@@ -1130,7 +1130,7 @@ const findArtwork = (artworks, type, lang, config) => {
 async function getSeriesPoster(seriesId: string, config: UserConfig): Promise<string | null> {
   try {
     const seriesData = await getSeriesExtended(seriesId, config);
-    const langCode = config.language?.split('-')[0];
+    const langCode = config.language;
     let langCode3 = 'eng';
     if (langCode) {
        langCode3 = await to3LetterCode(langCode, config);
@@ -1154,7 +1154,7 @@ async function getSeriesBackground(seriesId: string, config: UserConfig, isLands
       // Look for background artwork (type 3 is typically background)
       let langCode3;
       if (isLandscape) {
-        const langCode = config.language?.split('-')[0];
+        const langCode = config.language;
         if (langCode) {
           langCode3 = await to3LetterCode(langCode, config);
         }
@@ -1173,7 +1173,7 @@ async function getSeriesBackground(seriesId: string, config: UserConfig, isLands
 async function getMoviePoster(movieId: string, config: UserConfig): Promise<string | null> {
   try {
     const movieData = await getMovieExtended(movieId, config);
-    const langCode = config.language?.split('-')[0];
+    const langCode = config.language;
     let langCode3 = 'eng';
     if (langCode) {
        langCode3 = await to3LetterCode(langCode, config);
@@ -1195,7 +1195,7 @@ async function getMovieBackground(movieId: string, config: UserConfig, isLandsca
     if (movieData && movieData.artworks) {
       let langCode3;
       if (isLandscape) {
-        const langCode = config.language?.split('-')[0];
+        const langCode = config.language;
         if (langCode) {
           langCode3 = await to3LetterCode(langCode, config);
         }
@@ -1222,7 +1222,7 @@ async function getMovieBackground(movieId: string, config: UserConfig, isLandsca
 async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<string | null> {
   try {
     const seriesData = await getSeriesExtended(seriesId, config);
-    const langCode = config.language?.split('-')[0];
+    const langCode = config.language;
     let langCode3 = 'eng';
     if (langCode) {
        langCode3 = await to3LetterCode(langCode, config);
@@ -1244,7 +1244,7 @@ async function getSeriesLogo(seriesId: string, config: UserConfig): Promise<stri
 async function getMovieLogo(movieId: string, config: UserConfig): Promise<string | null> {
   try {
     const movieData = await getMovieExtended(movieId, config);
-    const langCode = config.language?.split('-')[0];
+    const langCode = config.language;
     let langCode3 = 'eng';
     if (langCode) {
        langCode3 = await to3LetterCode(langCode, config);
