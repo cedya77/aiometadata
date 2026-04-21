@@ -48,6 +48,13 @@ const logger = consola.withTag('ConfigApi');
 const configCache = require('./configCache');
 const { deleteKeysByPattern } = require('./redisUtils');
 
+const MAX_CATALOGS = (() => {
+  const raw = process.env.MAX_CATALOGS;
+  if (!raw) return null;
+  const max = Number.parseInt(raw, 10);
+  return (Number.isFinite(max) && max > 0) ? max : null;
+})();
+
 class ConfigApi {
   constructor() {
     this.initialized = false;
@@ -129,6 +136,19 @@ class ConfigApi {
     return { valid: true };
   }
 
+  validateCatalogCount(config) {
+    if (!MAX_CATALOGS) return { valid: true };
+    const catalogs = config && config.catalogs;
+    if (!Array.isArray(catalogs)) return { valid: true };
+    if (catalogs.length <= MAX_CATALOGS) return { valid: true };
+    return {
+      valid: false,
+      count: catalogs.length,
+      max: MAX_CATALOGS,
+      message: `Too many catalogs (${catalogs.length}); the maximum allowed on this instance is ${MAX_CATALOGS}. Remove some catalogs and try again.`,
+    };
+  }
+
   // Save configuration with password
   async saveConfig(req, res) {
     logger.debug('saveConfig called - starting function');
@@ -160,9 +180,19 @@ class ConfigApi {
       // Validate required API keys
       const validation = this.validateRequiredKeys(config);
       if (!validation.valid) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: validation.message,
           missingKeys: validation.missingKeys
+        });
+      }
+
+      // Optional catalog count ceiling (opt-in via MAX_CATALOGS env var)
+      const catalogCheck = this.validateCatalogCount(config);
+      if (!catalogCheck.valid) {
+        return res.status(400).json({
+          error: catalogCheck.message,
+          catalogCount: catalogCheck.count,
+          maxCatalogs: catalogCheck.max,
         });
       }
 
@@ -483,12 +513,22 @@ class ConfigApi {
       // Validate required API keys
       const validation = this.validateRequiredKeys(config);
       if (!validation.valid) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: validation.message,
           missingKeys: validation.missingKeys
         });
       }
-      
+
+      // Optional catalog count ceiling (opt-in via MAX_CATALOGS env var)
+      const catalogCheck = this.validateCatalogCount(config);
+      if (!catalogCheck.valid) {
+        return res.status(400).json({
+          error: catalogCheck.message,
+          catalogCount: catalogCheck.count,
+          maxCatalogs: catalogCheck.max,
+        });
+      }
+
       await this.sanitizeTraktToken(config);
 
       // Verify existing config exists
