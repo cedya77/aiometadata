@@ -1,133 +1,82 @@
-# Contributing Guide
+# Contributing
 
-Thank you for your interest in contributing to the TMDB Addon! This document provides guidelines and instructions for contributing to the project.
+Thanks for your interest in contributing.
 
-## Code of Conduct
+This repository is maintained with limited review time, so we use a strict contribution process to keep reviews fair, fast, and useful.
 
-By participating in this project, you agree to abide by our Code of Conduct. Please read it before contributing.
+## Before you open a pull request
 
-## How Can I Contribute?
+For anything beyond a tiny typo, documentation fix, or clearly isolated bugfix, **open an issue first and wait for maintainer confirmation before starting work**.
 
-### Reporting Bugs
+Pull requests may be closed without review when they:
+- are not linked to an issue that was already discussed or approved;
+- bundle several unrelated changes together;
+- are too large for efficient review;
+- do not explain the problem, approach, and test plan;
+- appear mechanically generated, mass-edited, or not understood by the author;
+- do not follow the repository's coding, testing, or documentation standards.
 
-1. Check if the bug has already been reported in the Issues section
-2. If not, create a new issue using the bug report template
-3. Include:
-   - Clear title and description
-   - Steps to reproduce
-   - Expected behavior
-   - Actual behavior
-   - Screenshots if applicable
-   - Your environment details
+## Scope rules
 
-### Suggesting Enhancements
+Please keep pull requests small and focused.
 
-1. Check if the enhancement has been suggested in the Issues section
-2. If not, create a new issue using the feature request template
-3. Include:
-   - Clear title and description
-   - Use case
-   - Proposed solution
-   - Alternative solutions considered
+Good pull requests usually:
+- solve one problem;
+- touch the smallest practical set of files;
+- include tests when behavior changes;
+- include docs when user-facing behavior changes;
+- explain tradeoffs and limitations.
 
-### Pull Requests
+Please avoid drive-by feature additions unless a maintainer has explicitly asked for them.
 
-1. Fork the repository
-2. Create a new branch:
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-3. Make your changes
-4. Run tests and linting:
-   ```bash
-   npm test
-   npm run lint
-   ```
-   Use `npm run lint:backend`, `npm run lint:frontend`, or `npm run lint:repo` when you only need one scope during local iteration.
-5. Commit your changes:
-   ```bash
-   git commit -m "feat: add some feature"
-   ```
-   We use [Conventional Commits](https://www.conventionalcommits.org/) specification.
+## AI-assisted changes
 
-6. Push to your fork:
-   ```bash
-   git push origin feature/your-feature
-   ```
-7. Open a Pull Request
+AI assistance is not banned, but accountability is required.
 
-## Commit Message Guidelines
+If you use AI tools in any part of your change, you must still:
+- understand every changed line;
+- verify the behavior yourself;
+- be able to explain the approach and tradeoffs in review;
+- fix follow-up review comments yourself;
+- ensure no generated content violates licensing or project rules.
 
-We follow the Conventional Commits specification:
+PRs that look bulk-generated, lack clear reasoning, or cannot be defended in review may be closed.
 
-- `feat:` - A new feature
-- `fix:` - A bug fix
-- `docs:` - Documentation changes
-- `style:` - Code style changes (formatting, etc)
-- `refactor:` - Code changes that neither fix bugs nor add features
-- `perf:` - Performance improvements
-- `test:` - Adding or modifying tests
-- `chore:` - Changes to build process or auxiliary tools
+## First-time contributors
 
-Example:
-```
-feat: add support for custom catalogs
+If this is your first contribution here:
+- start with a small issue;
+- do not open multiple PRs at once;
+- expect extra review scrutiny on broad or invasive changes.
 
-- Add catalog interface
-- Implement catalog registration
-- Add documentation
-```
+Maintainers may ask first-time contributors to split large PRs or start with a smaller issue.
 
-## Development Process
+## Pull request checklist
 
-1. **Pick an Issue**:
-   - Look for issues labeled `good first issue` or `help wanted`
-   - Comment on the issue to let others know you're working on it
+Before marking a PR ready for review, make sure you have:
+- linked the related issue in the PR body;
+- explained the problem and solution clearly;
+- described how the change was tested;
+- added or updated tests when needed;
+- added or updated documentation when needed;
+- kept the diff focused and reviewable.
 
-2. **Development**:
-   - Follow the [Development Guide](development.md)
-   - Keep changes focused and atomic
-   - Add tests for new features
+## Fast-path exceptions
 
-3. **Code Review**:
-   - All submissions require review
-   - Be open to feedback and suggestions
-   - Respond to comments promptly
+These changes usually do **not** need an issue first:
+- typo fixes;
+- spelling/grammar fixes;
+- narrow documentation clarifications;
+- very small, obvious test-only fixes.
 
-## Style Guide
+Even for these, please keep the PR tightly scoped.
 
-- Follow the existing code style
-- Use TypeScript for type safety
-- Write meaningful comments
-- Keep functions small and focused
-- Use descriptive variable names
+## Review expectations
 
-## Testing
+Maintainers may close PRs that are:
+- inactive after review feedback;
+- missing required context or checklist items;
+- significantly larger than requested;
+- misaligned with project direction.
 
-- Write tests for new features
-- Ensure all tests pass before submitting
-- Include both unit and integration tests
-- Test edge cases
-
-## Documentation
-
-- Update documentation for new features
-- Include JSDoc comments for functions
-- Update README if necessary
-- Add examples when helpful
-
-## Need Help?
-
-- Check the [Development Guide](development.md)
-- Look through closed issues for similar problems
-- Ask questions in the discussions section
-- Join our community chat
-
-## Recognition
-
-Contributors will be recognized in:
-- The project's README
-- Release notes
-- Our contributors page
-
-Thank you for contributing to AIOMetadata! 
+Closing a PR is not a judgment on the contributor. It is often just a review-capacity decision.
