@@ -3278,13 +3278,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   req.userConfig = config;
   let extraArgs = {};
   if (extra) {
-    if (id.includes('search') && extra.startsWith('search=')) {
-      // Take everything after 'search=' as the query, and decode it.
-      extraArgs = { search: decodeURIComponent(extra.substring('search='.length)) };
-    } else {
-      // For regular catalogs, decode the entire string first
-      extraArgs = Object.fromEntries(new URLSearchParams(req.url.split("/").pop().split("?")[0].slice(0, -5)).entries());
-    }
+    extraArgs = Object.fromEntries(new URLSearchParams(req.url.split("/").pop().split("?")[0].slice(0, -5)).entries());
   }
   const cacheWrapper = cacheWrapCatalog;
 
@@ -3396,7 +3390,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   } else {
     catalogPageSize = 20;
   }
-  const catalogPage = extraArgs.skip ? Math.ceil(parseInt(extraArgs.skip) / catalogPageSize) + 1 : 1;
+  const catalogPage = extraArgs.skip ? Math.floor(parseInt(extraArgs.skip) / catalogPageSize) + 1 : 1;
 
   // Build cache key with page instead of skip for stable cache hits
   const cacheExtraArgs = { ...extraArgs };
@@ -3479,7 +3473,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       } else if (searchEngine && searchEngine.startsWith('trakt.')) {
         searchPageSize = 30;
       }
-      const searchPage = extraArgs.skip ? Math.ceil(parseInt(extraArgs.skip) / searchPageSize) + 1 : 1;
+      const searchPage = extraArgs.skip ? Math.floor(parseInt(extraArgs.skip) / searchPageSize) + 1 : 1;
 
       // Normalize skip to page for stable search cache keys
       const searchExtraArgs = { ...extraArgs };
@@ -3765,164 +3759,33 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       return { metas: metas || [] };
     }, undefined, cacheOptions);
     }
-    // Digital release filter for catalog ids only not for search results
-    if (config.hideUnreleasedDigital && !['search', 'people_search', 'gemini.search'].includes(cleanId) && responseData?.metas && Array.isArray(responseData.metas)) {
-      const { isReleasedDigitally } = require("./utils/parseProps");
-      const beforeCount = responseData.metas.length;
-      responseData.metas = responseData.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
-      const afterCount = responseData.metas.length;
-      if (beforeCount !== afterCount) {
-        consola.debug(`[Catalog Route] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
-      }
+    if (!cleanId.startsWith('custom.') && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
+      const { applyCatalogFilters } = require('./utils/catalogFilters');
+      responseData.metas = await applyCatalogFilters(responseData.metas, {
+        type,
+        config,
+        catalogConfig,
+        cleanId
+      });
     }
-    if (config.hideUnreleasedDigitalSearch && ['search', 'people_search', 'gemini.search'].includes(cleanId) && responseData?.metas && Array.isArray(responseData.metas)) {
-      const { isReleasedDigitally } = require("./utils/parseProps");
-      const beforeCount = responseData.metas.length;
-      responseData.metas = responseData.metas.filter(meta => meta.type !== 'movie' || isReleasedDigitally(meta));
-      const afterCount = responseData.metas.length;
-      if (beforeCount !== afterCount) {
-        consola.debug(`[Catalog Route] Digital release filter: filtered out ${beforeCount - afterCount} unreleased movies`);
+
+    if (Array.isArray(responseData?.metas) && responseData.metas.length > 1) {
+      const seen = new Set();
+      const deduped = [];
+      for (const meta of responseData.metas) {
+        const key = meta?.id;
+        if (!key) { deduped.push(meta); continue; }
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(meta);
       }
-    }
-    
-    if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.traktTokenId) {
-      const globalHideWatched = !!config.hideWatchedTrakt;
-      const catalogHideWatched = catalogConfig?.metadata?.hideWatchedTrakt;
-      const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
-
-      const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
-        || cleanId.includes('watchlist')
-        || cleanId.includes('favorites')
-        || cleanId.includes('up_next')
-        || cleanId.includes('upnext');
-
-      if (shouldHideWatched && !isExcluded) {
-        try {
-          const { getTraktWatchedIds } = require('./utils/traktUtils');
-          const watchedIds = await getTraktWatchedIds(config);
-          if (watchedIds) {
-            const beforeCount = responseData.metas.length;
-            const actualType = catalogConfig?.type || type;
-            responseData.metas = responseData.metas.filter(meta => {
-              const metaId = meta.id || '';
-              const isMovie = (meta.type || actualType) === 'movie';
-              const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
-              if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
-              if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
-              return true;
-            });
-            if (beforeCount !== responseData.metas.length) {
-              consola.debug(`[Catalog Route] Hide watched filter: removed ${beforeCount - responseData.metas.length} Trakt-watched items`);
-            }
-          }
-        } catch (err) {
-          consola.warn(`[Catalog Route] Hide watched filter error: ${err.message}`);
-        }
+      if (deduped.length !== responseData.metas.length) {
+        consola.debug(`[Catalog Route] Deduped ${responseData.metas.length - deduped.length} duplicate metas by id`);
+        responseData = { ...responseData, metas: deduped };
       }
     }
 
-    if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.anilistTokenId) {
-      const globalHideWatched = !!config.hideWatchedAnilist;
-      const catalogHideWatched = catalogConfig?.metadata?.hideWatchedAnilist;
-      const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
 
-      const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
-        || cleanId.includes('watchlist')
-        || cleanId.includes('favorites')
-        || cleanId.includes('up_next')
-        || cleanId.includes('upnext');
-
-      if (shouldHideWatched && !isExcluded) {
-        try {
-          const { getAnilistWatchedIds } = require('./utils/anilistUtils');
-          const watchedIds = await getAnilistWatchedIds(config);
-          if (watchedIds) {
-            const beforeCount = responseData.metas.length;
-            responseData.metas = responseData.metas.filter(meta => {
-              const metaId = meta.id || '';
-              let anilistId = null;
-              let malId = null;
-
-              if (metaId.startsWith('anilist:')) {
-                anilistId = parseInt(metaId.split(':')[1], 10);
-              } else if (metaId.startsWith('mal:')) {
-                malId = parseInt(metaId.split(':')[1], 10);
-              } else if (metaId.startsWith('kitsu:')) {
-                const mapping = idMapper.getMappingByKitsuId(parseInt(metaId.split(':')[1], 10));
-                if (mapping) {
-                  anilistId = mapping.anilist_id;
-                  malId = mapping.mal_id;
-                }
-              } else if (metaId.startsWith('anidb:')) {
-                const mapping = idMapper.getMappingByAnidbId(parseInt(metaId.split(':')[1], 10));
-                if (mapping) {
-                  anilistId = mapping.anilist_id;
-                  malId = mapping.mal_id;
-                }
-              }
-
-              if (anilistId && watchedIds.anilistIds.has(anilistId)) return false;
-              if (malId && watchedIds.malIds.has(malId)) return false;
-              
-              return true;
-            });
-            if (beforeCount !== responseData.metas.length) {
-              consola.debug(`[Catalog Route] Hide watched filter: removed ${beforeCount - responseData.metas.length} AniList-watched items`);
-            }
-          }
-        } catch (err) {
-          consola.warn(`[Catalog Route] Hide AniList watched filter error: ${err.message}`);
-        }
-      }
-    }
-
-    if (responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0 && config.apiKeys?.mdblist) {
-      const globalHideWatched = !!config.hideWatchedMdblist;
-      const catalogHideWatched = catalogConfig?.metadata?.hideWatchedMdblist;
-      const shouldHideWatched = catalogHideWatched !== undefined ? catalogHideWatched : globalHideWatched;
-
-      const isExcluded = ['search', 'people_search', 'gemini.search'].includes(cleanId)
-        || cleanId.includes('watchlist')
-        || cleanId.includes('favorites')
-        || cleanId.includes('up_next')
-        || cleanId.includes('upnext');
-
-      if (shouldHideWatched && !isExcluded) {
-        try {
-          const { getMdblistWatchedIds } = require('./utils/mdblistUtils');
-          const watchedIds = await getMdblistWatchedIds(config);
-          if (watchedIds) {
-            const beforeCount = responseData.metas.length;
-            const actualType = catalogConfig?.type || type;
-            responseData.metas = responseData.metas.filter(meta => {
-              const metaId = meta.id || '';
-              const isMovie = (meta.type || actualType) === 'movie';
-              const idSet = isMovie ? watchedIds.movieImdbIds : watchedIds.showImdbIds;
-              if (metaId.startsWith('tt') && idSet.has(metaId)) return false;
-              if (meta.imdb_id && idSet.has(meta.imdb_id)) return false;
-
-              return true;
-            });
-            if (beforeCount !== responseData.metas.length) {
-              consola.debug(`[Catalog Route] Hide watched filter: removed ${beforeCount - responseData.metas.length} MDBList-watched items`);
-            }
-          }
-        } catch (err) {
-          consola.warn(`[Catalog Route] Hide MDBList watched filter error: ${err.message}`);
-        }
-      }
-    }
-
-    if ((config.exclusionKeywords || config.regexExclusionFilter || config.exclusionGenres) && responseData?.metas && Array.isArray(responseData.metas)) {
-      const { filterMetasByRegex } = require("./utils/regexFilter");
-      const beforeCount = responseData.metas.length;
-      responseData.metas = filterMetasByRegex(responseData.metas, config.exclusionKeywords || '', config.regexExclusionFilter || '', config.exclusionGenres || '');
-      const afterCount = responseData.metas.length;
-      if (beforeCount !== afterCount) {
-        consola.debug(`[Catalog Route] Content exclusion filter: filtered out ${beforeCount - afterCount} items`);
-      }
-    }
-    
     if (catalogConfig?.randomizePerPage && Array.isArray(responseData?.metas) && responseData.metas.length > 1) {
       responseData = {
         ...responseData,
@@ -3968,11 +3831,33 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
         }
         if (config.customBackgroundUrlPattern) {
           const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, type, config);
-          if (resolved) meta.background = resolved;
+          if (resolved) {
+            if (config.usePosterProxy) {
+              const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+              if (proxyId) {
+                meta.background = `${host}/background/${type}/${proxyId}?fallback=${encodeURIComponent(meta.background || '')}&url=${encodeURIComponent(resolved)}`;
+              } else {
+                meta.background = resolved;
+              }
+            } else {
+              meta.background = resolved;
+            }
+          }
         }
         if (config.customLogoUrlPattern) {
           const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, type, config);
-          if (resolved) meta.logo = resolved;
+          if (resolved) {
+            if (config.usePosterProxy) {
+              const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+              if (proxyId) {
+                meta.logo = `${host}/logo/${type}/${proxyId}?fallback=${encodeURIComponent(meta.logo || '')}&url=${encodeURIComponent(resolved)}`;
+              } else {
+                meta.logo = resolved;
+              }
+            } else {
+              meta.logo = resolved;
+            }
+          }
         }
       }
     }
@@ -4076,11 +3961,33 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       }
       if (config.customBackgroundUrlPattern) {
         const resolved = resolveCustomArtUrl(config.customBackgroundUrlPattern, ids, metaType, config, { userAgent });
-        if (resolved) result.meta.background = resolved;
+        if (resolved) {
+          if (config.usePosterProxy) {
+            const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+            if (proxyId) {
+              result.meta.background = `${host}/background/${metaType}/${proxyId}?fallback=${encodeURIComponent(result.meta.background || '')}&url=${encodeURIComponent(resolved)}`;
+            } else {
+              result.meta.background = resolved;
+            }
+          } else {
+            result.meta.background = resolved;
+          }
+        }
       }
       if (config.customLogoUrlPattern) {
         const resolved = resolveCustomArtUrl(config.customLogoUrlPattern, ids, metaType, config, { userAgent });
-        if (resolved) result.meta.logo = resolved;
+        if (resolved) {
+          if (config.usePosterProxy) {
+            const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+            if (proxyId) {
+              result.meta.logo = `${host}/logo/${metaType}/${proxyId}?fallback=${encodeURIComponent(result.meta.logo || '')}&url=${encodeURIComponent(resolved)}`;
+            } else {
+              result.meta.logo = resolved;
+            }
+          } else {
+            result.meta.logo = resolved;
+          }
+        }
       }
       // Apply thumbnail pattern to episode videos
       const thumbnailPattern = config.customThumbnailUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultThumbnailPattern(config.posterRatingProvider) : null);
@@ -4656,6 +4563,44 @@ addon.get("/poster/:type/:id", async function (req, res) {
     res.redirect(302, fallback);
   }
 });
+
+function streamArtWithFallback(assetName) {
+  return async function (req, res) {
+    const { type, id } = req.params;
+    const { fallback, url: customUrl } = req.query;
+    if (!customUrl) {
+      return res.redirect(302, fallback || '');
+    }
+    const etag = crypto.createHash('md5').update(`${assetName}:${type}:${id}:${customUrl}`).digest('hex');
+    res.setHeader('ETag', `"${etag}"`);
+    if (req.headers['if-none-match'] === `"${etag}"`) {
+      return res.status(304).end();
+    }
+    try {
+      const imageResponse = await axios({
+        method: 'get',
+        url: customUrl,
+        responseType: 'stream',
+        timeout: 5000,
+        validateStatus: (status) => status >= 200 && status < 300,
+        headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
+      });
+      const contentType = imageResponse.headers['content-type'];
+      res.setHeader('Content-Type', contentType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      imageResponse.data.pipe(res);
+    } catch (error) {
+      consola.debug(`Art proxy miss for ${assetName} ${id}: ${error.message}`);
+      if (fallback) {
+        return res.redirect(302, fallback);
+      }
+      res.status(404).end();
+    }
+  };
+}
+
+addon.get("/logo/:type/:id", streamArtWithFallback('logo'));
+addon.get("/background/:type/:id", streamArtWithFallback('background'));
 
 
 // --- Image Processing Routes ---

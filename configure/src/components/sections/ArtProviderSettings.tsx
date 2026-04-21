@@ -499,9 +499,9 @@ export function ArtProviderSettings() {
           {/* Proxy Toggle */}
           <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
             <div className="flex-1">
-              <Label htmlFor="usePosterProxy" className="text-base font-medium">Proxy Rating Posters</Label>
+              <Label htmlFor="usePosterProxy" className="text-base font-medium">Proxy Rating & Custom Art</Label>
               <p className="text-sm text-muted-foreground mt-1">
-                Route rating poster requests through this addon. Enables fallback posters when the rating API is down or missing a poster, but adds a small delay.
+                Route poster, logo, and backdrop requests through this addon. Enables fallback to the original art when a rating provider or custom URL is missing or down, but adds a small delay.
               </p>
             </div>
             <Switch

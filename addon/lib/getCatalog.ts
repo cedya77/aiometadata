@@ -17,6 +17,7 @@ import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
+import redis from './redisClient.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
@@ -1536,80 +1537,115 @@ function findProvider(providerId: string): any {
 async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
   try {
     logger.info(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
-    
-    // Find the user catalog configuration to get the source URL
+
     const userCatalog = config.catalogs?.find(c => c.id === catalogId && c.type === type);
     if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
       logger.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
       return [];
     }
-    
-    // Use sourceUrl for StremThru catalogs, fallback to source for backward compatibility
+
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
-    // sparkle emoji
     logger.debug(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
-    
-    // --- Dynamic pagination ---
+
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
-    // Use catalog-specific page size if configured, otherwise default to 100
     const stremThruBatchSize = userCatalog.pageSize || 100;
-    const globalItemIndex = (page - 1) * pageSize;
 
-    const batchesNeeded = Math.ceil((globalItemIndex % stremThruBatchSize + pageSize) / stremThruBatchSize);
-    const firstBatchSkip = Math.floor(globalItemIndex / stremThruBatchSize) * stremThruBatchSize;
+    // Cursor-based pagination: track (upstreamOffset, seenIds) per (catalog, user, genre).
+    // Handles upstream catalogs that return duplicate items at different skip values and
+    // filter shrinkage without Stremio losing scroll momentum on duplicate-heavy pages.
+    const cursorKey = `custom-cursor:${catalogId}:${userUUID}:${genre || 'all'}`;
+    const SEEN_IDS_CAP = 500;
+    const MAX_BATCH_ITERATIONS = 10;
+    const CURSOR_TTL_SECONDS = 600;
 
-    // ✅ Debug helper
-    const debugPagination = (skips: number[], start: number, end: number, total: number) => {
-      logger.debug(
-        `[🧩 Pagination Debug] Page ${page}: fetching batches ${skips.join(", ")} ` +
-        `(skip range = ${firstBatchSkip}–${firstBatchSkip + skips.length * stremThruBatchSize - 1}), ` +
-        `slicing local ${start}–${end}, total fetched = ${total}`
-      );
-    };
+    let cursor: { upstreamOffset: number; seenIds: string[] } = { upstreamOffset: 0, seenIds: [] };
+    if (page > 1) {
+      let loaded = false;
+      if (redis) {
+        try {
+          const raw = await redis.get(cursorKey);
+          if (raw) {
+            cursor = JSON.parse(raw);
+            loaded = true;
+          }
+        } catch (err: any) {
+          logger.warn(`[✨ StremThru] Failed to load cursor: ${err.message}`);
+        }
+      }
+      if (!loaded) {
+        // Cursor expired/missing — approximate from page number so we still advance
+        cursor.upstreamOffset = (page - 1) * stremThruBatchSize;
+        logger.debug(`[✨ StremThru] No cursor state for page ${page}, starting at offset=${cursor.upstreamOffset}`);
+      }
+    }
 
-    // --- Fetch all required batches with caching ---
-    const batchSkips: number[] = [];
-    let allItems: any[] = [];
+    const { applyCatalogFilters } = require('../utils/catalogFilters.js');
+    const seenSet = new Set<string>(cursor.seenIds);
+    const collected: any[] = [];
+    let iterations = 0;
+    let upstreamExhausted = false;
 
-    for (let i = 0; i < batchesNeeded; i++) {
-      const skip = firstBatchSkip + i * stremThruBatchSize;
-      batchSkips.push(skip);
+    while (collected.length < pageSize && iterations < MAX_BATCH_ITERATIONS) {
+      iterations++;
+      const skip = cursor.upstreamOffset;
       const cacheKey = `custom-batch:${catalogId}:${genre || 'all'}:skip=${skip}`;
-      
-      // Use cacheWrap to cache the batch fetch
+
       const batch = await cacheWrap(cacheKey, async () => {
         logger.debug(`[✨ StremThru] Fetching fresh batch: skip=${skip}, genre=${genre || 'all'}`);
         return await fetchStremThruCatalog(catalogUrl, skip, genre);
-      }, 300, { enableErrorCaching: true, maxRetries: 2 }); // 5 minute TTL for batches
-      
-      if (batch?.length) allItems = allItems.concat(batch);
+      }, 300, { enableErrorCaching: true, maxRetries: 2 });
+
+      if (!batch?.length) {
+        logger.debug(`[✨ StremThru] Upstream exhausted at skip=${skip} (iteration ${iterations})`);
+        upstreamExhausted = true;
+        break;
+      }
+
+      // Advance by actual batch length, mirroring Stremio's own skip behavior.
+      // Upstream addons may return partial batches (e.g., 14 instead of 20) and expect
+      // the next request at skip + batch.length, not skip + declared page size.
+      cursor.upstreamOffset += batch.length;
+
+      const newItems: any[] = [];
+      for (const item of batch) {
+        const id = item?.id || item?.imdb_id;
+        if (id && seenSet.has(id)) continue;
+        if (id) seenSet.add(id);
+        newItems.push(item);
+      }
+
+      if (newItems.length === 0) {
+        logger.debug(`[✨ StremThru] Batch at skip=${skip}: ${batch.length} items, all duplicates`);
+        continue;
+      }
+
+      let batchMetas = await parseStremThruItems(newItems, type, genre, language, config, includeVideos);
+      batchMetas = applyAgeRatingFilter(batchMetas, type, config);
+      batchMetas = await applyCatalogFilters(batchMetas, { type, config, catalogConfig: userCatalog, cleanId: catalogId });
+
+      for (const meta of batchMetas) {
+        collected.push(meta);
+        if (collected.length >= pageSize) break;
+      }
+      logger.debug(`[✨ StremThru] Batch at skip=${skip}: ${batch.length} items, ${newItems.length} new after dedup, ${batchMetas.length} after filters (collected ${collected.length}/${pageSize})`);
     }
 
-    if (!allItems.length) {
-      logger.warn(`[✨ StremThru] No items fetched from catalog: ${catalogId}`);
+    if (redis) {
+      try {
+        cursor.seenIds = Array.from(seenSet).slice(-SEEN_IDS_CAP);
+        await redis.set(cursorKey, JSON.stringify(cursor), 'EX', CURSOR_TTL_SECONDS);
+      } catch (err: any) {
+        logger.warn(`[✨ StremThru] Failed to persist cursor: ${err.message}`);
+      }
+    }
+
+    if (!collected.length) {
+      logger.warn(`[✨ StremThru] No items collected for catalog: ${catalogId} (page ${page}, exhausted=${upstreamExhausted})`);
       return [];
     }
 
-    // --- Slice exact page range ---
-    const localStartIndex = globalItemIndex - firstBatchSkip;
-    const localEndIndex = localStartIndex + pageSize;
-    const paginatedItems = allItems.slice(localStartIndex, localEndIndex);
-
-    // 📋 Print pagination debug info
-    debugPagination(batchSkips, localStartIndex, localEndIndex, allItems.length);
-    
-    // Log caching benefits
-    logger.debug(`[✨ StremThru] Batch caching: fetched ${batchesNeeded} batch(es) for page ${page}, total items: ${allItems.length}`);
-
-    // --- Parse and filter metas ---
-    let metas = await parseStremThruItems(paginatedItems, type, genre, language, config, includeVideos);
-
-    // Filter unreleased content if configured
-    // Filter by age rating if enabled
-    metas = applyAgeRatingFilter(metas, type, config);
-
-    logger.success(`[StremThru] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
-    return metas;
+    logger.success(`[StremThru] Processed ${collected.length} items for catalog ${catalogId} (page ${page}, upstreamOffset=${cursor.upstreamOffset}, iterations=${iterations})`);
+    return collected;
 
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
