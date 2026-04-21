@@ -31,7 +31,6 @@ interface RateLimitState {
 }
 
 const rateLimitStates = new Map<string, RateLimitState>();
-let requestTimestamps: number[] = [];
 
 let globalLastRequestTime = 0;
 let globalRequestPromise = Promise.resolve();
@@ -88,7 +87,6 @@ async function makeRequest(
     state.isRateLimited = false;
 
     await globalThrottle();
-    requestTimestamps.push(Date.now());
 
     const url = `${BASE_URL}${endpoint}`;
     const headers: Record<string, string> = {
@@ -421,7 +419,7 @@ async function checkinEpisode(
 }
 
 function getMemoryStats() {
-  return { requestTimestamps: requestTimestamps.length };
+  return { rateLimitStates: rateLimitStates.size };
 }
 
 export {
