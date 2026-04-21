@@ -439,6 +439,12 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 - **Description**: Number of items per catalog page
 - **Example**: `CATALOG_LIST_ITEMS_SIZE=30`
 
+### `MAX_CATALOGS`
+- **Optional**: Yes
+- **Default**: Unset (no limit)
+- **Description**: Maximum number of catalogs a user can have in their configuration. When set, saving a configuration with more catalogs than this limit is rejected. Useful for public instances to prevent abuse and high CPU/RAM usage.
+- **Example**: `MAX_CATALOGS=200`
+
 ---
 
 ## Content Settings
