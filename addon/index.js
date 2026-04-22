@@ -3390,7 +3390,12 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   } else {
     catalogPageSize = 20;
   }
-  const catalogPage = extraArgs.skip ? Math.floor(parseInt(extraArgs.skip) / catalogPageSize) + 1 : 1;
+  const isOffsetBased = cleanId.startsWith('stremthru.') || cleanId.startsWith('custom.');
+  const catalogPage = extraArgs.skip 
+    ? (isOffsetBased 
+        ? Math.floor(parseInt(extraArgs.skip) / catalogPageSize) + 1 
+        : Math.ceil(parseInt(extraArgs.skip) / catalogPageSize) + 1)
+    : 1;
 
   // Build cache key with page instead of skip for stable cache hits
   const cacheExtraArgs = { ...extraArgs };
@@ -3473,7 +3478,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       } else if (searchEngine && searchEngine.startsWith('trakt.')) {
         searchPageSize = 30;
       }
-      const searchPage = extraArgs.skip ? Math.floor(parseInt(extraArgs.skip) / searchPageSize) + 1 : 1;
+      const searchPage = extraArgs.skip ? Math.ceil(parseInt(extraArgs.skip) / searchPageSize) + 1 : 1;
 
       // Normalize skip to page for stable search cache keys
       const searchExtraArgs = { ...extraArgs };
