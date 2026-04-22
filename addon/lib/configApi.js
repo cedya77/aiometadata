@@ -140,12 +140,16 @@ class ConfigApi {
     if (!MAX_CATALOGS) return { valid: true };
     const catalogs = config && config.catalogs;
     if (!Array.isArray(catalogs)) return { valid: true };
-    if (catalogs.length <= MAX_CATALOGS) return { valid: true };
+    
+    // Only count enabled catalogs
+    const enabledCount = catalogs.filter(c => c.enabled !== false).length;
+    
+    if (enabledCount <= MAX_CATALOGS) return { valid: true };
     return {
       valid: false,
-      count: catalogs.length,
+      count: enabledCount,
       max: MAX_CATALOGS,
-      message: `Too many catalogs (${catalogs.length}); the maximum allowed on this instance is ${MAX_CATALOGS}. Remove some catalogs and try again.`,
+      message: `Too many enabled catalogs (${enabledCount}); the maximum allowed on this instance is ${MAX_CATALOGS}. Disable some catalogs and try again.`,
     };
   }
 

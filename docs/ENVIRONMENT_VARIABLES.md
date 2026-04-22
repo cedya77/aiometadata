@@ -442,7 +442,7 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 ### `MAX_CATALOGS`
 - **Optional**: Yes
 - **Default**: Unset (no limit)
-- **Description**: Maximum number of catalogs a user can have in their configuration. When set, saving a configuration with more catalogs than this limit is rejected. Useful for public instances to prevent abuse and high CPU/RAM usage.
+- **Description**: Maximum number of enabled catalogs a user can have in their configuration. When set, saving a configuration with more enabled catalogs than this limit is rejected. Useful for public instances to prevent abuse and ensure manifest generation remains fast.
 - **Example**: `MAX_CATALOGS=200`
 
 ---
