@@ -242,6 +242,10 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
       logger.error(`[Meta] Invalid stremioId: ${stremioId}`);
       return { meta: null };
     }
+    // Defensive normalization: some upstream providers (Simkl, raw TMDB responses,
+    // etc.) use TMDB's 'tv' convention for series. Normalize here so resolveAllIds
+    // and the finalType switch below don't silently reject the request.
+    if (type === 'tv') type = 'series';
     
     // --- Handle custom ID prefixes (e.g., "tun_tt6128300") ---
     const isTraktUpNextId = stremioId.startsWith('tun_');
@@ -355,7 +359,9 @@ async function getMeta(type, language, stremioId, config = {}, userUUID, include
       targetProviders.add(preferredProvider);
     }
     logger.debug(`[Meta] Target providers: ${Array.from(targetProviders)}`);
-    const allIds =  await resolveAllIds(stremioId, type, config, {}, Array.from(targetProviders));
+    // Use finalType (which maps animeId stremioIds to 'anime') rather than raw
+    // type so id-resolver's targetProviders heuristics pick the anime path.
+    const allIds =  await resolveAllIds(stremioId, finalType, config, {}, Array.from(targetProviders));
     switch (finalType) {
       case 'movie':
         meta = await getMovieMeta(stremioId, preferredProvider, language, config, userUUID, allIds);
