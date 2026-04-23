@@ -29,6 +29,11 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000); // Run every hour
 
+// Env-tunable to shed load faster during Jikan/MAL brownouts. Prior default
+// (30s connect + 3 retries) could hold a single stuck request for ~45s.
+// Declared here (before dispatcher init) so the fallback Agent can reference it.
+const JIKAN_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.JIKAN_REQUEST_TIMEOUT_MS, 10) || 5000);
+
 // MAL/Jikan dispatcher configuration
 // Priority: MAL_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
 const MAL_SOCKS_PROXY_URL = process.env.MAL_SOCKS_PROXY_URL;
@@ -80,9 +85,6 @@ if (!malDispatcher) {
 const MAX_CONCURRENT = parseInt(process.env.JIKAN_MAX_CONCURRENT, 10) || 2;  // In-flight requests at once
 const MIN_REQUEST_INTERVAL = parseInt(process.env.JIKAN_MIN_INTERVAL, 10) || 350; // ms between dispatches
 const MAX_REQUESTS_PER_MINUTE = parseInt(process.env.JIKAN_MAX_PER_MINUTE, 10) || 55; // Stay under 60/min
-// Env-tunable to shed load faster during Jikan/MAL brownouts. Prior default
-// (30s connect + 3 retries) could hold a single stuck request for ~45s.
-const JIKAN_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.JIKAN_REQUEST_TIMEOUT_MS, 10) || 5000);
 const MAX_RETRIES = Math.max(1, parseInt(process.env.JIKAN_MAX_RETRIES, 10) || 2);
 const RATE_LIMIT_DELAY = 2000;
 
