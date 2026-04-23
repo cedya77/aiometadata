@@ -812,65 +812,72 @@ async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', sea
   });
 }
 
+// IMDb ID → TVDB ID mapping is immutable per title. Wrap in global cache so
+// the id-resolver doesn't re-hit TVDB on every meta request for the same
+// external ID. Same for findByTmdbId below.
 async function findByImdbId(imdbId: string, config: UserConfig): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    
-    const responseTime = Date.now() - startTime;
-    
-    // Track successful request
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
-    
-    const results = (response.data as any)?.data || [];
-    const consola = require('consola');
-    consola.debug(`[TVDB] Found TVDB ID for IMDB ID ${imdbId}:`, results);
-    return results;
-  } catch (error) {
-    // Track failed request
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
-    
-    logger.error(`[findByImdbId] Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
-    return [];
-  }
+
+  return cacheWrapTvdbApi(`remoteid:imdb:${imdbId}`, async () => {
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/search/remoteid/${imdbId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+
+      const results = (response.data as any)?.data || [];
+      const consola = require('consola');
+      consola.debug(`[TVDB] Found TVDB ID for IMDB ID ${imdbId}:`, results);
+      return results;
+    } catch (error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+
+      logger.error(`[findByImdbId] Error finding TVDB by IMDb ID ${imdbId}:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function findByTmdbId(tmdbId: string, config: UserConfig): Promise<TvdbSearchResult[]> {
   const token = await getAuthToken(config.apiKeys?.tvdb, config.userUUID);
   if (!token) return [];
-  
-  const startTime = Date.now();
-  try {
-    const response = await tvdbHttpRequest(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    
-    const responseTime = Date.now() - startTime;
-    
-    // Track successful request
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, true);
-    
-    const results = (response.data as any)?.data || [];
-    
-    return results;
-  } catch (error) {
-    // Track failed request
-    const responseTime = Date.now() - startTime;
-    const requestTracker = require('./requestTracker');
-    requestTracker.trackProviderCall('tvdb', responseTime, false);
-    
-    logger.error(`[findByTmdbId] Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
-    return [];
-  }
+
+  return cacheWrapTvdbApi(`remoteid:tmdb:${tmdbId}`, async () => {
+    const startTime = Date.now();
+    try {
+      const response = await tvdbHttpRequest(`${TVDB_API_URL}/search/remoteid/${tmdbId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      // Track successful request
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, true);
+
+      const results = (response.data as any)?.data || [];
+
+      return results;
+    } catch (error) {
+      // Track failed request
+      const responseTime = Date.now() - startTime;
+      const requestTracker = require('./requestTracker');
+      requestTracker.trackProviderCall('tvdb', responseTime, false);
+
+      logger.error(`[findByTmdbId] Error finding TVDB by TMDB ID ${tmdbId}:`, (error as Error).message);
+      return [];
+    }
+  });
 }
 
 async function getAllGenres(config: UserConfig): Promise<TvdbGenre[]> {

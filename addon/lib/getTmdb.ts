@@ -807,8 +807,18 @@ export async function getTmdbSeriesLogo(tmdbId: string, config: UserConfig) {
   }
 }
 
+// Trending results are globally identical for (media_type, time_window, language,
+// page) — not user-specific — and the list only meaningfully shifts on the hour
+// or day scale. Cache globally so we don't fan out one TMDB call per user's
+// trending-catalog cache refresh. Before this: N users × M language/page
+// combinations = N·M TMDB calls per refresh. After: one per unique tuple per TTL.
 export async function trending(params: any, config: UserConfig) {
-    return makeTmdbRequest(`/trending/${params.media_type}/${params.time_window}`, getApiKey(config), params, 'GET', null, config);
+    const { media_type, time_window, language, page } = params;
+    const cacheKey = `tmdb:trending:${media_type}:${time_window}:${language || 'default'}:${page || 1}`;
+    return cacheWrapGlobal(cacheKey, () =>
+        makeTmdbRequest(`/trending/${media_type}/${time_window}`, getApiKey(config), params, 'GET', null, config),
+        60 * 60 // 1 hour — trending shifts within the day but not second-to-second
+    );
 }
 
 export async function seasonInfo(params: any, config: UserConfig) {
