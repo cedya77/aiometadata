@@ -119,7 +119,12 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
   const url = `${TMDB_API_URL}${endpoint}?${queryParams.toString()}`;
 
   let attempt = 0;
-  const maxRetries = 3;
+  // Env-tunable so operators can shed load faster during TMDB brownouts. Defaults
+  // (5s × 2 attempts = 10s worst case) replace the previous 15s × 3 = 45s, which
+  // let in-flight state pile up in memory during upstream slowdowns and drove
+  // heap OOMs on busy instances.
+  const maxRetries = Math.max(1, parseInt(process.env.TMDB_MAX_RETRIES || '2', 10));
+  const requestTimeoutMs = Math.max(1000, parseInt(process.env.TMDB_REQUEST_TIMEOUT_MS || '5000', 10));
   let lastError: any;
 
   while(attempt < maxRetries) {
@@ -132,7 +137,7 @@ async function makeTmdbRequest(endpoint: string, apiKey: string, params: Record<
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         dispatcher: dispatcher,
         body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(requestTimeoutMs)
       });
 
       const responseTime = Date.now() - startTime;
