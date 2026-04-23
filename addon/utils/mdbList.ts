@@ -302,9 +302,16 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
   // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
   
+  // Cache scoping: /watchlist/items is per-user (the user's own list), so the
+  // cache key must include the API key. /lists/{listId}/items returns a public
+  // list whose contents are identical regardless of which API key queried —
+  // scope that globally so N users hitting the same public list share one
+  // cache entry instead of each building their own.
+  const isPrivateList = listId === 'watchlist';
   const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
-  
-  const cacheKey = `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
+  const keyScope = isPrivateList ? `user:${apiKeyHash}` : 'public';
+
+  const cacheKey = `mdblist-api:items:${keyScope}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
   
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
