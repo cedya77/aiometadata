@@ -22,6 +22,11 @@ function sanitizeUrlForLogging(url: string): string {
 }
 
 
+// Env-tunable to shed load faster during MDBList brownouts. Prior defaults
+// (30s connect + 5 retries) could hold a single stuck request for ~50s.
+const MDBLIST_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.MDBLIST_REQUEST_TIMEOUT_MS || '5000', 10));
+const MDBLIST_MAX_RETRIES = Math.max(1, parseInt(process.env.MDBLIST_MAX_RETRIES || '2', 10));
+
 // MDBList dispatcher configuration
 // Priority: MDBLIST_SOCKS_PROXY_URL > HTTPS_PROXY/HTTP_PROXY > direct connection
 const MDBLIST_SOCKS_PROXY_URL = process.env.MDBLIST_SOCKS_PROXY_URL;
@@ -60,10 +65,10 @@ if (!mdblistDispatcher) {
       logger.info('[MDBList] Using global HTTP proxy.');
     } catch (error: any) {
       logger.error(`[MDBList] Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+      mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: MDBLIST_REQUEST_TIMEOUT_MS } });
     }
   } else {
-    mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+    mdblistDispatcher = new Agent({ allowH2: false, connect: { timeout: MDBLIST_REQUEST_TIMEOUT_MS } });
     logger.info('[MDBList] undici agent is enabled for direct connections.');
   }
 }
@@ -83,11 +88,11 @@ const host = process.env.HOST_NAME?.startsWith('http')
 
 // Rate limiting configuration for MDBList API
 const RATE_LIMIT_CONFIG = {
-  maxRetries: 5,
+  maxRetries: MDBLIST_MAX_RETRIES,
   baseDelay: 1000,
   maxDelay: 30000,
   rateLimitDelay: 5000,
-  minInterval: 210, 
+  minInterval: 210,
   backoffMultiplier: 2
 };
 

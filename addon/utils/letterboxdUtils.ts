@@ -9,11 +9,17 @@ const buildInfo = require('../lib/buildInfo');
 
 const logger = consola.withTag('Letterboxd');
 
-const letterboxdDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+// Env-tunable to shed load faster during Letterboxd/StremThru brownouts.
+// Prior defaults (30s connect + 3 retries) let a single stuck request hold
+// state for ~90 seconds.
+const LETTERBOXD_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.LETTERBOXD_REQUEST_TIMEOUT_MS || '5000', 10));
+const LETTERBOXD_MAX_RETRIES = Math.max(1, parseInt(process.env.LETTERBOXD_MAX_RETRIES || '2', 10));
+
+const letterboxdDispatcher = new Agent({ allowH2: false, connect: { timeout: LETTERBOXD_REQUEST_TIMEOUT_MS } });
 
 // Rate limiting configuration for Letterboxd API (through StremThru)
 const RATE_LIMIT_CONFIG = {
-  maxRetries: 3,
+  maxRetries: LETTERBOXD_MAX_RETRIES,
   baseDelay: 1000,
   maxDelay: 10000,
   minInterval: 500,

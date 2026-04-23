@@ -65,10 +65,10 @@ if (!malDispatcher) {
       logger.info('Using global HTTP proxy for Jikan API.');
     } catch (error) {
       logger.warn(`Invalid HTTP_PROXY URL. Using direct connection. Error: ${error.message}`);
-      malDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+      malDispatcher = new Agent({ allowH2: false, connect: { timeout: JIKAN_REQUEST_TIMEOUT_MS } });
     }
   } else {
-    malDispatcher = new Agent({ allowH2: false, connect: { timeout: 30000 } });
+    malDispatcher = new Agent({ allowH2: false, connect: { timeout: JIKAN_REQUEST_TIMEOUT_MS } });
     logger.info('undici agent is enabled for direct connections.');
   }
 }
@@ -80,7 +80,10 @@ if (!malDispatcher) {
 const MAX_CONCURRENT = parseInt(process.env.JIKAN_MAX_CONCURRENT, 10) || 2;  // In-flight requests at once
 const MIN_REQUEST_INTERVAL = parseInt(process.env.JIKAN_MIN_INTERVAL, 10) || 350; // ms between dispatches
 const MAX_REQUESTS_PER_MINUTE = parseInt(process.env.JIKAN_MAX_PER_MINUTE, 10) || 55; // Stay under 60/min
-const MAX_RETRIES = 3;
+// Env-tunable to shed load faster during Jikan/MAL brownouts. Prior default
+// (30s connect + 3 retries) could hold a single stuck request for ~45s.
+const JIKAN_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.JIKAN_REQUEST_TIMEOUT_MS, 10) || 5000);
+const MAX_RETRIES = Math.max(1, parseInt(process.env.JIKAN_MAX_RETRIES, 10) || 2);
 const RATE_LIMIT_DELAY = 2000;
 
 // --- Queue state ---

@@ -30,9 +30,15 @@ function sanitizeUrlForLogging(url: string): string {
 }
 
 const TRAKT_PROXY_URL = process.env.TRAKT_PROXY_URL;
-const traktDispatcher = TRAKT_PROXY_URL 
-  ? new ProxyAgent({ uri: TRAKT_PROXY_URL, allowH2: false, requestTls: { timeout: 30000 } })
-  : new Agent({ allowH2: false, connect: { timeout: 30000 } });
+// Env-tunable to shed load faster during Trakt brownouts. Prior defaults
+// (30s connect + 3 retries) could hold a single stuck request for ~90s,
+// and Trakt Up Next fans out dozens of calls per request (seen hitting
+// 125s single-request durations during upstream slowdowns).
+const TRAKT_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.TRAKT_REQUEST_TIMEOUT_MS || '5000', 10));
+const TRAKT_MAX_RETRIES = Math.max(1, parseInt(process.env.TRAKT_MAX_RETRIES || '2', 10));
+const traktDispatcher = TRAKT_PROXY_URL
+  ? new ProxyAgent({ uri: TRAKT_PROXY_URL, allowH2: false, requestTls: { timeout: TRAKT_REQUEST_TIMEOUT_MS } })
+  : new Agent({ allowH2: false, connect: { timeout: TRAKT_REQUEST_TIMEOUT_MS } });
 
 
 /**
@@ -340,7 +346,7 @@ function getEpisodeIdPart(ep: any): string {
 async function makeRateLimitedRequest<T>(
   requestFn: () => Promise<T>,
   context: string = 'Trakt',
-  retries: number = 3,
+  retries: number = TRAKT_MAX_RETRIES,
   queueKey: string = 'global'
 ): Promise<T> {
   const queue = queueManager.getQueue(queueKey);

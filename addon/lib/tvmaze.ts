@@ -3,8 +3,11 @@ import { cacheWrapTvmazeApi } from './getCache.js';
 const buildInfo = require('./buildInfo');
 import { Agent, ProxyAgent } from 'undici';
 const TVMAZE_API_URL = 'https://api.tvmaze.com';
-const DEFAULT_TIMEOUT = 15000; // 15-second timeout for all requests
-const MAX_RETRIES = 3;
+// Env-tunable to shed load faster during TVmaze brownouts. Prior defaults
+// (15s × 3 retries = 75s worst case per request) let concurrent in-flight
+// TVmaze requests balloon the heap during upstream slowdowns.
+const DEFAULT_TIMEOUT = Math.max(1000, parseInt(process.env.TVMAZE_REQUEST_TIMEOUT_MS || '5000', 10));
+const MAX_RETRIES = Math.max(1, parseInt(process.env.TVMAZE_MAX_RETRIES || '2', 10));
 const RETRY_DELAY = 1000; // 1 second base delay for network errors
 const RATE_LIMIT_FALLBACK_DELAY = 10000; // 10 seconds fallback if Retry-After header is missing
 const RETRY_AFTER_BUFFER = 1000; // Add 1 second buffer to Retry-After value

@@ -1,9 +1,15 @@
 const { httpPost } = require('../utils/httpClient');
 const { cacheWrapGlobal } = require('./getCache');
 
-const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http') 
-  ? process.env.HOST_NAME 
+const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
+  ? process.env.HOST_NAME
   : `https://${process.env.HOST_NAME}`;
+
+// Env-tunable to shed load faster during AniList brownouts. Prior defaults
+// (30s timeout × 3 retries = 90s worst case) let a single stuck request
+// pin down heap and sockets for well over a minute.
+const ANILIST_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.ANILIST_REQUEST_TIMEOUT_MS || '5000', 10));
+const ANILIST_MAX_RETRIES = Math.max(1, parseInt(process.env.ANILIST_MAX_RETRIES || '2', 10));
 
 class AniListAPI {
   baseURL: string;
@@ -40,7 +46,7 @@ class AniListAPI {
   /**
    * Rate limiting and retry logic
    */
-  async makeRateLimitedRequest(requestFn: () => Promise<any>, retries = 3, isRetry = false): Promise<any> {
+  async makeRateLimitedRequest(requestFn: () => Promise<any>, retries = ANILIST_MAX_RETRIES, isRetry = false): Promise<any> {
     const now = Date.now();
     
     // Check if we need to wait for rate limit reset
@@ -223,7 +229,7 @@ class AniListAPI {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 30000
+          timeout: ANILIST_REQUEST_TIMEOUT_MS
         })
       );
 
@@ -312,7 +318,7 @@ class AniListAPI {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 30000
+          timeout: ANILIST_REQUEST_TIMEOUT_MS
         })
       );
 
@@ -386,7 +392,7 @@ class AniListAPI {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 30000
+          timeout: ANILIST_REQUEST_TIMEOUT_MS
         })
       );
 
@@ -535,7 +541,7 @@ class AniListAPI {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 30000
+          timeout: ANILIST_REQUEST_TIMEOUT_MS
         })
       );
 
@@ -603,7 +609,7 @@ class AniListAPI {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          timeout: 30000
+          timeout: ANILIST_REQUEST_TIMEOUT_MS
         })
       );
 
@@ -861,7 +867,7 @@ class AniListAPI {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
-          timeout: 30000
+          timeout: ANILIST_REQUEST_TIMEOUT_MS
         })
       );
       

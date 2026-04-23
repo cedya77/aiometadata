@@ -8,8 +8,12 @@ import consola from 'consola';
 
 const logger = consola.withTag('TVDB');
 
+// Env-tunable retries. httpClient applies an 8s (env-tunable) timeout per
+// attempt; previous 3-retry default meant up to 24s held per failing request.
+const TVDB_MAX_RETRIES = Math.max(1, parseInt(process.env.TVDB_MAX_RETRIES || '2', 10));
+
 // TVDB-specific HTTP client with 429 rate limit handling
-async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: number = 3): Promise<any> {
+async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: number = TVDB_MAX_RETRIES): Promise<any> {
   let lastError;
   const startTime = Date.now();
   

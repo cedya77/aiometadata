@@ -28,11 +28,13 @@ const ANILIST_CLIENT_SECRET = process.env.ANILIST_CLIENT_SECRET;
 // Token expiration buffer (5 minutes in milliseconds)
 const TOKEN_EXPIRATION_BUFFER_MS = 5 * 60 * 1000;
 
-// Request timeout (10 seconds)
-const REQUEST_TIMEOUT_MS = 10000;
+// Env-tunable to shed load faster during AniList brownouts. Prior defaults
+// (10s × 3 retries = 30s worst case) let concurrent failing requests pile up
+// in heap during upstream slowdowns.
+const REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.ANILIST_TRACKER_REQUEST_TIMEOUT_MS, 10) || 5000);
 
 // Retry configuration
-const MAX_RETRIES = 3;
+const MAX_RETRIES = Math.max(1, parseInt(process.env.ANILIST_TRACKER_MAX_RETRIES, 10) || 2);
 const RETRY_DELAYS = [1000, 2000, 4000]; // Exponential backoff: 1s, 2s, 4s
 
 /**

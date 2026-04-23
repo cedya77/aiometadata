@@ -5,6 +5,10 @@ const { cacheWrapGlobal } = require('./getCache.js');
 
 const imdbAxiosInstance = axios.create();
 
+// Env-tunable to shed load faster when IMDb is slow. Prior default (10s × ~3
+// retries at the caller layer) held state on the heap for up to 30s per call.
+const IMDB_REQUEST_TIMEOUT_MS = Math.max(1000, parseInt(process.env.IMDB_REQUEST_TIMEOUT_MS, 10) || 5000);
+
 const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -128,7 +132,7 @@ async function fetchHtml(url, headers = {}) {
             },
             maxRedirects: 5,
             responseType: 'text',
-            timeout: 10000
+            timeout: IMDB_REQUEST_TIMEOUT_MS
         });
 
         if (response.status >= 400) {
@@ -148,7 +152,7 @@ async function fetchHtml(url, headers = {}) {
         } else if (axios.isAxiosError(error)) {
             if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
                 console.error(
-                    `[imdb-scraper] Request for ${url} timed out after 10000ms.`
+                    `[imdb-scraper] Request for ${url} timed out after ${IMDB_REQUEST_TIMEOUT_MS}ms.`
                 );
             } else if (error.response) {
                 console.error(
