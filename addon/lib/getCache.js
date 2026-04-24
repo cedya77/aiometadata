@@ -815,21 +815,22 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
-    showPrefix: config.showPrefix || false,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
     displayAgeRating: config.displayAgeRating || false,
 
   };
 
-  // Only include MDBList API key for MDBList catalogs
-  if (isMDBListCatalog) {
+  const isMDBListWatchlistOrUpNext = idOnly.startsWith('mdblist.watchlist') || idOnly === 'mdblist.upnext';
+  if (isMDBListCatalog && isMDBListWatchlistOrUpNext) {
     catalogConfig.apiKeys = {
       mdblist: config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || ''
     };
   }
   
-  // Only include Trakt token ID for Trakt catalogs (user-specific)
-  if (isTraktCatalog) {
+  const traktAuthCatalogs = ['trakt.upnext', 'trakt.unwatched', 'trakt.calendar', 'trakt.watchlist', 'trakt.favorites', 'trakt.recommendations'];
+  const isTraktAuthRequired = traktAuthCatalogs.some(prefix => idOnly === prefix || idOnly.startsWith(prefix + '.'))
+    || (isTraktCatalog && catalogFromConfig?.metadata?.privacy && catalogFromConfig.metadata.privacy !== 'public');
+  if (isTraktCatalog && isTraktAuthRequired) {
     catalogConfig.apiKeys = {
       traktTokenId: config.apiKeys?.traktTokenId || ''
     };
@@ -842,16 +843,17 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     };
   }
 
-  // Only include AniList token ID for user-list catalogs (trending is public, no token)
-  if (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') {
+  const isAniListUserList = idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending' && !isAniListDiscoverCatalog;
+  if (isAniListUserList) {
     catalogConfig.apiKeys = {
       anilistTokenId: config.apiKeys?.anilistTokenId || ''
     };
   }
   
-  // Only include MAL config for MAL catalogs
   if (isMALCatalog) {
-    catalogConfig.mal = config.mal || {};
+    catalogConfig.mal = {
+      useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
+    };
   }
   
   // Only include streaming config for streaming catalogs
@@ -969,17 +971,15 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
     const day = String(now.getDate()).padStart(2, '0');
     const today = `${year}-${month}-${day}`; // YYYY-MM-DD format in local timezone
     key = `catalog:${today}:${configHash}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog) {
+  } else if (idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.')) {
     key = `catalog:${userUUID}:${configHash}:${cacheTTL}:${catalogKey}`;
-  } else if (idOnly.startsWith('simkl.') || idOnly.startsWith('anilist.')) {
-    key = `catalog:${configHash}:${catalogKey}`;
   } else {
-    key = `catalog:${configHash}:${catalogKey}`;
+    key = `catalog:${configHash}:${cacheTTL}:${catalogKey}`;
   }
   
-  const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (userUUID || '');
+  const isUserScopedCatalog = isAuthCatalog || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.');
+  const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (isUserScopedCatalog ? (userUUID || '') : '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
-  const isUserScopedCatalog = idOnly.startsWith('mdblist.') || idOnly.startsWith('trakt.') || idOnly.startsWith('simkl.watchlist.') || (idOnly.startsWith('anilist.') && idOnly !== 'anilist.trending') || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.') || isDiscoverCatalog || isAuthCatalog;
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
   
   // Check if the catalog is already cached before calling cacheWrap

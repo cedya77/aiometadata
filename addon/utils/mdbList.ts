@@ -301,17 +301,18 @@ async function makeRateLimitedRequest<T>(
 async function fetchMDBListItems(listId: string, apiKey: string, language: string, page: number, sort?: string, order?: string, genre?: string, unified?: boolean, catalogType?: string, cacheTTL?: number): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
   // Use configurable page size (supports CATALOG_LIST_ITEMS_SIZE env var)
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-  
-  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
-  
-  const cacheKey = `mdblist-api:items:${apiKeyHash}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
-  
+
+  const keyScope = listId === 'watchlist'
+    ? crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16)
+    : 'shared';
+
+  const cacheKey = `mdblist-api:items:${keyScope}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
+
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
-  
-  return await cacheWrapGlobal(cacheKey, async () => {
-    const offset = (page * pageSize) - pageSize;
-    
-    try {
+
+  try {
+    return await cacheWrapGlobal(cacheKey, async () => {
+      const offset = (page * pageSize) - pageSize;
       let url: string;
       
       // Special handling for watchlist
@@ -422,11 +423,11 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
         hasMore,
         totalPages
       };
-    } catch (err: any) {
-      logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
-      return { items: [] };
-    }
-  }, ttl, { skipVersion: true });
+    }, ttl, { skipVersion: true });
+  } catch (err: any) {
+    logger.error(`Error retrieving items for list ${listId}, page ${page}:`, err.message);
+    return { items: [] };
+  }
 }
 
 
@@ -580,9 +581,7 @@ async function fetchMDBListExternalItems(
   cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore?: boolean, totalPages?: number}> {
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
-  
-  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
-  
+
   const normalizedUrl = new URL(url);
   normalizedUrl.searchParams.delete('apikey');
   normalizedUrl.searchParams.delete('limit');
@@ -596,15 +595,14 @@ async function fetchMDBListExternalItems(
   normalizedUrl.searchParams.delete('filter_score_min');
   normalizedUrl.searchParams.delete('filter_score_max');
   const urlBase = normalizedUrl.toString();
-  
-  const cacheKey = `mdblist-api:external:${apiKeyHash}:${urlBase}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}`;
-  
+
+  const cacheKey = `mdblist-api:external:shared:${urlBase}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}`;
+
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
-  return await cacheWrapGlobal(cacheKey, async () => {
-    const offset = (page * pageSize) - pageSize;
-
-    try {
+  try {
+    return await cacheWrapGlobal(cacheKey, async () => {
+      const offset = (page * pageSize) - pageSize;
       const urlWithParams = new URL(url);
       urlWithParams.searchParams.set('apikey', apiKey);
       urlWithParams.searchParams.set('limit', pageSize.toString());
@@ -668,11 +666,11 @@ async function fetchMDBListExternalItems(
       }
 
       return { items, hasMore };
-    } catch (err: any) {
-      logger.error(`Error retrieving items from URL ${sanitizeUrlForLogging(url)}, page ${page}:`, err.message);
-      return { items: [] };
-    }
-  }, ttl, { skipVersion: true });
+    }, ttl, { skipVersion: true });
+  } catch (err: any) {
+    logger.error(`Error retrieving items from URL ${sanitizeUrlForLogging(url)}, page ${page}:`, err.message);
+    return { items: [] };
+  }
 }
 
 async function parseMDBListItems(items: any[], type: string, language: string, config: UserConfig, includeVideos: boolean = false): Promise<any[]> {
