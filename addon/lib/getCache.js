@@ -811,6 +811,7 @@ function buildScopedProviderConfig(config, contentScope) {
   }
 
   artProviders.englishArtOnly = config.artProviders?.englishArtOnly;
+  artProviders.originalLangFallback = config.artProviders?.originalLangFallback;
 
   return { providers, artProviders };
 }
@@ -1182,6 +1183,7 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
      displayAgeRating: config.displayAgeRating || false,
      
      englishArtOnly: config.artProviders?.englishArtOnly || false,
+     originalLangFallback: config.artProviders?.originalLangFallback || false,
      
      timezone: config.timezone || 'UTC',
    };
@@ -1270,6 +1272,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
      englishArtOnly: config.artProviders?.englishArtOnly || false,
+     originalLangFallback: config.artProviders?.originalLangFallback || false,
      timezone: config.timezone || 'UTC',
    };
    const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
@@ -1522,6 +1525,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,
      englishArtOnly: config.artProviders?.englishArtOnly || false,
+     originalLangFallback: config.artProviders?.originalLangFallback || false,
      timezone: config.timezone || 'UTC',
    };
 

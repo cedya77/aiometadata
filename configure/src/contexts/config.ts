@@ -112,6 +112,7 @@ export interface AppConfig {
       logo: 'meta' | 'mal' | 'anilist' | 'tvdb' | 'fanart' | 'imdb';
     };
     englishArtOnly: boolean;
+    originalLangFallback: boolean;
   };
   tvdbSeasonType: string;
   mal: {

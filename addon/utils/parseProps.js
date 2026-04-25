@@ -2465,10 +2465,10 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false, origina
 
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
+  const origLangFb = config.artProviders?.originalLangFallback ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
-  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}:${landscape}:${isLandscape}`;
-  
-  // Check if there's already an in-flight request for this movie
+  const cacheKey = `tmdb-movie-images:${tmdbId}:${langCode}:${englishOnly}:${origLangFb}:${landscape}`;
+
   if (tmdbMovieImagesInflight.has(cacheKey)) {
     return tmdbMovieImagesInflight.get(cacheKey);
   }
@@ -2804,10 +2804,10 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false, origin
 
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
+  const origLangFb = config.artProviders?.originalLangFallback ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
-  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}:${landscape}`;
-  
-  // Check if there's already an in-flight request for this series
+  const cacheKey = `tmdb-tv-images:${tmdbId}:${langCode}:${englishOnly}:${origLangFb}:${landscape}`;
+
   if (tmdbTvImagesInflight.has(cacheKey)) {
     return tmdbTvImagesInflight.get(cacheKey);
   }
@@ -3220,14 +3220,21 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1', originalLangua
 
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
   const targetCountry = config.language?.split('-')[1]?.toUpperCase() || 'US';
-  return (
-    images.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||
-    images.find(img => img[key] === targetLang) ||
-    images.find(img => img[key] === 'en') ||
-    (originalLanguage && images.find(img => img[key] === originalLanguage)) ||
-    images.find(img => img[key] != null && img[key] !== 'xx') ||
-    images[0]
-  );
+  const preferOrigLang = config.artProviders?.originalLangFallback;
+
+  const targetExact = images.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry);
+  if (targetExact) return targetExact;
+
+  if (preferOrigLang) {
+    const orig = originalLanguage && images.find(img => img[key] === originalLanguage);
+    return orig || images.find(img => img[key] === 'en') || images.find(img => img[key] != null && img[key] !== 'xx') || images[0];
+  }
+
+  return images.find(img => img[key] === targetLang)
+    || images.find(img => img[key] === 'en')
+    || (originalLanguage && images.find(img => img[key] === originalLanguage))
+    || images.find(img => img[key] != null && img[key] !== 'xx')
+    || images[0];
 }
 
 function genSeasonsString(seasons) {

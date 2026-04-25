@@ -161,6 +161,26 @@ export function ArtProviderSettings() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="original-lang-fallback" className="text-base font-medium">
+                  Original Language Poster Fallback
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  When a poster isn't available in your display language, prefer the title's original language poster.
+                </p>
+              </div>
+              <Switch
+                id="original-lang-fallback"
+                checked={!!config.artProviders?.originalLangFallback}
+                onCheckedChange={(value) => setConfig(prev => ({ ...prev, artProviders: { ...prev.artProviders, originalLangFallback: value } }))}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {isFanartSelected() && !hasFanartKey && (
           <div className="p-4 border border-amber-400/30 bg-amber-900/20 rounded-lg mt-4">
             <div className="flex items-center gap-2 text-amber-400">
