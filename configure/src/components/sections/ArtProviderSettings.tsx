@@ -11,14 +11,14 @@ const movieArtProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'fanart', label: 'Fanart.tv' },
-  { value: 'imdb', label: 'Internet Movie Database (IMDB)' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB/Cinemeta)' },
 ];
 
 const seriesArtProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'fanart', label: 'Fanart.tv' },
-  { value: 'imdb', label: 'Internet Movie Database (IMDB)' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB/Cinemeta)' },
 ];
 
 const animeArtProviders = [
@@ -28,7 +28,7 @@ const animeArtProviders = [
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
-  { value: 'imdb', label: 'Internet Movie Database (IMDB)' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB/Cinemeta)' },
 ];
 
 const animeBackgroundArtProviders = [
@@ -38,11 +38,11 @@ const animeBackgroundArtProviders = [
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },
-  { value: 'imdb', label: 'Internet Movie Database (IMDB) (Recommended)' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB/Cinemeta) (Recommended)' },
 ];
 
 const animeLogoArtProviders = [
-  { value: 'imdb', label: 'Internet Movie Database (IMDB) (Recommended)' },
+  { value: 'imdb', label: 'Internet Movie Database (IMDB/Cinemeta) (Recommended)' },
   { value: 'tvdb', label: 'TheTVDB' },
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'fanart', label: 'Fanart.tv' },

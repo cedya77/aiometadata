@@ -7,14 +7,14 @@ import { Switch } from '@/components/ui/switch';
 const movieProviders = [
   { value: 'tmdb', label: 'The Movie Database (TMDB)' },
   { value: 'tvdb', label: 'TheTVDB' },
-  { value: 'imdb', label: 'IMDb' },
+  { value: 'imdb', label: 'IMDb (Cinemeta)' },
 ];
 
 const seriesProviders = [
   { value: 'tvdb', label: 'TheTVDB (Recommended)' },
   { value: 'tmdb', label: 'The Movie Database' },
   { value: 'tvmaze', label: 'TVmaze' },
-  { value: 'imdb', label: 'IMDb' },
+  { value: 'imdb', label: 'IMDb (Cinemeta)' },
 ];
 
 const animeProviders = [
@@ -22,7 +22,7 @@ const animeProviders = [
   { value: 'mal', label: 'MyAnimeList' },
   { value: 'tvdb', label: 'TheTVDB' },
   // { value: 'tmdb', label: 'The Movie Database' },
-  { value: 'imdb', label: 'IMDb' },
+  { value: 'imdb', label: 'IMDb (Cinemeta)' },
 ];
 
 const animeIdProviders = [
