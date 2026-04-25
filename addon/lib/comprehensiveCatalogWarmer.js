@@ -573,10 +573,15 @@ class ComprehensiveCatalogWarmer {
             }
           }
         }
-        if (catalogId === 'trakt.upnext' || catalogId === 'publicmetadb.upnext') {
+        if (catalogId === 'trakt.upnext' || catalogId === 'mdblist.upnext' || catalogId === 'publicmetadb.upnext') {
           extraArgs.useShowPoster = typeof catalogConfig?.metadata?.useShowPosterForUpNext === 'boolean'
               ? catalogConfig.metadata.useShowPosterForUpNext
               : false;
+        }
+        if (catalogId === 'mdblist.upnext') {
+          if (catalogConfig?.metadata?.hideUnreleased !== undefined) {
+            extraArgs.hideUnreleased = catalogConfig.metadata.hideUnreleased;
+          }
         }
 
         if (catalogId === 'trakt.calendar') {

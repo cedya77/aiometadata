@@ -48,7 +48,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
     return metas;
   }
 
-  logger.debug(`[StremThru] Applying age rating filter: ${config.ageRating} for type: ${type}`);
+  logger.debug(`[AgeRating] Applying age rating filter: ${config.ageRating} for type: ${type}`);
   const beforeCount = metas.length;
   const filterStartTime = performance.now();
   
@@ -78,7 +78,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
     if (meta.app_extras?.certification) {
       cert = meta.app_extras.certification;
     } else {
-      logger.debug(`[StremThru] ${type} ${meta.name}: No certification data available`);
+      logger.debug(`[AgeRating] ${type} ${meta.name}: No certification data available`);
     }
 
     // If rating is PG-13 or lower, exclude NR content as it could be inappropriate
@@ -103,7 +103,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
   const afterCount = filteredMetas.length;
   const filterTime = performance.now() - filterStartTime;
   if (beforeCount !== afterCount) {
-    logger.info(`Age rating filter (StremThru): filtered out ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
+    logger.info(`[AgeRating] Filtered out ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
   }
 
   return filteredMetas;
@@ -133,13 +133,13 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       return { metas: tmdbResults };
     }
     else if (id.startsWith('stremthru.')) {
-      logger.debug(`Routing to StremThru catalog handler for id: ${id}`);
-      const stremthruResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      logger.debug(`Routing to External Addon catalog handler for id: ${id}`);
+      const stremthruResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: stremthruResults };
     }
     else if (id.startsWith('custom.')) {
-      logger.debug(`Routing to Custom Manifest catalog handler for id: ${id}`);
-      const customResults = await getStremThruCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      logger.debug(`Routing to External Addon catalog handler for id: ${id}`);
+      const customResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: customResults };
     }
     else if (id.startsWith('trakt.')) {
@@ -1534,18 +1534,18 @@ function findProvider(providerId: string): any {
   return provider;
 }
 
-async function getStremThruCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
+async function getExternalAddonCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
   try {
-    logger.info(`[✨ StremThru] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
+    logger.info(`[External Addon] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
 
     const userCatalog = config.catalogs?.find(c => c.id === catalogId && c.type === type);
     if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
-      logger.error(`[✨ StremThru] No source URL found for catalog: ${catalogId}`);
+      logger.error(`[External Addon] No source URL found for catalog: ${catalogId}`);
       return [];
     }
 
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
-    logger.debug(`[✨ StremThru] Using catalog URL: ${catalogUrl}`);
+    logger.debug(`[External Addon] Using catalog URL: ${catalogUrl}`);
 
     const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
     const stremThruBatchSize = userCatalog.pageSize || 100;
@@ -1569,13 +1569,13 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
             loaded = true;
           }
         } catch (err: any) {
-          logger.warn(`[✨ StremThru] Failed to load cursor: ${err.message}`);
+          logger.warn(`[External Addon] Failed to load cursor: ${err.message}`);
         }
       }
       if (!loaded) {
         // Cursor expired/missing — approximate from page number so we still advance
         cursor.upstreamOffset = (page - 1) * stremThruBatchSize;
-        logger.debug(`[✨ StremThru] No cursor state for page ${page}, starting at offset=${cursor.upstreamOffset}`);
+        logger.debug(`[External Addon] No cursor state for page ${page}, starting at offset=${cursor.upstreamOffset}`);
       }
     }
 
@@ -1591,12 +1591,12 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
       const cacheKey = `custom-batch:${catalogId}:${genre || 'all'}:skip=${skip}`;
 
       const batch = await cacheWrap(cacheKey, async () => {
-        logger.debug(`[✨ StremThru] Fetching fresh batch: skip=${skip}, genre=${genre || 'all'}`);
+        logger.debug(`[External Addon] Fetching fresh batch: skip=${skip}, genre=${genre || 'all'}`);
         return await fetchStremThruCatalog(catalogUrl, skip, genre);
       }, 300, { enableErrorCaching: true, maxRetries: 2 });
 
       if (!batch?.length) {
-        logger.debug(`[✨ StremThru] Upstream exhausted at skip=${skip} (iteration ${iterations})`);
+        logger.debug(`[External Addon] Upstream exhausted at skip=${skip} (iteration ${iterations})`);
         upstreamExhausted = true;
         break;
       }
@@ -1615,7 +1615,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
       }
 
       if (newItems.length === 0) {
-        logger.debug(`[✨ StremThru] Batch at skip=${skip}: ${batch.length} items, all duplicates`);
+        logger.debug(`[External Addon] Batch at skip=${skip}: ${batch.length} items, all duplicates`);
         continue;
       }
 
@@ -1627,7 +1627,7 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
         collected.push(meta);
         if (collected.length >= pageSize) break;
       }
-      logger.debug(`[✨ StremThru] Batch at skip=${skip}: ${batch.length} items, ${newItems.length} new after dedup, ${batchMetas.length} after filters (collected ${collected.length}/${pageSize})`);
+      logger.debug(`[External Addon] Batch at skip=${skip}: ${batch.length} items, ${newItems.length} new after dedup, ${batchMetas.length} after filters (collected ${collected.length}/${pageSize})`);
     }
 
     if (redis) {
@@ -1635,21 +1635,21 @@ async function getStremThruCatalog(type: string, catalogId: string, genre: strin
         cursor.seenIds = Array.from(seenSet).slice(-SEEN_IDS_CAP);
         await redis.set(cursorKey, JSON.stringify(cursor), 'EX', CURSOR_TTL_SECONDS);
       } catch (err: any) {
-        logger.warn(`[✨ StremThru] Failed to persist cursor: ${err.message}`);
+        logger.warn(`[External Addon] Failed to persist cursor: ${err.message}`);
       }
     }
 
     if (!collected.length) {
-      logger.warn(`[✨ StremThru] No items collected for catalog: ${catalogId} (page ${page}, exhausted=${upstreamExhausted})`);
+      logger.warn(`[External Addon] No items collected for catalog: ${catalogId} (page ${page}, exhausted=${upstreamExhausted})`);
       return [];
     }
 
-    logger.success(`[StremThru] Processed ${collected.length} items for catalog ${catalogId} (page ${page}, upstreamOffset=${cursor.upstreamOffset}, iterations=${iterations})`);
+    logger.success(`[External Addon] Processed ${collected.length} items for catalog ${catalogId} (page ${page}, upstreamOffset=${cursor.upstreamOffset}, iterations=${iterations})`);
     return collected;
 
   } catch (err: any) {
     const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
-    logger.error(`[StremThru] Error processing catalog ${catalogId}: ${err.message}`);
+    logger.error(`[External Addon] Error processing catalog ${catalogId}: ${err.message}`);
     logger.error(`Error at: ${errorLine}`);
     logger.error(`Full stack trace:`, err.stack);
     return [];

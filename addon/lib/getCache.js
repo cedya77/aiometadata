@@ -991,6 +991,17 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
     }
   }
+  if (isMDBListCatalog) {
+    options = {
+      ...options,
+      resultClassifier: (result, error, cacheKey) => {
+        if (error) return classifyResult(result, error, cacheKey);
+        const hasData = Array.isArray(result?.metas) && result.metas.length > 0;
+        if (!hasData) return { type: 'SKIP_CACHE', ttl: 0 };
+        return { type: 'SUCCESS', ttl: null };
+      },
+    };
+  }
   return await cacheWrap(key, method, cacheTTL, options);
   }
 
