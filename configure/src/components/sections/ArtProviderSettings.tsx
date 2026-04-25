@@ -169,7 +169,7 @@ export function ArtProviderSettings() {
                   Original Language Poster Fallback
                 </Label>
                 <p className="text-sm text-muted-foreground">
-                  When a poster isn't available in your display language, prefer the title's original language poster.
+                  Skip region-mismatched posters in your display language and fall back to English or the title's original language instead.
                 </p>
               </div>
               <Switch

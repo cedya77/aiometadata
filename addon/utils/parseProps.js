@@ -3226,8 +3226,10 @@ function selectTmdbImageByLang(images, config, key = 'iso_639_1', originalLangua
   if (targetExact) return targetExact;
 
   if (preferOrigLang) {
-    const orig = originalLanguage && images.find(img => img[key] === originalLanguage);
-    return orig || images.find(img => img[key] === 'en') || images.find(img => img[key] != null && img[key] !== 'xx') || images[0];
+    return images.find(img => img[key] === 'en')
+      || (originalLanguage && images.find(img => img[key] === originalLanguage))
+      || images.find(img => img[key] != null && img[key] !== 'xx')
+      || images[0];
   }
 
   return images.find(img => img[key] === targetLang)

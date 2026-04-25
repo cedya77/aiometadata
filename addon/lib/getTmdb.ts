@@ -32,7 +32,6 @@ function selectTmdbImageByLang(images: TmdbImage[] | undefined, config: UserConf
   if (!Array.isArray(images) || images.length === 0) return undefined;
 
   const englishArtOnly = (config.artProviders as any)?.englishArtOnly;
-  const preferOrigLang = (config.artProviders as any)?.originalLangFallback;
   const targetLang = englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
 
   let best: TmdbImage | null = null;
@@ -56,9 +55,6 @@ function selectTmdbImageByLang(images: TmdbImage[] | undefined, config: UserConf
      }
   }
 
-  if (preferOrigLang) {
-    return best || fallbackOriginal || fallbackEn || fallbackAnyLang || fallbackNull || undefined;
-  }
   return best || fallbackEn || fallbackOriginal || fallbackAnyLang || fallbackNull || undefined;
 }
 
