@@ -753,6 +753,68 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
 // --- Helper Functions ---
 
+function getCatalogContentScope(idOnly, catalogType, config) {
+  const animeProviderPrefixes = ['kitsu.', 'anilist.', 'anidb.'];
+  if (animeProviderPrefixes.some(p => idOnly.startsWith(p))) return 'anime';
+
+  if (idOnly.startsWith('mal.')) {
+    return config.mal?.useImdbIdForCatalogAndSearch ? (catalogType || 'mixed') : 'anime';
+  }
+
+  const simklAnimeCatalogs = ['simkl.trending.anime', 'simkl.calendar.anime'];
+  if (simklAnimeCatalogs.includes(idOnly) ||
+      idOnly.startsWith('simkl.watchlist.anime.') ||
+      idOnly.startsWith('simkl.discover.anime.')) {
+    return 'anime';
+  }
+
+  if (idOnly === 'simkl.calendar') return 'mixed';
+
+  if (idOnly === 'mdblist.upnext') return 'series';
+  if (idOnly === 'mdblist.watchlist') return 'mixed';
+
+  if (idOnly.startsWith('letterboxd.')) return 'mixed';
+  if (idOnly === 'publicmetadb.upnext') return 'series';
+
+  if (catalogType === 'movie') return 'movie';
+  if (catalogType === 'series') return 'series';
+  return 'mixed';
+}
+
+function buildScopedProviderConfig(config, contentScope) {
+  if (contentScope === 'mixed') {
+    return {
+      providers: config.providers || {},
+      artProviders: config.artProviders || {},
+    };
+  }
+
+  const providers = {};
+  const artProviders = {};
+
+  if (contentScope === 'anime') {
+    providers.anime = config.providers?.anime;
+    providers.anime_id_provider = config.providers?.anime_id_provider;
+    artProviders.anime = config.artProviders?.anime;
+  } else if (contentScope === 'movie') {
+    providers.movie = config.providers?.movie;
+    artProviders.movie = config.artProviders?.movie;
+  } else if (contentScope === 'series') {
+    providers.series = config.providers?.series;
+    artProviders.series = config.artProviders?.series;
+    if (config.providers?.forceAnimeForDetectedImdb) {
+      providers.forceAnimeForDetectedImdb = true;
+      providers.anime = config.providers?.anime;
+      providers.anime_id_provider = config.providers?.anime_id_provider;
+      artProviders.anime = config.artProviders?.anime;
+    }
+  }
+
+  artProviders.englishArtOnly = config.artProviders?.englishArtOnly;
+
+  return { providers, artProviders };
+}
+
 async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
   let config;
@@ -801,23 +863,16 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const enableRatingPosters = catalogFromConfig?.enableRatingPosters !== false; // Default to true if not explicitly disabled
   const catalogHideWatchedTrakt = catalogFromConfig?.metadata?.hideWatchedTrakt;
 
-  // Create context-aware catalog config (only relevant parameters for catalogs)
+  const contentScope = getCatalogContentScope(idOnly, catalogType, config);
+  const scopedProviders = buildScopedProviderConfig(config, contentScope);
+
   const catalogConfig = {
-    // Language (affects all catalogs except MAL when MAL is the anime provider)
-    // MAL/Jikan doesn't return multilingual data, so language doesn't affect results
     ...(shouldExcludeLanguageForMAL ? {} : { language: config.language || 'en-US' }),
-    
-    // Provider settings (affect catalog content)
-    providers: config.providers || {},
-    artProviders: config.artProviders || {},
-    
-    // Content filtering (affects catalog results)
+    ...scopedProviders,
     sfw: config.sfw || false,
     includeAdult: config.includeAdult || false,
     ageRating: config.ageRating || null,
     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
-    displayAgeRating: config.displayAgeRating || false,
-
   };
 
   const isMDBListWatchlistOrUpNext = idOnly.startsWith('mdblist.watchlist') || idOnly === 'mdblist.upnext';
@@ -980,7 +1035,7 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const isUserScopedCatalog = isAuthCatalog || idOnly.includes('stremthru.') || idOnly.startsWith('custom.') || idOnly.startsWith('letterboxd.');
   const cacheKeyIdentifier = isAuthCatalog ? (config.sessionId || 'no-session') : (isUserScopedCatalog ? (userUUID || '') : '');
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
-  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
+  cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] scope:${contentScope} userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
   
   // Check if the catalog is already cached before calling cacheWrap
   // so we can log the full config detail on HITs (cacheWrap only logs the key)
@@ -1002,7 +1057,28 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       },
     };
   }
-  return await cacheWrap(key, method, cacheTTL, options);
+  const result = await cacheWrap(key, method, cacheTTL, options);
+
+  if (result?.metas?.length) {
+    const displayAgeRating = config.displayAgeRating || false;
+    for (const meta of result.metas) {
+      const cert = meta.app_extras?.certification;
+      if (!cert) continue;
+      const hasCertLink = meta.links?.some(l => l.name === cert && l.category === 'Genres');
+      if (displayAgeRating && !hasCertLink) {
+        if (!Array.isArray(meta.links)) meta.links = [];
+        const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id;
+        const url = imdbId
+          ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
+          : `https://www.themoviedb.org/movie/${meta.id}`;
+        meta.links.unshift({ name: cert, category: 'Genres', url });
+      } else if (!displayAgeRating && hasCertLink) {
+        meta.links = meta.links.filter(l => !(l.name === cert && l.category === 'Genres'));
+      }
+    }
+  }
+
+  return result;
   }
 
 /**
