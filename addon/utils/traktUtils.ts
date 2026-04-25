@@ -1,5 +1,6 @@
 import { httpGet, httpPost } from "./httpClient.js";
 import { getMeta } from "../lib/getMeta.js";
+import { mapWithLimit } from "./concurrency.js";
 import { cacheWrapMetaSmart, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
@@ -2011,17 +2012,15 @@ async function parseTraktItems(
   
   const getMetaTimings: number[] = [];
   
-  const metas = await Promise.all(
-    filteredItems.map(async (item: TraktListItem, index: number) => {
+  const metas = await mapWithLimit(filteredItems, async (item: TraktListItem, index: number) => {
       const itemStart = Date.now();
       try {
-        // Get the media object based on type
         const media = item.movie || item.show;
         if (!media) {
           logger.warn(`Trakt item missing media object:`, item);
           return null;
         }
-        
+
         const isUpNext = !!item.upNextEpisode;
         const hasUnwatchedList = Array.isArray((item as any).unwatchedEpisodes) && (item as any).unwatchedEpisodes.length > 0;
         const upNextEpisode = item.upNextEpisode;
@@ -2161,9 +2160,8 @@ async function parseTraktItems(
         logger.error(`Error getting meta for Trakt item:`, error.message);
         return null;
       }
-    })
-  );
-  
+    });
+
   const validMetas = metas.filter(Boolean);
   const totalParseTime = Date.now() - parseStart;
   const avgGetMetaTime = getMetaTimings.length > 0 ? Math.round(getMetaTimings.reduce((a, b) => a + b, 0) / getMetaTimings.length) : 0;

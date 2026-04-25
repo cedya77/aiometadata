@@ -505,6 +505,16 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 - **Example**: `MAX_CONCURRENT_REQUESTS=5`
 - **Note**: Adjust based on your server capacity and API limits
 
+### `META_CONCURRENCY`
+- **Default**: Unlimited
+- **Description**: Maximum number of concurrent `getMeta()` calls per catalog request. Each catalog page can trigger 20-50 simultaneous meta fetches; on public instances with many active users, this can spike memory usage. Set to 20-30 to cap peak heap usage while keeping response times fast. Cached items resolve instantly regardless of this limit.
+- **Example**: `META_CONCURRENCY=25`
+
+### `HEAP_LOG_INTERVAL_MIN`
+- **Default**: `0` (disabled)
+- **Description**: Periodically logs heap usage and in-memory cache sizes to the console. Value is the interval in minutes. Useful for monitoring memory on public instances.
+- **Example**: `HEAP_LOG_INTERVAL_MIN=30`
+
 ### `REQUEST_TIMEOUT`
 - **Default**: `8000`
 - **Description**: Request timeout in milliseconds

@@ -40,6 +40,27 @@ class DashboardAPI {
       .catch((err) => {
         logger.error("Failed to initialize uptime:", err);
       });
+
+    const heapLogInterval = parseInt(process.env.HEAP_LOG_INTERVAL_MIN || '0', 10);
+    if (heapLogInterval > 0) {
+      this._heapLogTimer = setInterval(() => {
+        try {
+          const profile = this.getHeapProfile();
+          const mb = (b) => `${Math.round(b / 1024 / 1024)}MB`;
+          const p = profile.process;
+          const lines = [
+            `[Heap] rss=${mb(p.rss)} heapUsed=${mb(p.heapUsed)} heapTotal=${mb(p.heapTotal)} external=${mb(p.external)}`,
+          ];
+          for (const [name, stats] of Object.entries(profile.caches)) {
+            lines.push(`[Heap]   ${name}: ${JSON.stringify(stats)}`);
+          }
+          lines.forEach(l => logger.info(l));
+        } catch (err) {
+          logger.warn(`[Heap] Failed to log heap profile: ${err.message}`);
+        }
+      }, heapLogInterval * 60 * 1000);
+      this._heapLogTimer.unref();
+    }
   }
 
   // Get system overview data

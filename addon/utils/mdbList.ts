@@ -2,6 +2,7 @@ import { httpGet, httpPost } from "./httpClient.js";
 import { resolveAllIds } from "../lib/id-resolver.js";
 const buildInfo = require('../lib/buildInfo');
 import { getMeta } from "../lib/getMeta.js";
+import { mapWithLimit } from "./concurrency.js";
 import { cacheWrapMetaSmart, cacheWrapMDBListGenres, cacheWrapGlobal } from "../lib/getCache.js";
 import { UserConfig } from "../types/index.js";
 const consola = require('consola');
@@ -707,18 +708,15 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
     return true;
   });
  
-  const metas = await Promise.all(validItems
-
-    .map(async (item: any) => {
+  const metas = await mapWithLimit(validItems, async (item: any) => {
       try {
         let stremioId = `tmdb:${item.id}`;
         const mdblistType = item.mediatype === 'movie' ? 'movie' : 'series';
-        
-        // Use getMeta with cacheWrapMetaSmart to get the full meta object with caching
+
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
           return await getMeta(mdblistType, language, stremioId, config, config.userUUID, includeVideos);
         }, undefined, {enableErrorCaching: true, maxRetries: 2}, mdblistType as any, includeVideos);
-        
+
         if (result && result.meta) {
           return result.meta;
         }
@@ -727,7 +725,7 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
         logger.error(`Error getting meta for item ${item.id}:`, error.message);
         return null;
       }
-    }));
+    });
 
   return metas.filter(Boolean);
 }
@@ -1352,19 +1350,17 @@ async function parseMDBListUpNextItems(
   
   const getMetaTimings: number[] = [];
   
-  const metas = await Promise.all(
-    items.map(async (item: any, index: number) => {
+  const metas = await mapWithLimit(items, async (item: any, index: number) => {
       const itemStart = Date.now();
       try {
         const show = item.show;
         const nextEpisode = item.next_episode;
-        
+
         if (!show || !nextEpisode) {
           logger.warn(`[MDBList Up Next] Item missing show or next_episode:`, item);
           return null;
         }
-        
-        // Get stremioId from available IDs (prefer tmdb)
+
         let stremioId: string;
         if (show.ids?.tmdb) {
           stremioId = `tmdb:${show.ids.tmdb}`;
@@ -1374,43 +1370,39 @@ async function parseMDBListUpNextItems(
           logger.warn(`[MDBList Up Next] Show has no usable ID:`, show.ids);
           return null;
         }
-        
-        // Create unique cache key that includes the next-episode identifier
+
         const epIdPart = `S${nextEpisode.season}E${nextEpisode.episode}`;
         const cacheId = `mdblist_upnext_${stremioId}_${epIdPart}`;
-        
+
         const getMetaStart = Date.now();
         const result = await cacheWrapMetaSmart(
           config.userUUID,
           cacheId,
           async () => {
             const metaResult = await getMeta('series', language, stremioId, config, config.userUUID, true);
-            
+
             if (metaResult?.meta?.videos && Array.isArray(metaResult.meta.videos)) {
               const upNextVideo = metaResult.meta.videos.find((v: any) =>
                 v.season === nextEpisode.season &&
                 v.episode === nextEpisode.episode
               );
-              
+
               if (upNextVideo) {
                 metaResult.meta.videos = [upNextVideo];
                 metaResult.meta.behaviorHints = metaResult.meta.behaviorHints || {};
                 metaResult.meta.behaviorHints.defaultVideoId = upNextVideo.id;
-                
-                // Check if user wants to use show poster or episode thumbnail
+
                 if (!useShowPoster) {
-                  // Prefer episode still from API, fallback to video thumbnail
                   if (nextEpisode.still) {
-                    metaResult.meta.poster = nextEpisode.still.startsWith('http') 
-                      ? nextEpisode.still 
+                    metaResult.meta.poster = nextEpisode.still.startsWith('http')
+                      ? nextEpisode.still
                       : `https://image.tmdb.org/t/p/w500${nextEpisode.still}`;
                   } else if (upNextVideo.thumbnail) {
                     metaResult.meta.poster = upNextVideo.thumbnail;
                   }
-                  
+
                   if (metaResult.meta.poster) {
                     metaResult.meta.posterShape = 'landscape';
-                    // Handle fallback URL extraction (similar to Trakt)
                     if (metaResult.meta.poster.includes('/poster/') && metaResult.meta.poster.includes('fallback=')) {
                       try {
                         const url = new URL(metaResult.meta.poster);
@@ -1419,22 +1411,20 @@ async function parseMDBListUpNextItems(
                           metaResult.meta.poster = decodeURIComponent(fallback);
                         }
                       } catch (e) {
-                        // Keep original if URL parsing fails
                         logger.warn(`[MDBList Up Next] Failed to extract fallback poster URL: ${e.message}`);
                       }
                     }
                     metaResult.meta._rawPosterUrl = null;
                   }
                 }
-                // If useShowPoster is true, keep the original show poster
-                
+
                 metaResult.meta.name = `${metaResult.meta.name} - S${nextEpisode.season}E${nextEpisode.episode}`;
                 metaResult.meta.id = cacheId;
               } else {
                 logger.warn(`[MDBList Up Next] Episode S${nextEpisode.season}E${nextEpisode.episode} not found in videos for ${metaResult.meta.name}`);
               }
             }
-            
+
             return metaResult;
           },
           undefined,
@@ -1443,10 +1433,10 @@ async function parseMDBListUpNextItems(
           true,
           useShowPoster
         );
-        
+
         const getMetaTime = Date.now() - getMetaStart;
         getMetaTimings.push(getMetaTime);
-        
+
         if (result && result.meta) {
           return result.meta;
         }
@@ -1455,8 +1445,7 @@ async function parseMDBListUpNextItems(
         logger.error(`[MDBList Up Next] Error getting meta for item:`, error.message);
         return null;
       }
-    })
-  );
+    });
   
   const validMetas = metas.filter(Boolean);
   const totalParseTime = Date.now() - parseStart;

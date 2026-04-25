@@ -8,6 +8,7 @@ import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, get
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 import { fetchResume, parseResumeItems, fetchListItems, parseListItems, fetchPickItems, parsePickItems } from "../utils/publicmetadbUtils.js";
+import { mapWithLimit } from "../utils/concurrency.js";
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
@@ -912,7 +913,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }
 
       const metaType = mediaType === 'movie' ? 'movie' : 'series';
-      const metas = await Promise.all(response.results.map(async (item: any) => {
+      const metas = await mapWithLimit(response.results, async (item: any) => {
         const stremioId = `tmdb:${item.id}`;
 
         try {
@@ -928,7 +929,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         }
 
         return null;
-      }));
+      });
 
       const validMetas = metas.filter(meta => meta !== null);
       logger.success(`[TMDB Discover] Processed ${validMetas.length} items for ${id}`);
