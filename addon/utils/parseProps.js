@@ -2460,10 +2460,9 @@ const tmdbMovieImagesInflight = new Map();
  * @param {object} config - User configuration
  * @returns {Promise<{poster: string|null, background: string|null, logo: string|null}>}
  */
-async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false) {
+async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false, originalLanguage = null) {
   if (!tmdbId) return { poster: null, background: null, logo: null };
-  
-  // Include language in cache key since results vary by language
+
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
@@ -2477,22 +2476,22 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false) {
   // Create the promise for this request
   const fetchPromise = (async () => {
     try {
-      // Single API call with proper language params to get user's language, English, and null images
-      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const langSet = new Set([langCode, 'en', 'null']);
+      if (originalLanguage) langSet.add(originalLanguage);
+      const imageLanguages = Array.from(langSet).join(',');
       const res = await tmdb.movieImages({ id: tmdbId, include_image_language: imageLanguages }, config);
-      
+
       if (!res) {
         return { poster: null, background: null, logo: null };
       }
-      
-      // Extract poster with language preference
-      const posterImg = selectTmdbImageByLang(res.posters, config);
-      const poster = posterImg?.file_path 
+
+      const posterImg = selectTmdbImageByLang(res.posters, config, 'iso_639_1', originalLanguage);
+      const poster = posterImg?.file_path
         ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
         : null;
       let backgroundImg;
       if (isLandscape) {
-        backgroundImg = selectTmdbImageByLang(res.backdrops, config);
+        backgroundImg = selectTmdbImageByLang(res.backdrops, config, 'iso_639_1', originalLanguage);
       }
       else {
       backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
@@ -2503,9 +2502,8 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false) {
       const background = backgroundImg?.file_path
         ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
         : null;
-      
-      // Extract logo with language preference
-      const logoImg = selectTmdbImageByLang(res.logos, config);
+
+      const logoImg = selectTmdbImageByLang(res.logos, config, 'iso_639_1', originalLanguage);
       const logo = logoImg?.file_path
         ? `https://image.tmdb.org/t/p/original${logoImg.file_path}`
         : null;
@@ -2529,7 +2527,7 @@ async function getTmdbMovieArtBatch(tmdbId, config, isLandscape = false) {
 /**
  * Get movie poster with art provider preference
  */
-async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config, isLandscape = false) {
+async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl, originalLanguage }, config, isLandscape = false) {
   const artProvider = resolveArtProvider('movie', 'poster', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -2583,7 +2581,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbMovieArtBatch(tmdbId, config, isLandscape);
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config, isLandscape, originalLanguage);
         if (batchArt.poster) {
           return batchArt.poster;
         }
@@ -2592,7 +2590,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config, isLandscape);
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config, isLandscape, originalLanguage);
           if (batchArt.poster) {
             return batchArt.poster;
           }
@@ -2619,7 +2617,7 @@ async function getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPo
 /**
  * Get movie background with art provider preference
  */
-async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config) {
+async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl, originalLanguage }, config) {
   const artProvider = resolveArtProvider('movie', 'background', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -2674,7 +2672,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbMovieArtBatch(tmdbId, config);
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config, false, originalLanguage);
         if (batchArt.background) {
           return batchArt.background;
         }
@@ -2683,7 +2681,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
         if(!tvdbId) return fallbackBackgroundUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config);
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config, false, originalLanguage);
           if (batchArt.background) {
             return batchArt.background;
           }
@@ -2704,7 +2702,7 @@ async function getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallba
 /**
  * Get movie logo with art provider preference
  */
-async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl }, config) {
+async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl, originalLanguage }, config) {
   const artProvider = resolveArtProvider('movie', 'logo', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -2758,7 +2756,7 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbMovieArtBatch(tmdbId, config);
+        const batchArt = await getTmdbMovieArtBatch(tmdbId, config, false, originalLanguage);
         if (batchArt.logo) {
           return batchArt.logo;
         }
@@ -2767,7 +2765,7 @@ async function getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogo
         if(!tvdbId) return fallbackLogoUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'movie', config);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config);
+          const batchArt = await getTmdbMovieArtBatch(mappedIds.tmdbId, config, false, originalLanguage);
           if (batchArt.logo) {
             return batchArt.logo;
           }
@@ -2801,10 +2799,9 @@ const tmdbTvImagesInflight = new Map();
  * @param {object} config - User configuration
  * @returns {Promise<{poster: string|null, background: string|null, logo: string|null}>}
  */
-async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
+async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false, originalLanguage = null) {
   if (!tmdbId) return { poster: null, background: null, logo: null };
-  
-  // Include language in cache key since results vary by language
+
   const langCode = config.language?.split('-')[0] || 'en';
   const englishOnly = config.artProviders?.englishArtOnly ? '1' : '0';
   const landscape = isLandscape ? '1' : '0';
@@ -2818,23 +2815,23 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
   // Create the promise for this request
   const fetchPromise = (async () => {
     try {
-      // Single API call with proper language params to get user's language, English, and null images
-      const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
+      const langSet = new Set([langCode, 'en', 'null']);
+      if (originalLanguage) langSet.add(originalLanguage);
+      const imageLanguages = Array.from(langSet).join(',');
       const res = await tmdb.tvImages({ id: tmdbId, include_image_language: imageLanguages }, config);
-      
+
       if (!res) {
         return { poster: null, background: null, logo: null };
       }
-      
-      // Extract poster with language preference
-      const posterImg = selectTmdbImageByLang(res.posters, config);
-      const poster = posterImg?.file_path 
+
+      const posterImg = selectTmdbImageByLang(res.posters, config, 'iso_639_1', originalLanguage);
+      const poster = posterImg?.file_path
         ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${posterImg.file_path}`
         : null;
-      
+
       let backgroundImg;
       if (isLandscape) {
-        backgroundImg = selectTmdbImageByLang(res.backdrops, config);
+        backgroundImg = selectTmdbImageByLang(res.backdrops, config, 'iso_639_1', originalLanguage);
       }
       else {
       backgroundImg = res.backdrops?.find(b => b.iso_639_1 === 'xx')
@@ -2845,9 +2842,8 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
       const background = backgroundImg?.file_path
         ? `https://image.tmdb.org/t/p/original${backgroundImg.file_path}`
         : null;
-      
-      // Extract logo with language preference
-      const logoImg = selectTmdbImageByLang(res.logos, config);
+
+      const logoImg = selectTmdbImageByLang(res.logos, config, 'iso_639_1', originalLanguage);
       const logo = logoImg?.file_path
         ? `https://image.tmdb.org/t/p/original${logoImg.file_path}`
         : null;
@@ -2871,7 +2867,7 @@ async function getTmdbSeriesArtBatch(tmdbId, config, isLandscape = false) {
 /**
  * Get series poster with art provider preference
  */
-async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl }, config) {
+async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackPosterUrl, originalLanguage }, config) {
   const artProvider = resolveArtProvider('series', 'poster', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -2921,7 +2917,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config);
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config, false, originalLanguage);
         if (batchArt.poster) {
           return batchArt.poster;
         }
@@ -2930,7 +2926,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
         if(!tvdbId) return fallbackPosterUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config);
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config, false, originalLanguage);
           if (batchArt.poster) {
             return batchArt.poster;
           }
@@ -2956,7 +2952,7 @@ async function getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider, fallbackP
 /**
  * Get series background with art provider preference
  */
-async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl }, config, isLandscape = false) {
+async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallbackBackgroundUrl, originalLanguage }, config, isLandscape = false) {
   const artProvider = resolveArtProvider('series', 'background', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -3009,7 +3005,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config, isLandscape);
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config, isLandscape, originalLanguage);
         if (batchArt.background) {
           return batchArt.background;
         }
@@ -3017,7 +3013,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
       else {
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config, null, ['tmdb']);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config, isLandscape);
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config, isLandscape, originalLanguage);
           if (batchArt.background) {
             return batchArt.background;
           }
@@ -3039,7 +3035,7 @@ async function getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider, fallb
 /**
  * Get series logo with art provider preference
  */
-async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl }, config) {
+async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLogoUrl, originalLanguage }, config) {
   const artProvider = resolveArtProvider('series', 'logo', config);
   
   if (artProvider === 'tvdb' && metaProvider != 'tvdb') {
@@ -3096,7 +3092,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
   if (artProvider === 'tmdb' && metaProvider != 'tmdb') {
     try {
       if(tmdbId) {
-        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config);
+        const batchArt = await getTmdbSeriesArtBatch(tmdbId, config, false, originalLanguage);
         if (batchArt.logo) {
           return batchArt.logo;
         }
@@ -3105,7 +3101,7 @@ async function getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider, fallbackLog
         if(!tvdbId) return fallbackLogoUrl;
         const mappedIds = await resolveAllIds(`tvdb:${tvdbId}`, 'series', config);
         if(mappedIds.tmdbId) {
-          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config);
+          const batchArt = await getTmdbSeriesArtBatch(mappedIds.tmdbId, config, false, originalLanguage);
           if (batchArt.logo) {
             return batchArt.logo;
           }
@@ -3219,17 +3215,17 @@ function convertAnilistBannerToBackground(bannerUrl, options = {}) {
 }
 
 // Helper for language fallback selection from TMDB images
-function selectTmdbImageByLang(images, config, key = 'iso_639_1') {
+function selectTmdbImageByLang(images, config, key = 'iso_639_1', originalLanguage = null) {
   if (!Array.isArray(images) || images.length === 0) return undefined;
-  
-  // If englishArtOnly is enabled, force English language selection
+
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
   const targetCountry = config.language?.split('-')[1]?.toUpperCase() || 'US';
-  // Sort by vote_average descending
   return (
     images.find(img => img[key] === targetLang && img.iso_3166_1 === targetCountry) ||
     images.find(img => img[key] === targetLang) ||
     images.find(img => img[key] === 'en') ||
+    (originalLanguage && images.find(img => img[key] === originalLanguage)) ||
+    images.find(img => img[key] != null && img[key] !== 'xx') ||
     images[0]
   );
 }

@@ -28,28 +28,34 @@ interface TmdbImage {
  * @param {object} config - The user's configuration object
  * @returns {object|undefined} The best image object, or undefined if none
  */
-function selectTmdbImageByLang(images: TmdbImage[] | undefined, config: UserConfig): TmdbImage | undefined {
+function selectTmdbImageByLang(images: TmdbImage[] | undefined, config: UserConfig, originalLanguage?: string | null): TmdbImage | undefined {
   if (!Array.isArray(images) || images.length === 0) return undefined;
 
   const englishArtOnly = (config.artProviders as any)?.englishArtOnly;
   const targetLang = englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
-  
+
   let best: TmdbImage | null = null;
   let fallbackEn: TmdbImage | null = null;
-  let fallbackAny: TmdbImage | null = null;
+  let fallbackOriginal: TmdbImage | null = null;
+  let fallbackAnyLang: TmdbImage | null = null;
+  let fallbackNull: TmdbImage | null = null;
 
   for (const img of images) {
-     if (img.iso_639_1 === targetLang) {
+     const lang = img.iso_639_1;
+     if (lang === targetLang) {
          if (!best || (img.vote_average > best.vote_average)) best = img;
-     } else if (img.iso_639_1 === 'en') {
+     } else if (lang === 'en') {
          if (!fallbackEn || (img.vote_average > fallbackEn.vote_average)) fallbackEn = img;
+     } else if (originalLanguage && lang === originalLanguage) {
+         if (!fallbackOriginal || (img.vote_average > fallbackOriginal.vote_average)) fallbackOriginal = img;
+     } else if (lang === null || lang === 'xx') {
+         if (!fallbackNull || (img.vote_average > fallbackNull.vote_average)) fallbackNull = img;
      } else {
-         // Keep the highest rated 'any' image as a last resort
-         if (!fallbackAny || (img.vote_average > fallbackAny.vote_average)) fallbackAny = img;
+         if (!fallbackAnyLang || (img.vote_average > fallbackAnyLang.vote_average)) fallbackAnyLang = img;
      }
   }
-  
-  return best || fallbackEn || fallbackAny || undefined;
+
+  return best || fallbackEn || fallbackOriginal || fallbackAnyLang || fallbackNull || undefined;
 }
 
 // TMDB dispatcher configuration

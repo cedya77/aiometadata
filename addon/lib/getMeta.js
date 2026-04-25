@@ -1245,6 +1245,7 @@ async function ensureLatinTmdbCredits(mediaType, tmdbId, existingCredits, config
 async function buildTmdbMovieResponse(stremioId, movieData, language, config, userUUID, enrichmentData = {}, isAnime = false) {
   const { allIds } = enrichmentData;
   const { id: tmdbId, title, external_ids, poster_path, backdrop_path, images, } = movieData;
+  const originalLanguage = movieData.original_language || null;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
   const castCount = config.castCount;
@@ -1253,17 +1254,16 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   if (!credits) {
     credits = { cast: [], crew: [] };
   }
-  // Get artwork based on art provider preference
-  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config);
+  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config, 'iso_639_1', originalLanguage);
   const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === langCode)
     || images?.backdrops?.[0];
-  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config);
+  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config, 'iso_639_1', originalLanguage);
   const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedLandscapePoster?.file_path}` : null;
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
+  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config, 'iso_639_1', originalLanguage);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
 
   let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
@@ -1277,11 +1277,11 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
     [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
-      Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
-      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
-      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config),
+      Utils.getMoviePoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl, originalLanguage }, config),
+      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl, originalLanguage }, config),
+      Utils.getMovieLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl, originalLanguage }, config),
       getImdbRating(imdbId, 'movie'),
-      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbLandscapePosterUrl }, config, true)
+      Utils.getMovieBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbLandscapePosterUrl, originalLanguage }, config, true)
   ]);
   }
   
@@ -1380,6 +1380,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
 
 async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, userUUID, enrichmentData = {}, isAnime = false, includeVideos = true) {
   const { id: tmdbId, name, external_ids, poster_path, backdrop_path, videos: trailers, seasons, images } = seriesData;
+  const originalLanguage = seriesData.original_language || null;
   const { allIds } = enrichmentData;
   const imdbId = allIds?.imdbId;
   const tvdbId = allIds?.tvdbId;
@@ -1399,22 +1400,20 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   }
   const langCode = language.split('-')[0];
 
-  // Get artwork based on art provider preference
-  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config);
+  const selectedPoster = Utils.selectTmdbImageByLang(images?.posters, config, 'iso_639_1', originalLanguage);
   const tmdbPosterUrl = selectedPoster?.file_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${selectedPoster?.file_path}` : poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${poster_path}` : `${host}/missing_poster.png`;
   const selectedBg = images?.backdrops?.find(b => b.iso_639_1 === 'xx')
     || images?.backdrops?.find(b => b.iso_639_1 === null)
     || images?.backdrops?.find(b => b.iso_639_1 === langCode)
     || images?.backdrops?.[0];
-  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config);
+  const selectedLandscapePoster = Utils.selectTmdbImageByLang(images?.backdrops, config, 'iso_639_1', originalLanguage);
   const tmdbLandscapePosterUrl = selectedLandscapePoster?.file_path ? `https://image.tmdb.org/t/p/original${selectedLandscapePoster?.file_path}` : null;
   const tmdbBackgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : backdrop_path ? `https://image.tmdb.org/t/p/original${backdrop_path}` : null;
-  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config);
+  const selectedLogo = Utils.selectTmdbImageByLang(images?.logos, config, 'iso_639_1', originalLanguage);
   let tmdbLogoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : imdbId ? imdb.getLogoFromImdb(imdbId) : null;
   let poster, background, logoUrl, imdbRatingValue, landscapePosterUrl;
 
   const animeIdProviders = ['mal', 'anilist', 'kitsu', 'anidb'];
-  // check if stremioId starts with one of the animeIdProviders
   if (isAnime && animeIdProviders.some(provider => stremioId.startsWith(provider))) {
     const artwork = await getAnimeArtwork(allIds, config, tmdbPosterUrl, tmdbBackgroundUrl, 'series');
     poster = artwork.poster;
@@ -1424,11 +1423,11 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     landscapePosterUrl = artwork.landscapePosterUrl;
   } else {
     [poster, background, logoUrl, imdbRatingValue, landscapePosterUrl] = await Promise.all([
-      Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl }, config),
-      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl }, config),
-      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl }, config),
+      Utils.getSeriesPoster({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackPosterUrl: tmdbPosterUrl, originalLanguage }, config),
+      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbBackgroundUrl, originalLanguage }, config),
+      Utils.getSeriesLogo({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackLogoUrl: tmdbLogoUrl, originalLanguage }, config),
       getImdbRating(imdbId, 'series'),
-      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbLandscapePosterUrl }, config, true)
+      Utils.getSeriesBackground({ tmdbId, tvdbId, imdbId, metaProvider: 'tmdb', fallbackBackgroundUrl: tmdbLandscapePosterUrl, originalLanguage }, config, true)
   ]);
   }
   // log arts 

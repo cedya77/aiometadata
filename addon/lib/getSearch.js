@@ -581,13 +581,15 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         }
 
         let logoUrl; let backgroundUrl; let posterUrl;
-        const langCode = language.split('-')[0]; 
-        const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-        // OPTIMIZATION: Fetch details, external_ids, certifications, and keywords in ONE call
+        const langCode = language.split('-')[0];
+        const originalLanguage = media.original_language || null;
+        const langSet = new Set([langCode, 'en', 'null']);
+        if (originalLanguage) langSet.add(originalLanguage);
+        const imageLanguages = Array.from(langSet).join(',');
         const details = mediaType === 'movie'
             ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords, release_dates", include_image_language: imageLanguages }, config)
             : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
-        
+
         let allIds = {
             tmdbId: details.id,
             imdbId: details.external_ids?.imdb_id || details.imdb_id,
@@ -598,8 +600,8 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
           || details.images?.backdrops?.find(b => b.iso_639_1 === null)
           || details.images?.backdrops?.find(b => b.iso_639_1 === language.split('-')[0])
           || details.images?.backdrops?.[0];
-        const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
-        const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
+        const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config, 'iso_639_1', originalLanguage);
+        const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config, 'iso_639_1', originalLanguage);
         const fallbackImage = `${host}/missing_poster.png`;
         logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo?.file_path}` : null;
         backgroundUrl = selectedBg?.file_path ? `https://image.tmdb.org/t/p/original${selectedBg?.file_path}` : details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null;
@@ -990,21 +992,24 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
     
     // Step 3: Immediately enrich the matched result (no separate phase)
     const tmdbId = match.id;
+    const originalLanguage = match.original_language || null;
     const langCode = language.split('-')[0];
-    const imageLanguages = Array.from(new Set([langCode, 'en', 'null'])).join(',');
-    
+    const langSet = new Set([langCode, 'en', 'null']);
+    if (originalLanguage) langSet.add(originalLanguage);
+    const imageLanguages = Array.from(langSet).join(',');
+
     const details = type === 'movie'
-      ? await moviedb.movieInfo({ 
-          id: tmdbId, 
-          language, 
+      ? await moviedb.movieInfo({
+          id: tmdbId,
+          language,
           append_to_response: "external_ids,release_dates,images,keywords",
-          include_image_language: imageLanguages 
+          include_image_language: imageLanguages
         }, config)
-      : await moviedb.tvInfo({ 
-          id: tmdbId, 
-          language, 
+      : await moviedb.tvInfo({
+          id: tmdbId,
+          language,
           append_to_response: "external_ids,content_ratings,images,keywords",
-          include_image_language: imageLanguages 
+          include_image_language: imageLanguages
         }, config);
     
     // --- Safety Filter: Keyword Blacklist ---
@@ -1038,8 +1043,8 @@ async function matchAndEnrichFromTMDB(suggestion, language, config) {
       || details.images?.backdrops?.find(b => b.iso_639_1 === null)
       || details.images?.backdrops?.find(b => b.iso_639_1 === langCode)
       || details.images?.backdrops?.[0];
-    const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config);
-    const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config);
+    const selectedLogo = Utils.selectTmdbImageByLang(details.images?.logos, config, 'iso_639_1', originalLanguage);
+    const selectedPoster = Utils.selectTmdbImageByLang(details.images?.posters, config, 'iso_639_1', originalLanguage);
     
     const fallbackImage = `${host}/missing_poster.png`;
     const logoUrl = selectedLogo?.file_path ? `https://image.tmdb.org/t/p/original${selectedLogo.file_path}` : null;
