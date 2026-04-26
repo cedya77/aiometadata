@@ -816,6 +816,262 @@ function buildScopedProviderConfig(config, contentScope) {
   return { providers, artProviders };
 }
 
+function getMetaCacheContext(config, metaId, type, useShowPoster = false) {
+  const [prefix] = metaId.split(':');
+  const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
+  const isAnime = type === 'anime' || animePrefixes.includes(prefix);
+  const contentType = isAnime ? 'anime' : type;
+
+  const base = {
+    language: config.language || 'en-US',
+    contentType: contentType || 'unknown',
+  };
+
+  const artLanguagePolicy = {
+    englishArtOnly: config.artProviders?.englishArtOnly || false,
+    originalLangFallback: config.artProviders?.originalLangFallback || false,
+  };
+
+  const context = {
+    prefix,
+    isAnime,
+    base,
+    artLanguagePolicy,
+    metaProvider: null,
+    artProvider: {},
+    providerOptions: {},
+    videoOptions: {},
+    animeIdProvider: config.providers?.anime_id_provider || 'imdb',
+    useShowPoster,
+  };
+
+  if (isAnime) {
+    context.metaProvider = config.providers?.anime || 'mal';
+    context.artProvider = {
+      poster: resolveArtProvider('anime', 'poster', config),
+      background: resolveArtProvider('anime', 'background', config),
+      logo: resolveArtProvider('anime', 'logo', config),
+    };
+    context.videoOptions = {
+      mal: {
+        skipFiller: config.mal?.skipFiller || false,
+        skipRecap: config.mal?.skipRecap || false,
+        allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
+        useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false,
+      },
+    };
+  } else if (type === 'movie') {
+    context.metaProvider = config.providers?.movie || 'tmdb';
+    context.artProvider = {
+      poster: resolveArtProvider('movie', 'poster', config),
+      background: resolveArtProvider('movie', 'background', config),
+      logo: resolveArtProvider('movie', 'logo', config),
+    };
+    context.providerOptions = {
+      tmdb: {
+        scrapeImdb: config.tmdb?.scrapeImdb || false,
+        forceLatinCastNames: config.tmdb?.forceLatinCastNames || false,
+      },
+    };
+  } else if (type === 'series') {
+    context.metaProvider = config.providers?.series || 'tvdb';
+    context.artProvider = {
+      poster: resolveArtProvider('series', 'poster', config),
+      background: resolveArtProvider('series', 'background', config),
+      logo: resolveArtProvider('series', 'logo', config),
+    };
+    context.providerOptions = {
+      tmdb: {
+        scrapeImdb: config.tmdb?.scrapeImdb || false,
+        forceLatinCastNames: config.tmdb?.forceLatinCastNames || false,
+      },
+      forceAnimeForDetectedImdb: config.providers?.forceAnimeForDetectedImdb || false,
+    };
+    context.videoOptions = {
+      tvdbSeasonType: config.tvdbSeasonType || 'default',
+      forceAnimeForDetectedImdb: config.providers?.forceAnimeForDetectedImdb || false,
+    };
+  }
+
+  return context;
+}
+
+function hashProfile(profile) {
+  return hashConfig(stableStringify(profile));
+}
+
+function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = false, userUUID = '' }) {
+  const ctx = getMetaCacheContext(config, metaId, type, useShowPoster);
+  const commonProvider = {
+    ...ctx.base,
+    metaProvider: ctx.metaProvider,
+    animeIdProvider: ctx.animeIdProvider,
+    providerOptions: ctx.providerOptions,
+  };
+  const artCommon = {
+    ...ctx.base,
+    metaProvider: ctx.metaProvider,
+    artLanguagePolicy: ctx.artLanguagePolicy,
+    providerOptions: ctx.providerOptions,
+  };
+
+  const basicProfile = {
+    ...commonProvider,
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
+  };
+  const posterProfile = {
+    ...artCommon,
+    artProvider: ctx.artProvider.poster,
+    useShowPosterForUpNext: !!ctx.useShowPoster,
+  };
+  const backgroundProfile = {
+    ...artCommon,
+    artProvider: ctx.artProvider.background,
+  };
+  const logoProfile = {
+    ...artCommon,
+    artProvider: ctx.artProvider.logo,
+  };
+  const videosProfile = {
+    ...commonProvider,
+    videoOptions: ctx.videoOptions,
+  };
+  const creditsProfile = {
+    ...commonProvider,
+  };
+  const linksProfile = {
+    ...commonProvider,
+    castCount: config.castCount || 0,
+  };
+  const trailersProfile = {
+    ...commonProvider,
+  };
+  const extrasProfile = {
+    ...commonProvider,
+  };
+
+  return {
+    basic: `meta-basic:${hashProfile(basicProfile)}:${metaId}`,
+    poster: `meta-poster:${hashProfile(posterProfile)}:${metaId}`,
+    rawPoster: `meta-raw-poster:${hashProfile(posterProfile)}:${metaId}`,
+    background: `meta-background:${hashProfile(backgroundProfile)}:${metaId}`,
+    landscapePoster: `meta-landscape-poster:${hashProfile(backgroundProfile)}:${metaId}`,
+    logo: `meta-logo:${hashProfile(logoProfile)}:${metaId}`,
+    videos: `meta-videos:${hashProfile(videosProfile)}:${metaId}`,
+    cast: `meta-cast:${hashProfile(creditsProfile)}:${metaId}`,
+    director: `meta-director:${hashProfile(creditsProfile)}:${metaId}`,
+    writer: `meta-writer:${hashProfile(creditsProfile)}:${metaId}`,
+    links: `meta-links:user:${userUUID || 'anonymous'}:${hashProfile(linksProfile)}:${metaId}`,
+    trailers: `meta-trailers:${hashProfile(trailersProfile)}:${metaId}`,
+    extras: `meta-extras:${hashProfile(extrasProfile)}:${metaId}`,
+  };
+}
+
+function getBlurProxyPrefix() {
+  const host = process.env.HOST_NAME?.startsWith('http')
+    ? process.env.HOST_NAME
+    : `https://${process.env.HOST_NAME}`;
+  return `${host}/api/image/blur?url=`;
+}
+
+function unwrapBlurThumbnail(thumbnail) {
+  if (!thumbnail || typeof thumbnail !== 'string') return thumbnail;
+  const marker = '/api/image/blur?url=';
+  if (!thumbnail.includes(marker)) return thumbnail;
+  return decodeURIComponent(thumbnail.split(marker)[1] || '');
+}
+
+function canonicalizeVideosForCache(videos) {
+  if (!Array.isArray(videos)) return videos;
+  return videos.map(video => ({
+    ...video,
+    thumbnail: unwrapBlurThumbnail(video.thumbnail),
+  }));
+}
+
+function applyBlurThumbProjection(meta, config) {
+  if (!meta?.videos || !Array.isArray(meta.videos)) return meta;
+  const shouldBlur = !!config.blurThumbs;
+  const blurPrefix = getBlurProxyPrefix();
+  meta.videos = meta.videos.map(video => {
+    const rawThumbnail = unwrapBlurThumbnail(video.thumbnail);
+    if (!shouldBlur || !rawThumbnail || rawThumbnail.endsWith('/missing_thumbnail.png')) {
+      return { ...video, thumbnail: rawThumbnail };
+    }
+    return { ...video, thumbnail: `${blurPrefix}${encodeURIComponent(rawThumbnail)}` };
+  });
+  return meta;
+}
+
+function stripCertificationLinks(links, certification) {
+  if (!Array.isArray(links) || !certification) return links;
+  return links.filter(link => !(link?.name === certification && link?.category === 'Genres'));
+}
+
+function applyDisplayAgeRatingProjection(meta, config) {
+  const certification = meta?.app_extras?.certification;
+  if (!certification) return meta;
+  const links = Array.isArray(meta.links) ? stripCertificationLinks(meta.links, certification) : [];
+  if (config.displayAgeRating) {
+    const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id || meta._imdbId;
+    const tmdbPath = meta.type === 'series' ? 'tv' : 'movie';
+    const url = imdbId
+      ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
+      : `https://www.themoviedb.org/${tmdbPath}/${meta.id}`;
+    meta.links = [{ name: certification, category: 'Genres', url }, ...links];
+  } else if (Array.isArray(meta.links)) {
+    meta.links = links;
+  }
+  return meta;
+}
+
+function getConfiguredCastCount(config) {
+  if (config.castCount === undefined || config.castCount === null) return null;
+  const count = Number(config.castCount);
+  if (!Number.isFinite(count) || count < 0) return null;
+  return Math.floor(count);
+}
+
+function applyCastCountProjection(meta, config) {
+  const castCount = getConfiguredCastCount(config);
+  if (castCount === null) return meta;
+
+  if (Array.isArray(meta?.app_extras?.cast)) {
+    meta.app_extras.cast = meta.app_extras.cast.slice(0, castCount);
+  }
+
+  if (castCount === 0) {
+    if (Object.prototype.hasOwnProperty.call(meta, 'director')) {
+      meta.director = Array.isArray(meta.director) ? [] : '';
+    }
+    if (Object.prototype.hasOwnProperty.call(meta, 'writer')) {
+      meta.writer = Array.isArray(meta.writer) ? [] : '';
+    }
+    if (Object.prototype.hasOwnProperty.call(meta, 'writers')) {
+      meta.writers = Array.isArray(meta.writers) ? [] : '';
+    }
+    if (meta.app_extras && Array.isArray(meta.app_extras.directors)) {
+      meta.app_extras.directors = [];
+    }
+    if (meta.app_extras && Array.isArray(meta.app_extras.director)) {
+      meta.app_extras.director = [];
+    }
+    if (meta.app_extras && Array.isArray(meta.app_extras.writers)) {
+      meta.app_extras.writers = [];
+    }
+  }
+
+  return meta;
+}
+
+function projectMetaForUser(meta, config) {
+  if (!meta) return meta;
+  applyCastCountProjection(meta, config);
+  applyBlurThumbProjection(meta, config);
+  applyDisplayAgeRatingProjection(meta, config);
+  return meta;
+}
+
 async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
   let config;
@@ -1261,87 +1517,13 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      return { meta: null };
    }
    
-   const [prefix, sourceId] = metaId.split(':');
-   const metaType = type;
-   
-   const metaConfig = {
-     language: config.language || 'en-US',
-     castCount: config.castCount || 0,
-     blurThumbs: config.blurThumbs || false,
-     showPrefix: config.showPrefix || false,
-     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
-     displayAgeRating: config.displayAgeRating || false,
-     englishArtOnly: config.artProviders?.englishArtOnly || false,
-     originalLangFallback: config.artProviders?.originalLangFallback || false,
-     timezone: config.timezone || 'UTC',
-   };
-   const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
-   const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   //const isImdbIdAnime = metaId.startsWith('tt') && !!idMapper.getMappingByImdbId(metaId);
-   //const isAnimeWithImdbId = isAnime || (isImdbIdAnime && config.providers?.forceAnimeForDetectedImdb);
-
-   
-   if (isAnime) {
-     metaConfig.metaProvider = config.providers?.anime || 'mal';
-     metaConfig.artProvider = {
-       poster: resolveArtProvider('anime', 'poster', config),
-       background: resolveArtProvider('anime', 'background', config),
-       logo: resolveArtProvider('anime', 'logo', config)
-     };
-     metaConfig.mal = {
-       skipFiller: config.mal?.skipFiller || false,
-       skipRecap: config.mal?.skipRecap || false,
-       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
-       useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
-     };
-   } else if (metaType === 'movie') {
-     metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-     metaConfig.artProvider = {
-       poster: resolveArtProvider('movie', 'poster', config),
-       background: resolveArtProvider('movie', 'background', config),
-       logo: resolveArtProvider('movie', 'logo', config)
-     };
-    metaConfig.tmdb = {
-     scrapeImdb: config.tmdb?.scrapeImdb || false,
-     forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
-    };
-   } else if (metaType === 'series') {
-     metaConfig.metaProvider = config.providers?.series || 'tvdb';
-     metaConfig.artProvider = {
-       poster: resolveArtProvider('series', 'poster', config),
-       background: resolveArtProvider('series', 'background', config),
-       logo: resolveArtProvider('series', 'logo', config)
-     };
-     metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-     metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false,
-      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
-    };
-     metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-     metaConfig.useShowPosterForUpNext = useShowPoster;
-    }
-    /*if (isAnimeWithImdbId) {
-      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-    }*/
-    metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
-const metaConfigString = stableStringify(metaConfig);
-const configHash = hashConfig(metaConfigString);
- 
-  const componentCacheKeys = {
-     basic: `meta-basic:${configHash}:${metaId}`,
-     poster: `meta-poster:${configHash}:${metaId}`,
-     rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
-     background: `meta-background:${configHash}:${metaId}`,
-     landscapePoster: `meta-landscape-poster:${configHash}:${metaId}`,
-     logo: `meta-logo:${configHash}:${metaId}`,
-     videos: `meta-videos:${configHash}:${metaId}`,
-     cast: `meta-cast:${configHash}:${metaId}`,
-     director: `meta-director:${configHash}:${metaId}`,
-     writer: `meta-writer:${configHash}:${metaId}`,
-     links: `meta-links:${configHash}:${metaId}`,
-     trailers: `meta-trailers:${configHash}:${metaId}`,
-     extras: `meta-extras:${configHash}:${metaId}`
-   };
+  const componentCacheKeys = buildMetaComponentCacheKeys({
+    config,
+    metaId,
+    type,
+    useShowPoster,
+    userUUID,
+  });
    
    const result = await method();
    
@@ -1444,12 +1626,11 @@ const configHash = hashConfig(metaConfigString);
    
    if (meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0) {
      componentPromises.push(
-       cacheComponent(componentCacheKeys.videos, { videos: meta.videos }, ttl)
+       cacheComponent(componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) }, ttl)
      );
    }
    
-   // Skip individual cast caching when castCount is configured (already in metaConfig hash)
-   if (meta.app_extras?.cast && (!config.castCount || config.castCount === 0)) {
+   if (meta.app_extras?.cast) {
      componentPromises.push(
        cacheComponent(componentCacheKeys.cast, { cast: meta.app_extras.cast }, ttl)
      );
@@ -1469,7 +1650,7 @@ const configHash = hashConfig(metaConfigString);
    
    if (meta.links && Array.isArray(meta.links)) {
      componentPromises.push(
-       cacheComponent(componentCacheKeys.links, { links: meta.links }, ttl)
+       cacheComponent(componentCacheKeys.links, { links: stripCertificationLinks(meta.links, meta.app_extras?.certification) }, ttl)
      );
    }
    
@@ -1489,7 +1670,7 @@ const configHash = hashConfig(metaConfigString);
    }
    
   await Promise.all(componentPromises);
-   return { meta };
+   return { meta: projectMetaForUser(meta, config) };
 }
 
 /**
@@ -1514,83 +1695,13 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     return { errorReason: 'no config for user' };
   }
    
-   const [prefix, sourceId] = metaId.split(':');
-   const metaType = type;
-   
-   const metaConfig = {
-     language: config.language || 'en-US',
-     castCount: config.castCount || 0,
-     blurThumbs: config.blurThumbs || false,
-     showPrefix: config.showPrefix || false,
-     showMetaProviderAttribution: config.showMetaProviderAttribution || false,
-     displayAgeRating: config.displayAgeRating || false,
-     englishArtOnly: config.artProviders?.englishArtOnly || false,
-     originalLangFallback: config.artProviders?.originalLangFallback || false,
-     timezone: config.timezone || 'UTC',
-   };
-
-   const animePrefixes = ['mal', 'kitsu', 'anilist', 'anidb'];
-   const isAnime = metaType === 'anime' || animePrefixes.includes(prefix);
-   if (isAnime) {
-     metaConfig.metaProvider = config.providers?.anime || 'mal';
-     metaConfig.artProvider = {
-       poster: resolveArtProvider('anime', 'poster', config),
-       background: resolveArtProvider('anime', 'background', config),
-       logo: resolveArtProvider('anime', 'logo', config)
-     };
-     metaConfig.mal = {
-       skipFiller: config.mal?.skipFiller || false,
-       skipRecap: config.mal?.skipRecap || false,
-       allowEpisodeMarking: config.mal?.allowEpisodeMarking || false,
-       useImdbIdForCatalogAndSearch: config.mal?.useImdbIdForCatalogAndSearch || false
-     };
-   } else if (metaType === 'movie') {
-    metaConfig.metaProvider = config.providers?.movie || 'tmdb';
-    metaConfig.artProvider = {
-      poster: resolveArtProvider('movie', 'poster', config),
-      background: resolveArtProvider('movie', 'background', config),
-      logo: resolveArtProvider('movie', 'logo', config)
-    };
-    metaConfig.tmdb = {
-    scrapeImdb: config.tmdb?.scrapeImdb || false,
-    forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
-   };
-  } else if (metaType === 'series') {
-    metaConfig.metaProvider = config.providers?.series || 'tvdb';
-    metaConfig.artProvider = {
-      poster: resolveArtProvider('series', 'poster', config),
-      background: resolveArtProvider('series', 'background', config),
-      logo: resolveArtProvider('series', 'logo', config)
-    };
-    metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-    metaConfig.tmdb = {
-      scrapeImdb: config.tmdb?.scrapeImdb || false,
-      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
-    };
-   metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
-   metaConfig.useShowPosterForUpNext = useShowPoster;
- }
- metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
- 
- const metaConfigString = stableStringify(metaConfig);
- const configHash = hashConfig(metaConfigString);
-  const debugSig = shortSignature(`${userUUID}|${configHash}`);
-  
-   const componentCacheKeys = {
-    basic: `meta-basic:${configHash}:${metaId}`,
-     poster: `meta-poster:${configHash}:${metaId}`,
-     rawPoster: `meta-raw-poster:${configHash}:${metaId}`,
-     background: `meta-background:${configHash}:${metaId}`,
-     landscapePoster: `meta-landscape-poster:${configHash}:${metaId}`,
-     logo: `meta-logo:${configHash}:${metaId}`,
-     videos: `meta-videos:${configHash}:${metaId}`,
-     cast: `meta-cast:${configHash}:${metaId}`,
-     director: `meta-director:${configHash}:${metaId}`,
-     writer: `meta-writer:${configHash}:${metaId}`,
-     links: `meta-links:${configHash}:${metaId}`,
-     trailers: `meta-trailers:${configHash}:${metaId}`,
-     extras: `meta-extras:${configHash}:${metaId}`
-   };
+   const componentCacheKeys = buildMetaComponentCacheKeys({
+    config,
+    metaId,
+    type,
+    useShowPoster,
+    userUUID,
+   });
    
   const componentEntries = Object.entries(componentCacheKeys).filter(([componentName]) => {
     return includeVideos || componentName !== 'videos';
@@ -1687,6 +1798,15 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
             return { errorReason: 'corrupted: missing videos' };
         }
     }
+
+    if (bd._hasLinks) {
+        const hasLinks = availableComponents.some(c => c.componentName === 'links');
+        if (!hasLinks) {
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required user-scoped links.`);
+            updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
+            return { errorReason: 'corrupted: missing links' };
+        }
+    }
   }
 
   
@@ -1771,7 +1891,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
   const metaReconstructionKey = `meta:reconstructed:${metaId}`;
   updateCacheHealth(metaReconstructionKey, 'hit', true);
   
-  return { meta: reconstructedMeta };
+  return { meta: projectMetaForUser(reconstructedMeta, config) };
 }
 
 /**
@@ -2073,6 +2193,7 @@ module.exports = {
   cacheWrapMeta,
   cacheWrapMetaComponents,
   reconstructMetaFromComponents,
+  buildMetaComponentCacheKeys,
   cacheWrapMetaSmart,
   getCacheHealth,
   clearCacheHealth,
