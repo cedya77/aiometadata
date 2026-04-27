@@ -484,7 +484,12 @@ async function cacheWrap(key, method, ttl, options = {}) {
   }
 
   const versionedKey = `v${ADDON_VERSION}:${key}`;
-  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const {
+    enableErrorCaching = false,
+    resultClassifier = classifyResult,
+    maxRetries = SELF_HEALING_CONFIG.maxRetries,
+    onHit,
+  } = options;
 
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);
@@ -516,6 +521,13 @@ async function cacheWrap(key, method, ttl, options = {}) {
             return parsed;
           } else {
             cacheLogger.debug(`⚡ [Cache] HIT for ${versionedKey}`);
+            if (typeof onHit === 'function') {
+              try {
+                onHit({ key, versionedKey, value: parsed });
+              } catch (hookError) {
+                cacheLogger.warn(`[Cache] onHit hook failed for ${versionedKey}:`, hookError);
+              }
+            }
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -1293,15 +1305,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] scope:${contentScope} userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
   
-  // Check if the catalog is already cached before calling cacheWrap
-  // so we can log the full config detail on HITs (cacheWrap only logs the key)
-  if (redis) {
-    const versionedKey = `v${ADDON_VERSION}:${key}`;
-    const cached = await redis.get(versionedKey);
-    if (cached) {
-      cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
-    }
-  }
   if (isMDBListCatalog) {
     options = {
       ...options,
@@ -1313,6 +1316,16 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       },
     };
   }
+  const existingOnHit = options.onHit;
+  options = {
+    ...options,
+    onHit: (hit) => {
+      if (typeof existingOnHit === 'function') {
+        existingOnHit(hit);
+      }
+      cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
+    },
+  };
   const result = await cacheWrap(key, method, cacheTTL, options);
 
   if (result?.metas?.length) {
