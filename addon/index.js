@@ -674,23 +674,15 @@ addon.get("/api/auth/trakt/callback", async (req, res) => {
     }
 
     try {
-      const allUsers = await database.getAllUsers();
-      for (const dbUser of allUsers) {
-        const userConfig = JSON.parse(dbUser.config || '{}');
-        let configUpdated = false;
-        if (userConfig.apiKeys?.traktTokenId) {
-          const currentToken = await database.getOAuthToken(userConfig.apiKeys.traktTokenId);
-          if (currentToken && currentToken.user_id.toLowerCase() === user.username.toLowerCase()) {
-            userConfig.apiKeys.traktTokenId = tokenId;
-            configUpdated = true;
-            consola.info(`[Trakt OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
-          } else if (!currentToken) {
-            consola.warn(`[Trakt OAuth] User ${dbUser.id} has missing Trakt token ${userConfig.apiKeys.traktTokenId} - manual reconnection required`);
-          }
-        }
-        if (configUpdated) {
-          await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
+      const userTraktTokens = existingTokens.filter(t => t.user_id.toLowerCase() === user.username.toLowerCase());
+      const oldTokenIds = userTraktTokens.map(t => t.id).filter(id => id !== tokenId);
+      if (oldTokenIds.length > 0) {
+        const affectedUsers = await database.getUsersByOAuthTokenIds('traktTokenId', oldTokenIds);
+        for (const dbUser of affectedUsers) {
+          dbUser.config.apiKeys.traktTokenId = tokenId;
+          await database.saveUserConfig(dbUser.id, dbUser.password_hash, dbUser.config);
           configCache.del(dbUser.id);
+          consola.info(`[Trakt OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
         }
       }
     } catch (configError) {
@@ -898,30 +890,16 @@ addon.get("/api/auth/simkl/callback", async (req, res) => {
       `);
     }
     
-    // Update config
     try {
-      const allUsers = await database.getAllUsers();
-      for (const dbUser of allUsers) {
-        const userConfig = JSON.parse(dbUser.config || '{}');
-        let configUpdated = false;
-        
-        // Only update if user has an existing Simkl token configured
-        if (userConfig.apiKeys?.simklTokenId) {
-          const currentToken = await database.getOAuthToken(userConfig.apiKeys.simklTokenId);
-          
-          if (currentToken && currentToken.user_id.toLowerCase() === user.username.toLowerCase()) {
-            userConfig.apiKeys.simklTokenId = tokenId;
-            configUpdated = true;
-            consola.info(`[Simkl OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
-          } else if (!currentToken) {
-            consola.warn(`[Simkl OAuth] User ${dbUser.id} has missing Simkl token ${userConfig.apiKeys.simklTokenId} - manual reconnection required`);
-          }
-        }
-        
-        // Save updated config if changed
-        if (configUpdated) {
-          await database.saveUserConfig(dbUser.id, dbUser.password_hash, userConfig);
+      const userSimklTokens = existingTokens.filter(t => t.user_id.toLowerCase() === user.username.toLowerCase());
+      const oldTokenIds = userSimklTokens.map(t => t.id).filter(id => id !== tokenId);
+      if (oldTokenIds.length > 0) {
+        const affectedUsers = await database.getUsersByOAuthTokenIds('simklTokenId', oldTokenIds);
+        for (const dbUser of affectedUsers) {
+          dbUser.config.apiKeys.simklTokenId = tokenId;
+          await database.saveUserConfig(dbUser.id, dbUser.password_hash, dbUser.config);
           configCache.del(dbUser.id);
+          consola.info(`[Simkl OAuth] Updated user ${dbUser.id} config to use new token ${tokenId}`);
         }
       }
     } catch (configError) {

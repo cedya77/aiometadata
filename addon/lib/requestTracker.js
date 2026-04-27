@@ -1515,14 +1515,19 @@ class RequestTracker {
     return anonymizedIP;
   }
 
-  // Get improved user identifier using simplified factors
   getImprovedUserIdentifier(req) {
     const crypto = require("crypto");
 
-    // Get anonymized IP (first 3 octets only for privacy)
-    const anonymizedIP = this.getAnonymizedIP(req);
+    const userUUID = req.params?.userUUID;
+    if (userUUID) {
+      return crypto
+        .createHash("sha256")
+        .update(userUUID)
+        .digest("hex")
+        .substring(0, 16);
+    }
 
-    // Get basic browser info (just browser name, not version)
+    const anonymizedIP = this.getAnonymizedIP(req);
     const userAgent = req.get("User-Agent") || "unknown";
     let browserType;
     if (userAgent.includes("Chrome")) browserType = "chrome";
@@ -1532,11 +1537,8 @@ class RequestTracker {
     else if (userAgent.includes("Stremio")) browserType = "stremio";
     else browserType = "other";
 
-    // Create a simplified identifier that groups users more reasonably
-    // Only use IP + basic browser type to avoid over-fragmenting users
     const compositeId = `${anonymizedIP}:${browserType}`;
 
-    // Hash the composite identifier
     return crypto
       .createHash("sha256")
       .update(compositeId)

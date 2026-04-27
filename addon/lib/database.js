@@ -666,61 +666,76 @@ class Database {
     }
   }
 
-  // Get all users with basic statistics
+  async getUsersByOAuthTokenIds(tokenField, tokenIds) {
+    if (!tokenIds.length) return [];
+    try {
+      if (this.type === 'sqlite') {
+        const placeholders = tokenIds.map(() => '?').join(', ');
+        const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
+          WHERE json_extract(config_data, '$.apiKeys.${tokenField}') IN (${placeholders})`;
+        const rows = await this.allQuery(query, tokenIds);
+        return rows.map(row => ({
+          id: row.user_uuid,
+          password_hash: row.password_hash,
+          config: typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data
+        }));
+      } else {
+        const placeholders = tokenIds.map((_, i) => `$${i + 1}`).join(', ');
+        const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
+          WHERE config_data->'apiKeys'->>'${tokenField}' IN (${placeholders})`;
+        const rows = await this.allQuery(query, tokenIds);
+        return rows.map(row => ({
+          id: row.user_uuid,
+          password_hash: row.password_hash,
+          config: typeof row.config_data === 'string' ? JSON.parse(row.config_data) : row.config_data
+        }));
+      }
+    } catch (error) {
+      logger.error(`Error finding users by ${tokenField}:`, error);
+      return [];
+    }
+  }
+
   async getAllUsersWithStats() {
     try {
       const query = this.type === 'sqlite'
-        ? `SELECT 
+        ? `SELECT
              user_uuid,
              created_at,
              updated_at,
-             config_data
-           FROM user_configs 
+             CASE WHEN json_extract(config_data, '$.apiKeys.tmdb') IS NOT NULL
+                    OR json_extract(config_data, '$.apiKeys.tvdb') IS NOT NULL
+                    OR json_extract(config_data, '$.apiKeys.imdb') IS NOT NULL
+                    OR json_extract(config_data, '$.apiKeys.kitsu') IS NOT NULL
+               THEN 1 ELSE 0 END AS has_api_keys,
+             CASE WHEN updated_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END AS is_active
+           FROM user_configs
            ORDER BY created_at DESC`
-        : `SELECT 
+        : `SELECT
              user_uuid,
              created_at,
              updated_at,
-             config_data
-           FROM user_configs 
+             CASE WHEN (config_data->'apiKeys'->>'tmdb') IS NOT NULL
+                    OR (config_data->'apiKeys'->>'tvdb') IS NOT NULL
+                    OR (config_data->'apiKeys'->>'imdb') IS NOT NULL
+                    OR (config_data->'apiKeys'->>'kitsu') IS NOT NULL
+               THEN true ELSE false END AS has_api_keys,
+             CASE WHEN updated_at >= NOW() - INTERVAL '7 days' THEN true ELSE false END AS is_active
+           FROM user_configs
            ORDER BY created_at DESC`;
 
       const rows = await this.allQuery(query);
 
-      return rows.map(row => {
-        let configData = null;
-        try {
-          configData = typeof row.config_data === 'string' 
-            ? JSON.parse(row.config_data) 
-            : row.config_data;
-        } catch (error) {
-          logger.warn('Error parsing config data for user:', row.user_uuid);
-        }
-
-        // Check if user has API keys configured
-        const hasApiKeys = configData?.apiKeys && (
-          configData.apiKeys.tmdb || 
-          configData.apiKeys.tvdb || 
-          configData.apiKeys.imdb || 
-          configData.apiKeys.kitsu
-        );
-
-        // Determine if user is active (updated in last 7 days)
-        const lastUpdated = new Date(row.updated_at);
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const isActive = lastUpdated > sevenDaysAgo;
-
-        return {
-          uuid: row.user_uuid,
-          created_at: row.created_at,
-          last_updated: row.updated_at,
-          last_activity: null, // This would need to come from request tracker
-          total_requests: 0, // This would need to be tracked separately
-          has_api_keys: !!hasApiKeys,
-          config_status: configData ? 'configured' : 'empty',
-          is_active: isActive
-        };
-      });
+      return rows.map(row => ({
+        uuid: row.user_uuid,
+        created_at: row.created_at,
+        last_updated: row.updated_at,
+        last_activity: null,
+        total_requests: 0,
+        has_api_keys: !!row.has_api_keys,
+        config_status: 'configured',
+        is_active: !!row.is_active
+      }));
     } catch (error) {
       logger.error('Error getting all users with stats:', error);
       return [];
