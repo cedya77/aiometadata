@@ -1537,7 +1537,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     cacheLogger.warn(`Failed to capture metadata for dashboard: ${error.message}`);
   }
    
-   const componentPromises = [];
+   const componentsToCache = [];
    
    const basicMeta = {
       id: metaId,
@@ -1572,9 +1572,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       _hasLinks: !!(meta.links && Array.isArray(meta.links) && meta.links.length > 0)
    };
    
-   componentPromises.push(
-     cacheComponent(componentCacheKeys.basic, basicMeta, ttl)
-   );
+   queueComponentCache(componentsToCache, componentCacheKeys.basic, basicMeta);
    
    if (meta.poster) {
     let rawPoster = meta.poster;
@@ -1595,77 +1593,53 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
         rawPoster = meta._rawPosterUrl;
     }
 
-    componentPromises.push(
-      cacheComponent(componentCacheKeys.poster, { poster: rawPoster }, ttl)
-    );
-    componentPromises.push(
-      cacheComponent(componentCacheKeys.rawPoster, { _rawPosterUrl: meta._rawPosterUrl }, ttl)
-    );
+    queueComponentCache(componentsToCache, componentCacheKeys.poster, { poster: rawPoster });
+    queueComponentCache(componentsToCache, componentCacheKeys.rawPoster, { _rawPosterUrl: meta._rawPosterUrl });
   }
    
    if (meta.background) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.background, { background: meta.background }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.background, { background: meta.background });
    }
    if (meta.landscapePoster) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.landscapePoster, { landscapePoster: meta.landscapePoster }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.landscapePoster, { landscapePoster: meta.landscapePoster });
    }
    
    if (meta.logo) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.logo, { logo: meta.logo }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.logo, { logo: meta.logo });
    }
    
    if (meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) });
    }
    
    if (meta.app_extras?.cast) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.cast, { cast: meta.app_extras.cast }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.cast, { cast: meta.app_extras.cast });
    }
    
    if (meta.app_extras?.directors) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.director, { directors: meta.app_extras.directors }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.director, { directors: meta.app_extras.directors });
    }
    
    if (meta.app_extras?.writers) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.writer, { writers: meta.app_extras.writers }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.writer, { writers: meta.app_extras.writers });
    }
    
    if (meta.links && Array.isArray(meta.links)) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.links, { links: stripCertificationLinks(meta.links, meta.app_extras?.certification) }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.links, { links: stripCertificationLinks(meta.links, meta.app_extras?.certification) });
    }
    
    if (meta.trailers || meta.trailerStreams) {
      const trailerData = {};
      if (meta.trailers) trailerData.trailers = meta.trailers;
      if (meta.trailerStreams) trailerData.trailerStreams = meta.trailerStreams;
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.trailers, trailerData, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.trailers, trailerData);
    }
    
    if (meta.app_extras) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.extras, { app_extras: meta.app_extras }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: meta.app_extras });
    }
    
-  await Promise.all(componentPromises);
+  await cacheComponentsPipeline(componentsToCache, ttl);
    return { meta: projectMetaForUser(meta, config) };
 }
 
@@ -1931,19 +1905,44 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type, useShowPoster);
 }
 
+function queueComponentCache(components, cacheKey, componentData) {
+  if (!cacheKey || !componentData) return;
+  components.push({ cacheKey, componentData });
+}
+
 /**
- * Simple component caching without validation
- * Used for individual meta components that don't need meta validation
+ * Batch component caching without validation.
+ * Keeps writes non-fatal while reducing Redis command dispatch overhead.
  */
-async function cacheComponent(cacheKey, componentData, ttl) {
-  if (!redis || !componentData) return;
-  
-  const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
-  
+async function cacheComponentsPipeline(components, ttl) {
+  if (!redis || !Array.isArray(components) || components.length === 0) return;
+
+  const pipeline = redis.pipeline();
+  const queuedCommands = [];
+
+  for (const { cacheKey, componentData } of components) {
+    const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
+
+    try {
+      pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+      queuedCommands.push(versionedKey);
+    } catch (error) {
+      cacheLogger.warn(`Failed to queue component cache write for ${versionedKey}:`, error);
+    }
+  }
+
+  if (queuedCommands.length === 0) return;
+
   try {
-    await redis.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+    const results = await pipeline.exec();
+
+    results?.forEach(([error], index) => {
+      if (error) {
+        cacheLogger.warn(`Failed to cache component for ${queuedCommands[index]}:`, error);
+      }
+    });
   } catch (error) {
-    cacheLogger.warn(`Failed to cache component for ${versionedKey}:`, error);
+    cacheLogger.warn(`Failed to execute component cache pipeline:`, error);
   }
 }
 
