@@ -459,7 +459,7 @@ async function handleTvdbCollection(collectionId, language, config, userUUID) {
       };
     },
     12 * 60 * 60,
-    {},
+    { config },
     'movie'
   );
 }

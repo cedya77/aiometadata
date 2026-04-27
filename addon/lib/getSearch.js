@@ -280,7 +280,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
             return (await cacheWrapMetaSmart(config.userUUID, id, async () => {
               const { getMeta } = await import("../lib/getMeta");
               return await getMeta(itemType, language, `kitsu:${kitsuId}`, config, config.userUUID, false);
-            }, undefined, {enableErrorCaching: true, maxRetries: 2}, itemType, false))?.meta || null;
+            }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, itemType, false))?.meta || null;
           }
           
           

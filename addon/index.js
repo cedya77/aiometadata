@@ -3101,7 +3101,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
               return await getMeta('series', config.language || 'en-US', id, config, userUUID, true);
             },
             undefined, 
-            { enableErrorCaching: true, maxRetries: 2 },
+            { enableErrorCaching: true, maxRetries: 2, config },
             'series',
             true 
           );
@@ -3602,7 +3602,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
               try {
                 const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
                   return await getMeta('series', language, stremioId, config, userUUID, true);
-                }, undefined, { enableErrorCaching: true, maxRetries: 2 }, 'series', true);
+                }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, 'series', true);
 
                 meta = result?.meta;
               } catch (error) {
@@ -3848,6 +3848,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2, // Allow retries for temporary failures
+    config: fullConfig,
   };
   
   try {

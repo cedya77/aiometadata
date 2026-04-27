@@ -255,7 +255,7 @@ export async function parseLetterboxdItems(
             return await getMeta(itemType, language, stremioId, config, config.userUUID, includeVideos);
           },
           undefined,
-          { enableErrorCaching: true, maxRetries: 2 },
+          { enableErrorCaching: true, maxRetries: 2, config },
           itemType as any,
           includeVideos
         );

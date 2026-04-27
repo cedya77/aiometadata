@@ -277,7 +277,7 @@ async function parseResumeItems(
 
             return metaResult;
           },
-          undefined, { enableErrorCaching: true, maxRetries: 2 }, stremioType as any, stremioType === 'series'
+          undefined, { enableErrorCaching: true, maxRetries: 2, config }, stremioType as any, stremioType === 'series'
         );
 
         return result?.meta || null;
@@ -312,7 +312,7 @@ async function parseListItems(
           (config as any).userUUID,
           cacheId,
           async () => getMeta(stremioType, language, stremioId, config, (config as any).userUUID, false),
-          undefined, { enableErrorCaching: true, maxRetries: 2 }, stremioType as any, false
+          undefined, { enableErrorCaching: true, maxRetries: 2, config }, stremioType as any, false
         );
 
         return result?.meta || null;
@@ -347,7 +347,7 @@ async function parsePickItems(
           (config as any).userUUID,
           cacheId,
           async () => getMeta(stremioType, language, stremioId, config, (config as any).userUUID, false),
-          undefined, { enableErrorCaching: true, maxRetries: 2 }, stremioType as any, false
+          undefined, { enableErrorCaching: true, maxRetries: 2, config }, stremioType as any, false
         );
 
         return result?.meta || null;

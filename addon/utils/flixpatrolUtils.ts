@@ -141,7 +141,7 @@ export async function getFlixPatrolMetas(
             return await getMeta(stremioType, language, stremioId, config, config.userUUID, includeVideos);
           },
           undefined,
-          { enableErrorCaching: true, maxRetries: 2 },
+          { enableErrorCaching: true, maxRetries: 2, config },
           stremioType as any,
           includeVideos
         );

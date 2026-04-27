@@ -1068,6 +1068,16 @@ function projectMetaForUser(meta, config) {
   return meta;
 }
 
+async function resolveConfigForCache(userUUID, options = {}) {
+  if (options?.config) return options.config;
+
+  const config = await loadConfigFromDatabase(userUUID);
+  if (config && options && typeof options === 'object') {
+    options.config = config;
+  }
+  return config;
+}
+
 async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
   let config;
@@ -1409,7 +1419,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
 async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
    let config;
    try {
-     config = await loadConfigFromDatabase(userUUID);
+     config = await resolveConfigForCache(userUUID, options);
    } catch (error) {
      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      return { meta: null };
@@ -1503,7 +1513,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    
    let config;
    try {
-     config = await loadConfigFromDatabase(userUUID);
+     config = await resolveConfigForCache(userUUID, options);
    } catch (error) {
      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      return { meta: null };
@@ -1654,7 +1664,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    let config;
    try {
-     config = await loadConfigFromDatabase(userUUID);
+     config = await resolveConfigForCache(userUUID, options);
   } catch (error) {
     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     return { errorReason: `load config failed: ${error.message}` };
