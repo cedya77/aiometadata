@@ -11,6 +11,29 @@ const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens')
 const buildInfo = require('./buildInfo');
 const crypto = require('crypto');
 
+function extractIdsFromWarmerMeta(meta) {
+  const ids = {};
+  if (!meta) return ids;
+  const id = meta.id || '';
+  if (id) ids.id = id;
+  if (id.startsWith('tmdb:')) ids.tmdbId = id.slice(5);
+  else if (id.startsWith('tvdb:')) ids.tvdbId = id.slice(5);
+  else if (id.startsWith('kitsu:')) ids.kitsuId = id.slice(6);
+  else if (id.startsWith('mal:')) ids.malId = id.slice(4);
+  else if (id.startsWith('anilist:')) ids.anilistId = id.slice(8);
+  else if (id.startsWith('anidb:')) ids.anidbId = id.slice(6);
+  else if (id.startsWith('tt')) ids.imdbId = id;
+  if (meta.imdb_id) ids.imdbId = meta.imdb_id;
+  if (meta._tmdbId && !ids.tmdbId) ids.tmdbId = meta._tmdbId;
+  if (meta._tvdbId && !ids.tvdbId) ids.tvdbId = meta._tvdbId;
+  if (meta._imdbId && !ids.imdbId) ids.imdbId = meta._imdbId;
+  if (meta._malId && !ids.malId) ids.malId = meta._malId;
+  if (meta._kitsuId && !ids.kitsuId) ids.kitsuId = meta._kitsuId;
+  if (meta._anilistId && !ids.anilistId) ids.anilistId = meta._anilistId;
+  if (meta._anidbId && !ids.anidbId) ids.anidbId = meta._anidbId;
+  return ids;
+}
+
 const logger = consola.create({
   defaults: {
     tag: 'Catalog-Warmer'
@@ -658,6 +681,17 @@ class ComprehensiveCatalogWarmer {
             const posterUrls = result.metas
               .map(m => m.poster)
               .filter(Boolean);
+
+            const { resolveCustomArtUrl, getDefaultPosterPattern, getPosterRatingApiKey } = require('../utils/parseProps');
+            const posterPattern = config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultPosterPattern(config.posterRatingProvider) : null);
+            if (posterPattern) {
+              for (const meta of result.metas) {
+                const ids = extractIdsFromWarmerMeta(meta);
+                const resolved = resolveCustomArtUrl(posterPattern, ids, meta.type || catalog.type, config);
+                if (resolved) posterUrls.push(resolved);
+              }
+            }
+
             if (posterUrls.length > 0) {
               const posterDelay = parseInt(process.env.POSTER_WARMUP_DELAY_MS) || 50;
               const pageCatalogId = catalogId;
