@@ -4,7 +4,6 @@ const buildInfo = require('./buildInfo');
 const redis = require('./redisClient');
 const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
-const idMapper = require('./id-mapper');
 const crypto = require('crypto');
 const { isMetricsDisabled } = require('./metricsConfig');
 
@@ -29,7 +28,6 @@ function parsePositiveIntEnv(envValue, defaultValue, minValue = 1, maxValue = 10
 }
 
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
 const ADDON_VERSION = buildInfo.version;
 
@@ -85,7 +83,6 @@ const KEYS_TO_KEEP_AFTER_PRUNE = Math.min(
 
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
-const { cache } = require('sharp');
 
 /**
  * Safely delete Redis keys matching a pattern using SCAN and pipelined DELs to avoid memory/stack spikes
@@ -243,18 +240,6 @@ function truncateCacheKey(key, maxLength = 80) {
   }
   
   return key.substring(0, maxLength - 3) + '...';
-}
-
-function safeParseConfigString(configString) {
-  try {
-    if (!configString) return null;
-    const lz = require('lz-string');
-    const decompressed = lz.decompressFromEncodedURIComponent(configString);
-    if (!decompressed) return null;
-    return JSON.parse(decompressed);
-  } catch {
-    return null;
-  }
 }
 
 function pruneKeyAccessCounts() {
