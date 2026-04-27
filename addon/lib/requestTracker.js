@@ -93,22 +93,12 @@ class RequestTracker {
       const today = new Date().toISOString().split("T")[0];
       const hour = new Date().toISOString().substring(0, 13);
 
-      // Get improved anonymous user identifier
-      const userIdentifier = this.getImprovedUserIdentifier(req);
-
-      // Track content requests (meta requests)
       this.trackContentRequest(req);
 
-      // Only increment counters for actual user-facing requests
       if (this.shouldTrackRequest(req)) {
         redis.incr(`requests:total`).catch(() => {});
         redis.incr(`requests:${today}`).catch(() => {});
         redis.incr(`requests:${hour}`).catch(() => {});
-      }
-
-      // Track active users only for user-facing requests (fire-and-forget)
-      if (this.shouldTrackRequest(req)) {
-        this.trackActiveUser(userIdentifier, req).catch(() => {});
       }
 
       // Set expiration for time-based keys (don't await)
@@ -150,9 +140,10 @@ class RequestTracker {
       const statusCode = res.statusCode;
       const shouldTrack = this.shouldTrackRequest(req);
 
-      // Only track metrics for user-facing requests
       if (shouldTrack) {
-        // Track response times by hour for charts
+        const userIdentifier = this.getImprovedUserIdentifier(req);
+        this.trackActiveUser(userIdentifier, req).catch(() => {});
+
         const hour = new Date().toISOString().substring(0, 13);
         redis.lpush(`response_times:${hour}`, responseTime).catch(() => {});
         redis.ltrim(`response_times:${hour}`, 0, 999).catch(() => {}); // Keep last 1000 for hourly averages
