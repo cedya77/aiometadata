@@ -900,7 +900,7 @@ function hashProfile(profile) {
   return hashConfig(stableStringify(profile));
 }
 
-function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = false, userUUID = '' }) {
+function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = false }) {
   const ctx = getMetaCacheContext(config, metaId, type, useShowPoster);
   const commonProvider = {
     ...ctx.base,
@@ -941,7 +941,6 @@ function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = fal
   };
   const linksProfile = {
     ...commonProvider,
-    castCount: config.castCount || 0,
   };
   const trailersProfile = {
     ...commonProvider,
@@ -961,7 +960,7 @@ function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = fal
     cast: `meta-cast:${hashProfile(creditsProfile)}:${metaId}`,
     director: `meta-director:${hashProfile(creditsProfile)}:${metaId}`,
     writer: `meta-writer:${hashProfile(creditsProfile)}:${metaId}`,
-    links: `meta-links:user:${userUUID || 'anonymous'}:${hashProfile(linksProfile)}:${metaId}`,
+    links: `meta-links:${hashProfile(linksProfile)}:${metaId}`,
     trailers: `meta-trailers:${hashProfile(trailersProfile)}:${metaId}`,
     extras: `meta-extras:${hashProfile(extrasProfile)}:${metaId}`,
   };
@@ -1522,9 +1521,8 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     metaId,
     type,
     useShowPoster,
-    userUUID,
   });
-   
+
    const result = await method();
    
    const meta = result?.meta || result;
@@ -1700,7 +1698,6 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     metaId,
     type,
     useShowPoster,
-    userUUID,
    });
    
   const componentEntries = Object.entries(componentCacheKeys).filter(([componentName]) => {
@@ -1802,7 +1799,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     if (bd._hasLinks) {
         const hasLinks = availableComponents.some(c => c.componentName === 'links');
         if (!hasLinks) {
-            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required user-scoped links.`);
+            cacheLogger.warn(`[Reconstruct] Integrity failure for ${metaId}: Missing required links component.`);
             updateCacheHealth(`meta:reconstructed:${metaId}`, 'miss', true);
             return { errorReason: 'corrupted: missing links' };
         }
