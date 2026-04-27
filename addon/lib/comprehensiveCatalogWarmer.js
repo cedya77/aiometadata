@@ -673,22 +673,33 @@ class ComprehensiveCatalogWarmer {
 
           const rawMetaCount = result?.metas?.length || 0;
 
-          // Fire-and-forget poster pre-warming through the proxy cache.
-          // Chained so only one batch runs at a time (prevents concurrent pileup),
-          // but doesn't block catalog warming from advancing to the next page.
           const posterWarmupUrl = (process.env.POSTER_WARMUP_URL || process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
           if (posterWarmupUrl && rawMetaCount > 0) {
-            const posterUrls = result.metas
-              .map(m => m.poster)
-              .filter(Boolean);
-
             const { resolveCustomArtUrl, getDefaultPosterPattern, getPosterRatingApiKey } = require('../utils/parseProps');
             const posterPattern = config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultPosterPattern(config.posterRatingProvider) : null);
-            if (posterPattern) {
-              for (const meta of result.metas) {
-                const ids = extractIdsFromWarmerMeta(meta);
-                const resolved = resolveCustomArtUrl(posterPattern, ids, meta.type || catalog.type, config);
-                if (resolved) posterUrls.push(resolved);
+            const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
+            const posterUrls = [];
+
+            for (const meta of result.metas) {
+              const ids = extractIdsFromWarmerMeta(meta);
+              const type = meta.type || catalog.type;
+              const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+
+              if (posterPattern && proxyId) {
+                if (proxyApiKey) {
+                  posterUrls.push(`poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`);
+                } else {
+                  const resolved = resolveCustomArtUrl(posterPattern, ids, type, config);
+                  if (resolved) {
+                    if (config.usePosterProxy) {
+                      posterUrls.push(`poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&url=${encodeURIComponent(resolved)}`);
+                    } else {
+                      posterUrls.push(resolved);
+                    }
+                  }
+                }
+              } else if (meta.poster) {
+                posterUrls.push(meta.poster);
               }
             }
 
@@ -699,7 +710,8 @@ class ComprehensiveCatalogWarmer {
                 let warmed = 0;
                 for (const url of posterUrls) {
                   try {
-                    await fetch(`${posterWarmupUrl}/${url}`, { method: 'HEAD' });
+                    const warmUrl = url.startsWith('http') ? url : `${posterWarmupUrl}/${url}`;
+                    await fetch(warmUrl, { method: 'HEAD' });
                     warmed++;
                   } catch (_) { /* ignore */ }
                   if (posterDelay > 0) await new Promise(r => setTimeout(r, posterDelay));
