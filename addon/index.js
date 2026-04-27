@@ -3,6 +3,7 @@ const favicon = require('serve-favicon');
 const fs = require('fs');
 const path = require("path");
 const crypto = require('crypto');
+const v8 = require('v8');
 const addon = express();
 // Honor X-Forwarded-* headers from reverse proxies (e.g., Traefik) so req.protocol reflects HTTPS
 //addon.set('trust proxy', true);
@@ -5540,6 +5541,98 @@ addon.get("/api/dashboard/memory", requireDashboardAdmin, (req, res) => {
   } catch (error) {
     consola.error('[Dashboard API] Memory profile error:', error);
     res.status(500).json({ error: 'Failed to fetch memory profile' });
+  }
+});
+
+const HEAP_DIAGNOSTICS_DIR = path.resolve(
+  process.env.HEAP_DIAGNOSTICS_DIR || path.join(process.cwd(), 'addon', 'data', 'diagnostics')
+);
+let heapSnapshotInProgress = false;
+
+function ensureHeapDiagnosticsDir() {
+  fs.mkdirSync(HEAP_DIAGNOSTICS_DIR, { recursive: true });
+}
+
+function getHeapDiagnosticFiles() {
+  ensureHeapDiagnosticsDir();
+  return fs.readdirSync(HEAP_DIAGNOSTICS_DIR, { withFileTypes: true })
+    .filter(entry => entry.isFile())
+    .filter(entry => entry.name.endsWith('.heapsnapshot') || entry.name.endsWith('.heapprofile'))
+    .map(entry => {
+      const filePath = path.join(HEAP_DIAGNOSTICS_DIR, entry.name);
+      const stats = fs.statSync(filePath);
+      return {
+        name: entry.name,
+        size: stats.size,
+        createdAt: stats.birthtime.toISOString(),
+        modifiedAt: stats.mtime.toISOString(),
+        downloadUrl: `/api/dashboard/heap-snapshots/${encodeURIComponent(entry.name)}`,
+      };
+    })
+    .sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+}
+
+addon.post("/api/dashboard/heap-snapshots", requireDashboardAdmin, (req, res) => {
+  if (heapSnapshotInProgress) {
+    return res.status(409).json({ error: 'Heap snapshot already in progress' });
+  }
+
+  heapSnapshotInProgress = true;
+  try {
+    ensureHeapDiagnosticsDir();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const suffix = crypto.randomBytes(4).toString('hex');
+    const filename = `heap-${timestamp}-${process.pid}-${suffix}.heapsnapshot`;
+    const targetPath = path.join(HEAP_DIAGNOSTICS_DIR, filename);
+    const snapshotPath = v8.writeHeapSnapshot(targetPath);
+    const stats = fs.statSync(snapshotPath);
+
+    res.json({
+      name: path.basename(snapshotPath),
+      size: stats.size,
+      directory: HEAP_DIAGNOSTICS_DIR,
+      downloadUrl: `/api/dashboard/heap-snapshots/${encodeURIComponent(path.basename(snapshotPath))}`,
+      warning: 'Heap snapshots may contain secrets such as tokens, API keys, request data, and user configuration.',
+    });
+  } catch (error) {
+    consola.error('[Dashboard API] Heap snapshot error:', error);
+    res.status(500).json({ error: 'Failed to write heap snapshot', message: error.message });
+  } finally {
+    heapSnapshotInProgress = false;
+  }
+});
+
+addon.get("/api/dashboard/heap-snapshots", requireDashboardAdmin, (req, res) => {
+  try {
+    res.json({
+      directory: HEAP_DIAGNOSTICS_DIR,
+      files: getHeapDiagnosticFiles(),
+    });
+  } catch (error) {
+    consola.error('[Dashboard API] Heap snapshot list error:', error);
+    res.status(500).json({ error: 'Failed to list heap diagnostics', message: error.message });
+  }
+});
+
+addon.get("/api/dashboard/heap-snapshots/:filename", requireDashboardAdmin, (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    if (!filename.endsWith('.heapsnapshot') && !filename.endsWith('.heapprofile')) {
+      return res.status(400).json({ error: 'Unsupported diagnostic file type' });
+    }
+
+    const filePath = path.resolve(HEAP_DIAGNOSTICS_DIR, filename);
+    if (!filePath.startsWith(`${HEAP_DIAGNOSTICS_DIR}${path.sep}`)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Diagnostic file not found' });
+    }
+
+    res.download(filePath, filename);
+  } catch (error) {
+    consola.error('[Dashboard API] Heap snapshot download error:', error);
+    res.status(500).json({ error: 'Failed to download heap diagnostic', message: error.message });
   }
 });
 
