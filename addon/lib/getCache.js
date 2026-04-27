@@ -4,7 +4,6 @@ const buildInfo = require('./buildInfo');
 const redis = require('./redisClient');
 const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
-const idMapper = require('./id-mapper');
 const crypto = require('crypto');
 const { isMetricsDisabled } = require('./metricsConfig');
 
@@ -29,7 +28,6 @@ function parsePositiveIntEnv(envValue, defaultValue, minValue = 1, maxValue = 10
 }
 
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
 const ADDON_VERSION = buildInfo.version;
 
@@ -85,7 +83,6 @@ const KEYS_TO_KEEP_AFTER_PRUNE = Math.min(
 
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
-const { cache } = require('sharp');
 
 /**
  * Safely delete Redis keys matching a pattern using SCAN and pipelined DELs to avoid memory/stack spikes
@@ -243,18 +240,6 @@ function truncateCacheKey(key, maxLength = 80) {
   }
   
   return key.substring(0, maxLength - 3) + '...';
-}
-
-function safeParseConfigString(configString) {
-  try {
-    if (!configString) return null;
-    const lz = require('lz-string');
-    const decompressed = lz.decompressFromEncodedURIComponent(configString);
-    if (!decompressed) return null;
-    return JSON.parse(decompressed);
-  } catch {
-    return null;
-  }
 }
 
 function pruneKeyAccessCounts() {
@@ -484,7 +469,12 @@ async function cacheWrap(key, method, ttl, options = {}) {
   }
 
   const versionedKey = `v${ADDON_VERSION}:${key}`;
-  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
+  const {
+    enableErrorCaching = false,
+    resultClassifier = classifyResult,
+    maxRetries = SELF_HEALING_CONFIG.maxRetries,
+    onHit,
+  } = options;
 
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);
@@ -516,6 +506,13 @@ async function cacheWrap(key, method, ttl, options = {}) {
             return parsed;
           } else {
             cacheLogger.debug(`⚡ [Cache] HIT for ${versionedKey}`);
+            if (typeof onHit === 'function') {
+              try {
+                onHit({ key, versionedKey, value: parsed });
+              } catch (hookError) {
+                cacheLogger.warn(`[Cache] onHit hook failed for ${versionedKey}:`, hookError);
+              }
+            }
             updateCacheHealth(versionedKey, 'hit', true);
             return parsed;
           }
@@ -1071,6 +1068,16 @@ function projectMetaForUser(meta, config) {
   return meta;
 }
 
+async function resolveConfigForCache(userUUID, options = {}) {
+  if (options?.config) return options.config;
+
+  const config = await loadConfigFromDatabase(userUUID);
+  if (config && options && typeof options === 'object') {
+    options.config = config;
+  }
+  return config;
+}
+
 async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   // Load config from database
   let config;
@@ -1293,15 +1300,6 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
   const catalogSig = shortSignature(`${cacheKeyIdentifier}|${idOnly}|${configHash}|ttl:${cacheTTL}`);
   cacheLogger.debug(`[Catalog] Key detail (${idOnly}) [sig:${catalogSig}] scope:${contentScope} userScoped:${isUserScopedCatalog} ttl:${cacheTTL}s catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
   
-  // Check if the catalog is already cached before calling cacheWrap
-  // so we can log the full config detail on HITs (cacheWrap only logs the key)
-  if (redis) {
-    const versionedKey = `v${ADDON_VERSION}:${key}`;
-    const cached = await redis.get(versionedKey);
-    if (cached) {
-      cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
-    }
-  }
   if (isMDBListCatalog) {
     options = {
       ...options,
@@ -1313,6 +1311,16 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       },
     };
   }
+  const existingOnHit = options.onHit;
+  options = {
+    ...options,
+    onHit: (hit) => {
+      if (typeof existingOnHit === 'function') {
+        existingOnHit(hit);
+      }
+      cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
+    },
+  };
   const result = await cacheWrap(key, method, cacheTTL, options);
 
   if (result?.metas?.length) {
@@ -1411,7 +1419,7 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
 async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
    let config;
    try {
-     config = await loadConfigFromDatabase(userUUID);
+     config = await resolveConfigForCache(userUUID, options);
    } catch (error) {
      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      return { meta: null };
@@ -1505,7 +1513,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    
    let config;
    try {
-     config = await loadConfigFromDatabase(userUUID);
+     config = await resolveConfigForCache(userUUID, options);
    } catch (error) {
      cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
      return { meta: null };
@@ -1539,7 +1547,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     cacheLogger.warn(`Failed to capture metadata for dashboard: ${error.message}`);
   }
    
-   const componentPromises = [];
+   const componentsToCache = [];
    
    const basicMeta = {
       id: metaId,
@@ -1574,9 +1582,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
       _hasLinks: !!(meta.links && Array.isArray(meta.links) && meta.links.length > 0)
    };
    
-   componentPromises.push(
-     cacheComponent(componentCacheKeys.basic, basicMeta, ttl)
-   );
+   queueComponentCache(componentsToCache, componentCacheKeys.basic, basicMeta);
    
    if (meta.poster) {
     let rawPoster = meta.poster;
@@ -1597,77 +1603,53 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
         rawPoster = meta._rawPosterUrl;
     }
 
-    componentPromises.push(
-      cacheComponent(componentCacheKeys.poster, { poster: rawPoster }, ttl)
-    );
-    componentPromises.push(
-      cacheComponent(componentCacheKeys.rawPoster, { _rawPosterUrl: meta._rawPosterUrl }, ttl)
-    );
+    queueComponentCache(componentsToCache, componentCacheKeys.poster, { poster: rawPoster });
+    queueComponentCache(componentsToCache, componentCacheKeys.rawPoster, { _rawPosterUrl: meta._rawPosterUrl });
   }
    
    if (meta.background) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.background, { background: meta.background }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.background, { background: meta.background });
    }
    if (meta.landscapePoster) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.landscapePoster, { landscapePoster: meta.landscapePoster }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.landscapePoster, { landscapePoster: meta.landscapePoster });
    }
    
    if (meta.logo) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.logo, { logo: meta.logo }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.logo, { logo: meta.logo });
    }
    
    if (meta.videos && Array.isArray(meta.videos) && meta.videos.length > 0) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) });
    }
    
    if (meta.app_extras?.cast) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.cast, { cast: meta.app_extras.cast }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.cast, { cast: meta.app_extras.cast });
    }
    
    if (meta.app_extras?.directors) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.director, { directors: meta.app_extras.directors }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.director, { directors: meta.app_extras.directors });
    }
    
    if (meta.app_extras?.writers) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.writer, { writers: meta.app_extras.writers }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.writer, { writers: meta.app_extras.writers });
    }
    
    if (meta.links && Array.isArray(meta.links)) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.links, { links: stripCertificationLinks(meta.links, meta.app_extras?.certification) }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.links, { links: stripCertificationLinks(meta.links, meta.app_extras?.certification) });
    }
    
    if (meta.trailers || meta.trailerStreams) {
      const trailerData = {};
      if (meta.trailers) trailerData.trailers = meta.trailers;
      if (meta.trailerStreams) trailerData.trailerStreams = meta.trailerStreams;
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.trailers, trailerData, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.trailers, trailerData);
    }
    
    if (meta.app_extras) {
-     componentPromises.push(
-       cacheComponent(componentCacheKeys.extras, { app_extras: meta.app_extras }, ttl)
-     );
+     queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: meta.app_extras });
    }
    
-  await Promise.all(componentPromises);
+  await cacheComponentsPipeline(componentsToCache, ttl);
    return { meta: projectMetaForUser(meta, config) };
 }
 
@@ -1682,7 +1664,7 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
    
    let config;
    try {
-     config = await loadConfigFromDatabase(userUUID);
+     config = await resolveConfigForCache(userUUID, options);
   } catch (error) {
     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     return { errorReason: `load config failed: ${error.message}` };
@@ -1933,19 +1915,44 @@ async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, opti
   return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type, useShowPoster);
 }
 
+function queueComponentCache(components, cacheKey, componentData) {
+  if (!cacheKey || !componentData) return;
+  components.push({ cacheKey, componentData });
+}
+
 /**
- * Simple component caching without validation
- * Used for individual meta components that don't need meta validation
+ * Batch component caching without validation.
+ * Keeps writes non-fatal while reducing Redis command dispatch overhead.
  */
-async function cacheComponent(cacheKey, componentData, ttl) {
-  if (!redis || !componentData) return;
-  
-  const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
-  
+async function cacheComponentsPipeline(components, ttl) {
+  if (!redis || !Array.isArray(components) || components.length === 0) return;
+
+  const pipeline = redis.pipeline();
+  const queuedCommands = [];
+
+  for (const { cacheKey, componentData } of components) {
+    const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
+
+    try {
+      pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+      queuedCommands.push(versionedKey);
+    } catch (error) {
+      cacheLogger.warn(`Failed to queue component cache write for ${versionedKey}:`, error);
+    }
+  }
+
+  if (queuedCommands.length === 0) return;
+
   try {
-    await redis.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+    const results = await pipeline.exec();
+
+    results?.forEach(([error], index) => {
+      if (error) {
+        cacheLogger.warn(`Failed to cache component for ${queuedCommands[index]}:`, error);
+      }
+    });
   } catch (error) {
-    cacheLogger.warn(`Failed to cache component for ${versionedKey}:`, error);
+    cacheLogger.warn(`Failed to execute component cache pipeline:`, error);
   }
 }
 

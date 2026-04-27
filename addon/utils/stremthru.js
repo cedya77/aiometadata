@@ -64,7 +64,7 @@ async function _processAnimeItem(item, provider, id, language, config, includeVi
   if(config.mal?.useImdbIdForCatalogAndSearch && item.type === 'series' && imdbId){
     return (await cacheWrapMetaSmart(config.userUUID, imdbId, async () => {
       return await getMeta(item.type, language, imdbId, config, config.userUUID, includeVideos);
-    }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, includeVideos))?.meta || null;
+    }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, item.type, includeVideos))?.meta || null;
   }
   else if(!config.mal?.useImdbIdForCatalogAndSearch || !imdbId){
     const posterUrl = mapping.mal_id
@@ -109,7 +109,7 @@ async function _processStandardItem(item, provider, language, config, includeVid
   let stremioId = item.id;
   const result = await cacheWrapMetaSmart(config.userUUID, item.id, async () => {
       return await getMeta(item.type, language, stremioId, config, config.userUUID, includeVideos);
-  }, undefined, { enableErrorCaching: true, maxRetries: 2 }, item.type, includeVideos);
+  }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, item.type, includeVideos);
   
   if (result?.meta && item.behaviorHints && Object.keys(item.behaviorHints).length > 0) {
     result.meta.behaviorHints = item.behaviorHints;

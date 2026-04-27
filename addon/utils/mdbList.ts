@@ -715,7 +715,7 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
 
         const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
           return await getMeta(mdblistType, language, stremioId, config, config.userUUID, includeVideos);
-        }, undefined, {enableErrorCaching: true, maxRetries: 2}, mdblistType as any, includeVideos);
+        }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, mdblistType as any, includeVideos);
 
         if (result && result.meta) {
           return result.meta;
@@ -1428,7 +1428,7 @@ async function parseMDBListUpNextItems(
             return metaResult;
           },
           undefined,
-          { enableErrorCaching: true, maxRetries: 2 },
+          { enableErrorCaching: true, maxRetries: 2, config },
           'series' as any,
           true,
           useShowPoster

@@ -501,7 +501,7 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, config.userUUID, includeVideos);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, type as any, includeVideos);
     
     if (result && result.meta) {
       return result.meta;
@@ -627,7 +627,7 @@ async function getTvdbDiscoverCatalog(
       try {
         const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
           return await getMeta(metaType, language, stremioId, config, userUUID, includeVideos);
-        }, undefined, { enableErrorCaching: true, maxRetries: 2 }, metaType as any, includeVideos);
+        }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, metaType as any, includeVideos);
 
         if (result && result.meta) {
           return result.meta;
@@ -919,7 +919,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         try {
           const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
             return await getMeta(metaType, language, stremioId, config, userUUID, includeVideos);
-          }, undefined, { enableErrorCaching: true, maxRetries: 2 }, metaType as any, includeVideos);
+          }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, metaType as any, includeVideos);
 
           if (result && result.meta) {
             return result.meta;
@@ -1028,7 +1028,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         try {
           const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
             return await getMeta(itemType, language, stremioId, config, userUUID, includeVideos);
-          }, undefined, {enableErrorCaching: true, maxRetries: 2}, itemType as any, includeVideos);
+          }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, itemType as any, includeVideos);
           
           if (result && result.meta) {
             return result.meta;
@@ -1098,7 +1098,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     
     const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
-    }, undefined, {enableErrorCaching: true, maxRetries: 2}, type as any, includeVideos);
+    }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, type as any, includeVideos);
     if (result && result.meta) {
       return result.meta;
     }

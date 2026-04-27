@@ -865,7 +865,7 @@ async function parseSimklItems(
             stremioId,
             async () => getMeta(itemType, config.language, stremioId, config, userUUID, includeVideos),
             undefined,
-            { enableErrorCaching: true, maxRetries: 2 },
+            { enableErrorCaching: true, maxRetries: 2, config },
             itemType as any,
             includeVideos
           );
@@ -932,7 +932,7 @@ async function parseSimklItems(
             return await getMeta(itemType, config.language, stremioId!, config, userUUID, includeVideos);
           },
           undefined,
-          { enableErrorCaching: true, maxRetries: 2 },
+          { enableErrorCaching: true, maxRetries: 2, config },
           itemType as any,
           includeVideos
         );

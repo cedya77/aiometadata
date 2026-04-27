@@ -2328,7 +2328,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         // When useImdbIdForCatalogAndSearch is enabled, call getMeta with IMDb ID so it's treated consistently
         // This ensures cache keys match - if forceAnimeForDetectedImdb is false, it will be treated as series/movie
         return await getMeta(stremioType, language, id, config, config.userUUID, includeVideos);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, stremioType, includeVideos))?.meta || null;
+      }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, stremioType, includeVideos))?.meta || null;
     }
     else {
       let malReleaseInfo = anime.year || (anime.aired?.from ? anime.aired.from.substring(0, 4) : "");

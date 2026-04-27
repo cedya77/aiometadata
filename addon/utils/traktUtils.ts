@@ -2140,7 +2140,7 @@ async function parseTraktItems(
             return metaResult;
           }, 
           undefined, 
-          { enableErrorCaching: true, maxRetries: 2 }, 
+          { enableErrorCaching: true, maxRetries: 2, config },
           metaType as any, 
           shouldIncludeVideos,
           useShowPoster

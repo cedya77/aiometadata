@@ -158,7 +158,7 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
       
       const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
         return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
-      }, undefined, {enableErrorCaching: true, maxRetries: 2}, type, includeVideos);
+      }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, type, includeVideos);
       
       if (result && result.meta) {
         return result.meta;
