@@ -1949,13 +1949,6 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
 
   normalizeMetaReleaseAvailability(reconstructedMeta);
   
-  try {
-    const requestTracker = require('./requestTracker');
-    requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type).catch(() => {});
-  } catch (error) {
-    cacheLogger.warn(`Failed to capture reconstructed metadata for dashboard: ${error.message}`);
-  }
-  
   const metaReconstructionKey = `meta:reconstructed:${metaId}`;
   updateCacheHealth(metaReconstructionKey, 'hit', true);
   
