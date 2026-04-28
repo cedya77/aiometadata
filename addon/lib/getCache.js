@@ -6,6 +6,10 @@ const { loadConfigFromDatabase } = require('./configApi');
 const consola = require('consola');
 const crypto = require('crypto');
 const { isMetricsDisabled } = require('./metricsConfig');
+const {
+  canonicalizeLinksForCache,
+  applyLinksUserScopeProjection,
+} = require('./linkProjection');
 
 // Helper to hash config
 function hashConfig(configObj) {
@@ -1098,13 +1102,22 @@ function projectMetaForUser(meta, config) {
   applyCastCountProjection(meta, config);
   applyBlurThumbProjection(meta, config);
   applyDisplayAgeRatingProjection(meta, config);
+  applyLinksUserScopeProjection(meta, config);
   return meta;
 }
 
 async function resolveConfigForCache(userUUID, options = {}) {
-  if (options?.config) return options.config;
+  if (options?.config) {
+    if (userUUID && !options.config.userUUID) {
+      options.config.userUUID = userUUID;
+    }
+    return options.config;
+  }
 
   const config = await loadConfigFromDatabase(userUUID);
+  if (config && userUUID) {
+    config.userUUID = userUUID;
+  }
   if (config && options && typeof options === 'object') {
     options.config = config;
   }
@@ -1677,7 +1690,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
    }
    
    if (meta.links && Array.isArray(meta.links)) {
-     queueComponentCache(componentsToCache, componentCacheKeys.links, { links: stripCertificationLinks(meta.links, meta.app_extras?.certification) });
+     queueComponentCache(componentsToCache, componentCacheKeys.links, { links: canonicalizeLinksForCache(stripCertificationLinks(meta.links, meta.app_extras?.certification)) });
    }
    
    if (meta.trailers || meta.trailerStreams) {
