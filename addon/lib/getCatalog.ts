@@ -311,7 +311,6 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const langParts = language.split('-');
   const langCode2 = langParts[0];
   const countryCode2 = langParts[1] || langCode2; 
-  const langCode3 = await to3LetterCode(language, config);
   const countryCode3 = to3LetterCountryCode(countryCode2);
   const tvdbContentRatingId = getTVDBContentRatingId(config.ageRating as string, countryCode3, type === 'movie' ? 'movie' : 'episode');
   
@@ -403,27 +402,14 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize;
   const paginatedResults = sortedResults.slice(startIndex, endIndex);
-  
+
   logger.debug(`Pagination: page ${page}, showing items ${startIndex + 1}-${Math.min(endIndex, sortedResults.length)} of ${sortedResults.length} total results`);
 
-  let preferredProvider: string;
-  if (type === 'movie') {
-    preferredProvider = config.providers?.movie || 'tmdb';
-  } else {
-    preferredProvider = config.providers?.series || 'tvdb';
-  }
   const metas = await Promise.all(paginatedResults.map(async (item: any) => {
     const tvdbId = item.id;
     if (!tvdbId) return null;
     
     let stremioId = `tvdb:${tvdbId}`;
-    //if(preferredProvider === 'tmdb' && allIds?.tmdbId) {
-    //  stremioId = `tmdb:${allIds.tmdbId}`;
-    //} else if(preferredProvider === 'tvmaze' && allIds?.tvmazeId) {
-    //  stremioId = `tvmaze:${allIds.tvmazeId}`;
-    //} else if(preferredProvider === 'imdb' && allIds?.imdbId) {
-    //  stremioId = allIds.imdbId;
-    //}
     
     const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
       return await getMeta(type, language, stremioId, config, config.userUUID, includeVideos);
