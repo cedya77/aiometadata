@@ -84,6 +84,36 @@ const KEYS_TO_KEEP_AFTER_PRUNE = Math.min(
 const inFlightRequests = new Map();
 const cacheValidator = require('./cacheValidator');
 
+async function singleFlight(key, factory, cloneResult = value => value) {
+  let promise = inFlightRequests.get(key);
+  if (!promise) {
+    promise = Promise.resolve()
+      .then(factory)
+      .finally(() => {
+        if (inFlightRequests.get(key) === promise) {
+          inFlightRequests.delete(key);
+        }
+      });
+    inFlightRequests.set(key, promise);
+  }
+
+  return cloneResult(await promise);
+}
+
+function cloneJsonCompatibleResult(value) {
+  if (value === null || value === undefined) return value;
+
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch (_) {
+      // Fall through to JSON cloning, which matches Redis cache serialization.
+    }
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
 /**
  * Safely delete Redis keys matching a pattern using SCAN and pipelined DELs to avoid memory/stack spikes
  * @param {string} pattern Redis key pattern (e.g., 'meta-*:*')
@@ -469,16 +499,16 @@ async function cacheWrap(key, method, ttl, options = {}) {
   }
 
   const versionedKey = `v${ADDON_VERSION}:${key}`;
+  return singleFlight(versionedKey, () => cacheWrapInternal(key, method, ttl, options, versionedKey));
+}
+
+async function cacheWrapInternal(key, method, ttl, options, versionedKey) {
   const {
     enableErrorCaching = false,
     resultClassifier = classifyResult,
     maxRetries = SELF_HEALING_CONFIG.maxRetries,
     onHit,
   } = options;
-
-  if (inFlightRequests.has(versionedKey)) {
-    return inFlightRequests.get(versionedKey);
-  }
   
   let retries = 0;
   
@@ -527,11 +557,8 @@ async function cacheWrap(key, method, ttl, options = {}) {
       updateCacheHealth(versionedKey, 'error', false);
   }
 
-  const promise = method();
-  inFlightRequests.set(versionedKey, promise);
-
   try {
-    const result = await promise;
+    const result = await method();
       //cacheLogger.info(`⏳ MISS for ${versionedKey}`);
       updateCacheHealth(versionedKey, 'miss', true);
       
@@ -614,9 +641,7 @@ async function cacheWrap(key, method, ttl, options = {}) {
       }
       
     throw error; 
-  } finally {
-    inFlightRequests.delete(versionedKey);
-    }
+  }
   }
 }
 
@@ -628,12 +653,13 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
     return method();
   }
 
-  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries, skipVersion = false } = options;
+  const { skipVersion = false } = options;
   const versionedKey = skipVersion ? `global:${key}` : `global:${ADDON_VERSION}:${key}`;
-  
-  if (inFlightRequests.has(versionedKey)) {
-    return inFlightRequests.get(versionedKey);
-  }
+  return singleFlight(versionedKey, () => cacheWrapGlobalInternal(key, method, ttl, options, versionedKey));
+}
+
+async function cacheWrapGlobalInternal(key, method, ttl, options, versionedKey) {
+  const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries } = options;
 
   let retries = 0;
   
@@ -673,11 +699,8 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       updateCacheHealth(versionedKey, 'error', false);
   }
 
-  const promise = method();
-  inFlightRequests.set(versionedKey, promise);
-
   try {
-    const result = await promise;
+    const result = await method();
       //globalCacheLogger.info(`⏳ MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
@@ -742,9 +765,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       }
       
     throw error;
-  } finally {
-    inFlightRequests.delete(versionedKey);
-    }
+  }
   }
 }
 
@@ -895,6 +916,18 @@ function getMetaCacheContext(config, metaId, type, useShowPoster = false) {
 
 function hashProfile(profile) {
   return hashConfig(stableStringify(profile));
+}
+
+function getMetaSmartLockContextHash(config, metaId, type, includeVideos, useShowPoster) {
+  return hashConfig({
+    cacheContext: getMetaCacheContext(config, metaId, type, useShowPoster),
+    projection: {
+      castCount: config.castCount || 0,
+      blurThumbs: config.blurThumbs || false,
+      displayAgeRating: config.displayAgeRating || false,
+    },
+    includeVideos: !!includeVideos,
+  });
 }
 
 function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = false }) {
@@ -1523,7 +1556,18 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
      cacheLogger.warn(`No config found for user ${userUUID}`);
      return { meta: null };
    }
-   
+   const result = await method();
+   return writeMetaComponentsWithConfig({
+     config,
+     metaId,
+     result,
+     ttl,
+     type,
+     useShowPoster,
+   });
+}
+
+async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL, type = null, useShowPoster = false }) {
   const componentCacheKeys = buildMetaComponentCacheKeys({
     config,
     metaId,
@@ -1531,8 +1575,6 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
     useShowPoster,
   });
 
-   const result = await method();
-   
    const meta = result?.meta || result;
    
   if (!meta || !meta.id || !meta.name || !meta.type) {
@@ -1674,7 +1716,22 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
     cacheLogger.warn(`No config found for user ${userUUID}`);
     return { errorReason: 'no config for user' };
   }
-   
+
+  return reconstructMetaFromComponentsWithConfig({
+    config,
+    metaId,
+    type,
+    includeVideos,
+    useShowPoster,
+  });
+}
+
+async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = null, includeVideos = true, useShowPoster = false }) {
+  if (!metaId || typeof metaId !== 'string') {
+    cacheLogger.warn(`Invalid metaId provided: ${metaId}`);
+    return { errorReason: 'invalid metaId' };
+  }
+
    const componentCacheKeys = buildMetaComponentCacheKeys({
     config,
     metaId,
@@ -1879,40 +1936,92 @@ async function reconstructMetaFromComponents(userUUID, metaId, ttl = META_TTL, o
  */
 async function cacheWrapMetaSmart(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null, includeVideos = true, useShowPoster = false) {
   cacheLogger.debug(`[Meta] Smart caching for ${metaId} (type:${type}, videos:${includeVideos}, showPoster:${useShowPoster})`);
-   
-   // First, try to reconstruct from cached components BEFORE calling method
-   const reconstructedMeta = await reconstructMetaFromComponents(userUUID, metaId, ttl, options, type, includeVideos, useShowPoster);
-  
+
+  if (!metaId || typeof metaId !== 'string') {
+    cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaSmart: ${metaId}`);
+    return { meta: null };
+  }
+
+  let config;
+  try {
+    config = await resolveConfigForCache(userUUID, options);
+  } catch (error) {
+    cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
+    return { meta: null };
+  }
+
+  if (!config) {
+    cacheLogger.warn(`No config found for user ${userUUID}`);
+    return { meta: null };
+  }
+
+  // First, try to reconstruct from cached components BEFORE taking the single-flight lock.
+  const reconstructedMeta = await reconstructMetaFromComponentsWithConfig({
+    config,
+    metaId,
+    type,
+    includeVideos,
+    useShowPoster,
+  });
+
   if (reconstructedMeta && reconstructedMeta.meta) {
     cacheLogger.debug(`[Meta] Component reconstruction successful for ${metaId}`);
     return reconstructedMeta;
   }
-   
+
   const failureReason = reconstructedMeta && reconstructedMeta.errorReason ? ` (reason: ${reconstructedMeta.errorReason})` : '';
-  cacheLogger.debug(`[Meta] Component reconstruction failed for ${metaId}, generating full meta${failureReason}`);
-  
-  const result = await method();
-  
-  // Handle null/empty results
-  if (!result || !result.meta) {
-    cacheLogger.debug(`[Meta] Method returned null/empty result for ${metaId}`);
-    return { meta: null };
-  }
-  
-  const meta = result.meta;
-  let idToCache = meta.id;
-  
-  // Validate that we have a valid ID to cache
-  if (!idToCache || typeof idToCache !== 'string') {
-    cacheLogger.warn(`Invalid meta.id for caching: ${idToCache}, using original metaId: ${metaId}`);
-    idToCache = metaId;
-  }
-  
-  if(metaId.startsWith('tun_')){
-    idToCache = metaId;
-  }
-  
-  return await cacheWrapMetaComponents(userUUID, idToCache, async () => result, ttl, options, type, useShowPoster);
+  cacheLogger.debug(`[Meta] Component reconstruction failed for ${metaId}${failureReason}`);
+
+  const lockContextHash = getMetaSmartLockContextHash(config, metaId, type, includeVideos, useShowPoster);
+  const lockKey = `meta-smart:v${ADDON_VERSION}:${userUUID || 'global'}:${type || 'unknown'}:${lockContextHash}:videos=${includeVideos ? 1 : 0}:showPoster=${useShowPoster ? 1 : 0}:${metaId}`;
+
+  return singleFlight(lockKey, async () => {
+    const reconstructedAfterWait = await reconstructMetaFromComponentsWithConfig({
+      config,
+      metaId,
+      type,
+      includeVideos,
+      useShowPoster,
+    });
+
+    if (reconstructedAfterWait && reconstructedAfterWait.meta) {
+      cacheLogger.debug(`[Meta] Component reconstruction successful after wait for ${metaId}`);
+      return reconstructedAfterWait;
+    }
+
+    const retryReason = reconstructedAfterWait && reconstructedAfterWait.errorReason ? ` (reason: ${reconstructedAfterWait.errorReason})` : '';
+    cacheLogger.debug(`[Meta] Generating full meta for ${metaId}${retryReason}`);
+
+    const result = await method();
+
+    // Handle null/empty results
+    if (!result || !result.meta) {
+      cacheLogger.debug(`[Meta] Method returned null/empty result for ${metaId}`);
+      return { meta: null };
+    }
+
+    const meta = result.meta;
+    let idToCache = meta.id;
+
+    // Validate that we have a valid ID to cache
+    if (!idToCache || typeof idToCache !== 'string') {
+      cacheLogger.warn(`Invalid meta.id for caching: ${idToCache}, using original metaId: ${metaId}`);
+      idToCache = metaId;
+    }
+
+    if(metaId.startsWith('tun_')){
+      idToCache = metaId;
+    }
+
+    return writeMetaComponentsWithConfig({
+      config,
+      metaId: idToCache,
+      result,
+      ttl,
+      type,
+      useShowPoster,
+    });
+  }, cloneJsonCompatibleResult);
 }
 
 function queueComponentCache(components, cacheKey, componentData) {
