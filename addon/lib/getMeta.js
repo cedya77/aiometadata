@@ -2782,8 +2782,6 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     if (stremioType === 'series' && malData.status !== 'Not yet aired' && episodeData && episodeData.length > 0) {      // Filter episodes once
       
 
-      // Pre-fetch franchise info once to avoid repeated API calls for each episode
-      let franchiseInfo = null;
       let tmdbThumbnailMap = new Map(); // Map of "season:episode" -> thumbnail URL
       let tmdbSeasonPosterMap = new Map(); // Map of season -> season poster url
       let tmdbAirDateMap = new Map(); // Map of "season:episode" -> air_date
@@ -2794,20 +2792,14 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       
       if (mapping?.themoviedb_id && kitsuId) {
         try {
-          franchiseInfo = await idMapper.getFranchiseInfoFromTmdbId(mapping.themoviedb_id);
-          
           // Resolve all TMDB episodes and group by season for bulk fetching
           const seasonSet = new Set();
-          
-          for (const ep of episodeData) {
-            try {
-              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuId, ep.mal_id, config);
-              if (tmdbEpisode && tmdbEpisode.tmdbId) {
-                tmdbEpisodeMap.set(ep.mal_id, tmdbEpisode);
-                seasonSet.add(tmdbEpisode.seasonNumber);
-              }
-            } catch (error) {
-              logger.debug(`[buildKitsuAnimeResponse] Failed to resolve TMDB episode for Kitsu episode ${ep.mal_id}: ${error.message}`);
+          const episodeNumbers = episodeData.map(ep => ep.mal_id);
+          tmdbEpisodeMap = await idMapper.resolveTmdbEpisodesFromKitsu(kitsuId, episodeNumbers, config);
+
+          for (const tmdbEpisode of tmdbEpisodeMap.values()) {
+            if (tmdbEpisode && tmdbEpisode.tmdbId) {
+              seasonSet.add(tmdbEpisode.seasonNumber);
             }
           }
           
@@ -2862,7 +2854,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
             }
           }
         } catch (error) {
-          logger.debug(`[buildKitsuAnimeResponse] Failed to fetch franchise info: ${error.message}`);
+          logger.debug(`[buildKitsuAnimeResponse] Failed to resolve TMDB episodes: ${error.message}`);
         }
       }
       
@@ -3230,8 +3222,6 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
 
     // 🔹 episodes for series
     if (stremioType === 'series' && Array.isArray(episodeData) && episodeData.length > 0) {
-      // Pre-fetch franchise info once to avoid repeated API calls for each episode
-      let franchiseInfo = null;
       let tmdbThumbnailMap = new Map(); // Map of "season:episode" -> thumbnail URL
       let tmdbSeasonPosterMap = new Map(); // Map of season -> season poster url
       let tmdbAirDateMap = new Map(); // Map of "season:episode" -> air_date
@@ -3242,21 +3232,14 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
       
       if (mapping?.themoviedb_id) {
         try {
-          franchiseInfo = await idMapper.getFranchiseInfoFromTmdbId(mapping.themoviedb_id);
-          
           // Resolve all TMDB episodes and group by season for bulk fetching
           const seasonSet = new Set();
-          
-          for (const item of episodeData) {
-            const ep = item.attributes;
-            try {
-              const tmdbEpisode = await idMapper.resolveTmdbEpisodeFromKitsu(kitsuData.id, ep.number, config);
-              if (tmdbEpisode && tmdbEpisode.tmdbId) {
-                tmdbEpisodeMap.set(ep.number, tmdbEpisode);
-                seasonSet.add(tmdbEpisode.seasonNumber);
-              }
-            } catch (error) {
-              logger.debug(`[buildKitsuAnimeResponse] Failed to resolve TMDB episode for Kitsu episode ${ep.number}: ${error.message}`);
+          const episodeNumbers = episodeData.map(item => item.attributes.number);
+          tmdbEpisodeMap = await idMapper.resolveTmdbEpisodesFromKitsu(kitsuData.id, episodeNumbers, config);
+
+          for (const tmdbEpisode of tmdbEpisodeMap.values()) {
+            if (tmdbEpisode && tmdbEpisode.tmdbId) {
+              seasonSet.add(tmdbEpisode.seasonNumber);
             }
           }
           
@@ -3311,7 +3294,7 @@ async function buildKitsuAnimeResponse(stremioId, kitsuData, genres, includeObje
             }
           }
         } catch (error) {
-          logger.debug(`[buildKitsuAnimeResponse] Failed to fetch franchise info: ${error.message}`);
+          logger.debug(`[buildKitsuAnimeResponse] Failed to resolve TMDB episodes: ${error.message}`);
         }
       }
       
