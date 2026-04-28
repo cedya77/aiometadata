@@ -162,15 +162,23 @@ function isRateLimitError(error: any): boolean {
  * Tracks provider calls only for final outcomes (not each retry attempt)
  */
 async function makeRateLimitedRequest<T>(
-  requestFn: () => Promise<T>, 
+  requestFn: () => Promise<T>,
   apiKey: string,
-  context: string = 'MDBList', 
+  context: string = 'MDBList',
   retries: number = RATE_LIMIT_CONFIG.maxRetries
 ): Promise<T> {
   let attempt = 0;
   const state = getRateLimitState(apiKey);
-  const overallStartTime = Date.now(); // Track total time including retries
-  
+  const overallStartTime = Date.now();
+
+  if (state.lastRemaining === 0 && state.lastReset && Date.now() < state.lastReset * 1000) {
+    const quotaError = new Error('MDBList API quota exhausted (remaining=0).') as Error & { code?: string; response?: any };
+    quotaError.code = 'MDBLIST_QUOTA_EXHAUSTED';
+    quotaError.response = { status: 429 };
+    logger.warn(`[MDBList] Quota exhausted, skipping request - ${context}`);
+    throw quotaError;
+  }
+
   while (attempt < retries) {
     attempt++;
     const isLastAttempt = attempt === retries;
