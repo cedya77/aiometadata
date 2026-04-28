@@ -1,9 +1,7 @@
 const { request, setGlobalDispatcher, ProxyAgent } = require("undici");
 const buildInfo = require('../lib/buildInfo');
 
-// Global proxy configuration - applies to all undici requests
-// Prefers HTTPS_PROXY since most API calls are HTTPS, falls back to HTTP_PROXY
-const getProxyUrl = () => {
+const getProxyUrl = (): string | null => {
   const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
   if (proxy) {
     try {
@@ -22,25 +20,45 @@ if (proxyUrl) {
   setGlobalDispatcher(dispatcher);
 }
 
-/**
- * HTTP client wrapper optimized for MAXIMUM SPEED.
- * It uses a "fail-fast" strategy with a short timeout and NO retries.
- * This is designed to prioritize user-perceived latency above all.
- *
- * @param {string} url - The URL to request
- * @param {Object} options - Request options
- * @returns {Promise<Object>} Response object with data, status, headers
- */
-async function httpRequest(url, options = {}) {
+interface HttpRequestOptions {
+  method?: string;
+  data?: any;
+  headers?: Record<string, string>;
+  timeout?: number;
+  dispatcher?: any;
+  params?: Record<string, string>;
+}
+
+interface HttpResponse {
+  data: any;
+  status: number;
+  headers: Record<string, string>;
+}
+
+interface HttpError extends Error {
+  response?: {
+    status: number;
+    data?: string;
+    headers?: Record<string, string>;
+  };
+}
+
+export async function httpRequest(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
   const {
     method = 'GET',
     data,
     headers = {},
     timeout = 8000,
-    dispatcher
+    dispatcher,
+    params
   } = options;
 
-  const requestOptions = {
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    url += (url.includes('?') ? '&' : '?') + qs;
+  }
+
+  const requestOptions: any = {
     method,
     headers: {
       'User-Agent': `AIOMetadata/${buildInfo.version}`,
@@ -67,7 +85,6 @@ async function httpRequest(url, options = {}) {
     '';
 
   if (statusCode >= 200 && statusCode < 300) {
-    // HEAD usually has no body; don't try to parse
     if (method === 'HEAD') {
       return {
         data: null,
@@ -87,7 +104,7 @@ async function httpRequest(url, options = {}) {
       headers: responseHeaders
     };
   } else if (statusCode === 304) {
-    const error = new Error(`Not Modified`);
+    const error: HttpError = new Error(`Not Modified`);
     error.response = {
       status: 304,
       headers: responseHeaders
@@ -95,7 +112,7 @@ async function httpRequest(url, options = {}) {
     throw error;
   } else {
     const errorText = await body.text();
-    const error = new Error(`Request failed with status code ${statusCode}`);
+    const error: HttpError = new Error(`Request failed with status code ${statusCode}`);
     error.response = {
       status: statusCode,
       data: errorText,
@@ -105,46 +122,35 @@ async function httpRequest(url, options = {}) {
   }
 }
 
-
-/**
- * Convenience method for GET requests
- */
-async function httpGet(url, options = {}) {
-  // Follow up to 3 redirects for GET requests (handles 301/302/303/307/308)
+export async function httpGet(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
   let currentUrl = url;
   for (let i = 0; i < 3; i++) {
     try {
       return await httpRequest(currentUrl, { ...options, method: 'GET' });
-    } catch (error) {
+    } catch (error: any) {
       const status = error?.response?.status;
       const locationHeader = error?.response?.headers?.location || error?.response?.headers?.Location;
       const isRedirect = status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
       if (isRedirect && locationHeader) {
-        // Resolve relative Location headers against the current URL
         currentUrl = new URL(locationHeader, currentUrl).toString();
         continue;
       }
       throw error;
     }
   }
-  // Final attempt without further redirect handling
   return httpRequest(currentUrl, { ...options, method: 'GET' });
 }
 
-/**
- * Convenience method for POST requests
- */
-async function httpPost(url, data, options = {}) {
+export async function httpPost(url: string, data: any, options: HttpRequestOptions = {}): Promise<HttpResponse> {
   let currentUrl = url;
   for (let i = 0; i < 3; i++) {
     try {
       return await httpRequest(currentUrl, { ...options, method: 'POST', data });
-    } catch (error) {
+    } catch (error: any) {
       const status = error?.response?.status;
       const locationHeader = error?.response?.headers?.location || error?.response?.headers?.Location;
       const isRedirect = status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
       if (isRedirect && locationHeader) {
-        // Resolve relative Location headers against the current URL
         currentUrl = new URL(locationHeader, currentUrl).toString();
         continue;
       }
@@ -154,15 +160,12 @@ async function httpPost(url, data, options = {}) {
   return httpRequest(currentUrl, { ...options, method: 'POST', data });
 }
 
-/**
- * Convenience method for HEAD requests
- */
-async function httpHead(url, options = {}) {
+export async function httpHead(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
   let currentUrl = url;
   for (let i = 0; i < 3; i++) {
     try {
       return await httpRequest(currentUrl, { ...options, method: 'HEAD' });
-    } catch (error) {
+    } catch (error: any) {
       const status = error?.response?.status;
       const locationHeader = error?.response?.headers?.location || error?.response?.headers?.Location;
       const isRedirect = status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
@@ -175,10 +178,3 @@ async function httpHead(url, options = {}) {
   }
   return httpRequest(currentUrl, { ...options, method: 'HEAD' });
 }
-
-module.exports = {
-  httpRequest,
-  httpGet,
-  httpPost,
-  httpHead
-};

@@ -1,20 +1,15 @@
 require("dotenv").config();
 const FanartTvApi = require('@fanart-tv/api');
-const { LRUCache } = require('lru-cache');
+import { LRUCache } from 'lru-cache';
 const { cacheWrapGlobal } = require('../lib/getCache');
 const FANART_IMAGE_BASE = 'https://assets.fanart.tv/fanart/movies/';
 
-const clientCache = new LRUCache({
-  max: parseInt(process.env.FANART_CLIENT_CACHE_MAX, 10) || 2000,
+const clientCache = new LRUCache<string, any>({
+  max: parseInt(process.env.FANART_CLIENT_CACHE_MAX as string, 10) || 2000,
   ttl: 24 * 60 * 60 * 1000,
 });
 
-/**
- * Gets a configured and initialized FanartTvApi client.
- * @param {object} config - The user's configuration object.
- * @returns {FanartTvApi|null} An initialized client, or null if no key is provided.
- */
-function getFanartClient(config) {
+function getFanartClient(config: any): any | null {
   const projectKey = process.env.FANART_API_PROJECT_KEY || process.env.FANART_API_KEY;
   const personalKey = config.apiKeys?.fanart;
   const apiKey = projectKey || personalKey;
@@ -28,7 +23,7 @@ function getFanartClient(config) {
   }
 
   try {
-    const opts = { apiKey, version: 'v3.2' };
+    const opts: any = { apiKey, version: 'v3.2' };
     if (projectKey && personalKey) {
       opts.clientKey = personalKey;
     }
@@ -36,17 +31,13 @@ function getFanartClient(config) {
 
     clientCache.set(cacheKey, newClient);
     return newClient;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[Fanart] Failed to initialize client:`, error.message);
     return null;
   }
 }
 
-
-/**
- * Fetches the best background image (showbackground) for a TV series from Fanart.tv.
- */
-async function getBestSeriesBackground(tvdbId, config) {
+async function getBestSeriesBackground(tvdbId: string, config: any): Promise<string | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tvdbId) {
     return null;
@@ -63,7 +54,7 @@ async function getBestSeriesBackground(tvdbId, config) {
       const selectedBackground = selectFanartImageByLang(images.showbackground, config, 'lang');
       const backgroundUrl = selectedBackground.url.startsWith('http') ? selectedBackground.url : `${FANART_IMAGE_BASE}${selectedBackground.id}/showbackground/${selectedBackground.url}`;
       return backgroundUrl;
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
       } else {
@@ -71,13 +62,10 @@ async function getBestSeriesBackground(tvdbId, config) {
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days - artwork rarely changes
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the best background image (moviebackground) for a movie from Fanart.tv.
- */
-async function getBestMovieBackground(tmdbId, config) {
+async function getBestMovieBackground(tmdbId: string, config: any): Promise<string | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tmdbId) {
     return null;
@@ -93,7 +81,7 @@ async function getBestMovieBackground(tmdbId, config) {
       const selectedBackground = selectFanartImageByLang(images.moviebackground, config, 'lang');
       const backgroundUrl = selectedBackground.url.startsWith('http') ? selectedBackground.url : `${FANART_IMAGE_BASE}${selectedBackground.id}/moviebackground/${selectedBackground.url}`;
       return backgroundUrl;
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
       } else {
@@ -101,16 +89,10 @@ async function getBestMovieBackground(tmdbId, config) {
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the complete image object for a movie from Fanart.tv.
- * @param {string} tmdbId - The TMDB ID of the movie.
- * @param {object} config - The user's configuration object.
- * @returns {Promise<object|null>} The full image object, or null on failure.
- */
-async function getMovieImages(tmdbId, config) {
+async function getMovieImages(tmdbId: string, config: any): Promise<any | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tmdbId) {
     return null;
@@ -120,19 +102,16 @@ async function getMovieImages(tmdbId, config) {
   return cacheWrapGlobal(cacheKey, async () => {
     try {
       return await fanartClient.getMovieImages(tmdbId);
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && !error.message.includes("Not Found")) {
         console.error(`[Fanart] Error in getMovieImages for TMDB ID ${tmdbId}:`, error.message);
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the best poster image (movieposter) for a movie from Fanart.tv.
- */
-async function getBestMoviePoster(tmdbId, config) {
+async function getBestMoviePoster(tmdbId: string, config: any): Promise<string | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tmdbId) {
     return null;
@@ -148,7 +127,7 @@ async function getBestMoviePoster(tmdbId, config) {
       const selectedPoster = selectFanartImageByLang(images.movieposter, config, 'lang');
       const posterUrl = selectedPoster.url.startsWith('http') ? selectedPoster.url : `${FANART_IMAGE_BASE}${selectedPoster.id}/movieposter/${selectedPoster.url}`;
       return posterUrl;
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
       } else {
@@ -156,14 +135,10 @@ async function getBestMoviePoster(tmdbId, config) {
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the best logo image (movielogo) for a movie from Fanart.tv.
- */
-
-async function getBestMovieLogo(tmdbId, config) {
+async function getBestMovieLogo(tmdbId: string, config: any): Promise<string | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tmdbId) {
     return null;
@@ -179,7 +154,7 @@ async function getBestMovieLogo(tmdbId, config) {
       const selectedLogo = selectFanartImageByLang(images.hdmovielogo, config, 'lang');
       const logoUrl = selectedLogo.url.startsWith('http') ? selectedLogo.url : `${FANART_IMAGE_BASE}${selectedLogo.id}/hdmovielogo/${selectedLogo.url}`;
       return logoUrl;
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TMDB ID ${tmdbId}.`);
       } else {
@@ -187,13 +162,10 @@ async function getBestMovieLogo(tmdbId, config) {
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the best poster image (tvposter) for a series from Fanart.tv.
- */
-async function getBestSeriesPoster(tvdbId, config) {
+async function getBestSeriesPoster(tvdbId: string, config: any): Promise<string | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tvdbId) {
     return null;
@@ -209,7 +181,7 @@ async function getBestSeriesPoster(tvdbId, config) {
       const selectedPoster = selectFanartImageByLang(images.tvposter, config, 'lang');
       const posterUrl = selectedPoster.url.startsWith('http') ? selectedPoster.url : `${FANART_IMAGE_BASE}${selectedPoster.id}/tvposter/${selectedPoster.url}`;
       return posterUrl;
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
       } else {
@@ -217,13 +189,10 @@ async function getBestSeriesPoster(tvdbId, config) {
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the best logo image (tvlogo) for a tv from Fanart.tv.
- */
-async function getBestTVLogo(tvdbId, config) {
+async function getBestTVLogo(tvdbId: string, config: any): Promise<string | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tvdbId) {
     return null;
@@ -239,7 +208,7 @@ async function getBestTVLogo(tvdbId, config) {
       const selectedLogo = selectFanartImageByLang(images.hdtvlogo, config, 'lang');
       const logoUrl = selectedLogo.url.startsWith('http') ? selectedLogo.url : `${FANART_IMAGE_BASE}${selectedLogo.id}/hdtvlogo/${selectedLogo.url}`;
       return logoUrl;
-    } catch (error) {
+    } catch (error: any) {
       if (error.message && error.message.includes("Not Found")) {
         console.log(`[Fanart] No entry found on Fanart.tv for TVDB ID ${tvdbId}.`);
       } else {
@@ -247,16 +216,10 @@ async function getBestTVLogo(tvdbId, config) {
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Fetches the complete image object for a series from Fanart.tv.
- * @param {string} tvdbId - The TVDB ID of the series.
- * @param {object} config - The user's configuration object.
- * @returns {Promise<object|null>} The full image object, or null on failure.
- */
-async function getShowImages(tvdbId, config) {
+async function getShowImages(tvdbId: string, config: any): Promise<any | null> {
   const fanartClient = getFanartClient(config);
   if (!fanartClient || !tvdbId) {
     return null;
@@ -266,36 +229,31 @@ async function getShowImages(tvdbId, config) {
   return cacheWrapGlobal(cacheKey, async () => {
     try {
       return await fanartClient.getShowImages(tvdbId);
-    } catch (error) {
-      // We can be less verbose for 404s, as they are expected.
+    } catch (error: any) {
       if (error.message && !error.message.includes("Not Found")) {
         console.error(`[Fanart] Error in getShowImages for TVDB ID ${tvdbId}:`, error.message);
       }
       return null;
     }
-  }, 7 * 24 * 60 * 60); // Cache for 7 days
+  }, 7 * 24 * 60 * 60);
 }
 
-/**
- * Selects the best Fanart image by language (user's, then English, then any), using likes as tiebreaker.
- * @param {Array} images - Array of Fanart image objects (e.g., hdmovielogo, tvposter, etc.)
- * @param {object} config - The user's configuration object.
- * @param {string} key - The property for language (default: 'lang').
- * @returns {object|undefined} The best image object, or undefined if none.
- */
-function selectFanartImageByLang(images, config, key = 'lang') {
+interface FanartImage {
+  url: string;
+  id: string;
+  likes: string;
+  [key: string]: string;
+}
+
+function selectFanartImageByLang(images: FanartImage[], config: any, key: string = 'lang'): FanartImage | undefined {
   if (!Array.isArray(images) || images.length === 0) return undefined;
-  
-  // If englishArtOnly is enabled, force English language selection
+
   const targetLang = config.artProviders?.englishArtOnly ? 'en' : (config.language?.split('-')[0]?.toLowerCase() || 'en');
-  
-  // Filter by target language, then English, then generic (00), then any
+
   let filtered = images.filter(img => img[key] === targetLang);
   if (filtered.length === 0) filtered = images.filter(img => img[key] === 'en');
   if (filtered.length === 0) filtered = images.filter(img => img[key] === '00');
   if (filtered.length === 0) filtered = images;
-  //console.log(`[selectFanartImageByLang] Filtered images: ${JSON.stringify(filtered)}`);
-  // Sort by likes descending (as int)
   filtered.sort((a, b) => parseInt(b.likes || '0') - parseInt(a.likes || '0'));
   return filtered[0];
 }

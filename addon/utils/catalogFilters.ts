@@ -1,7 +1,7 @@
-const consola = require('consola');
+import consola from 'consola';
 const logger = consola.withTag('CatalogFilters');
 
-function isHideWatchedExcluded(cleanId) {
+function isHideWatchedExcluded(cleanId: string): boolean {
   return ['search', 'people_search', 'gemini.search'].includes(cleanId)
     || cleanId.includes('watchlist')
     || cleanId.includes('favorites')
@@ -9,8 +9,65 @@ function isHideWatchedExcluded(cleanId) {
     || cleanId.includes('upnext');
 }
 
-async function applyCatalogFilters(metas, { type, config, catalogConfig, cleanId }) {
+const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+const tvRatingHierarchy = ['TV-Y', 'TV-Y7', 'TV-G', 'TV-PG', 'TV-14', 'TV-MA'];
+const movieToTvMap: Record<string, string> = {
+  'G': 'TV-G',
+  'PG': 'TV-PG',
+  'PG-13': 'TV-14',
+  'R': 'TV-MA',
+  'NC-17': 'TV-MA'
+};
+
+function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
+  if (!config.ageRating || config.ageRating.toLowerCase() === 'none') {
+    return metas;
+  }
+
+  const isTvRating = type === 'series';
+  const finalUserRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
+  const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
+  const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
+
+  if (userRatingIndex === -1) return metas;
+
+  const isUserRatingRestrictive = finalUserRating === 'PG-13' ||
+    (movieRatingHierarchy.indexOf(finalUserRating) !== -1 &&
+      movieRatingHierarchy.indexOf(finalUserRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
+    (tvRatingHierarchy.indexOf(finalUserRating) !== -1 &&
+      tvRatingHierarchy.indexOf(finalUserRating) <= tvRatingHierarchy.indexOf('TV-14'));
+
+  const before = metas.length;
+  const filtered = metas.filter(meta => {
+    const cert = meta.app_extras?.certification || null;
+
+    if (!cert || cert === '' || cert.toLowerCase() === 'nr') {
+      return !isUserRatingRestrictive;
+    }
+
+    const resultRatingIndex = ratingHierarchy.indexOf(cert);
+    if (resultRatingIndex === -1) return true;
+
+    return resultRatingIndex <= userRatingIndex;
+  });
+
+  if (before !== filtered.length) {
+    logger.info(`[AgeRating] Filtered out ${before - filtered.length} items (max: ${config.ageRating})`);
+  }
+  return filtered;
+}
+
+interface CatalogFilterOptions {
+  type: string;
+  config: any;
+  catalogConfig: any;
+  cleanId: string;
+}
+
+async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, cleanId }: CatalogFilterOptions): Promise<any[]> {
   if (!Array.isArray(metas) || metas.length === 0) return metas;
+
+  metas = applyAgeRatingFilter(metas, type, config);
 
   const isSearch = ['search', 'people_search', 'gemini.search'].includes(cleanId);
   const hideWatchedExcluded = isHideWatchedExcluded(cleanId);
@@ -47,7 +104,7 @@ async function applyCatalogFilters(metas, { type, config, catalogConfig, cleanId
             logger.debug(`Hide Trakt watched: removed ${before - metas.length} items`);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         logger.warn(`Hide Trakt watched filter error: ${err.message}`);
       }
     }
@@ -66,8 +123,8 @@ async function applyCatalogFilters(metas, { type, config, catalogConfig, cleanId
           const before = metas.length;
           metas = metas.filter(meta => {
             const metaId = meta.id || '';
-            let anilistId = null;
-            let malId = null;
+            let anilistId: number | null = null;
+            let malId: number | null = null;
             if (metaId.startsWith('anilist:')) {
               anilistId = parseInt(metaId.split(':')[1], 10);
             } else if (metaId.startsWith('mal:')) {
@@ -93,7 +150,7 @@ async function applyCatalogFilters(metas, { type, config, catalogConfig, cleanId
             logger.debug(`Hide AniList watched: removed ${before - metas.length} items`);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         logger.warn(`Hide AniList watched filter error: ${err.message}`);
       }
     }
@@ -122,7 +179,7 @@ async function applyCatalogFilters(metas, { type, config, catalogConfig, cleanId
             logger.debug(`Hide MDBList watched: removed ${before - metas.length} items`);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         logger.warn(`Hide MDBList watched filter error: ${err.message}`);
       }
     }

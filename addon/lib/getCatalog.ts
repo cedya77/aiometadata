@@ -37,80 +37,6 @@ const host = process.env.HOST_NAME?.startsWith('http')
     ? process.env.HOST_NAME
     : `https://${process.env.HOST_NAME}`;
 
-/**
- * Apply age rating filter to metas based on user configuration
- * @param metas - Array of meta objects to filter
- * @param type - Content type ('movie' or 'series')
- * @param config - User configuration
- * @returns Filtered array of metas
- */
-function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
-  if (!config.ageRating || config.ageRating.toLowerCase() === 'none') {
-    return metas;
-  }
-
-  logger.debug(`[AgeRating] Applying age rating filter: ${config.ageRating} for type: ${type}`);
-  const beforeCount = metas.length;
-  const filterStartTime = performance.now();
-  
-  const movieRatingHierarchy = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
-  const tvRatingHierarchy = ["TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"];
-  
-  const movieToTvMap: { [key: string]: string } = {
-    'G': 'TV-G',
-    'PG': 'TV-PG', 
-    'PG-13': 'TV-14',
-    'R': 'TV-MA',
-    'NC-17': 'TV-MA'
-  };
-  
-  const isTvRating = type === 'series';
-  const finalUserRating = isTvRating ? (movieToTvMap[config.ageRating] || config.ageRating) : config.ageRating;
-  const ratingHierarchy = isTvRating ? tvRatingHierarchy : movieRatingHierarchy;
-  const userRatingIndex = ratingHierarchy.indexOf(finalUserRating);
-
-  if (userRatingIndex === -1) {
-    return metas;
-  }
-
-  const filteredMetas = metas.filter(meta => {
-    let cert: string | null = null;
-    
-    if (meta.app_extras?.certification) {
-      cert = meta.app_extras.certification;
-    } else {
-      logger.debug(`[AgeRating] ${type} ${meta.name}: No certification data available`);
-    }
-
-    // If rating is PG-13 or lower, exclude NR content as it could be inappropriate
-    const isUserRatingRestrictive = finalUserRating === 'PG-13' || 
-                                   (movieRatingHierarchy.indexOf(finalUserRating) !== -1 && 
-                                    movieRatingHierarchy.indexOf(finalUserRating) <= movieRatingHierarchy.indexOf('PG-13')) ||
-                                   (tvRatingHierarchy.indexOf(finalUserRating) !== -1 && 
-                                    tvRatingHierarchy.indexOf(finalUserRating) <= tvRatingHierarchy.indexOf('TV-14'));
-    
-    if (!cert || cert === "" || cert.toLowerCase() === 'nr') {
-      return !isUserRatingRestrictive; // Exclude NR if user rating is restrictive
-    }
-      
-    const resultRatingIndex = ratingHierarchy.indexOf(cert);
-    if (resultRatingIndex === -1) {
-      return true; // Allow items with unknown ratings
-    }
-    
-    return resultRatingIndex <= userRatingIndex;
-  });
-  
-  const afterCount = filteredMetas.length;
-  const filterTime = performance.now() - filterStartTime;
-  if (beforeCount !== afterCount) {
-    logger.info(`[AgeRating] Filtered out ${beforeCount - afterCount} items in ${filterTime.toFixed(2)}ms`);
-  }
-
-  return filteredMetas;
-}
-
-
 async function getCatalog(type: string, language: string, page: number, id: string, genre: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<{ metas: any[] }> {
   try {
     if (id === 'tvdb.collections') {
@@ -686,7 +612,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }));
 
       let metas = await parseMDBListItems(normalizedItems, type, language, config, includeVideos);
-      metas = applyAgeRatingFilter(metas, type, config);
       return metas;
     }
 
@@ -736,9 +661,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       const parseTime = Date.now() - parseStart;
       logger.info(`[MDBList Up Next] parseMDBListUpNextItems took ${parseTime}ms for ${response.items.length} items`);
       
-      // Apply age rating filter
-      metas = applyAgeRatingFilter(metas, type, config);
-      
       logger.success(`[MDBList Up Next] Processed ${metas.length} items`);
       return metas;
     }
@@ -774,8 +696,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       );
 
       let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
-
-      metas = applyAgeRatingFilter(metas, type, config);
 
       return metas;
     }
@@ -849,9 +769,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     }
     
     let metas = await parseMDBListItems(response.items, type, language, config, includeVideos);
-    
-    metas = applyAgeRatingFilter(metas, type, config);
-    
+
     return metas;
   }
 
@@ -1041,9 +959,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       }));
       
       let validMetas = metas.filter(meta => meta !== null);
-      
-      validMetas = applyAgeRatingFilter(validMetas, type, config);
-      
+
       logger.success(`[TMDB List] Processed ${validMetas.length} items for list ${listId}`);
       return validMetas;
       
@@ -1621,7 +1537,6 @@ async function getExternalAddonCatalog(type: string, catalogId: string, genre: s
       }
 
       let batchMetas = await parseStremThruItems(newItems, type, genre, language, config, includeVideos);
-      batchMetas = applyAgeRatingFilter(batchMetas, type, config);
       batchMetas = await applyCatalogFilters(batchMetas, { type, config, catalogConfig: userCatalog, cleanId: catalogId });
 
       for (const meta of batchMetas) {
@@ -2022,9 +1937,6 @@ async function getTraktCatalog(
     const parseTime = Date.now() - parseStart;
     logger.info(`Up Next: parseTraktItems took ${parseTime}ms for ${response.items.length} items`);
     
-    // Apply age rating filter
-    metas = applyAgeRatingFilter(metas, type, config);
-    
     logger.success(`[Trakt] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
     
@@ -2317,8 +2229,6 @@ async function getLetterboxdCatalog(
       config,
       includeVideos
     );
-
-    metas = applyAgeRatingFilter(metas, type, config);
 
     logger.debug(`Successfully processed ${metas.length} Letterboxd items`);
     return metas;
@@ -2706,9 +2616,6 @@ async function getSimklCatalog(
     const parseTime = Date.now() - parseStart;
     logger.info(`[Simkl] parseSimklItems took ${parseTime}ms for ${response.items.length} items`);
     
-    // Apply age rating filter
-    metas = applyAgeRatingFilter(metas, type, config);
-    
     logger.success(`[Simkl] Processed ${metas.length} items for catalog ${catalogId} (page ${page})`);
     return metas;
     
@@ -2750,7 +2657,6 @@ async function getFlixPatrolCatalog(
     logger.info(`[FlixPatrol] Fetching top 10: service=${service}, country=${countrySlug}, type=${mediaType}`);
 
     let metas = await getFlixPatrolMetas(service, countrySlug, mediaType, language, config, includeVideos);
-    metas = applyAgeRatingFilter(metas, type, config);
 
     logger.success(`[FlixPatrol] Processed ${metas.length} items for catalog ${catalogId}`);
     return metas;
@@ -2785,7 +2691,6 @@ async function getPublicMetaDBCatalog(
       if (page > 1) return [];
       const items = await fetchResume(apiKey);
       let metas = await parseResumeItems(items, type, language, config, useShowPoster);
-      metas = applyAgeRatingFilter(metas, type, config);
       logger.success(`[PublicMetaDB] Up Next: ${metas.length} items`);
       return metas;
     }
@@ -2795,7 +2700,6 @@ async function getPublicMetaDBCatalog(
       const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
       const data = await fetchListItems(apiKey, listId, page, pageSize);
       let metas = await parseListItems(data.items || [], type, language, config);
-      metas = applyAgeRatingFilter(metas, type, config);
       logger.success(`[PublicMetaDB] List ${listId}: ${metas.length} items (page ${page})`);
       return metas;
     }
@@ -2805,7 +2709,6 @@ async function getPublicMetaDBCatalog(
       if (page > 5) return [];
       const data = await fetchPickItems(apiKey, pickId, page);
       let metas = await parsePickItems(data.items || [], type, language, config);
-      metas = applyAgeRatingFilter(metas, type, config);
       logger.success(`[PublicMetaDB] Pick ${pickId}: ${metas.length} items (page ${page})`);
       return metas;
     }
