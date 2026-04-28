@@ -18,7 +18,6 @@ const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
-const { resolveAllIds } = require('./lib/id-resolver');
 const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
@@ -57,7 +56,7 @@ const { SimklClient } = require('./lib/simkl');
 const axios = require('axios');
 const getCountryISO3 = require('country-iso-2-to-3');
 const jikan = require('./lib/mal');
-const tvmaze = require('./lib/tvmaze');
+const { getTvmazeScheduleCatalog } = require('./lib/tvmazeScheduleCatalog');
 const buildInfo = require('./lib/buildInfo');
 const { clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
 const ADDON_VERSION = buildInfo.version;
@@ -3531,72 +3530,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
           case 'tvmaze.schedule': {
             const scheduleDate = extraArgs.date;
             const scheduleCountry = extraArgs.genre;
-            const scheduleEntries = await tvmaze.getFullSchedule(scheduleDate, scheduleCountry);
-
-            if (!Array.isArray(scheduleEntries) || scheduleEntries.length === 0) {
-              metas = [];
-              break;
-            }
-
-            const stripHtml = (text) => text ? text.replace(/<[^>]*>?/gm, '') : '';
-
-            // Filter out news shows
-            const filteredEntries = scheduleEntries.filter(entry => {
-              const showType = entry?.show?.type;
-              return showType && showType.toLowerCase() !== 'news' && showType.toLowerCase() !== 'talk show';
-            });
-
-            const uniqueByShow = new Map();
-            for (const entry of filteredEntries) {
-              const showId = entry?.show?.id;
-              if (!showId || uniqueByShow.has(showId)) continue;
-              uniqueByShow.set(showId, entry);
-            }
-
-            const dedupedEntries = Array.from(uniqueByShow.values()).sort((a, b) => {
-              const timeA = a?.airstamp ? new Date(a.airstamp).getTime() : 0;
-              const timeB = b?.airstamp ? new Date(b.airstamp).getTime() : 0;
-              return timeA - timeB;
-            });
-
-            const resolveScheduleEntryMeta = async (entry) => {
-              const show = entry?.show;
-              if (!show?.id) return null;
-
-              let stremioId = `tvmaze:${show.id}`;
-              try {
-                const allIds = await resolveAllIds(stremioId, 'series', config);
-                if (allIds) {
-                    if (allIds.imdbId) {
-                        stremioId = allIds.imdbId;
-                    } else if (allIds.tvdbId) {
-                        stremioId = `tvdb:${allIds.tvdbId}`;
-                    } else if (allIds.tmdbId) {
-                        stremioId = `tmdb:${allIds.tmdbId}`;
-                    }
-                }
-              } catch (e) {
-                  // Fallback to original tvmaze ID if resolution fails
-              }
-              let meta;
-
-              try {
-                const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-                  return await getMeta('series', language, stremioId, config, userUUID, false);
-                }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, 'series', false);
-
-                meta = result?.meta;
-              } catch (error) {
-                consola.warn(`[Catalog Route] Failed to fetch meta for schedule entry ${stremioId}: ${error.message}`);
-              }
-              return meta;
-            };
-
-            const startIndex = (page - 1) * catalogPageSize;
-            const endIndex = startIndex + catalogPageSize;
-            const pageEntries = dedupedEntries.slice(startIndex, endIndex);
-            const metasFromSchedule = await Promise.all(pageEntries.map(resolveScheduleEntryMeta));
-            metas = metasFromSchedule.filter(Boolean);
+            metas = (await getTvmazeScheduleCatalog({
+              date: scheduleDate,
+              country: scheduleCountry,
+              page,
+              pageSize: catalogPageSize,
+              language,
+              config,
+              userUUID,
+              includeVideos: false,
+              enableErrorCaching: true,
+              maxRetries: 2,
+            })).metas;
             break;
           }
           case 'mal.genres': {
