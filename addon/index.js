@@ -47,7 +47,7 @@ const configApi = require('./lib/configApi');
 const database = require('./lib/database');
 const { loadConfigFromDatabase } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
-const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
+const { getRpdbPoster, getRatingPosterUrl, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
 const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
@@ -4382,6 +4382,40 @@ addon.get("/api/detect-page-size", async function (req, res) {
   }
 });
 
+async function fetchPosterImageStream(posterUrl) {
+  const imageResponse = await axios({
+    method: 'get',
+    url: posterUrl,
+    responseType: 'stream',
+    timeout: 5000,
+    maxRedirects: 5,
+    validateStatus: (status) => status >= 200 && status < 300,
+    headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
+  });
+
+  const contentType = imageResponse.headers['content-type'];
+  if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+    imageResponse.data.destroy();
+    throw new Error(`Poster URL returned non-image content-type: ${contentType}`);
+  }
+
+  const contentLength = imageResponse.headers['content-length'];
+  const parsedContentLength = contentLength ? parseInt(contentLength, 10) : null;
+  if (Number.isFinite(parsedContentLength) && parsedContentLength < 100) {
+    imageResponse.data.destroy();
+    throw new Error(`Poster URL returned too-small content-length: ${contentLength}`);
+  }
+
+  return imageResponse;
+}
+
+function pipePosterImageResponse(res, imageResponse) {
+  const contentType = imageResponse.headers['content-type'];
+  res.setHeader('Content-Type', contentType || 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+  imageResponse.data.pipe(res);
+}
+
 addon.get("/poster/:type/:id", async function (req, res) {
   const { type, id } = req.params;
   const { fallback, lang, key, url: customUrl } = req.query;
@@ -4417,31 +4451,8 @@ addon.get("/poster/:type/:id", async function (req, res) {
       return res.redirect(302, fallback);
     }
 
-    if (customUrl) {
-      const imageResponse = await axios({
-        method: 'get',
-        url: posterUrl,
-        responseType: 'stream',
-        timeout: 5000,
-        validateStatus: (status) => status >= 200 && status < 300,
-        headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
-      });
-      const contentType = imageResponse.headers['content-type'];
-      res.setHeader('Content-Type', contentType || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      imageResponse.data.pipe(res);
-    } else if (await checkIfExists(posterUrl)) {
-      const imageResponse = await axios({
-        method: 'get',
-        url: posterUrl,
-        responseType: 'stream'
-      });
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      imageResponse.data.pipe(res);
-    } else {
-      res.redirect(302, fallback);
-    }
+    const imageResponse = await fetchPosterImageStream(posterUrl);
+    pipePosterImageResponse(res, imageResponse);
   } catch (error) {
     consola.error(`Error in poster proxy for ${id}:`, error.message);
     res.redirect(302, fallback);
