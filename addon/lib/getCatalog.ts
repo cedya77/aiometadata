@@ -1016,7 +1016,6 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
 }
 
 async function buildParameters(type: string, language: string, page: number, id: string, genre: string, genreList: any[], config: UserConfig): Promise<any> {
-  const languages = await getLanguages(config);
   const parameters: any = { language, page, 'vote_count.gte': 50};
 
   /*if (id === 'tmdb.top' && type === 'series') {
@@ -1123,7 +1122,7 @@ async function buildParameters(type: string, language: string, page: number, id:
         }
         break;
       case "tmdb.language":
-        const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, languages) : language.split("-")[0];
+        const findGenre = genre && genre.toLowerCase() !== 'none' ? findLanguageCode(genre, await getLanguages(config)) : language.split("-")[0];
         parameters.with_original_language = findGenre;
         // Only set default sort if no custom sort is configured
         if (!catalogConfig?.sort) {
