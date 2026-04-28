@@ -3187,9 +3187,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     catalogConfig.enableRatingPosters = false;
   }
 
-  consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
-  //consola.debug(`[CATALOG ROUTE] enableRatingPosters value:`, catalogConfig?.enableRatingPosters, `(type: ${typeof catalogConfig?.enableRatingPosters})`);
-  
+  //consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
+
   // Add current catalog config to global config for per-catalog settings (like enableRatingPosters)
   config._currentCatalogConfig = catalogConfig;
   
