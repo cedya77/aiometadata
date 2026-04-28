@@ -545,11 +545,15 @@ async function checkinSimkl(parsedId, config) {
     // Import MDBList functions dynamically to avoid circular dependencies
     const { checkinSeries, checkinMovie, getSimklToken } = require('../utils/simklUtils');
     const tokenId = config.apiKeys?.simklTokenId;
-    const token = await getSimklToken(tokenId);
-    const accessToken = token.access_token;
-
     if (!tokenId) {
       logger.debug('[Simkl Checkin] Skipping checkin - missing token Id');
+      return;
+    }
+
+    const token = await getSimklToken(tokenId);
+    const accessToken = token?.access_token;
+    if (!accessToken) {
+      logger.warn(`[Simkl Checkin] Skipping checkin - missing or invalid Simkl token for tokenId ${tokenId}`);
       return;
     }
 

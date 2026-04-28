@@ -83,6 +83,19 @@ class ConfigApi {
     return { cleaned: false };
   }
 
+  async sanitizeSimklToken(config) {
+    if (config?.apiKeys?.simklTokenId) {
+        const token = await database.getOAuthToken(config.apiKeys.simklTokenId);
+        if (!token || token.provider !== 'simkl' || !token.access_token) {
+            logger.warn(`[Config Protection] Attempted to save config with invalid Simkl token ${config.apiKeys.simklTokenId}. Removing it.`);
+            delete config.apiKeys.simklTokenId;
+            delete config.simklUser;
+            return { cleaned: true };
+        }
+    }
+    return { cleaned: false };
+  }
+
   // Validate required API keys
   validateRequiredKeys(config) {
     const requiredKeys = ['tmdb'];
@@ -201,6 +214,7 @@ class ConfigApi {
       }
 
       await this.sanitizeTraktToken(config);
+      await this.sanitizeSimklToken(config);
 
       // Use existing UUID if provided, otherwise generate a new one
       const userUUID = existingUUID || database.generateUserUUID();
@@ -534,6 +548,7 @@ class ConfigApi {
       }
 
       await this.sanitizeTraktToken(config);
+      await this.sanitizeSimklToken(config);
 
       // Verify existing config exists
       const existingConfig = await database.verifyUserAndGetConfig(userUUID, password);
