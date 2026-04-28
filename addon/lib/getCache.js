@@ -1130,10 +1130,9 @@ async function resolveConfigForCache(userUUID, options = {}) {
 }
 
 async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
-  // Load config from database
   let config;
   try {
-    config = await loadConfigFromDatabase(userUUID);
+    config = await resolveConfigForCache(userUUID, options);
   } catch (error) {
     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     // Return empty response for invalid UUIDs instead of crashing
@@ -1404,10 +1403,9 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
  * Search results depend on different config parameters than catalogs
  */
 async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null, options = {}) {
-  // Load config from database
   let config;
   try {
-    config = await loadConfigFromDatabase(userUUID);
+    config = await resolveConfigForCache(userUUID, options);
   } catch (error) {
     cacheLogger.warn(`Failed to load config for user ${userUUID}: ${error.message}`);
     // Return empty response for invalid UUIDs instead of crashing
@@ -1950,13 +1948,6 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
   }
 
   normalizeMetaReleaseAvailability(reconstructedMeta);
-  
-  try {
-    const requestTracker = require('./requestTracker');
-    requestTracker.captureMetadataFromComponents(metaId, reconstructedMeta, reconstructedMeta.type).catch(() => {});
-  } catch (error) {
-    cacheLogger.warn(`Failed to capture reconstructed metadata for dashboard: ${error.message}`);
-  }
   
   const metaReconstructionKey = `meta:reconstructed:${metaId}`;
   updateCacheHealth(metaReconstructionKey, 'hit', true);

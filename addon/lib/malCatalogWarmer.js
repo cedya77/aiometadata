@@ -394,7 +394,7 @@ class MALCatalogWarmer {
                 }, ttl, { skipVersion: true });
             const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
             return { metas };
-          }, { enableErrorCaching: false, maxRetries: 1 });
+          }, { enableErrorCaching: false, maxRetries: 1, config: warmingConfig });
           
           if (result && result.metas && result.metas.length > 0) {
             this.log('debug', `Cached ${result.metas.length} items from ${catalog.name} page ${page}`);
@@ -468,7 +468,7 @@ class MALCatalogWarmer {
           }, null, { skipVersion: true });
           const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
           return { metas };
-        }, { enableErrorCaching: false, maxRetries: 1 });
+        }, { enableErrorCaching: false, maxRetries: 1, config: warmingConfig });
         
         if (result && result.metas && result.metas.length > 0) {
           this.log('debug', `Cached ${result.metas.length} items from schedule ${day}`);
@@ -541,7 +541,7 @@ class MALCatalogWarmer {
             }, null, { skipVersion: true });
             const metas = await parseAnimeCatalogMetaBatch(animeResults, warmingConfig, language);
             return { metas };
-          }, { enableErrorCaching: false, maxRetries: 1 });
+          }, { enableErrorCaching: false, maxRetries: 1, config: warmingConfig });
           
           if (result && result.metas && result.metas.length > 0) {
             this.log('debug', `Cached ${result.metas.length} items from decade ${decade.id}`);

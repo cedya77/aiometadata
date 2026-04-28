@@ -3337,6 +3337,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2,
+    config,
   };
   
   try {
@@ -3640,7 +3641,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
           }
       }
       return { metas: metas || [] };
-    }, undefined, cacheOptions);
+    }, cacheOptions);
     }
     if (!cleanId.startsWith('custom.') && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
       const { applyCatalogFilters } = require('./utils/catalogFilters');

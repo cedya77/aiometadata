@@ -684,7 +684,7 @@ class ComprehensiveCatalogWarmer {
             const { getCatalog } = require('./getCatalog');
              return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
           }
-          }, undefined, { enableErrorCaching: false, maxRetries: 1 });
+          }, { enableErrorCaching: false, maxRetries: 1, config });
 
           const rawMetaCount = result?.metas?.length || 0;
 

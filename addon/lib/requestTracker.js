@@ -633,43 +633,26 @@ class RequestTracker {
         cached_at: new Date().toISOString(),
       };
 
+      const metadataKeys = Array.from(
+        new Set([
+          `content_metadata:${contentKey}`,
+          `content_metadata:${encodedContentKey}`,
+          `content_metadata:${providerContentKey}`,
+          `content_metadata:${providerEncodedContentKey}`,
+        ]),
+      );
+      const metadataPayload = JSON.stringify(metadataInfo);
+
       logger.debug(
-        `[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
+        `[Request Tracker] Storing metadata for ${metadataKeys.map(key => key.replace("content_metadata:", "")).join(", ")}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
       );
 
-      // Store in Redis with 30 day TTL for all formats
-      redis
-        .set(
-          `content_metadata:${contentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${encodedContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${providerContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${providerEncodedContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
+      // Store in Redis with 30 day TTL for all formats.
+      const pipeline = redis.pipeline();
+      metadataKeys.forEach(key => {
+        pipeline.set(key, metadataPayload, "EX", 86400 * 30);
+      });
+      pipeline.exec().catch(() => {});
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to capture metadata from components:",
