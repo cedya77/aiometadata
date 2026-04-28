@@ -19,6 +19,7 @@ const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = r
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
 const { resolveAllIds } = require('./lib/id-resolver');
+const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
 
@@ -355,6 +356,7 @@ const respond = function (req, res, data, opts) {
     }
   }
 
+  stripReleaseAvailabilityForResponse(data);
   res.send(data);
 };
 

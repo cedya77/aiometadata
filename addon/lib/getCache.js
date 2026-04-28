@@ -10,6 +10,11 @@ const {
   canonicalizeLinksForCache,
   applyLinksUserScopeProjection,
 } = require('./linkProjection');
+const {
+  RELEASE_AVAILABILITY_FIELD,
+  normalizeMetaReleaseAvailability,
+  normalizeReleaseAvailabilityInPayload,
+} = require('../utils/releaseAvailability');
 
 // Helper to hash config
 function hashConfig(configObj) {
@@ -1367,7 +1372,10 @@ async function cacheWrapCatalog(userUUID, catalogKey, method, options = {}) {
       cacheLogger.debug(`[Catalog] HIT detail (${idOnly}) [sig:${catalogSig}] catalogConfig:${catalogConfigString} catalogKey:${catalogKey}`);
     },
   };
-  const result = await cacheWrap(key, method, cacheTTL, options);
+  const result = await cacheWrap(key, async () => {
+    return normalizeReleaseAvailabilityInPayload(await method());
+  }, cacheTTL, options);
+  normalizeReleaseAvailabilityInPayload(result);
 
   if (result?.metas?.length) {
     const displayAgeRating = config.displayAgeRating || false;
@@ -1459,7 +1467,11 @@ async function cacheWrapSearch(userUUID, searchKey, method, searchEngine = null,
   // TTL for search results
   const SEARCH_TTL = 12 * 60 * 60; // 12 hours
   
-  return cacheWrap(key, method, SEARCH_TTL, options);
+  const result = await cacheWrap(key, async () => {
+    return normalizeReleaseAvailabilityInPayload(await method());
+  }, SEARCH_TTL, options);
+  normalizeReleaseAvailabilityInPayload(result);
+  return result;
 }
 
 async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options = {}, type = null) {
@@ -1544,7 +1556,11 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    const metaSig = shortSignature(`${configHash}`);
   cacheLogger.debug(`[Meta] Key detail (${prefix}/${metaType}) [sig:${metaSig}]`);
    
-   return cacheWrap(key, method, ttl, options);
+   const result = await cacheWrap(key, async () => {
+     return normalizeReleaseAvailabilityInPayload(await method());
+   }, ttl, options);
+   normalizeReleaseAvailabilityInPayload(result);
+   return result;
 }
 
 /**
@@ -1594,6 +1610,8 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
           cacheLogger.warn(`No valid meta object returned for ${metaId}`);
     return { meta: null };
   }
+
+  normalizeMetaReleaseAvailability(meta);
   
   try {
     const requestTracker = require('./requestTracker');
@@ -1624,6 +1642,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
       year: meta.year,
       releaseInfo: meta.releaseInfo,
       released: meta.released,
+      [RELEASE_AVAILABILITY_FIELD]: meta[RELEASE_AVAILABILITY_FIELD],
       runtime: meta.runtime,
       country: meta.country,
       imdbRating: meta.imdbRating,
@@ -1929,6 +1948,8 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
       return { errorReason: 'empty videos for series' };
     }
   }
+
+  normalizeMetaReleaseAvailability(reconstructedMeta);
   
   try {
     const requestTracker = require('./requestTracker');

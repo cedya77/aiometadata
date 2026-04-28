@@ -13,6 +13,7 @@ const { selectFanartImageByLang } = require('./fanart');
 const { getImdbRating } = require('../lib/getImdbRating');
 const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
+const { getReleaseAvailability } = require('./releaseAvailability');
 const wikiMappings = require('../lib/wiki-mapper.js');
 const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
 const buildInfo = require('../lib/buildInfo');
@@ -3267,24 +3268,22 @@ function isReleasedDigitally(meta) {
     return true; // Only filter movies, not series
   }
 
+  const releaseAvailability = getReleaseAvailability(meta);
+  const isOnOrBeforeNow = (dateValue, now) => {
+    if (!dateValue) return false;
+    const time = new Date(dateValue).getTime();
+    return Number.isFinite(time) && time <= now.getTime();
+  };
+
   // Check if movie has a release date
   if (!meta.released) {
-    if (meta.app_extras?.releaseDates?.results) {
+    if (releaseAvailability?.hasReleaseDateData) {
       const now = new Date();
-      const hasAnyPastRelease = meta.app_extras.releaseDates.results.some((country) =>
-        country.release_dates?.some((release) =>
-          new Date(release.release_date) <= now
-        )
-      );
+      const hasAnyPastRelease = isOnOrBeforeNow(releaseAvailability.earliestAnyReleaseDate, now);
       if (!hasAnyPastRelease) {
         return false; 
       }
-      const hasDigitalRelease = meta.app_extras.releaseDates.results.some((country) =>
-        country.release_dates?.some((release) =>
-          release.type >= 4 && release.type <= 6 && new Date(release.release_date) <= now
-        )
-      );
-      return hasDigitalRelease;
+      return isOnOrBeforeNow(releaseAvailability.earliestHomeReleaseDate, now);
     }
     return true;
   }
@@ -3313,17 +3312,13 @@ function isReleasedDigitally(meta) {
 
   // For recent movies (< 1 year old), check for explicit digital/physical/TV release
   // If no release data is available, show the movie (avoid false positives)
-  if (!meta.app_extras?.releaseDates?.results) {
+  if (!releaseAvailability?.hasReleaseDateData) {
     logger.debug(`Movie ${meta.name} has no release date data, showing by default`);
     return true;
   }
 
   // Type 4 = Digital, Type 5 = Physical, Type 6 = TV
-  const hasDigitalRelease = meta.app_extras?.releaseDates?.results?.some((country) =>
-    country.release_dates?.some((release) =>
-      release.type >= 4 && release.type <= 6 && new Date(release.release_date) <= now
-    )
-  );
+  const hasDigitalRelease = isOnOrBeforeNow(releaseAvailability.earliestHomeReleaseDate, now);
 
   if (hasDigitalRelease) {
     logger.debug(`Movie ${meta.name} has digital release`);
