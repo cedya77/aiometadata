@@ -1486,17 +1486,19 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       logger.debug(`[ID Builder] Built Season-to-Kitsu map for tmdb:${tmdbId}:`, seasonToKitsuIdMap);
     }
     //console.log(`[TmdbSeriesMeta] credits: ${JSON.stringify(credits)}`);
-    const imdbMeta = await imdb.getMetaFromImdb(imdbId, 'series', stremioId);
 
     // Fetch Cinemeta videos data for IMDB episode mapping (once per IMDB series)
-    let cinemetaVideos = null;
+    let cinemetaVideos = [];
+    if (imdbId) {
       try {
+        const imdbMeta = await imdb.getMetaFromImdb(imdbId, 'series', stremioId);
         cinemetaVideos = imdbMeta?.videos || [];
         if (cinemetaVideos && cinemetaVideos.length > 0) {
           logger.debug(`[ID Builder] Fetched ${cinemetaVideos.length} Cinemeta videos for IMDB ${imdbId}`);
         }
       } catch (error) {
         logger.warn(`[ID Builder] Failed to fetch Cinemeta videos for IMDB ${imdbId}:`, error.message || error || 'Unknown error');
+      }
     }
 
     
@@ -1504,7 +1506,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
     const seasonsString = Utils.genSeasonsString(seasons);
     const seasonPromises = seasonsString.map(el => moviedb.tvInfo({ id: tmdbId, language, append_to_response: el }, config));
     
-    const imdbEpisodesCount = (cinemetaVideos || []).filter(season => season.season !==0).length;
     const seasonResponses = await Promise.all(seasonPromises);
     
     // Extract and combine all season data into an array
@@ -1516,16 +1517,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
           seasonDetails.push(seasonData);
         });
     });
-    const tmdbTotalEpisodes = seriesData.number_of_episodes;
-    if (imdbEpisodesCount !== tmdbTotalEpisodes) {
-      const imdbMeta = await imdb.getMetaFromImdb(imdbId, 'series', stremioId);
-      if (imdbMeta) {
-        const cinemetaIoVideos = (imdbMeta.videos || []).filter(episode => episode.season !== 0);
-        if (cinemetaIoVideos.length > 0 && cinemetaIoVideos.length === tmdbTotalEpisodes) {
-          cinemetaVideos = cinemetaIoVideos;
-        }
-      }
-    }
     const isAnimeContent = isAnimeFunc(seriesData, seriesData.genres) || kitsuId || malId;
     logger.debug(`[TmdbSeriesMeta] isAnimeContent: ${isAnimeContent}`);
     
