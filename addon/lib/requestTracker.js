@@ -25,6 +25,10 @@ class RequestTracker {
     const tracker = this; // Capture the tracker instance
 
     return async (req, res, next) => {
+      if (isMetricsDisabled() || !tracker.shouldTrackRequest(req)) {
+        return next();
+      }
+
       const start = process.hrtime();
       let responseTracked = false;
 
@@ -95,13 +99,9 @@ class RequestTracker {
 
       this.trackContentRequest(req);
 
-      if (this.shouldTrackRequest(req)) {
-        redis.incr(`requests:total`).catch(() => {});
-        redis.incr(`requests:${today}`).catch(() => {});
-        redis.incr(`requests:${hour}`).catch(() => {});
-      }
-
-      // Set expiration for time-based keys (don't await)
+      redis.incr(`requests:total`).catch(() => {});
+      redis.incr(`requests:${today}`).catch(() => {});
+      redis.incr(`requests:${hour}`).catch(() => {});
       redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
       redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
 
@@ -155,10 +155,9 @@ class RequestTracker {
           redis.incr(`errors:${today}`).catch(() => {});
         } else {
           redis.incr(`success:${today}`).catch(() => {});
+          redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
         }
       }
-
-      redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
 
       // Track catalog/search success
       if (req.path.includes("/catalog/")) {
