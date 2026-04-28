@@ -18,7 +18,6 @@ const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
 const consola = require('consola');
-const { resolveAllIds } = require('./lib/id-resolver');
 const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
@@ -48,7 +47,7 @@ const configApi = require('./lib/configApi');
 const database = require('./lib/database');
 const { loadConfigFromDatabase } = require('./lib/configApi');
 const { getTrending } = require("./lib/getTrending");
-const { getRpdbPoster, getRatingPosterUrl, checkIfExists, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
+const { getRpdbPoster, getRatingPosterUrl, parseAnimeCatalogMeta, parseAnimeCatalogMetaBatch } = require("./utils/parseProps");
 const { getFavorites, getWatchList } = require("./lib/getPersonalLists");
 const { resolveDynamicTmdbDiscoverParams } = require('./lib/tmdbDiscoverDateTokens');
 const { blurImage, convertBannerToBackground } = require('./utils/imageProcessor');
@@ -57,7 +56,7 @@ const { SimklClient } = require('./lib/simkl');
 const axios = require('axios');
 const getCountryISO3 = require('country-iso-2-to-3');
 const jikan = require('./lib/mal');
-const tvmaze = require('./lib/tvmaze');
+const { getTvmazeScheduleCatalog } = require('./lib/tvmazeScheduleCatalog');
 const buildInfo = require('./lib/buildInfo');
 const { clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
 const ADDON_VERSION = buildInfo.version;
@@ -3188,9 +3187,8 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     catalogConfig.enableRatingPosters = false;
   }
 
-  consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
-  //consola.debug(`[CATALOG ROUTE] enableRatingPosters value:`, catalogConfig?.enableRatingPosters, `(type: ${typeof catalogConfig?.enableRatingPosters})`);
-  
+  //consola.debug(`[CATALOG ROUTE] catalogConfig:`, JSON.stringify(catalogConfig));
+
   // Add current catalog config to global config for per-catalog settings (like enableRatingPosters)
   config._currentCatalogConfig = catalogConfig;
   
@@ -3338,6 +3336,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   const cacheOptions = {
     enableErrorCaching: true,
     maxRetries: 2,
+    config,
   };
   
   try {
@@ -3531,71 +3530,18 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
           case 'tvmaze.schedule': {
             const scheduleDate = extraArgs.date;
             const scheduleCountry = extraArgs.genre;
-            const scheduleEntries = await tvmaze.getFullSchedule(scheduleDate, scheduleCountry);
-
-            if (!Array.isArray(scheduleEntries) || scheduleEntries.length === 0) {
-              metas = [];
-              break;
-            }
-
-            const stripHtml = (text) => text ? text.replace(/<[^>]*>?/gm, '') : '';
-
-            // Filter out news shows
-            const filteredEntries = scheduleEntries.filter(entry => {
-              const showType = entry?.show?.type;
-              return showType && showType.toLowerCase() !== 'news' && showType.toLowerCase() !== 'talk show';
-            });
-
-            const uniqueByShow = new Map();
-            for (const entry of filteredEntries) {
-              const showId = entry?.show?.id;
-              if (!showId || uniqueByShow.has(showId)) continue;
-              uniqueByShow.set(showId, entry);
-            }
-
-            const dedupedEntries = Array.from(uniqueByShow.values()).sort((a, b) => {
-              const timeA = a?.airstamp ? new Date(a.airstamp).getTime() : 0;
-              const timeB = b?.airstamp ? new Date(b.airstamp).getTime() : 0;
-              return timeA - timeB;
-            });
-
-            const metasFromSchedule = await Promise.all(dedupedEntries.map(async (entry) => {
-              const show = entry?.show;
-              if (!show?.id) return null;
-
-              let stremioId = `tvmaze:${show.id}`;
-              try {
-                const allIds = await resolveAllIds(stremioId, 'series', config);
-                if (allIds) {
-                    if (allIds.imdbId) {
-                        stremioId = allIds.imdbId;
-                    } else if (allIds.tvdbId) {
-                        stremioId = `tvdb:${allIds.tvdbId}`;
-                    } else if (allIds.tmdbId) {
-                        stremioId = `tmdb:${allIds.tmdbId}`;
-                    }
-                }
-              } catch (e) {
-                  // Fallback to original tvmaze ID if resolution fails
-              }
-              let meta;
-
-              try {
-                const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-                  return await getMeta('series', language, stremioId, config, userUUID, true);
-                }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, 'series', true);
-
-                meta = result?.meta;
-              } catch (error) {
-                consola.warn(`[Catalog Route] Failed to fetch meta for schedule entry ${stremioId}: ${error.message}`);
-              }
-              return meta;
-            }));
-
-            const validScheduleMetas = metasFromSchedule.filter(Boolean);
-            const startIndex = (page - 1) * catalogPageSize;
-            const endIndex = startIndex + catalogPageSize;
-            metas = validScheduleMetas.slice(startIndex, endIndex);
+            metas = (await getTvmazeScheduleCatalog({
+              date: scheduleDate,
+              country: scheduleCountry,
+              page,
+              pageSize: catalogPageSize,
+              language,
+              config,
+              userUUID,
+              includeVideos: false,
+              enableErrorCaching: true,
+              maxRetries: 2,
+            })).metas;
             break;
           }
           case 'mal.genres': {
@@ -3694,7 +3640,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
           }
       }
       return { metas: metas || [] };
-    }, undefined, cacheOptions);
+    }, cacheOptions);
     }
     if (!cleanId.startsWith('custom.') && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
       const { applyCatalogFilters } = require('./utils/catalogFilters');
@@ -4436,6 +4382,40 @@ addon.get("/api/detect-page-size", async function (req, res) {
   }
 });
 
+async function fetchPosterImageStream(posterUrl) {
+  const imageResponse = await axios({
+    method: 'get',
+    url: posterUrl,
+    responseType: 'stream',
+    timeout: 5000,
+    maxRedirects: 5,
+    validateStatus: (status) => status >= 200 && status < 300,
+    headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
+  });
+
+  const contentType = imageResponse.headers['content-type'];
+  if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+    imageResponse.data.destroy();
+    throw new Error(`Poster URL returned non-image content-type: ${contentType}`);
+  }
+
+  const contentLength = imageResponse.headers['content-length'];
+  const parsedContentLength = contentLength ? parseInt(contentLength, 10) : null;
+  if (Number.isFinite(parsedContentLength) && parsedContentLength < 100) {
+    imageResponse.data.destroy();
+    throw new Error(`Poster URL returned too-small content-length: ${contentLength}`);
+  }
+
+  return imageResponse;
+}
+
+function pipePosterImageResponse(res, imageResponse) {
+  const contentType = imageResponse.headers['content-type'];
+  res.setHeader('Content-Type', contentType || 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+  imageResponse.data.pipe(res);
+}
+
 addon.get("/poster/:type/:id", async function (req, res) {
   const { type, id } = req.params;
   const { fallback, lang, key, url: customUrl } = req.query;
@@ -4471,31 +4451,8 @@ addon.get("/poster/:type/:id", async function (req, res) {
       return res.redirect(302, fallback);
     }
 
-    if (customUrl) {
-      const imageResponse = await axios({
-        method: 'get',
-        url: posterUrl,
-        responseType: 'stream',
-        timeout: 5000,
-        validateStatus: (status) => status >= 200 && status < 300,
-        headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
-      });
-      const contentType = imageResponse.headers['content-type'];
-      res.setHeader('Content-Type', contentType || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      imageResponse.data.pipe(res);
-    } else if (await checkIfExists(posterUrl)) {
-      const imageResponse = await axios({
-        method: 'get',
-        url: posterUrl,
-        responseType: 'stream'
-      });
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      imageResponse.data.pipe(res);
-    } else {
-      res.redirect(302, fallback);
-    }
+    const imageResponse = await fetchPosterImageStream(posterUrl);
+    pipePosterImageResponse(res, imageResponse);
   } catch (error) {
     consola.error(`Error in poster proxy for ${id}:`, error.message);
     res.redirect(302, fallback);

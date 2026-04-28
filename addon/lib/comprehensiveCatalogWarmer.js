@@ -8,6 +8,7 @@ const redis = require('./redisClient');
 const consola = require('consola');
 const { loadConfigFromDatabase } = require('./configApi.js');
 const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens');
+const { getTvmazeScheduleCatalog } = require('./tvmazeScheduleCatalog');
 const buildInfo = require('./buildInfo');
 const crypto = require('crypto');
 
@@ -659,6 +660,20 @@ class ComprehensiveCatalogWarmer {
             const configWithUUID = { ...config, userUUID: uuid };
             const { getTrending } = require('./getTrending');
              return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
+          } else if (catalogId === 'tvmaze.schedule') {
+            const configWithUUID = { ...config, userUUID: uuid };
+            return await getTvmazeScheduleCatalog({
+              date: extraArgs.date,
+              country: extraArgs.genre || '',
+              page: derivedPage,
+              pageSize: 20,
+              language: config.language || 'en-US',
+              config: configWithUUID,
+              userUUID: uuid,
+              includeVideos: true,
+              enableErrorCaching: false,
+              maxRetries: 1,
+            });
           } else {
             // Everything else goes through getCatalog
             if (!uuid) {
@@ -669,7 +684,7 @@ class ComprehensiveCatalogWarmer {
             const { getCatalog } = require('./getCatalog');
              return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
           }
-          }, undefined, { enableErrorCaching: false, maxRetries: 1 });
+          }, { enableErrorCaching: false, maxRetries: 1, config });
 
           const rawMetaCount = result?.metas?.length || 0;
 

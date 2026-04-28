@@ -25,6 +25,10 @@ class RequestTracker {
     const tracker = this; // Capture the tracker instance
 
     return async (req, res, next) => {
+      if (isMetricsDisabled() || !tracker.shouldTrackRequest(req)) {
+        return next();
+      }
+
       const start = process.hrtime();
       let responseTracked = false;
 
@@ -95,13 +99,9 @@ class RequestTracker {
 
       this.trackContentRequest(req);
 
-      if (this.shouldTrackRequest(req)) {
-        redis.incr(`requests:total`).catch(() => {});
-        redis.incr(`requests:${today}`).catch(() => {});
-        redis.incr(`requests:${hour}`).catch(() => {});
-      }
-
-      // Set expiration for time-based keys (don't await)
+      redis.incr(`requests:total`).catch(() => {});
+      redis.incr(`requests:${today}`).catch(() => {});
+      redis.incr(`requests:${hour}`).catch(() => {});
       redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
       redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
 
@@ -155,10 +155,9 @@ class RequestTracker {
           redis.incr(`errors:${today}`).catch(() => {});
         } else {
           redis.incr(`success:${today}`).catch(() => {});
+          redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
         }
       }
-
-      redis.expire(`success:${today}`, 86400 * 30).catch(() => {});
 
       // Track catalog/search success
       if (req.path.includes("/catalog/")) {
@@ -633,43 +632,26 @@ class RequestTracker {
         cached_at: new Date().toISOString(),
       };
 
+      const metadataKeys = Array.from(
+        new Set([
+          `content_metadata:${contentKey}`,
+          `content_metadata:${encodedContentKey}`,
+          `content_metadata:${providerContentKey}`,
+          `content_metadata:${providerEncodedContentKey}`,
+        ]),
+      );
+      const metadataPayload = JSON.stringify(metadataInfo);
+
       logger.debug(
-        `[Request Tracker] Storing metadata for ${contentKey}, ${encodedContentKey}, ${providerContentKey}, and ${providerEncodedContentKey}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
+        `[Request Tracker] Storing metadata for ${metadataKeys.map(key => key.replace("content_metadata:", "")).join(", ")}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
       );
 
-      // Store in Redis with 30 day TTL for all formats
-      redis
-        .set(
-          `content_metadata:${contentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${encodedContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${providerContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${providerEncodedContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
+      // Store in Redis with 30 day TTL for all formats.
+      const pipeline = redis.pipeline();
+      metadataKeys.forEach(key => {
+        pipeline.set(key, metadataPayload, "EX", 86400 * 30);
+      });
+      pipeline.exec().catch(() => {});
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to capture metadata from components:",
