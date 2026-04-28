@@ -3559,7 +3559,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
               return timeA - timeB;
             });
 
-            const metasFromSchedule = await Promise.all(dedupedEntries.map(async (entry) => {
+            const resolveScheduleEntryMeta = async (entry) => {
               const show = entry?.show;
               if (!show?.id) return null;
 
@@ -3582,20 +3582,21 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
 
               try {
                 const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
-                  return await getMeta('series', language, stremioId, config, userUUID, true);
-                }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, 'series', true);
+                  return await getMeta('series', language, stremioId, config, userUUID, false);
+                }, undefined, { enableErrorCaching: true, maxRetries: 2, config }, 'series', false);
 
                 meta = result?.meta;
               } catch (error) {
                 consola.warn(`[Catalog Route] Failed to fetch meta for schedule entry ${stremioId}: ${error.message}`);
               }
               return meta;
-            }));
+            };
 
-            const validScheduleMetas = metasFromSchedule.filter(Boolean);
             const startIndex = (page - 1) * catalogPageSize;
             const endIndex = startIndex + catalogPageSize;
-            metas = validScheduleMetas.slice(startIndex, endIndex);
+            const pageEntries = dedupedEntries.slice(startIndex, endIndex);
+            const metasFromSchedule = await Promise.all(pageEntries.map(resolveScheduleEntryMeta));
+            metas = metasFromSchedule.filter(Boolean);
             break;
           }
           case 'mal.genres': {

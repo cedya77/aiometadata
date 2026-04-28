@@ -2217,9 +2217,10 @@ function cacheWrapTvdbApi(key, method) {
 }
 
 function cacheWrapTvmazeApi(key, method) {
+  const keyForClassify = `tvmaze-api:${key}`;
   const tvmazeResultClassifier = (result, error = null) => {
     if (error) {
-      return classifyResult(result, error);
+      return classifyResult(result, error, keyForClassify);
     }
     
     // Don't cache null results from TVmaze API - let them retry immediately
@@ -2228,7 +2229,7 @@ function cacheWrapTvmazeApi(key, method) {
       return { type: 'SKIP_CACHE', ttl: 0 };
     }
     
-    return classifyResult(result, error);
+    return classifyResult(result, error, keyForClassify);
   };
 
   return cacheWrapGlobal(`tvmaze-api:${key}`, method, TVMAZE_API_TTL, {
