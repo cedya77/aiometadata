@@ -112,8 +112,9 @@ Add a `poster-cache` service alongside your aiometadata container:
     volumes:
       - ./poster-cache-nginx.conf:/etc/nginx/nginx.conf:ro
       - ./poster-cache-stats.sh:/stats.sh:ro
+      - ./poster-cache-purge-handler.sh:/purge-handler.sh:ro
       - ${DOCKER_DATA_DIR}/poster-cache:/var/cache/nginx
-    entrypoint: ["/bin/sh", "-c", "/stats.sh & exec nginx -g 'daemon off;'"]
+    entrypoint: ["/bin/sh", "-c", "nc -lk -p 9888 -e /purge-handler.sh & /stats.sh & exec nginx -g 'daemon off;'"]
     expose:
       - "8888"
     labels:
@@ -181,6 +182,12 @@ http {
             alias /tmp/cache-stats.json;
         }
 
+        location = /purge {
+            access_log off;
+            default_type application/json;
+            proxy_pass http://127.0.0.1:9888;
+        }
+
         location / {
             resolver 127.0.0.11 valid=30s ipv6=off;
 
@@ -240,6 +247,17 @@ while true; do
     size_human="0B"
     file_count=0
   fi
+
+  # Check for purge flag
+  if [ -f /tmp/purge-cache ]; then
+    rm -f /tmp/purge-cache
+    rm -rf "$CACHE_DIR"
+    mkdir -p "$CACHE_DIR"
+    size_bytes=0
+    size_human="0B"
+    file_count=0
+  fi
+
   cat > "$STATS_FILE" <<EOF
 {"cached_images":${file_count},"disk_usage":"${size_human}","disk_usage_bytes":${size_bytes},"max_size":"${MAX_SIZE}","inactive":"${INACTIVE}"}
 EOF
@@ -247,10 +265,27 @@ EOF
 done
 ```
 
-Make the stats script executable:
+Save the following as `poster-cache-purge-handler.sh` next to your `docker-compose.yml`:
+
+```sh
+#!/bin/sh
+# HTTP handler for /purge — called by nc -lk -e
+read -r method path _
+# Consume remaining headers
+while read -r line; do
+  line=$(printf '%s' "$line" | tr -d '\r\n')
+  [ -z "$line" ] && break
+done
+
+touch /tmp/purge-cache
+BODY='{"success":true,"message":"cache purge scheduled"}'
+printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s" ${#BODY} "$BODY"
+```
+
+Make both scripts executable:
 
 ```bash
-chmod +x poster-cache-stats.sh
+chmod +x poster-cache-stats.sh poster-cache-purge-handler.sh
 ```
 
 Then set these environment variables on the aiometadata service:
