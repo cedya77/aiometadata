@@ -26,6 +26,8 @@ import {
   useExecuteMaintenanceTask,
   useClearErrorLogs,
   useClearUserData,
+  usePurgePosterCache,
+  usePosterCacheStats,
   type DashboardTab,
 } from "@/hooks/useDashboardQueries";
 import { Input } from "@/components/ui/input";
@@ -69,6 +71,7 @@ import {
   Play,
   ChevronLeft,
   ChevronRight,
+  Image,
 } from "lucide-react";
 import {
   LineChart as RechartsLineChart,
@@ -2884,6 +2887,8 @@ function DashboardOperations({ data, loading, activeTab }) {
   const clearCacheMutation = useClearCache();
   const executeTaskMutation = useExecuteMaintenanceTask();
   const clearErrorsMutation = useClearErrorLogs();
+  const purgePosterCacheMutation = usePurgePosterCache();
+  const posterCacheStatsQuery = usePosterCacheStats({ enabled: activeTab === 'operations' });
 
   const [cacheStats, setCacheStats] = useState(() => {
     if (data?.cacheStats) {
@@ -3012,6 +3017,18 @@ function DashboardOperations({ data, loading, activeTab }) {
     });
   };
 
+  const handlePurgePosterCache = () => {
+    purgePosterCacheMutation.mutate(undefined, {
+      onSuccess: () => {
+        toast.success("Poster Cache Purge Scheduled", { description: "Cache will be cleared within 30 seconds." });
+        setTimeout(() => posterCacheStatsQuery.refetch(), 35000);
+      },
+      onError: (error) => {
+        toast.error("Poster Cache Purge Failed", { description: error.message });
+      },
+    });
+  };
+
   // Derive loading states from mutations
   const cacheClearing = clearCacheMutation.isPending;
   const clearingErrors = clearErrorsMutation.isPending;
@@ -3101,6 +3118,58 @@ function DashboardOperations({ data, loading, activeTab }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Poster Cache */}
+      {posterCacheStatsQuery.data !== undefined && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Image className="h-5 w-5" />
+              <CardTitle>Poster Cache</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {posterCacheStatsQuery.data ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Cached Images</span>
+                    <p className="text-lg font-semibold"><AnimatedNumber value={posterCacheStatsQuery.data.cached_images} /></p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Disk Usage</span>
+                    <p className="text-lg font-semibold">{posterCacheStatsQuery.data.disk_usage}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Max Size</span>
+                    <p className="text-lg font-semibold">{posterCacheStatsQuery.data.max_size}</p>
+                  </div>
+                </div>
+                <div className="flex justify-center mt-3 pt-3 border-t">
+                  <Button
+                    onClick={handlePurgePosterCache}
+                    variant="outline"
+                    size="sm"
+                    disabled={purgePosterCacheMutation.isPending}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                  >
+                    {purgePosterCacheMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4 mr-1.5" />
+                        Purge Poster Cache
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Poster cache not configured or unreachable.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Error Management */}
       <Card>

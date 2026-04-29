@@ -5649,6 +5649,38 @@ addon.post("/api/dashboard/cache/clear", requireDashboardAdmin, (req, res) => {
   }
 });
 
+addon.post("/api/dashboard/poster-cache/purge", requireDashboardAdmin, async (req, res) => {
+  const posterCacheUrl = (process.env.POSTER_WARMUP_URL || process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
+  if (!posterCacheUrl) {
+    return res.status(400).json({ error: 'No poster cache URL configured' });
+  }
+
+  try {
+    const response = await fetch(`${posterCacheUrl}/purge`, { method: 'POST' });
+    const result = await response.json();
+    consola.info('[API] Poster cache purge requested via dashboard');
+    res.json(result);
+  } catch (error) {
+    consola.error('[API] Poster cache purge failed:', error.message);
+    res.status(502).json({ error: 'Failed to reach poster cache', details: error.message });
+  }
+});
+
+addon.get("/api/dashboard/poster-cache/stats", requireDashboardAdmin, async (req, res) => {
+  const posterCacheUrl = (process.env.POSTER_WARMUP_URL || process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
+  if (!posterCacheUrl) {
+    return res.status(400).json({ error: 'No poster cache URL configured' });
+  }
+
+  try {
+    const response = await fetch(`${posterCacheUrl}/stats`);
+    const stats = await response.json();
+    res.json(stats);
+  } catch (error) {
+    res.status(502).json({ error: 'Failed to reach poster cache', details: error.message });
+  }
+});
+
 addon.post("/api/dashboard/users/clear", requireDashboardAdmin, (req, res) => {
   
   

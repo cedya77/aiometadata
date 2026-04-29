@@ -508,6 +508,62 @@ export function useClearErrorLogs() {
 }
 
 /**
+ * Purge poster cache mutation
+ */
+export function usePurgePosterCache() {
+  const { adminKey, logout } = useAdmin();
+
+  return useMutation({
+    mutationFn: async () => {
+      const headers: Record<string, string> = {};
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
+      const response = await fetch('/api/dashboard/poster-cache/purge', {
+        method: 'POST',
+        headers,
+      });
+
+      if (response.status === 401) {
+        logout();
+        throw new Error('Session expired. Please log in again.');
+      }
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to purge poster cache');
+      }
+
+      return response.json();
+    },
+  });
+}
+
+/**
+ * Fetch poster cache stats
+ */
+export function usePosterCacheStats(options: { enabled?: boolean } = {}) {
+  const { adminKey } = useAdmin();
+
+  return useQuery({
+    queryKey: ['poster-cache-stats'],
+    queryFn: async () => {
+      const headers: Record<string, string> = {};
+      if (adminKey) {
+        headers['x-admin-key'] = adminKey;
+      }
+
+      const response = await fetch('/api/dashboard/poster-cache/stats', { headers });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    refetchInterval: 30000,
+    enabled: options.enabled !== false,
+  });
+}
+
+/**
  * Clear user data mutation
  */
 export function useClearUserData() {
