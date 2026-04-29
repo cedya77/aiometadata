@@ -693,6 +693,7 @@ class ComprehensiveCatalogWarmer {
             const { resolveCustomArtUrl, getDefaultPosterPattern, getPosterRatingApiKey } = require('../utils/parseProps');
             const posterPattern = config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultPosterPattern(config.posterRatingProvider) : null);
             const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
+            const addonHost = process.env.HOST_NAME ? (process.env.HOST_NAME.startsWith('http') ? process.env.HOST_NAME : `https://${process.env.HOST_NAME}`) : '';
             const posterUrls = [];
 
             for (const meta of result.metas) {
@@ -702,12 +703,12 @@ class ComprehensiveCatalogWarmer {
 
               if (posterPattern && proxyId) {
                 if (proxyApiKey) {
-                  posterUrls.push(`poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`);
+                  posterUrls.push(`${addonHost}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`);
                 } else {
                   const resolved = resolveCustomArtUrl(posterPattern, ids, type, config);
                   if (resolved) {
                     if (config.usePosterProxy) {
-                      posterUrls.push(`poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&url=${encodeURIComponent(resolved)}`);
+                      posterUrls.push(`${addonHost}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&url=${encodeURIComponent(resolved)}`);
                     } else {
                       posterUrls.push(resolved);
                     }
@@ -725,7 +726,7 @@ class ComprehensiveCatalogWarmer {
                 let warmed = 0;
                 for (const url of posterUrls) {
                   try {
-                    const warmUrl = url.startsWith('http') ? url : `${posterWarmupUrl}/${url}`;
+                    const warmUrl = `${posterWarmupUrl}/${url}`;
                     await fetch(warmUrl, { method: 'HEAD' });
                     warmed++;
                   } catch (_) { /* ignore */ }
