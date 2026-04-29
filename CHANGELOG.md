@@ -2,6 +2,104 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.0](https://github.com/cedya77/aiometadata/compare/v1.35.2...v2.0.0) (2026-04-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* major version bump to 2.0.0
+
+### Features
+
+* add "This Season" filter and dynamic genres for anime discover ([68382d0](https://github.com/cedya77/aiometadata/commit/68382d0c7832126d9e6091aafbd91ecf59e707e5))
+* add certification range filters and fix MAL airing cache TTL ([26f3b7e](https://github.com/cedya77/aiometadata/commit/26f3b7e6a277c4e6d57d4217b1860ae229de5280))
+* add discover catalog duplicate button and rename DiscoverBuilderDialog ([47a3c55](https://github.com/cedya77/aiometadata/commit/47a3c558f4a4b7b5752f030c6f13f5ba23fafe90))
+* add heap profile to dashboard operations tab ([34a8572](https://github.com/cedya77/aiometadata/commit/34a85721a4d9e8e83f48d292d78017b291682670))
+* add META_CONCURRENCY env to cap getMeta fan-out and HEAP_LOG_INTERVAL_MIN for periodic heap logging ([17c900d](https://github.com/cedya77/aiometadata/commit/17c900d2411ecba2cb66e5a3353d74aabc30dec0))
+* add original language poster fallback toggle in art providers settings ([68d40bf](https://github.com/cedya77/aiometadata/commit/68d40bf14c3aea349ee65675139adc4394129fc6))
+* add poster cache management to admin dashboard ([d74ab9c](https://github.com/cedya77/aiometadata/commit/d74ab9c5204af11d25bba1e8830508bc94ca6b6b))
+* add PublicMetaDB integration (up next, lists, watch tracking) ([ae0c2f3](https://github.com/cedya77/aiometadata/commit/ae0c2f3e22605c0452d36aa9ab3a75f69da3aa77))
+* add unified import option for MDBList dynamic mixed lists ([5d6e9d3](https://github.com/cedya77/aiometadata/commit/5d6e9d34bfc98a67b85b4720efcd6407546cb4db)), closes [#415](https://github.com/cedya77/aiometadata/issues/415)
+* AIOMetadata 2.0.0 ([5c1d102](https://github.com/cedya77/aiometadata/commit/5c1d102009b7e435d4910a2893dda4db7fb53212))
+* cursor-based pagination for custom catalogs ([c1ec9f3](https://github.com/cedya77/aiometadata/commit/c1ec9f3fdd3d18c82c5b3ba726e2cbc9451d4e56))
+* **custom-art:** add raw {id} placeholder support ([0a95fe6](https://github.com/cedya77/aiometadata/commit/0a95fe6aa27cf00080dd739466d5a86e6856c48c))
+* extend usePosterProxy fallback to logo and backdrop ([c1ec9f3](https://github.com/cedya77/aiometadata/commit/c1ec9f3fdd3d18c82c5b3ba726e2cbc9451d4e56))
+* show recent dev commits for testing channel in changelog ([caf7675](https://github.com/cedya77/aiometadata/commit/caf7675b29fdb2ff467c679fe2e7324ea9c6cc8e))
+* streaming top 10 catalogs integration ([59de923](https://github.com/cedya77/aiometadata/commit/59de923aff3a3d9924d771db6977ddc3cb038a3d))
+* support FANART_API_PROJECT_KEY with user keys as clientKey ([4e93312](https://github.com/cedya77/aiometadata/commit/4e933120f23ff18eba5b452be1f0cfe199374657))
+* support FANART_API_PROJECT_KEY with user keys as clientKey ([6101409](https://github.com/cedya77/aiometadata/commit/61014094aeeef8b4e0276334b893b17bd0f80e82))
+* update Top Posters API domain and add user-agent support ([4ef0187](https://github.com/cedya77/aiometadata/commit/4ef0187e60f6f3da9c217530a84e616f45321cb4))
+* update Top Posters API domain and add user-agent support ([1995e86](https://github.com/cedya77/aiometadata/commit/1995e8691e9f2dc1c9c8ff87e16b411cfec352b8))
+* warm custom poster pattern URLs during comprehensive catalog warming ([bf441f9](https://github.com/cedya77/aiometadata/commit/bf441f9ecaad59413292219ad08218c076c22272))
+
+
+### Bug Fixes
+
+* add experimental TMDB/IMDB fallback episode matching logic ([3559037](https://github.com/cedya77/aiometadata/commit/35590374b78b6d7c7f60b0cccd4fbe744dbc3ae3))
+* anime movie ID resolution fallbacks in getMeta ([bd494c3](https://github.com/cedya77/aiometadata/commit/bd494c374f4dc769992c10a7e500484534ab3565))
+* avoid duplicate Cinemeta fetch for TMDB series ([309fa68](https://github.com/cedya77/aiometadata/commit/309fa683c5862c4fdedf5f896193dfb0bcb1dd50))
+* avoid full metadata fanout in tvmaze schedule catalog ([7dd840e](https://github.com/cedya77/aiometadata/commit/7dd840e815fbb38c246360c82c8226bcf2fb6d5e))
+* cache auth tokens by api key instead of user UUID ([f545971](https://github.com/cedya77/aiometadata/commit/f545971f59fe35a54c5ca5151e0d61c89494b3a8))
+* clear ONA type cache on reindex ([7179dca](https://github.com/cedya77/aiometadata/commit/7179dca4508ed6521072688146929f476c95412a))
+* correct TVDB language code mapping for Portuguese regional variants ([1a1c6d1](https://github.com/cedya77/aiometadata/commit/1a1c6d1ae1b04b1ffd5b305ff5f99378463b1775))
+* crash when config.language is undefined in selectTmdbImageByLang ([3bae00e](https://github.com/cedya77/aiometadata/commit/3bae00eff131724ac6f0e6087fbe9179bcf08898))
+* crash when config.language is undefined in selectTmdbImageByLang ([4ca72f6](https://github.com/cedya77/aiometadata/commit/4ca72f665d235f08937514d67284e59560159a03))
+* eliminate OOM from OAuth handlers loading all configs into memory ([cebff85](https://github.com/cedya77/aiometadata/commit/cebff85ca5577ecb892b1261e71b081b7180f3fd))
+* exclude videos array when unnecessary ([1049ce3](https://github.com/cedya77/aiometadata/commit/1049ce31ce7a7d2aa6f78bbf78d2a70d84cf0577))
+* guard simkl check-in against stale tokens ([881f329](https://github.com/cedya77/aiometadata/commit/881f329434f31b91055a854389c5d107f53e80a4))
+* ignore Vary header in poster-cache and add concurrent warming ([9205bb9](https://github.com/cedya77/aiometadata/commit/9205bb9391d802e8838609fc1f49b291c95d5857))
+* mdblist upnext cache key, skip caching empty mdblist results, lightweight healthcheck ([db6fc70](https://github.com/cedya77/aiometadata/commit/db6fc70dc0e701b20b114e9bfcc687118137d55b))
+* **mobile:** polish mobile UI across settings, modals, and bulk actions ([9032b04](https://github.com/cedya77/aiometadata/commit/9032b0436fce2a7997f4aa14008148e07cccdda5))
+* move active user tracking to response phase where req.params exists ([c3ee1a4](https://github.com/cedya77/aiometadata/commit/c3ee1a4acd1b9c1ba3f0ea6069e3395a744269f5))
+* move age rating filter to post-cache processing and convert files to TypeScript ([d80dfa6](https://github.com/cedya77/aiometadata/commit/d80dfa69d5489cfd60e5147dc67db41051ca52cf))
+* ONA type detection in Kitsu search ([e286f6a](https://github.com/cedya77/aiometadata/commit/e286f6af6000272d3126bf2faf2a6b45b3ea601d))
+* only run scheduled tasks if e-tag has changed ([3b69ac3](https://github.com/cedya77/aiometadata/commit/3b69ac36e4e2a47f36c4d4cd1f8e4bd93d35de3d))
+* optimize catalog cache hit logging ([845ef8e](https://github.com/cedya77/aiometadata/commit/845ef8e6b8837988b28318ce41ce65316df6ba56))
+* pagination logic by using Math.ceil for page-based catalogs ([21d675e](https://github.com/cedya77/aiometadata/commit/21d675eb5e670fd4bbab5fe03999de9a4b59e2bb))
+* preserve season objects for imdb series episode mapping ([cf4db3d](https://github.com/cedya77/aiometadata/commit/cf4db3d9e1ab57976d2d6d295e765650d8bb2d89))
+* prevent logo crush on mobile with long testing version tags ([1b57773](https://github.com/cedya77/aiometadata/commit/1b5777306cf89476f10bd89843f73a716d935525))
+* reduce redis RDB snapshot frequency to hourly ([4ebf84e](https://github.com/cedya77/aiometadata/commit/4ebf84e47a570177d00b823a296e0339e044e3a9))
+* reduce redis RDB snapshot frequency to prevent excessive disk writes ([c6684c6](https://github.com/cedya77/aiometadata/commit/c6684c6004e886eeb6e3c56e48dc4299e143a60d))
+* **release dates:** use air date + country of origin to determine release date format. ([5fa60ce](https://github.com/cedya77/aiometadata/commit/5fa60ce8ddc003a7cda3fd1781be8ca6bb1b89a2))
+* restore poster proxy URL passthrough mode in meta handler ([e55523d](https://github.com/cedya77/aiometadata/commit/e55523dc481157f76f7f5fd2bfe8f25abfec3f7f))
+* retry TVDB requests on HTTP/2 GOAWAY frames ([da13382](https://github.com/cedya77/aiometadata/commit/da13382088f02c7d8fe843de64eca42f88937538))
+* reuse loaded config in catalog and search wrappers ([e766f0d](https://github.com/cedya77/aiometadata/commit/e766f0d25fd7726d6632fc2ba82d9846f8f6d36a))
+* route poster warming through poster-cache proxy ([2866304](https://github.com/cedya77/aiometadata/commit/2866304797d144206458728f524c7f3cade0c3d9))
+* short-circuit MDBList requests when quota exhausted ([cace872](https://github.com/cedya77/aiometadata/commit/cace872e3f088fb552e4ea547fc1acdab938b7b1))
+* stack Input+Button pairs vertically on mobile across integration modals ([4852511](https://github.com/cedya77/aiometadata/commit/485251169c5919074af323738656850eb9ae2022))
+* stop extras cache from overwriting cast and crew ([0ae730e](https://github.com/cedya77/aiometadata/commit/0ae730e4e011b94cda395447f840f2d1fb4ceb84))
+* stream expiring-key cleanup ([42d1d18](https://github.com/cedya77/aiometadata/commit/42d1d1830d7a55bc68f034ee0d93d4cc809379c4))
+* tighten up redis initialization sequence ([e341620](https://github.com/cedya77/aiometadata/commit/e34162022353fd3df00e0ffd0705e6c255a2a5b5))
+* trakt 401 token refresh and custom poster pattern preservation ([f4a201b](https://github.com/cedya77/aiometadata/commit/f4a201bae2460ea3585bff3251e80afc68e4d888))
+* unresponsive UI after closing find & replace type modal ([b0c1b53](https://github.com/cedya77/aiometadata/commit/b0c1b53494a7cc10617534810a17b7b056b43d74))
+* use Math.floor for skip→page conversion and simplify search URL parsing ([c1ec9f3](https://github.com/cedya77/aiometadata/commit/c1ec9f3fdd3d18c82c5b3ba726e2cbc9451d4e56))
+* user-scoped discover links in cache ([2c87840](https://github.com/cedya77/aiometadata/commit/2c878403c504224554497cf7722cf553d900259e))
+* user-scoped discover links in cache ([c3d6f54](https://github.com/cedya77/aiometadata/commit/c3d6f548571c493c9cf18455f55e90836db579db))
+* warm poster proxy URLs with fallback params to match live requests ([c779eff](https://github.com/cedya77/aiometadata/commit/c779effe919eb710c7ffb5d95d241696cebfd1c9))
+
+
+### Performance Improvements
+
+* add heap snapshot endpoint for testing ([a72fb80](https://github.com/cedya77/aiometadata/commit/a72fb80f97a24054fc16e5e62f14350ec813f589))
+* add heap snapshot endpoint for testing ([25d3d62](https://github.com/cedya77/aiometadata/commit/25d3d62dccd8f838da1d7a1b15bb284100520e48))
+* apply PR optimizations to ConfigCache ([b8bb898](https://github.com/cedya77/aiometadata/commit/b8bb8982c3f0bb10702db8739aded2fddec24f04))
+* batch redis writes for meta components ([6389498](https://github.com/cedya77/aiometadata/commit/6389498c7ecca20aa8c2a64710d6dd3fb49b335c))
+* broaden cache key sharing across MDBList, Trakt, AniList, and catalog-level caches ([659e5ac](https://github.com/cedya77/aiometadata/commit/659e5ac0ec08d9d44097266c319556cc5159414d))
+* cache MAX_CATALOGS env var and remove narrative comments ([cf5b85c](https://github.com/cedya77/aiometadata/commit/cf5b85cf4517c168aa9881fc3259792f054ff2a4))
+* deduplicate concurrent cache misses with in-flight locks ([f4dc3ac](https://github.com/cedya77/aiometadata/commit/f4dc3ac7f01ac8ebd21a20036831577e8f12a211))
+* deduplicate concurrent cache misses with in-flight locks ([7409729](https://github.com/cedya77/aiometadata/commit/7409729f234569e0c7bd5eb709e8f3f85ab697cc))
+* implement batch TMDB episode resolver for kitsu ([16a1f9e](https://github.com/cedya77/aiometadata/commit/16a1f9ee4f15f4d89c53ef8e38f650fba0e54e9b))
+* lazily load TMDB languages for language catalog ([9cfecee](https://github.com/cedya77/aiometadata/commit/9cfeceea0ce95900b4534330c31a47589a4f1ef0))
+* migrate sqlite3 to better-sqlite3 ([088d62b](https://github.com/cedya77/aiometadata/commit/088d62b8e1b99190e836cc9ffafc0f4b9362f28f))
+* optimize meta cache config reuse in fanout paths ([e1b852f](https://github.com/cedya77/aiometadata/commit/e1b852f0eed911fd03762b3fe79e7f1d245d060a))
+* optimize release timestamp handling in metadata builders ([9f9934e](https://github.com/cedya77/aiometadata/commit/9f9934ee9238a778662ea75e54027c70308e35f7))
+* reduce content metadata writes on component cache hits ([9fe914d](https://github.com/cedya77/aiometadata/commit/9fe914decfcc89397c70d3a001f524b7b176ef33))
+* reduce frontend bundle size ([d46e210](https://github.com/cedya77/aiometadata/commit/d46e210068f5eb24a80b8e1f23b8536558b56619))
+* remove unbounded requestTimestamps array in pmdb utils ([f69515d](https://github.com/cedya77/aiometadata/commit/f69515df1f09a7c7461bd8d37a1b73d4b4ca9bc0))
+* replace checkIfExists (head+get) with single piped get ([2241200](https://github.com/cedya77/aiometadata/commit/224120049e4123ca6f0deaaf103653de764559fc))
+* scope providers/artProviders per content type in catalog cache keys ([2f0cb1c](https://github.com/cedya77/aiometadata/commit/2f0cb1c6a8f04125257a8017e0b1bc2cc861ae9b))
+* short circuit request tracker ([031ea46](https://github.com/cedya77/aiometadata/commit/031ea462ae15dcd677e3d51dadbd9c1e27e7fe8f))
+
 ## [1.35.2](https://github.com/cedya77/aiometadata/compare/v1.35.1...v1.35.2) (2026-03-24)
 
 
