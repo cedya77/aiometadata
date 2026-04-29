@@ -1,4 +1,4 @@
-const { request, setGlobalDispatcher, ProxyAgent } = require("undici");
+const { request, Agent, setGlobalDispatcher, ProxyAgent } = require("undici");
 const buildInfo = require('../lib/buildInfo');
 
 const getProxyUrl = (): string | null => {
@@ -16,8 +16,9 @@ const getProxyUrl = (): string | null => {
 
 const proxyUrl = getProxyUrl();
 if (proxyUrl) {
-  const dispatcher = new ProxyAgent({ uri: proxyUrl, allowH2: false });
-  setGlobalDispatcher(dispatcher);
+  setGlobalDispatcher(new ProxyAgent({ uri: proxyUrl, allowH2: false }));
+} else {
+  setGlobalDispatcher(new Agent({ allowH2: false }));
 }
 
 interface HttpRequestOptions {

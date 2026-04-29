@@ -52,14 +52,6 @@ async function tvdbHttpRequest(url: string, options: any = {}, maxRetries: numbe
           throw error;
         }
       } else {
-        const isGoaway = error.message?.includes('GOAWAY');
-        if (isGoaway && attempt < maxRetries) {
-          const delay = Math.min(500 * Math.pow(2, attempt), 5000);
-          logger.warn(`GOAWAY received, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-
         if (attempt >= maxRetries) {
           const requestTracker = require('./requestTracker');
           const status = error.response?.status;
