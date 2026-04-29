@@ -201,6 +201,7 @@ http {
             proxy_cache poster_cache;
             proxy_cache_key $upstream_url;
             proxy_cache_valid 200 30d;
+            proxy_ignore_headers Cache-Control Expires Vary;
             proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
             proxy_cache_lock on;
 
@@ -220,19 +221,27 @@ Save the following as `poster-cache-stats.sh` next to your `docker-compose.yml`:
 # Periodically writes cache stats to a JSON file served by nginx
 CACHE_DIR="/var/cache/nginx/posters"
 STATS_FILE="/tmp/cache-stats.json"
+MAX_SIZE="${POSTER_CACHE_MAX_SIZE:-10g}"
+INACTIVE="${POSTER_CACHE_INACTIVE:-30d}"
 
 while true; do
   if [ -d "$CACHE_DIR" ]; then
     size_bytes=$(du -sb "$CACHE_DIR" 2>/dev/null | cut -f1)
-    size_human=$(du -sh "$CACHE_DIR" 2>/dev/null | cut -f1)
     file_count=$(find "$CACHE_DIR" -type f 2>/dev/null | wc -l)
+    size_human=$(awk "BEGIN {
+      b = ${size_bytes:-0};
+      if (b >= 1000000000) printf \"%.1fG\", b/1000000000;
+      else if (b >= 1000000) printf \"%.1fM\", b/1000000;
+      else if (b >= 1000) printf \"%.1fK\", b/1000;
+      else printf \"%dB\", b;
+    }")
   else
     size_bytes=0
-    size_human="0"
+    size_human="0B"
     file_count=0
   fi
   cat > "$STATS_FILE" <<EOF
-{"cached_images":${file_count},"disk_usage":"${size_human}","disk_usage_bytes":${size_bytes},"max_size":"10g","inactive":"30d"}
+{"cached_images":${file_count},"disk_usage":"${size_human}","disk_usage_bytes":${size_bytes},"max_size":"${MAX_SIZE}","inactive":"${INACTIVE}"}
 EOF
   sleep 30
 done
@@ -251,7 +260,8 @@ Then set these environment variables on the aiometadata service:
 | `DOCKER_DATA_DIR` | Base directory for persistent Docker data | `/opt/docker/data` |
 | `POSTER_PROXY_PREFIX_URL` | Public HTTPS URL for the proxy (used in responses so Stremio fetches through it) | `https://poster-cache.example.com` |
 | `POSTER_WARMUP_URL` | Internal Docker URL for server-side warming (optional, falls back to `POSTER_PROXY_PREFIX_URL`) | `http://poster-cache:8888` |
-| `POSTER_WARMUP_DELAY_MS` | Delay between poster HEAD requests during warming (default `50`) | `50` |
+| `POSTER_WARMUP_DELAY_MS` | Delay between poster warm batches during warming (default `50`) | `50` |
+| `POSTER_WARMUP_CONCURRENCY` | Number of concurrent poster warm requests per batch (default `1`) | `5` |
 
 If you're not using Traefik, remove the labels, expose port 8888 directly, and set `POSTER_PROXY_PREFIX_URL` to wherever your proxy is publicly accessible.
 

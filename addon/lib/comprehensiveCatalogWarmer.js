@@ -721,15 +721,16 @@ class ComprehensiveCatalogWarmer {
 
             if (posterUrls.length > 0) {
               const posterDelay = parseInt(process.env.POSTER_WARMUP_DELAY_MS) || 50;
+              const posterConcurrency = Math.max(1, parseInt(process.env.POSTER_WARMUP_CONCURRENCY) || 1);
               const pageCatalogId = catalogId;
               posterWarmingChain = posterWarmingChain.then(async () => {
                 let warmed = 0;
-                for (const url of posterUrls) {
-                  try {
-                    const warmUrl = `${posterWarmupUrl}/${url}`;
-                    await fetch(warmUrl, { method: 'HEAD' });
-                    warmed++;
-                  } catch (_) { /* ignore */ }
+                for (let i = 0; i < posterUrls.length; i += posterConcurrency) {
+                  const batch = posterUrls.slice(i, i + posterConcurrency);
+                  const results = await Promise.allSettled(
+                    batch.map(url => fetch(`${posterWarmupUrl}/${url}`, { method: 'HEAD' }))
+                  );
+                  warmed += results.filter(r => r.status === 'fulfilled').length;
                   if (posterDelay > 0) await new Promise(r => setTimeout(r, posterDelay));
                 }
                 this.log('debug', `[Poster Warming] Pre-warmed ${warmed} poster images for catalog ${pageCatalogId}`);
