@@ -253,6 +253,7 @@ while true; do
     rm -f /tmp/purge-cache
     rm -rf "$CACHE_DIR"
     mkdir -p "$CACHE_DIR"
+    chown nginx:nginx "$CACHE_DIR"
     size_bytes=0
     size_human="0B"
     file_count=0
