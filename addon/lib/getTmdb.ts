@@ -5,13 +5,27 @@ import requestTracker from './requestTracker';
 import consola from 'consola';
 import nameToImdb from "name-to-imdb";
 import timingMetrics from './timing-metrics';
-import { cacheWrapGlobal } from './getCache';
+import { cacheWrapGlobal, stableStringify } from './getCache';
+import {
+  normalizeTmdbMovieDetailForCache,
+  normalizeTmdbTvDetailForCache,
+  tmdbCacheNormalizers,
+} from './tmdbCacheNormalizers.js';
 import { LRUCache } from 'lru-cache';
 import { UserConfig } from '../types/index';
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 const ACCOUNT_DETAILS_CACHE_MAX = 2000;
 const ACCOUNT_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const TMDB_DETAIL_TTL = (() => {
+  const ttl = Number.parseInt(process.env.TMDB_DETAIL_TTL || '', 10);
+  return Number.isFinite(ttl) && ttl > 0 ? ttl : 6 * 60 * 60;
+})();
+const COMMA_LIST_QUERY_PARAMS = new Set([
+  'append_to_response',
+  'include_image_language',
+  'include_video_language',
+]);
 
 // HTTP status codes that should NOT be retried
 const NON_RETRYABLE_CODES = new Set([400, 401, 403, 404, 422]);
@@ -338,6 +352,42 @@ function getApiKey(config: UserConfig): string {
     return key;
 }
 
+function normalizeCommaListParam(value: any): string {
+  const raw = Array.isArray(value) ? value.join(',') : String(value);
+  const tokens = raw
+    .split(',')
+    .map(token => token.trim())
+    .filter(token => token !== '');
+
+  return Array.from(new Set(tokens))
+    .sort()
+    .join(',');
+}
+
+function normalizeTmdbDetailQueryParams(params: Record<string, any> = {}): Record<string, any> {
+  const normalized: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    normalized[key] = COMMA_LIST_QUERY_PARAMS.has(key)
+      ? normalizeCommaListParam(value)
+      : value;
+  }
+
+  return normalized;
+}
+
+function getTmdbDetailCacheKey(mediaType: 'movie' | 'tv', id: string, queryParams: Record<string, any>, config: UserConfig): string {
+  const cacheContext = {
+    query: normalizeTmdbDetailQueryParams(queryParams),
+    tmdb: {
+      scrapeImdb: config?.tmdb?.scrapeImdb || false,
+    },
+  };
+
+  return `tmdb:detail:${mediaType}:${id}:${stableStringify(cacheContext)}`;
+}
+
 // --- Endpoints ---
 
 // Cache language/translation data as it changes rarely (24h)
@@ -357,11 +407,23 @@ export async function primaryTranslations(config: UserConfig) {
 
 export async function movieInfo(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
-  return makeTmdbRequest(`/movie/${id}`, getApiKey(config), queryParams, 'GET', null, config);
+  const normalizedQueryParams = normalizeTmdbDetailQueryParams(queryParams);
+  const cacheKey = getTmdbDetailCacheKey('movie', String(id), normalizedQueryParams, config);
+  return cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/movie/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
+      .then(normalizeTmdbMovieDetailForCache),
+    TMDB_DETAIL_TTL
+  );
 }
 export async function tvInfo(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
-  return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams, 'GET', null, config);
+  const normalizedQueryParams = normalizeTmdbDetailQueryParams(queryParams);
+  const cacheKey = getTmdbDetailCacheKey('tv', String(id), normalizedQueryParams, config);
+  return cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/tv/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
+      .then(normalizeTmdbTvDetailForCache),
+    TMDB_DETAIL_TTL
+  );
 }
 
 export async function movieExternalIds(id: string, config: UserConfig) {
@@ -891,6 +953,7 @@ module.exports = {
   selectTmdbImageByLang,
   movieImages,
   tvImages,
+  __privateTmdbCacheNormalizers: tmdbCacheNormalizers,
   getMemoryStats: () => ({
     accountDetailsCache: accountDetailsCache.size,
     accountDetailsInflight: accountDetailsInflight.size,

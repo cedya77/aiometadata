@@ -587,7 +587,7 @@ async function performTmdbSearch(type, query, language, config, searchPersons = 
         if (originalLanguage) langSet.add(originalLanguage);
         const imageLanguages = Array.from(langSet).join(',');
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords, release_dates", include_image_language: imageLanguages }, config)
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords", include_image_language: imageLanguages }, config)
             : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
 
         let allIds = {
