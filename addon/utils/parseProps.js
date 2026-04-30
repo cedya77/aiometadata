@@ -3295,9 +3295,10 @@ function genSeasonsString(seasons) {
       seasons.map((season) => `season/${season.season_number}`).join(","),
     ];
   } else {
-    const result = new Array(Math.ceil(seasons.length / 20))
-      .fill()
-      .map((_) => seasons.splice(0, 20));
+    const result = [];
+    for (let i = 0; i < seasons.length; i += 20) {
+      result.push(seasons.slice(i, i + 20));
+    }
     return result.map((arr) => {
       return arr.map((season) => `season/${season.season_number}`).join(",");
     });
