@@ -268,7 +268,6 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           let imdbId = isMovie ? idMapper.getTraktAnimeMovieByMalId(malId)?.externals.imdb : mapping?.imdb_id;
           let tvdbId = isMovie ? (wikiMappings.getByImdbId(imdbId, itemType))?.tvdbId || null : mapping?.tvdb_id;
 
-          const imdbRating = imdbId ? await getImdbRating(imdbId, itemType) : 'N/A';
           let id = imdbId || `kitsu:${kitsuId}`;
           const preferredProvider = config.providers?.anime || 'mal';
           if(preferredProvider === 'kitsu') {
@@ -284,6 +283,7 @@ async function performKitsuSearch(type, query, language, config, page = 1) {
           }
           
           
+          const imdbRating = imdbId ? await getImdbRating(imdbId, itemType) : 'N/A';
           const mediaType = isMovie ? 'movie' : 'series';
           const background = mapping?.mal_id ? await Utils.getAnimeBg({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType, malPosterUrl: item.coverImage?.original}, config) : item.coverImage?.original;
           const poster = mapping?.mal_id ? await Utils.getAnimePoster({malId: mapping?.mal_id, imdbId: imdbId, tvdbId: tvdbId, tmdbId: tmdbId, mediaType, malPosterUrl: item.posterImage?.original}, config) : item.posterImage?.original;
