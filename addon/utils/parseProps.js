@@ -398,6 +398,7 @@ function sortSearchResults(results, query) {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return results;
   
+  const currentYear = new Date().getFullYear();
   const queryWords = normalizedQuery.split(/\s+/).filter((w) => w);
   const personMatchCount = results.filter((r) => r.matchType === "person").length;
   const titleMatchCount = results.length - personMatchCount;
@@ -415,8 +416,8 @@ function sortSearchResults(results, query) {
 
     // Quality checks
     const isEstablishedClassic = voteCount >= 1000;
-    const isStandardHit = voteCount >= 200 && score >= 2.0 && year >= new Date().getFullYear() - 15;
-    const isRecentUpAndComer = item.year && item.year >= new Date().getFullYear() - 2 && voteCount >= 50 && score >= 1.5;
+    const isStandardHit = voteCount >= 200 && score >= 2.0 && year >= currentYear - 15;
+    const isRecentUpAndComer = item.year && item.year >= currentYear - 2 && voteCount >= 50 && score >= 1.5;
     const passesExactQuality = isEstablishedClassic || isStandardHit || isRecentUpAndComer;
 
     // Match types
@@ -424,16 +425,29 @@ function sortSearchResults(results, query) {
     const similarity = jaroWinklerSimilarity(title, normalizedQuery);
     
     const isNearExact = similarity >= 0.97; //slight typo tolerance
+    const isExactLike = isExact || isNearExact;
     
-    const startsWith = !isExact && !isNearExact && !isPersonMatch && title.startsWith(normalizedQuery);
-    const contains = !isExact && !isNearExact && !isPersonMatch && !startsWith && queryWords.every((word) => title.includes(word));
+    const startsWith = !isExactLike && !isPersonMatch && title.startsWith(normalizedQuery);
+    const contains = !isExactLike && !isPersonMatch && !startsWith && queryWords.every((word) => title.includes(word));
 
     let matchReason = "Other";
-    if ((isExact || isNearExact) && passesExactQuality) matchReason = "ExactHQ";
-    else if (isExact || isNearExact) matchReason = "Exact";
+    if (isExactLike && passesExactQuality) matchReason = "ExactHQ";
+    else if (isExactLike) matchReason = "Exact";
     else if (isPersonMatch) matchReason = "Person";
     else if (startsWith) matchReason = "StartsWith";
     else if (contains) matchReason = "Contains";
+
+    const age = currentYear - year;
+    const popularityScore = score;
+    const voteScore = Math.log10(voteCount + 1) * 5;
+    let recencyBonus = 0;
+    if (age <= 5) {
+      recencyBonus = (5 - age) * 1;
+    } else if (age > 20) {
+      recencyBonus = -Math.min(age - 20, 10) * 0.5;
+    }
+    const similarityScore = matchReason === "Other" ? 0 : similarity * 10;
+    const qualityScore = popularityScore + voteScore + recencyBonus + similarityScore;
 
     return {
       originalItem: item,
@@ -443,6 +457,8 @@ function sortSearchResults(results, query) {
       voteAverage: item.vote_average || 0,
       year,
       isExact,
+      isNearExact,
+      isExactLike,
       passesExactQuality,
       isPersonMatch,
       startsWith,
@@ -453,12 +469,13 @@ function sortSearchResults(results, query) {
       mediaType: item.media_type,
       genre_ids: item.genre_ids,
       matchReason,
+      qualityScore,
     };
   });
 
   // 2. FILTER
   const RULES = {
-    CURRENT_YEAR: new Date().getFullYear(),
+    CURRENT_YEAR: currentYear,
     HQ_VOTE_THRESHOLD: 100,
     HQ_POPULARITY_THRESHOLD: 5.0,
     LQ_EXACT: { MIN_VOTES: 1, MIN_POPULARITY: 0.5, RECENT_YEAR_SPAN: 5 },
@@ -477,7 +494,7 @@ function sortSearchResults(results, query) {
     // Stage 1: Priority Pass
     const isFightingEvent = /^(?=.*\b(UFC|LFA|PFL|Bellator)\b)(?=.*\b\w+\s+vs\.?\s+\w+\b).*/i.test(item.title);
     const isPriorityItem =
-      (item.isExact && item.passesExactQuality) ||
+      (item.isExactLike && item.passesExactQuality) ||
       item.isPersonMatch ||
       isFightingEvent ||
       item.voteCount >= RULES.HQ_VOTE_THRESHOLD ||
@@ -492,7 +509,7 @@ function sortSearchResults(results, query) {
       item.score < RULES.OBSCURE.MAX_POPULARITY &&
       item.voteCount < RULES.OBSCURE.MAX_VOTES;
     
-    if (isMissingCoreData || (isObscureContent && !item.isExact && !item.isNearExact)) return false;
+    if (isMissingCoreData || (isObscureContent && !item.isExactLike)) return false;
 
     // Stage 3: Case-by-Case Rules
     switch (item.matchReason) {
@@ -554,39 +571,7 @@ function sortSearchResults(results, query) {
     
     }
     // 3. Composite Quality Score
-    // Combines popularity (engagement), votes (validation), recency, and similarity
-    const calculateQualityScore = (item) => {
-      const currentYear = new Date().getFullYear();
-      const age = currentYear - item.year;
-      
-      // Popularity component (0-100+ range)
-      const popularityScore = item.score;
-      
-      // Vote component using logarithmic scale (prevents low-vote items from ranking high)
-      // log10(10000) ≈ 4, log10(1000) ≈ 3, log10(100) ≈ 2, log10(10) ≈ 1, log10(1) = 0
-      const voteScore = Math.log10(item.voteCount + 1) * 5; // Scale up to ~20 for 10k votes
-      
-      // Recency bonus (newer content gets a small boost, older gets slight penalty)
-      // Content from last 5 years gets +5 to +1 bonus, 6-15 years neutral, older gets penalty
-      let recencyBonus = 0;
-      if (age <= 5) {
-        recencyBonus = (5 - age) * 1; // +5 for current year, +4 for 1 year old, etc.
-      } else if (age > 20) {
-        recencyBonus = -Math.min(age - 20, 10) * 0.5; // Penalty for very old content, capped at -5
-      }
-      
-      // Similarity component
-      // "Other" matches don't get similarity boost - they're already weak
-      const similarityScore = 
-        (item.matchReason === "Other") ? 0 : item.similarity * 10;
-      
-      // Final score: popularity + vote validation + recency + similarity
-      return popularityScore + voteScore + recencyBonus + similarityScore;
-    };
-    
-    const aQualityScore = calculateQualityScore(a);
-    const bQualityScore = calculateQualityScore(b);
-    if (aQualityScore !== bQualityScore) return bQualityScore - aQualityScore;
+    if (a.qualityScore !== b.qualityScore) return b.qualityScore - a.qualityScore;
 
     // 4. Release date as final tiebreaker (newer first)
     if (a.year !== b.year) return b.year - a.year;
