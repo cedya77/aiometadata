@@ -1900,6 +1900,58 @@ async function getBatchAnimeArtwork(malIds, config) {
   return [];
 }
 
+const KITSU_ANIME_DETAIL_APPENDS = 'categories';
+
+function normalizeKitsuIds(kitsuIds) {
+  return [...new Set((kitsuIds || []).map(id => String(id)).filter(Boolean))]
+    .sort((a, b) => {
+      const numericDiff = Number(a) - Number(b);
+      return Number.isNaN(numericDiff) || numericDiff === 0 ? a.localeCompare(b) : numericDiff;
+    });
+}
+
+function getKitsuBatchDetailsCacheKey(kitsuIds, appends = KITSU_ANIME_DETAIL_APPENDS) {
+  const normalizedIds = normalizeKitsuIds(kitsuIds);
+  return `kitsu-anime-batch-${normalizedIds.join(',')}-${appends || 'none'}`;
+}
+
+async function getCachedKitsuAnimeBatchDetails(kitsuIds, appends = KITSU_ANIME_DETAIL_APPENDS) {
+  const normalizedIds = normalizeKitsuIds(kitsuIds);
+
+  if (normalizedIds.length === 0) {
+    return { data: [], included: [] };
+  }
+
+  return cacheWrapGlobal(
+    getKitsuBatchDetailsCacheKey(normalizedIds, appends),
+    () => kitsu.getMultipleAnimeDetails(normalizedIds, appends),
+    CATALOG_TTL
+  );
+}
+
+function getKitsuGenresForItem(item, included = [], allowIncludedFallback = false) {
+  const categoryIds = (item?.relationships?.categories?.data || []).map(category => String(category.id));
+
+  if (categoryIds.length > 0) {
+    const includedCategoriesById = new Map(
+      (included || [])
+        .filter(includedItem => includedItem.type === 'categories')
+        .map(includedItem => [String(includedItem.id), includedItem])
+    );
+
+    return categoryIds
+      .map(categoryId => includedCategoriesById.get(categoryId)?.attributes?.title)
+      .filter(Boolean);
+  }
+
+  if (!allowIncludedFallback) return [];
+
+  return (included || [])
+    .filter(includedItem => includedItem.type === 'categories')
+    .map(includedItem => includedItem.attributes?.title)
+    .filter(Boolean);
+}
+
 async function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = null) {
   if (!anime || !anime.mal_id) return null;
 
@@ -2060,8 +2112,31 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
   
   // Extract MAL IDs and try to get AniList IDs from mappings
   const malIds = animes.map(anime => anime.mal_id).filter(id => id && typeof id === 'number' && id > 0);
+  const animeByMalId = new Map();
+  const mappingByMalId = new Map();
+  const kitsuIds = [];
+  const seenKitsuIds = new Set();
+
+  animes.forEach(anime => {
+    if (!anime || !anime.mal_id || typeof anime.mal_id !== 'number' || anime.mal_id <= 0) return;
+
+    if (!animeByMalId.has(anime.mal_id)) {
+      animeByMalId.set(anime.mal_id, anime);
+    }
+
+    const mapping = idMapper.getMappingByMalId(anime.mal_id);
+    mappingByMalId.set(anime.mal_id, mapping);
+
+    if (mapping?.kitsu_id) {
+      const kitsuId = String(mapping.kitsu_id);
+      if (!seenKitsuIds.has(kitsuId)) {
+        seenKitsuIds.add(kitsuId);
+        kitsuIds.push(mapping.kitsu_id);
+      }
+    }
+  });
+
   let anilistArtworkMap = new Map();
-  const kitsuMalMap = new Map();
   
   if (useAniList && malIds.length > 0) {
     try {
@@ -2069,16 +2144,12 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       //console.log(`[parseAnimeCatalogMetaBatch] MAL IDs: ${malIds.slice(0, 10).join(', ')}${malIds.length > 10 ? '...' : ''}`);
       
       // First, try to get AniList IDs from mappings
-      const malToAnilistMap = new Map();
       const anilistIds = [];
-      const kitsuIds = [];
       const malIdsWithoutAnilist = [];
-      const malIdsWithoutKitsu = [];
       
       malIds.forEach(malId => {
-        const mapping = idMapper.getMappingByMalId(malId);
+        const mapping = mappingByMalId.get(malId);
         if (mapping && mapping.anilist_id) {
-          malToAnilistMap.set(mapping.anilist_id, malId);
           anilistIds.push(mapping.anilist_id);
         } else {
           malIdsWithoutAnilist.push(malId);
@@ -2121,29 +2192,20 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
   
   // Fetch Kitsu artwork if configured as art provider
   let kitsuArtworkMap = new Map();
-  if (useKitsu && malIds.length > 0) {
+  let kitsuBatchDetails = null;
+  if (useKitsu && kitsuIds.length > 0) {
     try {
-      // Get Kitsu IDs from mappings
-      const kitsuIds = malIds
-        .map(malId => {
-          const mapping = idMapper.getMappingByMalId(malId);
-          return mapping?.kitsu_id;
-        })
-        .filter(id => id);
-      
-      if (kitsuIds.length > 0) {
-        const kitsuData = await kitsu.getMultipleAnimeDetails(kitsuIds);
-        if (kitsuData?.data) {
-          // Create a map for quick lookup using MAL ID as key
-          kitsuArtworkMap = new Map();
-          kitsuData.data.forEach(item => {
-            const mapping = idMapper.getMappingByKitsuId(item.id);
-            if (mapping?.mal_id) {
-              kitsuArtworkMap.set(mapping.mal_id, item);
-            }
-          });
-          // logger.debug(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuData.data.length} Kitsu artworks`);
-        }
+      kitsuBatchDetails = await getCachedKitsuAnimeBatchDetails(kitsuIds);
+      if (kitsuBatchDetails?.data) {
+        // Create a map for quick lookup using MAL ID as key
+        kitsuArtworkMap = new Map();
+        kitsuBatchDetails.data.forEach(item => {
+          const mapping = idMapper.getMappingByKitsuId(item.id);
+          if (mapping?.mal_id) {
+            kitsuArtworkMap.set(mapping.mal_id, item);
+          }
+        });
+        // logger.debug(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuBatchDetails.data.length} Kitsu artworks`);
       }
     } catch (error) {
       logger.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
@@ -2155,17 +2217,19 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
 
   if(preferredProvider === 'kitsu') {
     try {
+      const kitsuData = kitsuBatchDetails || await getCachedKitsuAnimeBatchDetails(kitsuIds);
+      const kitsuItems = kitsuData?.data || [];
+      const kitsuById = new Map(kitsuItems.map(item => [String(item.id), item]));
+
       let metas = await Promise.all(malIds.map(async id => {
         // logger.debug(`[parseAnimeCatalogMetaBatch] Fetching Kitsu data for ID: ${id}`);
         
-        const mapping = idMapper.getMappingByMalId(id);
-        if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animes.find(anime => anime.mal_id === id), config, language);
-        const kitsuData = await cacheWrapGlobal(
-          `kitsu-anime-${mapping.kitsu_id}-categories`,
-          () => kitsu.getMultipleAnimeDetails([mapping.kitsu_id]),
-          CATALOG_TTL
-        );
-        const item = kitsuData.data[0];
+        const mapping = mappingByMalId.get(id);
+        if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animeByMalId.get(id), config, language);
+        const item = kitsuById.get(String(mapping.kitsu_id));
+        if (!item) {
+          throw new Error(`Missing Kitsu data for Kitsu ID ${mapping.kitsu_id}`);
+        }
         const stremioType = item.attributes.subtype === 'movie' ? 'movie' : 'series';
         let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(id)?.externals.tmdb : mapping?.themoviedb_id;
         let imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(id)?.externals.imdb : mapping?.imdb_id;
@@ -2185,7 +2249,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
             }
           }
         }
-        let genres = kitsuData.included?.filter(item => item.type === 'categories').map(item => item.attributes?.title).filter(Boolean) || [];
+        let genres = getKitsuGenresForItem(item, kitsuData?.included, kitsuItems.length <= 1);
         
         let releaseDates = null;
         if (config.hideUnreleasedDigital && stremioType === 'movie' && tmdbId) {
