@@ -5,6 +5,12 @@ import { to3LetterCode } from './language-map.js';
 import { httpPost, httpGet } from '../utils/httpClient.js';
 import { UserConfig } from '../types/index.js';
 import consola from 'consola';
+import {
+  normalizeTvdbMovieExtendedForCache,
+  normalizeTvdbSeriesEpisodesForCache,
+  normalizeTvdbSeriesExtendedForCache,
+  tvdbCacheNormalizers,
+} from './tvdbCacheNormalizers.js';
 
 const logger = consola.withTag('TVDB');
 
@@ -695,7 +701,7 @@ async function getSeriesExtended(seriesId: string, config: UserConfig): Promise<
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, true);
       
-      return (response.data as any)?.data;
+      return normalizeTvdbSeriesExtendedForCache((response.data as any)?.data);
     } catch(error) {
       // Track failed request
       const responseTime = Date.now() - startTime;
@@ -724,7 +730,7 @@ async function getMovieExtended(movieId: string, config: UserConfig): Promise<Tv
       const requestTracker = require('./requestTracker');
       requestTracker.trackProviderCall('tvdb', responseTime, true);
       
-      return (response.data as any)?.data;
+      return normalizeTvdbMovieExtendedForCache((response.data as any)?.data);
     } catch(error) {
       // Track failed request
       const responseTime = Date.now() - startTime;
@@ -806,7 +812,7 @@ async function getSeriesEpisodes(tvdbId: string, language: string = 'en-US', sea
       return getSeriesEpisodes(tvdbId, 'en-US', seasonType, config, true); 
     }
     
-    return result;
+    return normalizeTvdbSeriesEpisodesForCache(result);
   });
 }
 
@@ -1372,6 +1378,8 @@ function getMemoryStats() {
   };
 }
 
+const __privateTvdbCacheNormalizers = tvdbCacheNormalizers;
+
 // CommonJS compatibility
 module.exports = {
   searchSeries,
@@ -1403,4 +1411,5 @@ module.exports = {
   getCollectionDetails,
   getCollectionTranslations,
   getMemoryStats,
+  __privateTvdbCacheNormalizers,
 };
