@@ -1149,7 +1149,6 @@ const CATALOG_META_FIELDS = [
   'links',
   'behaviorHints',
   'trailers',
-  'trailerStreams',
 ];
 
 function projectAppExtrasForCatalogCache(appExtras) {
@@ -1825,11 +1824,8 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
      queueComponentCache(componentsToCache, componentCacheKeys.links, { links: canonicalizeLinksForCache(stripCertificationLinks(meta.links, meta.app_extras?.certification)) });
    }
    
-   if (meta.trailers?.length || meta.trailerStreams?.length) {
-     const trailerData = {};
-     if (meta.trailers?.length) trailerData.trailers = meta.trailers;
-     if (meta.trailerStreams?.length) trailerData.trailerStreams = meta.trailerStreams;
-     queueComponentCache(componentsToCache, componentCacheKeys.trailers, trailerData);
+   if (meta.trailers?.length) {
+     queueComponentCache(componentsToCache, componentCacheKeys.trailers, { trailers: meta.trailers });
    }
    
    const extrasForCache = projectAppExtrasForComponentCache(meta.app_extras);
@@ -2054,7 +2050,6 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
        reconstructedMeta.links = data.links;
      } else if (componentName === 'trailers') {
        if (data.trailers) reconstructedMeta.trailers = data.trailers;
-       if (data.trailerStreams) reconstructedMeta.trailerStreams = data.trailerStreams;
       } else if (componentName === 'extras') {
         if (data.app_extras && typeof data.app_extras === 'object' && !Array.isArray(data.app_extras)) {
           reconstructedMeta.app_extras = {

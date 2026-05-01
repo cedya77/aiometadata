@@ -993,12 +993,7 @@ function parseTrailers(videos) {
         .map((el) => ({ source: el.key, type: el.type, name: el.name, ytId: el.key, lang: el.iso_639_1 }));
 }
 
-function parseTrailerStream(videos) {
-    if (!videos || !Array.isArray(videos.results)) return [];
-    return videos.results
-        .filter((el) => el.site === "YouTube" && el.type === "Trailer")
-        .map((el) => ({ title: el.name, ytId: el.key, lang: el.iso_639_1 }));
-}
+
 
 function parseImdbLink(vote_average, imdb_id) {
   return {
@@ -2043,13 +2038,6 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       }
     }
   }
-  const trailerStreams = [];
-  if (anime.trailer?.youtube_id) {
-    trailerStreams.push({
-      ytId: anime.trailer.youtube_id,
-      title: anime.title_english || anime.title
-    });
-  }
   const trailers = [];
   if (anime.trailer?.youtube_id) {
     trailers.push({
@@ -2072,7 +2060,6 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     runtime: parseRunTime(anime.duration),
     isAnime: true,
     trailers: trailers,
-    trailerStreams: trailerStreams,
     behavioralHints: {
       defaultVideoId: stremioType === 'movie' ? mapping?.imdb_id ? mapping?.imdb_id: (kitsuId ? `kitsu:${kitsuId}` : `mal:${malId}`): null,
       hasScheduledVideos: stremioType === 'series',
@@ -2357,13 +2344,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       getImdbRating(imdbId, stremioType)
     ]);
     
-    const trailerStreams = [];
-    if (anime.trailer?.youtube_id) {
-      trailerStreams.push({
-        ytId: anime.trailer.youtube_id,
-        title: anime.title_english || anime.title
-      });
-    }
+
     const trailers = [];
     if (anime.trailer?.youtube_id) {
       trailers.push({
@@ -2424,8 +2405,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         releaseInfo: malReleaseInfo,
         runtime: parseRunTime(anime.duration),
         imdbRating: imdbRating,
-        trailers: trailers,
-        trailerStreams: trailerStreams
+        trailers: trailers
       };
       
       if (releaseDates) {
@@ -2470,10 +2450,9 @@ function getYouTubeIdFromUrl(url) {
  */
 function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
   const trailers = [];
-  const trailerStreams = [];
 
   if (!Array.isArray(tvdbTrailers)) {
-    return { trailers, trailerStreams };
+    return { trailers };
   }
 
   for (const trailer of tvdbTrailers) {
@@ -2488,16 +2467,11 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
           type: 'Trailer',
           name: defaultTitle
         });
-
-        trailerStreams.push({
-          ytId: ytId,
-          title: title
-        });
       }
     }
   }
 
-  return { trailers, trailerStreams };
+  return { trailers };
 }
 
 // In-flight request cache for TMDB movie images to deduplicate concurrent requests
@@ -3413,7 +3387,6 @@ module.exports = {
   parseWriter,
   parseSlug,
   parseTrailers,
-  parseTrailerStream,
   parseImdbLink,
   parseShareLink,
   parseGenreLink,
