@@ -1111,6 +1111,92 @@ function projectMetaForUser(meta, config) {
   return meta;
 }
 
+const CATALOG_META_FIELDS = [
+  'id',
+  'type',
+  'name',
+  'poster',
+  '_rawPosterUrl',
+  'posterShape',
+  'background',
+  'landscapePoster',
+  'logo',
+  'description',
+  'year',
+  'releaseInfo',
+  'released',
+  RELEASE_AVAILABILITY_FIELD,
+  'runtime',
+  'genres',
+  'certification',
+  'imdbRating',
+  'country',
+  'isAnime',
+  'imdb_id',
+  '_imdbId',
+  '_tmdbId',
+  '_tvdbId',
+  '_malId',
+  '_kitsuId',
+  '_anilistId',
+  '_anidbId',
+  'slug',
+  'behaviorHints',
+  'trailers',
+  'trailerStreams',
+];
+
+function projectAppExtrasForCatalogCache(appExtras) {
+  if (!appExtras || typeof appExtras !== 'object' || Array.isArray(appExtras)) {
+    return undefined;
+  }
+
+  const projected = {};
+  const fields = [
+    'certification',
+    'ratings',
+    'releaseAvailability',
+  ];
+
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(appExtras, field)) {
+      projected[field] = appExtras[field];
+    }
+  }
+
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
+function projectMetaForCatalogCache(meta) {
+  if (!meta || typeof meta !== 'object') return meta;
+
+  const projected = {};
+  for (const field of CATALOG_META_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(meta, field) && meta[field] !== undefined) {
+      projected[field] = meta[field];
+    }
+  }
+
+  const appExtras = projectAppExtrasForCatalogCache(meta.app_extras);
+  if (appExtras) {
+    projected.app_extras = appExtras;
+  }
+
+  return projected;
+}
+
+function projectCatalogPayloadForCache(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (!Array.isArray(payload.metas)) return payload;
+
+  normalizeReleaseAvailabilityInPayload(payload);
+
+  return {
+    ...payload,
+    metas: payload.metas.map(projectMetaForCatalogCache),
+  };
+}
+
 async function resolveConfigForCache(userUUID, options = {}) {
   if (options?.config) {
     if (userUUID && !options.config.userUUID) {
@@ -1594,7 +1680,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    });
 }
 
-async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL, type = null, useShowPoster = false }) {
+async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL, type = null, useShowPoster = false, overwrite = true }) {
   const componentCacheKeys = buildMetaComponentCacheKeys({
     config,
     metaId,
@@ -1721,8 +1807,42 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
      queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: meta.app_extras });
    }
    
-  await cacheComponentsPipeline(componentsToCache, ttl);
+  await cacheComponentsPipeline(componentsToCache, ttl, { overwrite });
    return { meta: projectMetaForUser(meta, config) };
+}
+
+async function writeMetaComponentsBatchWithConfig({ config, metas, ttl = META_TTL, type = null, useShowPoster = false, overwrite = true }) {
+  if (!Array.isArray(metas) || metas.length === 0) {
+    return { written: 0, skipped: 0 };
+  }
+
+  let written = 0;
+  let skipped = 0;
+
+  for (const meta of metas) {
+    if (!meta || !meta.id || !meta.name || !meta.type) {
+      skipped++;
+      continue;
+    }
+
+    const result = await writeMetaComponentsWithConfig({
+      config,
+      metaId: meta.id,
+      result: { meta },
+      ttl,
+      type: meta.type || type,
+      useShowPoster,
+      overwrite,
+    });
+
+    if (result?.meta) {
+      written++;
+    } else {
+      skipped++;
+    }
+  }
+
+  return { written, skipped };
 }
 
 /**
@@ -2058,9 +2178,10 @@ function queueComponentCache(components, cacheKey, componentData) {
  * Batch component caching without validation.
  * Keeps writes non-fatal while reducing Redis command dispatch overhead.
  */
-async function cacheComponentsPipeline(components, ttl) {
+async function cacheComponentsPipeline(components, ttl, options = {}) {
   if (!redis || !Array.isArray(components) || components.length === 0) return;
 
+  const overwrite = options.overwrite !== false;
   const pipeline = redis.pipeline();
   const queuedCommands = [];
 
@@ -2068,7 +2189,11 @@ async function cacheComponentsPipeline(components, ttl) {
     const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
 
     try {
-      pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+      if (overwrite) {
+        pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+      } else {
+        pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl, 'NX');
+      }
       queuedCommands.push(versionedKey);
     } catch (error) {
       cacheLogger.warn(`Failed to queue component cache write for ${versionedKey}:`, error);
@@ -2333,6 +2458,9 @@ module.exports = {
   cacheWrapMetaComponents,
   reconstructMetaFromComponents,
   buildMetaComponentCacheKeys,
+  projectMetaForCatalogCache,
+  projectCatalogPayloadForCache,
+  writeMetaComponentsBatchWithConfig,
   cacheWrapMetaSmart,
   getCacheHealth,
   clearCacheHealth,

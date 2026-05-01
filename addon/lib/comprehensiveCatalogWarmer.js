@@ -1,5 +1,11 @@
 require('dotenv').config();
-const { cacheWrapCatalog, cacheWrapJikanApi, stableStringify } = require('./getCache');
+const {
+  cacheWrapCatalog,
+  cacheWrapJikanApi,
+  stableStringify,
+  projectCatalogPayloadForCache,
+  writeMetaComponentsBatchWithConfig,
+} = require('./getCache');
 const { getGenreList } = require('./getGenreList');
 const { parseAnimeCatalogMetaBatch } = require('../utils/parseProps');
 const jikan = require('./mal');
@@ -250,6 +256,27 @@ class ComprehensiveCatalogWarmer {
     } catch (error) {
       this.log('error', `Failed to mark warmup complete for UUID ${uuid}: ${error.message}`);
     }
+  }
+
+  async persistFullMetasAndProjectCatalog(result, config, type, options = {}) {
+    const metas = Array.isArray(result?.metas) ? result.metas : [];
+
+    if (metas.length > 0) {
+      try {
+        const stats = await writeMetaComponentsBatchWithConfig({
+          config,
+          metas,
+          type,
+          useShowPoster: !!options.useShowPoster,
+          overwrite: false,
+        });
+        this.log('debug', `[Catalog Cache] Processed ${stats.written} meta component set(s), skipped ${stats.skipped}`);
+      } catch (error) {
+        this.log('warn', `[Catalog Cache] Failed to write meta components before catalog projection: ${error.message}`);
+      }
+    }
+
+    return projectCatalogPayloadForCache(result);
   }
 
   async warmMALCatalog(catalogId, page, config, extraArgs) {
@@ -651,7 +678,8 @@ class ComprehensiveCatalogWarmer {
           // Check if this is a MAL catalog
           if (catalogId.startsWith('mal.')) {
             const configWithUUID = { ...config, userUUID: uuid };
-             return await this.warmMALCatalog(catalogId, derivedPage, configWithUUID, extraArgs);
+            const fullResult = await this.warmMALCatalog(catalogId, derivedPage, configWithUUID, extraArgs);
+            return await this.persistFullMetasAndProjectCatalog(fullResult, configWithUUID, actualType);
           } else if (catalogId === 'tmdb.trending') {
             // Special handling for tmdb.trending - call getTrending directly
             if (!uuid) {
@@ -659,10 +687,11 @@ class ComprehensiveCatalogWarmer {
             }
             const configWithUUID = { ...config, userUUID: uuid };
             const { getTrending } = require('./getTrending');
-             return await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
+            const fullResult = await getTrending(catalog.type, config.language, derivedPage, extraArgs.genre || null, configWithUUID, uuid, true);
+            return await this.persistFullMetasAndProjectCatalog(fullResult, configWithUUID, actualType);
           } else if (catalogId === 'tvmaze.schedule') {
             const configWithUUID = { ...config, userUUID: uuid };
-            return await getTvmazeScheduleCatalog({
+            const fullResult = await getTvmazeScheduleCatalog({
               date: extraArgs.date,
               country: extraArgs.genre || '',
               page: derivedPage,
@@ -674,6 +703,7 @@ class ComprehensiveCatalogWarmer {
               enableErrorCaching: false,
               maxRetries: 1,
             });
+            return await this.persistFullMetasAndProjectCatalog(fullResult, configWithUUID, actualType);
           } else {
             // Everything else goes through getCatalog
             if (!uuid) {
@@ -682,7 +712,10 @@ class ComprehensiveCatalogWarmer {
             // Add userUUID to config object for parseStremThruItems
             const configWithUUID = { ...config, userUUID: uuid };
             const { getCatalog } = require('./getCatalog');
-             return await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
+            const fullResult = await getCatalog(catalog.type, config.language, derivedPage, catalogId, extraArgs.genre || null, configWithUUID, uuid, true);
+            return await this.persistFullMetasAndProjectCatalog(fullResult, configWithUUID, actualType, {
+              useShowPoster: !!extraArgs.useShowPoster,
+            });
           }
           }, { enableErrorCaching: false, maxRetries: 1, config });
 
