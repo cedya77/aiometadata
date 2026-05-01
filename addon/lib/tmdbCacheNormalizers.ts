@@ -3,6 +3,8 @@ const PRODUCTION_COUNTRY_KEYS = ['iso_3166_1', 'name'];
 const IMAGE_KEYS = ['file_path', 'iso_639_1', 'iso_3166_1', 'vote_average', 'vote_count', 'width', 'height', 'aspect_ratio'];
 const CAST_CREDIT_KEYS = ['id', 'name', 'original_name', 'character', 'profile_path', 'order'];
 const CREW_CREDIT_KEYS = ['id', 'name', 'original_name', 'job', 'department', 'profile_path'];
+const USED_CREW_JOBS = new Set(['Director', 'Writer', 'Creator']);
+const USED_CREW_DEPARTMENTS = new Set(['Writing']);
 const VIDEO_KEYS = ['id', 'name', 'key', 'site', 'type', 'iso_639_1', 'iso_3166_1'];
 const TRANSLATION_KEYS = ['iso_3166_1', 'iso_639_1', 'name', 'english_name'];
 const TRANSLATION_DATA_KEYS = ['title', 'name', 'overview'];
@@ -90,12 +92,20 @@ function normalizeTmdbCrewCreditForCache(credit: any) {
   return pickDefined(credit, CREW_CREDIT_KEYS);
 }
 
+function isUsedTmdbCrewCredit(credit: any) {
+  if (!credit || typeof credit !== 'object') return false;
+  return USED_CREW_JOBS.has(credit.job) || USED_CREW_DEPARTMENTS.has(credit.department);
+}
+
 function normalizeTmdbCreditsForCache(credits: any) {
   if (!credits || typeof credits !== 'object') return credits;
 
   const result: any = {};
   if (credits.cast !== undefined) result.cast = mapIfArray(credits.cast, normalizeTmdbCastCreditForCache);
-  if (credits.crew !== undefined) result.crew = mapIfArray(credits.crew, normalizeTmdbCrewCreditForCache);
+  if (credits.crew !== undefined) {
+    const usedCrew = Array.isArray(credits.crew) ? credits.crew.filter(isUsedTmdbCrewCredit) : credits.crew;
+    result.crew = mapIfArray(usedCrew, normalizeTmdbCrewCreditForCache);
+  }
   return result;
 }
 

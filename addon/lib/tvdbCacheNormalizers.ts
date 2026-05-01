@@ -2,6 +2,7 @@ const TRANSLATION_NAME_KEYS = ['language', 'name'];
 const TRANSLATION_OVERVIEW_KEYS = ['language', 'overview'];
 const ARTWORK_KEYS = ['id', 'image', 'type', 'language', 'thumbnail', 'width', 'height', 'score', 'includesText'];
 const CHARACTER_KEYS = ['id', 'name', 'peopleId', 'peopleType', 'personName', 'personImgURL', 'image', 'type', 'sort', 'isFeatured'];
+const USED_CHARACTER_TYPES = new Set(['Actor', 'Director', 'Writer']);
 const REMOTE_ID_KEYS = ['id', 'sourceName', 'sourceId', 'url'];
 const GENRE_KEYS = ['id', 'name', 'slug'];
 const CONTENT_RATING_KEYS = ['id', 'name', 'country', 'contentType', 'description'];
@@ -90,6 +91,11 @@ function normalizeTvdbCharacterForCache(character: any) {
   return pickDefined(character, CHARACTER_KEYS);
 }
 
+function isUsedTvdbCharacter(character: any) {
+  if (!character || typeof character !== 'object') return false;
+  return USED_CHARACTER_TYPES.has(character.peopleType);
+}
+
 function normalizeTvdbRemoteIdForCache(remoteId: any) {
   return pickDefined(remoteId, REMOTE_ID_KEYS);
 }
@@ -141,7 +147,7 @@ export function normalizeTvdbSeriesExtendedForCache(series: any) {
     ...(series.status !== undefined ? { status: normalizeTvdbStatusForCache(series.status) } : {}),
     ...(Array.isArray(series.genres) ? { genres: mapIfArray(series.genres, normalizeTvdbGenreForCache) } : {}),
     ...(Array.isArray(series.contentRatings) ? { contentRatings: mapIfArray(series.contentRatings, normalizeTvdbContentRatingForCache) } : {}),
-    ...(Array.isArray(series.characters) ? { characters: mapIfArray(series.characters, normalizeTvdbCharacterForCache) } : {}),
+    ...(Array.isArray(series.characters) ? { characters: mapIfArray(series.characters.filter(isUsedTvdbCharacter), normalizeTvdbCharacterForCache) } : {}),
     ...(Array.isArray(series.remoteIds) ? { remoteIds: mapIfArray(series.remoteIds, normalizeTvdbRemoteIdForCache) } : {}),
     ...(Array.isArray(series.seasons) ? { seasons: mapIfArray(series.seasons, normalizeTvdbSeasonForCache) } : {}),
     ...(Array.isArray(series.artworks) ? { artworks: mapIfArray(series.artworks, normalizeTvdbArtworkForCache) } : {}),
@@ -158,7 +164,7 @@ export function normalizeTvdbMovieExtendedForCache(movie: any) {
     ...(movie.first_release !== undefined ? { first_release: normalizeTvdbFirstReleaseForCache(movie.first_release) } : {}),
     ...(Array.isArray(movie.genres) ? { genres: mapIfArray(movie.genres, normalizeTvdbGenreForCache) } : {}),
     ...(Array.isArray(movie.contentRatings) ? { contentRatings: mapIfArray(movie.contentRatings, normalizeTvdbContentRatingForCache) } : {}),
-    ...(Array.isArray(movie.characters) ? { characters: mapIfArray(movie.characters, normalizeTvdbCharacterForCache) } : {}),
+    ...(Array.isArray(movie.characters) ? { characters: mapIfArray(movie.characters.filter(isUsedTvdbCharacter), normalizeTvdbCharacterForCache) } : {}),
     ...(Array.isArray(movie.remoteIds) ? { remoteIds: mapIfArray(movie.remoteIds, normalizeTvdbRemoteIdForCache) } : {}),
     ...(Array.isArray(movie.artworks) ? { artworks: mapIfArray(movie.artworks, normalizeTvdbArtworkForCache) } : {}),
     ...(Array.isArray(movie.trailers) ? { trailers: mapIfArray(movie.trailers, normalizeTvdbTrailerForCache) } : {}),
