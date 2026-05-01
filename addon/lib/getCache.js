@@ -1215,6 +1215,14 @@ function projectAppExtrasForComponentCache(appExtras) {
   }
 
   const { cast, directors, writers, ...extras } = appExtras;
+  
+  for (const key of Object.keys(extras)) {
+    const v = extras[key];
+    if (v === null || v === undefined || (Array.isArray(v) && v.length === 0)) {
+      delete extras[key];
+    }
+  }
+
   return Object.keys(extras).length > 0 ? extras : null;
 }
 
@@ -1801,26 +1809,26 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
      queueComponentCache(componentsToCache, componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) });
    }
    
-   if (meta.app_extras?.cast) {
+   if (meta.app_extras?.cast?.length) {
      queueComponentCache(componentsToCache, componentCacheKeys.cast, { cast: meta.app_extras.cast });
    }
    
-   if (meta.app_extras?.directors) {
+   if (meta.app_extras?.directors?.length) {
      queueComponentCache(componentsToCache, componentCacheKeys.director, { directors: meta.app_extras.directors });
    }
    
-   if (meta.app_extras?.writers) {
+   if (meta.app_extras?.writers?.length) {
      queueComponentCache(componentsToCache, componentCacheKeys.writer, { writers: meta.app_extras.writers });
    }
    
-   if (meta.links && Array.isArray(meta.links)) {
+   if (meta.links && Array.isArray(meta.links) && meta.links.length > 0) {
      queueComponentCache(componentsToCache, componentCacheKeys.links, { links: canonicalizeLinksForCache(stripCertificationLinks(meta.links, meta.app_extras?.certification)) });
    }
    
-   if (meta.trailers || meta.trailerStreams) {
+   if (meta.trailers?.length || meta.trailerStreams?.length) {
      const trailerData = {};
-     if (meta.trailers) trailerData.trailers = meta.trailers;
-     if (meta.trailerStreams) trailerData.trailerStreams = meta.trailerStreams;
+     if (meta.trailers?.length) trailerData.trailers = meta.trailers;
+     if (meta.trailerStreams?.length) trailerData.trailerStreams = meta.trailerStreams;
      queueComponentCache(componentsToCache, componentCacheKeys.trailers, trailerData);
    }
    
