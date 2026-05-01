@@ -13,7 +13,7 @@ import {
   normalizeTmdbPrimaryTranslationsForCache,
   normalizeTmdbReleaseDatesForCache,
   normalizeTmdbContentRatingsForCache,
-  normalizeTmdbWatchProvidersForCache,
+
   normalizeTmdbImagesForCache,
   normalizeTmdbSeasonForCache,
   tmdbCacheNormalizers,
@@ -632,8 +632,8 @@ export async function getMovieWatchProviders(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
   const cacheKey = `tmdb:movie:watch_providers:${id}${getTmdbQueryCacheSuffix(queryParams)}`;
   const data = await cacheWrapGlobal(cacheKey, () =>
-    makeTmdbRequest(`/movie/${id}/watch/providers`, getApiKey(config), queryParams, 'GET', null, config)
-      .then(normalizeTmdbWatchProvidersForCache),
+    makeTmdbRequest(`/movie/${id}/watch/providers`, getApiKey(config), queryParams, 'GET', null, config),
+
     24 * 60 * 60 
   );
   if (data?.results) {
@@ -709,8 +709,8 @@ export async function getTvWatchProviders(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
   const cacheKey = `tmdb:tv:watch_providers:${id}${getTmdbQueryCacheSuffix(queryParams)}`;
   const data = await cacheWrapGlobal(cacheKey, () =>
-    makeTmdbRequest(`/tv/${id}/watch/providers`, getApiKey(config), queryParams, 'GET', null, config)
-      .then(normalizeTmdbWatchProvidersForCache),
+    makeTmdbRequest(`/tv/${id}/watch/providers`, getApiKey(config), queryParams, 'GET', null, config),
+
     24 * 60 * 60 
   );
   if (data?.results) {
