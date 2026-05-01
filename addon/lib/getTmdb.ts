@@ -7,8 +7,15 @@ import nameToImdb from "name-to-imdb";
 import timingMetrics from './timing-metrics';
 import { cacheWrapGlobal, stableStringify } from './getCache';
 import {
-  normalizeTmdbMovieDetailForCache,
-  normalizeTmdbTvDetailForCache,
+  normalizeTmdbExternalIdsForCache,
+  normalizeTmdbGenreListForCache,
+  normalizeTmdbLanguagesForCache,
+  normalizeTmdbPrimaryTranslationsForCache,
+  normalizeTmdbReleaseDatesForCache,
+  normalizeTmdbContentRatingsForCache,
+  normalizeTmdbWatchProvidersForCache,
+  normalizeTmdbImagesForCache,
+  normalizeTmdbSeasonForCache,
   tmdbCacheNormalizers,
 } from './tmdbCacheNormalizers.js';
 import { LRUCache } from 'lru-cache';
@@ -17,10 +24,6 @@ import { UserConfig } from '../types/index';
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 const ACCOUNT_DETAILS_CACHE_MAX = 2000;
 const ACCOUNT_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-const TMDB_DETAIL_TTL = (() => {
-  const ttl = Number.parseInt(process.env.TMDB_DETAIL_TTL || '', 10);
-  return Number.isFinite(ttl) && ttl > 0 ? ttl : 6 * 60 * 60;
-})();
 const COMMA_LIST_QUERY_PARAMS = new Set([
   'append_to_response',
   'include_image_language',
@@ -346,8 +349,8 @@ async function getAccountDetails(sessionId: string, apiKey: string) {
     accountDetailsInflight.set(cacheKey, request);
     return request;
 }
-function getApiKey(config: UserConfig): string {
-    const key = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
+function getApiKey(config: UserConfig = {} as UserConfig): string {
+    const key = config?.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
     if (!key) throw new Error("TMDB API key not found in config or environment.");
     return key;
 }
@@ -364,7 +367,7 @@ function normalizeCommaListParam(value: any): string {
     .join(',');
 }
 
-function normalizeTmdbDetailQueryParams(params: Record<string, any> = {}): Record<string, any> {
+function normalizeTmdbCacheQueryParams(params: Record<string, any> = {}): Record<string, any> {
   const normalized: Record<string, any> = {};
 
   for (const [key, value] of Object.entries(params)) {
@@ -377,15 +380,11 @@ function normalizeTmdbDetailQueryParams(params: Record<string, any> = {}): Recor
   return normalized;
 }
 
-function getTmdbDetailCacheKey(mediaType: 'movie' | 'tv', id: string, queryParams: Record<string, any>, config: UserConfig): string {
-  const cacheContext = {
-    query: normalizeTmdbDetailQueryParams(queryParams),
-    tmdb: {
-      scrapeImdb: config?.tmdb?.scrapeImdb || false,
-    },
-  };
-
-  return `tmdb:detail:${mediaType}:${id}:${stableStringify(cacheContext)}`;
+function getTmdbQueryCacheSuffix(queryParams: Record<string, any> = {}): string {
+  const normalizedQueryParams = normalizeTmdbCacheQueryParams(queryParams);
+  return Object.keys(normalizedQueryParams).length > 0
+    ? `:${stableStringify(normalizedQueryParams)}`
+    : '';
 }
 
 // --- Endpoints ---
@@ -393,49 +392,41 @@ function getTmdbDetailCacheKey(mediaType: 'movie' | 'tv', id: string, queryParam
 // Cache language/translation data as it changes rarely (24h)
 export async function languages(config: UserConfig) {
   return cacheWrapGlobal('tmdb:languages', () => 
-    makeTmdbRequest('/configuration/languages', getApiKey(config), {}, 'GET', null, config), 
+    makeTmdbRequest('/configuration/languages', getApiKey(config), {}, 'GET', null, config)
+      .then(normalizeTmdbLanguagesForCache),
     24 * 60 * 60
   );
 }
 
 export async function primaryTranslations(config: UserConfig) {
   return cacheWrapGlobal('tmdb:primary_translations', () => 
-    makeTmdbRequest('/configuration/primary_translations', getApiKey(config), {}, 'GET', null, config),
+    makeTmdbRequest('/configuration/primary_translations', getApiKey(config), {}, 'GET', null, config)
+      .then(normalizeTmdbPrimaryTranslationsForCache),
     24 * 60 * 60
   );
 }
 
 export async function movieInfo(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
-  const normalizedQueryParams = normalizeTmdbDetailQueryParams(queryParams);
-  const cacheKey = getTmdbDetailCacheKey('movie', String(id), normalizedQueryParams, config);
-  return cacheWrapGlobal(cacheKey, () =>
-    makeTmdbRequest(`/movie/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
-      .then(normalizeTmdbMovieDetailForCache),
-    TMDB_DETAIL_TTL
-  );
+  return makeTmdbRequest(`/movie/${id}`, getApiKey(config), queryParams, 'GET', null, config);
 }
 export async function tvInfo(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
-  const normalizedQueryParams = normalizeTmdbDetailQueryParams(queryParams);
-  const cacheKey = getTmdbDetailCacheKey('tv', String(id), normalizedQueryParams, config);
-  return cacheWrapGlobal(cacheKey, () =>
-    makeTmdbRequest(`/tv/${id}`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
-      .then(normalizeTmdbTvDetailForCache),
-    TMDB_DETAIL_TTL
-  );
+  return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams, 'GET', null, config);
 }
 
 export async function movieExternalIds(id: string, config: UserConfig) {
   return cacheWrapGlobal(`tmdb:movie:external_ids:${id}`, () =>
-    makeTmdbRequest(`/movie/${id}/external_ids`, getApiKey(config), {}, 'GET', null, config),
+    makeTmdbRequest(`/movie/${id}/external_ids`, getApiKey(config), {}, 'GET', null, config)
+      .then(normalizeTmdbExternalIdsForCache),
     24 * 60 * 60 // 24 hours
   );
 }
 
 export async function tvExternalIds(id: string, config: UserConfig) {
   return cacheWrapGlobal(`tmdb:tv:external_ids:${id}`, () => 
-    makeTmdbRequest(`/tv/${id}/external_ids`, getApiKey(config), {}, 'GET', null, config),
+    makeTmdbRequest(`/tv/${id}/external_ids`, getApiKey(config), {}, 'GET', null, config)
+      .then(normalizeTmdbExternalIdsForCache),
     24 * 60 * 60 // 24 hours
   );
 }
@@ -546,7 +537,8 @@ export async function discoverTv(params: any, config: UserConfig) {
 export async function genreMovieList(params: any, config: UserConfig) {
   const language = params.language || 'en';
   return cacheWrapGlobal(`tmdb:genre:movie:${language}`, () =>
-    makeTmdbRequest('/genre/movie/list', getApiKey(config), params, 'GET', null, config),
+    makeTmdbRequest('/genre/movie/list', getApiKey(config), params, 'GET', null, config)
+      .then(normalizeTmdbGenreListForCache),
     30 * 24 * 60 * 60,
     { skipVersion: true }
   );
@@ -555,7 +547,8 @@ export async function genreMovieList(params: any, config: UserConfig) {
 export async function genreTvList(params: any, config: UserConfig) {
   const language = params.language || 'en';
   return cacheWrapGlobal(`tmdb:genre:tv:${language}`, () =>
-    makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config),
+    makeTmdbRequest('/genre/tv/list', getApiKey(config), params, 'GET', null, config)
+      .then(normalizeTmdbGenreListForCache),
     30 * 24 * 60 * 60,
     { skipVersion: true }
   );
@@ -620,7 +613,8 @@ export async function getTmdbListItems(params: any, config: UserConfig) {
 export async function getMovieCertifications(params: any, config: UserConfig) {
   const apiKey = getApiKey(config);
   return cacheWrapGlobal(`tmdb:movie:release_dates:${params.id}`, () =>
-    makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params, 'GET', null, config),
+    makeTmdbRequest(`/movie/${params.id}/release_dates`, apiKey, params, 'GET', null, config)
+      .then(normalizeTmdbReleaseDatesForCache),
     24 * 60 * 60 // 24 hours
   );
 }
@@ -628,14 +622,18 @@ export async function getMovieCertifications(params: any, config: UserConfig) {
 export async function getTvCertifications(params: any, config: UserConfig) {
   const apiKey = getApiKey(config);
   return cacheWrapGlobal(`tmdb:tv:content_ratings:${params.id}`, () =>
-    makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params, 'GET', null, config),
+    makeTmdbRequest(`/tv/${params.id}/content_ratings`, apiKey, params, 'GET', null, config)
+      .then(normalizeTmdbContentRatingsForCache),
     24 * 60 * 60 
   );
 }
 
 export async function getMovieWatchProviders(params: any, config: UserConfig) {
-  const data = await cacheWrapGlobal(`tmdb:movie:watch_providers:${params.id}`, () =>
-    makeTmdbRequest(`/movie/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config),
+  const { id, ...queryParams } = params;
+  const cacheKey = `tmdb:movie:watch_providers:${id}${getTmdbQueryCacheSuffix(queryParams)}`;
+  const data = await cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/movie/${id}/watch/providers`, getApiKey(config), queryParams, 'GET', null, config)
+      .then(normalizeTmdbWatchProvidersForCache),
     24 * 60 * 60 
   );
   if (data?.results) {
@@ -697,7 +695,8 @@ export async function getTmdbImages(mediaType: string, tmdbId: string, config: U
     const endpoint = `/${mediaType}/${tmdbId}/images`;
     // This makes ONE network request.
     return cacheWrapGlobal(`tmdb:${mediaType}:images:${tmdbId}`, () =>
-      makeTmdbRequest(endpoint, getApiKey(config), {}, 'GET', null, config),
+      makeTmdbRequest(endpoint, getApiKey(config), {}, 'GET', null, config)
+        .then(normalizeTmdbImagesForCache),
       24 * 60 * 60 
     ) || { posters: [], backdrops: [], logos: [] };
   } catch (error: any) {
@@ -707,8 +706,11 @@ export async function getTmdbImages(mediaType: string, tmdbId: string, config: U
 }
 
 export async function getTvWatchProviders(params: any, config: UserConfig) {
-  const data = await cacheWrapGlobal(`tmdb:tv:watch_providers:${params.id}`, () =>
-    makeTmdbRequest(`/tv/${params.id}/watch/providers`, getApiKey(config), params, 'GET', null, config),
+  const { id, ...queryParams } = params;
+  const cacheKey = `tmdb:tv:watch_providers:${id}${getTmdbQueryCacheSuffix(queryParams)}`;
+  const data = await cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/tv/${id}/watch/providers`, getApiKey(config), queryParams, 'GET', null, config)
+      .then(normalizeTmdbWatchProvidersForCache),
     24 * 60 * 60 
   );
   if (data?.results) {
@@ -881,26 +883,33 @@ export async function trending(params: any, config: UserConfig) {
 
 export async function seasonInfo(params: any, config: UserConfig) {
   const { id, season_number, ...queryParams } = params;
-  return cacheWrapGlobal(`tmdb:tv:season:${id}:${season_number}`, () =>
-    makeTmdbRequest(`/tv/${id}/season/${season_number}`, getApiKey(config), queryParams, 'GET', null, config),
+  const normalizedQueryParams = normalizeTmdbCacheQueryParams(queryParams);
+  const cacheKey = `tmdb:tv:season:${id}:${season_number}${getTmdbQueryCacheSuffix(normalizedQueryParams)}`;
+  return cacheWrapGlobal(cacheKey, () =>
+    makeTmdbRequest(`/tv/${id}/season/${season_number}`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
+      .then(normalizeTmdbSeasonForCache),
     24 * 60 * 60
   );
 }
 
 export async function movieImages(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
-  const cacheKey = `tmdb:movie:images:${id}:${queryParams.include_image_language || 'all'}`;
+  const normalizedQueryParams = normalizeTmdbCacheQueryParams(queryParams);
+  const cacheKey = `tmdb:movie:images:${id}${getTmdbQueryCacheSuffix(normalizedQueryParams)}`;
   return cacheWrapGlobal(cacheKey, () =>
-    makeTmdbRequest(`/movie/${id}/images`, getApiKey(config), queryParams, 'GET', null, config),
+    makeTmdbRequest(`/movie/${id}/images`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
+      .then(normalizeTmdbImagesForCache),
     24 * 60 * 60
   );
 }
 
 export async function tvImages(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
-  const cacheKey = `tmdb:tv:images:${id}:${queryParams.include_image_language || 'all'}`;
+  const normalizedQueryParams = normalizeTmdbCacheQueryParams(queryParams);
+  const cacheKey = `tmdb:tv:images:${id}${getTmdbQueryCacheSuffix(normalizedQueryParams)}`;
   return cacheWrapGlobal(cacheKey, () =>
-    makeTmdbRequest(`/tv/${id}/images`, getApiKey(config), queryParams, 'GET', null, config),
+    makeTmdbRequest(`/tv/${id}/images`, getApiKey(config), normalizedQueryParams, 'GET', null, config)
+      .then(normalizeTmdbImagesForCache),
     24 * 60 * 60
   );
 }

@@ -72,7 +72,7 @@ function normalizeTmdbImageForCache(image: any) {
   return pickDefined(image, IMAGE_KEYS);
 }
 
-function normalizeTmdbImagesForCache(images: any) {
+export function normalizeTmdbImagesForCache(images: any) {
   if (!images || typeof images !== 'object') return images;
 
   const result: any = {};
@@ -127,7 +127,7 @@ function normalizeTmdbTranslationsForCache(translations: any) {
   return result;
 }
 
-function normalizeTmdbExternalIdsForCache(externalIds: any) {
+export function normalizeTmdbExternalIdsForCache(externalIds: any) {
   return pickDefined(externalIds, EXTERNAL_ID_KEYS);
 }
 
@@ -143,7 +143,7 @@ function normalizeTmdbReleaseCountryForCache(country: any) {
   return result;
 }
 
-function normalizeTmdbReleaseDatesForCache(releaseDates: any) {
+export function normalizeTmdbReleaseDatesForCache(releaseDates: any) {
   if (!releaseDates || typeof releaseDates !== 'object') return releaseDates;
 
   const result: any = {};
@@ -151,7 +151,7 @@ function normalizeTmdbReleaseDatesForCache(releaseDates: any) {
   return result;
 }
 
-function normalizeTmdbContentRatingsForCache(contentRatings: any) {
+export function normalizeTmdbContentRatingsForCache(contentRatings: any) {
   if (!contentRatings || typeof contentRatings !== 'object') return contentRatings;
 
   const result: any = {};
@@ -182,7 +182,7 @@ function normalizeTmdbProviderForCache(provider: any) {
   return pickDefined(provider, PROVIDER_KEYS);
 }
 
-function normalizeTmdbWatchProvidersForCache(watchProviders: any) {
+export function normalizeTmdbWatchProvidersForCache(watchProviders: any) {
   if (!watchProviders || typeof watchProviders !== 'object') return watchProviders;
 
   const normalizedResults: any = {};
@@ -210,12 +210,30 @@ function normalizeTmdbEpisodeForCache(episode: any) {
   return pickDefined(episode, EPISODE_KEYS);
 }
 
-function normalizeTmdbSeasonForCache(season: any) {
+export function normalizeTmdbSeasonForCache(season: any) {
   if (!season || typeof season !== 'object') return season;
 
   const result = pickDefined(season, SEASON_KEYS);
   if (season.episodes !== undefined) result.episodes = mapIfArray(season.episodes, normalizeTmdbEpisodeForCache);
   return result;
+}
+
+export function normalizeTmdbGenreListForCache(genreList: any) {
+  if (!genreList || typeof genreList !== 'object') return genreList;
+
+  const result: any = {};
+  if (genreList.genres !== undefined) result.genres = mapIfArray(genreList.genres, normalizeTmdbGenreForCache);
+  return result;
+}
+
+export function normalizeTmdbLanguagesForCache(languages: any) {
+  return mapIfArray(languages, (language: any) => pickDefined(language, ['iso_639_1', 'english_name', 'name']));
+}
+
+export function normalizeTmdbPrimaryTranslationsForCache(translations: any) {
+  return Array.isArray(translations)
+    ? translations.filter((translation: any) => typeof translation === 'string')
+    : translations;
 }
 
 function normalizeTmdbDetailCommonForCache(detail: any) {
@@ -257,6 +275,15 @@ export function normalizeTmdbTvDetailForCache(series: any) {
 }
 
 export const tmdbCacheNormalizers = {
+  normalizeTmdbExternalIdsForCache,
+  normalizeTmdbGenreListForCache,
+  normalizeTmdbLanguagesForCache,
+  normalizeTmdbPrimaryTranslationsForCache,
+  normalizeTmdbReleaseDatesForCache,
+  normalizeTmdbContentRatingsForCache,
+  normalizeTmdbWatchProvidersForCache,
+  normalizeTmdbImagesForCache,
+  normalizeTmdbSeasonForCache,
   normalizeTmdbMovieDetailForCache,
   normalizeTmdbTvDetailForCache,
 };
