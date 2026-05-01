@@ -1209,6 +1209,15 @@ function projectCatalogPayloadForCache(payload) {
   };
 }
 
+function projectAppExtrasForComponentCache(appExtras) {
+  if (!appExtras || typeof appExtras !== 'object' || Array.isArray(appExtras)) {
+    return appExtras;
+  }
+
+  const { cast, directors, writers, ...extras } = appExtras;
+  return Object.keys(extras).length > 0 ? extras : null;
+}
+
 async function resolveConfigForCache(userUUID, options = {}) {
   if (options?.config) {
     if (userUUID && !options.config.userUUID) {
@@ -1815,8 +1824,9 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
      queueComponentCache(componentsToCache, componentCacheKeys.trailers, trailerData);
    }
    
-   if (meta.app_extras) {
-     queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: meta.app_extras });
+   const extrasForCache = projectAppExtrasForComponentCache(meta.app_extras);
+   if (extrasForCache) {
+     queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: extrasForCache });
    }
    
   await cacheComponentsPipeline(componentsToCache, ttl, { overwrite });
