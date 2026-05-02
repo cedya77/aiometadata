@@ -3,6 +3,8 @@ const ANIME_ATTRIBUTE_KEYS = [
   'canonicalTitle',
   'titles',
   'synopsis',
+  'description',
+  'slug',
   'subtype',
   'status',
   'startDate',
