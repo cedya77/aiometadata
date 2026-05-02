@@ -5,6 +5,12 @@ const { Agent, ProxyAgent } = require('undici');
 const consola = require('consola');
 const redis = require('./redisClient');
 const logger = consola.withTag('MAL');
+const {
+  normalizeJikanAnimeDetailsForCache,
+  normalizeJikanAnimeCharactersForCache,
+  normalizeJikanAnimeEpisodesForCache,
+  normalizeJikanCatalogForCache,
+} = require('./jikanCacheNormalizers');
 
 const JIKAN_API_BASE = process.env.JIKAN_API_BASE || 'https://api.jikan.moe/v4';
 
@@ -336,7 +342,7 @@ async function searchAnime(type, query, limit = 25, config = {}, page = 1) {
   }
   //logger.debug(`Jikan request for: ${url}`);
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.error(`A critical error occurred while searching for anime with query "${query}"`, e.message);
       return [];
@@ -349,7 +355,10 @@ async function searchAnime(type, query, limit = 25, config = {}, page = 1) {
 async function getAnimeDetails(malId) {
   const url = `${JIKAN_API_BASE}/anime/${malId}/full`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || null)
+    .then(response => {
+      const data = response.data?.data || null;
+      return data ? normalizeJikanAnimeDetailsForCache(data) : null;
+    })
     .catch(() => null); 
 }
 
@@ -358,7 +367,7 @@ async function getAnimeEpisodes(malId) {
   //logger.debug(`Fetching all episode data for MAL ID: ${malId}`);
   const results = await jikanGetAllPages(`/anime/${malId}/episodes`);
   //logger.debug(`Finished fetching. Total episodes collected for MAL ID ${malId}: ${results.length}`);
-  return results;
+  return normalizeJikanAnimeEpisodesForCache(results);
 }
 
 async function getAnimeEpisodeVideos(malId) {
@@ -371,7 +380,7 @@ async function getAnimeEpisodeVideos(malId) {
 async function getAnimeCharacters(malId) {
   const url = `${JIKAN_API_BASE}/anime/${malId}/characters`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanAnimeCharactersForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch characters for MAL ID ${malId}:`, e.message);
       return [];
@@ -515,7 +524,7 @@ async function getAiringSchedule(day, page = 1, config = {}) {
   const params = new URLSearchParams(queryParams);
   const url = `${JIKAN_API_BASE}/schedules?${params.toString()}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch airing schedule for ${day}, page ${page}:`, e.message);
       return [];
@@ -532,7 +541,7 @@ async function getAiringNow(page = 1, config = {}) {
   const params = new URLSearchParams(queryParams);
   const url = `${JIKAN_API_BASE}/seasons/now?${params.toString()}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch currently airing anime, page ${page}:`, e.message);
       return [];
@@ -550,7 +559,7 @@ async function getUpcoming(page = 1, config = {}) {
   const url = `${JIKAN_API_BASE}/seasons/upcoming?${params.toString()}`;
   
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch upcoming anime , page ${page}:`, e.message);
       return [];
@@ -586,7 +595,8 @@ async function getAnimeByGenre(genreId, typeFilter = null, page = 1 , config = {
     const animeList = response.data?.data || [];
 
     const desiredTypes = new Set(['tv', 'movie', 'ova', 'ona']);
-    return animeList.filter(anime => anime.type && desiredTypes.has(anime.type.toLowerCase()));
+    const filtered = animeList.filter(anime => anime.type && desiredTypes.has(anime.type.toLowerCase()));
+    return normalizeJikanCatalogForCache(filtered);
 
   } catch (error) {
     logger.error(`Jikan API Error: Could not fetch anime for genre ID ${genreId}, page ${page}. URL: ${url}`, error.message);
@@ -635,7 +645,7 @@ async function getTopAnimeByDateRange(startDate, endDate, page = 1, genreId, con
   const params = new URLSearchParams(queryParams);
   const url = `${JIKAN_API_BASE}/anime?${params.toString()}`;   
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch top anime between ${startDate} and ${endDate}, page ${page}:`, e.message);
       return [];
@@ -664,7 +674,7 @@ async function getTopAnimeByType(type, page = 1, config = {}) {
 
   const url = `${JIKAN_API_BASE}/top/anime?${new URLSearchParams(queryParams).toString()}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch top  anime, page ${page}:`, e.message);
       return [];
@@ -683,7 +693,7 @@ async function getTopAnimeByFilter(filter, page = 1, config = {}) {
 
   const url = `${JIKAN_API_BASE}/top/anime?${new URLSearchParams(queryParams).toString()}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch top anime by filter ${filter}, page ${page}:`, e.message);
       return [];
@@ -714,7 +724,7 @@ async function getStudios(limit = 100) {
 async function getAnimeByStudio(studioId, page = 1, limit = 25) {
   const url = `${JIKAN_API_BASE}/anime?producers=${studioId}&order_by=members&sort=desc&page=${page}&limit=${limit}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch anime for studio ID ${studioId}:`, e.message);
       return [];
@@ -739,7 +749,7 @@ async function getAnimeBySeason(year, season, page = 1, config = {}) {
   const params = new URLSearchParams(queryParams);
   const url = `${JIKAN_API_BASE}/seasons/${year}/${season}?${params.toString()}`;
   return enqueueRequest(() => _makeJikanRequest(url), url)
-    .then(response => response.data?.data || [])
+    .then(response => normalizeJikanCatalogForCache(response.data?.data || []))
     .catch(e => {
       logger.warn(`Could not fetch anime for ${season} ${year}, page ${page}:`, e.message);
       return [];
@@ -876,7 +886,7 @@ async function fetchDiscover(params = {}, page = 1) {
     const pagination = response.data?.pagination || {};
 
     return {
-      items: animeList,
+      items: normalizeJikanCatalogForCache(animeList),
       hasMore: pagination.has_next_page || false,
       total: pagination.items?.total || animeList.length,
       currentPage: pagination.current_page || page,
