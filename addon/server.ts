@@ -145,10 +145,25 @@ async function startServer(): Promise<void> {
   const dashboardApi = indexModule.getDashboardAPI();
   startCacheCleanupScheduler(dashboardApi);
   
-  addon.listen(PORT, () => {
+  const server = addon.listen(PORT, () => {
     consola.success(`Addon active and listening on port ${PORT}.`);
     consola.info(`Open http://127.0.0.1:${PORT} in your browser.`);
   });
+
+  const shutdown = () => {
+    consola.info('Received shutdown signal, closing server...');
+    server.close(() => {
+      consola.success('Server closed.');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      consola.warn('Forceful shutdown after timeout.');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
  
 startServer().catch((error: Error) => {
