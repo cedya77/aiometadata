@@ -279,10 +279,7 @@ async function warmPopularContent(force = false) {
   try {
     // Check cache warmup mode - skip if comprehensive only
     const warmupMode = process.env.CACHE_WARMUP_MODE || 'essential';
-    if (warmupMode === 'comprehensive') {
-      logger.debug('[API Cache Warming] Essential warming disabled (CACHE_WARMUP_MODE=comprehensive)');
-      return;
-    }
+    if (warmupMode === 'comprehensive') return;
     
     // Check if popular warming is disabled
     if (process.env.TMDB_POPULAR_WARMING_ENABLED === 'false') {
