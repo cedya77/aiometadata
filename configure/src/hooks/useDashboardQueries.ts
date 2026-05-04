@@ -543,8 +543,13 @@ export function usePurgePosterCache() {
 /**
  * Fetch poster cache stats
  */
-export function usePosterCacheStats(options: { enabled?: boolean } = {}) {
-  const { adminKey } = useAdmin();
+export function usePosterCacheStats(options: DashboardQueryOptions = {}) {
+  const { isAdmin, adminKey } = useAdmin();
+  const isVisible = usePageVisibility();
+  const { activeTab = 'overview', enabled = true } = options;
+
+  const isActiveTab = activeTab === 'operations';
+  const shouldPoll = isVisible && isActiveTab && isAdmin;
 
   return useQuery({
     queryKey: ['poster-cache-stats'],
@@ -558,8 +563,9 @@ export function usePosterCacheStats(options: { enabled?: boolean } = {}) {
       if (!response.ok) return null;
       return response.json();
     },
-    refetchInterval: 30000,
-    enabled: options.enabled !== false,
+    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
+    refetchInterval: shouldPoll ? POLLING_INTERVALS.OPERATIONS : false,
+    refetchIntervalInBackground: false,
   });
 }
 

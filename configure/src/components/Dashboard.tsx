@@ -2888,7 +2888,7 @@ function DashboardOperations({ data, loading, activeTab }) {
   const executeTaskMutation = useExecuteMaintenanceTask();
   const clearErrorsMutation = useClearErrorLogs();
   const purgePosterCacheMutation = usePurgePosterCache();
-  const posterCacheStatsQuery = usePosterCacheStats({ enabled: activeTab === 'operations' });
+  const posterCacheStatsQuery = usePosterCacheStats({ activeTab });
 
   const [cacheStats, setCacheStats] = useState(() => {
     if (data?.cacheStats) {
