@@ -156,21 +156,21 @@ export function Header() {
   return (
     <header className="w-full max-w-5xl py-6 sm:py-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col items-center sm:flex-row sm:items-center sm:space-x-4 gap-2 sm:gap-0">
           <button
             type="button"
             onClick={handleLogoClick}
             className="group flex items-center focus:outline-none"
             aria-label="Return to configuration"
           >
-            <img 
+            <img
               src="/logo.png"
-              alt="AIO-Metadata Addon Logo" 
+              alt="AIO-Metadata Addon Logo"
               className="h-12 w-12 sm:h-16 sm:w-16 transition-transform group-hover:scale-105"
             />
           </button>
-          <div className="text-left">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-center sm:text-left">
+            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
               {isEditingName ? (
                 <div className="flex items-center gap-1.5">
                   <Input

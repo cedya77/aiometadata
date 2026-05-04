@@ -35,7 +35,8 @@ const ApiKeyInput = ({
   linkHref,
   placeholder = "Paste your API key here",
   validationStatus = 'idle',
-  onKeyChange
+  onKeyChange,
+  forceShow
 }: {
   id: keyof AppConfig['apiKeys'];
   label: string;
@@ -43,9 +44,11 @@ const ApiKeyInput = ({
   placeholder?: string;
   validationStatus?: 'idle' | 'loading' | 'success' | 'error';
   onKeyChange?: (id: keyof AppConfig['apiKeys']) => void;
+  forceShow?: boolean;
 }) => {
   const { config, setConfig } = useConfig();
   const [showKey, setShowKey] = useState(false);
+  const visible = forceShow ?? showKey;
   const value = config.apiKeys[id];
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,7 +77,7 @@ const ApiKeyInput = ({
         <div className="flex items-center space-x-2">
           <Input
             id={id}
-            type={showKey ? 'text' : 'password'}
+            type={visible ? 'text' : 'password'}
             value={value}
             onChange={handleChange}
             placeholder={placeholder}
@@ -88,10 +91,10 @@ const ApiKeyInput = ({
             variant="ghost"
             size="icon"
             onClick={() => setShowKey(!showKey)}
-            aria-label={showKey ? 'Hide key' : 'Show key'}
+            aria-label={visible ? 'Hide key' : 'Show key'}
             className="text-muted-foreground hover:text-foreground"
           >
-            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
         </div>
       </div>
@@ -103,6 +106,7 @@ export function IntegrationsSettings() {
   const { config, setConfig, sessionId, setSessionId, auth } = useConfig();
   const [validationStatus, setValidationStatus] = useState<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({});
   const [isTesting, setIsTesting] = useState(false);
+  const [showAllKeys, setShowAllKeys] = useState(false);
   const [tmdbAuthLoading, setTmdbAuthLoading] = useState(false);
   const [tmdbAuthError, setTmdbAuthError] = useState('');
   
@@ -498,7 +502,18 @@ export function IntegrationsSettings() {
     <div className="space-y-8 animate-fade-in">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-semibold">Integrations & API Keys</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">Integrations & API Keys</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAllKeys(!showAllKeys)}
+            className="text-muted-foreground hover:text-foreground gap-1.5 shrink-0"
+          >
+            {showAllKeys ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showAllKeys ? 'Hide All' : 'Show All'}
+          </Button>
+        </div>
         <p className="text-muted-foreground mt-1">
           Connect to external services to enhance metadata quality.
         </p>
@@ -512,6 +527,7 @@ export function IntegrationsSettings() {
           linkHref="https://aistudio.google.com/app/apikey"
           validationStatus={validationStatus.gemini || 'idle'}
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput
           id="openrouter"
@@ -519,6 +535,7 @@ export function IntegrationsSettings() {
           linkHref="https://openrouter.ai/keys"
           validationStatus={validationStatus.openrouter || 'idle'}
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput 
           id="tmdb" 
@@ -526,6 +543,7 @@ export function IntegrationsSettings() {
           linkHref="https://www.themoviedb.org/settings/api" 
           validationStatus={validationStatus.tmdb || 'idle'} 
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput 
           id="tvdb" 
@@ -533,6 +551,7 @@ export function IntegrationsSettings() {
           linkHref="https://thetvdb.com/api-information" 
           validationStatus={validationStatus.tvdb || 'idle'} 
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput 
           id="fanart" 
@@ -540,6 +559,7 @@ export function IntegrationsSettings() {
           linkHref="https://fanart.tv/get-an-api-key/" 
           validationStatus={validationStatus.fanart || 'idle'} 
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput
           id="rpdb"
@@ -547,6 +567,7 @@ export function IntegrationsSettings() {
           linkHref="https://ratingposterdb.com/"
           validationStatus={validationStatus.rpdb || 'idle'}
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput
           id="topPoster"
@@ -554,6 +575,7 @@ export function IntegrationsSettings() {
           linkHref="https://api.top-posters.com/user/dashboard"
           validationStatus={validationStatus.topPoster || 'idle'}
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput
           id="mdblist"
@@ -561,6 +583,7 @@ export function IntegrationsSettings() {
           linkHref="https://mdblist.com/preferences/#api_key_uid"
           validationStatus={validationStatus.mdblist || 'idle'}
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
         <ApiKeyInput
           id="publicmetadb"
@@ -568,6 +591,7 @@ export function IntegrationsSettings() {
           linkHref="https://publicmetadb.com"
           validationStatus={validationStatus.publicmetadb || 'idle'}
           onKeyChange={handleKeyChange}
+          forceShow={showAllKeys || undefined}
         />
       </div>
       
