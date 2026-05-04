@@ -233,6 +233,18 @@ class RequestTracker {
     return Math.abs(hash).toString(16);
   }
 
+  // Normalize content ID for metadata tracking
+  normalizeContentId(rawId) {
+    let id = decodeURIComponent(rawId || "");
+    id = id.replace(/\.(json|xml)$/i, "");
+    return id;
+  }
+
+  // Generate canonical metadata key
+  canonicalContentMetadataKey(type, rawId) {
+    return `content_metadata:${type}:${this.normalizeContentId(rawId)}`;
+  }
+
   // Track content requests (meta, search, catalog)
   async trackContentRequest(req) {
     // Skip metrics collection if disabled
@@ -253,14 +265,13 @@ class RequestTracker {
           const originalId = id;
 
           // Also store a cleaned version for metadata lookup
-          const cleanId = decodeURIComponent(id).replace(/\.(json|xml)$/i, "");
+          const cleanId = this.normalizeContentId(id);
 
-          const contentKey = `${type}:${originalId}`;
           const cleanContentKey = `${type}:${cleanId}`;
 
-          // Track popular content
+          // Track popular content using normalized key to prevent duplicates
           redis
-            .zincrby(`popular_content:${today}`, 1, contentKey)
+            .zincrby(`popular_content:${today}`, 1, cleanContentKey)
             .catch(() => {});
           redis.expire(`popular_content:${today}`, 86400 * 30).catch(() => {}); // 30 days
         }
@@ -389,34 +400,17 @@ class RequestTracker {
       const popularContent = await Promise.all(
         contentEntries.map(async ({ contentKey, type, id, requests }) => {
           try {
-            // Try to get real metadata from cache with multiple key variants
-            const tryKeys = [];
-            // exact member key (often includes .json or provider prefix)
-            tryKeys.push(`content_metadata:${contentKey}`);
-            // decoded variant without extension
+            // Extract id from contentKey. If the key is already normalized, this is fine.
+            // If it's from old tracked data, we normalize it here.
             const parts = contentKey.split(":");
             const keyType = parts[0];
             const rawId = parts.slice(1).join(":");
-            const decoded = decodeURIComponent(rawId || "");
-            const cleanId = decoded.replace(/\.(json|xml)$/i, "");
-            tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
-            // encoded + .json variant from captureMetadataFromComponents
-            const encodedJson = encodeURIComponent(cleanId) + ".json";
-            tryKeys.push(`content_metadata:${keyType}:${encodedJson}`);
-            // provider variants (tmdb:123 etc.) if present in original
-            if (cleanId.includes(":")) {
-              tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
-              const providerEncoded = encodeURIComponent(cleanId) + ".json";
-              tryKeys.push(`content_metadata:${keyType}:${providerEncoded}`);
-            }
-
+            
+            const canonicalKey = this.canonicalContentMetadataKey(keyType, rawId);
             let metadataStr = null;
-            for (const k of tryKeys) {
-              try {
-                metadataStr = await redis.get(k);
-                if (metadataStr) break;
-              } catch (_) {}
-            }
+            try {
+              metadataStr = await redis.get(canonicalKey);
+            } catch (_) {}
 
             if (metadataStr) {
               const metadata = JSON.parse(metadataStr);
@@ -540,85 +534,14 @@ class RequestTracker {
       return [];
     }
   }
-
-  // Capture metadata from cache key (for cache hits)
-  async captureMetadataFromCacheKey(cacheKey, meta) {
-    // Skip metrics collection if disabled
-    if (isMetricsDisabled()) {
-      return;
-    }
-    try {
-      if (!meta || !meta.name) return;
-
-      // Extract metaId from cache key format: meta:configHash:metaId
-      const keyMatch = cacheKey.match(/^meta:([a-f0-9]{10}):(.+)$/);
-      if (!keyMatch) return;
-      
-      const metaId = keyMatch[2];
-      logger.info(
-        `[Request Tracker] Capturing metadata from cache key for ${metaId}: "${meta.name}"`,
-      );
-
-      // Use the existing capture method
-      await this.captureMetadataFromComponents(metaId, meta, meta.type);
-    } catch (error) {
-      logger.warn(
-        "[Request Tracker] Failed to capture metadata from cache key:",
-        error.message,
-      );
-    }
-  }
-
-  // Capture metadata from complete meta components (better approach!)
+  // Capture metadata from complete meta components
   // NOTE: This function intentionally runs even when DISABLE_METRICS=true because it stores
   // content_metadata for the rating page functionality, not just telemetry/analytics metrics.
   async captureMetadataFromComponents(metaId, meta, metaType) {
     try {
       if (!meta || !meta.name) return;
 
-      /*logger.info(`[Request Tracker] Capturing metadata from components for ${metaId}:`, {
-        name: meta.name,
-        type: meta.type || metaType,
-        imdbRating: meta.imdbRating,
-        year: meta.year,
-        imdb_id: meta.imdb_id
-      });*/
-
-      // Parse metaId to get the actual ID format
-      const metaIdParts = metaId.split(":");
-      const prefix = metaIdParts[0];
-      const id = metaIdParts.length > 1 ? metaIdParts[1] : metaIdParts[0]; // Use full metaId if no colon
       const type = meta.type || metaType || "unknown";
-
-      // Determine the provider from the meta object or metaId
-      let provider = prefix;
-      if (metaIdParts.length === 1) {
-        // If metaId is just an ID, try to determine provider from meta object
-        if (meta.imdb_id && metaId.startsWith("tt")) {
-          provider = "imdb";
-        } else if (metaId.match(/^\d+$/)) {
-          // Numeric ID, could be TMDB or TVDB
-          if (type === "movie") {
-            provider = "tmdb";
-          } else if (type === "series") {
-            provider = "tvdb";
-          } else {
-            provider = "tmdb"; // Default
-          }
-        }
-      }
-
-      // Create content key in the format that tracking uses
-      // Also create URL-encoded version to match how requests are tracked
-      const contentKey = `${type}:${id}`;
-      const encodedId = encodeURIComponent(metaId) + ".json";
-      const encodedContentKey = `${type}:${encodedId}`;
-
-      // Also create the provider:ID format for better matching
-      const providerId = metaIdParts.length > 1 ? metaId : `${provider}:${id}`;
-      const providerContentKey = `${type}:${providerId}`;
-      const providerEncodedId = encodeURIComponent(providerId) + ".json";
-      const providerEncodedContentKey = `${type}:${providerEncodedId}`;
 
       // Store metadata for later lookup
       const metadataInfo = {
@@ -632,113 +555,18 @@ class RequestTracker {
         cached_at: new Date().toISOString(),
       };
 
-      const metadataKeys = Array.from(
-        new Set([
-          `content_metadata:${contentKey}`,
-          `content_metadata:${encodedContentKey}`,
-          `content_metadata:${providerContentKey}`,
-          `content_metadata:${providerEncodedContentKey}`,
-        ]),
-      );
+      const canonicalKey = this.canonicalContentMetadataKey(type, metaId);
       const metadataPayload = JSON.stringify(metadataInfo);
 
       logger.debug(
-        `[Request Tracker] Storing metadata for ${metadataKeys.map(key => key.replace("content_metadata:", "")).join(", ")}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
+        `[Request Tracker] Storing canonical metadata for ${canonicalKey.replace("content_metadata:", "")}: "${metadataInfo.title}" ⭐${metadataInfo.rating}`,
       );
 
-      // Store in Redis with 30 day TTL for all formats.
-      const pipeline = redis.pipeline();
-      metadataKeys.forEach(key => {
-        pipeline.set(key, metadataPayload, "EX", 86400 * 30);
-      });
-      pipeline.exec().catch(() => {});
+      // Store in Redis with 30 day TTL
+      redis.set(canonicalKey, metadataPayload, "EX", 86400 * 30).catch(() => {});
     } catch (error) {
       logger.warn(
         "[Request Tracker] Failed to capture metadata from components:",
-        error.message,
-      );
-    }
-  }
-
-  // Capture metadata when content is cached (legacy approach)
-  async captureMetadata(cacheKey, result) {
-    // Skip metrics collection if disabled
-    if (isMetricsDisabled()) {
-      return;
-    }
-    try {
-      const meta = result?.meta || result;
-      if (!meta || !meta.name) return;
-
-      // Extract content info from cache key format: meta:configHash:id
-      const keyMatch = cacheKey.match(/^meta:([a-f0-9]{10}):(.+)$/);
-      if (!keyMatch) {
-        logger.info(
-          `[Request Tracker] Cache key doesn't match expected format: ${cacheKey}`,
-        );
-        return;
-      }
-
-      const id = keyMatch[2];
-
-      // Try to extract type from meta object or guess from ID
-      let type = meta.type;
-      if (!type) {
-        // Try to determine type from ID patterns
-        if (id.includes("movie") || id.includes("tmdb")) {
-          type = "movie";
-        } else if (id.includes("series") || id.includes("tvdb")) {
-          type = "series";
-        } else if (id.includes("anime")) {
-          type = "anime";
-        } else {
-          type = "unknown";
-        }
-      }
-
-      // Create both original and URL-encoded versions of the content key
-      const cleanId = decodeURIComponent(id).replace(/\.(json|xml)$/i, "");
-      const encodedId = encodeURIComponent(cleanId) + ".json";
-
-      const cleanContentKey = `${type}:${cleanId}`;
-      const encodedContentKey = `${type}:${encodedId}`;
-
-      // Store metadata for later lookup
-      const metadataInfo = {
-        title: meta.name,
-        type: meta.type || type,
-        rating: meta.imdb_rating || meta.rating || null,
-        year: meta.year || null,
-        description: meta.description || null,
-        poster: meta.poster || null,
-        imdb_id: meta.imdb_id || null,
-        cached_at: new Date().toISOString(),
-      };
-
-      logger.info(
-        `[Request Tracker] Capturing metadata for ${cleanContentKey} and ${encodedContentKey}: "${metadataInfo.title}"`,
-      );
-
-      // Store in Redis with 30 day TTL for both formats
-      redis
-        .set(
-          `content_metadata:${cleanContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-      redis
-        .set(
-          `content_metadata:${encodedContentKey}`,
-          JSON.stringify(metadataInfo),
-          "EX",
-          86400 * 30,
-        )
-        .catch(() => {});
-    } catch (error) {
-      logger.warn(
-        "[Request Tracker] Failed to capture metadata:",
         error.message,
       );
     }

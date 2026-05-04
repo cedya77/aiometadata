@@ -1,5 +1,6 @@
 import axios, { AxiosResponse } from 'axios';
 import { cacheWrapGlobal } from './getCache.js';
+import { normalizeKitsuBatchResponseForCache, normalizeKitsuDetailResponseForCache } from './kitsuCacheNormalizers.js';
 import consola from 'consola';
 
 const logger = consola.withTag('Kitsu');
@@ -372,11 +373,11 @@ async function getMultipleAnimeDetails(ids: (string | number)[], appends: string
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('kitsu', responseTime, true);
     
-    return {
+    return normalizeKitsuBatchResponseForCache({
       data: allData,
       included: allIncluded,
       meta: { count: allData.length }
-    };
+    });
     
   } catch (error: any) {
     // Track failed request
@@ -524,7 +525,7 @@ async function fetchRelationshipList(url?: string, attributeKey: 'name' | 'title
     const requestTracker = require('./requestTracker');
     requestTracker.trackProviderCall('kitsu', responseTime, true);
 
-    return { data: anime, included, genres, characters }
+    return normalizeKitsuDetailResponseForCache({ data: anime, included, genres, characters })
   } catch (error: any) {
     // Track failed request
     const responseTime = Date.now() - startTime;

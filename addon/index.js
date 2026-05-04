@@ -4689,34 +4689,14 @@ addon.get("/stremio/:userUUID/rating", async function (req, res) {
         const stremioType = metaType.toLowerCase();
         const contentKey = `${stremioType}:${id}`;
         
-        // Try to get metadata from cache with multiple key variants (same as dashboard)
-        const tryKeys = [];
-        // exact member key (often includes .json or provider prefix)
-        tryKeys.push(`content_metadata:${contentKey}`);
-        // decoded variant without extension
-        const parts = contentKey.split(":");
-        const keyType = parts[0];
-        const rawId = parts.slice(1).join(":");
-        const decoded = decodeURIComponent(rawId || "");
-        const cleanId = decoded.replace(/\.(json|xml)$/i, "");
-        tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
-        // encoded + .json variant from captureMetadataFromComponents
-        const encodedJson = encodeURIComponent(cleanId) + ".json";
-        tryKeys.push(`content_metadata:${keyType}:${encodedJson}`);
-        // provider variants (tmdb:123 etc.) if present in original
-        if (cleanId.includes(":")) {
-          tryKeys.push(`content_metadata:${keyType}:${cleanId}`);
-          const providerEncoded = encodeURIComponent(cleanId) + ".json";
-          tryKeys.push(`content_metadata:${keyType}:${providerEncoded}`);
-        }
+        // Try to get metadata from cache using the canonical key
+        const canonicalKey = requestTracker.canonicalContentMetadataKey(stremioType, id);
         
         let metadataStr = null;
-        for (const k of tryKeys) {
-          try {
-            metadataStr = await redis.get(k);
-            if (metadataStr) break;
-          } catch (_) {}
-        }
+        try {
+          metadataStr = await redis.get(canonicalKey);
+        } catch (_) {}
+
         
         if (metadataStr) {
           const metadata = JSON.parse(metadataStr);

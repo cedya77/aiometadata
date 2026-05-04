@@ -1224,17 +1224,12 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     }
     if (movieData.videos) {
       const allTrailers = Utils.parseTrailers(movieData.videos);
-      const allTrailerStreams = Utils.parseTrailerStream(movieData.videos);
       const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
-      const filteredTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === langCode);
 
       const englishTrailers = allTrailers.filter(trailer => trailer.lang === 'en');
-      const englishTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === 'en');
       const finalTrailers = filteredTrailers.length > 0 ? filteredTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
-      const finalTrailerStreams = filteredTrailerStreams.length > 0 ? filteredTrailerStreams : (englishTrailerStreams.length > 0 ? englishTrailerStreams : allTrailerStreams);
 
       imdbData.trailers = finalTrailers;
-      imdbData.trailerStreams = finalTrailerStreams;
       }
     }
   }
@@ -1377,15 +1372,11 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   }
 
   const allTrailers = Utils.parseTrailers(movieData.videos);
-  const allTrailerStreams = Utils.parseTrailerStream(movieData.videos);
   const userLangTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
-  const userLangTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === langCode);
   const englishTrailers = allTrailers.filter(trailer => trailer.lang === 'en');
-  const englishTrailerStreams = allTrailerStreams.filter(trailer => trailer.lang === 'en');
 
   // Prefer user's language, fallback to English, then all available
   const finalTrailers = userLangTrailers.length > 0 ? userLangTrailers : (englishTrailers.length > 0 ? englishTrailers : allTrailers);
-  const finalTrailerStreams = userLangTrailerStreams.length > 0 ? userLangTrailerStreams : (englishTrailerStreams.length > 0 ? englishTrailerStreams : allTrailerStreams);
 
   return {
     id: imdbId || stremioId,
@@ -1409,7 +1400,6 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     landscapePoster: landscapePosterUrl,
     logo: processLogo(logoUrl),
     trailers: finalTrailers,
-    trailerStreams: finalTrailerStreams,
     links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
     app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, certification: certification },
@@ -1978,7 +1968,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     url: `stremio:///search?search=${w}`
   }));
   
-  const { trailers, trailerStreams } = Utils.parseTvdbTrailers(movieData.trailers, translatedName);
+  const { trailers } = Utils.parseTvdbTrailers(movieData.trailers, translatedName);
 
   if(!logoUrl && imdbId){
     logoUrl =  imdb.getLogoFromImdb(imdbId);
@@ -2032,7 +2022,6 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
     landscapePoster: landscapePosterUrl,
     logo: processLogo(logoUrl),
     trailers: trailers,
-    trailerStreams: trailerStreams,
     behaviorHints: {
       defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId ? imdbId : stremioId,
       hasScheduledVideos: false
@@ -2238,7 +2227,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     url: `stremio:///search?search=${w}`
   }));
 
-  const { trailers, trailerStreams } = Utils.parseTvdbTrailers(tvdbShow.trailers, translatedName);
+  const { trailers } = Utils.parseTvdbTrailers(tvdbShow.trailers, translatedName);
 
 
 
@@ -2468,7 +2457,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     logo: logoUrl,
     videos: videos,
     trailers: trailers,
-    trailerStreams: trailerStreams,
+
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
     app_extras: { cast: Utils.parseCast(tvdbCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, certification: certification },
@@ -3004,14 +2993,9 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
     };
 
     // Optimize trailer processing
-    const trailerStreams = [];
     const trailers = [];
     if (malData.trailer?.youtube_id) {
       const trailerTitle = malData.title_english || malData.title;
-      trailerStreams.push({
-        ytId: malData.trailer.youtube_id,
-        title: trailerTitle
-      });
       trailers.push({
         source: malData.trailer.youtube_id,
         type: "Trailer",
@@ -3077,7 +3061,7 @@ async function buildAnimeResponse(stremioId, malData, language, characterData, e
       logo: enrichmentData.bestLogoUrl,
       links: links.filter(Boolean),
       trailers: trailers,
-      trailerStreams: trailerStreams,
+
       releaseInfo: malReleaseInfo,
       director: [],
       writers: [],

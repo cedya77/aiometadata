@@ -1111,6 +1111,120 @@ function projectMetaForUser(meta, config) {
   return meta;
 }
 
+const CATALOG_META_FIELDS = [
+  'id',
+  'type',
+  'name',
+  'poster',
+  '_rawPosterUrl',
+  'posterShape',
+  'background',
+  'landscapePoster',
+  'logo',
+  'description',
+  'year',
+  'releaseInfo',
+  'released',
+  RELEASE_AVAILABILITY_FIELD,
+  'runtime',
+  'genres',
+  'cast',
+  'director',
+  'writer',
+  'writers',
+  'certification',
+  'imdbRating',
+  'country',
+  'status',
+  'isAnime',
+  'imdb_id',
+  '_imdbId',
+  '_tmdbId',
+  '_tvdbId',
+  '_malId',
+  '_kitsuId',
+  '_anilistId',
+  '_anidbId',
+  'slug',
+  'links',
+  'behaviorHints',
+  'trailers',
+];
+
+function projectAppExtrasForCatalogCache(appExtras) {
+  if (!appExtras || typeof appExtras !== 'object' || Array.isArray(appExtras)) {
+    return undefined;
+  }
+
+  const projected = {};
+  const fields = [
+    'certification',
+    'ratings',
+    'releaseAvailability',
+    'cast',
+    'directors',
+    'director',
+    'writers',
+    'writer',
+    'producers',
+  ];
+
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(appExtras, field)) {
+      projected[field] = appExtras[field];
+    }
+  }
+
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
+function projectMetaForCatalogCache(meta) {
+  if (!meta || typeof meta !== 'object') return meta;
+
+  const projected = {};
+  for (const field of CATALOG_META_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(meta, field) && meta[field] !== undefined) {
+      projected[field] = meta[field];
+    }
+  }
+
+  const appExtras = projectAppExtrasForCatalogCache(meta.app_extras);
+  if (appExtras) {
+    projected.app_extras = appExtras;
+  }
+
+  return projected;
+}
+
+function projectCatalogPayloadForCache(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (!Array.isArray(payload.metas)) return payload;
+
+  normalizeReleaseAvailabilityInPayload(payload);
+
+  return {
+    ...payload,
+    metas: payload.metas.map(projectMetaForCatalogCache),
+  };
+}
+
+function projectAppExtrasForComponentCache(appExtras) {
+  if (!appExtras || typeof appExtras !== 'object' || Array.isArray(appExtras)) {
+    return appExtras;
+  }
+
+  const { cast, directors, writers, ...extras } = appExtras;
+  
+  for (const key of Object.keys(extras)) {
+    const v = extras[key];
+    if (v === null || v === undefined || (Array.isArray(v) && v.length === 0)) {
+      delete extras[key];
+    }
+  }
+
+  return Object.keys(extras).length > 0 ? extras : null;
+}
+
 async function resolveConfigForCache(userUUID, options = {}) {
   if (options?.config) {
     if (userUUID && !options.config.userUUID) {
@@ -1594,7 +1708,7 @@ async function cacheWrapMetaComponents(userUUID, metaId, method, ttl = META_TTL,
    });
 }
 
-async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL, type = null, useShowPoster = false }) {
+async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL, type = null, useShowPoster = false, overwrite = true }) {
   const componentCacheKeys = buildMetaComponentCacheKeys({
     config,
     metaId,
@@ -1694,35 +1808,67 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
      queueComponentCache(componentsToCache, componentCacheKeys.videos, { videos: canonicalizeVideosForCache(meta.videos) });
    }
    
-   if (meta.app_extras?.cast) {
+   if (meta.app_extras?.cast?.length) {
      queueComponentCache(componentsToCache, componentCacheKeys.cast, { cast: meta.app_extras.cast });
    }
    
-   if (meta.app_extras?.directors) {
+   if (meta.app_extras?.directors?.length) {
      queueComponentCache(componentsToCache, componentCacheKeys.director, { directors: meta.app_extras.directors });
    }
    
-   if (meta.app_extras?.writers) {
+   if (meta.app_extras?.writers?.length) {
      queueComponentCache(componentsToCache, componentCacheKeys.writer, { writers: meta.app_extras.writers });
    }
    
-   if (meta.links && Array.isArray(meta.links)) {
+   if (meta.links && Array.isArray(meta.links) && meta.links.length > 0) {
      queueComponentCache(componentsToCache, componentCacheKeys.links, { links: canonicalizeLinksForCache(stripCertificationLinks(meta.links, meta.app_extras?.certification)) });
    }
    
-   if (meta.trailers || meta.trailerStreams) {
-     const trailerData = {};
-     if (meta.trailers) trailerData.trailers = meta.trailers;
-     if (meta.trailerStreams) trailerData.trailerStreams = meta.trailerStreams;
-     queueComponentCache(componentsToCache, componentCacheKeys.trailers, trailerData);
+   if (meta.trailers?.length) {
+     queueComponentCache(componentsToCache, componentCacheKeys.trailers, { trailers: meta.trailers });
    }
    
-   if (meta.app_extras) {
-     queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: meta.app_extras });
+   const extrasForCache = projectAppExtrasForComponentCache(meta.app_extras);
+   if (extrasForCache) {
+     queueComponentCache(componentsToCache, componentCacheKeys.extras, { app_extras: extrasForCache });
    }
    
-  await cacheComponentsPipeline(componentsToCache, ttl);
+  await cacheComponentsPipeline(componentsToCache, ttl, { overwrite });
    return { meta: projectMetaForUser(meta, config) };
+}
+
+async function writeMetaComponentsBatchWithConfig({ config, metas, ttl = META_TTL, type = null, useShowPoster = false, overwrite = true }) {
+  if (!Array.isArray(metas) || metas.length === 0) {
+    return { written: 0, skipped: 0 };
+  }
+
+  let written = 0;
+  let skipped = 0;
+
+  for (const meta of metas) {
+    if (!meta || !meta.id || !meta.name || !meta.type) {
+      skipped++;
+      continue;
+    }
+
+    const result = await writeMetaComponentsWithConfig({
+      config,
+      metaId: meta.id,
+      result: { meta },
+      ttl,
+      type: meta.type || type,
+      useShowPoster,
+      overwrite,
+    });
+
+    if (result?.meta) {
+      written++;
+    } else {
+      skipped++;
+    }
+  }
+
+  return { written, skipped };
 }
 
 /**
@@ -1904,7 +2050,6 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
        reconstructedMeta.links = data.links;
      } else if (componentName === 'trailers') {
        if (data.trailers) reconstructedMeta.trailers = data.trailers;
-       if (data.trailerStreams) reconstructedMeta.trailerStreams = data.trailerStreams;
       } else if (componentName === 'extras') {
         if (data.app_extras && typeof data.app_extras === 'object' && !Array.isArray(data.app_extras)) {
           reconstructedMeta.app_extras = {
@@ -2058,9 +2203,10 @@ function queueComponentCache(components, cacheKey, componentData) {
  * Batch component caching without validation.
  * Keeps writes non-fatal while reducing Redis command dispatch overhead.
  */
-async function cacheComponentsPipeline(components, ttl) {
+async function cacheComponentsPipeline(components, ttl, options = {}) {
   if (!redis || !Array.isArray(components) || components.length === 0) return;
 
+  const overwrite = options.overwrite !== false;
   const pipeline = redis.pipeline();
   const queuedCommands = [];
 
@@ -2068,7 +2214,11 @@ async function cacheComponentsPipeline(components, ttl) {
     const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
 
     try {
-      pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+      if (overwrite) {
+        pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+      } else {
+        pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl, 'NX');
+      }
       queuedCommands.push(versionedKey);
     } catch (error) {
       cacheLogger.warn(`Failed to queue component cache write for ${versionedKey}:`, error);
@@ -2333,6 +2483,9 @@ module.exports = {
   cacheWrapMetaComponents,
   reconstructMetaFromComponents,
   buildMetaComponentCacheKeys,
+  projectMetaForCatalogCache,
+  projectCatalogPayloadForCache,
+  writeMetaComponentsBatchWithConfig,
   cacheWrapMetaSmart,
   getCacheHealth,
   clearCacheHealth,

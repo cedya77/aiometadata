@@ -398,6 +398,7 @@ function sortSearchResults(results, query) {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return results;
   
+  const currentYear = new Date().getFullYear();
   const queryWords = normalizedQuery.split(/\s+/).filter((w) => w);
   const personMatchCount = results.filter((r) => r.matchType === "person").length;
   const titleMatchCount = results.length - personMatchCount;
@@ -415,8 +416,8 @@ function sortSearchResults(results, query) {
 
     // Quality checks
     const isEstablishedClassic = voteCount >= 1000;
-    const isStandardHit = voteCount >= 200 && score >= 2.0 && year >= new Date().getFullYear() - 15;
-    const isRecentUpAndComer = item.year && item.year >= new Date().getFullYear() - 2 && voteCount >= 50 && score >= 1.5;
+    const isStandardHit = voteCount >= 200 && score >= 2.0 && year >= currentYear - 15;
+    const isRecentUpAndComer = item.year && item.year >= currentYear - 2 && voteCount >= 50 && score >= 1.5;
     const passesExactQuality = isEstablishedClassic || isStandardHit || isRecentUpAndComer;
 
     // Match types
@@ -424,16 +425,29 @@ function sortSearchResults(results, query) {
     const similarity = jaroWinklerSimilarity(title, normalizedQuery);
     
     const isNearExact = similarity >= 0.97; //slight typo tolerance
+    const isExactLike = isExact || isNearExact;
     
-    const startsWith = !isExact && !isNearExact && !isPersonMatch && title.startsWith(normalizedQuery);
-    const contains = !isExact && !isNearExact && !isPersonMatch && !startsWith && queryWords.every((word) => title.includes(word));
+    const startsWith = !isExactLike && !isPersonMatch && title.startsWith(normalizedQuery);
+    const contains = !isExactLike && !isPersonMatch && !startsWith && queryWords.every((word) => title.includes(word));
 
     let matchReason = "Other";
-    if ((isExact || isNearExact) && passesExactQuality) matchReason = "ExactHQ";
-    else if (isExact || isNearExact) matchReason = "Exact";
+    if (isExactLike && passesExactQuality) matchReason = "ExactHQ";
+    else if (isExactLike) matchReason = "Exact";
     else if (isPersonMatch) matchReason = "Person";
     else if (startsWith) matchReason = "StartsWith";
     else if (contains) matchReason = "Contains";
+
+    const age = currentYear - year;
+    const popularityScore = score;
+    const voteScore = Math.log10(voteCount + 1) * 5;
+    let recencyBonus = 0;
+    if (age <= 5) {
+      recencyBonus = (5 - age) * 1;
+    } else if (age > 20) {
+      recencyBonus = -Math.min(age - 20, 10) * 0.5;
+    }
+    const similarityScore = matchReason === "Other" ? 0 : similarity * 10;
+    const qualityScore = popularityScore + voteScore + recencyBonus + similarityScore;
 
     return {
       originalItem: item,
@@ -443,6 +457,8 @@ function sortSearchResults(results, query) {
       voteAverage: item.vote_average || 0,
       year,
       isExact,
+      isNearExact,
+      isExactLike,
       passesExactQuality,
       isPersonMatch,
       startsWith,
@@ -453,12 +469,13 @@ function sortSearchResults(results, query) {
       mediaType: item.media_type,
       genre_ids: item.genre_ids,
       matchReason,
+      qualityScore,
     };
   });
 
   // 2. FILTER
   const RULES = {
-    CURRENT_YEAR: new Date().getFullYear(),
+    CURRENT_YEAR: currentYear,
     HQ_VOTE_THRESHOLD: 100,
     HQ_POPULARITY_THRESHOLD: 5.0,
     LQ_EXACT: { MIN_VOTES: 1, MIN_POPULARITY: 0.5, RECENT_YEAR_SPAN: 5 },
@@ -477,7 +494,7 @@ function sortSearchResults(results, query) {
     // Stage 1: Priority Pass
     const isFightingEvent = /^(?=.*\b(UFC|LFA|PFL|Bellator)\b)(?=.*\b\w+\s+vs\.?\s+\w+\b).*/i.test(item.title);
     const isPriorityItem =
-      (item.isExact && item.passesExactQuality) ||
+      (item.isExactLike && item.passesExactQuality) ||
       item.isPersonMatch ||
       isFightingEvent ||
       item.voteCount >= RULES.HQ_VOTE_THRESHOLD ||
@@ -492,7 +509,7 @@ function sortSearchResults(results, query) {
       item.score < RULES.OBSCURE.MAX_POPULARITY &&
       item.voteCount < RULES.OBSCURE.MAX_VOTES;
     
-    if (isMissingCoreData || (isObscureContent && !item.isExact && !item.isNearExact)) return false;
+    if (isMissingCoreData || (isObscureContent && !item.isExactLike)) return false;
 
     // Stage 3: Case-by-Case Rules
     switch (item.matchReason) {
@@ -554,39 +571,7 @@ function sortSearchResults(results, query) {
     
     }
     // 3. Composite Quality Score
-    // Combines popularity (engagement), votes (validation), recency, and similarity
-    const calculateQualityScore = (item) => {
-      const currentYear = new Date().getFullYear();
-      const age = currentYear - item.year;
-      
-      // Popularity component (0-100+ range)
-      const popularityScore = item.score;
-      
-      // Vote component using logarithmic scale (prevents low-vote items from ranking high)
-      // log10(10000) ≈ 4, log10(1000) ≈ 3, log10(100) ≈ 2, log10(10) ≈ 1, log10(1) = 0
-      const voteScore = Math.log10(item.voteCount + 1) * 5; // Scale up to ~20 for 10k votes
-      
-      // Recency bonus (newer content gets a small boost, older gets slight penalty)
-      // Content from last 5 years gets +5 to +1 bonus, 6-15 years neutral, older gets penalty
-      let recencyBonus = 0;
-      if (age <= 5) {
-        recencyBonus = (5 - age) * 1; // +5 for current year, +4 for 1 year old, etc.
-      } else if (age > 20) {
-        recencyBonus = -Math.min(age - 20, 10) * 0.5; // Penalty for very old content, capped at -5
-      }
-      
-      // Similarity component
-      // "Other" matches don't get similarity boost - they're already weak
-      const similarityScore = 
-        (item.matchReason === "Other") ? 0 : item.similarity * 10;
-      
-      // Final score: popularity + vote validation + recency + similarity
-      return popularityScore + voteScore + recencyBonus + similarityScore;
-    };
-    
-    const aQualityScore = calculateQualityScore(a);
-    const bQualityScore = calculateQualityScore(b);
-    if (aQualityScore !== bQualityScore) return bQualityScore - aQualityScore;
+    if (a.qualityScore !== b.qualityScore) return b.qualityScore - a.qualityScore;
 
     // 4. Release date as final tiebreaker (newer first)
     if (a.year !== b.year) return b.year - a.year;
@@ -1008,12 +993,7 @@ function parseTrailers(videos) {
         .map((el) => ({ source: el.key, type: el.type, name: el.name, ytId: el.key, lang: el.iso_639_1 }));
 }
 
-function parseTrailerStream(videos) {
-    if (!videos || !Array.isArray(videos.results)) return [];
-    return videos.results
-        .filter((el) => el.site === "YouTube" && el.type === "Trailer")
-        .map((el) => ({ title: el.name, ytId: el.key, lang: el.iso_639_1 }));
-}
+
 
 function parseImdbLink(vote_average, imdb_id) {
   return {
@@ -1900,6 +1880,58 @@ async function getBatchAnimeArtwork(malIds, config) {
   return [];
 }
 
+const KITSU_ANIME_DETAIL_APPENDS = 'categories';
+
+function normalizeKitsuIds(kitsuIds) {
+  return [...new Set((kitsuIds || []).map(id => String(id)).filter(Boolean))]
+    .sort((a, b) => {
+      const numericDiff = Number(a) - Number(b);
+      return Number.isNaN(numericDiff) || numericDiff === 0 ? a.localeCompare(b) : numericDiff;
+    });
+}
+
+function getKitsuBatchDetailsCacheKey(kitsuIds, appends = KITSU_ANIME_DETAIL_APPENDS) {
+  const normalizedIds = normalizeKitsuIds(kitsuIds);
+  return `kitsu-anime-batch-${normalizedIds.join(',')}-${appends || 'none'}`;
+}
+
+async function getCachedKitsuAnimeBatchDetails(kitsuIds, appends = KITSU_ANIME_DETAIL_APPENDS) {
+  const normalizedIds = normalizeKitsuIds(kitsuIds);
+
+  if (normalizedIds.length === 0) {
+    return { data: [], included: [] };
+  }
+
+  return cacheWrapGlobal(
+    getKitsuBatchDetailsCacheKey(normalizedIds, appends),
+    () => kitsu.getMultipleAnimeDetails(normalizedIds, appends),
+    CATALOG_TTL
+  );
+}
+
+function getKitsuGenresForItem(item, included = [], allowIncludedFallback = false) {
+  const categoryIds = (item?.relationships?.categories?.data || []).map(category => String(category.id));
+
+  if (categoryIds.length > 0) {
+    const includedCategoriesById = new Map(
+      (included || [])
+        .filter(includedItem => includedItem.type === 'categories')
+        .map(includedItem => [String(includedItem.id), includedItem])
+    );
+
+    return categoryIds
+      .map(categoryId => includedCategoriesById.get(categoryId)?.attributes?.title)
+      .filter(Boolean);
+  }
+
+  if (!allowIncludedFallback) return [];
+
+  return (included || [])
+    .filter(includedItem => includedItem.type === 'categories')
+    .map(includedItem => includedItem.attributes?.title)
+    .filter(Boolean);
+}
+
 async function parseAnimeCatalogMeta(anime, config, language, descriptionFallback = null) {
   if (!anime || !anime.mal_id) return null;
 
@@ -2006,13 +2038,6 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
       }
     }
   }
-  const trailerStreams = [];
-  if (anime.trailer?.youtube_id) {
-    trailerStreams.push({
-      ytId: anime.trailer.youtube_id,
-      title: anime.title_english || anime.title
-    });
-  }
   const trailers = [];
   if (anime.trailer?.youtube_id) {
     trailers.push({
@@ -2035,7 +2060,6 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     runtime: parseRunTime(anime.duration),
     isAnime: true,
     trailers: trailers,
-    trailerStreams: trailerStreams,
     behavioralHints: {
       defaultVideoId: stremioType === 'movie' ? mapping?.imdb_id ? mapping?.imdb_id: (kitsuId ? `kitsu:${kitsuId}` : `mal:${malId}`): null,
       hasScheduledVideos: stremioType === 'series',
@@ -2060,8 +2084,31 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
   
   // Extract MAL IDs and try to get AniList IDs from mappings
   const malIds = animes.map(anime => anime.mal_id).filter(id => id && typeof id === 'number' && id > 0);
+  const animeByMalId = new Map();
+  const mappingByMalId = new Map();
+  const kitsuIds = [];
+  const seenKitsuIds = new Set();
+
+  animes.forEach(anime => {
+    if (!anime || !anime.mal_id || typeof anime.mal_id !== 'number' || anime.mal_id <= 0) return;
+
+    if (!animeByMalId.has(anime.mal_id)) {
+      animeByMalId.set(anime.mal_id, anime);
+    }
+
+    const mapping = idMapper.getMappingByMalId(anime.mal_id);
+    mappingByMalId.set(anime.mal_id, mapping);
+
+    if (mapping?.kitsu_id) {
+      const kitsuId = String(mapping.kitsu_id);
+      if (!seenKitsuIds.has(kitsuId)) {
+        seenKitsuIds.add(kitsuId);
+        kitsuIds.push(mapping.kitsu_id);
+      }
+    }
+  });
+
   let anilistArtworkMap = new Map();
-  const kitsuMalMap = new Map();
   
   if (useAniList && malIds.length > 0) {
     try {
@@ -2069,16 +2116,12 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       //console.log(`[parseAnimeCatalogMetaBatch] MAL IDs: ${malIds.slice(0, 10).join(', ')}${malIds.length > 10 ? '...' : ''}`);
       
       // First, try to get AniList IDs from mappings
-      const malToAnilistMap = new Map();
       const anilistIds = [];
-      const kitsuIds = [];
       const malIdsWithoutAnilist = [];
-      const malIdsWithoutKitsu = [];
       
       malIds.forEach(malId => {
-        const mapping = idMapper.getMappingByMalId(malId);
+        const mapping = mappingByMalId.get(malId);
         if (mapping && mapping.anilist_id) {
-          malToAnilistMap.set(mapping.anilist_id, malId);
           anilistIds.push(mapping.anilist_id);
         } else {
           malIdsWithoutAnilist.push(malId);
@@ -2121,29 +2164,20 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
   
   // Fetch Kitsu artwork if configured as art provider
   let kitsuArtworkMap = new Map();
-  if (useKitsu && malIds.length > 0) {
+  let kitsuBatchDetails = null;
+  if (useKitsu && kitsuIds.length > 0) {
     try {
-      // Get Kitsu IDs from mappings
-      const kitsuIds = malIds
-        .map(malId => {
-          const mapping = idMapper.getMappingByMalId(malId);
-          return mapping?.kitsu_id;
-        })
-        .filter(id => id);
-      
-      if (kitsuIds.length > 0) {
-        const kitsuData = await kitsu.getMultipleAnimeDetails(kitsuIds);
-        if (kitsuData?.data) {
-          // Create a map for quick lookup using MAL ID as key
-          kitsuArtworkMap = new Map();
-          kitsuData.data.forEach(item => {
-            const mapping = idMapper.getMappingByKitsuId(item.id);
-            if (mapping?.mal_id) {
-              kitsuArtworkMap.set(mapping.mal_id, item);
-            }
-          });
-          // logger.debug(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuData.data.length} Kitsu artworks`);
-        }
+      kitsuBatchDetails = await getCachedKitsuAnimeBatchDetails(kitsuIds);
+      if (kitsuBatchDetails?.data) {
+        // Create a map for quick lookup using MAL ID as key
+        kitsuArtworkMap = new Map();
+        kitsuBatchDetails.data.forEach(item => {
+          const mapping = idMapper.getMappingByKitsuId(item.id);
+          if (mapping?.mal_id) {
+            kitsuArtworkMap.set(mapping.mal_id, item);
+          }
+        });
+        // logger.debug(`[parseAnimeCatalogMetaBatch] Successfully fetched ${kitsuBatchDetails.data.length} Kitsu artworks`);
       }
     } catch (error) {
       logger.warn(`[parseAnimeCatalogMetaBatch] Kitsu batch fetch failed:`, error.message);
@@ -2155,17 +2189,19 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
 
   if(preferredProvider === 'kitsu') {
     try {
+      const kitsuData = kitsuBatchDetails || await getCachedKitsuAnimeBatchDetails(kitsuIds);
+      const kitsuItems = kitsuData?.data || [];
+      const kitsuById = new Map(kitsuItems.map(item => [String(item.id), item]));
+
       let metas = await Promise.all(malIds.map(async id => {
         // logger.debug(`[parseAnimeCatalogMetaBatch] Fetching Kitsu data for ID: ${id}`);
         
-        const mapping = idMapper.getMappingByMalId(id);
-        if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animes.find(anime => anime.mal_id === id), config, language);
-        const kitsuData = await cacheWrapGlobal(
-          `kitsu-anime-${mapping.kitsu_id}-categories`,
-          () => kitsu.getMultipleAnimeDetails([mapping.kitsu_id]),
-          CATALOG_TTL
-        );
-        const item = kitsuData.data[0];
+        const mapping = mappingByMalId.get(id);
+        if(!mapping || !mapping.kitsu_id) return parseAnimeCatalogMeta(animeByMalId.get(id), config, language);
+        const item = kitsuById.get(String(mapping.kitsu_id));
+        if (!item) {
+          throw new Error(`Missing Kitsu data for Kitsu ID ${mapping.kitsu_id}`);
+        }
         const stremioType = item.attributes.subtype === 'movie' ? 'movie' : 'series';
         let tmdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(id)?.externals.tmdb : mapping?.themoviedb_id;
         let imdbId = stremioType === 'movie' ? idMapper.getTraktAnimeMovieByMalId(id)?.externals.imdb : mapping?.imdb_id;
@@ -2185,7 +2221,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
             }
           }
         }
-        let genres = kitsuData.included?.filter(item => item.type === 'categories').map(item => item.attributes?.title).filter(Boolean) || [];
+        let genres = getKitsuGenresForItem(item, kitsuData?.included, kitsuItems.length <= 1);
         
         let releaseDates = null;
         if (config.hideUnreleasedDigital && stremioType === 'movie' && tmdbId) {
@@ -2308,13 +2344,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
       getImdbRating(imdbId, stremioType)
     ]);
     
-    const trailerStreams = [];
-    if (anime.trailer?.youtube_id) {
-      trailerStreams.push({
-        ytId: anime.trailer.youtube_id,
-        title: anime.title_english || anime.title
-      });
-    }
+
     const trailers = [];
     if (anime.trailer?.youtube_id) {
       trailers.push({
@@ -2375,8 +2405,7 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         releaseInfo: malReleaseInfo,
         runtime: parseRunTime(anime.duration),
         imdbRating: imdbRating,
-        trailers: trailers,
-        trailerStreams: trailerStreams
+        trailers: trailers
       };
       
       if (releaseDates) {
@@ -2421,10 +2450,9 @@ function getYouTubeIdFromUrl(url) {
  */
 function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
   const trailers = [];
-  const trailerStreams = [];
 
   if (!Array.isArray(tvdbTrailers)) {
-    return { trailers, trailerStreams };
+    return { trailers };
   }
 
   for (const trailer of tvdbTrailers) {
@@ -2439,16 +2467,11 @@ function parseTvdbTrailers(tvdbTrailers, defaultTitle = 'Official Trailer') {
           type: 'Trailer',
           name: defaultTitle
         });
-
-        trailerStreams.push({
-          ytId: ytId,
-          title: title
-        });
       }
     }
   }
 
-  return { trailers, trailerStreams };
+  return { trailers };
 }
 
 // In-flight request cache for TMDB movie images to deduplicate concurrent requests
@@ -3246,9 +3269,10 @@ function genSeasonsString(seasons) {
       seasons.map((season) => `season/${season.season_number}`).join(","),
     ];
   } else {
-    const result = new Array(Math.ceil(seasons.length / 20))
-      .fill()
-      .map((_) => seasons.splice(0, 20));
+    const result = [];
+    for (let i = 0; i < seasons.length; i += 20) {
+      result.push(seasons.slice(i, i + 20));
+    }
     return result.map((arr) => {
       return arr.map((season) => `season/${season.season_number}`).join(",");
     });
@@ -3363,7 +3387,6 @@ module.exports = {
   parseWriter,
   parseSlug,
   parseTrailers,
-  parseTrailerStream,
   parseImdbLink,
   parseShareLink,
   parseGenreLink,
