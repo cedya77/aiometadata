@@ -1325,18 +1325,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
   const kitsuId = allIds?.kitsuId;
   const idProvider = config.providers?.movie || 'imdb';
   const _rawPosterUrl = poster || `${host}/missing_poster.png`;
-  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
-    name: d.name,
-    category: 'Directors',
-    url: `stremio:///search?search=${d.name}`
-  }));
 
-  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
-    name: w.name,
-    category: 'Writers',
-    url: `stremio:///search?search=${w.name}`
-  }));
-  
   const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     character: d.name,
@@ -1468,18 +1457,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   const castCount = config.castCount;
   const _rawPosterUrl = poster || `${host}/missing_poster.png`;
 
-  const directorLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
-    name: d.name,
-    category: 'Directors',
-    url: `stremio:///search?search=${d.name}`
-  }));
-
-  const writerLinks = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Writer").map(w => ({
-    name: w.name,
-    category: 'Writers',
-    url: `stremio:///search?search=${w.name}`
-  }));
-  
   const directorDetails = !credits || !Array.isArray(credits.crew) ? [] : credits.crew.filter((x) => x.job === "Director").map(d => ({
     name: d.name,
     character: d.name,
@@ -1814,7 +1791,6 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
   let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID)];
-  links.push(...directorLinks, ...writerLinks);
   if (certification && config.displayAgeRating) {
     const certificationLink = {
       name: certification,
