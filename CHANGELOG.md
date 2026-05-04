@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.1](https://github.com/cedya77/aiometadata/compare/v2.1.0...v2.1.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* remove duplicate director/writer links for TMDB series ([eba777f](https://github.com/cedya77/aiometadata/commit/eba777fe2bf0616325f008780c7878316aa09339))
+
 ## [2.1.0](https://github.com/cedya77/aiometadata/compare/v2.0.0...v2.1.0) (2026-05-04)
 
 
