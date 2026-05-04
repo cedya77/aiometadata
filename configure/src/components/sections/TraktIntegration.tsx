@@ -686,6 +686,25 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
     toast.success(`Added Trakt Popular ${type}`);
   };
 
+  const handleAddAnticipatedCatalog = (type: 'movies' | 'shows') => {
+    const id = `trakt.anticipated.${type}`;
+    if (config.catalogs.some(c => c.id === id)) {
+      toast.info(`Anticipated ${type} catalog already added.`);
+      return;
+    }
+    const newCatalog: CatalogConfig = {
+      id,
+      type: type === 'movies' ? 'movie' : 'series',
+      name: `Trakt Anticipated ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      enabled: true,
+      showInHome: true,
+      source: 'trakt',
+      metadata: { traktEndpoint: `anticipated/${type}` }
+    };
+    setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+    toast.success(`Added Trakt Anticipated ${type}`);
+  };
+
   const fetchLikedLists = async () => {
     if (!isConnected || !config.apiKeys?.traktTokenId) {
       toast.error('Not connected to Trakt or token not available');
@@ -1623,8 +1642,8 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                     <Flame className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0 space-y-1.5">
-                    <CardTitle>Trending & Popular Catalogs</CardTitle>
-                    <CardDescription>Import Trakt trending or popular movies/shows as single catalogs</CardDescription>
+                    <CardTitle>Trending, Popular & Anticipated</CardTitle>
+                    <CardDescription>Import Trakt trending, popular, or anticipated movies/shows as catalogs</CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1668,8 +1687,28 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                       Popular Shows
                     </Button>
                   </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleAddAnticipatedCatalog('movies')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'trakt.anticipated.movies')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Anticipated Movies
+                    </Button>
+                    <Button
+                      onClick={() => handleAddAnticipatedCatalog('shows')}
+                      variant="outline"
+                      className="flex-1"
+                      disabled={config.catalogs.some(c => c.id === 'trakt.anticipated.shows')}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Anticipated Shows
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    These catalogs use Trakt's trending and popular endpoints for movies and shows. They update automatically.
+                    These catalogs use Trakt's trending, popular, and anticipated endpoints for movies and shows. They update automatically.
                   </p>
                 </CardContent>
               </Card>

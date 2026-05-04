@@ -585,7 +585,7 @@ const TraktSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogCon
   const minCacheTTL = 300; // 5 minutes minimum for all Trakt catalogs
   const isUpNext = catalog.id === 'trakt.upnext';
   const isCalendar = catalog.id === 'trakt.calendar';
-  const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.') && catalog.id !== 'trakt.upnext';
+  const showSortOptions = !catalog.id.startsWith('trakt.trending.') && !catalog.id.startsWith('trakt.popular.') && !catalog.id.startsWith('trakt.anticipated.') && catalog.id !== 'trakt.upnext';
 
   const handleSave = () => {
     const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;

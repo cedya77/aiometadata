@@ -2701,6 +2701,62 @@ async function fetchTraktPopularItems(
   }, ttl, { skipVersion: true });
 }
 
+/**
+ * Fetch anticipated items for movies or shows from Trakt
+ */
+async function fetchTraktAnticipatedItems(
+  type: 'movies' | 'shows',
+  page: number = 1,
+  limit: number = 20,
+  genre?: string,
+  cacheTTL?: number
+): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
+  const cacheKey = `trakt-api:anticipated:${type}:${page}:${limit}:${genre || ''}`;
+
+  const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
+
+  return await cacheWrapGlobal(cacheKey, async () => {
+    try {
+      let url = `${TRAKT_BASE_URL}/${type}/anticipated?page=${page}&limit=${limit}`;
+      if (genre && genre.toLowerCase() !== 'all' && genre.toLowerCase() !== 'none') {
+        url += `&genres=${encodeURIComponent(genre)}`;
+      }
+      logger.debug(`Trakt anticipated ${type}: page=${page}, limit=${limit}, genre=${genre || 'none'}`);
+      const response: any = await makeRateLimitedRequest(
+        () => httpGet(url, {
+          dispatcher: traktDispatcher,
+          headers: {
+            'Content-Type': 'application/json',
+            'trakt-api-version': '2',
+            'trakt-api-key': TRAKT_CLIENT_ID
+          }
+        }),
+        `Trakt fetchAnticipatedItems (${type}, page: ${page})`,
+        3,
+        TRAKT_UNAUTHED_QUEUE_KEY
+      );
+
+      const paginationHeaders = response.headers || {};
+      const totalItems = paginationHeaders['x-pagination-item-count'] ? parseInt(paginationHeaders['x-pagination-item-count']) : undefined;
+      const pageCount = paginationHeaders['x-pagination-page-count'] ? parseInt(paginationHeaders['x-pagination-page-count']) : undefined;
+      const currentPage = paginationHeaders['x-pagination-page'] ? parseInt(paginationHeaders['x-pagination-page']) : page;
+
+      const rawItems = Array.isArray(response.data) ? response.data : [];
+      const items = rawItems.map((entry: any) => {
+        const media = entry.movie || entry.show || entry;
+        const itemType = type === 'movies' ? 'movie' : 'show';
+        return { type: itemType, movie: itemType === 'movie' ? media : undefined, show: itemType === 'show' ? media : undefined } as TraktListItem;
+      });
+
+      const hasMore = currentPage < (pageCount || 1);
+      return { items, totalItems, hasMore, totalPages: pageCount };
+    } catch (err: any) {
+      logger.error(`Error fetching Trakt anticipated ${type}, page ${page}:`, err.message);
+      throw err;
+    }
+  }, ttl, { skipVersion: true });
+}
+
 const refreshLocks = new Map<string, Promise<string | null>>();
 /**
  * Get Trakt access token from database with automatic refresh
@@ -3105,6 +3161,7 @@ export {
   fetchTraktMostFavoritedItems,
   fetchTraktTrendingItems,
   fetchTraktPopularItems,
+  fetchTraktAnticipatedItems,
   fetchTraktSearchItems,
   fetchTraktPersonSearch,
   fetchTraktPersonCredits,

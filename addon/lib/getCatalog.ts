@@ -3,7 +3,7 @@ import { getGenreList } from "./getGenreList.js";
 import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
-import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken, fetchTraktUpNextEpisodes, fetchTraktUnwatchedEpisodes, fetchTraktTrendingItems, fetchTraktPopularItems } from "../utils/traktUtils.js";
+import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken, fetchTraktUpNextEpisodes, fetchTraktUnwatchedEpisodes, fetchTraktTrendingItems, fetchTraktPopularItems, fetchTraktAnticipatedItems } from "../utils/traktUtils.js";
 import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
@@ -1789,6 +1789,14 @@ async function getTraktCatalog(
     } else if (catalogId === 'trakt.popular.shows') {
       logger.debug('Fetching Trakt popular shows');
       const result = await fetchTraktPopularItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
+    } else if (catalogId === 'trakt.anticipated.movies') {
+      logger.debug('Fetching Trakt anticipated movies');
+      const result = await fetchTraktAnticipatedItems('movies', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
+      response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
+    } else if (catalogId === 'trakt.anticipated.shows') {
+      logger.debug('Fetching Trakt anticipated shows');
+      const result = await fetchTraktAnticipatedItems('shows', page, pageSize, genreSlug, catalogConfig?.cacheTTL);
       response = { items: result.items, hasMore: result.hasMore, totalItems: result.totalItems, totalPages: result.totalPages };
     } else if (catalogId === 'trakt.watchlist') {
       // Unified watchlist
