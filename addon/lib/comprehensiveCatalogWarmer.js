@@ -194,14 +194,8 @@ class ComprehensiveCatalogWarmer {
 
   async shouldWarmup() {
     try {
-      const inProgress = await redis.get('catalog-warmup:in-progress');
-      if (inProgress) {
-        this.log('warn', `Previous warmup was interrupted (started at ${new Date(parseInt(inProgress)).toISOString()}) - will re-warm`);
-        await redis.del('catalog-warmup:in-progress');
-        return true;
-      }
+      await redis.del('catalog-warmup:in-progress');
 
-      // Check if any UUID needs warming
       for (const uuid of this.config.uuids) {
         const lastWarmupKey = `catalog-warmup:last-run:${uuid}`;
         const lastRun = await redis.get(lastWarmupKey);
@@ -211,18 +205,14 @@ class ComprehensiveCatalogWarmer {
           return true;
         }
 
-        const lastRunTime = parseInt(lastRun);
-        const now = Date.now();
-        const hoursSinceLastRun = (now - lastRunTime) / (1000 * 60 * 60);
-        const shouldRun = hoursSinceLastRun >= this.config.intervalHours;
+        const hoursSinceLastRun = (Date.now() - parseInt(lastRun)) / (1000 * 60 * 60);
 
-        if (shouldRun) {
+        if (hoursSinceLastRun >= this.config.intervalHours) {
           this.log('info', `UUID ${uuid} last warmup was ${hoursSinceLastRun.toFixed(1)}h ago - will run`);
           return true;
         }
       }
 
-      // If we get here, no UUIDs need warming
       this.log('info', `All UUIDs warmed recently - skipping (next in ${this.config.intervalHours}h)`);
       return false;
     } catch (error) {
@@ -571,13 +561,14 @@ class ComprehensiveCatalogWarmer {
 
     this.log('debug', `Starting to warm catalog: ${catalogId} with UUID: ${uuid}${shouldIncludeGenreNone ? ' (with genre=None)' : ''}`);
 
-    // Page-based iteration: use page numbers directly instead of skip values.
-    // This matches the endpoint's cache key construction which also uses page instead of skip,
-    // ensuring warmer cache keys align with live request cache keys regardless of post-cache filtering.
+    if (catalogId.startsWith('stremthru.') || catalogId.startsWith('custom.')) {
+      return await this.warmExternalAddonCatalog(catalogId, catalog, genreValue, config, uuid);
+    }
+
     let currentPage = 1;
     let totalItems = 0;
     const maxPages = this.config.maxPagesPerCatalog;
-    let posterWarmingChain = Promise.resolve(); // serializes fire-and-forget poster warming
+    let posterWarmingChain = Promise.resolve();
 
     while (currentPage <= maxPages) {
       try {
@@ -787,6 +778,98 @@ class ComprehensiveCatalogWarmer {
     }
 
     return { pages: currentPage - 1, items: totalItems };
+  }
+
+  async warmExternalAddonCatalog(catalogId, catalog, genreValue, config, uuid) {
+    const configWithUUID = { ...config, userUUID: uuid };
+    const { getCatalog } = require('./getCatalog');
+    const maxPages = this.config.maxPagesPerCatalog;
+    let currentSkip = 0;
+    let pagesWarmed = 0;
+    let totalItems = 0;
+    let posterWarmingChain = Promise.resolve();
+
+    while (pagesWarmed < maxPages) {
+      try {
+        const fullResult = await getCatalog(catalog.type, config.language, 1, catalogId, genreValue || null, configWithUUID, uuid, true, currentSkip);
+        const result = await this.persistFullMetasAndProjectCatalog(fullResult, configWithUUID, catalog.type);
+
+        const rawMetaCount = result?.metas?.length || 0;
+
+        const posterWarmupUrl = (process.env.POSTER_WARMUP_URL || process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
+        if (posterWarmupUrl && rawMetaCount > 0) {
+          const { resolveCustomArtUrl, getDefaultPosterPattern, getPosterRatingApiKey } = require('../utils/parseProps');
+          const posterPattern = config.customPosterUrlPattern || (config.posterRatingProvider && config.posterRatingProvider !== 'custom' ? getDefaultPosterPattern(config.posterRatingProvider) : null);
+          const proxyApiKey = config.usePosterProxy ? getPosterRatingApiKey(config) : null;
+          const addonHost = process.env.HOST_NAME ? (process.env.HOST_NAME.startsWith('http') ? process.env.HOST_NAME : `https://${process.env.HOST_NAME}`) : '';
+          const posterUrls = [];
+
+          for (const meta of result.metas) {
+            const ids = extractIdsFromWarmerMeta(meta);
+            const type = meta.type || catalog.type;
+            const proxyId = ids.imdbId || (ids.tmdbId ? `tmdb:${ids.tmdbId}` : (ids.tvdbId ? `tvdb:${ids.tvdbId}` : null));
+
+            if (posterPattern && proxyId) {
+              if (proxyApiKey) {
+                posterUrls.push(`${addonHost}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&lang=${config.language || 'en-US'}&key=${proxyApiKey}`);
+              } else {
+                const resolved = resolveCustomArtUrl(posterPattern, ids, type, config);
+                if (resolved) {
+                  if (config.usePosterProxy) {
+                    posterUrls.push(`${addonHost}/poster/${type}/${proxyId}?fallback=${encodeURIComponent(meta.poster || '')}&url=${encodeURIComponent(resolved)}`);
+                  } else {
+                    posterUrls.push(resolved);
+                  }
+                }
+              }
+            } else if (meta.poster) {
+              posterUrls.push(meta.poster);
+            }
+          }
+
+          if (posterUrls.length > 0) {
+            const posterDelay = parseInt(process.env.POSTER_WARMUP_DELAY_MS) || 50;
+            const posterConcurrency = Math.max(1, parseInt(process.env.POSTER_WARMUP_CONCURRENCY) || 1);
+            posterWarmingChain = posterWarmingChain.then(async () => {
+              let warmed = 0;
+              for (let i = 0; i < posterUrls.length; i += posterConcurrency) {
+                const batch = posterUrls.slice(i, i + posterConcurrency);
+                const results = await Promise.allSettled(
+                  batch.map(url => fetch(`${posterWarmupUrl}/${url}`, { method: 'HEAD' }))
+                );
+                warmed += results.filter(r => r.status === 'fulfilled').length;
+                if (posterDelay > 0) await new Promise(r => setTimeout(r, posterDelay));
+              }
+              this.log('debug', `[Poster Warming] Pre-warmed ${warmed} poster images for catalog ${catalogId}`);
+            });
+          }
+        }
+
+        if (rawMetaCount === 0) {
+          this.log('debug', `Catalog ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} complete at skip=${currentSkip}`);
+          break;
+        }
+
+        totalItems += rawMetaCount;
+        pagesWarmed++;
+
+        const cursorKey = `catalog-cursor:${uuid}:${catalogId}:${catalog.type}:${genreValue || 'all'}`;
+        const raw = await redis.get(cursorKey);
+        if (raw) {
+          const cursor = JSON.parse(raw);
+          currentSkip = cursor.served;
+        } else {
+          break;
+        }
+
+        await this.delay(this.config.taskDelayMs);
+      } catch (error) {
+        this.log('error', `Error warming ${catalogId}${genreValue ? ' (genre: '+genreValue+')' : ''} at skip=${currentSkip}: ${error.message}`);
+        break;
+      }
+    }
+
+    return { pages: pagesWarmed, items: totalItems };
   }
 
   async runWarmup(force = false) {

@@ -1080,15 +1080,11 @@ function parseGenreLink(genres, type, userUUID, isTvdb = false) {
 }
 
 function parseCreditsLink(credits, castCount, metaProvider = 'tmdb') {
-  const castData = parseCast(credits, castCount, metaProvider);
+  const castData = parseCast(credits, undefined, metaProvider);
   const Cast = castData.map((actor) => ({
     name: actor.name, category: "Cast", url: `stremio:///search?search=${encodeURIComponent(actor.name)}`
   }));
-  
-  if (castCount === 0) {
-    return [...Cast];
-  }
-  
+
   const Director = parseDirector(credits).map((director) => ({
     name: director, category: "Directors", url: `stremio:///search?search=${encodeURIComponent(director)}`,
   }));
@@ -1158,7 +1154,7 @@ function parseAnimeCreditsLink(characterData, userUUID, castCount) {
   const manifestPath = userUUID ? `stremio/${userUUID}/manifest.json` : 'manifest.json';
   const manifestUrl = `${host}/${manifestPath}`;
 
-  const charactersToProcess = castCount === undefined || castCount === null ? characterData : characterData.slice(0, castCount);
+  const charactersToProcess = characterData;
   const voiceActorLinks = charactersToProcess.map(charEntry => {
     const voiceActor = charEntry.voice_actors.find(va => va.language === 'Japanese');
     if (!voiceActor) return null;

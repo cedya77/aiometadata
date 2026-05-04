@@ -931,7 +931,6 @@ function getMetaSmartLockContextHash(config, metaId, type, includeVideos, useSho
   return hashConfig({
     cacheContext: getMetaCacheContext(config, metaId, type, useShowPoster),
     projection: {
-      castCount: config.castCount || 0,
       blurThumbs: config.blurThumbs || false,
       displayAgeRating: config.displayAgeRating || false,
     },
@@ -1078,6 +1077,14 @@ function applyCastCountProjection(meta, config) {
     meta.app_extras.cast = meta.app_extras.cast.slice(0, castCount);
   }
 
+  if (Array.isArray(meta?.links)) {
+    const castLinks = meta.links.filter(l => l.category === 'Cast');
+    if (castLinks.length > castCount) {
+      const kept = new Set(castLinks.slice(0, castCount));
+      meta.links = meta.links.filter(l => l.category !== 'Cast' || kept.has(l));
+    }
+  }
+
   if (castCount === 0) {
     if (Object.prototype.hasOwnProperty.call(meta, 'director')) {
       meta.director = Array.isArray(meta.director) ? [] : '';
@@ -1096,6 +1103,9 @@ function applyCastCountProjection(meta, config) {
     }
     if (meta.app_extras && Array.isArray(meta.app_extras.writers)) {
       meta.app_extras.writers = [];
+    }
+    if (Array.isArray(meta?.links)) {
+      meta.links = meta.links.filter(l => l.category !== 'Directors' && l.category !== 'Writers' && l.category !== 'Executive Producers');
     }
   }
 
@@ -1608,9 +1618,8 @@ async function cacheWrapMeta(userUUID, metaId, method, ttl = META_TTL, options =
    const metaConfig = {
      // Language (affects all meta)
      language: config.language || 'en-US',
-     
+
      // Display settings (affect all meta)
-     castCount: config.castCount || 0,
      blurThumbs: config.blurThumbs || false,
      showMetaProviderAttribution: config.showMetaProviderAttribution || false,
      displayAgeRating: config.displayAgeRating || false,

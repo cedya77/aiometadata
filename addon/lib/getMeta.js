@@ -1814,9 +1814,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
 
   const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
   let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID)];
-  if (castCount !== 0) {
-    links.push(...directorLinks, ...writerLinks);
-  }
+  links.push(...directorLinks, ...writerLinks);
   if (certification && config.displayAgeRating) {
     const certificationLink = {
       name: certification,
@@ -1987,9 +1985,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
   else links = [...links];
-  if (castCount !== 0) {
-    links.push(...directorLinks, ...writerLinks);
-  }
+  links.push(...directorLinks, ...writerLinks);
   if(certification && config.displayAgeRating){
     const certificationLink = {
       name: certification,
@@ -2419,9 +2415,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
   else links = [...links];
-  if (castCount !== 0) {
-    links.push(...directorLinks, ...writerLinks);
-  }
+  links.push(...directorLinks, ...writerLinks);
   if(certification && config.displayAgeRating){
     const certificationLink = {
       name: certification,
@@ -2680,9 +2674,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   }
 
   let links = [...Utils.buildLinks(imdbRating, imdbId, name, 'series', tvmazeShow.genres.map(g => ({ name: g })), tvmazeCredits, language, castCount, userUUID, false, 'tvmaze')];
-  if (castCount !== 0) {
-    links.push(...producerLinks, ...writerLinks);
-  }
+  links.push(...producerLinks, ...writerLinks);
   if(certification && config.displayAgeRating){
     const certificationLink = {
       name: certification,

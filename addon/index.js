@@ -3642,7 +3642,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       return { metas: metas || [] };
     }, cacheOptions);
     }
-    if (!cleanId.startsWith('custom.') && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
+    if (!cleanId.startsWith('custom.') && !cleanId.startsWith('stremthru.') && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
       const { applyCatalogFilters } = require('./utils/catalogFilters');
       responseData.metas = await applyCatalogFilters(responseData.metas, {
         type,

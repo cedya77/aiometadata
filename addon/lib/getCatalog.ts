@@ -18,13 +18,13 @@ import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
 import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
-import redis from './redisClient.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
 
 const consola = require('consola');
 const database = require('./database.js');
+import redis from './redisClient.js';
 
 const logger = consola.withTag('Catalog');
 import { cacheWrapMetaSmart } from './getCache.js';
@@ -61,12 +61,12 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     }
     else if (id.startsWith('stremthru.')) {
       logger.debug(`Routing to External Addon catalog handler for id: ${id}`);
-      const stremthruResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      const stremthruResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
       return { metas: stremthruResults };
     }
     else if (id.startsWith('custom.')) {
       logger.debug(`Routing to External Addon catalog handler for id: ${id}`);
-      const customResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
+      const customResults = await getExternalAddonCatalog(type, id, genre, page, language, config, userUUID, includeVideos, skip);
       return { metas: customResults };
     }
     else if (id.startsWith('trakt.')) {
@@ -1436,10 +1436,8 @@ function findProvider(providerId: string): any {
   return provider;
 }
 
-async function getExternalAddonCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false): Promise<any[]> {
+async function getExternalAddonCatalog(type: string, catalogId: string, genre: string, page: number, language: string, config: UserConfig, userUUID: string, includeVideos: boolean = false, skip?: number): Promise<any[]> {
   try {
-    logger.info(`[External Addon] Processing catalog request: ${catalogId}, type: ${type}, genre: ${genre || 'none'}, page: ${page}`);
-
     const userCatalog = config.catalogs?.find(c => c.id === catalogId && c.type === type);
     if (!userCatalog || (!userCatalog.sourceUrl && !userCatalog.source)) {
       logger.error(`[External Addon] No source URL found for catalog: ${catalogId}`);
@@ -1447,112 +1445,68 @@ async function getExternalAddonCatalog(type: string, catalogId: string, genre: s
     }
 
     const catalogUrl = userCatalog.sourceUrl || userCatalog.source;
-    logger.debug(`[External Addon] Using catalog URL: ${catalogUrl}`);
+    const catalogTTL = userCatalog.cacheTTL ?? parseInt(process.env.CATALOG_TTL || String(24 * 60 * 60), 10);
+    const batchSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
+    const useCursor = skip !== undefined && redis;
+    const stremioSkip = skip ?? (page - 1) * batchSize;
 
-    const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
-    const stremThruBatchSize = userCatalog.pageSize || 100;
+    const cursorKey = useCursor ? `catalog-cursor:${userUUID}:${catalogId}:${type}:${genre || 'all'}` : null;
+    let upstreamSkip: number;
 
-    // Cursor-based pagination: track (upstreamOffset, seenIds) per (catalog, user, genre).
-    // Handles upstream catalogs that return duplicate items at different skip values and
-    // filter shrinkage without Stremio losing scroll momentum on duplicate-heavy pages.
-    const cursorKey = `custom-cursor:${catalogId}:${userUUID}:${genre || 'all'}`;
-    const SEEN_IDS_CAP = 500;
-    const MAX_BATCH_ITERATIONS = 10;
-    const CURSOR_TTL_SECONDS = 600;
-
-    let cursor: { upstreamOffset: number; seenIds: string[] } = { upstreamOffset: 0, seenIds: [] };
-    if (page > 1) {
-      let loaded = false;
-      if (redis) {
-        try {
-          const raw = await redis.get(cursorKey);
-          if (raw) {
-            cursor = JSON.parse(raw);
-            loaded = true;
-          }
-        } catch (err: any) {
-          logger.warn(`[External Addon] Failed to load cursor: ${err.message}`);
+    if (!useCursor) {
+      upstreamSkip = stremioSkip;
+    } else if (stremioSkip === 0) {
+      upstreamSkip = 0;
+      await redis!.del(cursorKey!);
+    } else {
+      const raw = await redis!.get(cursorKey!);
+      if (raw) {
+        const cursor = JSON.parse(raw);
+        if (cursor.served === stremioSkip) {
+          upstreamSkip = cursor.upstreamOffset;
+        } else {
+          logger.warn(`[External Addon] ${catalogId}: cursor mismatch (served=${cursor.served}, skip=${stremioSkip}) - returning empty`);
+          return [];
         }
-      }
-      if (!loaded) {
-        // Cursor expired/missing — approximate from page number so we still advance
-        cursor.upstreamOffset = (page - 1) * stremThruBatchSize;
-        logger.debug(`[External Addon] No cursor state for page ${page}, starting at offset=${cursor.upstreamOffset}`);
+      } else {
+        logger.warn(`[External Addon] ${catalogId}: no cursor for skip=${stremioSkip} - returning empty`);
+        return [];
       }
     }
 
-    const { applyCatalogFilters } = require('../utils/catalogFilters.js');
-    const seenSet = new Set<string>(cursor.seenIds);
-    const collected: any[] = [];
-    let iterations = 0;
-    let upstreamExhausted = false;
+    logger.info(`[External Addon] ${catalogId}: type=${type}, stremioSkip=${stremioSkip}, upstreamSkip=${upstreamSkip}, genre=${genre || 'none'}`);
 
-    while (collected.length < pageSize && iterations < MAX_BATCH_ITERATIONS) {
-      iterations++;
-      const skip = cursor.upstreamOffset;
-      const cacheKey = `custom-batch:${catalogId}:${genre || 'all'}:skip=${skip}`;
+    const cacheKey = `custom-batch:${catalogId}:${genre || 'all'}:skip=${upstreamSkip}`;
+    const items = await cacheWrap(cacheKey, async () => {
+      return await fetchStremThruCatalog(catalogUrl, upstreamSkip, genre);
+    }, catalogTTL, { enableErrorCaching: true, maxRetries: 2 });
 
-      const batch = await cacheWrap(cacheKey, async () => {
-        logger.debug(`[External Addon] Fetching fresh batch: skip=${skip}, genre=${genre || 'all'}`);
-        return await fetchStremThruCatalog(catalogUrl, skip, genre);
-      }, 300, { enableErrorCaching: true, maxRetries: 2 });
-
-      if (!batch?.length) {
-        logger.debug(`[External Addon] Upstream exhausted at skip=${skip} (iteration ${iterations})`);
-        upstreamExhausted = true;
-        break;
-      }
-
-      // Advance by actual batch length, mirroring Stremio's own skip behavior.
-      // Upstream addons may return partial batches (e.g., 14 instead of 20) and expect
-      // the next request at skip + batch.length, not skip + declared page size.
-      cursor.upstreamOffset += batch.length;
-
-      const newItems: any[] = [];
-      for (const item of batch) {
-        const id = item?.id || item?.imdb_id;
-        if (id && seenSet.has(id)) continue;
-        if (id) seenSet.add(id);
-        newItems.push(item);
-      }
-
-      if (newItems.length === 0) {
-        logger.debug(`[External Addon] Batch at skip=${skip}: ${batch.length} items, all duplicates`);
-        continue;
-      }
-
-      let batchMetas = await parseStremThruItems(newItems, type, genre, language, config, includeVideos);
-      batchMetas = await applyCatalogFilters(batchMetas, { type, config, catalogConfig: userCatalog, cleanId: catalogId });
-
-      for (const meta of batchMetas) {
-        collected.push(meta);
-        if (collected.length >= pageSize) break;
-      }
-      logger.debug(`[External Addon] Batch at skip=${skip}: ${batch.length} items, ${newItems.length} new after dedup, ${batchMetas.length} after filters (collected ${collected.length}/${pageSize})`);
-    }
-
-    if (redis) {
-      try {
-        cursor.seenIds = Array.from(seenSet).slice(-SEEN_IDS_CAP);
-        await redis.set(cursorKey, JSON.stringify(cursor), 'EX', CURSOR_TTL_SECONDS);
-      } catch (err: any) {
-        logger.warn(`[External Addon] Failed to persist cursor: ${err.message}`);
-      }
-    }
-
-    if (!collected.length) {
-      logger.warn(`[External Addon] No items collected for catalog: ${catalogId} (page ${page}, exhausted=${upstreamExhausted})`);
+    if (!items?.length) {
+      logger.debug(`[External Addon] No items returned for ${catalogId} at skip=${upstreamSkip}`);
       return [];
     }
 
-    logger.success(`[External Addon] Processed ${collected.length} items for catalog ${catalogId} (page ${page}, upstreamOffset=${cursor.upstreamOffset}, iterations=${iterations})`);
+    const { applyCatalogFilters } = require('../utils/catalogFilters.js');
+    const collected: any[] = [];
+
+    for (let i = 0; i < items.length; i += batchSize) {
+      const chunk = items.slice(i, i + batchSize);
+      let metas = await parseStremThruItems(chunk, type, genre, language, config, includeVideos);
+      metas = await applyCatalogFilters(metas, { type, config, catalogConfig: userCatalog, cleanId: catalogId });
+      collected.push(...metas);
+    }
+
+    if (cursorKey && collected.length > 0) {
+      const newServed = stremioSkip + collected.length;
+      const newUpstream = upstreamSkip + items.length;
+      await redis!.set(cursorKey, JSON.stringify({ served: newServed, upstreamOffset: newUpstream }), 'EX', catalogTTL);
+    }
+
+    logger.success(`[External Addon] ${catalogId}: ${collected.length}/${items.length} items (stremioSkip=${stremioSkip}, nextUpstream=${upstreamSkip + items.length})`);
     return collected;
 
   } catch (err: any) {
-    const errorLine = err.stack?.split('\n')[1]?.trim() || 'unknown';
     logger.error(`[External Addon] Error processing catalog ${catalogId}: ${err.message}`);
-    logger.error(`Error at: ${errorLine}`);
-    logger.error(`Full stack trace:`, err.stack);
     return [];
   }
 }
