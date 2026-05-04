@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.0](https://github.com/cedya77/aiometadata/compare/v2.0.0...v2.1.0) (2026-05-04)
+
+
+### Features
+
+* add Trakt Anticipated Movies/Shows catalogs ([50cba80](https://github.com/cedya77/aiometadata/commit/50cba808ad0072b63523d93778985cba58ccd71f))
+* **ui:** add show/hide all toggle for API key fields ([6990ca5](https://github.com/cedya77/aiometadata/commit/6990ca5a83a85be153f5cddbf3ce11f3b888bc66))
+* **ui:** stack logo above addon name on mobile ([6990ca5](https://github.com/cedya77/aiometadata/commit/6990ca5a83a85be153f5cddbf3ce11f3b888bc66))
+
+
+### Bug Fixes
+
+* apply castCount projection at read time so changes take effect without reinstall ([876da47](https://github.com/cedya77/aiometadata/commit/876da473f943875b59469de12512921ea021f356))
+* disable HTTP/2 globally to prevent GOAWAY errors ([e768239](https://github.com/cedya77/aiometadata/commit/e76823930c268ad2bbe3db42d1eebb1de41a9e34))
+* handle SIGTERM/SIGINT for graceful shutdown ([6f20c53](https://github.com/cedya77/aiometadata/commit/6f20c5375a05a1ed32854fa16fbe33ffd59d7e45))
+* poster cache stats now poll live like other ops tab queries ([d7e29e2](https://github.com/cedya77/aiometadata/commit/d7e29e25be0cbd55c59bb2a73f3d919a76d2e1ce))
+* remove double-filtering for stremthru catalogs in index.js ([876da47](https://github.com/cedya77/aiometadata/commit/876da473f943875b59469de12512921ea021f356))
+* rewrite external addon catalog pagination with cursor tracking ([876da47](https://github.com/cedya77/aiometadata/commit/876da473f943875b59469de12512921ea021f356))
+
+
+### Performance Improvements
+
+* normalize and reduce Redis cache payload sizes ([#473](https://github.com/cedya77/aiometadata/issues/473)) ([2574288](https://github.com/cedya77/aiometadata/commit/2574288e35d18b60853ede8c3ea98493dc5d0303))
+* simplify catalog warmer interrupted detection ([876da47](https://github.com/cedya77/aiometadata/commit/876da473f943875b59469de12512921ea021f356))
+
 ## [2.0.0](https://github.com/cedya77/aiometadata/compare/v1.35.2...v2.0.0) (2026-04-29)
 
 
