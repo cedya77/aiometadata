@@ -39,7 +39,7 @@ function applyAgeRatingFilter(metas: any[], type: string, config: any): any[] {
 
   const before = metas.length;
   const filtered = metas.filter(meta => {
-    const cert = meta.app_extras?.certification || null;
+    const cert = meta.app_extras?.certification || meta.certification || null;
 
     if (!cert || cert === '' || cert.toLowerCase() === 'nr') {
       return !isUserRatingRestrictive;
@@ -67,9 +67,11 @@ interface CatalogFilterOptions {
 async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, cleanId }: CatalogFilterOptions): Promise<any[]> {
   if (!Array.isArray(metas) || metas.length === 0) return metas;
 
-  metas = applyAgeRatingFilter(metas, type, config);
-
   const isSearch = ['search', 'people_search', 'gemini.search'].includes(cleanId);
+
+  if (!isSearch) {
+    metas = applyAgeRatingFilter(metas, type, config);
+  }
   const hideWatchedExcluded = isHideWatchedExcluded(cleanId);
 
   if ((isSearch ? config.hideUnreleasedDigitalSearch : config.hideUnreleasedDigital)) {
