@@ -1,6 +1,7 @@
 // FILE: lib/cacheValidator.js
 
 const redis = require('./redisClient');
+const { decodeCachePayload } = require('./cacheCodec');
 
 /**
  * Cache validation system to detect and invalidate bad cache entries
@@ -288,10 +289,12 @@ class CacheValidator {
     if (!redis) return { shouldInvalidate: false, reason: 'Redis not available' };
 
     try {
-      const cachedData = await redis.get(cacheKey);
+      const cachedData = typeof redis.getBuffer === 'function'
+        ? await redis.getBuffer(cacheKey)
+        : await redis.get(cacheKey);
       if (!cachedData) return { shouldInvalidate: false, reason: 'No cached data' };
 
-      const parsed = JSON.parse(cachedData);
+      const parsed = await decodeCachePayload(cachedData);
       
       if (contentType === 'meta') {
         const validation = this.validateMetaBeforeCache(parsed);
