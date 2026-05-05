@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.2](https://github.com/cedya77/aiometadata/compare/v2.1.1...v2.1.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* prevent double age-rating filtering on search results ([ba334e1](https://github.com/cedya77/aiometadata/commit/ba334e14d88f9c64e8e224fb3467da0d3ff73baa))
+
 ## [2.1.1](https://github.com/cedya77/aiometadata/compare/v2.1.0...v2.1.1) (2026-05-04)
 
 
