@@ -7,6 +7,10 @@ const consola = require('consola');
 const crypto = require('crypto');
 const { isMetricsDisabled } = require('./metricsConfig');
 const {
+  decodeCachePayload,
+  encodeCachePayload,
+} = require('./cacheCodec');
+const {
   canonicalizeLinksForCache,
   applyLinksUserScopeProjection,
 } = require('./linkProjection');
@@ -404,7 +408,7 @@ async function attemptSelfHealing(key, originalError) {
       timestamp: new Date().toISOString()
     };
     
-    await redis.set(key, JSON.stringify(errorResult), 'EX', ERROR_TTL_STRATEGIES.CACHE_CORRUPTED);
+    await redis.set(key, await encodeCachePayload(errorResult), 'EX', ERROR_TTL_STRATEGIES.CACHE_CORRUPTED);
     
     selfHealingLogger.success(`Successfully repaired corrupted cache entry: ${key}`);
     return true;
@@ -523,10 +527,10 @@ async function cacheWrapInternal(key, method, ttl, options, versionedKey) {
   
   while (retries <= maxRetries) {
   try {
-    const cached = await redis.get(versionedKey);
+    const cached = await redis.getBuffer(versionedKey);
     if (cached) {
         try {
-          const parsed = JSON.parse(cached);
+          const parsed = await decodeCachePayload(cached);
           
           // Check if it's a cached error that should be retried
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
@@ -603,7 +607,7 @@ async function cacheWrapInternal(key, method, ttl, options, versionedKey) {
         }
         
         try {
-          await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+          await redis.set(versionedKey, await encodeCachePayload(result), 'EX', finalTtl);
       } catch (err) {
             cacheLogger.warn(`Failed to write to Redis for key ${versionedKey}:`, err);
           updateCacheHealth(versionedKey, 'error', false);
@@ -633,7 +637,7 @@ async function cacheWrapInternal(key, method, ttl, options, versionedKey) {
               message: error.message,
               timestamp: new Date().toISOString()
             };
-            await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
+            await redis.set(versionedKey, await encodeCachePayload(errorResult), 'EX', errorTtl);
             cacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
           } catch (err) {
               cacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
@@ -674,10 +678,10 @@ async function cacheWrapGlobalInternal(key, method, ttl, options, versionedKey) 
   
   while (retries <= maxRetries) {
   try {
-    const cached = await redis.get(versionedKey);
+    const cached = await redis.getBuffer(versionedKey);
     if (cached) {
         try {
-          const parsed = JSON.parse(cached);
+          const parsed = await decodeCachePayload(cached);
           
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
@@ -731,7 +735,7 @@ async function cacheWrapGlobalInternal(key, method, ttl, options, versionedKey) 
     }
 
     if (result !== null && result !== undefined) {
-      await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+      await redis.set(versionedKey, await encodeCachePayload(result), 'EX', finalTtl);
         }
       } else {
         globalCacheLogger.debug(`[Global-Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
@@ -757,7 +761,7 @@ async function cacheWrapGlobalInternal(key, method, ttl, options, versionedKey) 
               message: error.message,
               timestamp: new Date().toISOString()
             };
-            await redis.set(versionedKey, JSON.stringify(errorResult), 'EX', errorTtl);
+            await redis.set(versionedKey, await encodeCachePayload(errorResult), 'EX', errorTtl);
             globalCacheLogger.warn(`Cached ${classification.type} error for ${versionedKey} for ${errorTtl}s`);
           } catch (err) {
             globalCacheLogger.warn(`Failed to cache error for key ${versionedKey}:`, err);
@@ -1936,12 +1940,12 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
     componentResults = componentNames.map(componentName => ({ componentName, data: null }));
   } else {
     try {
-      const cachedValues = await redis.mget(...cacheKeys);
-    componentResults = componentNames.map((componentName, index) => {
+      const cachedValues = await redis.mgetBuffer(...cacheKeys);
+    componentResults = await Promise.all(componentNames.map(async (componentName, index) => {
       const cached = cachedValues[index];
       if (cached) {
         try {
-          const parsed = JSON.parse(cached);
+          const parsed = await decodeCachePayload(cached);
           //console.log(`📦 [Cache] Component HIT: ${componentName} for ${metaId}`);
           return { componentName, data: parsed };
         } catch (parseError) {
@@ -1952,7 +1956,7 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
         //console.log(`📦 [Cache] Component MISS: ${componentName} for ${metaId}`);
         return { componentName, data: null };
       }
-    });
+    }));
     } catch (error) {
       cacheLogger.warn(`Error fetching components with MGET:`, error);
       componentResults = componentNames.map(componentName => ({ componentName, data: null }));
@@ -2223,10 +2227,11 @@ async function cacheComponentsPipeline(components, ttl, options = {}) {
     const versionedKey = `v${ADDON_VERSION}:${cacheKey}`;
 
     try {
+      const payload = await encodeCachePayload(componentData);
       if (overwrite) {
-        pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl);
+        pipeline.set(versionedKey, payload, 'EX', ttl);
       } else {
-        pipeline.set(versionedKey, JSON.stringify(componentData), 'EX', ttl, 'NX');
+        pipeline.set(versionedKey, payload, 'EX', ttl, 'NX');
       }
       queuedCommands.push(versionedKey);
     } catch (error) {

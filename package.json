@@ -83,6 +83,7 @@
     "lru-cache": "^11.3.3",
     "lucide-react": "^0.462.0",
     "lz-string": "^1.5.0",
+    "lz4-napi": "^2.9.0",
     "name-to-imdb": "^3.0.5",
     "pg": "^8.20.0",
     "react": "19.2.5",
