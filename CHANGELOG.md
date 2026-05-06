@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.2.0](https://github.com/cedya77/aiometadata/compare/v2.1.2...v2.2.0) (2026-05-06)
+
+
+### Features
+
+* add cache compression ([1c27005](https://github.com/cedya77/aiometadata/commit/1c270057a12d1351e65d26d2969b9341acac953b))
+
+
+### Bug Fixes
+
+* bypass outer cache wrapper for custom/stremthru catalogs ([17e7df9](https://github.com/cedya77/aiometadata/commit/17e7df9b0f70f87f33a2840aa0dd3ccf772538d5))
+* update this endpoint to handle he new architecture ([4425bb5](https://github.com/cedya77/aiometadata/commit/4425bb51f4c3f20215a651f11a558393f4f4b72f))
+
 ## [2.1.2](https://github.com/cedya77/aiometadata/compare/v2.1.1...v2.1.2) (2026-05-05)
 
 
