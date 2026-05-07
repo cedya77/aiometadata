@@ -1,34 +1,28 @@
-const consola = require('consola');
-const idMapper = require('./id-mapper');
-const { resolveTmdbEpisodeFromKitsu } = require('./id-mapper');
-const { resolveTvdbEpisodeFromAnidbEpisode, resolveAnidbEpisodeFromTvdbEpisode } = require('./anime-list-mapper');
-const anilistTracker = require('./anilistTracker');
-const simklUtils = require('../utils/simklUtils');
+const consola: any = require('consola');
+const idMapper: any = require('./id-mapper');
+const { resolveTmdbEpisodeFromKitsu }: any = require('./id-mapper');
+const { resolveTvdbEpisodeFromAnidbEpisode, resolveAnidbEpisodeFromTvdbEpisode }: any = require('./anime-list-mapper');
+const anilistTracker: any = require('./anilistTracker');
+const simklUtils: any = require('../utils/simklUtils');
 
+const logger: any = consola.withTag('SubtitleHandler');
 
-const logger = consola.withTag('SubtitleHandler');
+interface ParsedMediaId {
+  type: 'movie' | 'series';
+  provider: string;
+  id: string;
+  season?: number;
+  episode?: number;
+}
 
-/**
- * Parse Stremio media IDs into structured identifiers supported by MDBList.
- *
- * Supported ID formats:
- *   Movies:  imdb -> tt1234567
- *            tmdb -> tmdb:123456   or tmdb-localized (still matches tmdb:123456)
- *            trakt -> trakt:123456
- *            kitsu -> kitsu:123456
- *   Series:  imdb -> tt1234567:season:episode
- *            tmdb -> tmdb:123456:season:episode
- *            trakt -> trakt:123456:season:episode
- *            tvdb -> tvdb:123456:season:episode
- *
- * @param {string} id
- * @returns {Object|null} Structured identifier, or null if invalid/unsupported.
- *   Example return for movie:
- *     { type: 'movie', provider: 'tmdb', id: '12345' }
- *   Series:
- *     { type: 'series', provider: 'tvdb', id: '305089', season: 2, episode: 21 }
- */
-function parseMediaId(id) {
+interface ResolvedSeriesIds {
+  ids: Record<string, any>;
+  fallbackData?: any;
+  season: number;
+  episode: number;
+}
+
+function parseMediaId(id: any): ParsedMediaId | null {
   if (!id || typeof id !== 'string') {
     logger.debug(`[Watch Tracking] Invalid media ID format - id is ${id === null ? 'null' : id === undefined ? 'undefined' : 'not a string'}, type: ${typeof id}`);
     return null;
@@ -40,7 +34,7 @@ function parseMediaId(id) {
     return null;
   }
 
-  const parts = cleanId.split(':').map(part => part.trim()).filter(Boolean);
+  const parts = cleanId.split(':').map((part: string) => part.trim()).filter(Boolean);
 
   if (parts.length === 0) {
     logger.debug('[Watch Tracking] Invalid media ID format - no parts after splitting');
@@ -141,45 +135,28 @@ function parseMediaId(id) {
   return null;
 }
 
-/**
- * Check if watch tracking should be enabled for this request
- * Security: API keys are never logged or exposed
- * @param {Object} config - User configuration
- * @returns {boolean} - True if tracking should proceed
- */
-function shouldTrackMdblistWatch(config) {
-  // Check if MDBList API key exists (never log the actual key value)
+function shouldTrackMdblistWatch(config: any): boolean {
   if (!config?.apiKeys?.mdblist) {
     logger.debug('[Watch Tracking] Skipped - No MDBList API key configured');
     return false;
   }
 
-  // Check if watch tracking is explicitly disabled
   if (config.mdblistWatchTracking === false) {
     logger.debug('[Watch Tracking] Skipped - Feature disabled in user config');
     return false;
   }
 
-  // Default to boolean true when API key is present
   const enabled = config.mdblistWatchTracking !== false;
   logger.debug(`[Watch Tracking] Enabled - API key present, flag=${enabled}`);
   return enabled;
 }
 
-/**
- * Check if AniList watch tracking should be enabled for this request
- * @param {Object} config - User configuration
- * @returns {boolean} - True if AniList tracking should proceed
- */
-function shouldTrackAniList(config) {
-  // Check if anilistTokenId exists in config (user has connected their account)
-  // Token ID is stored in apiKeys.anilistTokenId by the frontend
+function shouldTrackAniList(config: any): boolean {
   if (!config?.apiKeys?.anilistTokenId) {
     logger.debug('[Watch Tracking] AniList skipped - No AniList account connected');
     return false;
   }
 
-  // Check if anilistWatchTracking is enabled
   if (!config.anilistWatchTracking) {
     logger.debug('[Watch Tracking] AniList skipped - Feature disabled in user config');
     return false;
@@ -189,19 +166,12 @@ function shouldTrackAniList(config) {
   return true;
 }
 
-/**
- * Check if Simkl watch tracking should be enabled for this request
- * @param {Object} config - User configuration
- * @returns {boolean} True if Simkl tracking should proceed
- */
-function shouldTrackSimkl(config) {
-  // Check if simklTokenId exists in config (user has connected their account)
+function shouldTrackSimkl(config: any): boolean {
   if (!config?.apiKeys?.simklTokenId) {
     logger.debug('[Watch Tracking] Simkl skipped - No Simkl account connected');
     return false;
   }
 
-  // Check if simklWatchTracking is enabled
   if (!config.simklWatchTracking) {
     logger.debug('[Watch Tracking] Simkl skipped - Feature disabled in user config');
     return false;
@@ -211,7 +181,7 @@ function shouldTrackSimkl(config) {
   return true;
 }
 
-function shouldTrackPublicMetaDB(config) {
+function shouldTrackPublicMetaDB(config: any): boolean {
   if (!config?.apiKeys?.publicmetadb) {
     return false;
   }
@@ -221,19 +191,12 @@ function shouldTrackPublicMetaDB(config) {
   return true;
 }
 
-/**
- * Check if Trakt watch tracking should be enabled for this request
- * @param {Object} config - User configuration
- * @returns {boolean} True if Trakt tracking should proceed
- */
-function shouldTrackTrakt(config) {
-  // Check if traktTokenId exists in config (user has connected their account)
+function shouldTrackTrakt(config: any): boolean {
   if (!config?.apiKeys?.traktTokenId) {
     logger.debug('[Watch Tracking] Trakt skipped - No Trakt account connected');
     return false;
   }
 
-  // Check if traktWatchTracking is enabled
   if (!config.traktWatchTracking) {
     logger.debug('[Watch Tracking] Trakt skipped - Feature disabled in user config');
     return false;
@@ -243,30 +206,18 @@ function shouldTrackTrakt(config) {
   return true;
 }
 
-/**
- * Main handler for subtitle requests - coordinates parsing and tracking
- * @param {string} type - Content type ('movie' or 'series')
- * @param {string} id - Media ID (e.g., 'tt1234567' or 'tt1234567:2:5')
- * @param {Object} config - User configuration including API keys
- * @param {string} userUUID - User identifier for logging and token retrieval
- * @returns {Object} - Empty subtitle response { subtitles: [] } (synchronous return)
- */
-function handleSubtitleRequest(type, id, config, userUUID) {
+function handleSubtitleRequest(type: string, id: string, config: any, userUUID: string): { subtitles: any[] } {
   try {
-    // Debug logging for all watch tracking attempts with media ID and user UUID
     logger.debug(`[Watch Tracking] Subtitle request received, type: ${type}, id: ${id}`);
 
-    // Parse the media ID first (needed for both MDBList and AniList tracking)
     const parsedId = parseMediaId(id);
     if (!parsedId) {
-      // Warning logging for invalid media ID formats
       logger.warn(`[Watch Tracking] Failed to parse media ID, id: ${id}, type: ${type}`);
       return { subtitles: [] };
     }
 
-    // MDBList tracking (fire-and-forget)
     if (shouldTrackMdblistWatch(config)) {
-      trackMdblistWatchStatus(parsedId, config).catch(error => {
+      trackMdblistWatchStatus(parsedId, config).catch((error: any) => {
         logger.error(`[Mdblist Watch Tracking] MDBList tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
@@ -274,9 +225,8 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       });
     }
 
-    // AniList tracking (fire-and-forget) - executes asynchronously without blocking response
     if (shouldTrackAniList(config)) {
-      anilistTracker.trackAnimeProgress(parsedId, config, userUUID).catch(error => {
+      anilistTracker.trackAnimeProgress(parsedId, config, userUUID).catch((error: any) => {
         logger.error(`[Watch Tracking] AniList tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
@@ -284,9 +234,8 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       });
     }
 
-    // Simkl tracking (fire-and-forget) - executes asynchronously without blocking response
     if (shouldTrackSimkl(config)) {
-      checkinSimkl(parsedId, config).catch(error => {
+      checkinSimkl(parsedId, config).catch((error: any) => {
         logger.error(`[Watch Tracking] Simkl tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
@@ -294,9 +243,8 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       });
     }
 
-    // Trakt tracking (fire-and-forget) - executes asynchronously without blocking response
     if (shouldTrackTrakt(config)) {
-      checkinTrakt(parsedId, config).catch(error => {
+      checkinTrakt(parsedId, config).catch((error: any) => {
         logger.error(`[Watch Tracking] Trakt tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
@@ -304,9 +252,8 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       });
     }
 
-    // PublicMetaDB tracking (fire-and-forget)
     if (shouldTrackPublicMetaDB(config)) {
-      checkinPublicMetaDB(parsedId, config).catch(error => {
+      checkinPublicMetaDB(parsedId, config).catch((error: any) => {
         logger.error(`[Watch Tracking] PublicMetaDB tracking failed for ${id}: ${error.message}`, {
           stack: error.stack,
           parsedId: parsedId
@@ -314,11 +261,9 @@ function handleSubtitleRequest(type, id, config, userUUID) {
       });
     }
 
-    // Return empty subtitles immediately (before tracking operations complete)
     return { subtitles: [] };
 
-  } catch (error) {
-    // Catch any unexpected errors to ensure we always return a valid response
+  } catch (error: any) {
     logger.error(`[Watch Tracking] Subtitle handler error, type: ${type}, id: ${id}, error: ${error.message}`, {
       stack: error.stack
     });
@@ -326,20 +271,13 @@ function handleSubtitleRequest(type, id, config, userUUID) {
   }
 }
 
-/**
- * Track watch status by calling MDBList API (async, fire-and-forget)
- * @param {string} type - Content type ('movie' or 'series')
- * @param {Object} parsedId - Parsed media information
- * @param {Object} config - User configuration
- * @param {string} userUUID - User identifier for logging
- */
-function buildIdSummary(ids) {
+function buildIdSummary(ids: Record<string, any>): string {
   return Object.entries(ids || {})
     .map(([key, value]) => `${key}:${value}`)
     .join(', ');
 }
 
-function normalizeIdsForMovie(parsedId) {
+function normalizeIdsForMovie(parsedId: ParsedMediaId): Record<string, any> | null {
   switch (parsedId.provider) {
     case 'imdb':
       return { imdb: parsedId.id };
@@ -373,25 +311,20 @@ function normalizeIdsForMovie(parsedId) {
   }
 }
 
-async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
+async function resolveSeriesIds(parsedId: ParsedMediaId, config: any = {}, isSimkl: boolean = false): Promise<ResolvedSeriesIds | null> {
   switch (parsedId.provider) {
     case 'imdb': {
-      // Check if this is an anime by looking up in anime ID mappings
       const animeMapping = idMapper.getMappingByImdbId(parsedId.id);
       if (animeMapping?.tvdb_id && !isSimkl) {
         try {
-          // IMDB → TVDB → AniDB
           const anidbInfo = await resolveAnidbEpisodeFromTvdbEpisode(
             animeMapping.tvdb_id, parsedId.season || 1, parsedId.episode
           );
           if (anidbInfo) {
-            // AniDB → AniList
             const anidbMapping = idMapper.getMappingByAnidbId(anidbInfo.anidbId);
             if (anidbMapping?.anilist_id) {
-              // AniList → Kitsu
               const anilistMapping = idMapper.getMappingByAnilistId(anidbMapping.anilist_id);
               if (anilistMapping?.kitsu_id) {
-                // Kitsu → TMDB
                 const resolved = await resolveTmdbEpisodeFromKitsu(
                   anilistMapping.kitsu_id, anidbInfo.anidbEpisode, config
                 );
@@ -408,22 +341,21 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
               }
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           logger.debug(`[Watch Tracking] Anime IMDB resolution failed for ${parsedId.id}: ${error.message}`);
         }
       }
-      // Fallback: standard IMDB passthrough (non-anime or resolution failed)
       return {
         ids: { imdb: parsedId.id },
-        season: parsedId.season,
-        episode: parsedId.episode
+        season: parsedId.season!,
+        episode: parsedId.episode!
       };
     }
     case 'tvdb':
       return {
         ids: { tvdb: parseInt(parsedId.id, 10) },
-        season: parsedId.season,
-        episode: parsedId.episode
+        season: parsedId.season!,
+        episode: parsedId.episode!
       };
     case 'tmdb': {
       const mapping = idMapper.getMappingByTmdbId(parsedId.id, 'series');
@@ -431,7 +363,7 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
         logger.debug(`[Watch Tracking] No mapping found for TMDB series ${parsedId.id}`);
         return null;
       }
-      const ids = {};
+      const ids: Record<string, any> = {};
       if (mapping.imdb_id) ids.imdb = mapping.imdb_id;
       if (mapping.tvdb_id) ids.tvdb = parseInt(mapping.tvdb_id, 10);
 
@@ -440,18 +372,18 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
         return null;
       }
 
-      return { ids, season: parsedId.season, episode: parsedId.episode };
+      return { ids, season: parsedId.season!, episode: parsedId.episode! };
     }
     case 'kitsu': {
-      let resolved;
-      let fallback;
-      if(!isSimkl){
+      let resolved: any;
+      let fallback: any;
+      if (!isSimkl) {
         resolved = await resolveTmdbEpisodeFromKitsu(
           parseInt(parsedId.id, 10),
-          parseInt(parsedId.episode, 10),
+          parseInt(String(parsedId.episode), 10),
           config
         );
-  
+
         if (!resolved) {
           logger.debug(`[Watch Tracking] Could not resolve Kitsu → TMDB for Kitsu series ${parsedId.id}`);
           return null;
@@ -460,31 +392,30 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
         const mappings = idMapper.getMappingByKitsuId(parseInt(parsedId.id, 10));
         const malId = mappings?.mal_id || null;
         const anidbId = mappings.anidb_id;
-        let tvdbInfo;
-        if(anidbId){
-          tvdbInfo = resolveTvdbEpisodeFromAnidbEpisode(anidbId, 1, parseInt(parsedId.episode, 10))
+        let tvdbInfo: any;
+        if (anidbId) {
+          tvdbInfo = resolveTvdbEpisodeFromAnidbEpisode(anidbId, 1, parseInt(String(parsedId.episode), 10));
         }
-        if(tvdbInfo){
-          logger.debug(`[tvdb anilist] tvdb anilist mapping: ${JSON.stringify(tvdbInfo)} `)
+        if (tvdbInfo) {
+          logger.debug(`[tvdb anilist] tvdb anilist mapping: ${JSON.stringify(tvdbInfo)} `);
           resolved = {
             tvdbId: tvdbInfo.tvdbId,
             seasonNumber: tvdbInfo.tvdbSeason,
             episodeNumber: tvdbInfo.tvdbEpisode
-          }
+          };
         }
-        if(malId){
+        if (malId) {
           fallback = {
             malId: malId,
             seasonNumber: 1,
-            episodeNumber: parseInt(parsedId.episode, 10)
-          }
+            episodeNumber: parseInt(String(parsedId.episode), 10)
+          };
         }
       }
-      
 
       return {
         ids: { tmdb: resolved.tmdbId, mal: resolved.malId, tvdb: resolved.tvdbId },
-        fallbackData: fallback?.malId ? {ids:  {mal: fallback.malId}, season: 1, episode: fallback.episodeNumber} : null,
+        fallbackData: fallback?.malId ? { ids: { mal: fallback.malId }, season: 1, episode: fallback.episodeNumber } : null,
         season: resolved.seasonNumber,
         episode: resolved.episodeNumber
       };
@@ -495,9 +426,8 @@ async function resolveSeriesIds(parsedId, config = {}, isSimkl = false) {
   }
 }
 
-async function trackMdblistWatchStatus(parsedId, config) {
+async function trackMdblistWatchStatus(parsedId: ParsedMediaId, config: any): Promise<void> {
   try {
-    // Import MDBList functions dynamically to avoid circular dependencies
     const { checkinMovie, checkinEpisode } = require('../utils/mdbList');
     const apiKey = config.apiKeys.mdblist;
 
@@ -533,16 +463,15 @@ async function trackMdblistWatchStatus(parsedId, config) {
     }
 
     logger.debug(`[Mdblist Watch Tracking] Unsupported content type for tracking: ${parsedId.type}`);
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`[Mdblist Watch Tracking] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }
 }
 
-async function checkinSimkl(parsedId, config) {
+async function checkinSimkl(parsedId: ParsedMediaId, config: any): Promise<void> {
   try {
-    // Import MDBList functions dynamically to avoid circular dependencies
     const { checkinSeries, checkinMovie, getSimklToken } = require('../utils/simklUtils');
     const tokenId = config.apiKeys?.simklTokenId;
     if (!tokenId) {
@@ -584,14 +513,14 @@ async function checkinSimkl(parsedId, config) {
     }
 
     logger.debug(`[Simkl Checkin] Unsupported content type for tracking: ${parsedId.type}`);
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`[Simkl Checkin] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }
 }
 
-async function checkinTrakt(parsedId, config) {
+async function checkinTrakt(parsedId: ParsedMediaId, config: any): Promise<void> {
   try {
     const { checkinSeries, checkinMovie, getTraktToken } = require('../utils/traktUtils');
     const tokenId = config.apiKeys?.traktTokenId;
@@ -629,14 +558,14 @@ async function checkinTrakt(parsedId, config) {
     }
 
     logger.debug(`[Trakt Checkin] Unsupported content type for tracking: ${parsedId.type}`);
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`[Trakt Checkin] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }
 }
 
-async function checkinPublicMetaDB(parsedId, config) {
+async function checkinPublicMetaDB(parsedId: ParsedMediaId, config: any): Promise<void> {
   try {
     const { checkinMovie, checkinEpisode } = require('../utils/publicmetadbUtils');
     const apiKey = config.apiKeys?.publicmetadb;
@@ -669,13 +598,19 @@ async function checkinPublicMetaDB(parsedId, config) {
     }
 
     logger.debug(`[PublicMetaDB Watch Tracking] Unsupported content type: ${parsedId.type}`);
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`[PublicMetaDB Watch Tracking] Unexpected tracking error: ${error.message}`, {
       stack: error.stack
     });
   }
 }
 
+export {
+  handleSubtitleRequest,
+  parseMediaId,
+  shouldTrackMdblistWatch,
+  shouldTrackAniList
+};
 module.exports = {
   handleSubtitleRequest,
   parseMediaId,

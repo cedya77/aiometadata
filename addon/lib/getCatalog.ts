@@ -411,8 +411,8 @@ async function getTvdbCatalog(type: string, catalogId: string, genreName: string
     
     let stremioId = `tvdb:${tvdbId}`;
     
-    const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
-      return await getMeta(type, language, stremioId, config, config.userUUID, includeVideos);
+    const result = await cacheWrapMetaSmart(config.userUUID || '', stremioId, async () => {
+      return await getMeta(type, language, stremioId, config, config.userUUID || '', includeVideos);
     }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, type as any, includeVideos);
     
     if (result && result.meta) {

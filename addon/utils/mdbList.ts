@@ -721,7 +721,7 @@ async function parseMDBListItems(items: any[], type: string, language: string, c
         let stremioId = `tmdb:${item.id}`;
         const mdblistType = item.mediatype === 'movie' ? 'movie' : 'series';
 
-        const result = await cacheWrapMetaSmart(config.userUUID, stremioId, async () => {
+        const result = await cacheWrapMetaSmart(config.userUUID || '', stremioId, async () => {
           return await getMeta(mdblistType, language, stremioId, config, config.userUUID, includeVideos);
         }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, mdblistType as any, includeVideos);
 
@@ -1384,7 +1384,7 @@ async function parseMDBListUpNextItems(
 
         const getMetaStart = Date.now();
         const result = await cacheWrapMetaSmart(
-          config.userUUID,
+          config.userUUID || '',
           cacheId,
           async () => {
             const metaResult = await getMeta('series', language, stremioId, config, config.userUUID, true);

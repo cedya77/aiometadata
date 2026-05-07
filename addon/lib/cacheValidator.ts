@@ -1,90 +1,99 @@
-// FILE: lib/cacheValidator.js
+const redis: any = require('./redisClient');
+const { decodeCachePayload }: any = require('./cacheCodec');
 
-const redis = require('./redisClient');
-const { decodeCachePayload } = require('./cacheCodec');
+interface ValidationResult {
+  isValid: boolean;
+  issues: string[];
+  itemCount?: number;
+  metaId?: string;
+  contentType?: string;
+}
 
-/**
- * Cache validation system to detect and invalidate bad cache entries
- * Helps ensure cache quality and automatic recovery from bugs
- */
+interface CacheCheckResult {
+  shouldInvalidate: boolean;
+  reason: string | null;
+  issues?: string[];
+}
+
+interface InvalidationResult {
+  invalidated: number;
+  checked: number;
+  error?: string;
+}
 
 class CacheValidator {
+  badPatterns: {
+    episodeIds: RegExp[];
+    metaFields: RegExp[];
+    catalogFields: RegExp[];
+    genreFields: RegExp[];
+  };
+  validationRules: Record<string, any>;
+
   constructor() {
     this.badPatterns = {
-      // Episode ID patterns that indicate bad data
       episodeIds: [
-        /:\d+:undefined$/,           // e.g., "tt21975436:1:undefined"
-        /:undefined:\d+$/,           // e.g., "tt21975436:undefined:1"
-        /:undefined:undefined$/,     // e.g., "tt21975436:undefined:undefined"
-        /^undefined:/,               // e.g., "undefined:123:1"
-        /^[^:]+:[^:]+:undefined$/,   // e.g., "mal:123:undefined" (but not "tmdb:123:1:undefined")
+        /:\d+:undefined$/,
+        /:undefined:\d+$/,
+        /:undefined:undefined$/,
+        /^undefined:/,
+        /^[^:]+:[^:]+:undefined$/,
       ],
-      // Meta patterns that indicate bad data
       metaFields: [
-        /"id":\s*"undefined"/,      // undefined ID fields
-        /"title":\s*"undefined"/,   // undefined title fields
-        /"episode":\s*undefined/,   // undefined episode numbers
-        /"season":\s*undefined/,    // undefined season numbers
+        /"id":\s*"undefined"/,
+        /"title":\s*"undefined"/,
+        /"episode":\s*undefined/,
+        /"season":\s*undefined/,
       ],
-      // Catalog patterns that indicate bad data
       catalogFields: [
-        /"id":\s*"undefined"/,      // undefined catalog IDs
-        /"name":\s*"undefined"/,    // undefined names
-        /"type":\s*"undefined"/,    // undefined types
+        /"id":\s*"undefined"/,
+        /"name":\s*"undefined"/,
+        /"type":\s*"undefined"/,
       ],
-      // Genre patterns that indicate bad data
       genreFields: [
-        /"id":\s*"undefined"/,      // undefined genre IDs
-        /"name":\s*"undefined"/,    // undefined genre names
-        /"id":\s*null/,             // null genre IDs
-        /"name":\s*null/,           // null genre names
+        /"id":\s*"undefined"/,
+        /"name":\s*"undefined"/,
+        /"id":\s*null/,
+        /"name":\s*null/,
       ]
     };
-    
+
     this.validationRules = {
-      // Series meta validation rules
       series: {
         required: ['id', 'name', 'type'],
-        episodeValidation: (episodes) => {
+        episodeValidation: (episodes: any[]) => {
           if (!Array.isArray(episodes)) return false;
-          return episodes.every(ep => 
-            ep.id && 
-            !ep.id.includes('undefined') && 
-            ep.title && 
+          return episodes.every(ep =>
+            ep.id &&
+            !ep.id.includes('undefined') &&
+            ep.title &&
             ep.title !== 'undefined' &&
             typeof ep.episode === 'number' &&
             typeof ep.season === 'number'
           );
         }
       },
-      // Movie meta validation rules
       movie: {
         required: ['id', 'name', 'type'],
-        fieldValidation: (meta) => {
-          return meta.id && 
-                 !meta.id.includes('undefined') && 
-                 meta.name && 
+        fieldValidation: (meta: any) => {
+          return meta.id &&
+                 !meta.id.includes('undefined') &&
+                 meta.name &&
                  meta.name !== 'undefined';
         }
       }
     };
   }
 
+  validateEpisodes(episodes: any[]): string[] {
+    const issues: string[] = [];
 
-
-  /**
-   * Validate episodes array for bad data
-   */
-  validateEpisodes(episodes) {
-    const issues = [];
-    
     if (!Array.isArray(episodes)) {
       issues.push('Episodes is not an array');
       return issues;
     }
 
-    episodes.forEach((ep, index) => {
-      // Check episode ID
+    episodes.forEach((ep: any, index: number) => {
       if (ep.id && typeof ep.id === 'string') {
         for (const pattern of this.badPatterns.episodeIds) {
           if (pattern.test(ep.id)) {
@@ -93,17 +102,14 @@ class CacheValidator {
         }
       }
 
-      // Check episode title
       if (ep.title === 'undefined' || ep.title === undefined) {
         issues.push(`Episode ${index + 1} has undefined title`);
       }
 
-      // Check episode number
       if (ep.episode === undefined || ep.episode === 'undefined') {
         issues.push(`Episode ${index + 1} has undefined episode number`);
       }
 
-      // Check season number
       if (ep.season === undefined || ep.season === 'undefined') {
         issues.push(`Episode ${index + 1} has undefined season number`);
       }
@@ -112,12 +118,9 @@ class CacheValidator {
     return issues;
   }
 
-  /**
-   * Validate a catalog response for bad data patterns
-   */
-  validateCatalogResponse(catalog) {
-    const issues = [];
-    
+  validateCatalogResponse(catalog: any): ValidationResult {
+    const issues: string[] = [];
+
     if (!catalog || !catalog.metas) {
       issues.push('Catalog response is missing or has no metas');
       return { isValid: false, issues };
@@ -128,7 +131,7 @@ class CacheValidator {
       return { isValid: false, issues };
     }
 
-    catalog.metas.forEach((meta, index) => {
+    catalog.metas.forEach((meta: any, index: number) => {
       if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
         issues.push(`Catalog item ${index + 1} has bad ID: ${meta.id}`);
       }
@@ -146,12 +149,9 @@ class CacheValidator {
     };
   }
 
-  /**
-   * Validate search results before caching
-   */
-  validateSearchBeforeCache(data) {
-    const issues = [];
-    
+  validateSearchBeforeCache(data: any): ValidationResult {
+    const issues: string[] = [];
+
     if (!data || !data.metas) {
       issues.push('Search response is missing or has no metas');
       return { isValid: false, issues };
@@ -162,35 +162,29 @@ class CacheValidator {
       return { isValid: false, issues };
     }
 
-    // Check for empty search results (this is valid, but log it)
     if (data.metas.length === 0) {
       console.log('[Search Validation] Empty search results (this is valid)');
     }
 
-    data.metas.forEach((meta, index) => {
-      // Check for bad IDs
+    data.metas.forEach((meta: any, index: number) => {
       if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
         issues.push(`Search item ${index + 1} has bad ID: ${meta.id}`);
       }
 
-      // Check for undefined names
       if (meta.name === 'undefined' || meta.name === undefined) {
         issues.push(`Search item ${index + 1} has undefined name`);
       }
 
-      // Check for malformed type
       if (meta.type === 'undefined' || meta.type === undefined) {
         issues.push(`Search item ${index + 1} has undefined type`);
       }
 
-      // Check for malformed poster URLs
       if (meta.poster && typeof meta.poster === 'string') {
         if (meta.poster.includes('undefined') || meta.poster === 'null') {
           issues.push(`Search item ${index + 1} has malformed poster URL`);
         }
       }
 
-      // Check for malformed background URLs
       if (meta.background && typeof meta.background === 'string') {
         if (meta.background.includes('undefined') || meta.background === 'null') {
           issues.push(`Search item ${index + 1} has malformed background URL`);
@@ -205,44 +199,35 @@ class CacheValidator {
     };
   }
 
-  /**
-   * Validate genre data before caching
-   */
-  validateGenreBeforeCache(data) {
-    const issues = [];
-    
-    // Check if data exists
+  validateGenreBeforeCache(data: any): ValidationResult {
+    const issues: string[] = [];
+
     if (!data) {
       issues.push('Genre data is null or undefined');
       return { isValid: false, issues };
     }
 
-    // Check if it's an error response
     if (data.error) {
       issues.push(`Genre data contains error: ${data.message || 'Unknown error'}`);
       return { isValid: false, issues };
     }
 
-    // Check if it's an array
     if (!Array.isArray(data)) {
       issues.push('Genre data is not an array');
       return { isValid: false, issues };
     }
 
-    // Check for empty array (this might be valid for some cases)
     if (data.length === 0) {
       console.log('[Cache Validator] Genre array is empty - this might be valid');
       return { isValid: true, issues: [] };
     }
 
-    // Validate each genre object
-    data.forEach((genre, index) => {
+    data.forEach((genre: any, index: number) => {
       if (!genre || typeof genre !== 'object') {
         issues.push(`Genre ${index} is not a valid object`);
         return;
       }
 
-      // Check for required fields
       if (!genre.id) {
         issues.push(`Genre ${index} missing required field: id`);
       }
@@ -251,7 +236,6 @@ class CacheValidator {
         issues.push(`Genre ${index} missing required field: name`);
       }
 
-      // Check for malformed fields
       if (genre.id && typeof genre.id === 'string' && genre.id.includes('undefined')) {
         issues.push(`Genre ${index} ID contains undefined: ${genre.id}`);
       }
@@ -260,7 +244,6 @@ class CacheValidator {
         issues.push(`Genre ${index} name is undefined string`);
       }
 
-      // Check for null values
       if (genre.id === null) {
         issues.push(`Genre ${index} ID is null`);
       }
@@ -269,7 +252,6 @@ class CacheValidator {
         issues.push(`Genre ${index} name is null`);
       }
 
-      // Check for invalid types
       if (genre.id && typeof genre.id !== 'number' && typeof genre.id !== 'string') {
         issues.push(`Genre ${index} ID has invalid type: ${typeof genre.id}`);
       }
@@ -282,10 +264,7 @@ class CacheValidator {
     return { isValid: issues.length === 0, issues };
   }
 
-  /**
-   * Check if a cache key contains bad data and should be invalidated
-   */
-  async checkCacheKeyForBadData(cacheKey, contentType = 'meta') {
+  async checkCacheKeyForBadData(cacheKey: string, contentType: string = 'meta'): Promise<CacheCheckResult> {
     if (!redis) return { shouldInvalidate: false, reason: 'Redis not available' };
 
     try {
@@ -295,7 +274,7 @@ class CacheValidator {
       if (!cachedData) return { shouldInvalidate: false, reason: 'No cached data' };
 
       const parsed = await decodeCachePayload(cachedData);
-      
+
       if (contentType === 'meta') {
         const validation = this.validateMetaBeforeCache(parsed);
         return {
@@ -314,16 +293,13 @@ class CacheValidator {
 
       return { shouldInvalidate: false, reason: 'Unknown content type' };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Cache Validator] Error checking cache key:', error);
       return { shouldInvalidate: false, reason: 'Error parsing cached data' };
     }
   }
 
-  /**
-   * Invalidate cache keys that contain bad data
-   */
-  async invalidateBadCacheKeys(pattern = '*', contentType = 'meta') {
+  async invalidateBadCacheKeys(pattern: string = '*', contentType: string = 'meta'): Promise<InvalidationResult> {
     if (!redis) {
       console.warn('[Cache Validator] Redis not available for cache invalidation');
       return { invalidated: 0, checked: 0 };
@@ -334,7 +310,7 @@ class CacheValidator {
       let checked = 0;
       console.log(`[Cache Validator] Scanning keys matching ${pattern} for bad data...`);
       const { scanKeys } = require('./redisUtils');
-      await scanKeys(pattern, async (key) => {
+      await scanKeys(pattern, async (key: string) => {
         checked++;
         const result = await this.checkCacheKeyForBadData(key, contentType);
         if (result.shouldInvalidate) {
@@ -347,16 +323,13 @@ class CacheValidator {
       console.log(`[Cache Validator] Cache validation complete. Checked: ${checked}, Invalidated: ${invalidated}`);
       return { invalidated, checked };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Cache Validator] Error during cache invalidation:', error);
       return { invalidated: 0, checked: 0, error: error.message };
     }
   }
 
-  /**
-   * Scan and clean all bad cache entries
-   */
-  async cleanAllBadCache() {
+  async cleanAllBadCache(): Promise<{ totalInvalidated: number; totalChecked: number; details: Record<string, InvalidationResult> }> {
     const results = {
       meta: await this.invalidateBadCacheKeys('meta*', 'meta'),
       catalog: await this.invalidateBadCacheKeys('catalog*', 'catalog'),
@@ -375,10 +348,7 @@ class CacheValidator {
     };
   }
 
-  /**
-   * Validate data before caching to prevent bad data from being cached
-   */
-  validateBeforeCache(data, contentType = 'meta') {
+  validateBeforeCache(data: any, contentType: string = 'meta'): ValidationResult {
     if (contentType === 'catalog') {
       return this.validateCatalogResponse(data);
     } else if (contentType === 'meta') {
@@ -388,29 +358,23 @@ class CacheValidator {
     } else if (contentType === 'genre') {
       return this.validateGenreBeforeCache(data);
     }
-    
+
     return { isValid: true, issues: [] };
   }
 
-  /**
-   * Enhanced meta validation before caching
-   */
-  validateMetaBeforeCache(data) {
-    const issues = [];
-    
-    // Check if data exists
+  validateMetaBeforeCache(data: any): ValidationResult {
+    const issues: string[] = [];
+
     if (!data) {
       issues.push('Meta data is null or undefined');
       return { isValid: false, issues };
     }
 
-    // Check if it's an error response
     if (data.error) {
       issues.push(`Meta data contains error: ${data.message || 'Unknown error'}`);
       return { isValid: false, issues };
     }
 
-    // Check if meta object exists
     if (!data.meta) {
       issues.push('Meta response missing meta object');
       return { isValid: false, issues };
@@ -418,13 +382,11 @@ class CacheValidator {
 
     const meta = data.meta;
 
-    // Check for null meta
     if (meta === null) {
       issues.push('Meta object is null');
       return { isValid: false, issues };
     }
 
-    // Check for required fields
     if (!meta.id) {
       issues.push('Meta missing required field: id');
     }
@@ -437,7 +399,6 @@ class CacheValidator {
       issues.push('Meta missing required field: type');
     }
 
-    // Check for malformed fields
     if (meta.id && typeof meta.id === 'string' && meta.id.includes('undefined')) {
       issues.push(`Meta ID contains undefined: ${meta.id}`);
     }
@@ -450,7 +411,6 @@ class CacheValidator {
       issues.push('Meta type is undefined string');
     }
 
-    // Check for malformed episodes in series
     if (meta.type === 'series' && meta.videos) {
       if (!Array.isArray(meta.videos)) {
         issues.push('Series videos is not an array');
@@ -460,18 +420,14 @@ class CacheValidator {
       }
     }
 
-    // Check for malformed links
     if (meta.links && !Array.isArray(meta.links)) {
       issues.push('Meta links is not an array');
     }
 
-    // Check for malformed genres
     if (meta.genres && !Array.isArray(meta.genres)) {
       issues.push('Meta genres is not an array');
     }
 
-
-    // Check for malformed poster/background URLs
     if (meta.poster && typeof meta.poster === 'string') {
       if (meta.poster.includes('undefined') || meta.poster === 'null') {
         issues.push('Meta poster URL contains undefined/null');
@@ -493,4 +449,6 @@ class CacheValidator {
   }
 }
 
-module.exports = new CacheValidator();
+const instance = new CacheValidator();
+export { instance as default };
+module.exports = instance;

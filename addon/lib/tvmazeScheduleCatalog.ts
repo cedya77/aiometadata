@@ -22,7 +22,7 @@ interface TvmazeScheduleCatalogOptions {
   pageSize?: number;
   language?: string;
   config?: UserConfig;
-  userUUID?: string;
+  userUUID: string;
   includeVideos?: boolean;
   enableErrorCaching?: boolean;
   maxRetries?: number;

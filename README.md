@@ -114,7 +114,7 @@ Add a `poster-cache` service alongside your aiometadata container:
       - ./poster-cache-stats.sh:/stats.sh:ro
       - ./poster-cache-purge-handler.sh:/purge-handler.sh:ro
       - ${DOCKER_DATA_DIR}/poster-cache:/var/cache/nginx
-    entrypoint: ["/bin/sh", "-c", "nc -lk -p 9888 -e /purge-handler.sh & /stats.sh & exec nginx -g 'daemon off;'"]
+    entrypoint: ["/bin/sh", "-c", "chown -R nginx:nginx /var/cache/nginx && nc -lk -p 9888 -e /purge-handler.sh & /stats.sh & exec nginx -g 'daemon off;'"]
     expose:
       - "8888"
     labels:
@@ -133,6 +133,7 @@ Add a `poster-cache` service alongside your aiometadata container:
 Save the following as `poster-cache-nginx.conf` next to your `docker-compose.yml`:
 
 ```nginx
+user nginx;
 worker_processes auto;
 
 events {

@@ -8,7 +8,7 @@ import { getGenresBySelection } from "../static/genres";
 import buildInfo from "./buildInfo";
 import * as catalogsTranslations from "../static/translations.json";
 import * as CATALOG_TYPES from "../static/catalog-types.json";
-import jikan from './mal';
+const jikan: any = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 import { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } from './getCache';
 import consola from 'consola';
