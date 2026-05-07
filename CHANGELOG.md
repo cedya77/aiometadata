@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.2.2](https://github.com/cedya77/aiometadata/compare/v2.2.1...v2.2.2) (2026-05-07)
+
+
+### Bug Fixes
+
+* use default import for JSON modules to preserve `default` key ([eb9b74d](https://github.com/cedya77/aiometadata/commit/eb9b74d28ab3fef1923712006699bba0345e3b58))
+
 ## [2.2.1](https://github.com/cedya77/aiometadata/compare/v2.2.0...v2.2.1) (2026-05-07)
 
 
