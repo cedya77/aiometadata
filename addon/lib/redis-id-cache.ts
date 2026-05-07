@@ -1,53 +1,60 @@
-const redis = require('./redisClient');
-const consola = require('consola');
+const redis: any = require('./redisClient');
+const consola: any = require('consola');
 
+const logger: any = consola.withTag('Redis-ID-Cache');
+const { deleteKeysByPattern }: any = require('./redisUtils');
 
-const logger = consola.withTag('Redis-ID-Cache');
-const { deleteKeysByPattern } = require('./redisUtils');
+interface IdMapping {
+  tmdb_id: string | null;
+  tvdb_id: string | null;
+  imdb_id: string | null;
+  tvmaze_id: string | null;
+  updated_at: string;
+}
+
+interface KeyInfo {
+  canonicalKey: string;
+  pointerKeys: string[];
+}
+
+interface CacheStats {
+  total_mappings: number;
+  total_pointers: number;
+  total_keys: number;
+  ttl_seconds: number;
+}
 
 class RedisIdCache {
+  redis: any;
+  dataPrefix: string;
+  ptrPrefix: string;
+  ttl: number;
+
   constructor() {
     this.redis = redis;
-    this.dataPrefix = 'id_map:data:'; // Stores the actual JSON mapping object.
-    this.ptrPrefix = 'id_map:ptr:';   // Stores a simple string that points to a data key.
-    this.ttl = 90 * 24 * 60 * 60;     // 90 days in seconds.
+    this.dataPrefix = 'id_map:data:';
+    this.ptrPrefix = 'id_map:ptr:';
+    this.ttl = 90 * 24 * 60 * 60;
   }
 
-  /**
-   * Generates the canonical key and all associated pointer keys.
-   * @private
-   */
-  _getKeys(contentType, tmdbId, tvdbId, imdbId, tvmazeId) {
+  _getKeys(contentType: string, tmdbId: string | null, tvdbId: string | null, imdbId: string | null, tvmazeId: string | null): KeyInfo | null {
     if (!tmdbId) {
       return null;
     }
 
     const canonicalKey = `${this.dataPrefix}${contentType}:${tmdbId}`;
-    const pointerKeys = [];
+    const pointerKeys: string[] = [];
 
-    // IMDb IDs are globally unique (e.g., 'tt' prefix), so no contentType is needed.
     if (imdbId) pointerKeys.push(`${this.ptrPrefix}imdb:${imdbId}`);
-    
-    // ** THE FIX IS HERE **
-    // TVDB IDs can collide between movies and series, so we MUST include the contentType.
     if (tvdbId) pointerKeys.push(`${this.ptrPrefix}tvdb:${contentType}:${tvdbId}`);
-
-    // TVmaze is currently series-only, so no collision is possible yet.
-    // However, for future-proofing, one could add contentType here as well. For now, we omit it.
     if (tvmazeId) pointerKeys.push(`${this.ptrPrefix}tvmaze:${tvmazeId}`);
-    
+
     return { canonicalKey, pointerKeys };
   }
 
-  /**
- * Retrieves a cached ID mapping using any of the provided IDs.
- * This version corrects a bug where data was confused with keys.
- */
-  async getCachedIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
+  async getCachedIdMapping(contentType: string, tmdbId: string | null = null, tvdbId: string | null = null, imdbId: string | null = null, tvmazeId: string | null = null): Promise<IdMapping | null> {
     if (!this.redis) return null;
 
-    // --- Step 1: Direct lookup (most efficient) ---
-    // If we have the TMDB ID, we can try to get the data directly.
     if (tmdbId) {
       const canonicalKey = `${this.dataPrefix}${contentType}:${tmdbId}`;
       try {
@@ -56,14 +63,12 @@ class RedisIdCache {
           logger.debug(`[Redis ID Cache] HIT (direct) for key ${canonicalKey}`);
           return JSON.parse(directData);
         }
-      } catch (error) {
+      } catch (error: any) {
         logger.error(`[Redis ID Cache] Error during direct get for ${canonicalKey}:`, error.message);
       }
     }
 
-    // --- Step 2: Pointer lookup ---
-    // If the direct lookup failed or wasn't possible, try finding a pointer.
-    const pointerKeys = [];
+    const pointerKeys: string[] = [];
     if (imdbId) pointerKeys.push(`${this.ptrPrefix}imdb:${imdbId}`);
     if (tvdbId) pointerKeys.push(`${this.ptrPrefix}tvdb:${contentType}:${tvdbId}`);
     if (tvmazeId) pointerKeys.push(`${this.ptrPrefix}tvmaze:${tvmazeId}`);
@@ -75,9 +80,8 @@ class RedisIdCache {
 
     try {
       const pointerResults = await this.redis.mget(...pointerKeys);
-      let canonicalKeyFromPointer = null;
+      let canonicalKeyFromPointer: string | null = null;
 
-      // Find the first valid pointer result, which will be the canonical key string.
       for (const result of pointerResults) {
         if (result && typeof result === 'string' && result.startsWith(this.dataPrefix)) {
           canonicalKeyFromPointer = result;
@@ -90,26 +94,21 @@ class RedisIdCache {
         return null;
       }
 
-      // Now, use the key we found from the pointer to get the actual data.
       const pointerData = await this.redis.get(canonicalKeyFromPointer);
       if (pointerData) {
         logger.debug(`[Redis ID Cache] HIT (via pointer) for key ${canonicalKeyFromPointer}`);
         return JSON.parse(pointerData);
       } else {
-        // This is a TRUE orphan pointer scenario.
         logger.warn(`[Redis ID Cache] Found pointer leading to a missing data key: ${canonicalKeyFromPointer}`);
         return null;
       }
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`[Redis ID Cache] Error during pointer lookup:`, error.message);
       return null;
     }
   }
 
-  /**
-   * Saves or updates an ID mapping to the cache.
-   */
-  async saveIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
+  async saveIdMapping(contentType: string, tmdbId: string | null = null, tvdbId: string | null = null, imdbId: string | null = null, tvmazeId: string | null = null): Promise<void> {
     if (!this.redis) return;
 
     if (!tmdbId) {
@@ -122,14 +121,14 @@ class RedisIdCache {
 
     const { canonicalKey, pointerKeys } = keyInfo;
 
-    const mapping = {
+    const mapping: IdMapping = {
       tmdb_id: tmdbId,
       tvdb_id: tvdbId,
       imdb_id: imdbId,
       tvmaze_id: tvmazeId,
       updated_at: new Date().toISOString()
     };
-    
+
     try {
       const transaction = this.redis.multi();
       transaction.setex(canonicalKey, this.ttl, JSON.stringify(mapping));
@@ -137,20 +136,15 @@ class RedisIdCache {
         transaction.setex(ptrKey, this.ttl, canonicalKey);
       }
       await transaction.exec();
-      
+
       logger.debug(`[Redis ID Cache] SAVED mapping with canonical key: ${canonicalKey}`);
-    } catch (error)
-      {
+    } catch (error: any) {
       logger.error(`[Redis ID Cache] Error saving mapping transaction:`, error.message);
     }
   }
 
-  /**
-   * Safely scans for keys matching a pattern without blocking the Redis server.
-   * @private
-   */
-  async _scanKeys(pattern) {
-    const foundKeys = [];
+  async _scanKeys(pattern: string): Promise<string[]> {
+    const foundKeys: string[] = [];
     let cursor = '0';
     do {
       const [newCursor, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', '1000');
@@ -160,10 +154,7 @@ class RedisIdCache {
     return foundKeys;
   }
 
-  /**
-   * Gets statistics about the ID mapping cache.
-   */
-  async getCacheStats() {
+  async getCacheStats(): Promise<CacheStats | null> {
     if (!this.redis) return null;
 
     try {
@@ -178,30 +169,29 @@ class RedisIdCache {
         total_keys: dataKeys.length + ptrKeys.length,
         ttl_seconds: this.ttl
       };
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`[Redis ID Cache] Error getting cache stats:`, error.message);
       return null;
     }
   }
 
-  /**
-   * Clears ALL ID mapping data and pointers from the cache.
-   */
-  async clearAllCache() {
+  async clearAllCache(): Promise<number> {
     if (!this.redis) return 0;
 
     try {
       logger.warn(`[Redis ID Cache] Starting cache clearing process...`);
       const { deleteKeysByPattern } = require('./redisUtils');
       const deleted = await deleteKeysByPattern('id_map:*');
-      
+
       logger.success(`[Redis ID Cache] Cleared ${deleted} keys.`);
       return deleted;
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`[Redis ID Cache] Error clearing cache:`, error.message);
       return 0;
     }
   }
 }
 
-module.exports = new RedisIdCache();
+const instance = new RedisIdCache();
+export { instance as default };
+module.exports = instance;

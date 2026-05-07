@@ -1,21 +1,28 @@
-const { Pool } = require('pg');
-const BetterSqlite3 = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
-const bcrypt = require('bcrypt');
-const redisIdCache = require('./redis-id-cache');
-const consola = require('consola');
+import { Pool } from 'pg';
+import BetterSqlite3 from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
+import bcrypt from 'bcrypt';
+const redisIdCache: any = require('./redis-id-cache');
+import consola from 'consola';
+
 const logger = consola.withTag('Database');
 
+type DbType = 'sqlite' | 'postgres';
+
 class Database {
+  db: any;
+  type: DbType | null;
+  initialized: boolean;
+
   constructor() {
     this.db = null;
     this.type = null;
     this.initialized = false;
   }
 
-  executeSQLiteStatement(statement, method, params = []) {
+  executeSQLiteStatement(statement: any, method: string, params: any = []) {
     if (params == null) {
       return statement[method]();
     }
@@ -27,15 +34,12 @@ class Database {
     return statement[method](params);
   }
 
-  // Helper method to hash passwords with bcrypt
-  async hashPassword(password) {
+  async hashPassword(password: string): Promise<string> {
     const saltRounds = 12;
     return await bcrypt.hash(password, saltRounds);
   }
 
-  // Helper method to verify passwords (supports both SHA-256 and bcrypt)
-  async verifyPasswordHash(password, storedHash) {
-    // First try bcrypt verification (for new passwords)
+  async verifyPasswordHash(password: string, storedHash: string): Promise<boolean> {
     try {
       const bcryptMatch = await bcrypt.compare(password, storedHash);
       if (bcryptMatch) return true;
@@ -43,19 +47,17 @@ class Database {
       // Not a bcrypt hash, continue to SHA-256 check
     }
 
-    // Fallback to SHA-256 verification (for legacy passwords)
     const hashRaw = crypto.createHash('sha256').update(password).digest('hex');
     const hashTrim = crypto.createHash('sha256').update((password || '').trim()).digest('hex');
-    
+
     return storedHash === hashRaw || storedHash === hashTrim;
   }
 
-  // Helper method to check if a hash is bcrypt
-  isBcryptHash(hash) {
+  isBcryptHash(hash: string): boolean {
     return hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$');
   }
 
-  async initialize() {
+  async initialize(): Promise<void> {
     if (this.initialized) return;
 
     const databaseUri = process.env.DATABASE_URI;
@@ -78,11 +80,10 @@ class Database {
     logger.info(`Initialized ${this.type} database`);
   }
 
-  async initializeSQLite(uri) {
+  async initializeSQLite(uri: string): Promise<void> {
     const dbPath = uri.replace('sqlite://', '');
     const fullPath = path.resolve(dbPath);
-    
-    // Ensure directory exists
+
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -102,15 +103,14 @@ class Database {
     this.db.pragma('mmap_size = 268435456');
   }
 
-  async initializePostgreSQL(uri) {
+  async initializePostgreSQL(uri: string): Promise<void> {
     this.db = new Pool({ connectionString: uri });
     this.type = 'postgres';
-    
-    // Test connection
+
     await this.db.query('SELECT 1');
   }
 
-  async createTables() {
+  async createTables(): Promise<void> {
     if (this.type === 'sqlite') {
       await this.createSQLiteTables();
     } else {
@@ -118,7 +118,7 @@ class Database {
     }
   }
 
-  async createSQLiteTables() {
+  async createSQLiteTables(): Promise<void> {
     const queries = [
       `CREATE TABLE IF NOT EXISTS user_configs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,7 +168,7 @@ class Database {
     }
   }
 
-  async createPostgreSQLTables() {
+  async createPostgreSQLTables(): Promise<void> {
     const queries = [
       `CREATE TABLE IF NOT EXISTS user_configs (
         id SERIAL PRIMARY KEY,
@@ -218,7 +218,7 @@ class Database {
     }
   }
 
-  async runQuery(query, params = []) {
+  async runQuery(query: string, params: any[] = []): Promise<any> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -236,7 +236,7 @@ class Database {
     }
   }
 
-  async getQuery(query, params = []) {
+  async getQuery(query: string, params: any[] = []): Promise<any> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -250,7 +250,7 @@ class Database {
     }
   }
 
-  async allQuery(query, params = []) {
+  async allQuery(query: string, params: any[] = []): Promise<any[]> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -264,13 +264,11 @@ class Database {
     }
   }
 
-  // Generate a UUID for a user
-  generateUserUUID() {
+  generateUserUUID(): string {
     return crypto.randomUUID();
   }
 
-  // Save user configuration by UUID with password
-  async saveUserConfig(userUUID, passwordHash, configData) {
+  async saveUserConfig(userUUID: string, passwordHash: string, configData: any): Promise<void> {
     let normalizedConfig = configData;
 
     if (typeof normalizedConfig === 'string') {
@@ -281,7 +279,7 @@ class Database {
       }
     }
 
-    let configJson;
+    let configJson: string;
     if (normalizedConfig && typeof normalizedConfig === 'object' && !Array.isArray(normalizedConfig)) {
       const configForHash = { ...normalizedConfig };
       delete configForHash.configHash;
@@ -293,50 +291,47 @@ class Database {
     } else {
       configJson = typeof configData === 'string' ? configData : JSON.stringify(configData);
     }
-    
+
     if (this.type === 'sqlite') {
       try {
-        // First try to insert as new user
         await this.runQuery(
-          `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at) 
+          `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at)
            VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [userUUID, passwordHash, configJson]
         );
-      } catch (error) {
-        // If insert failed (user already exists), update only the necessary fields
+      } catch (error: any) {
         if (error.code === 'SQLITE_CONSTRAINT_UNIQUE' || error.message.includes('UNIQUE constraint failed')) {
           await this.runQuery(
-            `UPDATE user_configs SET password_hash = ?, config_data = ?, updated_at = CURRENT_TIMESTAMP 
+            `UPDATE user_configs SET password_hash = ?, config_data = ?, updated_at = CURRENT_TIMESTAMP
              WHERE user_uuid = ?`,
             [passwordHash, configJson, userUUID]
           );
         } else {
-          throw error; // Re-throw if it's not a constraint violation
+          throw error;
         }
       }
     } else {
       await this.runQuery(
-        `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at) 
+        `INSERT INTO user_configs (user_uuid, password_hash, config_data, created_at, updated_at)
          VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-         ON CONFLICT (user_uuid) 
+         ON CONFLICT (user_uuid)
          DO UPDATE SET password_hash = $2, config_data = $3, updated_at = CURRENT_TIMESTAMP`,
         [userUUID, passwordHash, configJson]
       );
     }
   }
 
-  // Get user configuration by UUID (without password check for manifest access)
-  async getUserConfig(userUUID) {
+  async getUserConfig(userUUID: string): Promise<any> {
     const query = this.type === 'sqlite'
       ? 'SELECT config_data FROM user_configs WHERE user_uuid = ?'
       : 'SELECT config_data FROM user_configs WHERE user_uuid = $1';
     const row = await this.getQuery(query, [userUUID]);
-    
+
     if (!row) return null;
-    
+
     try {
-      return typeof row.config_data === 'string' 
-        ? JSON.parse(row.config_data) 
+      return typeof row.config_data === 'string'
+        ? JSON.parse(row.config_data)
         : row.config_data;
     } catch (error) {
       logger.error('Error parsing config data:', error);
@@ -344,8 +339,7 @@ class Database {
     }
   }
 
-  // Get user by UUID
-  async getUser(userUUID) {
+  async getUser(userUUID: string): Promise<any> {
     const query = this.type === 'sqlite'
       ? 'SELECT user_uuid, password_hash, created_at FROM user_configs WHERE user_uuid = ?'
       : 'SELECT user_uuid, password_hash, created_at FROM user_configs WHERE user_uuid = $1';
@@ -353,15 +347,13 @@ class Database {
     return row;
   }
 
-  // Get all user UUIDs for dashboard aggregation
-  async getAllUserUUIDs() {
+  async getAllUserUUIDs(): Promise<string[]> {
     const query = 'SELECT user_uuid FROM user_configs';
     const rows = await this.allQuery(query);
     return rows ? rows.map(row => row.user_uuid) : [];
   }
 
-  // Get users created today
-  async getUsersCreatedToday() {
+  async getUsersCreatedToday(): Promise<number> {
     const today = new Date().toISOString().substring(0, 10);
     const query = this.type === 'sqlite'
       ? 'SELECT COUNT(*) as count FROM user_configs WHERE DATE(created_at) = ?'
@@ -370,14 +362,12 @@ class Database {
     return row ? parseInt(row.count) : 0;
   }
 
-  // ID Mapping Cache Methods
-  async getCachedIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
-    const conditions = [];
-    const params = [];
+  async getCachedIdMapping(contentType: string, tmdbId: string | null = null, tvdbId: string | null = null, imdbId: string | null = null, tvmazeId: string | null = null): Promise<any> {
+    const conditions: string[] = [];
+    const params: any[] = [];
     let paramIndex = 1;
     const nextParam = () => `$${paramIndex++}`;
 
-    // Add content type parameter first
     params.push(contentType);
     const contentTypeCondition = this.type === 'sqlite' ? 'content_type = ?' : `content_type = ${nextParam()}`;
 
@@ -403,8 +393,8 @@ class Database {
     }
 
     const query = `
-      SELECT tmdb_id, tvdb_id, imdb_id, tvmaze_id 
-      FROM id_mappings 
+      SELECT tmdb_id, tvdb_id, imdb_id, tvmaze_id
+      FROM id_mappings
       WHERE ${contentTypeCondition} AND (${conditions.join(' OR ')})
       LIMIT 1
     `;
@@ -413,32 +403,29 @@ class Database {
     return result;
   }
 
-  async saveIdMapping(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
-    // Skip if no IDs provided
+  async saveIdMapping(contentType: string, tmdbId: string | null = null, tvdbId: string | null = null, imdbId: string | null = null, tvmazeId: string | null = null): Promise<void> {
     if (!tmdbId && !tvdbId && !imdbId && !tvmazeId) return;
-    // Skip if only one ID is non-null
     const ids = [tmdbId, tvdbId, imdbId, tvmazeId].filter(Boolean);
     if (ids.length <= 1) return;
 
     if (this.type === 'sqlite') {
       await this.runQuery(
-        `INSERT OR REPLACE INTO id_mappings (content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id, updated_at) 
+        `INSERT OR REPLACE INTO id_mappings (content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id, updated_at)
          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
         [contentType, tmdbId, tvdbId, imdbId, tvmazeId]
       );
     } else {
       await this.runQuery(
-        `INSERT INTO id_mappings (content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id, updated_at) 
+        `INSERT INTO id_mappings (content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id, updated_at)
          VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-         ON CONFLICT (content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id) 
+         ON CONFLICT (content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id)
          DO UPDATE SET updated_at = CURRENT_TIMESTAMP`,
         [contentType, tmdbId, tvdbId, imdbId, tvmazeId]
       );
     }
   }
 
-  async getCachedMappingByAnyId(contentType, tmdbId = null, tvdbId = null, imdbId = null, tvmazeId = null) {
-    // Try Redis cache first
+  async getCachedMappingByAnyId(contentType: string, tmdbId: string | null = null, tvdbId: string | null = null, imdbId: string | null = null, tvmazeId: string | null = null): Promise<any> {
     const redisCached = await redisIdCache.searchByAnyId(contentType, tmdbId, tvdbId, imdbId, tvmazeId);
     if (redisCached) {
       return redisCached;
@@ -447,8 +434,7 @@ class Database {
     return null;
   }
 
-  // Verify user password and get config (supports both SHA-256 and bcrypt)
-  async verifyUserAndGetConfig(userUUID, password) {
+  async verifyUserAndGetConfig(userUUID: string, password: string): Promise<any> {
     const query = this.type === 'sqlite'
       ? 'SELECT password_hash, config_data FROM user_configs WHERE user_uuid = ?'
       : 'SELECT password_hash, config_data FROM user_configs WHERE user_uuid = $1';
@@ -456,26 +442,23 @@ class Database {
     if (!row) return null;
 
     const storedHash = row.password_hash;
-    
-    // Verify password using new method that supports both SHA-256 and bcrypt
+
     const isValidPassword = await this.verifyPasswordHash(password, storedHash);
     if (!isValidPassword) {
       return null;
     }
 
-    // Background migration: If user has SHA-256 hash, upgrade to bcrypt
     if (!this.isBcryptHash(storedHash)) {
       try {
         const newBcryptHash = await this.hashPassword(password);
         const updateQuery = this.type === 'sqlite'
           ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
           : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
-        
+
         await this.runQuery(updateQuery, [newBcryptHash, userUUID]);
         logger.info(`Migrated user ${userUUID} from SHA-256 to bcrypt hash`);
       } catch (error) {
         logger.error(`Failed to migrate user ${userUUID} to bcrypt:`, error);
-        // Don't fail the login if migration fails
       }
     }
 
@@ -489,8 +472,7 @@ class Database {
     }
   }
 
-  // Verify user password only (returns boolean)
-  async verifyPassword(userUUID, password) {
+  async verifyPassword(userUUID: string, password: string): Promise<boolean> {
     const query = this.type === 'sqlite'
       ? 'SELECT password_hash FROM user_configs WHERE user_uuid = ?'
       : 'SELECT password_hash FROM user_configs WHERE user_uuid = $1';
@@ -501,29 +483,26 @@ class Database {
     return await this.verifyPasswordHash(password, storedHash);
   }
 
-  // Delete user configuration
-  async deleteUserConfig(userUUID) {
+  async deleteUserConfig(userUUID: string): Promise<void> {
     const query = this.type === 'sqlite'
       ? 'DELETE FROM user_configs WHERE user_uuid = ?'
       : 'DELETE FROM user_configs WHERE user_uuid = $1';
     await this.runQuery(query, [userUUID]);
   }
 
-  // Delete user and all associated data
-  async deleteUser(userUUID) {
+  async deleteUser(userUUID: string): Promise<boolean> {
     try {
       const query = this.type === 'sqlite'
         ? 'DELETE FROM user_configs WHERE user_uuid = ?'
         : 'DELETE FROM user_configs WHERE user_uuid = $1';
       const result = await this.runQuery(query, [userUUID]);
       const userDeleted = this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0;
-      
-      // Delete from trusted_uuids table
+
       const deleteTrustedQuery = this.type === 'sqlite'
         ? 'DELETE FROM trusted_uuids WHERE user_uuid = ?'
         : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
       await this.runQuery(deleteTrustedQuery, [userUUID]);
-      
+
       logger.info(`Successfully deleted user ${userUUID} and all associated data`);
       return userDeleted;
     } catch (error) {
@@ -532,25 +511,21 @@ class Database {
     }
   }
 
-  // Migrate from localStorage (for backward compatibility)
-  async migrateFromLocalStorage(localStorageData, password) {
+  async migrateFromLocalStorage(localStorageData: any, password: string): Promise<string | null> {
     if (!localStorageData) return null;
-    
+
     try {
-      const config = typeof localStorageData === 'string' 
-        ? JSON.parse(localStorageData) 
+      const config = typeof localStorageData === 'string'
+        ? JSON.parse(localStorageData)
         : localStorageData;
-      
-      // Generate a new UUID for the user
+
       const userUUID = this.generateUserUUID();
-      
-      // Hash the password
-      const crypto = require('crypto');
+
       const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
-      
+
       await this.saveUserConfig(userUUID, passwordHash, config);
       logger.info('[Database] Migrated localStorage config for user:', userUUID);
-      
+
       return userUUID;
     } catch (error) {
       logger.error('Migration failed:', error);
@@ -558,8 +533,7 @@ class Database {
     }
   }
 
-  // Move these methods into the Database class as proper methods:
-  async trustUUID(userUUID) {
+  async trustUUID(userUUID: string): Promise<void> {
     if (this.type === 'sqlite') {
       await this.runQuery(
         `INSERT OR REPLACE INTO trusted_uuids (user_uuid, trusted_at) VALUES (?, CURRENT_TIMESTAMP)`,
@@ -573,67 +547,60 @@ class Database {
       );
     }
   }
-  async isUUIDTrusted(userUUID) {
+
+  async isUUIDTrusted(userUUID: string): Promise<boolean> {
     const query = this.type === 'sqlite'
       ? 'SELECT trusted_at FROM trusted_uuids WHERE user_uuid = ?'
       : 'SELECT trusted_at FROM trusted_uuids WHERE user_uuid = $1';
     const row = await this.getQuery(query, [userUUID]);
     return !!row;
   }
-  async untrustUUID(userUUID) {
+
+  async untrustUUID(userUUID: string): Promise<void> {
     const query = this.type === 'sqlite'
       ? 'DELETE FROM trusted_uuids WHERE user_uuid = ?'
       : 'DELETE FROM trusted_uuids WHERE user_uuid = $1';
     await this.runQuery(query, [userUUID]);
   }
 
-  // Prune all id_mappings (delete all rows)
-  async pruneAllIdMappings() {
-    const query = this.type === 'sqlite'
-      ? 'DELETE FROM id_mappings'
-      : 'DELETE FROM id_mappings';
+  async pruneAllIdMappings(): Promise<void> {
+    const query = 'DELETE FROM id_mappings';
     await this.runQuery(query);
     logger.info('Pruned all id_mappings.');
   }
 
-  /**
-   * Get total count of ID mappings
-   */
-  async getTotalIdMappingCount() {
+  async getTotalIdMappingCount(): Promise<number> {
     const query = 'SELECT COUNT(*) as count FROM id_mappings';
     const result = await this.getQuery(query);
     return result ? result.count : 0;
   }
 
-  /**
-   * Get ID mappings in batches for migration
-   */
-  async getIdMappingsBatch(offset, limit) {
-    let query, params;
-    
+  async getIdMappingsBatch(offset: number, limit: number): Promise<any[]> {
+    let query: string;
+    let params: any[];
+
     if (this.type === 'sqlite') {
       query = `
-        SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id 
-        FROM id_mappings 
-        ORDER BY id 
+        SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id
+        FROM id_mappings
+        ORDER BY id
         LIMIT ? OFFSET ?
       `;
       params = [limit, offset];
     } else {
-      // PostgreSQL syntax
       query = `
-        SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id 
-        FROM id_mappings 
-        ORDER BY id 
+        SELECT content_type, tmdb_id, tvdb_id, imdb_id, tvmaze_id
+        FROM id_mappings
+        ORDER BY id
         LIMIT $1 OFFSET $2
       `;
       params = [limit, offset];
     }
-    
+
     return await this.allQuery(query, params);
   }
 
-  async close() {
+  async close(): Promise<void> {
     if (this.db) {
       if (this.type === 'sqlite') {
         this.db.close();
@@ -646,10 +613,7 @@ class Database {
     }
   }
 
-  // --- User Management Methods ---
-
-  // Get all users with raw data (for internal operations like OAuth token updates)
-  async getAllUsers() {
+  async getAllUsers(): Promise<{ id: string; password_hash: string; config: string }[]> {
     try {
       const query = `SELECT user_uuid, password_hash, config_data FROM user_configs`;
 
@@ -666,7 +630,7 @@ class Database {
     }
   }
 
-  async getUsersByOAuthTokenIds(tokenField, tokenIds) {
+  async getUsersByOAuthTokenIds(tokenField: string, tokenIds: string[]): Promise<any[]> {
     if (!tokenIds.length) return [];
     try {
       if (this.type === 'sqlite') {
@@ -696,7 +660,7 @@ class Database {
     }
   }
 
-  async getAllUsersWithStats() {
+  async getAllUsersWithStats(): Promise<any[]> {
     try {
       const query = this.type === 'sqlite'
         ? `SELECT
@@ -742,21 +706,20 @@ class Database {
     }
   }
 
-  // Get detailed user information
-  async getUserDetails(userUUID) {
+  async getUserDetails(userUUID: string): Promise<any> {
     try {
       const query = this.type === 'sqlite'
         ? 'SELECT * FROM user_configs WHERE user_uuid = ?'
         : 'SELECT * FROM user_configs WHERE user_uuid = $1';
-      
+
       const row = await this.getQuery(query, [userUUID]);
-      
+
       if (!row) return null;
 
-      let configData = null;
+      let configData: any = null;
       try {
-        configData = typeof row.config_data === 'string' 
-          ? JSON.parse(row.config_data) 
+        configData = typeof row.config_data === 'string'
+          ? JSON.parse(row.config_data)
           : row.config_data;
       } catch (error) {
         logger.warn('Error parsing config data for user:', userUUID);
@@ -767,8 +730,8 @@ class Database {
         uuid: row.user_uuid,
         created_at: row.created_at,
         last_updated: row.updated_at,
-        last_activity: null, // This would need to come from request tracker
-        total_requests: 0, // This would need to be tracked separately
+        last_activity: null,
+        total_requests: 0,
         api_keys: {
           tmdb: !!configData?.apiKeys?.tmdb,
           tvdb: !!configData?.apiKeys?.tvdb,
@@ -786,10 +749,8 @@ class Database {
     }
   }
 
-  // Reset user password (generate new one)
-  async resetUserPassword(userUUID) {
+  async resetUserPassword(userUUID: string): Promise<string | null> {
     try {
-      // Generate a new random password
       const newPassword = Math.random().toString(36).slice(-8);
       const hashedPassword = await this.hashPassword(newPassword);
 
@@ -798,11 +759,11 @@ class Database {
         : 'UPDATE user_configs SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = $2';
 
       const result = await this.runQuery(query, [hashedPassword, userUUID]);
-      
+
       if (this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0) {
         return newPassword;
       }
-      
+
       return null;
     } catch (error) {
       logger.error('Error resetting user password:', error);
@@ -810,23 +771,22 @@ class Database {
     }
   }
 
-  // Export all user data
-  async exportAllUserData() {
+  async exportAllUserData(): Promise<any> {
     try {
       const query = this.type === 'sqlite'
-        ? `SELECT 
+        ? `SELECT
              user_uuid,
              created_at,
              updated_at,
              config_data
-           FROM user_configs 
+           FROM user_configs
            ORDER BY created_at DESC`
-        : `SELECT 
+        : `SELECT
              user_uuid,
              created_at,
              updated_at,
              config_data
-           FROM user_configs 
+           FROM user_configs
            ORDER BY created_at DESC`;
 
       const rows = await this.allQuery(query);
@@ -835,10 +795,10 @@ class Database {
         exportDate: new Date().toISOString(),
         totalUsers: rows.length,
         users: rows.map(row => {
-          let configData = null;
+          let configData: any = null;
           try {
-            configData = typeof row.config_data === 'string' 
-              ? JSON.parse(row.config_data) 
+            configData = typeof row.config_data === 'string'
+              ? JSON.parse(row.config_data)
               : row.config_data;
           } catch (error) {
             logger.warn('Error parsing config data for export:', row.user_uuid);
@@ -858,8 +818,7 @@ class Database {
     }
   }
 
-  // Delete inactive users (older than specified days)
-  async deleteInactiveUsers(daysOld = 30) {
+  async deleteInactiveUsers(daysOld: number = 30): Promise<number> {
     try {
       const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
       const cutoffDateStr = cutoffDate.toISOString();
@@ -869,7 +828,7 @@ class Database {
         : 'DELETE FROM user_configs WHERE updated_at < $1';
 
       const result = await this.runQuery(query, [cutoffDateStr]);
-      
+
       return this.type === 'sqlite' ? result.changes : result.rowCount;
     } catch (error) {
       logger.error('Error deleting inactive users:', error);
@@ -877,27 +836,14 @@ class Database {
     }
   }
 
-  // OAuth Token Management Methods
-
-  /**
-   * Save OAuth token to database
-   * @param {string} id - UUID for this token
-   * @param {string} provider - OAuth provider (e.g., 'trakt')
-   * @param {string} userId - Provider's user ID/username
-   * @param {string} accessToken - OAuth access token
-   * @param {string} refreshToken - OAuth refresh token
-   * @param {number} expiresAt - Expiration timestamp
-   * @param {string} scope - OAuth scopes
-   * @returns {Promise<boolean>}
-   */
-  async saveOAuthToken(id, provider, userId, accessToken, refreshToken, expiresAt, scope = '') {
+  async saveOAuthToken(id: string, provider: string, userId: string, accessToken: string, refreshToken: string, expiresAt: number, scope: string = ''): Promise<boolean> {
     try {
       const query = this.type === 'sqlite'
-        ? `INSERT OR REPLACE INTO oauth_tokens 
-           (id, provider, user_id, access_token, refresh_token, expires_at, scope, updated_at) 
+        ? `INSERT OR REPLACE INTO oauth_tokens
+           (id, provider, user_id, access_token, refresh_token, expires_at, scope, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-        : `INSERT INTO oauth_tokens 
-           (id, provider, user_id, access_token, refresh_token, expires_at, scope, updated_at) 
+        : `INSERT INTO oauth_tokens
+           (id, provider, user_id, access_token, refresh_token, expires_at, scope, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
            ON CONFLICT (id) DO UPDATE SET
              access_token = EXCLUDED.access_token,
@@ -914,12 +860,7 @@ class Database {
     }
   }
 
-  /**
-   * Get OAuth token by ID
-   * @param {string} id - Token UUID
-   * @returns {Promise<Object|null>}
-   */
-  async getOAuthToken(id) {
+  async getOAuthToken(id: string): Promise<any> {
     try {
       const query = this.type === 'sqlite'
         ? 'SELECT * FROM oauth_tokens WHERE id = ?'
@@ -933,22 +874,14 @@ class Database {
     }
   }
 
-  /**
-   * Update OAuth token (for refresh)
-   * @param {string} id - Token UUID
-   * @param {string} accessToken - New access token
-   * @param {string} refreshToken - New refresh token
-   * @param {number} expiresAt - New expiration timestamp
-   * @returns {Promise<boolean>}
-   */
-  async updateOAuthToken(id, accessToken, refreshToken, expiresAt) {
+  async updateOAuthToken(id: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<boolean> {
     try {
       const query = this.type === 'sqlite'
-        ? `UPDATE oauth_tokens 
-           SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP 
+        ? `UPDATE oauth_tokens
+           SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`
-        : `UPDATE oauth_tokens 
-           SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = CURRENT_TIMESTAMP 
+        : `UPDATE oauth_tokens
+           SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = CURRENT_TIMESTAMP
            WHERE id = $4`;
 
       await this.runQuery(query, [accessToken, refreshToken, expiresAt, id]);
@@ -959,12 +892,7 @@ class Database {
     }
   }
 
-  /**
-   * Delete OAuth token by ID
-   * @param {string} id - Token UUID
-   * @returns {Promise<boolean>}
-   */
-  async deleteOAuthToken(id) {
+  async deleteOAuthToken(id: string): Promise<boolean> {
     try {
       const query = this.type === 'sqlite'
         ? 'DELETE FROM oauth_tokens WHERE id = ?'
@@ -978,12 +906,7 @@ class Database {
     }
   }
 
-  /**
-   * Get all OAuth tokens for a provider
-   * @param {string} provider - OAuth provider
-   * @returns {Promise<Array>}
-   */
-  async getOAuthTokensByProvider(provider) {
+  async getOAuthTokensByProvider(provider: string): Promise<any[]> {
     try {
       const query = this.type === 'sqlite'
         ? 'SELECT * FROM oauth_tokens WHERE provider = ?'
@@ -997,7 +920,7 @@ class Database {
   }
 }
 
-// Create singleton instance
 const database = new Database();
 
+export default database;
 module.exports = database;

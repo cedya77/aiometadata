@@ -1,35 +1,33 @@
 require("dotenv").config();
-const moviedb = require("./getTmdb");
-const { getGenreList } = require("./getGenreList");
-const { parseMedia } = require("../utils/parseProps");
-const translations = require("../static/translations.json");
-const { getMeta } = require("./getMeta");
-const { cacheWrapMetaSmart } = require("./getCache");
+const moviedb: any = require("./getTmdb");
+const translations: any = require("../static/translations.json");
+const { getMeta }: any = require("./getMeta");
+const { cacheWrapMetaSmart }: any = require("./getCache");
 
 
-function getAllTranslations(key) {
-    return Object.values(translations).map(lang => lang[key]).filter(Boolean);
+function getAllTranslations(key: string): string[] {
+    return Object.values(translations).map((lang: any) => lang[key]).filter(Boolean);
 }
 
-const API_FIELD_MAPPING = {
+const API_FIELD_MAPPING: Record<string, string> = {
     'added_date': 'created_at',
     'popularity': 'popularity',
     'release_date': 'release_date'
 };
 
-function sortResults(results, genre) {
+function sortResults(results: any[], genre: string): any[] {
     if (!genre) return results;
 
     let sortedResults = [...results];
-    
+
     const randomTranslations = getAllTranslations('random');
     if (randomTranslations.includes(genre)) {
         return shuffleArray(sortedResults);
     }
 
-    let field, order;
-    
-    const fields = {
+    let field: string | undefined, order: string | undefined;
+
+    const fields: Record<string, string[]> = {
         'added_date': getAllTranslations('added_date'),
         'popularity': getAllTranslations('popularity'),
         'release_date': getAllTranslations('release_date')
@@ -55,9 +53,9 @@ function sortResults(results, genre) {
         return sortedResults;
     }
 
-    sortedResults.sort((a, b) => {
-        let valueA, valueB;
-        
+    sortedResults.sort((a: any, b: any) => {
+        let valueA: any, valueB: any;
+
         switch (field) {
             case 'release_date':
                 valueA = a.release_date || a.first_air_date;
@@ -81,18 +79,18 @@ function sortResults(results, genre) {
     return sortedResults;
 }
 
-function configureSortingParameters(parameters, genre) {
-    const fields = {
+function configureSortingParameters(parameters: any, genre: string): any {
+    const fields: Record<string, string[]> = {
         'added_date': getAllTranslations('added_date'),
         'popularity': getAllTranslations('popularity'),
         'release_date': getAllTranslations('release_date')
     };
 
     for (const [fieldName, translations] of Object.entries(fields)) {
-        if (genre?.includes(translations.find(t => genre.includes(t)))) {
+        if (genre?.includes(translations.find(t => genre.includes(t)) as string)) {
             const ascTranslations = getAllTranslations('asc');
             const descTranslations = getAllTranslations('desc');
-            
+
             if (ascTranslations.some(t => genre.includes(t))) {
                 parameters.sort_by = `${API_FIELD_MAPPING[fieldName]}.asc`;
             } else if (descTranslations.some(t => genre.includes(t))) {
@@ -104,7 +102,7 @@ function configureSortingParameters(parameters, genre) {
     return parameters;
 }
 
-function shuffleArray(array) {
+function shuffleArray(array: any[]): any[] {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [array[i], array[j]] = [array[j], array[i]];
@@ -113,64 +111,59 @@ function shuffleArray(array) {
 }
 
 
-
-/**
- * A generic worker function to fetch a personal list (Favorites or Watchlist) from TMDB.
- * @param {'movie'|'series'} type - The content type.
- * @param {string} language - The user's language.
- * @param {number} page - The page number to fetch.
- * @param {string} genre - The genre/sorting string.
- * @param {string} sessionId - The user's TMDB session ID.
- * @param {'favorite'|'watchlist'} listType - The type of list to fetch.
- * @param {object} config - The user configuration.
- * @param {string} userUUID - The user's UUID for caching.
- * @param {boolean} includeVideos - Whether to include videos.
- * @returns {Promise<{metas: Array}>} A Stremio catalog object.
- */
-async function getPersonalList(type, language, page, genre, sessionId, listType, config, userUUID, includeVideos = false) {
+async function getPersonalList(
+    type: string,
+    language: string,
+    page: number,
+    genre: string,
+    sessionId: string,
+    listType: 'favorite' | 'watchlist',
+    config: any,
+    userUUID: string,
+    includeVideos: boolean = false
+): Promise<{ metas: any[] }> {
   if (!sessionId) {
     console.warn(`[TMDB Personal List] Attempted to fetch personal ${listType} without a session ID. User needs to authenticate with TMDB.`);
     return { metas: [] };
   }
 
   try {
-    let parameters = { language, page, session_id: sessionId };
+    let parameters: any = { language, page, session_id: sessionId };
     parameters = configureSortingParameters(parameters, genre);
 
-    let fetchFunction;
+    let fetchFunction: () => Promise<any>;
     if (listType === 'favorite') {
-      fetchFunction =  type === "movie" 
-      ? () => moviedb.accountFavoriteMovies(parameters, config) 
+      fetchFunction =  type === "movie"
+      ? () => moviedb.accountFavoriteMovies(parameters, config)
       : () => moviedb.accountFavoriteTv(parameters, config);
-    } else { 
-      fetchFunction = type === "movie" 
-      ? () => moviedb.accountMovieWatchlist(parameters, config) 
+    } else {
+      fetchFunction = type === "movie"
+      ? () => moviedb.accountMovieWatchlist(parameters, config)
       : () => moviedb.accountTvWatchlist(parameters, config);
     }
 
     const res = await fetchFunction();
 
     const sortedResults = sortResults(res?.results || [], genre);
-    
-    // Call getMeta for each item to get full metadata (similar to getCatalog)
-    const metas = await Promise.all(sortedResults.map(async (item) => {
+
+    const metas = await Promise.all(sortedResults.map(async (item: any) => {
       const stremioId = `tmdb:${item.id}`;
-      
+
       const result = await cacheWrapMetaSmart(userUUID, stremioId, async () => {
         return await getMeta(type, language, stremioId, config, userUUID, includeVideos);
       }, undefined, {enableErrorCaching: true, maxRetries: 2, config}, type, includeVideos);
-      
+
       if (result && result.meta) {
         return result.meta;
       }
       return null;
     }));
 
-    const validMetas = metas.filter(meta => meta !== null);
+    const validMetas = metas.filter((meta: any) => meta !== null);
 
     return { metas: validMetas };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[TMDB Personal List] Error fetching personal ${listType} for ${type}:`, error.message);
     if (error.response) {
       console.error(`[TMDB Personal List] Error response:`, error.response.data);
@@ -181,14 +174,14 @@ async function getPersonalList(type, language, page, genre, sessionId, listType,
 }
 
 
-
-async function getFavorites(type, language, page, genre, sessionId, config, userUUID, includeVideos = false) {
+async function getFavorites(type: string, language: string, page: number, genre: string, sessionId: string, config: any, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   return getPersonalList(type, language, page, genre, sessionId, 'favorite', config, userUUID, includeVideos);
 }
 
-async function getWatchList(type, language, page, genre, sessionId, config, userUUID, includeVideos = false) {
+async function getWatchList(type: string, language: string, page: number, genre: string, sessionId: string, config: any, userUUID: string, includeVideos: boolean = false): Promise<{ metas: any[] }> {
   return getPersonalList(type, language, page, genre, sessionId, 'watchlist', config, userUUID, includeVideos);
 }
 
 
+export { getFavorites, getWatchList };
 module.exports = { getFavorites, getWatchList };

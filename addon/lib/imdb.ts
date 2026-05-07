@@ -1,7 +1,7 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { httpGet } = require('../utils/httpClient.js');
-const { cacheWrapGlobal } = require('./getCache.js');
+const axios: any = require('axios');
+const cheerio: any = require('cheerio');
+const { httpGet }: any = require('../utils/httpClient');
+const { cacheWrapGlobal }: any = require('./getCache');
 
 const imdbAxiosInstance = axios.create();
 
@@ -13,37 +13,37 @@ const userAgents = [
     'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
 ];
 
-function getRandomUserAgent() {
+function getRandomUserAgent(): string {
     return userAgents[Math.floor(Math.random() * userAgents.length)];
 }
 
-imdbAxiosInstance.interceptors.request.use(config => {
+imdbAxiosInstance.interceptors.request.use((config: any) => {
     config.metadata = { startTime: new Date() };
     return config;
 });
 
-imdbAxiosInstance.interceptors.response.use(response => {
+imdbAxiosInstance.interceptors.response.use((response: any) => {
     const endTime = new Date();
-    const duration = endTime - response.config.metadata.startTime;
+    const duration = endTime.getTime() - response.config.metadata.startTime.getTime();
     console.log(`[imdb-scraper] Response time for ${response.config.url}: ${duration} ms`);
     return response;
-}, error => {
+}, (error: any) => {
     if (error.config && error.config.metadata) {
         const endTime = new Date();
-        const duration = endTime - error.config.metadata.startTime;
+        const duration = endTime.getTime() - error.config.metadata.startTime.getTime();
         console.log(`[imdb-scraper] Response time for ${error.config.url}: ${duration} ms (error)`);
     }
     return Promise.reject(error);
 });
 
-async function getMetaFromImdb(imdbId, type, stremioId) {
+async function getMetaFromImdb(imdbId: string, type: string, stremioId?: string): Promise<any> {
     if (!imdbId) {
         return undefined;
     }
 
     const cacheKey = `cinemeta-meta:${type}:${imdbId}`;
-    const TTL_24H = 24 * 60 * 60; // 24 hours in seconds
-    
+    const TTL_24H = 24 * 60 * 60;
+
     return await cacheWrapGlobal(cacheKey, async () => {
         const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
         try {
@@ -56,7 +56,7 @@ async function getMetaFromImdb(imdbId, type, stremioId) {
                 return meta;
             }
             return undefined;
-        } catch (error) {
+        } catch (error: any) {
             console.warn(
                 `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
             );
@@ -65,14 +65,14 @@ async function getMetaFromImdb(imdbId, type, stremioId) {
     }, TTL_24H);
 }
 
-async function getMetaFromImdbIo(imdbId, type, stremioId) {
+async function getMetaFromImdbIo(imdbId: string, type: string, stremioId?: string): Promise<any> {
     if (!imdbId) {
         return undefined;
     }
 
     const cacheKey = `cinemeta-live-meta:${type}:${imdbId}`;
-    const TTL_24H = 24 * 60 * 60; // 24 hours in seconds
-    
+    const TTL_24H = 24 * 60 * 60;
+
     return await cacheWrapGlobal(cacheKey, async () => {
         const url = `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`;
         try {
@@ -85,7 +85,7 @@ async function getMetaFromImdbIo(imdbId, type, stremioId) {
                 return meta;
             }
             return undefined;
-        } catch (error) {
+        } catch (error: any) {
             console.warn(
                 `Could not fetch meta for ${imdbId} from Cinemeta for type ${type}. Error: ${error.message}`
             );
@@ -94,21 +94,21 @@ async function getMetaFromImdbIo(imdbId, type, stremioId) {
     }, TTL_24H);
 }
 
-function getLogoFromImdb(imdbId) {
+function getLogoFromImdb(imdbId: string): string | null {
     if (!imdbId) {
         return null;
     }
     return `https://images.metahub.space/logo/medium/${imdbId}/img`;
 }
 
-function getBackgroundFromImdb(imdbId) {
+function getBackgroundFromImdb(imdbId: string): string | null {
     if (!imdbId) {
         return null;
     }
     return `https://images.metahub.space/background/medium/${imdbId}/img`;
 }
 
-function getPosterFromImdb(imdbId) {
+function getPosterFromImdb(imdbId: string): string | null {
     if (!imdbId) {
         return null;
     }
@@ -118,7 +118,7 @@ function getPosterFromImdb(imdbId) {
 
 
 
-async function fetchHtml(url, headers = {}) {
+async function fetchHtml(url: string, headers: Record<string, string> = {}): Promise<string> {
     console.log(`[imdb-scraper] Connecting to: ${url}`);
     try {
         const response = await imdbAxiosInstance.get(url, {
@@ -139,7 +139,7 @@ async function fetchHtml(url, headers = {}) {
 
         console.log(`[imdb-scraper] Response status code: ${response.status}`);
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         if (axios.isCancel(error)) {
             console.error(
                 `[imdb-scraper] Request for ${url} was canceled:`,
@@ -172,7 +172,13 @@ async function fetchHtml(url, headers = {}) {
     }
 }
 
-function createImdbResult(name, href) {
+interface ImdbResult {
+    imdbId: string;
+    name: string;
+    href: string;
+}
+
+function createImdbResult(name: string, href: string): ImdbResult | null {
     const idMatch = href.match(/\/title\/(tt\d+)\//);
     if (idMatch) {
         return {
@@ -185,10 +191,10 @@ function createImdbResult(name, href) {
 }
 
 function getMatchScore(
-    resultNameFromLink,
-    resultNameWithContext,
-    originalSearchTitle
-) {
+    resultNameFromLink: string,
+    resultNameWithContext: string,
+    originalSearchTitle: string
+): { score: number; nameLength: number; type: string } {
     const isCosmResult = resultNameWithContext.toLowerCase().includes('cosm shared reality');
     const searchIsForCosmReality = originalSearchTitle.toLowerCase().includes('cosm shared reality');
 
@@ -275,8 +281,8 @@ function getMatchScore(
     return { score: currentScore, nameLength: resultNameFromLink.length, type: matchType };
 }
 
-function processSearchResults($, searchResults, originalSearchTitle) {
-    let bestFoundResult = null;
+function processSearchResults($: any, searchResults: any, originalSearchTitle: string): ImdbResult | null {
+    let bestFoundResult: ImdbResult | null = null;
     let highestScore = 0;
     let shortestNameLengthAtHighestScore = Infinity;
 
@@ -286,13 +292,11 @@ function processSearchResults($, searchResults, originalSearchTitle) {
 
     for (let i = 0; i < searchResults.length; i++) {
         const listItem = $(searchResults[i]);
-        // Target a.ipc-metadata-list-summary-item__t which contains the main title text
         const linkElement = listItem.find('a.ipc-metadata-list-summary-item__t').first();
 
         if (linkElement && linkElement.length) {
             const href = linkElement.attr('href');
             const nameFromLink = linkElement.text().trim();
-            // Get the full text of the list item for context, this often includes years, directors, etc.
             const nameWithContext = listItem.text().trim();
 
             if (nameFromLink && href) {
@@ -344,8 +348,8 @@ function processSearchResults($, searchResults, originalSearchTitle) {
     return bestFoundResult;
 }
 
-async function scrapeSingleImdbResultByTitle(title, type) {
-    let title_type;
+async function scrapeSingleImdbResultByTitle(title: string, type: string): Promise<ImdbResult | null> {
+    let title_type: string;
     if (type === 'movie') {
         title_type = 'feature';
     } else {
@@ -358,7 +362,7 @@ async function scrapeSingleImdbResultByTitle(title, type) {
         const html = await fetchHtml(searchUrl);
         const $ = cheerio.load(html);
 
-        let foundResult = null;
+        let foundResult: ImdbResult | null = null;
 
         const topCandidates = $(
             'section[data-testid="find-results-section-all-results"] a.ipc-metadata-list-summary-item__t[href^="/title/tt"], ' +
@@ -390,7 +394,7 @@ async function scrapeSingleImdbResultByTitle(title, type) {
                             return foundResult;
                         }
                     }
-                   
+
                     if (!foundResult) {
                         const { score, type } = getMatchScore(
                             nameFromLink,
@@ -445,7 +449,6 @@ async function scrapeSingleImdbResultByTitle(title, type) {
                         `[imdb-scraper] List item processing found a BETTER candidate: "${foundResult.name}" (Score: ${listScore})`
                     );
                 } else if (!foundResult && listScore > 0) {
-                    // If no initial direct link candidate, and list gave something good
                     foundResult = resultFromList;
                     console.log(
                         `[imdb-scraper] List item processing found initial candidate: "${foundResult.name}" (Score: ${listScore})`
@@ -464,7 +467,7 @@ async function scrapeSingleImdbResultByTitle(title, type) {
             );
         }
         return foundResult;
-    } catch (error) {
+    } catch (error: any) {
         console.error(
             `[imdb-scraper] Failed to get IMDb result for "${title}" due to: ${error.message}`
         );
@@ -473,6 +476,14 @@ async function scrapeSingleImdbResultByTitle(title, type) {
 }
 
 
+export {
+    getMetaFromImdb,
+    scrapeSingleImdbResultByTitle,
+    getMetaFromImdbIo,
+    getLogoFromImdb,
+    getBackgroundFromImdb,
+    getPosterFromImdb
+};
 module.exports = {
     getMetaFromImdb,
     scrapeSingleImdbResultByTitle,

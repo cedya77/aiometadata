@@ -21,7 +21,22 @@ const DATE_TOKEN_PATTERN = new RegExp(
   `^${TMDB_DISCOVER_DATE_TOKEN_PREFIX}:(today|this_month|last_month|this_year|last_year|last_5_years|last_10_years):(from|to)$`
 );
 
-function parseDateToken(value) {
+interface DateToken {
+  preset: string;
+  bound: string;
+}
+
+interface DateRange {
+  from: string;
+  to: string;
+}
+
+interface ResolveOptions {
+  timezone?: string;
+  now?: Date;
+}
+
+function parseDateToken(value: any): DateToken | null {
   if (typeof value !== 'string') return null;
 
   const tokenMatch = value.match(DATE_TOKEN_PATTERN);
@@ -34,8 +49,8 @@ function parseDateToken(value) {
   };
 }
 
-function getDatePartsInTimezone(date, timezone) {
-  let formatter;
+function getDatePartsInTimezone(date: Date, timezone: string): { year: number; month: number; day: number } {
+  let formatter: Intl.DateTimeFormat;
   try {
     formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone || 'UTC',
@@ -43,7 +58,7 @@ function getDatePartsInTimezone(date, timezone) {
       month: '2-digit',
       day: '2-digit'
     });
-  } catch (_error) {
+  } catch (_error: any) {
     formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'UTC',
       year: 'numeric',
@@ -64,14 +79,14 @@ function getDatePartsInTimezone(date, timezone) {
   return { year, month, day };
 }
 
-function formatUtcDate(date) {
+function formatUtcDate(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-function getDateRangeFromRelativePreset(preset, timezone, nowInput) {
+function getDateRangeFromRelativePreset(preset: string, timezone: string, nowInput?: Date): DateRange | null {
   const now = nowInput instanceof Date ? nowInput : new Date();
   const { year, month, day } = getDatePartsInTimezone(now, timezone || 'UTC');
 
@@ -114,14 +129,14 @@ function getDateRangeFromRelativePreset(preset, timezone, nowInput) {
   };
 }
 
-function resolveDynamicTmdbDiscoverParams(rawParams, options = {}) {
+function resolveDynamicTmdbDiscoverParams(rawParams: any, options: ResolveOptions = {}): Record<string, any> {
   if (!rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) {
     return {};
   }
 
   const timezone = options.timezone || 'UTC';
   const now = options.now instanceof Date ? options.now : new Date();
-  const resolved = { ...rawParams };
+  const resolved: Record<string, any> = { ...rawParams };
 
   for (const [key, value] of Object.entries(rawParams)) {
     if (!TMDB_DYNAMIC_DATE_FIELDS.has(key)) continue;
@@ -139,6 +154,14 @@ function resolveDynamicTmdbDiscoverParams(rawParams, options = {}) {
   return resolved;
 }
 
+export {
+  TMDB_DISCOVER_DATE_TOKEN_PREFIX,
+  RELATIVE_DATE_PRESET_KEYS,
+  TMDB_DYNAMIC_DATE_FIELDS,
+  parseDateToken,
+  getDateRangeFromRelativePreset,
+  resolveDynamicTmdbDiscoverParams
+};
 module.exports = {
   TMDB_DISCOVER_DATE_TOKEN_PREFIX,
   RELATIVE_DATE_PRESET_KEYS,

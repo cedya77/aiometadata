@@ -1,25 +1,50 @@
-const redis = require('./redisClient');
-const consola = require('consola');
-const { isMetricsDisabled } = require('./metricsConfig');
+const redis: any = require('./redisClient');
+const consola: any = require('consola');
+const { isMetricsDisabled }: any = require('./metricsConfig');
 
-const logger = consola.withTag('Timing-Metrics');
+const logger: any = consola.withTag('Timing-Metrics');
+
+interface TimingStats {
+  count: number;
+  average: number;
+  min: number;
+  max: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
+interface TrendEntry {
+  count: number;
+  average: number;
+  p95?: number;
+  period?: string;
+}
+
+const EMPTY_STATS: TimingStats = {
+  count: 0,
+  average: 0,
+  min: 0,
+  max: 0,
+  p50: 0,
+  p95: 0,
+  p99: 0
+};
 
 class TimingMetrics {
+  redis: any;
+  keyPrefix: string;
+  maxSamples: number;
+  ttl: number;
+
   constructor() {
     this.redis = redis;
     this.keyPrefix = 'timing_metrics:';
-    this.maxSamples = 1000; // Keep last 1000 samples for each metric
-    this.ttl = 7 * 24 * 60 * 60; // 7 days TTL
+    this.maxSamples = 1000;
+    this.ttl = 7 * 24 * 60 * 60;
   }
 
-  /**
-   * Record a timing measurement (fire-and-forget with Redis pipeline)
-   * @param {string} metric - The metric name (e.g., 'id_resolution', 'nameToImdb', 'api_lookup')
-   * @param {number} duration - Duration in milliseconds
-   * @param {Object} metadata - Additional metadata (e.g., { type: 'movie', cached: true })
-   */
-  recordTiming(metric, duration, metadata = {}) {
-    // Skip metrics collection if disabled
+  recordTiming(metric: string, duration: number, metadata: Record<string, any> = {}): void {
     if (isMetricsDisabled()) {
       return;
     }
@@ -31,129 +56,80 @@ class TimingMetrics {
         metadata
       });
 
-      // Pipeline: 3 commands in 1 round-trip (fire-and-forget)
       this.redis.pipeline()
         .lpush(key, data)
         .ltrim(key, 0, this.maxSamples - 1)
         .expire(key, this.ttl)
         .exec()
-        .catch(error => {
+        .catch((error: any) => {
           logger.error(`Failed to record timing metric ${metric}:`, error.message);
         });
 
       logger.debug(`Recorded timing: ${metric} = ${duration}ms`, metadata);
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Failed to record timing metric ${metric}:`, error.message);
     }
   }
 
-  /**
-   * Get timing statistics for a metric
-   * @param {string} metric - The metric name
-   * @param {Object} filters - Optional filters for metadata
-   * @returns {Object} Statistics object
-   */
-  async getStats(metric, filters = {}) {
+  async getStats(metric: string, filters: Record<string, any> = {}): Promise<TimingStats> {
     try {
       const key = `${this.keyPrefix}${metric}`;
       const rawData = await this.redis.lrange(key, 0, -1);
-      
+
       if (!rawData || rawData.length === 0) {
-        return {
-          count: 0,
-          average: 0,
-          min: 0,
-          max: 0,
-          p50: 0,
-          p95: 0,
-          p99: 0
-        };
+        return { ...EMPTY_STATS };
       }
 
-      // Parse and filter data
-      const data = rawData
-        .map(item => JSON.parse(item))
-        .filter(item => this._matchesFilters(item.metadata, filters))
-        .map(item => item.duration)
-        .sort((a, b) => a - b);
+      const data: number[] = rawData
+        .map((item: string) => JSON.parse(item))
+        .filter((item: any) => this._matchesFilters(item.metadata, filters))
+        .map((item: any) => item.duration)
+        .sort((a: number, b: number) => a - b);
 
       if (data.length === 0) {
-        return {
-          count: 0,
-          average: 0,
-          min: 0,
-          max: 0,
-          p50: 0,
-          p95: 0,
-          p99: 0
-        };
+        return { ...EMPTY_STATS };
       }
 
       const count = data.length;
-      const sum = data.reduce((acc, val) => acc + val, 0);
+      const sum = data.reduce((acc: number, val: number) => acc + val, 0);
       const average = Math.round(sum / count);
       const min = data[0];
       const max = data[data.length - 1];
-      
-      // Percentiles
+
       const p50 = data[Math.floor(count * 0.5)];
       const p95 = data[Math.floor(count * 0.95)];
       const p99 = data[Math.floor(count * 0.99)];
 
-      return {
-        count,
-        average,
-        min,
-        max,
-        p50,
-        p95,
-        p99
-      };
-    } catch (error) {
+      return { count, average, min, max, p50, p95, p99 };
+    } catch (error: any) {
       logger.error(`Failed to get stats for metric ${metric}:`, error.message);
-      return {
-        count: 0,
-        average: 0,
-        min: 0,
-        max: 0,
-        p50: 0,
-        p95: 0,
-        p99: 0
-      };
+      return { ...EMPTY_STATS };
     }
   }
 
-  /**
-   * Get all available metrics
-   * @returns {Array} Array of metric names
-   */
-  async getAllMetrics() {
+  async getAllMetrics(): Promise<string[]> {
     try {
       const { scanKeys } = require('./redisUtils');
-      const metrics = [];
-      await scanKeys(`${this.keyPrefix}*`, async (key) => {
+      const metrics: string[] = [];
+      await scanKeys(`${this.keyPrefix}*`, async (key: string) => {
         metrics.push(key.replace(this.keyPrefix, ''));
       });
       return metrics;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get all metrics:', error.message);
       return [];
     }
   }
 
-  /**
-   * Get comprehensive dashboard data
-   * @returns {Object} Dashboard metrics
-   */
-  async getDashboardData() {
+  async getDashboardData(): Promise<Record<string, any>> {
     try {
       const metrics = await this.getAllMetrics();
-      const dashboardData = {};
+      const dashboardData: Record<string, any> = {};
 
       for (const metric of metrics) {
         const stats = await this.getStats(metric);
-        const recentStats = await this.getStats(metric, { recent: true }); // Last 100 samples
-        
+        const recentStats = await this.getStats(metric, { recent: true });
+
         dashboardData[metric] = {
           overall: stats,
           recent: recentStats,
@@ -162,28 +138,23 @@ class TimingMetrics {
       }
 
       return dashboardData;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get dashboard data:', error.message);
       return {};
     }
   }
 
-  /**
-   * Get timing breakdown by provider
-   * @returns {Object} Provider-specific timing data
-   */
-  async getProviderTimingBreakdown() {
+  async getProviderTimingBreakdown(): Promise<Record<string, any>> {
     try {
       const providerMetrics = ['search_tmdb', 'search_tvdb', 'search_tvmaze', 'search_mal', 'search_kitsu', 'search_trakt'];
       const secondaryMetrics = [
-        'secondary_tmdb_find_by_imdb', 
-        'secondary_tvdb_find_by_imdb', 
-        'secondary_tvdb_find_by_tmdb', 
+        'secondary_tmdb_find_by_imdb',
+        'secondary_tvdb_find_by_imdb',
+        'secondary_tvdb_find_by_tmdb',
         'secondary_tvmaze_find_by_imdb'
       ];
-      const breakdown = {};
+      const breakdown: Record<string, any> = {};
 
-      // Primary search metrics
       for (const metric of providerMetrics) {
         const stats = await this.getStats(metric);
         if (stats.count > 0) {
@@ -197,7 +168,6 @@ class TimingMetrics {
         }
       }
 
-      // Secondary API call metrics
       for (const metric of secondaryMetrics) {
         const stats = await this.getStats(metric);
         if (stats.count > 0) {
@@ -213,20 +183,16 @@ class TimingMetrics {
       }
 
       return breakdown;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get provider timing breakdown:', error.message);
       return {};
     }
   }
 
-  /**
-   * Get timing breakdown by resolution type
-   * @returns {Object} Resolution-type-specific timing data
-   */
-  async getResolutionTimingBreakdown() {
+  async getResolutionTimingBreakdown(): Promise<Record<string, any>> {
     try {
       const resolutionMetrics = ['id_resolution_total', 'id_resolution_cache', 'id_resolution_anime', 'id_resolution_wiki'];
-      const breakdown = {};
+      const breakdown: Record<string, any> = {};
 
       for (const metric of resolutionMetrics) {
         const stats = await this.getStats(metric);
@@ -241,67 +207,56 @@ class TimingMetrics {
       }
 
       return breakdown;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get resolution timing breakdown:', error.message);
       return {};
     }
   }
 
-  /**
-   * Get success rate for a metric (based on error metadata)
-   * @param {string} metric - The metric name
-   * @returns {number} Success rate percentage
-   */
-  async getSuccessRate(metric) {
+  async getSuccessRate(metric: string): Promise<number> {
     try {
       const key = `${this.keyPrefix}${metric}`;
       const rawData = await this.redis.lrange(key, 0, -1);
-      
+
       if (!rawData || rawData.length === 0) {
-        return 100; // Default to 100% if no data
+        return 100;
       }
 
-      const data = rawData.map(item => JSON.parse(item));
+      const data = rawData.map((item: string) => JSON.parse(item));
       const totalCount = data.length;
-      const errorCount = data.filter(item => item.metadata.error).length;
-      
+      const errorCount = data.filter((item: any) => item.metadata.error).length;
+
       return Math.round(((totalCount - errorCount) / totalCount) * 100);
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Failed to get success rate for metric ${metric}:`, error.message);
-      return 100; // Default to 100% on error
+      return 100;
     }
   }
 
-  /**
-   * Get timing trends over time periods
-   * @param {string} metric - The metric name
-   * @param {Array} periods - Array of time periods in hours
-   * @returns {Object} Timing trends
-   */
-  async getTimingTrends(metric, periods = [1, 24, 168]) { // 1h, 24h, 7d
+  async getTimingTrends(metric: string, periods: number[] = [1, 24, 168]): Promise<Record<string, TrendEntry>> {
     try {
-      const trends = {};
-      
+      const trends: Record<string, TrendEntry> = {};
+
       for (const period of periods) {
         const cutoff = Date.now() - (period * 60 * 60 * 1000);
         const key = `${this.keyPrefix}${metric}`;
         const rawData = await this.redis.lrange(key, 0, -1);
-        
+
         if (!rawData || rawData.length === 0) {
           trends[`${period}h`] = { count: 0, average: 0 };
           continue;
         }
 
-        const data = rawData
-          .map(item => JSON.parse(item))
-          .filter(item => item.timestamp > cutoff)
-          .map(item => item.duration)
-          .sort((a, b) => a - b);
+        const data: number[] = rawData
+          .map((item: string) => JSON.parse(item))
+          .filter((item: any) => item.timestamp > cutoff)
+          .map((item: any) => item.duration)
+          .sort((a: number, b: number) => a - b);
 
         if (data.length > 0) {
-          const average = Math.round(data.reduce((acc, val) => acc + val, 0) / data.length);
+          const average = Math.round(data.reduce((acc: number, val: number) => acc + val, 0) / data.length);
           const p95 = data[Math.floor(data.length * 0.95)];
-          
+
           trends[`${period}h`] = {
             count: data.length,
             average,
@@ -314,29 +269,24 @@ class TimingMetrics {
       }
 
       return trends;
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Failed to get timing trends for metric ${metric}:`, error.message);
       return {};
     }
   }
 
-  /**
-   * Clear old data for a metric
-   * @param {string} metric - The metric name
-   * @param {number} maxAge - Maximum age in milliseconds
-   */
-  async clearOldData(metric, maxAge = 24 * 60 * 60 * 1000) { // 24 hours default
+  async clearOldData(metric: string, maxAge: number = 24 * 60 * 60 * 1000): Promise<void> {
     try {
       const key = `${this.keyPrefix}${metric}`;
       const rawData = await this.redis.lrange(key, 0, -1);
-      
+
       if (!rawData) return;
 
       const cutoff = Date.now() - maxAge;
       const filteredData = rawData
-        .map(item => JSON.parse(item))
-        .filter(item => item.timestamp > cutoff)
-        .map(item => JSON.stringify(item));
+        .map((item: string) => JSON.parse(item))
+        .filter((item: any) => item.timestamp > cutoff)
+        .map((item: any) => JSON.stringify(item));
 
       if (filteredData.length < rawData.length) {
         await this.redis.del(key);
@@ -346,16 +296,12 @@ class TimingMetrics {
         }
         logger.info(`Cleaned ${rawData.length - filteredData.length} old entries for metric ${metric}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Failed to clear old data for metric ${metric}:`, error.message);
     }
   }
 
-  /**
-   * Check if metadata matches filters
-   * @private
-   */
-  _matchesFilters(metadata, filters) {
+  _matchesFilters(metadata: Record<string, any>, filters: Record<string, any>): boolean {
     for (const [key, value] of Object.entries(filters)) {
       if (metadata[key] !== value) {
         return false;
@@ -365,4 +311,6 @@ class TimingMetrics {
   }
 }
 
-module.exports = new TimingMetrics();
+const instance = new TimingMetrics();
+export { instance as default };
+module.exports = instance;

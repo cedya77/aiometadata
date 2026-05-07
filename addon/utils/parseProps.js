@@ -3440,7 +3440,8 @@ module.exports = {
   getTvdbCertification,
   getAnimePosterUrl,
   getKitsuLocalizedTitle,
-  resolveCustomArtUrl
+  resolveCustomArtUrl,
+  isRatingPostersEnabled
 };
 
 /**

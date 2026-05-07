@@ -1,8 +1,14 @@
-const redis = require('./redisClient');
-const consola = require('consola');
-const logger = consola.withTag('Redis-Utils');
+const redis: any = require('./redisClient');
+const consola: any = require('consola');
+const logger: any = consola.withTag('Redis-Utils');
 
-async function deleteKeysByPattern(pattern, options = {}) {
+interface DeleteKeysByPatternOptions {
+  scanCount?: number;
+  batchSize?: number;
+  filter?: ((key: string) => boolean) | null;
+}
+
+async function deleteKeysByPattern(pattern: string, options: DeleteKeysByPatternOptions = {}): Promise<number> {
   if (!redis) return 0;
   const scanCount = options.scanCount || 1000;
   const batchSize = options.batchSize || 500;
@@ -13,10 +19,9 @@ async function deleteKeysByPattern(pattern, options = {}) {
   do {
     const res = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount);
     cursor = res[0];
-    const keys = res[1] || [];
+    const keys: string[] = res[1] || [];
     if (keys.length === 0) continue;
 
-    // Apply filter if provided
     const keysToDelete = filter ? keys.filter(filter) : keys;
     if (keysToDelete.length === 0) continue;
 
@@ -32,7 +37,11 @@ async function deleteKeysByPattern(pattern, options = {}) {
   return totalDeleted;
 }
 
-async function scanKeys(pattern, cb, options = {}) {
+interface ScanKeysOptions {
+  scanCount?: number;
+}
+
+async function scanKeys(pattern: string, cb: (key: string) => Promise<void>, options: ScanKeysOptions = {}): Promise<number> {
   if (!redis) return 0;
   const scanCount = options.scanCount || 1000;
   let cursor = '0';
@@ -40,7 +49,7 @@ async function scanKeys(pattern, cb, options = {}) {
   do {
     const res = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount);
     cursor = res[0];
-    const keys = res[1] || [];
+    const keys: string[] = res[1] || [];
     for (const k of keys) {
       await cb(k);
       processed++;
@@ -49,7 +58,5 @@ async function scanKeys(pattern, cb, options = {}) {
   return processed;
 }
 
-module.exports = {
-  deleteKeysByPattern,
-  scanKeys
-};
+export { deleteKeysByPattern, scanKeys };
+module.exports = { deleteKeysByPattern, scanKeys };
