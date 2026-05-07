@@ -1,9 +1,8 @@
-const sharp = require('sharp');
-const axios = require('axios');
-const { Transform } = require('stream');
-const { pipeline } = require('stream/promises');
+const sharp: any = require('sharp');
+const axios: any = require('axios');
+const { Transform }: any = require('stream');
+const { pipeline }: any = require('stream/promises');
 
-// Whitelisted domains for image processing
 const ALLOWED_DOMAINS = [
   'image.tmdb.org',
   'artworks.thetvdb.com',
@@ -23,73 +22,67 @@ const ALLOWED_DOMAINS = [
   'top-posters.com'
 ];
 
-// Allowed file extensions
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
 
-// Maximum file size (15MB)
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_INPUT_PIXELS = 10000 * 10000;
 const REQUEST_TIMEOUT_MS = 10000;
 
-/**
- * Validate image URL for security
- * @param {string} imageUrl - URL to validate
- * @returns {boolean} - Whether URL is safe to process
- */
-function validateImageUrl(imageUrl) {
+interface BannerOptions {
+  width?: number;
+  height?: number;
+  blur?: number;
+  brightness?: number;
+  contrast?: number;
+  position?: string;
+}
+
+interface StreamResult {
+  bytesWritten: number;
+  info: any | null;
+}
+
+function validateImageUrl(imageUrl: string): boolean {
   try {
     const parsedUrl = new URL(imageUrl);
-    
+
     const domain = parsedUrl.hostname.toLowerCase();
-    const isAllowedDomain = ALLOWED_DOMAINS.some(allowed => 
+    const isAllowedDomain = ALLOWED_DOMAINS.some(allowed =>
       domain === allowed || domain.endsWith('.' + allowed)
     );
-    
+
     if (!isAllowedDomain) {
       console.warn(`[Security] Blocked request to unauthorized domain: ${domain}`);
       return false;
     }
-    
+
     if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && domain === 'localhost')) {
       console.warn(`[Security] Blocked request with unauthorized protocol: ${parsedUrl.protocol}`);
       return false;
     }
-    
+
     const pathname = parsedUrl.pathname.toLowerCase();
     const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => pathname.endsWith(ext));
-    // MetaHub serves images via extensionless endpoints like `/img`.
     const isExtensionless =
       domain === 'images.metahub.space' && pathname.endsWith('/img');
-    
+
     if (!hasValidExtension && !isExtensionless) {
       console.warn(`[Security] Blocked request with unauthorized file extension: ${pathname}`);
       return false;
     }
-    
+
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.warn(`[Security] Invalid URL format: ${imageUrl}`);
     return false;
   }
 }
 
-async function blurImage(imageUrl, outputStream) {
-  return streamProcessedImage(imageUrl, outputStream, (transformer) => transformer.blur(80));
+async function blurImage(imageUrl: string, outputStream: any): Promise<StreamResult> {
+  return streamProcessedImage(imageUrl, outputStream, (transformer: any) => transformer.blur(80));
 }
 
-/**
- * Convert banner image to full-size background image
- * @param {string} bannerUrl - Original banner image URL
- * @param {Object} options - Processing options
- * @param {number} options.width - Target width (default: 1920)
- * @param {number} options.height - Target height (default: 1080)
- * @param {number} options.blur - Blur amount (default: 0)
- * @param {number} options.brightness - Brightness adjustment (default: 1)
- * @param {number} options.contrast - Contrast adjustment (default: 1)
- * @param {import('stream').Writable} outputStream - Destination stream
- * @returns {Promise<{bytesWritten:number, info:Object|null}>} Stream result
- */
-async function convertBannerToBackground(bannerUrl, options = {}, outputStream) {
+async function convertBannerToBackground(bannerUrl: string, options: BannerOptions = {}, outputStream: any): Promise<StreamResult> {
   const {
     width = 1920,
     height = 1080,
@@ -99,7 +92,7 @@ async function convertBannerToBackground(bannerUrl, options = {}, outputStream) 
     position = 'center'
   } = options;
 
-  return streamProcessedImage(bannerUrl, outputStream, (transformer) => {
+  return streamProcessedImage(bannerUrl, outputStream, (transformer: any) => {
     let sharpInstance = transformer.resize(width, height, {
       fit: 'cover',
       position
@@ -120,17 +113,17 @@ async function convertBannerToBackground(bannerUrl, options = {}, outputStream) 
   });
 }
 
-function ensureOutputStream(outputStream) {
+function ensureOutputStream(outputStream: any): void {
   if (!outputStream || typeof outputStream.write !== 'function') {
     throw new Error('Output stream is required for image processing');
   }
 }
 
-function createInputSizeLimiter(maxBytes) {
+function createInputSizeLimiter(maxBytes: number): any {
   let totalBytes = 0;
 
   return new Transform({
-    transform(chunk, _encoding, callback) {
+    transform(chunk: any, _encoding: string, callback: any) {
       totalBytes += chunk.length;
 
       if (totalBytes > maxBytes) {
@@ -143,7 +136,7 @@ function createInputSizeLimiter(maxBytes) {
   });
 }
 
-function createOutputCounter() {
+function createOutputCounter(): { bytes: () => number; stream: any } {
   let bytesWritten = 0;
 
   return {
@@ -151,7 +144,7 @@ function createOutputCounter() {
       return bytesWritten;
     },
     stream: new Transform({
-      transform(chunk, _encoding, callback) {
+      transform(chunk: any, _encoding: string, callback: any) {
         bytesWritten += chunk.length;
         callback(null, chunk);
       }
@@ -159,7 +152,7 @@ function createOutputCounter() {
   };
 }
 
-async function fetchImageStream(imageUrl) {
+async function fetchImageStream(imageUrl: string): Promise<any> {
   if (!validateImageUrl(imageUrl)) {
     throw new Error('Invalid or unauthorized image URL');
   }
@@ -186,23 +179,23 @@ async function fetchImageStream(imageUrl) {
   return response;
 }
 
-function createSharpStream() {
+function createSharpStream(): any {
   return sharp({
     sequentialRead: true,
     limitInputPixels: MAX_INPUT_PIXELS
   });
 }
 
-async function streamProcessedImage(imageUrl, outputStream, configureTransformer) {
+async function streamProcessedImage(imageUrl: string, outputStream: any, configureTransformer: (transformer: any) => any): Promise<StreamResult> {
   ensureOutputStream(outputStream);
 
   const response = await fetchImageStream(imageUrl);
   const inputLimiter = createInputSizeLimiter(MAX_FILE_SIZE);
   const outputCounter = createOutputCounter();
   const transformer = configureTransformer(createSharpStream()).jpeg();
-  let outputInfo = null;
+  let outputInfo: any = null;
 
-  transformer.once('info', (info) => {
+  transformer.once('info', (info: any) => {
     outputInfo = info;
   });
 
@@ -219,10 +212,11 @@ async function streamProcessedImage(imageUrl, outputStream, configureTransformer
       bytesWritten: outputCounter.bytes(),
       info: outputInfo
     };
-  } catch (error) {
+  } catch (error: any) {
     response.data.destroy(error);
     throw error;
   }
 }
 
+export { blurImage, convertBannerToBackground, validateImageUrl };
 module.exports = { blurImage, convertBannerToBackground, validateImageUrl };

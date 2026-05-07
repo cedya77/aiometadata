@@ -1,68 +1,65 @@
-const { request, Agent, ProxyAgent } = require('undici');
+const { request, Agent, ProxyAgent }: any = require('undici');
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
-// Gemini dispatcher configuration
-// Priority: GEMINI_HTTPS_PROXY/GEMINI_HTTP_PROXY > HTTPS_PROXY/HTTP_PROXY > direct connection
-const getGeminiProxyUrl = () => {
-  // First check for Gemini-specific proxy
+interface GenerateContentOptions {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  useGrounding?: boolean;
+  timeout?: number;
+}
+
+interface GenerateContentResult {
+  text: string | null;
+  candidates: any[];
+  groundingMetadata: any | null;
+  promptFeedback: any | null;
+  finishReason: string | null;
+  safetyRatings: any | null;
+}
+
+const getGeminiProxyUrl = (): string | null => {
   const geminiProxy = process.env.GEMINI_HTTPS_PROXY ?? process.env.GEMINI_HTTP_PROXY;
   if (geminiProxy) {
     try {
       return new URL(geminiProxy).toString();
-    } catch (error) {
+    } catch (error: any) {
       console.warn('Invalid Gemini proxy URL:', geminiProxy);
     }
   }
-  // Fall back to global proxy
   const globalProxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY;
   if (globalProxy) {
     try {
       return new URL(globalProxy).toString();
-    } catch (error) {
+    } catch (error: any) {
       console.warn('Invalid global proxy URL:', globalProxy);
     }
   }
   return null;
 };
 
-// Create Gemini dispatcher
-// Uses Gemini-specific proxy if set, otherwise global proxy, otherwise direct connection
-const createGeminiDispatcher = () => {
+const createGeminiDispatcher = (): any => {
   const proxyUrl = getGeminiProxyUrl();
   if (proxyUrl) {
     return new ProxyAgent({ uri: proxyUrl, allowH2: false });
   }
-  // No proxy configured - use direct connection
   return new Agent({
     allowH2: false,
-    keepAliveTimeout: 30000,      // Keep connections alive for 30s
-    keepAliveMaxTimeout: 60000,   // Max keep-alive time 60s
-    connections: 50,              // Max concurrent connections
-    pipelining: 1,                // HTTP/1.1 pipelining
+    keepAliveTimeout: 30000,
+    keepAliveMaxTimeout: 60000,
+    connections: 50,
+    pipelining: 1,
   });
 };
 
-// Shared dispatcher for all requests to Gemini API
-// This is always a dedicated Agent/ProxyAgent, never using the global dispatcher
-const geminiDispatcher = createGeminiDispatcher();
+const geminiDispatcher: any = createGeminiDispatcher();
 
-/**
- * Generate content using Gemini API with optional Google Search grounding.
- * 
- * @param {Object} options
- * @param {string} options.apiKey - Gemini API key
- * @param {string} options.model - Model name (e.g., 'gemini-2.5-flash-lite')
- * @param {string} options.prompt - Text prompt to send
- * @param {boolean} [options.useGrounding=false] - Enable Google Search grounding
- * @param {number} [options.timeout=30000] - Request timeout in ms
- * @returns {Promise<{text: string|null, candidates: Array, groundingMetadata: Object|null, promptFeedback: Object|null}>}
- */
-async function generateContent({ apiKey, model, prompt, useGrounding = false, timeout = 30000 }) {
+async function generateContent({ apiKey, model, prompt, useGrounding = false, timeout = 30000 }: GenerateContentOptions): Promise<GenerateContentResult> {
   const url = `${GEMINI_BASE_URL}/models/${model}:generateContent`;
   const startTime = Date.now();
 
-  const body = {
+  const body: any = {
     contents: [
       {
         parts: [{ text: prompt }]
@@ -94,22 +91,19 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
     const responseTime = Date.now() - startTime;
 
     if (statusCode !== 200) {
-      // Track failure
-      const requestTracker = require('../lib/requestTracker');
+      const requestTracker: any = require('../lib/requestTracker');
       requestTracker.trackProviderCall('gemini', responseTime, false);
-      
+
       const errorMessage = data?.error?.message || `HTTP ${statusCode}`;
-      const error = new Error(`Gemini API error: ${errorMessage}`);
+      const error: any = new Error(`Gemini API error: ${errorMessage}`);
       error.statusCode = statusCode;
       error.response = data;
       throw error;
     }
 
-    // Track success
-    const requestTracker = require('../lib/requestTracker');
+    const requestTracker: any = require('../lib/requestTracker');
     requestTracker.trackProviderCall('gemini', responseTime, true);
 
-    // Extract response data
     const candidate = data?.candidates?.[0];
     const text = candidate?.content?.parts?.[0]?.text || null;
     const groundingMetadata = candidate?.groundingMetadata || null;
@@ -122,35 +116,25 @@ async function generateContent({ apiKey, model, prompt, useGrounding = false, ti
       finishReason: candidate?.finishReason || null,
       safetyRatings: candidate?.safetyRatings || null,
     };
-  } catch (error) {
+  } catch (error: any) {
     const responseTime = Date.now() - startTime;
-    
-    // Track failure if not already tracked (network errors, timeouts, etc.)
+
     if (!error.statusCode) {
-      const requestTracker = require('../lib/requestTracker');
+      const requestTracker: any = require('../lib/requestTracker');
       requestTracker.trackProviderCall('gemini', responseTime, false);
     }
-    
+
     throw error;
   }
 }
 
-/**
- * Get agent stats for monitoring/debugging.
- */
-function getAgentStats() {
+function getAgentStats(): any {
   return geminiDispatcher.stats;
 }
 
-/**
- * Close the agent and all connections (for graceful shutdown).
- */
-async function closeAgent() {
+async function closeAgent(): Promise<void> {
   await geminiDispatcher.close();
 }
 
-module.exports = {
-  generateContent,
-  getAgentStats,
-  closeAgent,
-};
+export { generateContent, getAgentStats, closeAgent };
+module.exports = { generateContent, getAgentStats, closeAgent };

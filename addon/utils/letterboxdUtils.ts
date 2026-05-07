@@ -133,21 +133,33 @@ export async function extractLetterboxdIdentifier(url: string): Promise<string> 
       }
     }
 
-    // Make HEAD request to extract identifier from headers
-    const response: any = await makeRateLimitedRequest(
-      () => httpHead(requestUrl, {
-        dispatcher: letterboxdDispatcher,
-        headers: {
-          'User-Agent': `AIOMetadata/${buildInfo.version}`,
-          'Accept-Language': 'en-US,en;q=0.9'
-        }
-      }),
-      `Letterboxd extractIdentifier (${requestUrl})`
-    );
+    if (!requestUrl.endsWith('/')) {
+      requestUrl += '/';
+    }
 
-    //consola.debug(`[Letterboxd] Response headers:`, response.headers);
-    
-    // Extract x-letterboxd-identifier from response headers
+    const requestOpts = {
+      dispatcher: letterboxdDispatcher,
+      headers: {
+        'User-Agent': `AIOMetadata/${buildInfo.version}`,
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    };
+
+    let response: any;
+    try {
+      response = await makeRateLimitedRequest(
+        () => httpGet(requestUrl, requestOpts),
+        `Letterboxd extractIdentifier GET (${requestUrl})`,
+        1
+      );
+    } catch (getError: any) {
+      logger.debug(`GET failed (${getError.message}), falling back to HEAD`);
+      response = await makeRateLimitedRequest(
+        () => httpHead(requestUrl, requestOpts),
+        `Letterboxd extractIdentifier HEAD (${requestUrl})`
+      );
+    }
+
     const identifier = response.headers?.['x-letterboxd-identifier'];
     
     if (!identifier) {
