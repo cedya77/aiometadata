@@ -12,7 +12,7 @@ import { mapWithLimit } from "../utils/concurrency.js";
 const anilist = require('./anilist');
 import * as jikan from "./mal.js"
 import * as Utils from '../utils/parseProps.js';
-import * as CATALOG_TYPES from "../static/catalog-types.json";
+import CATALOG_TYPES from "../static/catalog-types.json";
 import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';

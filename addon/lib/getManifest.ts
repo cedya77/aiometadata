@@ -6,8 +6,8 @@ import { getGenresFromStremThruCatalog, fetchStremThruCatalog } from "../utils/s
 import { fetchTraktGenres } from "../utils/traktUtils";
 import { getGenresBySelection } from "../static/genres";
 import buildInfo from "./buildInfo";
-import * as catalogsTranslations from "../static/translations.json";
-import * as CATALOG_TYPES from "../static/catalog-types.json";
+import catalogsTranslations from "../static/translations.json";
+import CATALOG_TYPES from "../static/catalog-types.json";
 const jikan: any = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 import { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } from './getCache';
