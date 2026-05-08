@@ -157,6 +157,8 @@ export interface AppConfig {
   sfw: boolean;
   hideUnreleasedDigital: boolean;
   hideUnreleasedDigitalSearch: boolean;
+  hideUnreleasedShows: boolean;
+  hideUnreleasedShowsSearch: boolean;
   hideWatchedTrakt?: boolean;
   hideWatchedAnilist?: boolean;
   hideWatchedMdblist?: boolean;

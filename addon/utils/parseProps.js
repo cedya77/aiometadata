@@ -2056,6 +2056,7 @@ async function parseAnimeCatalogMeta(anime, config, language, descriptionFallbac
     runtime: parseRunTime(anime.duration),
     isAnime: true,
     trailers: trailers,
+    released: anime.aired?.from ? new Date(anime.aired.from) : undefined,
     behavioralHints: {
       defaultVideoId: stremioType === 'movie' ? mapping?.imdb_id ? mapping?.imdb_id: (kitsuId ? `kitsu:${kitsuId}` : `mal:${malId}`): null,
       hasScheduledVideos: stremioType === 'series',
@@ -2242,16 +2243,17 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
           runtime: parseRunTime(item.attributes.episodeLength),
           certification: item.attributes.ageRating,
           imdbRating: mapping?.imdb_id ? await getImdbRating(mapping?.imdb_id, stremioType) : 'N/A',
+          released: item.attributes.startDate ? new Date(item.attributes.startDate) : undefined,
           trailers: item.attributes.youtubeVideoId ? [{
             source: item.attributes.youtubeVideoId,
             type: "Trailer"
           }] : [],
         };
-        
+
         if (releaseDates) {
           meta.app_extras = { releaseDates };
         }
-        
+
         return meta;
       }));
       // Filter out null metas before further processing
@@ -2401,13 +2403,14 @@ async function parseAnimeCatalogMetaBatch(animes, config, language, includeVideo
         releaseInfo: malReleaseInfo,
         runtime: parseRunTime(anime.duration),
         imdbRating: imdbRating,
+        released: anime.aired?.from ? new Date(anime.aired.from) : undefined,
         trailers: trailers
       };
-      
+
       if (releaseDates) {
         meta.app_extras = { releaseDates };
       }
-      
+
       return meta;
     }
   }));

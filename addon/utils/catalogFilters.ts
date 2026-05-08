@@ -83,6 +83,19 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
     }
   }
 
+  if ((isSearch ? config.hideUnreleasedShowsSearch : config.hideUnreleasedShows)) {
+    const now = new Date();
+    const before = metas.length;
+    metas = metas.filter(meta => {
+      if (meta.type !== 'series') return true;
+      if (!meta.released) return true;
+      return new Date(meta.released) <= now;
+    });
+    if (before !== metas.length) {
+      logger.debug(`Unreleased shows filter: removed ${before - metas.length} unreleased series`);
+    }
+  }
+
   if (metas.length > 0 && config.apiKeys?.traktTokenId) {
     const globalHide = !!config.hideWatchedTrakt;
     const catalogHide = catalogConfig?.metadata?.hideWatchedTrakt;

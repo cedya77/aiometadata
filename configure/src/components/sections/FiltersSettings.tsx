@@ -34,6 +34,14 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, hideUnreleasedDigitalSearch: checked }));
   };
 
+  const handleHideUnreleasedShowsChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, hideUnreleasedShows: checked }));
+  };
+
+  const handleHideUnreleasedShowsSearchChange = (checked: boolean) => {
+    setConfig(prev => ({ ...prev, hideUnreleasedShowsSearch: checked }));
+  };
+
   const handleExclusionKeywordsChange = (value: string) => {
     setConfig(prev => ({ ...prev, exclusionKeywords: value }));
   };
@@ -120,6 +128,36 @@ export function FiltersSettings() {
                 onCheckedChange={handleHideUnreleasedDigitalSearchChange}
               />
               <Label htmlFor="hide-unreleased-digital-search">Hide Unreleased Movies in Search</Label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Hide Unreleased Shows Card */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Unreleased Shows Filter</CardTitle>
+          <CardDescription>
+            Hide series that haven't aired yet based on their release date. Applies to series catalogs only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col space-y-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="hide-unreleased-shows"
+                checked={config.hideUnreleasedShows ?? false}
+                onCheckedChange={handleHideUnreleasedShowsChange}
+              />
+              <Label htmlFor="hide-unreleased-shows">Hide Unreleased Shows in Catalogs</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="hide-unreleased-shows-search"
+                checked={config.hideUnreleasedShowsSearch ?? false}
+                onCheckedChange={handleHideUnreleasedShowsSearchChange}
+              />
+              <Label htmlFor="hide-unreleased-shows-search">Hide Unreleased Shows in Search</Label>
             </div>
           </div>
         </CardContent>

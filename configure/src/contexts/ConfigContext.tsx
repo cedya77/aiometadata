@@ -109,6 +109,8 @@ const initialConfig: AppConfig = {
   sfw: false,
   hideUnreleasedDigital: false,
   hideUnreleasedDigitalSearch: false,
+  hideUnreleasedShows: false,
+  hideUnreleasedShowsSearch: false,
   hideWatchedTrakt: false,
   hideWatchedAnilist: false,
   hideWatchedMdblist: false,

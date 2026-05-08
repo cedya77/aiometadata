@@ -44,6 +44,8 @@ export interface UserConfig {
   ageRating?: string;
   hideUnreleasedDigital?: boolean;
   hideUnreleasedDigitalSearch?: boolean;
+  hideUnreleasedShows?: boolean;
+  hideUnreleasedShowsSearch?: boolean;
   hideWatchedTrakt?: boolean;
   hideWatchedAnilist?: boolean;
   hideWatchedMdblist?: boolean;
