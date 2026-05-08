@@ -4882,13 +4882,14 @@ addon.post('/api/admin/users/:userUUID/reset-password', async (req, res) => {
   
   try {
     const { userUUID } = req.params;
-    const newPassword = await database.resetUserPassword(userUUID);
-    
+    const { newPassword: providedPassword } = req.body || {};
+    const newPassword = await database.resetUserPassword(userUUID, providedPassword);
+
     if (!newPassword) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    res.json({ newPassword });
+
+    res.json({ success: true });
   } catch (error) {
     consola.error('[Admin API] Error resetting password:', error);
     res.status(500).json({ error: 'Failed to reset password' });

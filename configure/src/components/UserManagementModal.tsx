@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
 import {
   Search,
   MoreHorizontal,
@@ -93,6 +94,9 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [showUserDetails, setShowUserDetails] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [userToResetPassword, setUserToResetPassword] = useState<User | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -166,7 +170,7 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
     }
   };
 
-  const resetUserPassword = async (uuid: string) => {
+  const resetUserPassword = async (uuid: string, password: string) => {
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -179,12 +183,11 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
       const response = await fetch(`/api/admin/users/${uuid}/reset-password`, {
         method: 'POST',
         headers,
+        body: JSON.stringify({ newPassword: password }),
       });
 
       if (response.ok) {
-        const data = await response.json();
         toast.success(`Password reset for user ${uuid.substring(0, 8)}...`);
-        toast.info(`New password: ${data.newPassword}`);
       } else {
         toast.error('Failed to reset password');
       }
@@ -424,11 +427,15 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => resetUserPassword(user.uuid)}>
+                              <DropdownMenuItem onClick={() => {
+                                setUserToResetPassword(user);
+                                setNewPasswordInput("");
+                                setShowPasswordDialog(true);
+                              }}>
                                 <Key className="h-4 w-4 mr-2" />
                                 Reset Password
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => {
                                   setUserToDelete(user);
                                   setShowDeleteDialog(true);
@@ -475,7 +482,11 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
                             <Eye className="h-4 w-4 mr-2" />
                             View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => resetUserPassword(user.uuid)}>
+                          <DropdownMenuItem onClick={() => {
+                            setUserToResetPassword(user);
+                            setNewPasswordInput("");
+                            setShowPasswordDialog(true);
+                          }}>
                             <Key className="h-4 w-4 mr-2" />
                             Reset Password
                           </DropdownMenuItem>
@@ -612,6 +623,63 @@ export function UserManagementModal({ isOpen, onClose, adminKey }: UserManagemen
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={showPasswordDialog} onOpenChange={(open) => {
+        setShowPasswordDialog(open);
+        if (!open) setNewPasswordInput("");
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Reset Password
+            </DialogTitle>
+            <DialogDescription>
+              Set a new password for user <span className="font-mono">{userToResetPassword?.uuid.substring(0, 8)}...</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                placeholder="Enter new password"
+                value={newPasswordInput}
+                onChange={(e) => setNewPasswordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newPasswordInput.length >= 6 && userToResetPassword) {
+                    resetUserPassword(userToResetPassword.uuid, newPasswordInput);
+                    setShowPasswordDialog(false);
+                    setNewPasswordInput("");
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => {
+              setShowPasswordDialog(false);
+              setNewPasswordInput("");
+            }}>
+              Cancel
+            </Button>
+            <Button
+              disabled={newPasswordInput.length < 6}
+              onClick={() => {
+                if (userToResetPassword) {
+                  resetUserPassword(userToResetPassword.uuid, newPasswordInput);
+                  setShowPasswordDialog(false);
+                  setNewPasswordInput("");
+                }
+              }}
+            >
+              Reset Password
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -749,10 +749,10 @@ class Database {
     }
   }
 
-  async resetUserPassword(userUUID: string): Promise<string | null> {
+  async resetUserPassword(userUUID: string, newPassword?: string): Promise<string | null> {
     try {
-      const newPassword = Math.random().toString(36).slice(-8);
-      const hashedPassword = await this.hashPassword(newPassword);
+      const password = newPassword || Math.random().toString(36).slice(-8);
+      const hashedPassword = await this.hashPassword(password);
 
       const query = this.type === 'sqlite'
         ? 'UPDATE user_configs SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE user_uuid = ?'
@@ -761,7 +761,7 @@ class Database {
       const result = await this.runQuery(query, [hashedPassword, userUUID]);
 
       if (this.type === 'sqlite' ? result.changes > 0 : result.rowCount > 0) {
-        return newPassword;
+        return password;
       }
 
       return null;
