@@ -4346,46 +4346,6 @@ addon.get("/api/proxy-manifest", async function (req, res) {
 });
 
 // API endpoint to auto-detect page size for external addon catalogs
-addon.get("/api/detect-page-size", async function (req, res) {
-  const { catalogUrl } = req.query;
-  
-  if (!catalogUrl) {
-    return res.status(400).json({ error: 'Missing catalogUrl parameter' });
-  }
-
-  try {
-    const { httpGet } = require('./utils/httpClient');
-    
-    // For the first page, Stremio doesn't include skip parameter at all
-    // Fetch the base catalog URL directly without any skip parameter
-    const response = await httpGet(catalogUrl, { timeout: 10000 });
-    
-    if (!response.data || !response.data.metas) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.json({ pageSize: 100, detected: false, error: 'Invalid response format' });
-      return;
-    }
-    
-    const pageSize = response.data.metas.length;
-    
-    if (pageSize === 0) {
-      // If first page is empty, return error
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.json({ pageSize: 100, detected: false, error: 'No items found in first page' });
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.json({ pageSize, detected: true });
-    }
-  } catch (error) {
-    consola.error(`[Detect Page Size] Failed to detect page size for ${catalogUrl}:`, error.message);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(error.response?.status || 500).json({ 
-      pageSize: 100,
-      detected: false,
-      error: error.message || 'Failed to detect page size' 
-    });
-  }
-});
 
 async function fetchPosterImageStream(posterUrl) {
   const imageResponse = await axios({

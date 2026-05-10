@@ -318,7 +318,6 @@ export interface CustomManifestCatalogOptions {
   };
   manifestUrl: string;
   cacheTTL?: number;
-  pageSize?: number;
   displayTypeOverrides?: { movie?: string; series?: string };
 }
 
@@ -333,7 +332,6 @@ export function createCustomManifestCatalog(options: CustomManifestCatalogOption
     catalog,
     manifestUrl,
     cacheTTL = 86400, // Default 24 hours
-    pageSize = 100,
     displayTypeOverrides,
   } = options;
 
@@ -358,7 +356,6 @@ export function createCustomManifestCatalog(options: CustomManifestCatalogOption
     sourceUrl: catalogUrl,
     genres: catalog.genres || [],
     cacheTTL,
-    pageSize,
     enableRatingPosters: true,
     manifestData: {
       ...catalog,

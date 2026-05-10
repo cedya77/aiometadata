@@ -963,7 +963,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         enabled: true,
         showInHome: true,
         source: "trakt",
-        cacheTTL: 300, // 5 minutes
+        cacheTTL: 300,
         ...(displayType && { displayType }),
       };
 
@@ -1000,7 +1000,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
         enabled: true,
         showInHome: true,
         source: "trakt",
-        cacheTTL: 300, // 5 minutes
+        cacheTTL: 300,
         ...(displayType && { displayType }),
       };
 
