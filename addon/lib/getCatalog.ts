@@ -1465,12 +1465,13 @@ async function getExternalAddonCatalog(type: string, catalogId: string, genre: s
         if (cursor.served === stremioSkip) {
           upstreamSkip = cursor.upstreamOffset;
         } else {
-          logger.warn(`[External Addon] ${catalogId}: cursor mismatch (served=${cursor.served}, skip=${stremioSkip}) - returning empty`);
-          return [];
+          logger.debug(`[External Addon] ${catalogId}: cursor mismatch (served=${cursor.served}, skip=${stremioSkip}) - falling back to skip offset`);
+          upstreamSkip = stremioSkip;
+          await redis!.del(cursorKey!);
         }
       } else {
-        logger.warn(`[External Addon] ${catalogId}: no cursor for skip=${stremioSkip} - returning empty`);
-        return [];
+        logger.debug(`[External Addon] ${catalogId}: no cursor for skip=${stremioSkip} - falling back to skip offset`);
+        upstreamSkip = stremioSkip;
       }
     }
 
