@@ -1207,7 +1207,8 @@ async function fetchTraktWatchlistItems(
   const sortHow = sortDirection || 'asc';
 
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
-  const cacheKey = `trakt-api:watchlist:${tokenHash}:${typeParam}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}`;
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `trakt-api:watchlist:${tokenHash}:${typeParam}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}${ttlSegment}`;
 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
@@ -1293,7 +1294,8 @@ async function fetchTraktFavoritesItems(
   const sortHow = sortDirection || 'asc';
 
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
-  const cacheKey = `trakt-api:favorites:${tokenHash}:${type}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}`;
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `trakt-api:favorites:${tokenHash}:${type}:${page}:${limit}:${sortParam}:${sortHow}:${genre || ''}${ttlSegment}`;
 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
@@ -1372,8 +1374,9 @@ async function fetchTraktRecommendationsItems(
   cacheTTL?: number
 ): Promise<{items: TraktListItem[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
-  const cacheKey = `trakt-api:recommendations:${tokenHash}:${type}:${page}:${limit}`;
-  
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `trakt-api:recommendations:${tokenHash}:${type}:${page}:${limit}${ttlSegment}`;
+
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
   return await cacheWrapGlobal(cacheKey, async () => {
@@ -1470,7 +1473,8 @@ async function fetchTraktListItems(
   const typeParam = type || 'all';
   const isPublic = privacy === 'public';
   const tokenHash = isPublic ? 'public' : (accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public');
-  const cacheKey = `trakt-api:list:${tokenHash}:${username}:${listSlug}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `trakt-api:list:${tokenHash}:${username}:${listSlug}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}${ttlSegment}`;
   const queueKey = accessToken ? accessToken : TRAKT_UNAUTHED_QUEUE_KEY;
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
@@ -1563,7 +1567,8 @@ async function fetchTraktListItemsById(
   const typeParam = type || 'movie,show';
   const isPublic = privacy === 'public';
   const tokenHash = isPublic ? 'public' : (accessToken ? crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16) : 'public');
-  const cacheKey = `trakt-api:list-by-id:${tokenHash}:${listId}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}`;
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `trakt-api:list-by-id:${tokenHash}:${listId}:${typeParam}:${page}:${limit}:${sort || ''}:${sortDirection || ''}:${genre || ''}${ttlSegment}`;
   const queueKey = accessToken ? accessToken : TRAKT_UNAUTHED_QUEUE_KEY;
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
@@ -2262,8 +2267,9 @@ async function fetchTraktCalendarShows(
   cacheTTL?: number
 ): Promise<{items: any[]}> {
   const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').substring(0, 16);
-  const cacheKey = `trakt-api:calendar:${tokenHash}:${startDate}:${days}`;
-  
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `trakt-api:calendar:${tokenHash}:${startDate}:${days}${ttlSegment}`;
+
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
   
   return await cacheWrapGlobal(cacheKey, async () => {
