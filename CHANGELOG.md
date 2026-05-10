@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.3.0](https://github.com/cedya77/aiometadata/compare/v2.2.2...v2.3.0) (2026-05-10)
+
+
+### Features
+
+* add filter to hide unreleased shows from catalogs and search ([f924e8a](https://github.com/cedya77/aiometadata/commit/f924e8ab595f7faef409b2fdf5c405f212c4851d))
+
+
+### Bug Fixes
+
+* allow admin to set custom password on user password reset ([5aa8106](https://github.com/cedya77/aiometadata/commit/5aa8106d98eaf0dd6c070d2ec1491dcfda5369c1))
+* fallback to skip offset on cursor mismatch instead of returning empty ([d80c7c4](https://github.com/cedya77/aiometadata/commit/d80c7c463774ba9289fd64e9791b235ecc697f68))
+* include animeIdProvider in meta cache key when forceAnimeForDetectedImdb is on ([2a5f181](https://github.com/cedya77/aiometadata/commit/2a5f181ab39b032fd9d8975c764216a2dbcd9b33))
+* include custom cacheTTL in mdblist cache keys ([1365a82](https://github.com/cedya77/aiometadata/commit/1365a82a0006dfc1cfa0782fb36af1adbda0571a))
+* include custom cacheTTL in trakt personal list cache keys ([6fe3f2d](https://github.com/cedya77/aiometadata/commit/6fe3f2deebdda7faec18faa38ba365b1e24e830c))
+* Letterboxd identifier extraction blocked by Cloudflare ([b1a2158](https://github.com/cedya77/aiometadata/commit/b1a215844af8a0eafd005cf34735aaa75a7b76cc))
+* remove unused pageSize setting from custom manifest catalogs ([a68be3f](https://github.com/cedya77/aiometadata/commit/a68be3fb021ea09c5ad0a8e8ab281f6f9010d90b))
+
 ## [2.2.2](https://github.com/cedya77/aiometadata/compare/v2.2.1...v2.2.2) (2026-05-07)
 
 
