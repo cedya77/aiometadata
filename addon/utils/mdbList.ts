@@ -315,7 +315,8 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
     ? crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, 16)
     : 'shared';
 
-  const cacheKey = `mdblist-api:items:${keyScope}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}`;
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `mdblist-api:items:${keyScope}:${listId}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${unified !== false}:${catalogType || ''}:${pageSize}${ttlSegment}`;
 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
@@ -605,7 +606,8 @@ async function fetchMDBListExternalItems(
   normalizedUrl.searchParams.delete('filter_score_max');
   const urlBase = normalizedUrl.toString();
 
-  const cacheKey = `mdblist-api:external:shared:${urlBase}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}`;
+  const ttlSegment = cacheTTL !== undefined ? `:ttl:${cacheTTL}` : '';
+  const cacheKey = `mdblist-api:external:shared:${urlBase}:${page}:${sort || ''}:${order || ''}:${genre || ''}:${catalogType || ''}:${unified !== false}:${filterScoreMin ?? ''}:${filterScoreMax ?? ''}:${pageSize}${ttlSegment}`;
 
   const ttl = cacheTTL !== undefined ? cacheTTL : parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
 
