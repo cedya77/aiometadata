@@ -48,7 +48,7 @@ const ANILIST_CATALOG_TTL = parseInt(process.env.ANILIST_CATALOG_TTL || 1 * 60 *
 
 // Enhanced error caching strategy with self-healing
 const ERROR_TTL_STRATEGIES = {
-  EMPTY_RESULT: 60,             // Don't cache empty results at all
+  EMPTY_RESULT: 15 * 60,        // 15 minutes for empty results (e.g., missing fanart)
   RATE_LIMITED: 15 * 60,       // 15 minutes for rate limit errors
   TEMPORARY_ERROR: 2 * 60,     // 2 minutes for temporary errors
   PERMANENT_ERROR: 30 * 60,    // 30 minutes for permanent errors
@@ -476,6 +476,58 @@ function classifyResult(result, error = null, cacheKey = null) {
 }
 
 /**
+ * Read-only cache probe. Returns the cached value if present, or null on miss.
+ *
+ * Does NOT invoke any producer and does NOT write to Redis. Use this when you
+ * want to *check* whether a key is currently cached without populating it.
+ *
+ * Do NOT use `cacheWrap(key, async () => null, ttl)` as a probe — that pattern
+ * is unsafe with sentinel caching: a miss writes `{__null_sentinel: true}` for
+ * the full TTL, which then poisons subsequent `cacheWrap` calls that intended
+ * to populate the same key.
+ */
+async function cacheGet(key) {
+  if (GLOBAL_NO_CACHE || !redis) {
+    return null;
+  }
+  const versionedKey = `v${ADDON_VERSION}:${key}`;
+  try {
+    const cached = await redis.get(versionedKey);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (parsed && parsed.__null_sentinel) return null;
+    if (parsed && parsed.error) return null; // skip cached error envelopes
+    return parsed;
+  } catch (err) {
+    cacheLogger.warn(`cacheGet failed for ${versionedKey}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Read-only global cache probe. Same semantics as cacheGet but uses the global
+ * key namespace, mirroring cacheWrapGlobal.
+ */
+async function cacheGetGlobal(key, options = {}) {
+  if (GLOBAL_NO_CACHE || !redis) {
+    return null;
+  }
+  const { skipVersion = false } = options;
+  const versionedKey = skipVersion ? `global:${key}` : `global:${ADDON_VERSION}:${key}`;
+  try {
+    const cached = await redis.get(versionedKey);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (parsed && parsed.__null_sentinel) return null;
+    if (parsed && parsed.error) return null;
+    return parsed;
+  } catch (err) {
+    globalCacheLogger.warn(`cacheGetGlobal failed for ${versionedKey}:`, err.message);
+    return null;
+  }
+}
+
+/**
  * Enhanced cache wrapper with self-healing capabilities
  */
 async function cacheWrap(key, method, ttl, options = {}) {
@@ -489,16 +541,27 @@ async function cacheWrap(key, method, ttl, options = {}) {
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);
   }
-  
-  let retries = 0;
-  
-  while (retries <= maxRetries) {
+
+  // Register the in-flight promise synchronously BEFORE any await, so concurrent
+  // callers for the same key all share the same pending work instead of racing
+  // past the has() check and each making their own API call.
+  const promise = (async () => {
+    let retries = 0;
+
+    while (retries <= maxRetries) {
   try {
     const cached = await redis.get(versionedKey);
     if (cached) {
         try {
           const parsed = JSON.parse(cached);
           
+          // Return null for cached null sentinel values
+          if (parsed.__null_sentinel) {
+            cacheLogger.debug(`⚡ [Cache] HIT (null sentinel) for ${versionedKey}`);
+            updateCacheHealth(versionedKey, 'hit', true);
+            return null;
+          }
+
           // Check if it's a cached error that should be retried
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
@@ -530,14 +593,11 @@ async function cacheWrap(key, method, ttl, options = {}) {
       updateCacheHealth(versionedKey, 'error', false);
   }
 
-  const promise = method();
-  inFlightRequests.set(versionedKey, promise);
-
   try {
-    const result = await promise;
+    const result = await method();
       //cacheLogger.info(`⏳ MISS for ${versionedKey}`);
       updateCacheHealth(versionedKey, 'miss', true);
-      
+
     if (result !== null && result !== undefined) {
         // Validate data before caching to prevent bad data from being cached
         let contentType = 'unknown';
@@ -551,24 +611,24 @@ async function cacheWrap(key, method, ttl, options = {}) {
           contentType = 'genre';
         }
         const validation = cacheValidator.validateBeforeCache(result, contentType);
-        
+
         if (!validation.isValid) {
           cacheLogger.warn(`Preventing bad data from being cached for ${versionedKey}:`, validation.issues);
           updateCacheHealth(versionedKey, 'error', false);
           throw new Error(`Bad data detected: ${validation.issues.join(', ')}`);
         }
-        
+
         const classification = resultClassifier(result, null, key);
         const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
-        
+
         cacheLogger.debug(`[Cache] Classification: ${classification.type}, TTL: ${finalTtl}s`);
-        
+
         // Skip caching if TTL is 0 (e.g., empty results)
         if (finalTtl > 0) {
         if (classification.type !== 'SUCCESS') {
             cacheLogger.warn(`Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
         }
-        
+
         try {
           await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
       } catch (err) {
@@ -577,6 +637,20 @@ async function cacheWrap(key, method, ttl, options = {}) {
           }
         } else {
           cacheLogger.debug(`[Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
+        }
+    } else {
+        // Cache null/undefined results as sentinel to prevent re-fetching
+        const classification = resultClassifier(result, null, key);
+        const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
+        if (finalTtl > 0) {
+          if (classification.type !== 'SUCCESS') {
+            cacheLogger.warn(`Caching ${classification.type} result for ${versionedKey} for ${finalTtl}s`);
+          }
+          try {
+            await redis.set(versionedKey, JSON.stringify({ __null_sentinel: true }), 'EX', finalTtl);
+          } catch (err) {
+            cacheLogger.warn(`Failed to write null sentinel to Redis for key ${versionedKey}:`, err);
+          }
         }
     }
     return result;
@@ -615,11 +689,18 @@ async function cacheWrap(key, method, ttl, options = {}) {
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
-      
-    throw error; 
+
+    throw error;
+  }
+    }
+  })();
+
+  inFlightRequests.set(versionedKey, promise);
+
+  try {
+    return await promise;
   } finally {
     inFlightRequests.delete(versionedKey);
-    }
   }
 }
 
@@ -633,20 +714,31 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
   const { enableErrorCaching = false, resultClassifier = classifyResult, maxRetries = SELF_HEALING_CONFIG.maxRetries, skipVersion = false } = options;
   const versionedKey = skipVersion ? `global:${key}` : `global:${ADDON_VERSION}:${key}`;
-  
+
   if (inFlightRequests.has(versionedKey)) {
     return inFlightRequests.get(versionedKey);
   }
 
-  let retries = 0;
-  
-  while (retries <= maxRetries) {
+  // Register the in-flight promise synchronously BEFORE any await, so concurrent
+  // callers for the same key all share the same pending work instead of racing
+  // past the has() check and each making their own API call.
+  const promise = (async () => {
+    let retries = 0;
+
+    while (retries <= maxRetries) {
   try {
     const cached = await redis.get(versionedKey);
     if (cached) {
         try {
           const parsed = JSON.parse(cached);
           
+          // Return null for cached null sentinel values
+          if (parsed.__null_sentinel) {
+            globalCacheLogger.debug(`⚡ [Global-Cache] HIT (null sentinel) for ${truncateCacheKey(versionedKey)}`);
+            updateCacheHealth(versionedKey, 'hit', true);
+            return null;
+          }
+
           if (parsed.error && parsed.type === 'TEMPORARY_ERROR') {
             const errorAge = Date.now() - new Date(parsed.timestamp).getTime();
             if (errorAge > ERROR_TTL_STRATEGIES.TEMPORARY_ERROR * 1000) {
@@ -676,17 +768,14 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
       updateCacheHealth(versionedKey, 'error', false);
   }
 
-  const promise = method();
-  inFlightRequests.set(versionedKey, promise);
-
   try {
-    const result = await promise;
+    const result = await method();
       //globalCacheLogger.info(`⏳ MISS for ${truncateCacheKey(versionedKey)}`);
       updateCacheHealth(versionedKey, 'miss', true);
 
       const classification = resultClassifier(result, null, key);
       const finalTtl = classification.ttl !== null ? classification.ttl : ttl;
-      
+
       //globalCacheLogger.info(`Classification: ${classification.type}, TTL: ${finalTtl}s`);
 
       // Skip caching if result classifier says so
@@ -703,6 +792,9 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
 
     if (result !== null && result !== undefined) {
       await redis.set(versionedKey, JSON.stringify(result), 'EX', finalTtl);
+        } else {
+          // Cache null/undefined as a sentinel so we don't re-fetch endlessly
+          await redis.set(versionedKey, JSON.stringify({ __null_sentinel: true }), 'EX', finalTtl);
         }
       } else {
         globalCacheLogger.debug(`[Global-Cache] Skipping cache for ${versionedKey} (TTL: 0)`);
@@ -711,20 +803,20 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
   } catch (error) {
     globalCacheLogger.error(`Method failed for cache key ${versionedKey}:`, error);
       updateCacheHealth(versionedKey, 'error', false);
-      
+
       // Cache error results if enabled
       if (enableErrorCaching) {
         const classification = resultClassifier(null, error);
         const errorTtl = classification.ttl;
-        
+
         // Skip caching if classifier says so
         if (classification.type === 'SKIP_CACHE') {
           globalCacheLogger.debug(`[Global-Cache] Skipping error cache for ${truncateCacheKey(versionedKey)} as requested by classifier`);
         } else if (errorTtl > 0) {
           try {
-            const errorResult = { 
-              error: true, 
-              type: classification.type, 
+            const errorResult = {
+              error: true,
+              type: classification.type,
               message: error.message,
               timestamp: new Date().toISOString()
             };
@@ -735,7 +827,7 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
           }
         }
       }
-      
+
       // Retry logic for temporary errors
       if (retries < maxRetries && (error.status >= 500 || error.message?.includes('timeout'))) {
         retries++;
@@ -743,11 +835,18 @@ async function cacheWrapGlobal(key, method, ttl, options = {}) {
         await new Promise(resolve => setTimeout(resolve, SELF_HEALING_CONFIG.retryDelay));
         continue;
       }
-      
+
     throw error;
+  }
+    }
+  })();
+
+  inFlightRequests.set(versionedKey, promise);
+
+  try {
+    return await promise;
   } finally {
     inFlightRequests.delete(versionedKey);
-    }
   }
 }
 
@@ -1956,6 +2055,8 @@ async function cacheWrapAniListCatalog(username, listName, page, method, customT
 
 module.exports = {
   redis,
+  cacheGet,
+  cacheGetGlobal,
   cacheWrap,
   cacheWrapGlobal,
   deleteKeysByPattern,

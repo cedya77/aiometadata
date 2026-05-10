@@ -16,7 +16,7 @@ import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheGet, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
@@ -1701,12 +1701,12 @@ async function getTraktCatalog(
         const timestampTTL = 3600; // 1 hour for timestamp (persists across cache refreshes)
         
         const cacheCheckStart = Date.now();
-        const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
+        const cachedData = await cacheGet(cacheKey);
 
         // Get last known timestamp (longer TTL so it persists)
         // Only use the saved timestamp to short-circuit rebuild when we still have cached items.
         // If the items cache has expired (cachedData is null), force a rebuild by not passing the timestamp.
-        const cachedTimestamp = cachedData ? await cacheWrap(timestampKey, async () => null, timestampTTL) : null;
+        const cachedTimestamp = cachedData ? await cacheGet(timestampKey) : null;
         const cacheCheckTime = Date.now() - cacheCheckStart;
         logger.info(`Up Next: Cache check took ${cacheCheckTime}ms`);
         
@@ -1761,8 +1761,8 @@ async function getTraktCatalog(
         const cacheTTL = 300; // 5 minutes
         const timestampTTL = 3600; // 1 hour
 
-        const cachedData = await cacheWrap(cacheKey, async () => null, cacheTTL);
-        const cachedTimestamp = await cacheWrap(timestampKey, async () => null, timestampTTL);
+        const cachedData = await cacheGet(cacheKey);
+        const cachedTimestamp = await cacheGet(timestampKey);
 
         const result = await fetchTraktUnwatchedEpisodes(token, cachedTimestamp);
 
