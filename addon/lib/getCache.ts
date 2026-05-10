@@ -1534,6 +1534,10 @@ async function cacheWrapMeta(userUUID: string, metaId: string, method: () => Pro
      scrapeImdb: config.tmdb?.scrapeImdb || false,
      forceLatinCastNames: config.tmdb?.forceLatinCastNames || false
     };
+    if (config.providers?.forceAnimeForDetectedImdb) {
+      metaConfig.forceAnimeForDetectedImdb = true;
+      metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+    }
    } else if (metaType === 'series') {
      metaConfig.metaProvider = config.providers?.series || 'tvdb';
      metaConfig.forceAnimeForDetectedImdb = config.providers?.forceAnimeForDetectedImdb;
@@ -1543,7 +1547,9 @@ async function cacheWrapMeta(userUUID: string, metaId: string, method: () => Pro
        logo: resolveArtProvider('series', 'logo', config)
      };
      metaConfig.tvdbSeasonType = config.tvdbSeasonType || 'default';
-
+     if (config.providers?.forceAnimeForDetectedImdb) {
+       metaConfig.animeIdProvider = config.providers?.anime_id_provider || 'imdb';
+     }
    }
 
   const metaConfigString = stableStringify(metaConfig);
