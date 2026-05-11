@@ -78,6 +78,35 @@ const pendingTraktOAuthStates = new Map();
 const TRAKT_OAUTH_STATE_TTL_MS = parseInt(process.env.TRAKT_OAUTH_STATE_TTL_MS || String(10 * 60 * 1000), 10);
 const usedAnilistCodes = new Set();
 
+function extractCanonicalIdFromDynamicUpNextId(type, stremioId) {
+  if (type !== 'series' || typeof stremioId !== 'string') {
+    return null;
+  }
+
+  const prefixes = ['mdblist_upnext_', 'upnext_'];
+  const prefix = prefixes.find(p => stremioId.startsWith(p));
+  if (!prefix) {
+    return null;
+  }
+
+  const remainder = stremioId.slice(prefix.length);
+  const episodeSeparatorIndex = remainder.lastIndexOf('_');
+  if (episodeSeparatorIndex <= 0) {
+    return null;
+  }
+
+  const canonicalId = remainder.slice(0, episodeSeparatorIndex);
+  const episodePart = remainder.slice(episodeSeparatorIndex + 1);
+  const isSupportedCanonicalId = /^tt\d+$/.test(canonicalId) ||
+    /^tmdb:\d+$/.test(canonicalId) ||
+    /^tvdb:\d+$/.test(canonicalId);
+  const isSupportedEpisodePart = /^trakt\d+$/.test(episodePart) ||
+    /^S\d+E\d+$/.test(episodePart) ||
+    episodePart === 'unknown';
+
+  return isSupportedCanonicalId && isSupportedEpisodePart ? canonicalId : null;
+}
+
 function createTraktOAuthState() {
   const state = crypto.randomBytes(32).toString('hex');
   const expiresAt = Date.now() + TRAKT_OAUTH_STATE_TTL_MS;
@@ -3944,7 +3973,7 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
         useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
       }
     }
-    const result = await cacheWrapMetaSmart(
+    let result = await cacheWrapMetaSmart(
       userUUID,
       stremioId,
       async () => {
@@ -3956,6 +3985,25 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
       true,
       useShowPoster
     );
+
+    if (!result || !result.meta) {
+      const canonicalFallbackId = extractCanonicalIdFromDynamicUpNextId(type, stremioId);
+      if (canonicalFallbackId) {
+        consola.debug(`[Meta Route] Falling back from stale Up Next ID ${stremioId} to canonical ID ${canonicalFallbackId}`);
+        result = await cacheWrapMetaSmart(
+          userUUID,
+          canonicalFallbackId,
+          async () => {
+            return await getMeta(type, language, canonicalFallbackId, fullConfig, userUUID, true);
+          },
+          undefined,
+          cacheOptions,
+          type,
+          true,
+          false
+        );
+      }
+    }
 
     if (!result || !result.meta) {
       return respond(req, res, { meta: null });
