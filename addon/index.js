@@ -83,7 +83,7 @@ function extractCanonicalIdFromDynamicUpNextId(type, stremioId) {
     return null;
   }
 
-  const prefixes = ['mdblist_upnext_', 'upnext_'];
+  const prefixes = ['mdblist_upnext_', 'pmdb_resume_', 'upnext_'];
   const prefix = prefixes.find(p => stremioId.startsWith(p));
   if (!prefix) {
     return null;
@@ -3969,6 +3969,12 @@ addon.get("/stremio/:userUUID/meta/:type/:id.json", async function (req, res) {
     }
     if (type === 'series' && stremioId && stremioId.startsWith('mdblist_upnext_')) {
       const catalogConfig = fullConfig.catalogs?.find(c => c.id === 'mdblist.upnext');
+      if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
+        useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
+      }
+    }
+    if (type === 'series' && stremioId && stremioId.startsWith('pmdb_resume_')) {
+      const catalogConfig = fullConfig.catalogs?.find(c => c.id === 'publicmetadb.upnext');
       if (catalogConfig?.metadata?.useShowPosterForUpNext !== undefined) {
         useShowPoster = catalogConfig.metadata.useShowPosterForUpNext;
       }
