@@ -1,23 +1,19 @@
-require('dotenv').config();
-const { generateContent } = require('./openrouter-client');
-const { buildPrompt, parseAIResponse } = require('./gemini-service');
-const consola = require('consola');
+import 'dotenv/config';
+import consola from 'consola';
+import { generateContent } from './openrouter-client';
+import { buildPrompt, parseAIResponse } from './gemini-service';
 
 const logger = consola.withTag('OpenRouterService');
 
 const DEFAULT_OPENROUTER_MODEL = 'google/gemini-2.5-flash';
 
-/**
- * Performs AI-powered search via OpenRouter.
- *
- * @param {string} apiKey - The OpenRouter API key.
- * @param {string} query - The user's natural language search query.
- * @param {'movie' | 'series' | 'mixed'} type - The type of media to search for.
- * @param {string} language
- * @param {string} [model] - The OpenRouter model ID.
- * @returns {Promise<Array<{type: string, title: string, year: number}>>} Array of suggestions.
- */
-async function performOpenRouterSearch(apiKey, query, type, language, model) {
+interface Suggestion {
+  type: string;
+  title: string;
+  year: number;
+}
+
+async function performOpenRouterSearch(apiKey: string, query: string, type: 'movie' | 'series' | 'mixed', language: string, model?: string): Promise<Suggestion[]> {
   const startTime = Date.now();
 
   if (!apiKey) {
@@ -55,7 +51,7 @@ async function performOpenRouterSearch(apiKey, query, type, language, model) {
     logger.debug(`OpenRouter raw response: ${rawText}`);
 
     const parsingStart = Date.now();
-    const suggestions = parseAIResponse(rawText, type);
+    const suggestions = parseAIResponse(rawText || '', type);
     const parsingTime = Date.now() - parsingStart;
     logger.debug(`Parsing completed in ${parsingTime}ms`);
 
@@ -68,7 +64,7 @@ async function performOpenRouterSearch(apiKey, query, type, language, model) {
 
     return suggestions;
 
-  } catch (error) {
+  } catch (error: any) {
     const keyHint = apiKey ? `...${apiKey.slice(-4)}` : 'none';
     logger.error(`Error during AI search (model: ${selectedModel}, key: ${keyHint}):`, error.message);
     if (error.statusCode) {
@@ -79,6 +75,5 @@ async function performOpenRouterSearch(apiKey, query, type, language, model) {
   }
 }
 
-module.exports = {
-  performOpenRouterSearch,
-};
+export { performOpenRouterSearch };
+module.exports = { performOpenRouterSearch };

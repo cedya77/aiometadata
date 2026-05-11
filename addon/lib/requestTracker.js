@@ -1359,8 +1359,10 @@ class RequestTracker {
       ];
 
       // Store detailed user activity for analytics
+      const userUUID = req.params?.userUUID;
       const userActivity = {
         identifier: userIdentifier,
+        displayName: userUUID ? userUUID.substring(0, 8) : null,
         timestamp: now,
         endpoint: this.normalizeEndpoint(req.path),
         userAgent: req.get("User-Agent") || "unknown",

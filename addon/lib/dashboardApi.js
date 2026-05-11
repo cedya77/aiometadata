@@ -2170,7 +2170,7 @@ class DashboardAPI {
         if (!userActivityMap.has(userHash)) {
           userActivityMap.set(userHash, {
             id: userHash,
-            username: `User ${userHash.substring(0, 8)}`, // Anonymous display name
+            username: activity.displayName ? `User ${activity.displayName}` : `User ${userHash.substring(0, 8)}`,
             lastSeen: activity.timestamp,
             requests: 0,
             status: "active",

@@ -1856,6 +1856,150 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
   }
 });
 
+// AI-powered catalog creation
+const aiCatalogRateLimit = new Map();
+addon.post("/api/ai/create-catalog", async (req, res) => {
+  try {
+    const { userUUID, password, query, provider } = req.body;
+
+    if (!userUUID || !password) {
+      return res.status(400).json({ error: 'User UUID and password are required' });
+    }
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Rate limit: 5 requests per minute per user
+    const now = Date.now();
+    const userRateKey = `ai-catalog:${userUUID}`;
+    const userRequests = aiCatalogRateLimit.get(userRateKey) || [];
+    const recentRequests = userRequests.filter(t => now - t < 60000);
+    if (recentRequests.length >= 5) {
+      return res.status(429).json({ error: 'Too many requests. Please wait a moment before trying again.' });
+    }
+    recentRequests.push(now);
+    aiCatalogRateLimit.set(userRateKey, recentRequests);
+
+    // Authenticate
+    const config = await database.verifyUserAndGetConfig(userUUID, password);
+    if (!config) {
+      return res.status(401).json({ error: 'Invalid UUID or password' });
+    }
+
+    // Get AI key
+    const openrouterKey = config.apiKeys?.openrouter;
+    const geminiKey = config.apiKeys?.gemini;
+    if (!openrouterKey && !geminiKey) {
+      return res.status(400).json({ error: 'No AI API key configured. Add an OpenRouter or Gemini key in your settings.' });
+    }
+
+    const { buildCatalogCreationPrompt, parseCatalogAIResponse, normalizeCatalog, validateCatalogParams, resolveEntities, buildCatalogConfigs } = require('./utils/ai-catalog-service');
+    const { systemPrompt, userPrompt } = buildCatalogCreationPrompt(query.trim());
+
+    let rawText = null;
+    const useOpenRouter = provider === 'gemini' ? (!geminiKey && !!openrouterKey) : !!openrouterKey;
+
+    if (useOpenRouter) {
+      const { generateContent } = require('./utils/openrouter-client');
+      const model = config.search?.ai_model || 'google/gemini-2.5-flash';
+      const result = await generateContent({
+        apiKey: openrouterKey,
+        model,
+        prompt: userPrompt,
+        systemPrompt,
+        timeout: 45000,
+      });
+      rawText = result.text;
+    } else {
+      const { generateContent } = require('./utils/gemini-client');
+      const model = config.search?.ai_model || 'gemini-2.5-flash';
+      const result = await generateContent({
+        apiKey: geminiKey,
+        model,
+        prompt: userPrompt,
+        systemPrompt,
+        timeout: 45000,
+      });
+      rawText = result.text;
+    }
+
+    if (!rawText) {
+      return res.status(500).json({ error: 'AI returned an empty response. Please try again.' });
+    }
+
+    consola.debug(`[AI Catalog] Raw response: ${rawText.substring(0, 500)}`);
+
+    let parsed = parseCatalogAIResponse(rawText);
+    if (!parsed || !parsed.catalogs.length) {
+      // Retry once with corrective prompt
+      const retryPrompt = `${userPrompt}\n\nIMPORTANT: Your previous response was not valid JSON. Return ONLY a JSON object with a "catalogs" array. No text, no markdown.`;
+      let retryText = null;
+      if (useOpenRouter) {
+        const { generateContent } = require('./utils/openrouter-client');
+        const model = config.search?.ai_model || 'google/gemini-2.5-flash';
+        const result = await generateContent({ apiKey: openrouterKey, model, prompt: retryPrompt, systemPrompt, timeout: 45000 });
+        retryText = result.text;
+      } else {
+        const { generateContent } = require('./utils/gemini-client');
+        const model = config.search?.ai_model || 'gemini-2.5-flash';
+        const result = await generateContent({ apiKey: geminiKey, model, prompt: retryPrompt, systemPrompt, timeout: 45000 });
+        retryText = result.text;
+      }
+      parsed = parseCatalogAIResponse(retryText || '');
+      if (!parsed || !parsed.catalogs.length) {
+        return res.status(422).json({ error: 'Could not generate a valid catalog configuration. Try rephrasing your request.' });
+      }
+    }
+
+    // Normalize and validate each catalog
+    const validCatalogs = [];
+    const warnings = [];
+    for (const catalog of parsed.catalogs) {
+      normalizeCatalog(catalog);
+      const validation = validateCatalogParams(catalog);
+      if (validation.valid) {
+        validCatalogs.push(catalog);
+      } else {
+        warnings.push(`Skipped "${catalog.name || 'unnamed'}": ${validation.errors.join(', ')}`);
+        consola.debug(`[AI Catalog] Validation failed for catalog: ${JSON.stringify(validation.errors)}`);
+      }
+    }
+
+    if (validCatalogs.length === 0) {
+      return res.status(422).json({ error: 'AI generated invalid configurations. Try a more specific request.', warnings });
+    }
+
+    // Resolve dynamic entities
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
+    const tvdbApiKey = config.apiKeys?.tvdb || process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '';
+    const resolveCtx = { tmdbApiKey, tvdbApiKey, userUUID };
+    consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? 'present' : 'NONE'}`);
+
+    const resolvedParams = [];
+    for (const catalog of validCatalogs) {
+      try {
+        const resolved = await resolveEntities(catalog, resolveCtx);
+        consola.info(`[AI Catalog] Resolved for "${catalog.name}": ${JSON.stringify(resolved)}`);
+        resolvedParams.push(resolved);
+      } catch (e) {
+        consola.error(`[AI Catalog] Entity resolution error: ${e.message}`);
+        resolvedParams.push({});
+      }
+    }
+
+    // Build final catalog configs
+    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim());
+
+    return res.json({ catalogs: catalogConfigs, warnings: warnings.length ? warnings : undefined });
+  } catch (error) {
+    consola.error("[AI Catalog] Error:", error.message);
+    if (error.statusCode === 429) {
+      return res.status(429).json({ error: 'AI provider rate limited. Please wait and try again.' });
+    }
+    return res.status(500).json({ error: error.message || 'Failed to create AI catalog' });
+  }
+});
+
 // Proxy: Get TMDB request token
 addon.post("/api/tmdb/auth/request_token", async (req, res) => {
   try {
@@ -2085,7 +2229,7 @@ addon.get("/api/mal/discover/preview", async (req, res) => {
     const results = items.slice(0, 20).map(item => ({
       id: item.mal_id,
       title: item.title || item.title_english || '',
-      poster_path: item.images?.webp?.image_url || item.images?.jpg?.image_url || null,
+      poster_path: item.images?.jpg?.large_image_url || item.images?.webp?.image_url || item.images?.jpg?.image_url || null,
       score: item.score,
       year: item.year,
     }));

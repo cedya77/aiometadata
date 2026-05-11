@@ -11,6 +11,7 @@ import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { StreamingTop10Integration } from './StreamingTop10Integration';
 import { QuickAddDialog } from '@/components/QuickAddDialog';
+import { AICatalogDialog } from '@/components/AICatalogDialog';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -20,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy, MoreHorizontal } from 'lucide-react';
+import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy, MoreHorizontal, Sparkles } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -2628,6 +2629,7 @@ function CatalogsSettingsContent({
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [isStreamingTop10Open, setIsStreamingTop10Open] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isAICatalogOpen, setIsAICatalogOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
   const [tempSelectedProviders, setTempSelectedProviders] = useState<string[]>([]);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
@@ -3551,6 +3553,12 @@ function CatalogsSettingsContent({
               <Wand2 className="h-4 w-4 mr-2" />
               Build Your Catalog
             </Button>
+            {(config.apiKeys?.openrouter || config.apiKeys?.gemini) && (
+              <Button onClick={() => setIsAICatalogOpen(true)} size="sm" variant="outline">
+                <Sparkles className="h-4 w-4 mr-2" />
+                AI Catalog
+              </Button>
+            )}
             <Button onClick={handleExport} size="sm" variant="outline">
               <Upload className="h-4 w-4 mr-2" />
               Share Setup
@@ -3892,6 +3900,10 @@ function CatalogsSettingsContent({
       <QuickAddDialog
         isOpen={isQuickAddOpen}
         onClose={() => setIsQuickAddOpen(false)}
+      />
+      <AICatalogDialog
+        isOpen={isAICatalogOpen}
+        onClose={() => setIsAICatalogOpen(false)}
       />
       <DiscoverBuilderDialog
         isOpen={isTmdbDiscoverBuilderOpen}
