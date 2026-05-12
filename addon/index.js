@@ -2011,7 +2011,7 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     }
 
     // Build final catalog configs
-    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim());
+    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim(), config.catalogTTL);
 
     return res.json({ catalogs: catalogConfigs, warnings: warnings.length ? warnings : undefined });
   } catch (error) {

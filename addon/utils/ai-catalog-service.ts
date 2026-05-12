@@ -846,7 +846,7 @@ function deriveFormState(source: string, catalogType: string, params: Record<str
 }
 
 
-function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record<string, string>[], originalQuery: string): CatalogConfig[] {
+function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record<string, string>[], originalQuery: string, cacheTTL?: number): CatalogConfig[] {
   const SOURCE_PREFIXES: Record<string, string> = {
     tmdb: 'tmdb.discover',
     tvdb: 'tvdb.discover',
@@ -909,7 +909,7 @@ function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record
       enabled: true,
       showInHome: true,
       source: catalog.source,
-      cacheTTL: 3600,
+      cacheTTL: cacheTTL ?? 86400,
       metadata: {
         description: `${sourceLabel} Discover (${discoverMediaType}) - AI Generated`,
         discover: {
