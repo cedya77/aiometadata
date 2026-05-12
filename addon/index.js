@@ -1960,26 +1960,9 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
 
     consola.debug(`[AI Catalog] Raw response: ${rawText.substring(0, 500)}`);
 
-    let parsed = parseCatalogAIResponse(rawText);
+    const parsed = parseCatalogAIResponse(rawText);
     if (!parsed || !parsed.catalogs.length) {
-      // Retry once with corrective prompt
-      const retryPrompt = `${userPrompt}\n\nIMPORTANT: Your previous response was not valid JSON. Return ONLY a JSON object with a "catalogs" array. No text, no markdown.`;
-      let retryText = null;
-      if (useOpenRouter) {
-        const { generateContent } = require('./utils/openrouter-client');
-        const model = config.search?.ai_model || 'google/gemini-2.5-flash';
-        const result = await generateContent({ apiKey: openrouterKey, model, prompt: retryPrompt, systemPrompt, timeout: 45000 });
-        retryText = result.text;
-      } else {
-        const { generateContent } = require('./utils/gemini-client');
-        const model = config.search?.ai_model || 'gemini-2.5-flash';
-        const result = await generateContent({ apiKey: geminiKey, model, prompt: retryPrompt, systemPrompt, timeout: 45000 });
-        retryText = result.text;
-      }
-      parsed = parseCatalogAIResponse(retryText || '');
-      if (!parsed || !parsed.catalogs.length) {
-        return res.status(422).json({ error: 'Could not generate a valid catalog configuration. Try rephrasing your request.' });
-      }
+      return res.status(422).json({ error: 'AI returned an invalid response. Try again or rephrase your request.' });
     }
 
     // Normalize and validate each catalog
