@@ -44,6 +44,11 @@ Use keywords for thematic/niche concepts that genres can't capture. Examples of 
 - "treasure hunt" → resolve: { "keywords": ["treasure", "treasure hunt"] }
 - "zombie movies" → resolve: { "keywords": ["zombie"] }
 Keywords are more precise than genres for specific themes. Prefer keywords over broad genre combinations when the user describes a specific concept or theme.
+
+CRITICAL — when user mentions specific titles: TMDB keywords are thematic tags, NOT movie/series titles. If the user asks for a catalog referencing specific titles (e.g. "movies like Friday the 13th and Nightmare on Elm Street"), do NOT use those titles as keywords. Instead, identify the themes, subgenres, and characteristics those titles share (e.g. slasher, serial killer, summer camp, supernatural horror) and use THOSE as keywords combined with appropriate genres. Think: "what makes these titles similar?" not "what are these titles called?"
+- "Friday the 13th and Elm Street movies" → with_genres: "27", resolve: { "keywords": ["slasher", "serial killer", "masked killer"] }
+- "movies like Interstellar and Arrival" → with_genres: "878", resolve: { "keywords": ["space", "alien contact", "time travel"] }
+- "shows like Breaking Bad and Ozark" → with_genres: "80|18", resolve: { "keywords": ["drug trade", "money laundering", "crime family"] }
 `;
 
 const SOURCE_ANILIST = `
@@ -141,6 +146,7 @@ Rules:
 - "resolve" is ONLY for dynamic entities that need name-to-ID lookup. Omit if none needed.
 - For anime content, prefer AniList or MAL over TMDB.
 - For movies/series, prefer TMDB (most comprehensive filters).
+- "Cartoons" means western animated content (e.g. SpongeBob, Avatar, Rick and Morty) — use TMDB or Simkl with Animation genre, NOT AniList/MAL. AniList/MAL are strictly for Japanese anime (and occasionally Korean/Chinese animation).
 - Return exactly 1 catalog unless the request clearly implies multiple (e.g. "horror, comedy, and sci-fi catalogs", "by decade starting from the 70s", "create 3 catalogs"). Never split a single concept into multiple catalogs — one request like "best James Cameron movies" is 1 catalog, not separate "popular" and "top rated" catalogs. Max 5.
 - Always include sort_by/sort/order_by in params.
 - For TMDB "best" or "top" requests: use vote_count.desc (most voted) rather than vote_average.desc. High vote count naturally surfaces the best-known, most-watched titles. Only use vote_average.desc when the user explicitly asks for "highest rated" or "best scored".
