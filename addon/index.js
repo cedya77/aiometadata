@@ -1889,7 +1889,7 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
 const aiCatalogRateLimit = new Map();
 addon.post("/api/ai/create-catalog", async (req, res) => {
   try {
-    const { userUUID, password, query, provider } = req.body;
+    const { userUUID, password, query, provider, availableSources } = req.body;
 
     if (!userUUID || !password) {
       return res.status(400).json({ error: 'User UUID and password are required' });
@@ -1923,7 +1923,9 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     }
 
     const { buildCatalogCreationPrompt, parseCatalogAIResponse, normalizeCatalog, validateCatalogParams, resolveEntities, buildCatalogConfigs } = require('./utils/ai-catalog-service');
-    const { systemPrompt, userPrompt } = buildCatalogCreationPrompt(query.trim());
+    const hasTmdb = availableSources?.tmdb ?? !!(config.apiKeys?.tmdb || process.env.BUILT_IN_TMDB_API_KEY);
+    const hasTvdb = availableSources?.tvdb ?? !!(config.apiKeys?.tvdb || process.env.BUILT_IN_TVDB_API_KEY);
+    const { systemPrompt, userPrompt } = buildCatalogCreationPrompt(query.trim(), { tmdb: hasTmdb, tvdb: hasTvdb });
 
     let rawText = null;
     const useOpenRouter = provider === 'gemini' ? (!geminiKey && !!openrouterKey) : !!openrouterKey;
@@ -1985,6 +1987,14 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     const warnings = [];
     for (const catalog of parsed.catalogs) {
       normalizeCatalog(catalog);
+      if (catalog.source === 'tmdb' && !hasTmdb) {
+        warnings.push(`Skipped "${catalog.name || 'unnamed'}": no TMDB API key configured`);
+        continue;
+      }
+      if (catalog.source === 'tvdb' && !hasTvdb) {
+        warnings.push(`Skipped "${catalog.name || 'unnamed'}": no TVDB API key configured`);
+        continue;
+      }
       const validation = validateCatalogParams(catalog);
       if (validation.valid) {
         validCatalogs.push(catalog);
@@ -2002,14 +2012,15 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
     const tvdbApiKey = config.apiKeys?.tvdb || process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '';
     const resolveCtx = { tmdbApiKey, tvdbApiKey, userUUID };
-    consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? 'present' : 'NONE'}`);
+    consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? '...' + tvdbApiKey.slice(-4) : 'NONE'}, Prompt sources: TMDB=${hasTmdb}, TVDB=${hasTvdb}`);
 
     const resolvedParams = [];
     for (const catalog of validCatalogs) {
       try {
-        const resolved = await resolveEntities(catalog, resolveCtx);
+        const { resolved, warnings: resolveWarnings } = await resolveEntities(catalog, resolveCtx);
         consola.info(`[AI Catalog] Resolved for "${catalog.name}": ${JSON.stringify(resolved)}`);
         resolvedParams.push(resolved);
+        if (resolveWarnings.length) warnings.push(...resolveWarnings);
       } catch (e) {
         consola.error(`[AI Catalog] Entity resolution error: ${e.message}`);
         resolvedParams.push({});

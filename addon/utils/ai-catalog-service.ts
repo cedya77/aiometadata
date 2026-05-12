@@ -2,10 +2,12 @@ import consola from 'consola';
 
 const logger = consola.withTag('AICatalog');
 
-const SYSTEM_PROMPT = `You are a Stremio catalog configuration generator. Given a user's natural language description, output a JSON object with a "catalogs" array that maps to supported discovery sources.
+const PROMPT_HEADER = `You are a Stremio catalog configuration generator. Given a user's natural language description, output a JSON object with a "catalogs" array that maps to supported discovery sources.
 
 === SOURCES & PARAMETERS ===
+`;
 
+const SOURCE_TMDB = `
 ## TMDB (source: "tmdb", catalogType: "movie" or "series")
 mediaType: "movie" for movies, "tv" for series
 Static params:
@@ -42,7 +44,9 @@ Use keywords for thematic/niche concepts that genres can't capture. Examples of 
 - "treasure hunt" → resolve: { "keywords": ["treasure", "treasure hunt"] }
 - "zombie movies" → resolve: { "keywords": ["zombie"] }
 Keywords are more precise than genres for specific themes. Prefer keywords over broad genre combinations when the user describes a specific concept or theme.
+`;
 
+const SOURCE_ANILIST = `
 ## AniList (source: "anilist", catalogType: "anime", mediaType: "anime")
 Static params:
 - sort: TRENDING_DESC, POPULARITY_DESC, SCORE_DESC, FAVOURITES_DESC, START_DATE_DESC, UPDATED_AT_DESC, EPISODES_DESC
@@ -62,7 +66,9 @@ Static params:
 
 Dynamic (put in "resolve"):
 - studios: ["Bones", "MAPPA", "Ufotable", "Wit Studio", "Kyoto Animation"]
+`;
 
+const SOURCE_MAL = `
 ## MAL (source: "mal", catalogType: "anime", mediaType: "anime")
 Static params:
 - order_by: score, popularity, rank, members, favorites, start_date, end_date, episodes, title
@@ -79,7 +85,9 @@ Static params:
 
 Dynamic (put in "resolve"):
 - producers: ["Bones", "MAPPA", "Toei Animation"]
+`;
 
+const SOURCE_SIMKL = `
 ## Simkl (source: "simkl", catalogType depends on media)
 mediaType and catalogType: media "movies" -> catalogType "movie", media "shows" -> catalogType "series", media "anime" -> catalogType "anime"
 Static params:
@@ -96,26 +104,30 @@ Static params:
 - network (shows): netflix, disney, peacock, appletv, cbs, abc, fox, cw, hbo, showtime, fx, amc, starz
 - network (anime): tvtokyo, tokyomx, fujitv, nhk, mbs, animax, cartoonnetwork
 - year: this-week, this-month, this-year, or decade strings like 2010s, 2000s, 1990s
+`;
 
+const SOURCE_TVDB = `
 ## TVDB (source: "tvdb", catalogType: "movie" or "series", mediaType same as catalogType)
 Static params:
 - sort: score, firstAired, name, lastAired (lastAired for series only)
 - sortType: asc, desc (series only)
-- country: lowercase country code (default "usa")
-- lang: 3-letter language code (default "eng")
+- country: lowercase country code. Only set if user specifies a country. Omit for global/unfiltered results.
+- lang: 3-letter language code. Only set if user specifies a language. Omit to use default.
 - year: integer
-- genre: numeric genre ID (single value)
-- status: numeric status ID
-- contentRating: numeric content rating ID
 
-Dynamic (put in "resolve"):
+Dynamic (put in "resolve", backend resolves names to IDs):
 - company: ["HBO", "BBC", "Netflix"] (only first one is used)
+- genre: "Horror" (single genre name, backend resolves to numeric ID)
+- status: "Continuing" or "Ended" or "Upcoming" (backend resolves to numeric ID)
+- contentRating: "TV-MA" or "TV-14" etc. (backend resolves to numeric ID)
+`;
 
+const PROMPT_FOOTER = `
 === OUTPUT SCHEMA ===
 {
   "catalogs": [
     {
-      "source": "tmdb" | "tvdb" | "anilist" | "mal" | "simkl",
+      "source": <one of the available sources above>,
       "catalogType": "movie" | "series" | "anime",
       "name": "Short descriptive name (max 40 chars)",
       "mediaType": "movie" | "tv" | "anime" | "movies" | "shows",
@@ -189,11 +201,18 @@ const MAL_GENRE_NAMES: Record<number, string> = {
   79: 'Video Game', 80: 'Visual Arts', 81: 'Crossdressing', 82: 'Urban Fantasy', 83: 'Villainess',
 };
 
-function buildCatalogCreationPrompt(query: string): { systemPrompt: string; userPrompt: string } {
-  return {
-    systemPrompt: SYSTEM_PROMPT,
-    userPrompt: query,
-  };
+interface AvailableKeys {
+  tmdb?: boolean;
+  tvdb?: boolean;
+}
+
+function buildCatalogCreationPrompt(query: string, keys?: AvailableKeys): { systemPrompt: string; userPrompt: string } {
+  const sections = [PROMPT_HEADER];
+  if (!keys || keys.tmdb) sections.push(SOURCE_TMDB);
+  sections.push(SOURCE_ANILIST, SOURCE_MAL, SOURCE_SIMKL);
+  if (!keys || keys.tvdb) sections.push(SOURCE_TVDB);
+  sections.push(PROMPT_FOOTER);
+  return { systemPrompt: sections.join(''), userPrompt: query };
 }
 
 function parseCatalogAIResponse(rawText: string): ParsedAIResponse | null {
@@ -316,6 +335,21 @@ function normalizeCatalog(catalog: AICatalogOutput): void {
     }
   }
 
+  if (catalog.source === 'tvdb') {
+    if (!catalog.params.country) catalog.params.country = 'usa';
+    if (!catalog.params.lang) catalog.params.lang = 'eng';
+    if (!catalog.resolve) catalog.resolve = {};
+    for (const field of ['genre', 'status', 'contentRating']) {
+      if (catalog.params[field] !== undefined) {
+        const val = catalog.params[field];
+        if (!catalog.resolve[field]?.length) {
+          catalog.resolve[field] = [String(val)];
+        }
+        delete catalog.params[field];
+      }
+    }
+  }
+
   if (catalog.source === 'simkl' && !catalog.params.media) {
     const typeMap: Record<string, string> = { movie: 'movies', series: 'shows', anime: 'anime' };
     catalog.params.media = typeMap[catalog.catalogType] || 'movies';
@@ -335,6 +369,15 @@ function normalizeCatalog(catalog: AICatalogOutput): void {
         }).filter((id): id is number => id !== null);
         catalog.params[field] = ids.length ? ids.join(',') : undefined;
         if (!catalog.params[field]) delete catalog.params[field];
+      }
+    }
+  }
+
+  if (catalog.resolve) {
+    for (const key of Object.keys(catalog.resolve)) {
+      const val = catalog.resolve[key];
+      if (typeof val === 'string') {
+        catalog.resolve[key] = [val] as any;
       }
     }
   }
@@ -428,10 +471,16 @@ interface ResolveContext {
   userUUID?: string;
 }
 
-async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveContext): Promise<Record<string, string>> {
+interface ResolveResult {
+  resolved: Record<string, string>;
+  warnings: string[];
+}
+
+async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveContext): Promise<ResolveResult> {
   const resolved: Record<string, string> = {};
+  const warnings: string[] = [];
   const resolve = catalog.resolve;
-  if (!resolve) return resolved;
+  if (!resolve) return { resolved, warnings };
 
   const moviedb = require('../lib/getTmdb');
   const { httpGet, httpPost } = require('./httpClient');
@@ -439,7 +488,7 @@ async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveContext): P
   if (catalog.source === 'tmdb') {
     if (!ctx.tmdbApiKey) {
       logger.warn('[AI Catalog] No TMDB API key available for entity resolution');
-      return resolved;
+      return { resolved, warnings };
     }
     const config = { apiKeys: { tmdb: ctx.tmdbApiKey } };
 
@@ -555,22 +604,86 @@ async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveContext): P
     }
   }
 
-  if (catalog.source === 'tvdb' && resolve.company?.length && ctx.tvdbApiKey) {
+  if (catalog.source === 'tvdb' && ctx.tvdbApiKey) {
     const tvdbApi = require('../lib/tvdb');
     const tvdbConfig = { apiKeys: { tvdb: ctx.tvdbApiKey }, ...(ctx.userUUID ? { userUUID: ctx.userUUID } : {}) };
-    try {
-      const searchData = await tvdbApi.searchCompanies(resolve.company[0], tvdbConfig);
-      const results = Array.isArray(searchData) ? searchData : [];
-      if (results[0]?.id) {
-        resolved.company = String(results[0].id);
-        resolved._formState_withCompanies = JSON.stringify([{ id: results[0].id, label: results[0].name || resolve.company[0] }]);
+
+    if (resolve.company?.length) {
+      try {
+        const searchData = await tvdbApi.searchCompanies(resolve.company[0], tvdbConfig);
+        const results = Array.isArray(searchData) ? searchData : [];
+        if (results[0]?.id) {
+          resolved.company = String(results[0].id);
+          resolved._formState_withCompanies = JSON.stringify([{ id: results[0].id, label: results[0].name || resolve.company[0] }]);
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to resolve TVDB company "${resolve.company[0]}": ${e.message}`);
       }
-    } catch (e: any) {
-      logger.warn(`Failed to resolve TVDB company "${resolve.company[0]}": ${e.message}`);
+    }
+
+    if (resolve.genre?.length) {
+      try {
+        const genres = await tvdbApi.getAllGenres(tvdbConfig);
+        const val = resolve.genre[0];
+        const asNum = Number(val);
+        const match = Number.isFinite(asNum)
+          ? genres.find((g: any) => g.id === asNum)
+          : genres.find((g: any) => g.name?.toLowerCase() === val.toLowerCase());
+        if (match?.id) {
+          resolved.genre = String(match.id);
+          resolved._formState_includeGenres = JSON.stringify([{ id: match.id, label: match.name }]);
+        } else {
+          logger.warn(`[AI Catalog] TVDB genre "${val}" not found`);
+          warnings.push(`Could not resolve genre "${resolve.genre[0]}"`);
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to resolve TVDB genre "${resolve.genre[0]}": ${e.message}`);
+      }
+    }
+
+    if (resolve.status?.length) {
+      try {
+        const tvdbType = catalog.catalogType === 'movie' ? 'movies' : 'series';
+        const statuses = await tvdbApi.getStatuses(tvdbType, tvdbConfig);
+        const val = resolve.status[0];
+        const asNum = Number(val);
+        const match = Number.isFinite(asNum)
+          ? statuses.find((s: any) => s.id === asNum)
+          : statuses.find((s: any) => s.name?.toLowerCase() === val.toLowerCase());
+        if (match?.id != null) {
+          resolved.status = String(match.id);
+          resolved._formState_tvdbStatus = String(match.id);
+        } else {
+          logger.warn(`[AI Catalog] TVDB status "${val}" not found`);
+          warnings.push(`Could not resolve status "${resolve.status[0]}"`);
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to resolve TVDB status "${resolve.status[0]}": ${e.message}`);
+      }
+    }
+
+    if (resolve.contentRating?.length) {
+      try {
+        const ratings = await tvdbApi.getAllContentRatings(tvdbConfig);
+        const val = resolve.contentRating[0];
+        const asNum = Number(val);
+        const match = Number.isFinite(asNum)
+          ? ratings.find((r: any) => r.id === asNum)
+          : ratings.find((r: any) => r.name?.toLowerCase() === val.toLowerCase());
+        if (match?.id != null) {
+          resolved.contentRating = String(match.id);
+          resolved._formState_certificationValue = String(match.id);
+        } else {
+          logger.warn(`[AI Catalog] TVDB content rating "${val}" not found`);
+          warnings.push(`Could not resolve content rating "${resolve.contentRating[0]}"`);
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to resolve TVDB content rating "${resolve.contentRating[0]}": ${e.message}`);
+      }
     }
   }
 
-  return resolved;
+  return { resolved, warnings };
 }
 
 async function resolveNamedEntities(names: string[], resolver: (name: string) => Promise<{ id: number; label: string } | null>): Promise<Array<{ id: number; label: string }>> {

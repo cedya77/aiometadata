@@ -71,13 +71,20 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
           password: auth.password,
           query: query.trim(),
           provider,
+          availableSources: {
+            tmdb: !!config.apiKeys?.tmdb?.trim(),
+            tvdb: !!config.apiKeys?.tvdb?.trim(),
+          },
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create catalog');
+        const msg = data.warnings?.length
+          ? `${data.error}. ${data.warnings.join('. ')}`
+          : data.error || 'Failed to create catalog';
+        throw new Error(msg);
       }
 
       setState('resolving');
