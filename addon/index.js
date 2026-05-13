@@ -1998,20 +1998,23 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? '...' + tvdbApiKey.slice(-4) : 'NONE'}, Prompt sources: TMDB=${hasTmdb}, TVDB=${hasTvdb}`);
 
     const resolvedParams = [];
+    const perCatalogWarnings = [];
     for (const catalog of validCatalogs) {
       try {
         const { resolved, warnings: resolveWarnings } = await resolveEntities(catalog, resolveCtx);
         consola.info(`[AI Catalog] Resolved for "${catalog.name}": ${JSON.stringify(resolved)}`);
         resolvedParams.push(resolved);
+        perCatalogWarnings.push(resolveWarnings);
         if (resolveWarnings.length) warnings.push(...resolveWarnings);
       } catch (e) {
         consola.error(`[AI Catalog] Entity resolution error: ${e.message}`);
         resolvedParams.push({});
+        perCatalogWarnings.push([]);
       }
     }
 
     // Build final catalog configs
-    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim(), config.catalogTTL);
+    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim(), config.catalogTTL, perCatalogWarnings);
 
     return res.json({ catalogs: catalogConfigs, warnings: warnings.length ? warnings : undefined });
   } catch (error) {

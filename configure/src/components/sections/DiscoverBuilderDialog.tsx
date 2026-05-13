@@ -10,10 +10,9 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertCircle, CircleHelp, Loader2, Search, Trash2, Wand2 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CircleHelp, Loader2, Search, Trash2, Wand2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiCache } from '@/utils/apiCache';
-import { X } from 'lucide-react';
 
 interface DiscoverBuilderDialogProps {
   isOpen: boolean;
@@ -869,6 +868,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
   const [previewTotalResults, setPreviewTotalResults] = useState(0);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [aiWarnings, setAiWarnings] = useState<string[]>([]);
   const [showMdblistPreviewConfirm, setShowMdblistPreviewConfirm] = useState(false);
   const [mdblistPreviewRemember, setMdblistPreviewRemember] = useState(false);
 
@@ -1237,6 +1237,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setIsPreviewLoading(false);
 
     setIsSaving(false);
+    setAiWarnings([]);
   };
 
   useEffect(() => {
@@ -1376,6 +1377,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     if (fs.mdblistGenres) setMdblistGenres(fs.mdblistGenres);
     if (fs.mdblistGenreMode) setMdblistGenreMode(fs.mdblistGenreMode);
     if (fs.mdblistGenreSelection) setMdblistGenreSelection(fs.mdblistGenreSelection);
+    if (fs.aiWarnings?.length) setAiWarnings(fs.aiWarnings);
   }, [isOpen, editingCatalog]);
 
   useEffect(() => {
@@ -2679,6 +2681,22 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                 If your server has no {sourceLabel} fallback configured, discover requests will fail.
               </p>
             </div>
+          </div>
+        )}
+
+        {aiWarnings.length > 0 && (
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+            <div className="flex-1 space-y-1">
+              <p className="text-sm font-medium text-amber-500">Some filters couldn't be applied</p>
+              <ul className="text-xs text-muted-foreground space-y-0.5">
+                {aiWarnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+              <p className="text-xs text-muted-foreground">You can adjust the filters below. This message will disappear when you save.</p>
+            </div>
+            <button onClick={() => setAiWarnings([])} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
 

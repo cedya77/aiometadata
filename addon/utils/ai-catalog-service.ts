@@ -846,7 +846,7 @@ function deriveFormState(source: string, catalogType: string, params: Record<str
 }
 
 
-function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record<string, string>[], originalQuery: string, cacheTTL?: number): CatalogConfig[] {
+function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record<string, string>[], originalQuery: string, cacheTTL?: number, perCatalogWarnings?: string[][]): CatalogConfig[] {
   const SOURCE_PREFIXES: Record<string, string> = {
     tmdb: 'tmdb.discover',
     tvdb: 'tvdb.discover',
@@ -881,6 +881,7 @@ function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record
     const catalogId = `${sourcePrefix}.${catalogTypeSegment}.${sanitizedName}.${uniqueSuffix}`;
 
     const resolved = resolvedParams[i] || {};
+    const catalogWarnings = perCatalogWarnings?.[i] || [];
 
     // Separate _formState_ metadata from actual params
     const formStateExtras: Record<string, any> = {};
@@ -924,6 +925,7 @@ function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams: Record
             sortBy: mergedParams.sort_by || mergedParams.sort || mergedParams.order_by,
             aiGenerated: true,
             aiQuery: originalQuery,
+            ...(catalogWarnings.length ? { aiWarnings: catalogWarnings } : {}),
             ...derivedFormState,
             ...formStateExtras,
           },
