@@ -38,13 +38,18 @@ async function getTrending(type: string, language: string, page: number, genre: 
       
       if (result && result.meta) {
         
-        const certifications: any = type === 'movie' 
-            ? await moviedb.getMovieCertifications({ id: item.id }, config) 
+        const certifications: any = type === 'movie'
+            ? await moviedb.getMovieCertifications({ id: item.id }, config)
             : await moviedb.getTvCertifications({ id: item.id }, config);
         result.meta.app_extras = result.meta.app_extras || {};
-        result.meta.app_extras.certification = type === 'movie' 
-            ? Utils.getTmdbMovieCertificationForCountry(certifications) 
+        const cert = type === 'movie'
+            ? Utils.getTmdbMovieCertificationForCountry(certifications)
             : Utils.getTmdbTvCertificationForCountry(certifications);
+        result.meta.app_extras.certification = cert;
+        const trendCountry = language?.split('-')[1];
+        result.meta.app_extras.certificationLocal = trendCountry && trendCountry !== 'US'
+            ? (type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(certifications, trendCountry) : Utils.getTmdbTvCertificationForCountry(certifications, trendCountry)) || cert
+            : cert;
             
         return result.meta;
       }

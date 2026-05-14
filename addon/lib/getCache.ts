@@ -965,14 +965,15 @@ function stripCertificationLinks(links: any[], certification: string): any[] {
 function applyDisplayAgeRatingProjection(meta: any, config: any): any {
   const certification = meta?.app_extras?.certification;
   if (!certification) return meta;
-  const links = Array.isArray(meta.links) ? stripCertificationLinks(meta.links, certification) : [];
+  const displayCert = meta?.app_extras?.certificationLocal || certification;
+  const links = Array.isArray(meta.links) ? stripCertificationLinks(meta.links, certification).filter((l: any) => !(l?.name === displayCert && l?.category === 'Genres')) : [];
   if (config.displayAgeRating) {
     const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id || meta._imdbId;
     const tmdbPath = meta.type === 'series' ? 'tv' : 'movie';
     const url = imdbId
       ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
       : `https://www.themoviedb.org/${tmdbPath}/${meta.id}`;
-    meta.links = [{ name: certification, category: 'Genres', url }, ...links];
+    meta.links = [{ name: displayCert, category: 'Genres', url }, ...links];
   } else if (Array.isArray(meta.links)) {
     meta.links = links;
   }
@@ -1396,16 +1397,17 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     for (const meta of result.metas) {
       const cert = meta.app_extras?.certification;
       if (!cert) continue;
-      const hasCertLink = meta.links?.some((l: any) => l.name === cert && l.category === 'Genres');
+      const displayCert = meta.app_extras?.certificationLocal || cert;
+      const hasCertLink = meta.links?.some((l: any) => (l.name === cert || l.name === displayCert) && l.category === 'Genres');
       if (displayAgeRating && !hasCertLink) {
         if (!Array.isArray(meta.links)) meta.links = [];
         const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id;
         const url = imdbId
           ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
           : `https://www.themoviedb.org/movie/${meta.id}`;
-        meta.links.unshift({ name: cert, category: 'Genres', url });
+        meta.links.unshift({ name: displayCert, category: 'Genres', url });
       } else if (!displayAgeRating && hasCertLink) {
-        meta.links = meta.links.filter((l: any) => !(l.name === cert && l.category === 'Genres'));
+        meta.links = meta.links.filter((l: any) => !((l.name === cert || l.name === displayCert) && l.category === 'Genres'));
       }
     }
   }

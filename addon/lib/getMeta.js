@@ -1136,7 +1136,10 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
     imdbData.app_extras = imdbData.app_extras || {};
     if(seriesData){
       const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+      const userCountry = config.language?.split('-')[1];
+      const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings, userCountry) || certification) : certification;
       imdbData.app_extras.certification = certification;
+      imdbData.app_extras.certificationLocal = certificationLocal;
       if (seriesData.videos) {
         const allTrailers = Utils.parseTrailers(seriesData.videos);
         const filteredTrailers = allTrailers.filter(trailer => trailer.lang === langCode);
@@ -1149,7 +1152,7 @@ async function buildImdbSeriesResponse(stremioId, imdbData, enrichmentData = {},
       }
       if (certification && config.displayAgeRating) {
         const certificationLink = {
-          name: certification,
+          name: certificationLocal,
           category: 'Genres',
           url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${config.language}`
         };
@@ -1211,11 +1214,14 @@ async function buildImdbMovieResponse(stremioId, imdbData, enrichmentData = {}, 
     imdbData.app_extras = imdbData.app_extras || {};
     imdbData.released = movieData.release_date ? resolveReleaseTimestamp(movieData.release_date, { originCountry: movieData.production_countries?.[0]?.iso_3166_1 }) : null;
     imdbData.app_extras.releaseDates = movieData.release_dates;
-    const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates); 
+    const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
+    const userCountry = config.language?.split('-')[1];
+    const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(movieData.release_dates, userCountry) || certification) : certification;
     imdbData.app_extras.certification = certification;
+    imdbData.app_extras.certificationLocal = certificationLocal;
     if (certification && config.displayAgeRating) {
       const certificationLink = {
-        name: certification,
+        name: certificationLocal,
         category: 'Genres',
         url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${config.language}`
       };
@@ -1349,14 +1355,15 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     movieData.original_title
   );
   const certification = Utils.getTmdbMovieCertificationForCountry(movieData.release_dates);
+  const userCountry = language?.split('-')[1];
+  const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(movieData.release_dates, userCountry) || certification) : certification;
   let links = Utils.buildLinks(imdbRating, imdbId, title, 'movie', movieData.genres, credits, language, castCount, userUUID);
   if (certification && config.displayAgeRating) {
     const certificationLink = {
-      name: certification,
+      name: certificationLocal,
       category: 'Genres',
       url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/movie/${tmdbId}?language=${language}`
     };
-    // add certification link to links as first genre link
     links.unshift(certificationLink);
   }
 
@@ -1391,7 +1398,7 @@ async function buildTmdbMovieResponse(stremioId, movieData, language, config, us
     trailers: finalTrailers,
     links: links,
     behaviorHints: { defaultVideoId: kitsuId && idProvider === 'kitsu' ? `kitsu:${kitsuId}` : imdbId || stremioId, hasScheduledVideos: false },
-    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, certification: certification },
+    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, releaseDates: movieData.release_dates, certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
 }
@@ -1790,10 +1797,12 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
   }
 
   const certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+  const userCountry = language?.split('-')[1];
+  const certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings, userCountry) || certification) : certification;
   let links = [ ...Utils.buildLinks(imdbRating, imdbId, name, 'series', seriesData.genres, credits, language, castCount, userUUID)];
   if (certification && config.displayAgeRating) {
     const certificationLink = {
-      name: certification,
+      name: certificationLocal,
       category: 'Genres',
       url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.themoviedb.org/tv/${tmdbId}?language=${language}`
     };
@@ -1834,7 +1843,7 @@ async function buildTmdbSeriesResponse(stremioId, seriesData, language, config, 
       defaultVideoId: null,
       hasScheduledVideos: true,
     },
-    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, certification: certification },
+    app_extras: { cast: Utils.parseCast(credits), directors: directorDetails, writers: writerDetails, seasonPosters: tmdbSeasonPosters, certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
   if (runtime) {
@@ -1951,11 +1960,14 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
 
   let release_dates = null;
   let certification = null;
+  let certificationLocal = null;
   if(tmdbId){
     const tmdbMovieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
     if (tmdbMovieData) {
-      release_dates = tmdbMovieData.release_dates || null;  
+      release_dates = tmdbMovieData.release_dates || null;
     certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
+    const userCountry = language?.split('-')[1];
+    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(release_dates, userCountry) || certification) : certification;
   }
   }
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb');
@@ -1964,7 +1976,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   links.push(...directorLinks, ...writerLinks);
   if(certification && config.displayAgeRating){
     const certificationLink = {
-      name: certification,
+      name: certificationLocal,
       category: 'Genres',
       url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.thetvdb.com/movies/${movieData.slug}`
     };
@@ -1999,7 +2011,7 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
       hasScheduledVideos: false
     },
     links: links,
-    app_extras: { cast: Utils.parseCast(movieCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, releaseDates: release_dates, certification: certification },
+    app_extras: { cast: Utils.parseCast(movieCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, releaseDates: release_dates, certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
 }
@@ -2638,10 +2650,13 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   }
 
   let certification = null;
+  let certificationLocal = null;
   if(tmdbId){
     const seriesData = await moviedb.tvInfo({ id: tmdbId, language, append_to_response: "content_ratings" }, config);
     if (seriesData) {
     certification = Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings);
+    const userCountry = language?.split('-')[1];
+    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(seriesData.content_ratings, userCountry) || certification) : certification;
     }
   }
   videos = [... specialVideos, ... videos];
@@ -2653,7 +2668,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
   links.push(...producerLinks, ...writerLinks);
   if(certification && config.displayAgeRating){
     const certificationLink = {
-      name: certification,
+      name: certificationLocal,
       category: 'Genres',
       url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.tvmaze.com/shows/${tvmazeShow.id}`
     };
@@ -2683,7 +2698,7 @@ async function buildSeriesResponseFromTvmaze(stremioId, tvmazeShow, episodes, la
     videos,
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvmazeCredits, undefined, 'tvmaze'), producers: producerDetails, writers: writerDetails, certification: certification }
+    app_extras: { cast: Utils.parseCast(tvmazeCredits, undefined, 'tvmaze'), producers: producerDetails, writers: writerDetails, certification: certification, certificationLocal: certificationLocal }
   };
 
   return meta;

@@ -581,9 +581,14 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         parsed.imdbRating = imdbRating;
         parsed.logo = logoUrl;
         parsed.background = backgroundUrl;
-        parsed.certification = mediaType === 'movie'
+        const certification = mediaType === 'movie'
             ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
             : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
+        parsed.certification = certification;
+        const searchCountry = language?.split('-')[1];
+        const certLocal = searchCountry && searchCountry !== 'US'
+            ? (mediaType === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, searchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, searchCountry)) || certification
+            : certification;
         parsed.popularity = media.popularity;
         parsed.score = media.score;
         if(allIds.imdbId) parsed.imdb_id = allIds.imdbId;
@@ -591,7 +596,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         if(allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        parsed.app_extras = { releaseDates: details.release_dates };
+        parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
         return { parsed, details };
     } catch (error: any) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
@@ -987,9 +992,14 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
     parsed.imdbRating = imdbRating;
     parsed.logo = logoUrl;
     parsed.background = backgroundUrl;
-    parsed.certification = type === 'movie'
+    const certification = type === 'movie'
       ? Utils.getTmdbMovieCertificationForCountry(details.release_dates)
       : Utils.getTmdbTvCertificationForCountry(details.content_ratings);
+    parsed.certification = certification;
+    const matchCountry = language?.split('-')[1];
+    const certLocal = matchCountry && matchCountry !== 'US'
+      ? (type === 'movie' ? Utils.getTmdbMovieCertificationForCountry(details.release_dates, matchCountry) : Utils.getTmdbTvCertificationForCountry(details.content_ratings, matchCountry)) || certification
+      : certification;
     if (allIds.imdbId) parsed.imdb_id = allIds.imdbId;
     if (allIds.tmdbId) parsed._tmdbId = String(allIds.tmdbId);
     if (allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
@@ -1003,7 +1013,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       );
     }
 
-    parsed.app_extras = { releaseDates: details.release_dates };
+    parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
 
     return parsed;
 
