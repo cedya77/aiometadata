@@ -340,7 +340,7 @@ async function fetchMDBListItems(listId: string, apiKey: string, language: strin
         url += `&order=${order}`;
       }
       if (genre && genre.toLowerCase() !== 'none') {
-        url += `&filter_genre=${genre}`;
+        url += `&filter_genre=${encodeURIComponent(genre)}`;
       }
       
       // Log the final URL for debugging (with API key sanitized)
@@ -745,49 +745,45 @@ let genreTitleToSlugMap: Map<string, string> | null = null;
 
 async function fetchMDBListGenres(apiKey: string, isAnime: boolean = false): Promise<string[]> {
   try {
-    const cacheKey = `genres-${isAnime ? 'anime' : 'standard'}`;
-    
-    return await cacheWrapMDBListGenres(cacheKey, async () => {
+    const cacheKey = `genres-raw-${isAnime ? 'anime' : 'standard'}`;
+
+    const genresData: Array<{title: string, slug: string}> = await cacheWrapMDBListGenres(cacheKey, async () => {
       const animeParam = isAnime ? 1 : 0;
       const url = `https://api.mdblist.com/genres/?apikey=${apiKey}&anime=${animeParam}`;
-      
+
       return await makeRateLimitedRequest(async () => {
         logger.debug(`Fetching MDBList genres from API (anime=${animeParam})`);
-        
+
         const response = await fetch(url, {
           headers: {
             'Accept': 'application/json',
           },
-          signal: AbortSignal.timeout(10000), // 10 second timeout
+          signal: AbortSignal.timeout(10000),
         });
 
         if (!response.ok) {
           throw new Error(`MDBList genres API returned ${response.status}`);
         }
 
-        const genresData = await response.json();
-        
-        if (!Array.isArray(genresData)) {
+        const data = await response.json();
+
+        if (!Array.isArray(data)) {
           throw new Error('MDBList genres API returned invalid format');
         }
 
-        // Build title->slug mapping for genre conversion
-        if (!genreTitleToSlugMap) {
-          genreTitleToSlugMap = new Map();
-        }
-        genresData.forEach((g: any) => {
-          if (g.title && g.slug) {
-            genreTitleToSlugMap!.set(g.title.toLowerCase(), g.slug);
-          }
-        });
-
-        // Extract slugs from the genre objects (MDBList API uses slugs for filtering)
-        const genres = genresData.map(g => g.title).filter(Boolean);
-
-        logger.info(`Successfully fetched ${genres.length} ${isAnime ? 'anime' : 'standard'} genres from MDBList API`);
-        return genres;
+        logger.info(`Successfully fetched ${data.length} ${isAnime ? 'anime' : 'standard'} genres from MDBList API`);
+        return data.filter((g: any) => g.title && g.slug);
       }, apiKey, `MDBList Genres API (anime=${animeParam})`);
     });
+
+    if (!genreTitleToSlugMap) {
+      genreTitleToSlugMap = new Map();
+    }
+    genresData.forEach((g) => {
+      genreTitleToSlugMap!.set(g.title.toLowerCase(), g.slug);
+    });
+
+    return genresData.map(g => g.title);
   } catch (err: any) {
     logger.error(`Error fetching MDBList genres (anime=${isAnime}):`, err.message);
     return [];
@@ -806,20 +802,26 @@ async function fetchMdbListSearchItems(query: string, type: string, apiKey: stri
   return data.search ?? [];
 }
 
-// Convert genre title to slug using the mapping from the API
-function convertGenreToSlug(genre: string): string {
+async function convertGenreToSlug(genre: string, apiKey?: string): Promise<string> {
   if (!genre || genre.toLowerCase() === 'none') {
     return genre;
   }
-  
-  // If we have the mapping, use it
+
+  if (!genreTitleToSlugMap || genreTitleToSlugMap.size === 0) {
+    const key = apiKey || process.env.MDBLIST_API_KEY || '';
+    if (key) {
+      await fetchMDBListGenres(key, false);
+      await fetchMDBListGenres(key, true);
+    }
+  }
+
   if (genreTitleToSlugMap) {
     const slug = genreTitleToSlugMap.get(genre.toLowerCase());
     if (slug) {
       return slug;
     }
   }
-  
+
   // Fallback: genre is already in slug format or direct conversion
   return genre.toLowerCase();
 }
