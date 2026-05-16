@@ -5962,9 +5962,9 @@ addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   }
   
   try {
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 50;
     Promise.all([
-      requestTracker.getPopularContent(10),
+      requestTracker.getPopularContent(limit),
       requestTracker.getSearchPatterns(limit),
       requestTracker.getStats() // For content quality metrics
     ]).then(([popularContent, searchPatterns, stats]) => {
