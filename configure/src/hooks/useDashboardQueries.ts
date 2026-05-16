@@ -179,22 +179,21 @@ export function useDashboardAnalytics(options: DashboardQueryOptions = {}) {
  * Content data - popular content, search patterns
  * Polls every 60s when content tab is active (admin only - guests fetch once)
  */
-export function useDashboardContent(options: DashboardQueryOptions = {}) {
+export function useDashboardContent(options: DashboardQueryOptions & { timeframe?: string } = {}) {
   const { isAdmin, isGuest, logout } = useAdmin();
   const getHeaders = useApiHeaders();
   const isVisible = usePageVisibility();
-  const { activeTab = 'overview', enabled = true } = options;
+  const { activeTab = 'overview', enabled = true, timeframe = 'today' } = options;
 
   const isAuthenticated = isAdmin || isGuest;
   const isActiveTab = activeTab === 'content';
-  // Only admins get live polling - guests fetch once on load
   const shouldPoll = isVisible && isActiveTab && isAdmin;
 
   return useQuery({
-    queryKey: DASHBOARD_QUERY_KEYS.content,
+    queryKey: [...DASHBOARD_QUERY_KEYS.content, timeframe],
     queryFn: async () => {
       try {
-        return await fetchDashboardData('/api/dashboard/content', getHeaders());
+        return await fetchDashboardData(`/api/dashboard/content?timeframe=${timeframe}`, getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
@@ -203,7 +202,6 @@ export function useDashboardContent(options: DashboardQueryOptions = {}) {
         throw error;
       }
     },
-    // Only fetch when this tab is active
     enabled: enabled && isAuthenticated && isActiveTab,
     refetchInterval: shouldPoll ? POLLING_INTERVALS.CONTENT : false,
     refetchIntervalInBackground: false,

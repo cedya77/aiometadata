@@ -352,39 +352,24 @@ class RequestTracker {
   }
 
   // Get popular content
-  async getPopularContent(limit = 10) {
+  async getPopularContent(limit = 50, days = 1) {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
-
-      // Get popular content from both days
-      const [todayContent, yesterdayContent] = await Promise.all([
-        redis.zrevrange(`popular_content:${today}`, 0, limit - 1, "WITHSCORES"),
-        redis.zrevrange(
-          `popular_content:${yesterday}`,
-          0,
-          limit - 1,
-          "WITHSCORES",
-        ),
-      ]);
-
-      // Combine and format results
-      const contentMap = new Map();
-
-      // Process today's content
-      for (let i = 0; i < todayContent.length; i += 2) {
-        const contentKey = todayContent[i];
-        const score = parseInt(todayContent[i + 1]) || 0;
-        contentMap.set(contentKey, (contentMap.get(contentKey) || 0) + score);
+      const dates = [];
+      for (let i = 0; i < days; i++) {
+        dates.push(new Date(Date.now() - i * 86400000).toISOString().split("T")[0]);
       }
 
-      // Process yesterday's content
-      for (let i = 0; i < yesterdayContent.length; i += 2) {
-        const contentKey = yesterdayContent[i];
-        const score = parseInt(yesterdayContent[i + 1]) || 0;
-        contentMap.set(contentKey, (contentMap.get(contentKey) || 0) + score);
+      const results = await Promise.all(
+        dates.map(date => redis.zrevrange(`popular_content:${date}`, 0, limit - 1, "WITHSCORES"))
+      );
+
+      const contentMap = new Map();
+      for (const dayData of results) {
+        for (let i = 0; i < dayData.length; i += 2) {
+          const contentKey = dayData[i];
+          const score = parseInt(dayData[i + 1]) || 0;
+          contentMap.set(contentKey, (contentMap.get(contentKey) || 0) + score);
+        }
       }
 
       // Convert to array and enrich with metadata
@@ -453,60 +438,37 @@ class RequestTracker {
     }
   }
 
-  // Get search patterns
-  async getSearchPatterns(limit = 10) {
+  async getSearchPatterns(limit = 50, days = 1) {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
+      const dates = [];
+      for (let i = 0; i < days; i++) {
+        dates.push(new Date(Date.now() - i * 86400000).toISOString().split("T")[0]);
+      }
 
-      // Get attempts and successes from both days
-      const [
-        todaySearches,
-        yesterdaySearches,
-        todaySuccesses,
-        yesterdaySuccesses,
-      ] = await Promise.all([
-        redis.zrevrange(`search_patterns:${today}`, 0, limit - 1, "WITHSCORES"),
-        redis.zrevrange(
-          `search_patterns:${yesterday}`,
-          0,
-          limit - 1,
-          "WITHSCORES",
-        ),
-        redis.zrevrange(`search_success:${today}`, 0, -1, "WITHSCORES"),
-        redis.zrevrange(`search_success:${yesterday}`, 0, -1, "WITHSCORES"),
-      ]);
+      const searchResults = await Promise.all(
+        dates.map(date => redis.zrevrange(`search_patterns:${date}`, 0, limit - 1, "WITHSCORES"))
+      );
+      const successResults = await Promise.all(
+        dates.map(date => redis.zrevrange(`search_success:${date}`, 0, -1, "WITHSCORES"))
+      );
 
-      // Combine and format results
       const searchMap = new Map();
       const successMap = new Map();
 
-      // Process today's searches
-      for (let i = 0; i < todaySearches.length; i += 2) {
-        const query = todaySearches[i];
-        const count = parseInt(todaySearches[i + 1]) || 0;
-        searchMap.set(query, (searchMap.get(query) || 0) + count);
+      for (const dayData of searchResults) {
+        for (let i = 0; i < dayData.length; i += 2) {
+          const query = dayData[i];
+          const count = parseInt(dayData[i + 1]) || 0;
+          searchMap.set(query, (searchMap.get(query) || 0) + count);
+        }
       }
 
-      // Process yesterday's searches
-      for (let i = 0; i < yesterdaySearches.length; i += 2) {
-        const query = yesterdaySearches[i];
-        const count = parseInt(yesterdaySearches[i + 1]) || 0;
-        searchMap.set(query, (searchMap.get(query) || 0) + count);
-      }
-
-      // Process successes
-      for (let i = 0; i < todaySuccesses.length; i += 2) {
-        const query = todaySuccesses[i];
-        const count = parseInt(todaySuccesses[i + 1]) || 0;
-        successMap.set(query, (successMap.get(query) || 0) + count);
-      }
-      for (let i = 0; i < yesterdaySuccesses.length; i += 2) {
-        const query = yesterdaySuccesses[i];
-        const count = parseInt(yesterdaySuccesses[i + 1]) || 0;
-        successMap.set(query, (successMap.get(query) || 0) + count);
+      for (const dayData of successResults) {
+        for (let i = 0; i < dayData.length; i += 2) {
+          const query = dayData[i];
+          const count = parseInt(dayData[i + 1]) || 0;
+          successMap.set(query, (successMap.get(query) || 0) + count);
+        }
       }
 
       // Convert to array and sort

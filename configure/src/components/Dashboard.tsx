@@ -2016,7 +2016,7 @@ function DashboardPerformance({ data, loading }) {
 
 // Content Intelligence Component
 // Data is now fetched via TanStack Query at the Dashboard level
-function DashboardContent({ data, loading }) {
+function DashboardContent({ data, loading, timeframe, onTimeframeChange }) {
   const [searchLimit, setSearchLimit] = useState(10);
 
   // Extract data from props (fetched by TanStack Query)
@@ -2034,6 +2034,20 @@ function DashboardContent({ data, loading }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Time frame</span>
+        <select
+          value={timeframe}
+          onChange={(e) => onTimeframeChange(e.target.value)}
+          className="px-2 py-1 border rounded-md bg-background text-sm"
+        >
+          <option value="today">Today</option>
+          <option value="week">Week</option>
+          <option value="month">Month</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+
       {/* Popular Content */}
       <Card>
         <CardHeader>
@@ -2139,7 +2153,7 @@ function DashboardContent({ data, loading }) {
         <CardHeader>
           <CardTitle>Search Patterns</CardTitle>
           <CardDescription>
-            Most common search queries (shows today + yesterday)
+            Most common search queries
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -4368,6 +4382,7 @@ export function Dashboard() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [activeMobileSection, setActiveMobileSection] = useState<DashboardTab | undefined>(undefined);
+  const [contentTimeframe, setContentTimeframe] = useState('today');
 
   // Access level state management - tracks current access level based on AdminContext state
   const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
@@ -4377,7 +4392,7 @@ export function Dashboard() {
   
   const overviewQuery = useDashboardOverview(queryOptions);
   const analyticsQuery = useDashboardAnalytics(queryOptions);
-  const contentQuery = useDashboardContent(queryOptions);
+  const contentQuery = useDashboardContent({ ...queryOptions, timeframe: contentTimeframe });
   const performanceQuery = useDashboardPerformance(queryOptions);
   const systemQuery = useDashboardSystem(queryOptions);
   const operationsQuery = useDashboardOperations(queryOptions);
@@ -4527,6 +4542,8 @@ export function Dashboard() {
         <DashboardContent
           data={dashboardData.content}
           loading={dashboardData.loading}
+          timeframe={contentTimeframe}
+          onTimeframeChange={setContentTimeframe}
         />
       ),
     },
@@ -4720,6 +4737,8 @@ export function Dashboard() {
           <DashboardContent
             data={dashboardData.content}
             loading={dashboardData.loading}
+            timeframe={contentTimeframe}
+            onTimeframeChange={setContentTimeframe}
           />
         </TabsContent>
 

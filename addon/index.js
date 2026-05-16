@@ -5963,9 +5963,11 @@ addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   
   try {
     const limit = parseInt(req.query.limit) || 50;
+    const timeframe = req.query.timeframe || 'today';
+    const days = timeframe === 'week' ? 7 : timeframe === 'month' ? 30 : timeframe === 'all' ? 30 : 1;
     Promise.all([
-      requestTracker.getPopularContent(limit),
-      requestTracker.getSearchPatterns(limit),
+      requestTracker.getPopularContent(limit, days),
+      requestTracker.getSearchPatterns(limit, days),
       requestTracker.getStats() // For content quality metrics
     ]).then(([popularContent, searchPatterns, stats]) => {
       res.json({ 
