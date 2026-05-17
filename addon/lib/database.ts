@@ -353,6 +353,7 @@ class Database {
     return rows ? rows.map(row => row.user_uuid) : [];
   }
 
+
   async getUsersCreatedToday(): Promise<number> {
     const today = new Date().toISOString().substring(0, 10);
     const query = this.type === 'sqlite'
