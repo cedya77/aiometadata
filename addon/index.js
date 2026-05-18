@@ -3769,8 +3769,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
             break;
           }
           case 'mal.seasons': {
-            // Parse season string like "Winter 2024" into season and year
-            let seasonString = genreName;
+            let seasonString = genreName ? decodeURIComponent(genreName) : null;
             
             // If no season specified, calculate current season based on today's date
             if (!seasonString) {
