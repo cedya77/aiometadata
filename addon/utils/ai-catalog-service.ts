@@ -312,6 +312,20 @@ function normalizeCatalog(catalog: AICatalogOutput): void {
       }
     }
 
+    if (catalog.resolve) {
+      for (const key of Object.keys(catalog.resolve)) {
+        if (Array.isArray(catalog.resolve[key])) {
+          const seen = new Set<string>();
+          catalog.resolve[key] = catalog.resolve[key].filter((v: string) => {
+            const lower = v.toLowerCase();
+            if (seen.has(lower)) return false;
+            seen.add(lower);
+            return true;
+          });
+        }
+      }
+    }
+
     for (const field of ['with_genres', 'without_genres']) {
       if (catalog.params[field]) {
         const validGenres = catalog.catalogType === 'movie' ? VALID_TMDB_MOVIE_GENRES : VALID_TMDB_TV_GENRES;
@@ -468,7 +482,15 @@ function pickBestMatch(results: any[], queryName: string): any | null {
     exactMatches.sort((a: any, b: any) => a.id - b.id);
     return exactMatches[0];
   }
-  return results[0];
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const queryWordRe = new RegExp(`\\b${esc(nameLower)}\\b`);
+  const wordMatches = results.filter((r: any) => {
+    const label = (r.name || r.title || '').toLowerCase();
+    const labelWordRe = new RegExp(`\\b${esc(label)}\\b`);
+    return queryWordRe.test(label) || labelWordRe.test(nameLower);
+  });
+  if (wordMatches.length) return wordMatches[0];
+  return null;
 }
 
 interface ResolveContext {
