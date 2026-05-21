@@ -862,6 +862,7 @@ function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = fal
     metaProvider: ctx.metaProvider,
     animeIdProvider: ctx.animeIdProvider,
     providerOptions: ctx.providerOptions,
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
   };
   const artCommon = {
     ...ctx.base,
@@ -872,7 +873,6 @@ function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = fal
 
   const basicProfile = {
     ...commonProvider,
-    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
   };
   const posterProfile = {
     ...artCommon,
