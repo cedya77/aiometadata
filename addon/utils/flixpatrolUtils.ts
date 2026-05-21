@@ -54,11 +54,41 @@ interface CrawlerData {
 }
 
 
+const ISO_TO_SLUG: Record<string, string> = {
+  al: 'albania', dz: 'algeria', ag: 'antigua-and-barbuda', ar: 'argentina',
+  am: 'armenia', au: 'australia', at: 'austria', az: 'azerbaijan', bs: 'bahamas',
+  bh: 'bahrain', bd: 'bangladesh', by: 'belarus', be: 'belgium', bz: 'belize',
+  bo: 'bolivia', ba: 'bosnia-and-herzegovina', bw: 'botswana', br: 'brazil',
+  bg: 'bulgaria', kh: 'cambodia', ca: 'canada', cl: 'chile', co: 'colombia',
+  cr: 'costa-rica', hr: 'croatia', cy: 'cyprus', cz: 'czech-republic',
+  dk: 'denmark', dm: 'dominica', do: 'dominican-republic', ec: 'ecuador',
+  eg: 'egypt', ee: 'estonia', fi: 'finland', fr: 'france', gm: 'gambia',
+  de: 'germany', gh: 'ghana', gr: 'greece', gt: 'guatemala', hn: 'honduras',
+  hk: 'hong-kong', hu: 'hungary', is: 'iceland', in: 'india', id: 'indonesia',
+  iq: 'iraq', ie: 'ireland', il: 'israel', it: 'italy', jm: 'jamaica',
+  jp: 'japan', jo: 'jordan', kz: 'kazakhstan', ke: 'kenya', kw: 'kuwait',
+  la: 'laos', lv: 'latvia', lb: 'lebanon', ly: 'libya', lt: 'lithuania',
+  lu: 'luxembourg', my: 'malaysia', mt: 'malta', mr: 'mauritania', mu: 'mauritius',
+  mx: 'mexico', md: 'moldova', mn: 'mongolia', me: 'montenegro', ma: 'morocco',
+  mz: 'mozambique', na: 'namibia', nl: 'netherlands', nz: 'new-zealand',
+  ni: 'nicaragua', ne: 'niger', ng: 'nigeria', mk: 'north-macedonia',
+  no: 'norway', om: 'oman', pk: 'pakistan', pa: 'panama', py: 'paraguay',
+  pe: 'peru', ph: 'philippines', pl: 'poland', pt: 'portugal', qa: 'qatar',
+  ro: 'romania', sv: 'salvador', sa: 'saudi-arabia', rs: 'serbia', sg: 'singapore',
+  sk: 'slovakia', si: 'slovenia', za: 'south-africa', kr: 'south-korea',
+  es: 'spain', lk: 'sri-lanka', se: 'sweden', ch: 'switzerland', tw: 'taiwan',
+  tj: 'tajikistan', th: 'thailand', tt: 'trinidad-and-tobago', tn: 'tunisia',
+  tr: 'turkey', ug: 'uganda', ua: 'ukraine', ae: 'united-arab-emirates',
+  gb: 'united-kingdom', us: 'united-states', uy: 'uruguay', ve: 'venezuela',
+  vn: 'vietnam', ye: 'yemen', zw: 'zimbabwe',
+};
+
 async function fetchRegionData(regionSlug: string): Promise<CrawlerData> {
-  const cacheKey = `flixpatrol-region:${regionSlug}`;
+  const resolved = ISO_TO_SLUG[regionSlug.toLowerCase()] || regionSlug;
+  const cacheKey = `flixpatrol-region:${resolved}`;
 
   return cacheWrapGlobal(cacheKey, async () => {
-    const fileSlug = regionSlug === 'world' ? 'global' : regionSlug;
+    const fileSlug = resolved === 'world' ? 'global' : resolved;
     const url = `${CATALOG_BASE_URL}/${fileSlug}.json`;
     logger.info(`Fetching region data: ${url}`);
     const response: any = await httpGet(url);
