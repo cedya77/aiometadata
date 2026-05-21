@@ -24,7 +24,7 @@ import {
   Tv,
   Users,
 } from "lucide-react";
-import { AnimatedNumber } from "./AnimatedNumber";
+import { AnimatedNumber } from "../AnimatedNumber";
 
 interface DashboardSystemProps {
   data: any;

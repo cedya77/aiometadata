@@ -31,7 +31,7 @@ import {
   BarChart as RechartsBarChart,
   Bar,
 } from "recharts";
-import { AnimatedNumber } from "./AnimatedNumber";
+import { AnimatedNumber } from "../AnimatedNumber";
 
 const PROVIDER_COLORS: Record<string, string> = {
   tmdb: "#3b82f6",
@@ -218,7 +218,7 @@ export function DashboardAnalytics({ data, isMobile }: DashboardAnalyticsProps) 
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {providerPerformance.map((provider: any, index: number) => (
               <div
                 key={index}

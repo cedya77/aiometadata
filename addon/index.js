@@ -5611,6 +5611,25 @@ addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
   }
 });
 
+addon.get("/api/dashboard/logs", requireDashboardAdmin, (req, res) => {
+  try {
+    const { getLogEntries, getLogTags } = require('./lib/logBuffer.js');
+    const afterCursor = req.query.afterCursor ? parseInt(req.query.afterCursor, 10) : 0;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 200;
+    const { entries, cursor } = getLogEntries({
+      afterCursor,
+      level: req.query.level || undefined,
+      tag: req.query.tag || undefined,
+      search: req.query.search || undefined,
+      limit,
+    });
+    res.json({ entries, cursor, tags: getLogTags() });
+  } catch (error) {
+    consola.error('[Dashboard API] Logs error:', error);
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
 addon.get("/api/dashboard/memory", requireDashboardAdmin, (req, res) => {
   try {
     const dashboardApi = getDashboardAPI();
@@ -6005,6 +6024,17 @@ addon.get("/api/dashboard/users", requireDashboardAdmin, (req, res) => {
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch user data' });
+  }
+});
+
+addon.get("/api/dashboard/users/heatmap", requireDashboardAdmin, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 30);
+    const data = await requestTracker.getActivityHeatmap(days);
+    res.json(data);
+  } catch (error) {
+    consola.error('[Dashboard API] Heatmap error:', error);
+    res.status(500).json({ error: 'Failed to fetch heatmap data' });
   }
 });
 

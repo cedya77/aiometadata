@@ -13,7 +13,9 @@ import { performVersionCleanup } from './lib/versionCleanup.js';
 import { waitForRedisReady } from './lib/redisReady.js';
 import database from './lib/database.js';
 import consola from 'consola';
+import { installLogReporter } from './lib/logBuffer.js';
 
+installLogReporter();
 
 const PORT: number = parseInt(process.env.PORT || '3232', 10);
  

@@ -103,7 +103,7 @@ class RequestTracker {
       redis.incr(`requests:${today}`).catch(() => {});
       redis.incr(`requests:${hour}`).catch(() => {});
       redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
-      redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
+      redis.expire(`requests:${hour}`, 86400 * 31).catch(() => {}); // 31 days
 
       // Track metadata requests for activity feed
       const normalizedPath = this.normalizeEndpoint(req.path);
@@ -1051,6 +1051,42 @@ class RequestTracker {
     } catch (error) {
       logger.error("[Request Tracker] Failed to get hourly stats:", error);
       return [];
+    }
+  }
+
+  async getActivityHeatmap(days = 7) {
+    try {
+      const totalHours = days * 24;
+      const now = new Date();
+      const keys = [];
+      const timestamps = [];
+
+      for (let i = totalHours - 1; i >= 0; i--) {
+        const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
+        keys.push(`requests:${hour.toISOString().substring(0, 13)}`);
+        timestamps.push(hour);
+      }
+
+      const pipeline = redis.pipeline();
+      for (const key of keys) pipeline.get(key);
+      const results = await pipeline.exec();
+
+      const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+      let peak = 0;
+
+      for (let i = 0; i < timestamps.length; i++) {
+        const val = results[i]?.[1] ? parseInt(results[i][1]) : 0;
+        if (val <= 0) continue;
+        const day = (timestamps[i].getDay() + 6) % 7;
+        const hour = timestamps[i].getHours();
+        grid[day][hour] += val;
+        if (grid[day][hour] > peak) peak = grid[day][hour];
+      }
+
+      return { grid, peak };
+    } catch (error) {
+      logger.error("[Request Tracker] Failed to get activity heatmap:", error);
+      return { grid: Array.from({ length: 7 }, () => new Array(24).fill(0)), peak: 0 };
     }
   }
 

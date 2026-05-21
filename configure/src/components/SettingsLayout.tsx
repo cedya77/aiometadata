@@ -33,7 +33,7 @@ const LazyConfigurationManager = lazy(() =>
   import('./ConfigurationManager').then((module) => ({ default: module.ConfigurationManager }))
 );
 const LazyDashboard = lazy(() =>
-  import('./Dashboard').then((module) => ({ default: module.Dashboard }))
+  import('./dashboard/Dashboard').then((module) => ({ default: module.Dashboard }))
 );
 const LazyRatingPage = lazy(() => import('./RatingPage'));
 

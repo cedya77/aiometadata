@@ -1,12 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdmin } from '@/contexts/AdminContext';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type DashboardTab = 'overview' | 'analytics' | 'content' | 'performance' | 'system' | 'operations' | 'users';
+export type DashboardTab = 'overview' | 'analytics' | 'content' | 'performance' | 'system' | 'operations' | 'users' | 'logs';
 
 interface DashboardQueryOptions {
   activeTab?: DashboardTab;
@@ -26,6 +26,7 @@ const POLLING_INTERVALS = {
   OPERATIONS: 5 * 1000,         // 5 seconds - warming tasks need fast updates
   USERS: 15 * 1000,             // 15 seconds - user activity
   CONTENT: 60 * 1000,           // 60 seconds - slow-changing data
+  LOGS: 2 * 1000,               // 2 seconds - live log streaming
 } as const;
 
 // Query keys for cache management
@@ -37,6 +38,7 @@ export const DASHBOARD_QUERY_KEYS = {
   system: ['dashboard', 'system'] as const,
   operations: ['dashboard', 'operations'] as const,
   users: ['dashboard', 'users'] as const,
+  logs: ['dashboard', 'logs'] as const,
   all: ['dashboard'] as const,
 } as const;
 
@@ -378,6 +380,116 @@ export function useDashboardUsers(options: DashboardQueryOptions = {}) {
     refetchInterval: shouldPoll ? POLLING_INTERVALS.USERS : false,
     refetchIntervalInBackground: false,
   });
+}
+
+export interface HeatmapData {
+  grid: number[][];
+  peak: number;
+}
+
+export function useDashboardHeatmap(options: DashboardQueryOptions & { days?: number } = {}) {
+  const { isAdmin, logout, adminKey } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const { activeTab = 'overview', enabled = true, days = 7 } = options;
+
+  const isActiveTab = activeTab === 'users';
+
+  return useQuery({
+    queryKey: [...DASHBOARD_QUERY_KEYS.users, 'heatmap', days] as const,
+    queryFn: async () => {
+      try {
+        return await fetchDashboardData<HeatmapData>(`/api/dashboard/users/heatmap?days=${days}`, getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+          throw error;
+        }
+        throw error;
+      }
+    },
+    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Logs data - live log stream with cursor-based polling (admin only)
+ * Polls every 2s when logs tab is active, appends new entries
+ */
+export interface LogEntry {
+  id: number;
+  timestamp: string;
+  level: number;
+  levelLabel: string;
+  tag: string;
+  message: string;
+  args?: string;
+}
+
+export interface LogsData {
+  entries: LogEntry[];
+  cursor: number;
+  tags: string[];
+}
+
+export function useDashboardLogs(options: DashboardQueryOptions = {}) {
+  const { isAdmin, logout, adminKey } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const isVisible = usePageVisibility();
+  const { activeTab = 'overview', enabled = true } = options;
+
+  const isActiveTab = activeTab === 'logs';
+  const shouldPoll = isVisible && isActiveTab && isAdmin;
+
+  const cursorRef = useRef(0);
+  const [accumulated, setAccumulated] = useState<LogsData>({ entries: [], cursor: 0, tags: [] });
+
+  const query = useQuery({
+    queryKey: DASHBOARD_QUERY_KEYS.logs,
+    queryFn: async () => {
+      try {
+        const params = new URLSearchParams({ afterCursor: String(cursorRef.current), limit: '500' });
+        return await fetchDashboardData<LogsData>(`/api/dashboard/logs?${params}`, getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+          throw error;
+        }
+        throw error;
+      }
+    },
+    structuralSharing: false,
+    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
+    refetchInterval: shouldPoll ? POLLING_INTERVALS.LOGS : false,
+    refetchIntervalInBackground: false,
+  });
+
+  useEffect(() => {
+    if (!query.data) return;
+    if (query.data.entries.length > 0 && query.data.cursor > cursorRef.current) {
+      cursorRef.current = query.data.cursor;
+      setAccumulated(prev => {
+        const combined = [...prev.entries, ...query.data!.entries];
+        const capped = combined.length > 5000 ? combined.slice(-5000) : combined;
+        return { entries: capped, cursor: query.data!.cursor, tags: query.data!.tags };
+      });
+    } else if (query.data.tags.length > 0) {
+      setAccumulated(prev => {
+        if (prev.tags.length !== query.data!.tags.length) {
+          return { ...prev, tags: query.data!.tags };
+        }
+        return prev;
+      });
+    }
+  }, [query.data]);
+
+  const resetLogs = useCallback(() => {
+    cursorRef.current = 0;
+    setAccumulated({ entries: [], cursor: 0, tags: [] });
+  }, []);
+
+  return { ...query, data: accumulated, resetLogs };
 }
 
 // ============================================================================
