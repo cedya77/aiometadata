@@ -17,6 +17,7 @@ const { cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi
 const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
+const { runWithRequestContext } = require('./lib/logBuffer.js');
 const consola = require('consola');
 const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
@@ -188,6 +189,12 @@ addon.use((req, res, next) => {
 
 // Add request tracking middleware
 addon.use(requestTracker.middleware());
+
+addon.use((req, res, next) => {
+  const m = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(req.path);
+  if (m) return runWithRequestContext(m[1], () => next());
+  next();
+});
 
 const TEST_KEYS_RATE_LIMIT_PER_MIN = parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10);
 

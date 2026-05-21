@@ -63,7 +63,11 @@ export function DashboardLogs({ data, loading }: DashboardLogsProps) {
     return data.entries.filter((entry) => {
       if (levelFilter !== "all" && entry.levelLabel !== levelFilter) return false;
       if (tagFilter !== "all" && entry.tag !== tagFilter) return false;
-      if (debouncedSearch && !entry.message.toLowerCase().includes(debouncedSearch.toLowerCase())) return false;
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
+        if (!entry.message.toLowerCase().includes(q)
+          && !(entry.userId && entry.userId.toLowerCase().includes(q))) return false;
+      }
       return true;
     });
   }, [data?.entries, levelFilter, tagFilter, debouncedSearch]);
@@ -267,6 +271,11 @@ const LogRow = React.memo(function LogRow({
       {entry.tag && (
         <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 font-normal text-muted-foreground border-muted-foreground/20">
           {entry.tag}
+        </Badge>
+      )}
+      {entry.userId && (
+        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 font-normal text-purple-400/80 border-purple-400/20">
+          {entry.userId.slice(0, 8)}
         </Badge>
       )}
       <span className={`break-all ${entry.level === 0 ? "text-red-400" : entry.level === 1 ? "text-yellow-400" : "text-foreground/80"}`}>

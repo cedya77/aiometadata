@@ -425,6 +425,7 @@ export interface LogEntry {
   tag: string;
   message: string;
   args?: string;
+  userId?: string;
 }
 
 export interface LogsData {

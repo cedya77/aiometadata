@@ -1,4 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import consola from 'consola';
+
+const requestContext = new AsyncLocalStorage<{ userId: string }>();
+
+export function runWithRequestContext<T>(userId: string, fn: () => T): T {
+  return requestContext.run({ userId }, fn);
+}
 
 export interface LogEntry {
   id: number;
@@ -8,6 +15,7 @@ export interface LogEntry {
   tag: string;
   message: string;
   args?: string;
+  userId?: string;
 }
 
 export interface LogQueryFilters {
@@ -77,7 +85,8 @@ export function getLogEntries(filters: LogQueryFilters = {}): { entries: LogEntr
     if (entry.id <= afterCursor) continue;
     if (levelNum !== undefined && entry.level !== levelNum) continue;
     if (tag && entry.tag !== tag) continue;
-    if (searchLower && !entry.message.toLowerCase().includes(searchLower)) continue;
+    if (searchLower && !entry.message.toLowerCase().includes(searchLower)
+      && !(entry.userId && entry.userId.toLowerCase().includes(searchLower))) continue;
     results.push(entry);
   }
 
@@ -116,6 +125,7 @@ function handleLogObj(logObj: any): void {
 
   if (tag) tagSet.add(tag);
 
+  const ctx = requestContext.getStore();
   const entry: LogEntry = {
     id: nextId++,
     timestamp: (logObj.date || new Date()).toISOString(),
@@ -123,6 +133,7 @@ function handleLogObj(logObj: any): void {
     levelLabel,
     tag,
     message,
+    ...(ctx?.userId && { userId: ctx.userId }),
   };
 
   pushEntry(entry);
