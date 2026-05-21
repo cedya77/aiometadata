@@ -1975,6 +1975,16 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
     }
   }
 
+  if (Array.isArray(reconstructedMeta.videos)) {
+    const nowMs = Date.now();
+    for (const v of reconstructedMeta.videos) {
+      if (v && Object.prototype.hasOwnProperty.call(v, 'available') && v.released) {
+        const t = v.released instanceof Date ? v.released.getTime() : new Date(v.released).getTime();
+        if (Number.isFinite(t)) v.available = t <= nowMs;
+      }
+    }
+  }
+
   normalizeMetaReleaseAvailability(reconstructedMeta);
 
   const metaReconstructionKey = `meta:reconstructed:${metaId}`;
