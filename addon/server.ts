@@ -7,6 +7,8 @@ import { initializeMapper } from './lib/id-mapper.js';
 import { initializeAnimeListMapper } from './lib/anime-list-mapper.js';
 import { initializeMappings } from './lib/wiki-mapper.js';
 import { initializeRatings } from './lib/imdbRatings.js';
+import { initializeTmdbNetworkIndex } from './lib/tmdb-network-index.js';
+import { initializeTmdbKeywordIndex } from './lib/tmdb-keyword-index.js';
 import { runCacheCleanup } from './cache-cleanup.js';
 import { runCachePathMigration } from './lib/cache-path-migration.js';
 import { performVersionCleanup } from './lib/versionCleanup.js';
@@ -89,6 +91,22 @@ async function startServer(): Promise<void> {
         await initializeRatings();
       },
       critical: true
+    },
+    {
+      name: 'TMDB Network Index',
+      task: async () => {
+        consola.info('Initializing TMDB Network Index...');
+        await initializeTmdbNetworkIndex();
+      },
+      critical: false
+    },
+    {
+      name: 'TMDB Keyword Index',
+      task: async () => {
+        consola.info('Initializing TMDB Keyword Index...');
+        await initializeTmdbKeywordIndex();
+      },
+      critical: false
     },
     {
       name: 'Cache Cleanup Check',

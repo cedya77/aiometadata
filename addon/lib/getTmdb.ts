@@ -628,6 +628,78 @@ export async function getTvCertifications(params: any, config: UserConfig) {
   );
 }
 
+export function filterTmdbWatchProvidersByRegion(providers: any[], region: string) {
+  const normalizedRegion = String(region || '').toUpperCase();
+  if (!normalizedRegion) return [];
+
+  return providers
+    .filter((provider: any) => {
+      const priorities = provider?.display_priorities;
+      return !!provider?.provider_id
+        && !!priorities
+        && Object.prototype.hasOwnProperty.call(priorities, normalizedRegion);
+    })
+    .map((provider: any) => ({
+      ...provider,
+      display_priority: Number(provider.display_priorities[normalizedRegion]),
+    }))
+    .sort((a: any, b: any) => {
+      const priorityA = Number.isFinite(a.display_priority) ? a.display_priority : Number.MAX_SAFE_INTEGER;
+      const priorityB = Number.isFinite(b.display_priority) ? b.display_priority : Number.MAX_SAFE_INTEGER;
+      return priorityA - priorityB;
+    });
+}
+
+export async function getTmdbWatchProviderList(mediaType: string, config: UserConfig) {
+  const normalizedMediaType = mediaType === 'tv' ? 'tv' : 'movie';
+  const apiKey = getApiKey(config);
+  return cacheWrapGlobal(
+    `tmdb:watch_providers:${normalizedMediaType}:global`,
+    () => makeTmdbRequest(`/watch/providers/${normalizedMediaType}`, apiKey, {}, 'GET', null, config),
+    7 * 24 * 60 * 60
+  );
+}
+
+export async function getTmdbWatchProviderListForRegion(mediaType: string, region: string, config: UserConfig) {
+  const normalizedMediaType = mediaType === 'tv' ? 'tv' : 'movie';
+  const normalizedRegion = String(region || '').toUpperCase();
+  if (!normalizedRegion) {
+    return getTmdbWatchProviderList(normalizedMediaType, config);
+  }
+
+  const apiKey = getApiKey(config);
+  return cacheWrapGlobal(
+    `tmdb:watch_providers:${normalizedMediaType}:${normalizedRegion}`,
+    () => makeTmdbRequest(
+      `/watch/providers/${normalizedMediaType}`,
+      apiKey,
+      { watch_region: normalizedRegion },
+      'GET',
+      null,
+      config
+    ),
+    7 * 24 * 60 * 60
+  );
+}
+
+export async function getTmdbWatchProvidersForRegion(mediaType: string, region: string, config: UserConfig) {
+  const normalizedMediaType = mediaType === 'tv' ? 'tv' : 'movie';
+  const normalizedRegion = String(region || '').toUpperCase();
+  const data = await getTmdbWatchProviderListForRegion(normalizedMediaType, normalizedRegion, config);
+  const providers = Array.isArray(data?.results) ? data.results : [];
+  return {
+    mediaType: normalizedMediaType,
+    watch_region: normalizedRegion,
+    providers: providers
+      .filter((provider: any) => !!provider?.provider_id)
+      .sort((a: any, b: any) => {
+        const priorityA = Number.isFinite(a.display_priority) ? a.display_priority : Number.MAX_SAFE_INTEGER;
+        const priorityB = Number.isFinite(b.display_priority) ? b.display_priority : Number.MAX_SAFE_INTEGER;
+        return priorityA - priorityB;
+      }),
+  };
+}
+
 export async function getMovieWatchProviders(params: any, config: UserConfig) {
   const { id, ...queryParams } = params;
   const cacheKey = `tmdb:movie:watch_providers:${id}${getTmdbQueryCacheSuffix(queryParams)}`;
@@ -944,6 +1016,10 @@ module.exports = {
   getTmdbListItems,
   getMovieCertifications,
   getTvCertifications,
+  filterTmdbWatchProvidersByRegion,
+  getTmdbWatchProviderList,
+  getTmdbWatchProviderListForRegion,
+  getTmdbWatchProvidersForRegion,
   getTmdbMoviePoster,
   getTmdbSeriesPoster,
   getTmdbMovieBackground,
