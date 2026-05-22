@@ -16,15 +16,6 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart as RechartsBarChart,
-  Bar,
-} from "recharts";
 import { AnimatedNumber } from "../AnimatedNumber";
 
 function formatDuration(ms: number): string {
@@ -709,121 +700,46 @@ export function DashboardPerformance({ data, loading }: { data: any; loading: bo
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Overview Stats */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">
-                    <AnimatedNumber value={idResolverPerformance.totalResolutions} />
-                  </div>
-                  <div className="text-sm text-blue-600">Total Resolutions</div>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">
-                    <AnimatedNumber value={idResolverPerformance.earlyReturnRate} suffix="%" />
-                  </div>
-                  <div className="text-sm text-green-600">
-                    Early Return Rate
-                  </div>
-                </div>
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="text-center p-4 rounded-lg border border-blue-500/20 bg-blue-500/10">
+              <div className="text-2xl font-bold text-blue-400">
+                <AnimatedNumber value={idResolverPerformance.totalResolutions} />
               </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm text-gray-900">Wiki Mappings</span>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-gray-900">
-                      <AnimatedNumber value={idResolverPerformance.wikiMappingEarlyReturns.count} />
-                    </div>
-                    <div className="text-xs text-green-700">
-                      <AnimatedNumber value={idResolverPerformance.wikiMappingEarlyReturns.percentage} suffix="%" />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm text-gray-900">Cache Hits</span>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-gray-900">
-                      <AnimatedNumber value={idResolverPerformance.cacheEarlyReturns.count} />
-                    </div>
-                    <div className="text-xs text-blue-700">
-                      <AnimatedNumber value={idResolverPerformance.cacheEarlyReturns.percentage} suffix="%" />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm text-gray-900">
-                    Anime Resolutions
-                  </span>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-gray-900">
-                      <AnimatedNumber value={idResolverPerformance.animeResolutions.count} />
-                    </div>
-                    <div className="text-xs text-purple-700">
-                      <AnimatedNumber value={idResolverPerformance.animeResolutions.percentage} suffix="%" />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center p-2 bg-red-50 rounded">
-                  <span className="text-sm text-gray-900">
-                    API Calls Required
-                  </span>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-gray-900">
-                      <AnimatedNumber value={idResolverPerformance.apiCallsRequired.count} />
-                    </div>
-                    <div className="text-xs text-red-700">
-                      <AnimatedNumber value={idResolverPerformance.apiCallsRequired.percentage} suffix="%" />
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <div className="text-sm text-blue-400/70">Total Resolutions</div>
             </div>
+            <div className="text-center p-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10">
+              <div className="text-2xl font-bold text-emerald-400">
+                <AnimatedNumber value={idResolverPerformance.earlyReturnRate} suffix="%" />
+              </div>
+              <div className="text-sm text-emerald-400/70">Early Return Rate</div>
+            </div>
+          </div>
 
-            {/* Visual Chart */}
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsBarChart
-                  data={[
-                    {
-                      name: "Wiki Mappings",
-                      value:
-                        idResolverPerformance.wikiMappingEarlyReturns
-                          .percentage,
-                      fill: "#10b981",
-                    },
-                    {
-                      name: "Cache Hits",
-                      value: idResolverPerformance.cacheEarlyReturns.percentage,
-                      fill: "#3b82f6",
-                    },
-                    {
-                      name: "Anime",
-                      value: idResolverPerformance.animeResolutions.percentage,
-                      fill: "#8b5cf6",
-                    },
-                    {
-                      name: "API Calls",
-                      value: idResolverPerformance.apiCallsRequired.percentage,
-                      fill: "#ef4444",
-                    },
-                  ]}
-                  layout="horizontal"
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    domain={[0, 100]}
-                    tickFormatter={(value) => `${value}%`}
+          <div className="space-y-3">
+            {[
+              { label: "Wiki Mappings", count: idResolverPerformance.wikiMappingEarlyReturns.count, pct: idResolverPerformance.wikiMappingEarlyReturns.percentage, color: "#10b981" },
+              { label: "Cache Hits", count: idResolverPerformance.cacheEarlyReturns.count, pct: idResolverPerformance.cacheEarlyReturns.percentage, color: "#3b82f6" },
+              { label: "Anime Resolutions", count: idResolverPerformance.animeResolutions.count, pct: idResolverPerformance.animeResolutions.percentage, color: "#8b5cf6" },
+              { label: "API Calls Required", count: idResolverPerformance.apiCallsRequired.count, pct: idResolverPerformance.apiCallsRequired.percentage, color: "#ef4444" },
+            ].map((item) => (
+              <div key={item.label} className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{item.label}</span>
+                  <span className="font-medium tabular-nums">
+                    <AnimatedNumber value={item.count} />
+                    <span className="ml-1.5 text-xs" style={{ color: item.color }}>
+                      <AnimatedNumber value={item.pct} suffix="%" />
+                    </span>
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-muted/30 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700 ease-out"
+                    style={{ width: `${Math.max(item.pct, item.pct > 0 ? 2 : 0)}%`, backgroundColor: item.color }}
                   />
-                  <YAxis type="category" dataKey="name" width={80} />
-                  <Tooltip formatter={(value: number) => [`${value}%`, "Percentage"]} />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} />
-                </RechartsBarChart>
-              </ResponsiveContainer>
-            </div>
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

@@ -5883,11 +5883,12 @@ addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, re
     const { getPerformanceStats } = require('./lib/id-resolver.js');
     const dashboardApi = getDashboardAPI();
     
+    const tz = typeof req.query.tz === 'string' ? req.query.tz : null;
     const [stats, hourlyStats, topEndpoints, providerHourlyData, idResolverStats, cachePerformance, providerPerformance] = await Promise.all([
-      requestTracker.getStats(),
-      requestTracker.getHourlyStats(24),
+      requestTracker.getStats(tz),
+      requestTracker.getHourlyStats(24, tz),
       requestTracker.getTopEndpoints(10),
-      requestTracker.getHourlyProviderStats(24),
+      requestTracker.getHourlyProviderStats(24, tz),
       Promise.resolve(getPerformanceStats()),
       dashboardApi.getCachePerformance(),
       dashboardApi.getProviderPerformance()
@@ -5989,11 +5990,12 @@ addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const timeframe = req.query.timeframe || 'today';
+    const tz = typeof req.query.tz === 'string' ? req.query.tz : null;
     const days = timeframe === 'week' ? 7 : timeframe === 'month' ? 30 : timeframe === 'all' ? 30 : 1;
     Promise.all([
-      requestTracker.getPopularContent(limit, days),
-      requestTracker.getSearchPatterns(limit, days),
-      requestTracker.getStats() // For content quality metrics
+      requestTracker.getPopularContent(limit, days, tz),
+      requestTracker.getSearchPatterns(limit, days, tz),
+      requestTracker.getStats(tz)
     ]).then(([popularContent, searchPatterns, stats]) => {
       res.json({ 
         popularContent,
@@ -6037,7 +6039,8 @@ addon.get("/api/dashboard/users", requireDashboardAdmin, (req, res) => {
 addon.get("/api/dashboard/users/heatmap", requireDashboardAdmin, async (req, res) => {
   try {
     const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 30);
-    const data = await requestTracker.getActivityHeatmap(days);
+    const tz = typeof req.query.tz === 'string' ? req.query.tz : null;
+    const data = await requestTracker.getActivityHeatmap(days, tz);
     res.json(data);
   } catch (error) {
     consola.error('[Dashboard API] Heatmap error:', error);

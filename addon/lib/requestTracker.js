@@ -4,6 +4,33 @@ const { isMetricsDisabled } = require('./metricsConfig');
 
 const logger = consola.withTag("Request-Tracker");
 
+function dateKeysForRange(days, tz) {
+  const dates = new Set();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.now() - i * 86400000);
+    dates.add(d.toISOString().split("T")[0]);
+    if (tz) {
+      try { dates.add(d.toLocaleDateString('en-CA', { timeZone: tz })); } catch {}
+    }
+  }
+  return Array.from(dates);
+}
+
+function todayKey(tz) {
+  if (tz) {
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: tz }); } catch {}
+  }
+  return new Date().toISOString().split("T")[0];
+}
+
+function yesterdayKey(tz) {
+  const d = new Date(Date.now() - 86400000);
+  if (tz) {
+    try { return d.toLocaleDateString('en-CA', { timeZone: tz }); } catch {}
+  }
+  return d.toISOString().split("T")[0];
+}
+
 class RequestTracker {
   constructor() {
     this.startTime = Date.now();
@@ -352,12 +379,9 @@ class RequestTracker {
   }
 
   // Get popular content
-  async getPopularContent(limit = 50, days = 1) {
+  async getPopularContent(limit = 50, days = 1, tz = null) {
     try {
-      const dates = [];
-      for (let i = 0; i < days; i++) {
-        dates.push(new Date(Date.now() - i * 86400000).toISOString().split("T")[0]);
-      }
+      const dates = dateKeysForRange(days, tz);
 
       const results = await Promise.all(
         dates.map(date => redis.zrevrange(`popular_content:${date}`, 0, limit - 1, "WITHSCORES"))
@@ -438,12 +462,9 @@ class RequestTracker {
     }
   }
 
-  async getSearchPatterns(limit = 50, days = 1) {
+  async getSearchPatterns(limit = 50, days = 1, tz = null) {
     try {
-      const dates = [];
-      for (let i = 0; i < days; i++) {
-        dates.push(new Date(Date.now() - i * 86400000).toISOString().split("T")[0]);
-      }
+      const dates = dateKeysForRange(days, tz);
 
       const searchResults = await Promise.all(
         dates.map(date => redis.zrevrange(`search_patterns:${date}`, 0, limit - 1, "WITHSCORES"))
@@ -931,12 +952,10 @@ class RequestTracker {
   }
 
   // Get request statistics
-  async getStats() {
+  async getStats(tz = null) {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
+      const today = todayKey(tz);
+      const yesterday = yesterdayKey(tz);
 
       // Add timeout to Redis operations
       const timeout = new Promise((_, reject) =>
@@ -1020,7 +1039,7 @@ class RequestTracker {
   }
 
   // Get hourly request data for charts
-  async getHourlyStats(hours = 24) {
+  async getHourlyStats(hours = 24, tz = null) {
     try {
       const hourlyData = [];
       const now = new Date();
@@ -1030,7 +1049,6 @@ class RequestTracker {
         const hourKey = hour.toISOString().substring(0, 13);
         const requests = await redis.get(`requests:${hourKey}`);
 
-        // Get average response time for this hour
         const responseTimesKey = `response_times:${hourKey}`;
         const responseTimes = await redis.lrange(responseTimesKey, 0, -1);
         const avgResponseTime =
@@ -1039,8 +1057,13 @@ class RequestTracker {
               responseTimes.length
             : 0;
 
+        let displayHour = hour.getHours();
+        if (tz) {
+          try { displayHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(hour)) || 0; if (displayHour === 24) displayHour = 0; } catch {}
+        }
+
         hourlyData.push({
-          hour: hour.getHours(),
+          hour: displayHour,
           requests: parseInt(requests) || 0,
           responseTime: Math.round(avgResponseTime),
           timestamp: hour.toISOString(),
@@ -1054,7 +1077,7 @@ class RequestTracker {
     }
   }
 
-  async getActivityHeatmap(days = 7) {
+  async getActivityHeatmap(days = 7, tz = null) {
     try {
       const totalHours = days * 24;
       const now = new Date();
@@ -1074,11 +1097,27 @@ class RequestTracker {
       const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
       let peak = 0;
 
+      const fmt = tz ? { timeZone: tz } : undefined;
       for (let i = 0; i < timestamps.length; i++) {
         const val = results[i]?.[1] ? parseInt(results[i][1]) : 0;
         if (val <= 0) continue;
-        const day = (timestamps[i].getDay() + 6) % 7;
-        const hour = timestamps[i].getHours();
+        let day, hour;
+        if (fmt) {
+          try {
+            const parts = new Intl.DateTimeFormat('en-US', { ...fmt, weekday: 'short', hour: 'numeric', hour12: false }).formatToParts(timestamps[i]);
+            const weekday = parts.find(p => p.type === 'weekday')?.value;
+            const dayMap = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+            day = dayMap[weekday] ?? (timestamps[i].getDay() + 6) % 7;
+            hour = parseInt(parts.find(p => p.type === 'hour')?.value) || 0;
+            if (hour === 24) hour = 0;
+          } catch {
+            day = (timestamps[i].getDay() + 6) % 7;
+            hour = timestamps[i].getHours();
+          }
+        } else {
+          day = (timestamps[i].getDay() + 6) % 7;
+          hour = timestamps[i].getHours();
+        }
         grid[day][hour] += val;
         if (grid[day][hour] > peak) peak = grid[day][hour];
       }
@@ -1091,7 +1130,7 @@ class RequestTracker {
   }
 
   // Get hourly provider response time data for charts
-  async getHourlyProviderStats(hours = 24) {
+  async getHourlyProviderStats(hours = 24, tz = null) {
     try {
       const providers = [
         "tmdb",
@@ -1112,8 +1151,13 @@ class RequestTracker {
         const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
         const hourKey = hour.toISOString().substring(0, 13);
 
+        let displayHour = hour.getHours();
+        if (tz) {
+          try { displayHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(hour)) || 0; if (displayHour === 24) displayHour = 0; } catch {}
+        }
+
         const hourStats = {
-          hour: hour.getHours(),
+          hour: displayHour,
           timestamp: hour.toISOString(),
         };
 

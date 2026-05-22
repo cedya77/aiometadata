@@ -42,6 +42,13 @@ export const DASHBOARD_QUERY_KEYS = {
   all: ['dashboard'] as const,
 } as const;
 
+const CLIENT_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function appendTz(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}tz=${encodeURIComponent(CLIENT_TZ)}`;
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -161,7 +168,7 @@ export function useDashboardAnalytics(options: DashboardQueryOptions = {}) {
     queryKey: DASHBOARD_QUERY_KEYS.analytics,
     queryFn: async () => {
       try {
-        return await fetchDashboardData('/api/dashboard/analytics', getHeaders());
+        return await fetchDashboardData(appendTz('/api/dashboard/analytics'), getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
@@ -195,7 +202,7 @@ export function useDashboardContent(options: DashboardQueryOptions & { timeframe
     queryKey: [...DASHBOARD_QUERY_KEYS.content, timeframe],
     queryFn: async () => {
       try {
-        return await fetchDashboardData(`/api/dashboard/content?timeframe=${timeframe}`, getHeaders());
+        return await fetchDashboardData(appendTz(`/api/dashboard/content?timeframe=${timeframe}`), getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
@@ -398,7 +405,7 @@ export function useDashboardHeatmap(options: DashboardQueryOptions & { days?: nu
     queryKey: [...DASHBOARD_QUERY_KEYS.users, 'heatmap', days] as const,
     queryFn: async () => {
       try {
-        return await fetchDashboardData<HeatmapData>(`/api/dashboard/users/heatmap?days=${days}`, getHeaders());
+        return await fetchDashboardData<HeatmapData>(appendTz(`/api/dashboard/users/heatmap?days=${days}`), getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
