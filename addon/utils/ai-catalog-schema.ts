@@ -1,5 +1,5 @@
 const VALID_SOURCES = ['tmdb', 'tvdb', 'anilist', 'mal', 'simkl'] as const;
-export const AI_CATALOG_GENERATION_MODES = ['auto', 'tmdb', 'anilist', 'mal', 'tvdb'] as const;
+export const AI_CATALOG_GENERATION_MODES = ['auto', 'tmdb', 'anilist', 'mal', 'tvdb', 'simkl'] as const;
 
 type AICatalogGenerationMode = typeof AI_CATALOG_GENERATION_MODES[number];
 
@@ -85,16 +85,16 @@ const VALID_MAL_RATINGS = ['g', 'pg', 'pg13', 'r17', 'r', 'rx'];
 const VALID_MAL_SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL', 'CURRENT'];
 const VALID_MAL_SORT_DIRECTIONS = ['asc', 'desc'];
 const VALID_SIMKL_MEDIA = ['movies', 'shows', 'anime'];
-const VALID_SIMKL_MOVIE_GENRES = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 'drama', 'family', 'fantasy', 'history', 'horror', 'music', 'mystery', 'romance', 'science-fiction', 'thriller', 'tv-movie', 'war', 'western'];
-const VALID_SIMKL_SHOW_GENRES = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 'drama', 'family', 'fantasy', 'history', 'horror', 'mystery', 'romance', 'science-fiction', 'thriller', 'war', 'western', 'korean-drama', 'reality', 'game-show'];
-const VALID_SIMKL_ANIME_GENRES = ['action', 'adventure', 'comedy', 'drama', 'ecchi', 'fantasy', 'gore', 'harem', 'historical', 'horror', 'isekai', 'kids', 'magic', 'martial-arts', 'mecha', 'military', 'music', 'mystery', 'psychological', 'romance', 'samurai', 'school', 'sci-fi', 'seinen', 'shoujo', 'shounen', 'slice-of-life', 'space', 'sports', 'super-power', 'supernatural', 'thriller', 'vampire'];
+const VALID_SIMKL_MOVIE_GENRES = ['action', 'adventure', 'animation', 'comedy', 'crime', 'documentary', 'drama', 'erotica', 'family', 'fantasy', 'history', 'horror', 'music', 'mystery', 'romance', 'science-fiction', 'thriller', 'tv-movie', 'war', 'western'];
+const VALID_SIMKL_SHOW_GENRES = ['action', 'adventure', 'animation', 'awards-show', 'children', 'comedy', 'crime', 'documentary', 'drama', 'family', 'fantasy', 'food', 'game-show', 'history', 'home-and-garden', 'horror', 'indie', 'korean-drama', 'martial-arts', 'mini-series', 'musical', 'mystery', 'news', 'podcast', 'reality', 'romance', 'science-fiction', 'soap', 'special-interest', 'sport', 'suspense', 'talk-show', 'thriller', 'travel', 'video-game-play', 'war', 'western'];
+const VALID_SIMKL_ANIME_GENRES = ['action', 'adventure', 'comedy', 'drama', 'ecchi', 'educational', 'fantasy', 'gag-humor', 'gore', 'harem', 'historical', 'horror', 'idol', 'isekai', 'josei', 'kids', 'magic', 'martial-arts', 'mecha', 'military', 'music', 'mystery', 'mythology', 'parody', 'psychological', 'racing', 'reincarnation', 'romance', 'samurai', 'school', 'sci-fi', 'seinen', 'shoujo', 'shoujo-ai', 'shounen', 'shounen-ai', 'slice-of-life', 'space', 'sports', 'strategy-game', 'super-power', 'supernatural', 'thriller', 'vampire', 'yaoi', 'yuri'];
 const VALID_SIMKL_SHOW_TYPES = ['all-types', 'tv-shows', 'entertainment', 'documentaries', 'animation-filter'];
-const VALID_SIMKL_ANIME_TYPES = ['all-types', 'series', 'movies', 'ovas', 'onas'];
-const VALID_SIMKL_MOVIE_COUNTRIES = ['us', 'uk', 'ca', 'kr'];
-const VALID_SIMKL_SHOW_COUNTRIES = ['us', 'uk', 'ca', 'kr', 'jp'];
-const VALID_SIMKL_SHOW_NETWORKS = ['netflix', 'disney', 'peacock', 'appletv', 'cbs', 'abc', 'fox', 'cw', 'hbo', 'showtime', 'fx', 'amc', 'starz'];
-const VALID_SIMKL_ANIME_NETWORKS = ['tvtokyo', 'tokyomx', 'fujitv', 'nhk', 'mbs', 'animax', 'cartoonnetwork'];
-const VALID_SIMKL_YEAR_SHORTCUTS = ['this-week', 'this-month', 'this-year'];
+const VALID_SIMKL_ANIME_TYPES = ['all-types', 'series', 'movies', 'ovas', 'onas', 'specials', 'music'];
+const VALID_SIMKL_MOVIE_COUNTRIES = ['all', 'us', 'uk', 'ca', 'kr'];
+const VALID_SIMKL_SHOW_COUNTRIES = ['all', 'us', 'uk', 'ca', 'kr', 'jp'];
+const VALID_SIMKL_SHOW_NETWORKS = ['all-networks', 'netflix', 'disney', 'peacock', 'appletv', 'quibi', 'cbs', 'abc', 'fox', 'cw', 'hbo', 'showtime', 'usa', 'syfy', 'tnt', 'fx', 'amc', 'abcfam', 'showcase', 'starz', 'mtv', 'lifetime', 'ae', 'tvland'];
+const VALID_SIMKL_ANIME_NETWORKS = ['all-networks', 'tvtokyo', 'tokyomx', 'fujitv', 'tokyobroadcastingsystem', 'tvasahi', 'wowow', 'ntv', 'atx', 'ctc', 'nhk', 'mbs', 'animax', 'cartoonnetwork', 'abc'];
+const VALID_SIMKL_YEAR_SHORTCUTS = ['all-years', 'today', 'this-week', 'this-month', 'this-year'];
 
 const VALID_TMDB_MOVIE_GENRES = new Set([28, 12, 16, 35, 80, 99, 18, 10751, 14, 36, 27, 10402, 9648, 10749, 878, 10770, 53, 10752, 37]);
 const VALID_TMDB_TV_GENRES = new Set([10759, 16, 35, 80, 99, 18, 10751, 10762, 9648, 10763, 10764, 10765, 10766, 10767, 10768, 37]);

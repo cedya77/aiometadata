@@ -1,7 +1,9 @@
 import type { AICatalogGenerationMode, AICatalogOutput, AvailableKeys, ParsedAIResponse } from './ai-catalog-schema';
 import { SOURCE_SCHEMAS } from './ai-catalog-schema';
 import { isPlainObject } from './ai-catalog-sanitizer';
+import consola from 'consola';
 
+const logger = consola.withTag('AICatalog');
 const SCHEMA: any = SOURCE_SCHEMAS;
 
 function listValues(values: string[] | readonly string[] | Record<string, string>): string {
@@ -22,7 +24,7 @@ const PROMPT_HEADER = `You generate Stremio catalog discovery configs from natur
 - Use only the source schemas documented in this prompt.
 
 === DECISION POLICY ===
-- Genres beat keywords for broad categories. Countries beat country keywords. Provider/network/company filters beat keyword guesses.
+- Genres beat keywords for broad categories, but use keywords alongside genres when the user describes specific themes, topics, or subgenres. Countries beat country keywords. Provider/network/company filters beat keyword guesses.
 `;
 
 const AUTO_DECISION_POLICY = `- Prefer TMDB for movies/series, AniList or MAL for anime, and TMDB/Simkl for western cartoons.
@@ -35,7 +37,7 @@ const TMDB_DECISION_POLICY = `- Use TMDB for movie and series requests.
 - Do not add parent, distributor, or related companies unless the user names them.
 - Broad negative genres use resolve.excludeGenres when possible: "no comedy" -> excludeGenres: ["Comedy"].
 - Use resolve.genres together with resolve.excludeGenres when a TMDB genre is too broad and a small, obvious exclusion would improve tone or scope. Example: serious crime dramas can use genres ["Crime","Drama"] and excludeGenres ["Comedy"]; do not exclude genres that the user asked for or that are central to the request.
-- For broad TMDB "top/best/highly rated" movie catalogs, use vote_count.desc or vote_average.desc with vote_count.gte >= 300. Use 500+ for very broad genres.
+- For broad TMDB "top/best/highly rated" catalogs, use vote_count.desc or vote_average.desc with vote_count.gte >= 300. Use 500+ for very broad genres (Action, Comedy, Drama, Horror, Thriller, Romance, Sci-Fi, etc.). Only these four low-volume TV genres get a lower threshold of vote_count.gte 5-10: Reality, Documentary, Talk, TV Movie. All other genres use >= 300.
 - For recent TV catalogs, prefer popularity.desc with a first_air_date.gte floor.
 - If the user references specific titles, do not use titles as TMDB keywords. Infer shared themes instead.
 - For TMDB genres, use resolve.genres / resolve.excludeGenres with genreMode or excludeGenreMode. "crime dramas" -> genres ["Crime","Drama"], genreMode "and"; "action or adventure" -> genres ["Action","Adventure"], genreMode "or".
@@ -78,18 +80,34 @@ Static params:
 TMDB genres:
 - Movie genre names: ${listValues(SCHEMA.tmdb.movie.genreNames)}
 - TV genre names: ${listValues(SCHEMA.tmdb.series.genreNames)}
+CRITICAL: Movie and TV genre names are NOT interchangeable. There is NO Horror genre for TV — use 9648=Mystery or resolve.keywords: ["horror"] instead. For horror TV shows, use resolve.keywords: ["horror"].
 Use genreMode "and" for combined genre concepts where results should match every genre: crime drama, family animation, sci-fi horror. Use genreMode "or" for alternatives or broad buckets.
 
-Resolve fields:
+Dynamic (put in "resolve" object, backend resolves names to IDs):
 - genres: ["Crime", "Drama"] plus genreMode: "and" | "or"
 - excludeGenres: ["Comedy"] plus excludeGenreMode: "and" | "or"
 - companies: ["Pixar", "Marvel Studios", "A24"]
-- keywords: plain semantic names like ["true crime", "stand-up comedy", "period drama", "nature documentary", "time travel", "heist", "slasher"]
+- keywords: ["superhero", "based on novel", "dystopia", "plot twist", "mindfuck", "time loop"]
 - excludeKeywords: ["superhero", "anime", "japanese"]
 - cast: ["Tom Hanks", "Leonardo DiCaprio"] (movie actor requests only)
 - people: ["Christopher Nolan"] (movies only; broader cast/crew attachment)
-- watchProviders: ["Netflix", "Disney+", "Hulu"]
+- watchProviders: ["Netflix", "Disney+", "Hulu"] (MUST also set watch_region in params e.g. "US". Default to "US" if unsure.)
 - networks: ["HBO", "Netflix", "BBC One"] (series only)
+
+IMPORTANT about keywords: There is NO "keywords" field in params. Keywords MUST go in the "resolve" object so the backend can look up their IDs. Never put keywords directly in params.
+Use keywords for thematic/niche concepts that genres can't capture. Examples of correct usage:
+- "mindfuck movies" -> resolve: { "keywords": ["plot twist", "twist ending", "nonlinear timeline", "mindfuck"] }
+- "heist movies" -> resolve: { "keywords": ["heist", "robbery"] }
+- "time travel" -> resolve: { "keywords": ["time travel"] }
+- "treasure hunt" -> resolve: { "keywords": ["treasure", "treasure hunt"] }
+- "zombie movies" -> resolve: { "keywords": ["zombie"] }
+- "home renovation shows" -> resolve: { "keywords": ["home renovation", "renovation"] }
+Keywords are more precise than genres for specific themes. Prefer keywords over broad genre combinations when the user describes a specific concept or theme.
+
+CRITICAL: when user mentions specific titles, TMDB keywords are thematic tags, NOT movie/series titles. If the user asks for a catalog referencing specific titles (e.g. "movies like Friday the 13th and Nightmare on Elm Street"), do NOT use those titles as keywords. Instead, identify the themes, subgenres, and characteristics those titles share (e.g. slasher, serial killer, summer camp, supernatural horror) and use THOSE as keywords combined with appropriate genres.
+- "Friday the 13th and Elm Street movies" -> resolve: { "genres": ["Horror"], "keywords": ["slasher", "serial killer", "masked killer"] }
+- "movies like Interstellar and Arrival" -> resolve: { "genres": ["Science Fiction"], "keywords": ["space", "alien contact", "time travel"] }
+- "shows like Breaking Bad and Ozark" -> resolve: { "genres": ["Crime", "Drama"], "keywords": ["drug trade", "money laundering", "crime family"] }
 `;
 
 const SOURCE_ANILIST = `
@@ -200,6 +218,17 @@ Each catalog object:
 - mediaType: "movie" | "tv" | "anime" | "movies" | "shows"
 - params: static params only
 - resolve: optional dynamic names only
+
+Rules:
+- "resolve" is ONLY for dynamic entities that need name-to-ID lookup. Omit if none needed.
+- For anime content, prefer AniList or MAL over TMDB.
+- For movies/series, prefer TMDB (most comprehensive filters).
+- "Cartoons" means western animated content (e.g. SpongeBob, Avatar, Rick and Morty) — use TMDB or Simkl with Animation genre, NOT AniList/MAL. AniList/MAL are strictly for Japanese anime (and occasionally Korean/Chinese animation).
+- Return exactly 1 catalog unless the request clearly implies multiple (e.g. "horror, comedy, and sci-fi catalogs", "by decade starting from the 70s", "create 3 catalogs"). Never split a single concept into multiple catalogs — one request like "best James Cameron movies" is 1 catalog, not separate "popular" and "top rated" catalogs. Max 5.
+- Always include sort_by/sort/order_by in params.
+- For TMDB "best" or "top" requests: use vote_count.desc (most voted) rather than vote_average.desc. High vote count naturally surfaces the best-known, most-watched titles. Only use vote_average.desc when the user explicitly asks for "highest rated" or "best scored".
+- When using vote_average.desc, always set vote_count.gte >= 50 to avoid obscure titles. Exception: for Reality, Documentary, Talk, or TV Movie genres only, use vote_count.gte 5-10.
+- Return ONLY valid JSON. No markdown, no explanation, no code fences.
 
 `;
 
@@ -374,8 +403,29 @@ function parsedCatalogsFromJson(parsed: any, warnings: string[] = []): ParsedAIR
   return catalogs.length ? { catalogs, ...(warnings.length ? { warnings } : {}) } : null;
 }
 
+function extractBalancedJson(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return text.slice(start, i + 1); }
+  }
+  return null;
+}
+
 export function parseCatalogAIResponse(rawText: string): ParsedAIResponse | null {
-  if (!rawText) return null;
+  if (!rawText) {
+    logger.warn('Empty AI response received');
+    return null;
+  }
 
   let text = rawText.trim();
   const warnings: string[] = [];
@@ -384,19 +434,31 @@ export function parseCatalogAIResponse(rawText: string): ParsedAIResponse | null
     text = fenceMatch[1].trim();
   }
 
-  try {
-    const parsed = JSON.parse(text);
-    return parsedCatalogsFromJson(parsed, warnings);
-  } catch {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsedCatalogsFromJson(parsed, warnings);
-      } catch {
-        return null;
-      }
+  const tryParse = (json: string): ParsedAIResponse | null => {
+    try {
+      return parsedCatalogsFromJson(JSON.parse(json), warnings);
+    } catch {
+      return null;
     }
-    return null;
+  };
+
+  let result = tryParse(text);
+  if (result) return result;
+
+  // Extract first balanced top-level JSON object by tracking brace depth
+  const balanced = extractBalancedJson(text);
+  if (balanced) {
+    result = tryParse(balanced);
+    if (result) return result;
   }
+
+  // Last resort: greedy regex
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    result = tryParse(jsonMatch[0]);
+    if (result) return result;
+  }
+
+  logger.error(`Failed to parse AI response as JSON. Raw: ${text.slice(0, 500)}`);
+  return null;
 }

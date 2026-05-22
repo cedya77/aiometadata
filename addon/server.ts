@@ -101,7 +101,10 @@ async function startServer(): Promise<void> {
       name: 'TMDB Network Index',
       task: async () => {
         consola.info('Initializing TMDB Network Index...');
-        await initializeTmdbNetworkIndex();
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TMDB Network Index init timed out after 30s — will retry on first use')), 30000)
+        );
+        await Promise.race([initializeTmdbNetworkIndex(), timeout]);
       },
       critical: false
     },
@@ -109,7 +112,10 @@ async function startServer(): Promise<void> {
       name: 'TMDB Keyword Index',
       task: async () => {
         consola.info('Initializing TMDB Keyword Index...');
-        await initializeTmdbKeywordIndex();
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TMDB Keyword Index init timed out after 30s — will retry on first use')), 30000)
+        );
+        await Promise.race([initializeTmdbKeywordIndex(), timeout]);
       },
       critical: false
     },

@@ -13,14 +13,15 @@ interface AICatalogDialogProps {
   onClose: () => void;
 }
 
-type AICatalogGenerationMode = 'auto' | 'tmdb' | 'anilist' | 'mal' | 'tvdb';
+type AICatalogGenerationMode = 'auto' | 'tmdb' | 'anilist' | 'mal' | 'tvdb' | 'simkl';
 
 const GENERATION_MODE_OPTIONS: Array<{ value: AICatalogGenerationMode; label: string }> = [
-  { value: 'tmdb', label: 'TMDB' },
   { value: 'auto', label: 'Auto' },
+  { value: 'tmdb', label: 'TMDB' },
   { value: 'anilist', label: 'AniList' },
   { value: 'mal', label: 'MAL' },
   { value: 'tvdb', label: 'TVDB' },
+  { value: 'simkl', label: 'Simkl' },
 ];
 
 const EXAMPLE_PROMPTS: Record<AICatalogGenerationMode, string[]> = {
@@ -60,6 +61,12 @@ const EXAMPLE_PROMPTS: Record<AICatalogGenerationMode, string[]> = {
     "TV-MA horror series",
     "Netflix documentary series",
   ],
+  simkl: [
+    "Popular anime this month",
+    "Top rated sci-fi shows from the 2010s",
+    "Trending Korean dramas",
+    "Best action movies this year",
+  ],
 };
 
 type DialogState = 'idle' | 'generating' | 'resolving' | 'success' | 'error';
@@ -77,7 +84,7 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
   const hasBothProviders = !!(config.apiKeys?.openrouter && config.apiKeys?.gemini);
   const defaultProvider = config.apiKeys?.openrouter ? 'openrouter' : 'gemini';
   const [provider, setProvider] = useState<'openrouter' | 'gemini'>(defaultProvider);
-  const [generationMode, setGenerationMode] = useState<AICatalogGenerationMode>('tmdb');
+  const [generationMode, setGenerationMode] = useState<AICatalogGenerationMode>('auto');
 
   useEffect(() => {
     if (isOpen) {
@@ -87,7 +94,7 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
       setCreatedCatalogs([]);
       setWarnings([]);
       setProvider(defaultProvider);
-      setGenerationMode('tmdb');
+      setGenerationMode('auto');
     }
   }, [isOpen, defaultProvider]);
 

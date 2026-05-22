@@ -66,19 +66,19 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
 
   if (catalog.source === 'tmdb') {
     if (!ctx.tmdbApiKey) {
-      logger.warn('[AI Catalog] No TMDB API key available for entity resolution');
+      logger.warn('[AICatalog] No TMDB API key available for entity resolution');
       return { resolved, warnings };
     }
     const config = { apiKeys: { tmdb: ctx.tmdbApiKey } };
 
     if (resolve.companies?.length) {
-      logger.info(`[AI Catalog] Resolving TMDB companies: ${resolve.companies.join(', ')}`);
+      logger.info(`[AICatalog] Resolving TMDB companies: ${resolve.companies.join(', ')}`);
       const items = await resolveNamedEntities(resolve.companies, 'TMDB company', async (name) => {
         const data = await moviedb.makeTmdbRequest('/search/company', ctx.tmdbApiKey, { query: name, page: 1 }, 'GET', null, config);
         const results = (data?.results || []).filter((r: any) => r?.id);
         const best = pickBestMatch(results, name);
         if (!best) return null;
-        logger.debug(`[AI Catalog] Company "${name}" -> ID ${best.id} (${best.name})`);
+        logger.debug(`[AICatalog] Company "${name}" -> ID ${best.id} (${best.name})`);
         return { id: best.id, label: best.name || name };
       });
       if (items.length) resolved.with_companies = items.map(i => i.id).join('|');
@@ -94,11 +94,11 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
     ];
 
     if (keywordRequests.length) {
-      logger.info(`[AI Catalog] Resolving TMDB keywords: ${keywordRequests.map(item => item.input).join(', ')}`);
+      logger.info(`[AICatalog] Resolving TMDB keywords: ${keywordRequests.map(item => item.input).join(', ')}`);
       const items = await resolveNamedEntities(keywordRequests, 'TMDB keyword', async ({ input, exclude }) => {
         const local = await keywordIndex.resolveTmdbKeywordByName(input);
         if (!local?.id) return null;
-        logger.debug(`[AI Catalog] Keyword "${input}" -> ID ${local.id} (${local.label})`);
+        logger.debug(`[AICatalog] Keyword "${input}" -> ID ${local.id} (${local.label})`);
         return { id: local.id, label: local.label || input, _exclude: exclude };
       });
       const includeItems = items.filter((i: any) => !i._exclude);
@@ -114,13 +114,13 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
     }
 
     const resolveTmdbPeople = async (names: string[], label: string, singularLabel: string) => {
-      logger.info(`[AI Catalog] Resolving TMDB ${label}: ${names.join(', ')}`);
+      logger.info(`[AICatalog] Resolving TMDB ${label}: ${names.join(', ')}`);
       return resolveNamedEntities(names, `TMDB ${singularLabel}`, async (name) => {
         const data = await moviedb.makeTmdbRequest('/search/person', ctx.tmdbApiKey, { query: name, page: 1, include_adult: false }, 'GET', null, config);
         const results = (data?.results || []).filter((r: any) => r?.id);
         const best = pickBestMatch(results, name);
         if (!best) return null;
-        logger.debug(`[AI Catalog] ${singularLabel} "${name}" -> ID ${best.id} (${best.name})`);
+        logger.debug(`[AICatalog] ${singularLabel} "${name}" -> ID ${best.id} (${best.name})`);
         return { id: best.id, label: best.name || name };
       });
     };
@@ -139,11 +139,11 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
 
     if (catalog.catalogType === 'series' && resolve.networks?.length) {
       const { resolveTmdbNetworkByName } = require('../lib/tmdb-network-index');
-      logger.info(`[AI Catalog] Resolving TMDB networks: ${resolve.networks.join(', ')}`);
+      logger.info(`[AICatalog] Resolving TMDB networks: ${resolve.networks.join(', ')}`);
       const items = await resolveNamedEntities(resolve.networks, 'TMDB network', async (name) => {
         const network = await resolveTmdbNetworkByName(name);
         if (!network) return null;
-        logger.debug(`[AI Catalog] Network "${name}" -> ID ${network.id} (${network.label})`);
+        logger.debug(`[AICatalog] Network "${name}" -> ID ${network.id} (${network.label})`);
         return network;
       });
       if (items.length) {
@@ -162,11 +162,11 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
       for (const name of resolve.watchProviders) {
         const match = pickWatchProviderMatch(allProviders, name);
         if (match?.provider_id) {
-          logger.debug(`[AI Catalog] Watch provider "${name}" -> ID ${match.provider_id} (${match.provider_name})`);
+          logger.debug(`[AICatalog] Watch provider "${name}" -> ID ${match.provider_id} (${match.provider_name})`);
           items.push({ id: match.provider_id, label: match.provider_name || name });
         } else {
           const warning = `Could not resolve TMDB watch provider "${name}" for ${mediaType} in ${region}`;
-          logger.warn(`[AI Catalog] ${warning}`);
+          logger.warn(`[AICatalog] ${warning}`);
           warnings.push(warning);
         }
       }
@@ -184,10 +184,10 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
     for (const name of resolve.studios) {
       try {
         const results = await anilist.searchStudios(name);
-        logger.info(`[AI Catalog] AniList studio search "${name}": ${results?.length ?? 0} results${results?.[0] ? ` (top: ${results[0].name}, id: ${results[0].id})` : ''}`);
+        logger.info(`[AICatalog] AniList studio search "${name}": ${results?.length ?? 0} results${results?.[0] ? ` (top: ${results[0].name}, id: ${results[0].id})` : ''}`);
         if (results?.[0]?.id) items.push({ id: results[0].id, label: results[0].name || name });
       } catch (e: any) {
-        logger.warn(`[AI Catalog] Failed to resolve AniList studio "${name}": ${e.message}`);
+        logger.warn(`[AICatalog] Failed to resolve AniList studio "${name}": ${e.message}`);
       }
     }
     if (items.length) {
@@ -247,7 +247,7 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
           resolved.genre = String(match.id);
           resolved._formState_includeGenres = JSON.stringify([{ id: match.id, label: match.name }]);
         } else {
-          logger.warn(`[AI Catalog] TVDB genre "${val}" not found`);
+          logger.warn(`[AICatalog] TVDB genre "${val}" not found`);
           warnings.push(`Could not resolve genre "${resolve.genre[0]}"`);
         }
       } catch (e: any) {
@@ -268,7 +268,7 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
           resolved.status = String(match.id);
           resolved._formState_tvdbStatus = String(match.id);
         } else {
-          logger.warn(`[AI Catalog] TVDB status "${val}" not found`);
+          logger.warn(`[AICatalog] TVDB status "${val}" not found`);
           warnings.push(`Could not resolve status "${resolve.status[0]}"`);
         }
       } catch (e: any) {
@@ -288,7 +288,7 @@ export async function resolveEntities(catalog: AICatalogOutput, ctx: ResolveCont
           resolved.contentRating = String(match.id);
           resolved._formState_certificationValue = String(match.id);
         } else {
-          logger.warn(`[AI Catalog] TVDB content rating "${val}" not found`);
+          logger.warn(`[AICatalog] TVDB content rating "${val}" not found`);
           warnings.push(`Could not resolve content rating "${resolve.contentRating[0]}"`);
         }
       } catch (e: any) {
@@ -313,10 +313,10 @@ async function resolveNamedEntities<T extends { id: number; label: string }>(
       if (result) {
         items.push(result);
       } else {
-        logger.warn(`[AI Catalog] Could not resolve ${label} "${displayName}" - no results`);
+        logger.warn(`[AICatalog] Could not resolve ${label} "${displayName}" - no results`);
       }
     } catch (e: any) {
-      logger.error(`[AI Catalog] Failed to resolve ${label} "${displayName}": ${e.message}`);
+      logger.error(`[AICatalog] Failed to resolve ${label} "${displayName}": ${e.message}`);
     }
   }
   return items;

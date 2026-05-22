@@ -1059,7 +1059,7 @@ export function normalizeCatalog(catalog: AICatalogOutput, options: NormalizeCat
 
   const strippedParams = stripUnknownParams(catalog);
   if (strippedParams.length) {
-    logger.debug(`[AI Catalog] Stripped unsupported ${catalog.source} params from "${catalog.name}": ${strippedParams.join(', ')}`);
+    logger.debug(`[AICatalog] Stripped unsupported ${catalog.source} params from "${catalog.name}": ${strippedParams.join(', ')}`);
     diagnostics.push(`Stripped unsupported ${catalog.source} params from "${catalog.name}": ${strippedParams.join(', ')}`);
   }
 
