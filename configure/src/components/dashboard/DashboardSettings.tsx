@@ -210,7 +210,7 @@ function SettingRow({ setting }: { setting: SettingItem }) {
   const maskedValue = setting.sensitive && setting.value
     ? (setting.value.length <= 4 ? "••••" : "••••••" + setting.value.slice(-4))
     : "";
-  const displayValue = setting.sensitive && !revealed ? maskedValue : localValue;
+  const displayValue = setting.sensitive && !revealed && !hasChanged ? maskedValue : localValue;
 
   async function handleSave() {
     setSaving(true);

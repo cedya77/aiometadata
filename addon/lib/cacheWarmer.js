@@ -200,7 +200,7 @@ async function ensureSystemConfig() {
         scrapeImdb: false,
       },
       apiKeys: { 
-        tmdb: process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '',
+        tmdb: process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '',
         tvdb: process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '',
         fanart: process.env.FANART_API_KEY || process.env.BUILT_IN_FANART_API_KEY || '',
         rpdb: process.env.RPDB_API_KEY || process.env.BUILT_IN_RPDB_API_KEY || '',
@@ -292,7 +292,7 @@ async function warmPopularContent(force = false) {
       return;
     }
     
-    const builtInApiKey = process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
+    const builtInApiKey = process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY;
     if (!builtInApiKey) {
       logger.warn('[API Cache Warming] BUILT_IN_TMDB_API_KEY not set, skipping popular content warming');
       return;

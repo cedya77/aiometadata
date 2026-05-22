@@ -161,7 +161,7 @@ export function Header() {
     }
   };
   return (
-    <header className="w-full max-w-5xl py-6 sm:py-8">
+    <header className="w-full py-6 sm:py-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex flex-col items-center sm:flex-row sm:items-center sm:space-x-4 gap-2 sm:gap-0">
           <button
