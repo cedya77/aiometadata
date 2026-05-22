@@ -15,7 +15,7 @@ const { isAnime: isAnimeFunc } = require('../utils/isAnime');
 const e = require("express");
 const { resolveAllIds } = require('./id-resolver');
 const { cacheWrapMeta, cacheWrapJikanApi, cacheWrapGlobal } = require('./getCache');
-const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
+function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const kitsu = require('./kitsu');
 var nameToImdb = require("name-to-imdb");
 const consola = require('consola');
@@ -991,7 +991,7 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       const kitsuDetails = await cacheWrapGlobal(
         `kitsu-anime-${allIds.kitsuId}-categories,episodes,mediaRelationships.destination`,
         () => kitsu.getMultipleAnimeDetails([allIds.kitsuId], 'categories,episodes,mediaRelationships.destination'),
-        CATALOG_TTL
+        CATALOG_TTL()
       );
       if (!kitsuDetails) {
         throw new Error(`Kitsu returned no details for Kitsu ID ${allIds.kitsuId}.`);

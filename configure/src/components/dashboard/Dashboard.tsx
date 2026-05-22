@@ -14,6 +14,7 @@ import {
   useDashboardOperations,
   useDashboardUsers,
   useDashboardLogs,
+  useDashboardSettings,
   type DashboardTab,
 } from "@/hooks/useDashboardQueries";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,7 @@ import { DashboardOverview } from "./DashboardOverview";
 import { DashboardPerformance } from "./DashboardPerformance";
 import { DashboardOperations } from "./DashboardOperations";
 import { DashboardUsers } from "./DashboardUsers";
+import { DashboardSettings } from "./DashboardSettings";
 
 
 
@@ -344,6 +346,7 @@ export function Dashboard() {
   const operationsQuery = useDashboardOperations(queryOptions);
   const usersQuery = useDashboardUsers(queryOptions);
   const logsQuery = useDashboardLogs(queryOptions);
+  const settingsQuery = useDashboardSettings(queryOptions);
 
   // Refetch data when tab changes (only if not already fetching)
   const prevTabRef = useRef<DashboardTab | null>(null);
@@ -385,6 +388,9 @@ export function Dashboard() {
         case 'logs':
           if (isAdmin && !logsQuery.isFetching) logsQuery.refetch();
           break;
+        case 'settings':
+          if (isAdmin && !settingsQuery.isFetching) settingsQuery.refetch();
+          break;
       }
     }
   }, [activeTab]);
@@ -402,6 +408,7 @@ export function Dashboard() {
     operations: operationsQuery.data,
     users: usersQuery.data,
     logs: logsQuery.data,
+    settings: settingsQuery.data,
     loading: isInitialLoading,
     error: overviewQuery.error?.message || null,
   };
@@ -551,6 +558,15 @@ export function Dashboard() {
           />
         ),
       },
+      {
+        value: "settings",
+        title: "Settings",
+        component: (
+          <DashboardSettings
+            data={dashboardData.settings}
+          />
+        ),
+      },
     );
   }
 
@@ -640,6 +656,7 @@ export function Dashboard() {
                   { value: "operations", label: "Ops" },
                   { value: "users", label: "Users" },
                   { value: "logs", label: "Logs" },
+                  { value: "settings", label: "Settings" },
                 ] : []),
               ].map((tab) => (
                 <TabsTrigger
@@ -731,6 +748,12 @@ export function Dashboard() {
             <TabsContent value="logs" className="mt-0">
               <DashboardLogs
                 data={dashboardData.logs}
+              />
+            </TabsContent>
+
+            <TabsContent value="settings" className="mt-0">
+              <DashboardSettings
+                data={dashboardData.settings}
               />
             </TabsContent>
           </>

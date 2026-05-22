@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // Types
 // ============================================================================
 
-export type DashboardTab = 'overview' | 'analytics' | 'content' | 'performance' | 'system' | 'operations' | 'users' | 'logs';
+export type DashboardTab = 'overview' | 'analytics' | 'content' | 'performance' | 'system' | 'operations' | 'users' | 'logs' | 'settings';
 
 interface DashboardQueryOptions {
   activeTab?: DashboardTab;
@@ -39,6 +39,7 @@ export const DASHBOARD_QUERY_KEYS = {
   operations: ['dashboard', 'operations'] as const,
   users: ['dashboard', 'users'] as const,
   logs: ['dashboard', 'logs'] as const,
+  settings: ['dashboard', 'settings'] as const,
   all: ['dashboard'] as const,
 } as const;
 
@@ -722,6 +723,108 @@ export function useClearUserData() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.users });
       queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.overview });
+    },
+  });
+}
+
+// ============================================================================
+// Settings Hooks
+// ============================================================================
+
+export interface SettingItem {
+  key: string;
+  label: string;
+  description: string;
+  category: string;
+  type: 'string' | 'number' | 'boolean' | 'select';
+  default: string | number | boolean;
+  options?: string[];
+  sensitive: boolean;
+  requiresRestart: boolean;
+  envOnly: boolean;
+  uiHint: 'tags' | null;
+  maxTags: number | null;
+  min: number | null;
+  max: number | null;
+  value: string;
+  hasEnvVar: boolean;
+  hasDbOverride: boolean;
+  disabledReason: string | null;
+}
+
+export function useDashboardSettings(options: DashboardQueryOptions = {}) {
+  const { isAdmin, adminKey, logout } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const { activeTab = 'settings', enabled = true } = options;
+
+  return useQuery<{ settings: SettingItem[] }>({
+    queryKey: DASHBOARD_QUERY_KEYS.settings,
+    queryFn: async () => {
+      try {
+        return await fetchDashboardData('/api/dashboard/settings', getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+        }
+        throw error;
+      }
+    },
+    enabled: enabled && isAdmin && !!adminKey && activeTab === 'settings',
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateSetting() {
+  const { adminKey, logout } = useAdmin();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: string }) => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (adminKey) headers['x-admin-key'] = adminKey;
+
+      const response = await fetch(`/api/dashboard/settings/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ value }),
+      });
+
+      if (response.status === 401) { logout(); throw new Error('Session expired.'); }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.settings });
+    },
+  });
+}
+
+export function useResetSetting() {
+  const { adminKey, logout } = useAdmin();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (key: string) => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (adminKey) headers['x-admin-key'] = adminKey;
+
+      const response = await fetch(`/api/dashboard/settings/reset/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers,
+      });
+
+      if (response.status === 401) { logout(); throw new Error('Session expired.'); }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.settings });
     },
   });
 }

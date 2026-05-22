@@ -19,9 +19,10 @@ const host = process.env.HOST_NAME && process.env.HOST_NAME.startsWith('http')
   ? process.env.HOST_NAME
   : `https://${process.env.HOST_NAME}`;
 
-const manifestLogoUrl = process.env.ADDON_LOGO_URL && process.env.ADDON_LOGO_URL.trim() !== ''
-  ? process.env.ADDON_LOGO_URL.trim()
-  : `${host}/logo.png`;
+function manifestLogoUrl() {
+  const custom = process.env.ADDON_LOGO_URL?.trim();
+  return custom || `${host}/logo.png`;
+}
 
 const MANIFEST_CACHE_TTL = 5 * 60;
 
@@ -1318,7 +1319,7 @@ async function getManifest(config: any): Promise<any> {
   const manifest = {
     id: buildInfo.name,
     version: buildInfo.version,
-    logo: manifestLogoUrl,
+    logo: manifestLogoUrl(),
     background: `${host}/background.png`,
     name: addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",

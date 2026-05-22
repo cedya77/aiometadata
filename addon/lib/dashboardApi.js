@@ -221,8 +221,7 @@ class DashboardAPI {
           overallStatus = "error";
         }
       } else if (!this.cache) {
-        // NO_CACHE mode - don't show as issue
-        logger.info("[Dashboard API] Redis disabled (NO_CACHE mode)");
+        logger.info("[Dashboard API] Redis not available");
       }
     } catch (error) {
       issues.push(`Redis error: ${error.message}`);

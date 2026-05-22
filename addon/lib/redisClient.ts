@@ -1,9 +1,8 @@
 import Redis from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
 
-const redis: Redis | null = GLOBAL_NO_CACHE ? null : new Redis(REDIS_URL, {
+const redis: Redis | null = new Redis(REDIS_URL, {
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
   lazyConnect: true,

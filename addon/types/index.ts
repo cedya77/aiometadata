@@ -243,7 +243,6 @@ export interface EnvironmentConfig {
   DATABASE_URI?: string;
   REDIS_URL?: string;
   HOST_NAME?: string;
-  NO_CACHE?: string;
   ENABLE_CACHE_WARMING?: string;
   CACHE_WARMING_INTERVAL?: string;
   ADDON_PASSWORD?: string;
