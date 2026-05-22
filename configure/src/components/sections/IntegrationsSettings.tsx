@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Eye, EyeOff, CheckCircle, XCircle, Loader2, LogIn, LogOut, AlertCircle } from 'lucide-react';
 import { useConfig, AppConfig } from '@/contexts/ConfigContext';
 import { toast } from 'sonner';
@@ -61,15 +62,15 @@ const ApiKeyInput = ({
   };
   
   return (
-    <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-      <div className="flex-1 space-y-1">
+    <Card>
+      <CardContent className="p-4 space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor={id} className="text-lg font-medium">{label}</Label>
+          <Label htmlFor={id} className="font-medium">{label}</Label>
           <a
             href={linkHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
           >
             Get Key
           </a>
@@ -82,7 +83,7 @@ const ApiKeyInput = ({
             onChange={handleChange}
             placeholder={placeholder}
           />
-          <div className="w-6 h-6 flex items-center justify-center">
+          <div className="w-6 h-6 flex items-center justify-center shrink-0">
             {validationStatus === 'loading' && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
             {validationStatus === 'success' && <CheckCircle className="h-5 w-5 text-green-500" />}
             {validationStatus === 'error' && <XCircle className="h-5 w-5 text-red-500" />}
@@ -92,13 +93,13 @@ const ApiKeyInput = ({
             size="icon"
             onClick={() => setShowKey(!showKey)}
             aria-label={visible ? 'Hide key' : 'Show key'}
-            className="text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground shrink-0"
           >
             {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
 
@@ -520,7 +521,7 @@ export function IntegrationsSettings() {
       </div>
       
       {/* Inputs */}
-      <div className="space-y-4 max-w-2xl">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ApiKeyInput
           id="gemini"
           label="Google Gemini API Key"
@@ -596,7 +597,7 @@ export function IntegrationsSettings() {
       </div>
       
       {/* Test Button */}
-      <div className="max-w-2xl pt-2">
+      <div className="pt-2">
         <button
           onClick={handleTestAllKeys}
           disabled={isTesting || buttonState.disabled}

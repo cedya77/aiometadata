@@ -2794,6 +2794,12 @@ function CatalogsSettingsContent({
     () => config.catalogSetupComplete === true
   );
 
+  useEffect(() => {
+    if (config.catalogSetupComplete) {
+      setHasChosenCatalogSetup(true);
+    }
+  }, [config.catalogSetupComplete]);
+
   const handleCustomize = (catalog: CatalogConfig) => {
     const getTemplate = DEFAULT_CATALOG_TEMPLATES[catalog.id];
     if (getTemplate) {

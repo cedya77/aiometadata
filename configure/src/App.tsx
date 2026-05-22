@@ -1,4 +1,3 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { Header } from './components/layout/Header';
 import { SettingsLayout } from './components/SettingsLayout';
 import { AdminProvider } from './contexts/AdminContext';
@@ -19,21 +18,19 @@ function AppContent() {
   }
 
   return (
-    <div className="dark min-h-screen w-full bg-background text-foreground flex flex-col items-center p-4 sm:p-6">
-      <Header />
+    <div className="dark min-h-screen w-full bg-background text-foreground">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <Header />
 
-      {config.apiKeys.customDescriptionBlurb && (
-        <div
-          className="mb-6 p-4 bg-black border rounded-lg w-full max-w-5xl"
-          dangerouslySetInnerHTML={{ __html: config.apiKeys.customDescriptionBlurb }}
-        />
-      )}
+        {config.apiKeys.customDescriptionBlurb && (
+          <div
+            className="mb-6 p-4 bg-black border rounded-lg"
+            dangerouslySetInnerHTML={{ __html: config.apiKeys.customDescriptionBlurb }}
+          />
+        )}
 
-      <Card className="w-full max-w-5xl shadow-2xl mb-32">
-        <CardContent className="p-6 md:p-8">
-          <SettingsLayout />
-        </CardContent>
-      </Card>
+        <SettingsLayout />
+      </div>
       <Toaster />
     </div>
   );

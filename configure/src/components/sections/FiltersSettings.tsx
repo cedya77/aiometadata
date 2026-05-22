@@ -63,109 +63,107 @@ export function FiltersSettings() {
         <p className="text-muted-foreground mt-1">Filter the content displayed in catalogs and search results based on age ratings.</p>
       </div>
 
-      {/* Content Rating Card */}
-      <Card className="max-w-lg">
-        <CardHeader>
-          <CardTitle>Content Rating</CardTitle>
-          <CardDescription>
-            Select the maximum content rating to display. All content rated higher than your selection will be hidden. For movies and series only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-            <Select value={config.ageRating} onValueChange={handleAgeRatingChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a rating" />
-              </SelectTrigger>
-              <SelectContent>
-                {ageRatingOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Content Rating</CardTitle>
+            <CardDescription>
+              Select the maximum content rating to display. All content rated higher than your selection will be hidden. For movies and series only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+              <Select value={config.ageRating} onValueChange={handleAgeRatingChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a rating" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ageRatingOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+          </CardContent>
+        </Card>
 
-      {/* SFW Filter Card */}
-      <Card className="max-w-lg">
-        <CardHeader>
-          <CardTitle>Anime Content Filter</CardTitle>
-          <CardDescription>
-            Enable to show only safe for work anime content. This will filter out adult content, some ecchi content, and other mature themes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="sfw-mode"
-              checked={config.sfw}
-              onCheckedChange={handleSfwChange}
-            />
-            <Label htmlFor="sfw-mode">Safe for Work (SFW) Mode</Label>
-          </div>
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Anime Content Filter</CardTitle>
+            <CardDescription>
+              Enable to show only safe for work anime content. This will filter out adult content, some ecchi content, and other mature themes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="sfw-mode"
+                checked={config.sfw}
+                onCheckedChange={handleSfwChange}
+              />
+              <Label htmlFor="sfw-mode">Safe for Work (SFW) Mode</Label>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Hide Unreleased Digital Movies Card */}
-      <Card className="max-w-lg">
-        <CardHeader>
-          <CardTitle>Digital Release Filter</CardTitle>
-          <CardDescription>
-            Hide movies that haven't been released digitally yet. This filters out movies that are only in theaters or haven't been released at all. Applies to movie catalogs only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col space-y-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="hide-unreleased-digital"
-                checked={config.hideUnreleasedDigital ?? false}
-                onCheckedChange={handleHideUnreleasedDigitalChange}
-              />
-              <Label htmlFor="hide-unreleased-digital">Hide Unreleased Movies in Catalogs</Label>
+        <Card>
+          <CardHeader>
+            <CardTitle>Digital Release Filter</CardTitle>
+            <CardDescription>
+              Hide movies that haven't been released digitally yet. Applies to movie catalogs only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col space-y-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-unreleased-digital"
+                  checked={config.hideUnreleasedDigital ?? false}
+                  onCheckedChange={handleHideUnreleasedDigitalChange}
+                />
+                <Label htmlFor="hide-unreleased-digital">Hide Unreleased Movies in Catalogs</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-unreleased-digital-search"
+                  checked={config.hideUnreleasedDigitalSearch ?? false}
+                  onCheckedChange={handleHideUnreleasedDigitalSearchChange}
+                />
+                <Label htmlFor="hide-unreleased-digital-search">Hide Unreleased Movies in Search</Label>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="hide-unreleased-digital-search"
-                checked={config.hideUnreleasedDigitalSearch ?? false}
-                onCheckedChange={handleHideUnreleasedDigitalSearchChange}
-              />
-              <Label htmlFor="hide-unreleased-digital-search">Hide Unreleased Movies in Search</Label>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* Hide Unreleased Shows Card */}
-      <Card className="max-w-lg">
-        <CardHeader>
-          <CardTitle>Unreleased Shows Filter</CardTitle>
-          <CardDescription>
-            Hide series that haven't aired yet based on their release date. Applies to series catalogs only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col space-y-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="hide-unreleased-shows"
-                checked={config.hideUnreleasedShows ?? false}
-                onCheckedChange={handleHideUnreleasedShowsChange}
-              />
-              <Label htmlFor="hide-unreleased-shows">Hide Unreleased Shows in Catalogs</Label>
+        <Card>
+          <CardHeader>
+            <CardTitle>Unreleased Shows Filter</CardTitle>
+            <CardDescription>
+              Hide series that haven't aired yet based on their release date. Applies to series catalogs only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col space-y-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-unreleased-shows"
+                  checked={config.hideUnreleasedShows ?? false}
+                  onCheckedChange={handleHideUnreleasedShowsChange}
+                />
+                <Label htmlFor="hide-unreleased-shows">Hide Unreleased Shows in Catalogs</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="hide-unreleased-shows-search"
+                  checked={config.hideUnreleasedShowsSearch ?? false}
+                  onCheckedChange={handleHideUnreleasedShowsSearchChange}
+                />
+                <Label htmlFor="hide-unreleased-shows-search">Hide Unreleased Shows in Search</Label>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="hide-unreleased-shows-search"
-                checked={config.hideUnreleasedShowsSearch ?? false}
-                onCheckedChange={handleHideUnreleasedShowsSearchChange}
-              />
-              <Label htmlFor="hide-unreleased-shows-search">Hide Unreleased Shows in Search</Label>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Hide Watched Card */}
       {(config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist) && (
-        <Card className="max-w-lg">
+        <Card>
           <CardHeader>
             <CardTitle>Hide Watched</CardTitle>
             <CardDescription className="space-y-2 mt-2">
@@ -215,7 +213,7 @@ export function FiltersSettings() {
       )}
 
       {/* Content Exclusion Filter Card */}
-      <Card className="max-w-lg">
+      <Card>
         <CardHeader>
           <CardTitle>Content Exclusion Filter</CardTitle>
           <CardDescription>
