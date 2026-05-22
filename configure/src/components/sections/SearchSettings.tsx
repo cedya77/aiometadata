@@ -529,7 +529,7 @@ export function SearchSettings() {
                         Choose the default engine for basic keyword searches. The AI search uses this engine to find items based on its suggestions.
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6 max-w-4xl">
+                <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">Movies Search Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
@@ -635,7 +635,7 @@ export function SearchSettings() {
                         Search for movies and series by person names (actors, directors, writers). Only searches people's credits, not titles.
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6 max-w-4xl">
+                <CardContent className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                         <Label className="text-lg font-medium">People Search (Movies) Engine:</Label>
                         <div className="flex items-center gap-3 w-full sm:w-[280px]">
@@ -706,7 +706,7 @@ export function SearchSettings() {
                         <CardTitle>TVDB Collections Search</CardTitle>
                         <CardDescription>Search for curated TVDB lists and collections</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4 max-w-4xl">
+                    <CardContent className="space-y-4">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0">
                             <Label className="text-lg font-medium">Enable TVDB Collections Search:</Label>
                             <Switch
