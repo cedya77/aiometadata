@@ -89,8 +89,6 @@ export function CustomManifestIntegration({ isOpen, onClose }: CustomManifestInt
 
       setManifest(manifestData);
       setSelectedCatalogs(new Set()); // Reset selection
-      setDetectedPageSize(null); // Reset detected page size
-      setDefaultPageSize(100); // Reset to default
       toast.success("Manifest loaded successfully", {
         description: `Found ${manifestData.catalogs.length} available catalogs`
       });

@@ -1,12 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdmin } from '@/contexts/AdminContext';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type DashboardTab = 'overview' | 'analytics' | 'content' | 'performance' | 'system' | 'operations' | 'users';
+export type DashboardTab = 'overview' | 'analytics' | 'content' | 'performance' | 'system' | 'operations' | 'users' | 'logs' | 'settings';
 
 interface DashboardQueryOptions {
   activeTab?: DashboardTab;
@@ -26,6 +26,7 @@ const POLLING_INTERVALS = {
   OPERATIONS: 5 * 1000,         // 5 seconds - warming tasks need fast updates
   USERS: 15 * 1000,             // 15 seconds - user activity
   CONTENT: 60 * 1000,           // 60 seconds - slow-changing data
+  LOGS: 2 * 1000,               // 2 seconds - live log streaming
 } as const;
 
 // Query keys for cache management
@@ -37,8 +38,17 @@ export const DASHBOARD_QUERY_KEYS = {
   system: ['dashboard', 'system'] as const,
   operations: ['dashboard', 'operations'] as const,
   users: ['dashboard', 'users'] as const,
+  logs: ['dashboard', 'logs'] as const,
+  settings: ['dashboard', 'settings'] as const,
   all: ['dashboard'] as const,
 } as const;
+
+const CLIENT_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function appendTz(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}tz=${encodeURIComponent(CLIENT_TZ)}`;
+}
 
 // ============================================================================
 // Helper Functions
@@ -159,7 +169,7 @@ export function useDashboardAnalytics(options: DashboardQueryOptions = {}) {
     queryKey: DASHBOARD_QUERY_KEYS.analytics,
     queryFn: async () => {
       try {
-        return await fetchDashboardData('/api/dashboard/analytics', getHeaders());
+        return await fetchDashboardData(appendTz('/api/dashboard/analytics'), getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
@@ -179,22 +189,21 @@ export function useDashboardAnalytics(options: DashboardQueryOptions = {}) {
  * Content data - popular content, search patterns
  * Polls every 60s when content tab is active (admin only - guests fetch once)
  */
-export function useDashboardContent(options: DashboardQueryOptions = {}) {
+export function useDashboardContent(options: DashboardQueryOptions & { timeframe?: string } = {}) {
   const { isAdmin, isGuest, logout } = useAdmin();
   const getHeaders = useApiHeaders();
   const isVisible = usePageVisibility();
-  const { activeTab = 'overview', enabled = true } = options;
+  const { activeTab = 'overview', enabled = true, timeframe = 'today' } = options;
 
   const isAuthenticated = isAdmin || isGuest;
   const isActiveTab = activeTab === 'content';
-  // Only admins get live polling - guests fetch once on load
   const shouldPoll = isVisible && isActiveTab && isAdmin;
 
   return useQuery({
-    queryKey: DASHBOARD_QUERY_KEYS.content,
+    queryKey: [...DASHBOARD_QUERY_KEYS.content, timeframe],
     queryFn: async () => {
       try {
-        return await fetchDashboardData('/api/dashboard/content', getHeaders());
+        return await fetchDashboardData(appendTz(`/api/dashboard/content?timeframe=${timeframe}`), getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
@@ -203,7 +212,6 @@ export function useDashboardContent(options: DashboardQueryOptions = {}) {
         throw error;
       }
     },
-    // Only fetch when this tab is active
     enabled: enabled && isAuthenticated && isActiveTab,
     refetchInterval: shouldPoll ? POLLING_INTERVALS.CONTENT : false,
     refetchIntervalInBackground: false,
@@ -380,6 +388,117 @@ export function useDashboardUsers(options: DashboardQueryOptions = {}) {
     refetchInterval: shouldPoll ? POLLING_INTERVALS.USERS : false,
     refetchIntervalInBackground: false,
   });
+}
+
+export interface HeatmapData {
+  grid: number[][];
+  peak: number;
+}
+
+export function useDashboardHeatmap(options: DashboardQueryOptions & { days?: number } = {}) {
+  const { isAdmin, logout, adminKey } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const { activeTab = 'overview', enabled = true, days = 7 } = options;
+
+  const isActiveTab = activeTab === 'users';
+
+  return useQuery({
+    queryKey: [...DASHBOARD_QUERY_KEYS.users, 'heatmap', days] as const,
+    queryFn: async () => {
+      try {
+        return await fetchDashboardData<HeatmapData>(appendTz(`/api/dashboard/users/heatmap?days=${days}`), getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+          throw error;
+        }
+        throw error;
+      }
+    },
+    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Logs data - live log stream with cursor-based polling (admin only)
+ * Polls every 2s when logs tab is active, appends new entries
+ */
+export interface LogEntry {
+  id: number;
+  timestamp: string;
+  level: number;
+  levelLabel: string;
+  tag: string;
+  message: string;
+  args?: string;
+  userId?: string;
+}
+
+export interface LogsData {
+  entries: LogEntry[];
+  cursor: number;
+  tags: string[];
+}
+
+export function useDashboardLogs(options: DashboardQueryOptions = {}) {
+  const { isAdmin, logout, adminKey } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const isVisible = usePageVisibility();
+  const { activeTab = 'overview', enabled = true } = options;
+
+  const isActiveTab = activeTab === 'logs';
+  const shouldPoll = isVisible && isActiveTab && isAdmin;
+
+  const cursorRef = useRef(0);
+  const [accumulated, setAccumulated] = useState<LogsData>({ entries: [], cursor: 0, tags: [] });
+
+  const query = useQuery({
+    queryKey: DASHBOARD_QUERY_KEYS.logs,
+    queryFn: async () => {
+      try {
+        const params = new URLSearchParams({ afterCursor: String(cursorRef.current), limit: '500' });
+        return await fetchDashboardData<LogsData>(`/api/dashboard/logs?${params}`, getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+          throw error;
+        }
+        throw error;
+      }
+    },
+    structuralSharing: false,
+    enabled: enabled && isAdmin && !!adminKey && isActiveTab,
+    refetchInterval: shouldPoll ? POLLING_INTERVALS.LOGS : false,
+    refetchIntervalInBackground: false,
+  });
+
+  useEffect(() => {
+    if (!query.data) return;
+    if (query.data.entries.length > 0 && query.data.cursor > cursorRef.current) {
+      cursorRef.current = query.data.cursor;
+      setAccumulated(prev => {
+        const combined = [...prev.entries, ...query.data!.entries];
+        const capped = combined.length > 5000 ? combined.slice(-5000) : combined;
+        return { entries: capped, cursor: query.data!.cursor, tags: query.data!.tags };
+      });
+    } else if (query.data.tags.length > 0) {
+      setAccumulated(prev => {
+        if (prev.tags.length !== query.data!.tags.length) {
+          return { ...prev, tags: query.data!.tags };
+        }
+        return prev;
+      });
+    }
+  }, [query.data]);
+
+  const resetLogs = useCallback(() => {
+    cursorRef.current = 0;
+    setAccumulated({ entries: [], cursor: 0, tags: [] });
+  }, []);
+
+  return { ...query, data: accumulated, resetLogs };
 }
 
 // ============================================================================
@@ -604,6 +723,108 @@ export function useClearUserData() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.users });
       queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.overview });
+    },
+  });
+}
+
+// ============================================================================
+// Settings Hooks
+// ============================================================================
+
+export interface SettingItem {
+  key: string;
+  label: string;
+  description: string;
+  category: string;
+  type: 'string' | 'number' | 'boolean' | 'select';
+  default: string | number | boolean;
+  options?: string[];
+  sensitive: boolean;
+  requiresRestart: boolean;
+  envOnly: boolean;
+  uiHint: 'tags' | null;
+  maxTags: number | null;
+  min: number | null;
+  max: number | null;
+  value: string;
+  hasEnvVar: boolean;
+  hasDbOverride: boolean;
+  disabledReason: string | null;
+}
+
+export function useDashboardSettings(options: DashboardQueryOptions = {}) {
+  const { isAdmin, adminKey, logout } = useAdmin();
+  const getHeaders = useApiHeaders();
+  const { activeTab = 'settings', enabled = true } = options;
+
+  return useQuery<{ settings: SettingItem[] }>({
+    queryKey: DASHBOARD_QUERY_KEYS.settings,
+    queryFn: async () => {
+      try {
+        return await fetchDashboardData('/api/dashboard/settings', getHeaders());
+      } catch (error) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          logout();
+        }
+        throw error;
+      }
+    },
+    enabled: enabled && isAdmin && !!adminKey && activeTab === 'settings',
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateSetting() {
+  const { adminKey, logout } = useAdmin();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: string }) => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (adminKey) headers['x-admin-key'] = adminKey;
+
+      const response = await fetch(`/api/dashboard/settings/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ value }),
+      });
+
+      if (response.status === 401) { logout(); throw new Error('Session expired.'); }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.settings });
+    },
+  });
+}
+
+export function useResetSetting() {
+  const { adminKey, logout } = useAdmin();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (key: string) => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (adminKey) headers['x-admin-key'] = adminKey;
+
+      const response = await fetch(`/api/dashboard/settings/reset/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers,
+      });
+
+      if (response.status === 401) { logout(); throw new Error('Session expired.'); }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.settings });
     },
   });
 }

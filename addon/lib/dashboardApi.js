@@ -221,8 +221,7 @@ class DashboardAPI {
           overallStatus = "error";
         }
       } else if (!this.cache) {
-        // NO_CACHE mode - don't show as issue
-        logger.info("[Dashboard API] Redis disabled (NO_CACHE mode)");
+        logger.info("[Dashboard API] Redis not available");
       }
     } catch (error) {
       issues.push(`Redis error: ${error.message}`);
@@ -703,18 +702,20 @@ class DashboardAPI {
         return this._systemConfigCache;
       }
 
-      // Load all user configurations to aggregate statistics
       let userConfigs = [];
       let totalUsers = 0;
 
       try {
         if (this.database) {
-          // Get all user UUIDs from the database
           const userUUIDs = await this.database.getAllUserUUIDs();
           totalUsers = userUUIDs.length;
 
-          // Sample some configurations for analysis (up to 100 for performance)
-          const sampleUUIDs = userUUIDs.slice(0, 100);
+          const sampleSize = Math.min(250, userUUIDs.length);
+          for (let i = userUUIDs.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [userUUIDs[i], userUUIDs[j]] = [userUUIDs[j], userUUIDs[i]];
+          }
+          const sampleUUIDs = userUUIDs.slice(0, sampleSize);
           const configPromises = sampleUUIDs.map(async (userUUID) => {
             try {
               return await this.database.getUserConfig(userUUID);
@@ -771,8 +772,29 @@ class DashboardAPI {
     const stats = {
       languages: {},
       metaProviders: { movie: {}, series: {}, anime: {} },
-      artProviders: { movie: {}, series: {}, anime: {} },
+      artProviders: {
+        movie: { poster: {}, background: {}, logo: {} },
+        series: { poster: {}, background: {}, logo: {} },
+        anime: { poster: {}, background: {}, logo: {} },
+      },
       animeIdProviders: {},
+      catalogSources: {},
+      catalogCounts: [],
+      searchProviders: { movie: {}, series: {}, anime_movie: {}, anime_series: {} },
+      aiProvider: {},
+      streamingServices: {},
+      contentFilters: {
+        sfw: 0,
+        includeAdult: 0,
+        hideUnreleasedDigital: 0,
+        hideUnreleasedShows: 0,
+        hideWatchedTrakt: 0,
+        hideWatchedAnilist: 0,
+        hideWatchedMdblist: 0,
+        exclusionKeywords: 0,
+        posterProxy: 0,
+        forceAnimeDetection: 0,
+      },
       features: {
         skipFiller: 0,
         skipRecap: 0,
@@ -815,92 +837,32 @@ class DashboardAPI {
           (stats.animeIdProviders[animeIdProvider] || 0) + 1;
       }
 
-      // Art providers
+      // Art providers — resolve "meta" to the user's actual meta provider
       if (config.artProviders) {
-        // Handle movie art providers
-        const movieArtConfig = config.artProviders.movie;
-        if (typeof movieArtConfig === "string") {
-          // Legacy string format
-          const movieArt = movieArtConfig || config.providers?.movie || "tmdb";
-          stats.artProviders.movie[movieArt] =
-            (stats.artProviders.movie[movieArt] || 0) + 1;
-        } else if (
-          typeof movieArtConfig === "object" &&
-          movieArtConfig !== null
-        ) {
-          // New nested object format - track each art type
-          const posterProvider =
-            movieArtConfig.poster || config.providers?.movie || "tmdb";
-          const backgroundProvider =
-            movieArtConfig.background || config.providers?.movie || "tmdb";
-          const logoProvider =
-            movieArtConfig.logo || config.providers?.movie || "tmdb";
+        const resolveArt = (val, fallback) => (!val || val === 'meta') ? fallback : val;
+        const movieFallback = config.providers?.movie || "tmdb";
+        const seriesFallback = config.providers?.series || "tvdb";
+        const animeFallback = config.providers?.anime || "mal";
 
-          stats.artProviders.movie[`${posterProvider} (poster)`] =
-            (stats.artProviders.movie[`${posterProvider} (poster)`] || 0) + 1;
-          stats.artProviders.movie[`${backgroundProvider} (background)`] =
-            (stats.artProviders.movie[`${backgroundProvider} (background)`] ||
-              0) + 1;
-          stats.artProviders.movie[`${logoProvider} (logo)`] =
-            (stats.artProviders.movie[`${logoProvider} (logo)`] || 0) + 1;
-        }
+        const countArt = (artConfig, fallback, bucket) => {
+          if (typeof artConfig === "string") {
+            const resolved = resolveArt(artConfig, fallback);
+            bucket.poster[resolved] = (bucket.poster[resolved] || 0) + 1;
+            bucket.background[resolved] = (bucket.background[resolved] || 0) + 1;
+            bucket.logo[resolved] = (bucket.logo[resolved] || 0) + 1;
+          } else if (typeof artConfig === "object" && artConfig !== null) {
+            const poster = resolveArt(artConfig.poster, fallback);
+            const background = resolveArt(artConfig.background, fallback);
+            const logo = resolveArt(artConfig.logo, fallback);
+            bucket.poster[poster] = (bucket.poster[poster] || 0) + 1;
+            bucket.background[background] = (bucket.background[background] || 0) + 1;
+            bucket.logo[logo] = (bucket.logo[logo] || 0) + 1;
+          }
+        };
 
-        // Handle series art providers
-        const seriesArtConfig = config.artProviders.series;
-        if (typeof seriesArtConfig === "string") {
-          // Legacy string format
-          const seriesArt =
-            seriesArtConfig || config.providers?.series || "tvdb";
-          stats.artProviders.series[seriesArt] =
-            (stats.artProviders.series[seriesArt] || 0) + 1;
-        } else if (
-          typeof seriesArtConfig === "object" &&
-          seriesArtConfig !== null
-        ) {
-          // New nested object format - track each art type
-          const posterProvider =
-            seriesArtConfig.poster || config.providers?.series || "tvdb";
-          const backgroundProvider =
-            seriesArtConfig.background || config.providers?.series || "tvdb";
-          const logoProvider =
-            seriesArtConfig.logo || config.providers?.series || "tvdb";
-
-          stats.artProviders.series[`${posterProvider} (poster)`] =
-            (stats.artProviders.series[`${posterProvider} (poster)`] || 0) + 1;
-          stats.artProviders.series[`${backgroundProvider} (background)`] =
-            (stats.artProviders.series[`${backgroundProvider} (background)`] ||
-              0) + 1;
-          stats.artProviders.series[`${logoProvider} (logo)`] =
-            (stats.artProviders.series[`${logoProvider} (logo)`] || 0) + 1;
-        }
-
-        // Handle anime art providers
-        const animeArtConfig = config.artProviders.anime;
-        if (typeof animeArtConfig === "string") {
-          // Legacy string format
-          const animeArt = animeArtConfig || config.providers?.anime || "mal";
-          stats.artProviders.anime[animeArt] =
-            (stats.artProviders.anime[animeArt] || 0) + 1;
-        } else if (
-          typeof animeArtConfig === "object" &&
-          animeArtConfig !== null
-        ) {
-          // New nested object format - track each art type
-          const posterProvider =
-            animeArtConfig.poster || config.providers?.anime || "mal";
-          const backgroundProvider =
-            animeArtConfig.background || config.providers?.anime || "mal";
-          const logoProvider =
-            animeArtConfig.logo || config.providers?.anime || "mal";
-
-          stats.artProviders.anime[`${posterProvider} (poster)`] =
-            (stats.artProviders.anime[`${posterProvider} (poster)`] || 0) + 1;
-          stats.artProviders.anime[`${backgroundProvider} (background)`] =
-            (stats.artProviders.anime[`${backgroundProvider} (background)`] ||
-              0) + 1;
-          stats.artProviders.anime[`${logoProvider} (logo)`] =
-            (stats.artProviders.anime[`${logoProvider} (logo)`] || 0) + 1;
-        }
+        countArt(config.artProviders.movie, movieFallback, stats.artProviders.movie);
+        countArt(config.artProviders.series, seriesFallback, stats.artProviders.series);
+        countArt(config.artProviders.anime, animeFallback, stats.artProviders.anime);
       }
 
       // Feature usage
@@ -912,6 +874,50 @@ class DashboardAPI {
       if (config.traktWatchTracking) stats.features.traktWatchTracking++;
       config.posterRatingProvider === 'top' ? stats.features.ratingPostersTop++ : stats.features.ratingPostersRpdb++;
       if (config.search?.ai_enabled) stats.features.aiSearchEnabled++;
+
+      // Catalog sources & count (enabled only)
+      if (Array.isArray(config.catalogs)) {
+        const enabled = config.catalogs.filter((cat) => cat.enabled !== false);
+        stats.catalogCounts.push(enabled.length);
+        enabled.forEach((cat) => {
+          if (cat.source) {
+            stats.catalogSources[cat.source] = (stats.catalogSources[cat.source] || 0) + 1;
+          }
+        });
+      }
+
+      // Search providers
+      if (config.search?.providers) {
+        const sp = config.search.providers;
+        if (sp.movie) stats.searchProviders.movie[sp.movie] = (stats.searchProviders.movie[sp.movie] || 0) + 1;
+        if (sp.series) stats.searchProviders.series[sp.series] = (stats.searchProviders.series[sp.series] || 0) + 1;
+        if (sp.anime_movie) stats.searchProviders.anime_movie[sp.anime_movie] = (stats.searchProviders.anime_movie[sp.anime_movie] || 0) + 1;
+        if (sp.anime_series) stats.searchProviders.anime_series[sp.anime_series] = (stats.searchProviders.anime_series[sp.anime_series] || 0) + 1;
+      }
+
+      // AI provider
+      if (config.search?.ai_enabled && config.search?.ai_provider) {
+        stats.aiProvider[config.search.ai_provider] = (stats.aiProvider[config.search.ai_provider] || 0) + 1;
+      }
+
+      // Streaming services
+      if (Array.isArray(config.streaming)) {
+        config.streaming.forEach((service) => {
+          stats.streamingServices[service] = (stats.streamingServices[service] || 0) + 1;
+        });
+      }
+
+      // Content filters
+      if (config.sfw) stats.contentFilters.sfw++;
+      if (config.includeAdult) stats.contentFilters.includeAdult++;
+      if (config.hideUnreleasedDigital) stats.contentFilters.hideUnreleasedDigital++;
+      if (config.hideUnreleasedShows) stats.contentFilters.hideUnreleasedShows++;
+      if (config.hideWatchedTrakt) stats.contentFilters.hideWatchedTrakt++;
+      if (config.hideWatchedAnilist) stats.contentFilters.hideWatchedAnilist++;
+      if (config.hideWatchedMdblist) stats.contentFilters.hideWatchedMdblist++;
+      if (config.exclusionKeywords) stats.contentFilters.exclusionKeywords++;
+      if (config.usePosterProxy) stats.contentFilters.posterProxy++;
+      if (config.providers?.forceAnimeForDetectedImdb) stats.contentFilters.forceAnimeDetection++;
     });
 
     // Convert to percentages and format for display
@@ -930,6 +936,27 @@ class DashboardAPI {
         .sort((a, b) => b.count - a.count);
     };
 
+    const formatSelfRelativeDistribution = (obj) => {
+      const entries = Object.entries(obj);
+      const sum = entries.reduce((acc, [, count]) => acc + count, 0);
+      if (sum === 0) return [];
+      return entries
+        .map(([key, count]) => ({
+          name: key,
+          count: count,
+          percentage: Math.round((count / sum) * 100),
+        }))
+        .sort((a, b) => b.count - a.count);
+    };
+
+    const catalogCounts = stats.catalogCounts.sort((a, b) => a - b);
+    const n = catalogCounts.length;
+    const avgCatalogs = n > 0 ? Math.round(catalogCounts.reduce((a, b) => a + b, 0) / n * 10) / 10 : 0;
+    const medianCatalogs = n > 0 ? catalogCounts[Math.floor(n / 2)] : 0;
+    const maxCatalogs = n > 0 ? catalogCounts[n - 1] : 0;
+    const p25 = n > 0 ? catalogCounts[Math.floor(n * 0.25)] : 0;
+    const p75 = n > 0 ? catalogCounts[Math.floor(n * 0.75)] : 0;
+
     return {
       languages: formatDistribution(stats.languages),
       metaProviders: {
@@ -938,11 +965,33 @@ class DashboardAPI {
         anime: formatDistribution(stats.metaProviders.anime),
       },
       artProviders: {
-        movie: formatDistribution(stats.artProviders.movie),
-        series: formatDistribution(stats.artProviders.series),
-        anime: formatDistribution(stats.artProviders.anime),
+        movie: { poster: formatSelfRelativeDistribution(stats.artProviders.movie.poster), background: formatSelfRelativeDistribution(stats.artProviders.movie.background), logo: formatSelfRelativeDistribution(stats.artProviders.movie.logo) },
+        series: { poster: formatSelfRelativeDistribution(stats.artProviders.series.poster), background: formatSelfRelativeDistribution(stats.artProviders.series.background), logo: formatSelfRelativeDistribution(stats.artProviders.series.logo) },
+        anime: { poster: formatSelfRelativeDistribution(stats.artProviders.anime.poster), background: formatSelfRelativeDistribution(stats.artProviders.anime.background), logo: formatSelfRelativeDistribution(stats.artProviders.anime.logo) },
       },
       animeIdProviders: formatDistribution(stats.animeIdProviders),
+      catalogSources: formatSelfRelativeDistribution(stats.catalogSources),
+      catalogStats: { avg: avgCatalogs, median: medianCatalogs, max: maxCatalogs, p25, p75, total: catalogCounts.reduce((a, b) => a + b, 0) },
+      searchProviders: {
+        movie: formatDistribution(stats.searchProviders.movie),
+        series: formatDistribution(stats.searchProviders.series),
+        anime_movie: formatDistribution(stats.searchProviders.anime_movie),
+        anime_series: formatDistribution(stats.searchProviders.anime_series),
+      },
+      aiProvider: formatDistribution(stats.aiProvider),
+      streamingServices: formatSelfRelativeDistribution(stats.streamingServices),
+      contentFilters: {
+        sfw: Math.round((stats.contentFilters.sfw / total) * 100),
+        includeAdult: Math.round((stats.contentFilters.includeAdult / total) * 100),
+        hideUnreleasedDigital: Math.round((stats.contentFilters.hideUnreleasedDigital / total) * 100),
+        hideUnreleasedShows: Math.round((stats.contentFilters.hideUnreleasedShows / total) * 100),
+        hideWatchedTrakt: Math.round((stats.contentFilters.hideWatchedTrakt / total) * 100),
+        hideWatchedAnilist: Math.round((stats.contentFilters.hideWatchedAnilist / total) * 100),
+        hideWatchedMdblist: Math.round((stats.contentFilters.hideWatchedMdblist / total) * 100),
+        exclusionKeywords: Math.round((stats.contentFilters.exclusionKeywords / total) * 100),
+        posterProxy: Math.round((stats.contentFilters.posterProxy / total) * 100),
+        forceAnimeDetection: Math.round((stats.contentFilters.forceAnimeDetection / total) * 100),
+      },
       features: {
         skipFiller: Math.round((stats.features.skipFiller / total) * 100),
         skipRecap: Math.round((stats.features.skipRecap / total) * 100),
@@ -957,7 +1006,6 @@ class DashboardAPI {
     };
   }
 
-  // Get default stats when no user data is available
   getDefaultStats() {
     return {
       languages: [{ name: "en-US", count: 0, percentage: 100 }],
@@ -967,11 +1015,28 @@ class DashboardAPI {
         anime: [{ name: "mal", count: 0, percentage: 100 }],
       },
       artProviders: {
-        movie: [{ name: "tmdb", count: 0, percentage: 100 }],
-        series: [{ name: "tvdb", count: 0, percentage: 100 }],
-        anime: [{ name: "mal", count: 0, percentage: 100 }],
+        movie: { poster: [], background: [], logo: [] },
+        series: { poster: [], background: [], logo: [] },
+        anime: { poster: [], background: [], logo: [] },
       },
       animeIdProviders: [{ name: "imdb", count: 0, percentage: 100 }],
+      catalogSources: [],
+      catalogStats: { avg: 0, median: 0, max: 0, p25: 0, p75: 0, total: 0 },
+      searchProviders: { movie: [], series: [], anime_movie: [], anime_series: [] },
+      aiProvider: [],
+      streamingServices: [],
+      contentFilters: {
+        sfw: 0,
+        includeAdult: 0,
+        hideUnreleasedDigital: 0,
+        hideUnreleasedShows: 0,
+        hideWatchedTrakt: 0,
+        hideWatchedAnilist: 0,
+        hideWatchedMdblist: 0,
+        exclusionKeywords: 0,
+        posterProxy: 0,
+        forceAnimeDetection: 0,
+      },
       features: {
         skipFiller: 0,
         skipRecap: 0,

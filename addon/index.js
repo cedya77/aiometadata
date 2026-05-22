@@ -17,6 +17,8 @@ const { cacheWrapMetaSmart, cacheWrapCatalog, cacheWrapSearch, cacheWrapJikanApi
 const redis = require("./lib/redisClient");
 const { warmEssentialContent, warmPopularContent, scheduleEssentialWarming } = require("./lib/cacheWarmer");
 const requestTracker = require("./lib/requestTracker");
+const { runWithRequestContext } = require('./lib/logBuffer.js');
+const { getSetting } = require('./lib/settingsService');
 const consola = require('consola');
 const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
@@ -189,6 +191,12 @@ addon.use((req, res, next) => {
 // Add request tracking middleware
 addon.use(requestTracker.middleware());
 
+addon.use((req, res, next) => {
+  const m = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(req.path);
+  if (m) return runWithRequestContext(m[1], () => next());
+  next();
+});
+
 const TEST_KEYS_RATE_LIMIT_PER_MIN = parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10);
 
 async function testKeysRateLimitMiddleware(req, res, next) {
@@ -218,14 +226,13 @@ async function testKeysRateLimitMiddleware(req, res, next) {
 }
 
 
-const NO_CACHE = process.env.NO_CACHE === 'true';
-const POSTER_PROXY_PREFIX_URL = (process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, '');
+function POSTER_PROXY_PREFIX_URL() { return (process.env.POSTER_PROXY_PREFIX_URL || '').replace(/\/+$/, ''); }
 
 // Initialize cache warming for public instances (enabled by default)
 const ENABLE_CACHE_WARMING = process.env.ENABLE_CACHE_WARMING !== 'false';
 const CACHE_WARMING_INTERVAL = parseInt(process.env.CACHE_WARMING_INTERVAL || '720', 10);
 
-if (ENABLE_CACHE_WARMING && !NO_CACHE) {
+if (ENABLE_CACHE_WARMING) {
   consola.info(`[API Cache Warming] Initializing API cache warming (interval: ${CACHE_WARMING_INTERVAL} minutes)`);
 
   // Schedule periodic warming (non-blocking)
@@ -279,12 +286,7 @@ const respond = function (req, res, data, opts) {
     res.locals.hasResults = data.metas.length > 0;
   }
 
-  if (NO_CACHE) {
-    consola.debug('[Cache] Bypassing browser cache for this request.');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-  } else {
+  {
     const userUUID = req.params.userUUID || '';
 
     const routePath = req.route?.path || '';
@@ -367,10 +369,11 @@ const respond = function (req, res, data, opts) {
   res.setHeader("Content-Type", "application/json");
 
   // Prefix poster URLs with reverse proxy URL for local caching
-  if (POSTER_PROXY_PREFIX_URL && data) {
+  const posterProxyUrl = POSTER_PROXY_PREFIX_URL();
+  if (posterProxyUrl && data) {
     const prefixPoster = (url) => {
-      if (!url || url.startsWith(POSTER_PROXY_PREFIX_URL)) return url;
-      return `${POSTER_PROXY_PREFIX_URL}/${url}`;
+      if (!url || url.startsWith(posterProxyUrl)) return url;
+      return `${posterProxyUrl}/${url}`;
     };
     if (data.meta?.poster) {
       data.meta.poster = prefixPoster(data.meta.poster);
@@ -400,21 +403,21 @@ const respond = function (req, res, data, opts) {
     const resolvedOptions = simklTrendingPageSizeOptions.length > 0 ? simklTrendingPageSizeOptions : fallbackOptions;
 
     const publicEnvConfig = {
-      tmdb: process.env.TMDB_API || "",
-      tvdb: process.env.TVDB_API_KEY || "",
-      fanart: process.env.FANART_API_KEY || "",
-      rpdb: process.env.RPDB_API_KEY || "",
-      mdblist: process.env.MDBLIST_API_KEY || "",
-      gemini: process.env.GEMINI_API_KEY || "",
-      trakt: process.env.TRAKT_CLIENT_ID || "",
-      simkl: process.env.SIMKL_CLIENT_ID || "",
-      customDescriptionBlurb: process.env.CUSTOM_DESCRIPTION_BLURB || "",
+      tmdb: getSetting('TMDB_API'),
+      tvdb: getSetting('TVDB_API_KEY'),
+      fanart: getSetting('FANART_API_KEY'),
+      rpdb: getSetting('RPDB_API_KEY'),
+      mdblist: getSetting('MDBLIST_API_KEY'),
+      gemini: getSetting('GEMINI_API_KEY'),
+      trakt: getSetting('TRAKT_CLIENT_ID'),
+      simkl: getSetting('SIMKL_CLIENT_ID'),
+      customDescriptionBlurb: getSetting('CUSTOM_DESCRIPTION_BLURB'),
       addonVersion: ADDON_VERSION,
-      hasBuiltInTvdb: !!(process.env.BUILT_IN_TVDB_API_KEY),
-      hasBuiltInTmdb: !!(process.env.BUILT_IN_TMDB_API_KEY),
-      catalogTTL: parseInt(process.env.CATALOG_TTL || 24 * 60 * 60, 10), // Default to 24 hours
+      hasBuiltInTvdb: !!getSetting('BUILT_IN_TVDB_API_KEY'),
+      hasBuiltInTmdb: !!getSetting('BUILT_IN_TMDB_API_KEY'),
+      catalogTTL: parseInt(getSetting('CATALOG_TTL') || String(24 * 60 * 60), 10),
       simklTrendingPageSizeOptions: resolvedOptions,
-      traktSearchEnabled: process.env.DISABLE_TRAKT_SEARCH !== 'true',
+      traktSearchEnabled: getSetting('DISABLE_TRAKT_SEARCH') !== 'true',
     };
     
     // No cache to prevent cross-instance contamination
@@ -2052,6 +2055,7 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? '...' + tvdbApiKey.slice(-4) : 'NONE'}, Simkl client ID: ${hasSimkl ? 'SET' : 'NONE'}, Generation mode: ${generationMode}, Prompt sources: TMDB=${hasTmdb}, TVDB=${hasTvdb}, Simkl=${hasSimkl}`);
 
     const resolvedParams = [];
+    const perCatalogWarnings = [];
     for (const catalog of validCatalogs) {
       try {
         const { resolved, warnings: resolveWarnings } = await resolveEntities(catalog, resolveCtx);
@@ -2064,11 +2068,12 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
       } catch (e) {
         consola.error(`[AI Catalog] Entity resolution error: ${e.message}`);
         resolvedParams.push({});
+        perCatalogWarnings.push([]);
       }
     }
 
     // Build final catalog configs
-    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim());
+    const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim(), config.catalogTTL, perCatalogWarnings);
 
     const warnings = visibleWarnings();
     return res.json({ catalogs: catalogConfigs, warnings: warnings.length ? warnings : undefined });
@@ -3071,7 +3076,7 @@ addon.get("/api/cache/status", (req, res) => {
   const { isInitialWarmingComplete } = require('./lib/cacheWarmer');
   
   res.json({
-    cacheEnabled: !NO_CACHE,
+    cacheEnabled: true,
     warmingEnabled: ENABLE_CACHE_WARMING,
     warmingInterval: CACHE_WARMING_INTERVAL,
     initialWarmingComplete: isInitialWarmingComplete(),
@@ -3824,8 +3829,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
             break;
           }
           case 'mal.seasons': {
-            // Parse season string like "Winter 2024" into season and year
-            let seasonString = genreName;
+            let seasonString = genreName ? decodeURIComponent(genreName) : null;
             
             // If no season specified, calculate current season based on today's date
             if (!seasonString) {
@@ -5667,6 +5671,25 @@ addon.get("/api/dashboard/operations", requireDashboardAdmin, (req, res) => {
   }
 });
 
+addon.get("/api/dashboard/logs", requireDashboardAdmin, (req, res) => {
+  try {
+    const { getLogEntries, getLogTags } = require('./lib/logBuffer.js');
+    const afterCursor = req.query.afterCursor ? parseInt(req.query.afterCursor, 10) : 0;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 200;
+    const { entries, cursor } = getLogEntries({
+      afterCursor,
+      level: req.query.level || undefined,
+      tag: req.query.tag || undefined,
+      search: req.query.search || undefined,
+      limit,
+    });
+    res.json({ entries, cursor, tags: getLogTags() });
+  } catch (error) {
+    consola.error('[Dashboard API] Logs error:', error);
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
 addon.get("/api/dashboard/memory", requireDashboardAdmin, (req, res) => {
   try {
     const dashboardApi = getDashboardAPI();
@@ -5913,11 +5936,12 @@ addon.get("/api/dashboard/analytics", requireAuthUnlessGuestMode, async (req, re
     const { getPerformanceStats } = require('./lib/id-resolver.js');
     const dashboardApi = getDashboardAPI();
     
+    const tz = typeof req.query.tz === 'string' ? req.query.tz : null;
     const [stats, hourlyStats, topEndpoints, providerHourlyData, idResolverStats, cachePerformance, providerPerformance] = await Promise.all([
-      requestTracker.getStats(),
-      requestTracker.getHourlyStats(24),
+      requestTracker.getStats(tz),
+      requestTracker.getHourlyStats(24, tz),
       requestTracker.getTopEndpoints(10),
-      requestTracker.getHourlyProviderStats(24),
+      requestTracker.getHourlyProviderStats(24, tz),
       Promise.resolve(getPerformanceStats()),
       dashboardApi.getCachePerformance(),
       dashboardApi.getProviderPerformance()
@@ -6017,11 +6041,14 @@ addon.get("/api/dashboard/content", requireAuthUnlessGuestMode, (req, res) => {
   }
   
   try {
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 50;
+    const timeframe = req.query.timeframe || 'today';
+    const tz = typeof req.query.tz === 'string' ? req.query.tz : null;
+    const days = timeframe === 'week' ? 7 : timeframe === 'month' ? 30 : timeframe === 'all' ? 30 : 1;
     Promise.all([
-      requestTracker.getPopularContent(10),
-      requestTracker.getSearchPatterns(limit),
-      requestTracker.getStats() // For content quality metrics
+      requestTracker.getPopularContent(limit, days, tz),
+      requestTracker.getSearchPatterns(limit, days, tz),
+      requestTracker.getStats(tz)
     ]).then(([popularContent, searchPatterns, stats]) => {
       res.json({ 
         popularContent,
@@ -6059,6 +6086,18 @@ addon.get("/api/dashboard/users", requireDashboardAdmin, (req, res) => {
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch user data' });
+  }
+});
+
+addon.get("/api/dashboard/users/heatmap", requireDashboardAdmin, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 30);
+    const tz = typeof req.query.tz === 'string' ? req.query.tz : null;
+    const data = await requestTracker.getActivityHeatmap(days, tz);
+    res.json(data);
+  } catch (error) {
+    consola.error('[Dashboard API] Heatmap error:', error);
+    res.status(500).json({ error: 'Failed to fetch heatmap data' });
   }
 });
 
@@ -6337,9 +6376,48 @@ addon.post("/api/dashboard/maintenance/execute", requireDashboardAdmin, async (r
 });
 
 
+// --- Admin: Settings Management ---
+const settingsService = require('./lib/settingsService');
+
+addon.get('/api/dashboard/settings', (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  res.json({ settings: settingsService.getAllSettings() });
+});
+
+addon.put('/api/dashboard/settings/:key', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const { value } = req.body || {};
+    if (value === undefined) return res.status(400).json({ error: 'Missing value' });
+    await settingsService.setSetting(req.params.key, String(value));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+addon.post('/api/dashboard/settings/reset/:key', async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await settingsService.resetSetting(req.params.key);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Blocking startup function that waits for cache warming
 async function startServerWithCacheWarming() {
-  if (ENABLE_CACHE_WARMING && !NO_CACHE) {
+  if (ENABLE_CACHE_WARMING) {
     consola.info('[Server Startup] Waiting for initial cache warming to complete...');
     const { warmEssentialContent } = require("./lib/cacheWarmer");
     

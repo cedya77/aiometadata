@@ -17,6 +17,7 @@ const { resolveDynamicTmdbDiscoverParams } = require('./tmdbDiscoverDateTokens')
 const { getTvmazeScheduleCatalog } = require('./tvmazeScheduleCatalog');
 const buildInfo = require('./buildInfo');
 const crypto = require('crypto');
+const { runWithRequestContext } = require('./logBuffer.js');
 
 function extractIdsFromWarmerMeta(meta) {
   const ids = {};
@@ -966,10 +967,11 @@ class ComprehensiveCatalogWarmer {
         const enabledCatalogs = userData.enabledCatalogs;
         const config = freshConfig;
 
+        await runWithRequestContext(uuid, async () => {
         try {
           this.log('info', `Processing UUID: ${uuid} (${enabledCatalogs.length} catalogs)`);
           const uuidStartTime = Date.now();
-          
+
           let uuidWarmingInterrupted = false;
           for (const catalog of enabledCatalogs) {
             if (!this.shouldContinueWarming()) {
@@ -1012,6 +1014,7 @@ class ComprehensiveCatalogWarmer {
           this.log('error', `Failed to process UUID ${uuid}: ${error.message}`);
           this.stats.errors.push({ uuid, error: error.message });
         }
+        });
       }
 
       // Calculate overall duration

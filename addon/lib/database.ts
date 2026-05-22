@@ -160,7 +160,12 @@ class Database {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_provider ON oauth_tokens(provider)`,
-      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`
+      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`,
+      `CREATE TABLE IF NOT EXISTS addon_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`
     ];
 
     for (const query of queries) {
@@ -210,7 +215,12 @@ class Database {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_provider ON oauth_tokens(provider)`,
-      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`
+      `CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)`,
+      `CREATE TABLE IF NOT EXISTS addon_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`
     ];
 
     for (const query of queries) {
@@ -352,6 +362,7 @@ class Database {
     const rows = await this.allQuery(query);
     return rows ? rows.map(row => row.user_uuid) : [];
   }
+
 
   async getUsersCreatedToday(): Promise<number> {
     const today = new Date().toISOString().substring(0, 10);

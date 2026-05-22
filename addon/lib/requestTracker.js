@@ -4,6 +4,33 @@ const { isMetricsDisabled } = require('./metricsConfig');
 
 const logger = consola.withTag("Request-Tracker");
 
+function dateKeysForRange(days, tz) {
+  const dates = new Set();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.now() - i * 86400000);
+    dates.add(d.toISOString().split("T")[0]);
+    if (tz) {
+      try { dates.add(d.toLocaleDateString('en-CA', { timeZone: tz })); } catch {}
+    }
+  }
+  return Array.from(dates);
+}
+
+function todayKey(tz) {
+  if (tz) {
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: tz }); } catch {}
+  }
+  return new Date().toISOString().split("T")[0];
+}
+
+function yesterdayKey(tz) {
+  const d = new Date(Date.now() - 86400000);
+  if (tz) {
+    try { return d.toLocaleDateString('en-CA', { timeZone: tz }); } catch {}
+  }
+  return d.toISOString().split("T")[0];
+}
+
 class RequestTracker {
   constructor() {
     this.startTime = Date.now();
@@ -103,7 +130,7 @@ class RequestTracker {
       redis.incr(`requests:${today}`).catch(() => {});
       redis.incr(`requests:${hour}`).catch(() => {});
       redis.expire(`requests:${today}`, 86400 * 30).catch(() => {}); // 30 days
-      redis.expire(`requests:${hour}`, 86400 * 7).catch(() => {}); // 7 days
+      redis.expire(`requests:${hour}`, 86400 * 31).catch(() => {}); // 31 days
 
       // Track metadata requests for activity feed
       const normalizedPath = this.normalizeEndpoint(req.path);
@@ -352,39 +379,21 @@ class RequestTracker {
   }
 
   // Get popular content
-  async getPopularContent(limit = 10) {
+  async getPopularContent(limit = 50, days = 1, tz = null) {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
+      const dates = dateKeysForRange(days, tz);
 
-      // Get popular content from both days
-      const [todayContent, yesterdayContent] = await Promise.all([
-        redis.zrevrange(`popular_content:${today}`, 0, limit - 1, "WITHSCORES"),
-        redis.zrevrange(
-          `popular_content:${yesterday}`,
-          0,
-          limit - 1,
-          "WITHSCORES",
-        ),
-      ]);
+      const results = await Promise.all(
+        dates.map(date => redis.zrevrange(`popular_content:${date}`, 0, limit - 1, "WITHSCORES"))
+      );
 
-      // Combine and format results
       const contentMap = new Map();
-
-      // Process today's content
-      for (let i = 0; i < todayContent.length; i += 2) {
-        const contentKey = todayContent[i];
-        const score = parseInt(todayContent[i + 1]) || 0;
-        contentMap.set(contentKey, (contentMap.get(contentKey) || 0) + score);
-      }
-
-      // Process yesterday's content
-      for (let i = 0; i < yesterdayContent.length; i += 2) {
-        const contentKey = yesterdayContent[i];
-        const score = parseInt(yesterdayContent[i + 1]) || 0;
-        contentMap.set(contentKey, (contentMap.get(contentKey) || 0) + score);
+      for (const dayData of results) {
+        for (let i = 0; i < dayData.length; i += 2) {
+          const contentKey = dayData[i];
+          const score = parseInt(dayData[i + 1]) || 0;
+          contentMap.set(contentKey, (contentMap.get(contentKey) || 0) + score);
+        }
       }
 
       // Convert to array and enrich with metadata
@@ -453,60 +462,34 @@ class RequestTracker {
     }
   }
 
-  // Get search patterns
-  async getSearchPatterns(limit = 10) {
+  async getSearchPatterns(limit = 50, days = 1, tz = null) {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
+      const dates = dateKeysForRange(days, tz);
 
-      // Get attempts and successes from both days
-      const [
-        todaySearches,
-        yesterdaySearches,
-        todaySuccesses,
-        yesterdaySuccesses,
-      ] = await Promise.all([
-        redis.zrevrange(`search_patterns:${today}`, 0, limit - 1, "WITHSCORES"),
-        redis.zrevrange(
-          `search_patterns:${yesterday}`,
-          0,
-          limit - 1,
-          "WITHSCORES",
-        ),
-        redis.zrevrange(`search_success:${today}`, 0, -1, "WITHSCORES"),
-        redis.zrevrange(`search_success:${yesterday}`, 0, -1, "WITHSCORES"),
-      ]);
+      const searchResults = await Promise.all(
+        dates.map(date => redis.zrevrange(`search_patterns:${date}`, 0, limit - 1, "WITHSCORES"))
+      );
+      const successResults = await Promise.all(
+        dates.map(date => redis.zrevrange(`search_success:${date}`, 0, -1, "WITHSCORES"))
+      );
 
-      // Combine and format results
       const searchMap = new Map();
       const successMap = new Map();
 
-      // Process today's searches
-      for (let i = 0; i < todaySearches.length; i += 2) {
-        const query = todaySearches[i];
-        const count = parseInt(todaySearches[i + 1]) || 0;
-        searchMap.set(query, (searchMap.get(query) || 0) + count);
+      for (const dayData of searchResults) {
+        for (let i = 0; i < dayData.length; i += 2) {
+          const query = dayData[i];
+          const count = parseInt(dayData[i + 1]) || 0;
+          searchMap.set(query, (searchMap.get(query) || 0) + count);
+        }
       }
 
-      // Process yesterday's searches
-      for (let i = 0; i < yesterdaySearches.length; i += 2) {
-        const query = yesterdaySearches[i];
-        const count = parseInt(yesterdaySearches[i + 1]) || 0;
-        searchMap.set(query, (searchMap.get(query) || 0) + count);
-      }
-
-      // Process successes
-      for (let i = 0; i < todaySuccesses.length; i += 2) {
-        const query = todaySuccesses[i];
-        const count = parseInt(todaySuccesses[i + 1]) || 0;
-        successMap.set(query, (successMap.get(query) || 0) + count);
-      }
-      for (let i = 0; i < yesterdaySuccesses.length; i += 2) {
-        const query = yesterdaySuccesses[i];
-        const count = parseInt(yesterdaySuccesses[i + 1]) || 0;
-        successMap.set(query, (successMap.get(query) || 0) + count);
+      for (const dayData of successResults) {
+        for (let i = 0; i < dayData.length; i += 2) {
+          const query = dayData[i];
+          const count = parseInt(dayData[i + 1]) || 0;
+          successMap.set(query, (successMap.get(query) || 0) + count);
+        }
       }
 
       // Convert to array and sort
@@ -969,12 +952,10 @@ class RequestTracker {
   }
 
   // Get request statistics
-  async getStats() {
+  async getStats(tz = null) {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
+      const today = todayKey(tz);
+      const yesterday = yesterdayKey(tz);
 
       // Add timeout to Redis operations
       const timeout = new Promise((_, reject) =>
@@ -1058,7 +1039,7 @@ class RequestTracker {
   }
 
   // Get hourly request data for charts
-  async getHourlyStats(hours = 24) {
+  async getHourlyStats(hours = 24, tz = null) {
     try {
       const hourlyData = [];
       const now = new Date();
@@ -1068,7 +1049,6 @@ class RequestTracker {
         const hourKey = hour.toISOString().substring(0, 13);
         const requests = await redis.get(`requests:${hourKey}`);
 
-        // Get average response time for this hour
         const responseTimesKey = `response_times:${hourKey}`;
         const responseTimes = await redis.lrange(responseTimesKey, 0, -1);
         const avgResponseTime =
@@ -1077,8 +1057,13 @@ class RequestTracker {
               responseTimes.length
             : 0;
 
+        let displayHour = hour.getHours();
+        if (tz) {
+          try { displayHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(hour)) || 0; if (displayHour === 24) displayHour = 0; } catch {}
+        }
+
         hourlyData.push({
-          hour: hour.getHours(),
+          hour: displayHour,
           requests: parseInt(requests) || 0,
           responseTime: Math.round(avgResponseTime),
           timestamp: hour.toISOString(),
@@ -1092,8 +1077,60 @@ class RequestTracker {
     }
   }
 
+  async getActivityHeatmap(days = 7, tz = null) {
+    try {
+      const totalHours = days * 24;
+      const now = new Date();
+      const keys = [];
+      const timestamps = [];
+
+      for (let i = totalHours - 1; i >= 0; i--) {
+        const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
+        keys.push(`requests:${hour.toISOString().substring(0, 13)}`);
+        timestamps.push(hour);
+      }
+
+      const pipeline = redis.pipeline();
+      for (const key of keys) pipeline.get(key);
+      const results = await pipeline.exec();
+
+      const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+      let peak = 0;
+
+      const fmt = tz ? { timeZone: tz } : undefined;
+      for (let i = 0; i < timestamps.length; i++) {
+        const val = results[i]?.[1] ? parseInt(results[i][1]) : 0;
+        if (val <= 0) continue;
+        let day, hour;
+        if (fmt) {
+          try {
+            const parts = new Intl.DateTimeFormat('en-US', { ...fmt, weekday: 'short', hour: 'numeric', hour12: false }).formatToParts(timestamps[i]);
+            const weekday = parts.find(p => p.type === 'weekday')?.value;
+            const dayMap = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+            day = dayMap[weekday] ?? (timestamps[i].getDay() + 6) % 7;
+            hour = parseInt(parts.find(p => p.type === 'hour')?.value) || 0;
+            if (hour === 24) hour = 0;
+          } catch {
+            day = (timestamps[i].getDay() + 6) % 7;
+            hour = timestamps[i].getHours();
+          }
+        } else {
+          day = (timestamps[i].getDay() + 6) % 7;
+          hour = timestamps[i].getHours();
+        }
+        grid[day][hour] += val;
+        if (grid[day][hour] > peak) peak = grid[day][hour];
+      }
+
+      return { grid, peak };
+    } catch (error) {
+      logger.error("[Request Tracker] Failed to get activity heatmap:", error);
+      return { grid: Array.from({ length: 7 }, () => new Array(24).fill(0)), peak: 0 };
+    }
+  }
+
   // Get hourly provider response time data for charts
-  async getHourlyProviderStats(hours = 24) {
+  async getHourlyProviderStats(hours = 24, tz = null) {
     try {
       const providers = [
         "tmdb",
@@ -1114,8 +1151,13 @@ class RequestTracker {
         const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
         const hourKey = hour.toISOString().substring(0, 13);
 
+        let displayHour = hour.getHours();
+        if (tz) {
+          try { displayHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(hour)) || 0; if (displayHour === 24) displayHour = 0; } catch {}
+        }
+
         const hourStats = {
-          hour: hour.getHours(),
+          hour: displayHour,
           timestamp: hour.toISOString(),
         };
 

@@ -16,7 +16,7 @@ jobs:
       - uses: actions/stale@v9
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          days-before-stale: 14
+          days-before-stale: 28
           days-before-close: 7
           stale-pr-label: stale-awaiting-author
           exempt-pr-labels: pinned, security, work-in-progress

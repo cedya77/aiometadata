@@ -1175,44 +1175,41 @@ function parseAnimeCreditsLink(characterData, userUUID, castCount) {
   return [...voiceActorLinks];
 }
 
-function getTmdbMovieCertificationForCountry(certificationsData) {
+function getTmdbMovieCertificationForCountry(certificationsData, country = 'US') {
   if (!certificationsData) {
     return null;
   }
-  
-  const countryData = certificationsData.results?.find(r => r.iso_3166_1 === 'US');
+
+  const countryData = certificationsData.results?.find(r => r.iso_3166_1 === country);
   if (!countryData?.release_dates) return null;
-  
-  // Step 1: Find the most recent theatrical release with non-empty certification
+
   const theatricalWithCert = countryData.release_dates
     .filter(rd => rd.type === 3 && rd.certification && rd.certification.trim() !== '')
     .sort((a, b) => new Date(b.release_date) - new Date(a.release_date));
-  
+
   if (theatricalWithCert.length > 0) {
     return theatricalWithCert[0].certification;
   }
-  
-  // Step 2: If no theatrical releases have certification, find any release with certification data
+
   const anyWithCert = countryData.release_dates
     .filter(rd => rd.certification && rd.certification.trim() !== '')
     .sort((a, b) => new Date(b.release_date) - new Date(a.release_date));
-  
+
   if (anyWithCert.length > 0) {
     return anyWithCert[0].certification;
   }
-  
-  // Step 3: No certification data found
+
   return null;
 }
 
-function getTmdbTvCertificationForCountry(certificationsData) {
+function getTmdbTvCertificationForCountry(certificationsData, country = 'US') {
   if (!certificationsData) {
     return null;
   }
-  
-  const countryData = certificationsData.results?.find(r => r.iso_3166_1 === 'US');
+
+  const countryData = certificationsData.results?.find(r => r.iso_3166_1 === country);
   if (!countryData?.rating) return null;
-  
+
   return countryData.rating;
 }
 

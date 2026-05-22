@@ -37,19 +37,18 @@ function parsePositiveIntEnv(envValue: any, defaultValue: number, minValue: numb
 }
 
 
-const GLOBAL_NO_CACHE = process.env.NO_CACHE === 'true';
 const ADDON_VERSION = buildInfo.version;
 
-const META_TTL = parseInt(process.env.META_TTL || String(7 * 24 * 60 * 60), 10);
-const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10);
-const TMDB_TRENDING_TTL = parseInt(process.env.TMDB_TRENDING_TTL || String(3 * 60 * 60), 10);
+function META_TTL() { return parseInt(process.env.META_TTL || String(7 * 24 * 60 * 60), 10); }
+function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || String(1 * 24 * 60 * 60), 10); }
+function TMDB_TRENDING_TTL() { return parseInt(process.env.TMDB_TRENDING_TTL || String(3 * 60 * 60), 10); }
 const JIKAN_API_TTL = 30 * 24 * 60 * 60;
 const STATIC_CATALOG_TTL = 30 * 24 * 60 * 60;
 const TVDB_API_TTL = 12 * 60 * 60;
 const TVMAZE_API_TTL = 12 * 60 * 60;
 const MDBLIST_GENRES_TTL = 30 * 24 * 60 * 60;
 const STREMTHRU_GENRES_TTL = 7 * 24 * 60 * 60;
-const ANILIST_CATALOG_TTL = parseInt(process.env.ANILIST_CATALOG_TTL || String(1 * 60 * 60), 10);
+function ANILIST_CATALOG_TTL() { return parseInt(process.env.ANILIST_CATALOG_TTL || String(24 * 60 * 60), 10); }
 
 
 const ERROR_TTL_STRATEGIES: Record<string, number> = {
@@ -441,7 +440,7 @@ function classifyResult(result: any, error: any = null, cacheKey: string | null 
 }
 
 async function cacheWrap(key: string, method: () => Promise<any>, ttl: number, options: any = {}): Promise<any> {
-  if (GLOBAL_NO_CACHE || !redis) {
+  if (!redis) {
     return method();
   }
 
@@ -585,7 +584,7 @@ async function cacheWrapInternal(key: string, method: () => Promise<any>, ttl: n
 }
 
 async function cacheWrapGlobal(key: string, method: () => Promise<any>, ttl: number, options: any = {}): Promise<any> {
-  if (GLOBAL_NO_CACHE || !redis) {
+  if (!redis) {
     return method();
   }
 
@@ -862,6 +861,7 @@ function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = fal
     metaProvider: ctx.metaProvider,
     animeIdProvider: ctx.animeIdProvider,
     providerOptions: ctx.providerOptions,
+    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
   };
   const artCommon = {
     ...ctx.base,
@@ -872,7 +872,6 @@ function buildMetaComponentCacheKeys({ config, metaId, type, useShowPoster = fal
 
   const basicProfile = {
     ...commonProvider,
-    showMetaProviderAttribution: config.showMetaProviderAttribution || false,
   };
   const posterProfile = {
     ...artCommon,
@@ -965,14 +964,15 @@ function stripCertificationLinks(links: any[], certification: string): any[] {
 function applyDisplayAgeRatingProjection(meta: any, config: any): any {
   const certification = meta?.app_extras?.certification;
   if (!certification) return meta;
-  const links = Array.isArray(meta.links) ? stripCertificationLinks(meta.links, certification) : [];
+  const displayCert = meta?.app_extras?.certificationLocal || certification;
+  const links = Array.isArray(meta.links) ? stripCertificationLinks(meta.links, certification).filter((l: any) => !(l?.name === displayCert && l?.category === 'Genres')) : [];
   if (config.displayAgeRating) {
     const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id || meta._imdbId;
     const tmdbPath = meta.type === 'series' ? 'tv' : 'movie';
     const url = imdbId
       ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
       : `https://www.themoviedb.org/${tmdbPath}/${meta.id}`;
-    meta.links = [{ name: certification, category: 'Genres', url }, ...links];
+    meta.links = [{ name: displayCert, category: 'Genres', url }, ...links];
   } else if (Array.isArray(meta.links)) {
     meta.links = links;
   }
@@ -1265,13 +1265,13 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
   const catalogConfigString = JSON.stringify(catalogConfig);
   const configHash = hashConfig(catalogConfigString);
 
-  let cacheTTL = CATALOG_TTL;
+  let cacheTTL = CATALOG_TTL();
 
   if (isAuthCatalog) {
     cacheTTL = 0;
     cacheLogger.debug(`[Catalog] Not caching auth catalog ${idOnly} (user-specific data changes frequently)`);
   } else if (isTrendingCatalog) {
-    cacheTTL = TMDB_TRENDING_TTL;
+    cacheTTL = TMDB_TRENDING_TTL();
     cacheLogger.debug(`[Catalog] Using TMDB trending cache TTL for ${idOnly}: ${cacheTTL}s`);
   }
 
@@ -1299,7 +1299,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
 
   if (idOnly.startsWith('simkl.trending.')) {
     const catCfg = config.catalogs?.find((c: any) => c.id === idOnly);
-    cacheTTL = Math.max(catCfg?.cacheTTL || CATALOG_TTL, 3600);
+    cacheTTL = Math.max(catCfg?.cacheTTL || CATALOG_TTL(), 3600);
     cacheLogger.debug(`[Catalog] Using cache TTL for Simkl trending catalog ${idOnly}: ${cacheTTL}s`);
   }
 
@@ -1396,16 +1396,17 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     for (const meta of result.metas) {
       const cert = meta.app_extras?.certification;
       if (!cert) continue;
-      const hasCertLink = meta.links?.some((l: any) => l.name === cert && l.category === 'Genres');
+      const displayCert = meta.app_extras?.certificationLocal || cert;
+      const hasCertLink = meta.links?.some((l: any) => (l.name === cert || l.name === displayCert) && l.category === 'Genres');
       if (displayAgeRating && !hasCertLink) {
         if (!Array.isArray(meta.links)) meta.links = [];
         const imdbId = meta.id?.match(/^tt\d+/)?.[0] || meta.imdb_id;
         const url = imdbId
           ? `https://www.imdb.com/title/${imdbId}/parentalguide/`
           : `https://www.themoviedb.org/movie/${meta.id}`;
-        meta.links.unshift({ name: cert, category: 'Genres', url });
+        meta.links.unshift({ name: displayCert, category: 'Genres', url });
       } else if (!displayAgeRating && hasCertLink) {
-        meta.links = meta.links.filter((l: any) => !(l.name === cert && l.category === 'Genres'));
+        meta.links = meta.links.filter((l: any) => !((l.name === cert || l.name === displayCert) && l.category === 'Genres'));
       }
     }
   }
@@ -1478,7 +1479,7 @@ async function cacheWrapSearch(userUUID: string, searchKey: string, method: () =
   return result;
 }
 
-async function cacheWrapMeta(userUUID: string, metaId: string, method: () => Promise<any>, ttl: number = META_TTL, options: any = {}, type: string | null = null): Promise<any> {
+async function cacheWrapMeta(userUUID: string, metaId: string, method: () => Promise<any>, ttl: number = META_TTL(), options: any = {}, type: string | null = null): Promise<any> {
    let config: any;
    try {
      config = await resolveConfigForCache(userUUID, options);
@@ -1565,7 +1566,7 @@ async function cacheWrapMeta(userUUID: string, metaId: string, method: () => Pro
    return result;
 }
 
-async function cacheWrapMetaComponents(userUUID: string, metaId: string, method: () => Promise<any>, ttl: number = META_TTL, options: any = {}, type: string | null = null, useShowPoster: boolean = false): Promise<any> {
+async function cacheWrapMetaComponents(userUUID: string, metaId: string, method: () => Promise<any>, ttl: number = META_TTL(), options: any = {}, type: string | null = null, useShowPoster: boolean = false): Promise<any> {
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided to cacheWrapMetaComponents: ${metaId}`);
      return { meta: null };
@@ -1594,7 +1595,7 @@ async function cacheWrapMetaComponents(userUUID: string, metaId: string, method:
    });
 }
 
-async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL, type = null, useShowPoster = false, overwrite = true }: { config: any; metaId: string; result: any; ttl?: number; type?: string | null; useShowPoster?: boolean; overwrite?: boolean }): Promise<any> {
+async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = META_TTL(), type = null, useShowPoster = false, overwrite = true }: { config: any; metaId: string; result: any; ttl?: number; type?: string | null; useShowPoster?: boolean; overwrite?: boolean }): Promise<any> {
   const componentCacheKeys = buildMetaComponentCacheKeys({
     config,
     metaId,
@@ -1723,7 +1724,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
    return { meta: projectMetaForUser(meta, config) };
 }
 
-async function writeMetaComponentsBatchWithConfig({ config, metas, ttl = META_TTL, type = null, useShowPoster = false, overwrite = true }: { config: any; metas: any[]; ttl?: number; type?: string | null; useShowPoster?: boolean; overwrite?: boolean }): Promise<{ written: number; skipped: number }> {
+async function writeMetaComponentsBatchWithConfig({ config, metas, ttl = META_TTL(), type = null, useShowPoster = false, overwrite = true }: { config: any; metas: any[]; ttl?: number; type?: string | null; useShowPoster?: boolean; overwrite?: boolean }): Promise<{ written: number; skipped: number }> {
   if (!Array.isArray(metas) || metas.length === 0) {
     return { written: 0, skipped: 0 };
   }
@@ -1757,7 +1758,7 @@ async function writeMetaComponentsBatchWithConfig({ config, metas, ttl = META_TT
   return { written, skipped };
 }
 
-async function reconstructMetaFromComponents(userUUID: string, metaId: string, ttl: number = META_TTL, options: any = {}, type: string | null = null, includeVideos: boolean = true, useShowPoster: boolean = false): Promise<any> {
+async function reconstructMetaFromComponents(userUUID: string, metaId: string, ttl: number = META_TTL(), options: any = {}, type: string | null = null, includeVideos: boolean = true, useShowPoster: boolean = false): Promise<any> {
    if (!metaId || typeof metaId !== 'string') {
      cacheLogger.warn(`Invalid metaId provided: ${metaId}`);
      return { errorReason: 'invalid metaId' };
@@ -1973,6 +1974,16 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
     }
   }
 
+  if (Array.isArray(reconstructedMeta.videos)) {
+    const nowMs = Date.now();
+    for (const v of reconstructedMeta.videos) {
+      if (v && Object.prototype.hasOwnProperty.call(v, 'available') && v.released) {
+        const t = v.released instanceof Date ? v.released.getTime() : new Date(v.released).getTime();
+        if (Number.isFinite(t)) v.available = t <= nowMs;
+      }
+    }
+  }
+
   normalizeMetaReleaseAvailability(reconstructedMeta);
 
   const metaReconstructionKey = `meta:reconstructed:${metaId}`;
@@ -1981,7 +1992,7 @@ async function reconstructMetaFromComponentsWithConfig({ config, metaId, type = 
   return { meta: projectMetaForUser(reconstructedMeta, config) };
 }
 
-async function cacheWrapMetaSmart(userUUID: string, metaId: string, method: () => Promise<any>, ttl: number = META_TTL, options: any = {}, type: string | null = null, includeVideos: boolean = true, useShowPoster: boolean = false): Promise<any> {
+async function cacheWrapMetaSmart(userUUID: string, metaId: string, method: () => Promise<any>, ttl: number = META_TTL(), options: any = {}, type: string | null = null, includeVideos: boolean = true, useShowPoster: boolean = false): Promise<any> {
   cacheLogger.debug(`[Meta] Smart caching for ${metaId} (type:${type}, videos:${includeVideos}, showPoster:${useShowPoster})`);
 
   if (!metaId || typeof metaId !== 'string') {
@@ -2284,7 +2295,7 @@ function generateAniListCatalogCacheKey(username: string, listName: string, page
 
 async function cacheWrapAniListCatalog(username: string, listName: string, page: number, method: () => Promise<any>, customTTL: number | null = null, options: any = {}, sort: string | null = null): Promise<any> {
   const key = generateAniListCatalogCacheKey(username, listName, page, sort);
-  const ttl = customTTL !== null ? customTTL : ANILIST_CATALOG_TTL;
+  const ttl = customTTL !== null ? customTTL : ANILIST_CATALOG_TTL();
 
   cacheLogger.debug(`[AniList] Cache key: ${key}, TTL: ${ttl}s`);
 

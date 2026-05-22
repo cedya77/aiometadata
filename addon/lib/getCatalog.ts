@@ -579,7 +579,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       // Override genre if user selected one at request time
       if (genre && genre.toLowerCase() !== 'none') {
         const { convertGenreToSlug } = await import('../utils/mdbList.js');
-        params.genre = convertGenreToSlug(genre);
+        params.genre = await convertGenreToSlug(genre, apiKey);
       }
 
       const mediaType = type === 'movie' ? 'movie' : 'show';
@@ -664,7 +664,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
       const filterScoreMax = catalogConfig?.filter_score_max;
 
       const { convertGenreToSlug, fetchMDBListExternalItems } = await import('../utils/mdbList.js');
-      const genreSlug = convertGenreToSlug(genre);
+      const genreSlug = await convertGenreToSlug(genre, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '');
 
       const response = await fetchMDBListExternalItems(
         catalogConfig.sourceUrl,
@@ -692,7 +692,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     
     // Convert genre title to slug format for MDBList API (using the mapping from API)
     const { convertGenreToSlug } = await import('../utils/mdbList');
-    const genreSlug = convertGenreToSlug(genre);
+    const genreSlug = await convertGenreToSlug(genre, config.apiKeys?.mdblist || process.env.MDBLIST_API_KEY || '');
     if (genreSlug !== genre) {
       logger.debug(`Converted genre "${genre}" to slug "${genreSlug}"`);
     }

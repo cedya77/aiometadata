@@ -403,9 +403,13 @@ async function fetchSimklWatchlistItems(
       finalItems = itemsToReturn.anime || [];
     }
 
-    // 6. Sort by last watched
+    // 6. Sort: plantowatch/hold by added date, others by last watched
     if (status === 'plantowatch' || status === 'hold') {
-      finalItems.reverse();
+      finalItems.sort((a: any, b: any) => {
+        const aTime = a.added_to_watchlist_at ? new Date(a.added_to_watchlist_at).getTime() : 0;
+        const bTime = b.added_to_watchlist_at ? new Date(b.added_to_watchlist_at).getTime() : 0;
+        return bTime - aTime;
+      });
     } else {
       finalItems.sort((a: any, b: any) => {
         const aTime = (a.last_watched_at || a.last_watched) ? new Date(a.last_watched_at || a.last_watched).getTime() : 0;

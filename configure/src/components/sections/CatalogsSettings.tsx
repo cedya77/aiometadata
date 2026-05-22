@@ -1586,6 +1586,116 @@ const StreamingSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: Catalo
   );
 };
 
+const PMDBSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
+  const { setConfig, catalogTTL, config } = useConfig();
+  const isWatchlist = catalog.id === 'publicmetadb.upnext';
+  const minCacheTTL = isWatchlist ? 900 : 10800;
+  const defaultTTL = isWatchlist ? 900 : Math.max(catalogTTL, minCacheTTL);
+  const [cacheTTL, setCacheTTL] = useState<number>(catalog.cacheTTL || defaultTTL);
+  const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
+  const [hideWatchedAnilist, setHideWatchedAnilist] = useState<string>(catalog.metadata?.hideWatchedAnilist === true ? 'on' : catalog.metadata?.hideWatchedAnilist === false ? 'off' : 'global');
+  const [hideWatchedMdblist, setHideWatchedMdblist] = useState<string>(catalog.metadata?.hideWatchedMdblist === true ? 'on' : catalog.metadata?.hideWatchedMdblist === false ? 'off' : 'global');
+
+  const handleSave = () => {
+    const hideTraktValue = hideWatchedTrakt === 'on' ? true : hideWatchedTrakt === 'off' ? false : undefined;
+    const hideAnilistValue = hideWatchedAnilist === 'on' ? true : hideWatchedAnilist === 'off' ? false : undefined;
+    const hideMdblistValue = hideWatchedMdblist === 'on' ? true : hideWatchedMdblist === 'off' ? false : undefined;
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        c.id === catalog.id && c.type === catalog.type
+          ? { ...c, cacheTTL: Math.max(cacheTTL, minCacheTTL), metadata: { ...c.metadata, hideWatchedTrakt: hideTraktValue, hideWatchedAnilist: hideAnilistValue, hideWatchedMdblist: hideMdblistValue } }
+          : c
+      )
+    }));
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>PMDB Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Cache TTL (seconds)</Label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="number"
+                value={cacheTTL}
+                onChange={(e) => setCacheTTL(parseInt(e.target.value) || catalogTTL)}
+                min={minCacheTTL}
+                max="604800"
+                step={isWatchlist ? 900 : 3600}
+                className="flex-1 px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                placeholder={catalogTTL.toString()}
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                ({Math.floor(cacheTTL / 3600)}h {Math.floor((cacheTTL % 3600) / 60)}m)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {isWatchlist
+                ? 'Minimum 15 minutes for watchlist. Range: 15 minutes to 7 days.'
+                : 'Minimum 3 hours for lists and picks. Range: 3 hours to 7 days.'}
+            </p>
+          </div>
+          {config.apiKeys?.traktTokenId && (
+            <div className="space-y-2">
+              <Label>Hide Trakt Watched</Label>
+              <Select value={hideWatchedTrakt} onValueChange={setHideWatchedTrakt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.anilistTokenId && (
+            <div className="space-y-2">
+              <Label>Hide AniList Watched</Label>
+              <Select value={hideWatchedAnilist} onValueChange={setHideWatchedAnilist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {config.apiKeys?.mdblist && (
+            <div className="space-y-2">
+              <Label>Hide MDBList Watched</Label>
+              <Select value={hideWatchedMdblist} onValueChange={setHideWatchedMdblist}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Use Global Setting</SelectItem>
+                  <SelectItem value="on">Always On</SelectItem>
+                  <SelectItem value="off">Always Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogConfig, isOpen: boolean, onClose: () => void }) => {
   const { setConfig, config } = useConfig();
   const [hideWatchedTrakt, setHideWatchedTrakt] = useState<string>(catalog.metadata?.hideWatchedTrakt === true ? 'on' : catalog.metadata?.hideWatchedTrakt === false ? 'off' : 'global');
@@ -2144,7 +2254,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
 
 
           {/* Settings Gear - Now show for all catalogs if any tracking is connected */}
-          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || 
+          {(catalog.source === 'mdblist' || catalog.source === 'trakt' || (catalog.source === 'simkl' && !catalog.id.startsWith('simkl.watchlist.')) || catalog.source === 'letterboxd' || catalog.source === 'streaming' || catalog.source === 'publicmetadb' ||
             (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')) ||
             (config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist)) && (
             <Tooltip>
@@ -2454,16 +2564,23 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         onClose={() => setShowSettings(false)}
       />
 
+      <PMDBSettingsDialog
+        catalog={catalog}
+        isOpen={showSettings && catalog.source === 'publicmetadb'}
+        onClose={() => setShowSettings(false)}
+      />
+
       <GenericSettingsDialog
         catalog={catalog}
-        isOpen={showSettings && 
-          catalog.source !== 'mdblist' && 
-          catalog.source !== 'trakt' && 
-          catalog.source !== 'simkl' && 
-          catalog.source !== 'letterboxd' && 
-          catalog.source !== 'streaming' && 
-          catalog.source !== 'custom' && 
+        isOpen={showSettings &&
+          catalog.source !== 'mdblist' &&
+          catalog.source !== 'trakt' &&
+          catalog.source !== 'simkl' &&
+          catalog.source !== 'letterboxd' &&
+          catalog.source !== 'streaming' &&
+          catalog.source !== 'custom' &&
           catalog.source !== 'anilist' &&
+          catalog.source !== 'publicmetadb' &&
           !(catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language'))
         }
         onClose={() => setShowSettings(false)}

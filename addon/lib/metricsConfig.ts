@@ -1,7 +1,5 @@
-const metricsDisabled = process.env.DISABLE_METRICS === 'true';
-
 function isMetricsDisabled(): boolean {
-  return metricsDisabled;
+  return process.env.DISABLE_METRICS === 'true';
 }
 
 export { isMetricsDisabled };

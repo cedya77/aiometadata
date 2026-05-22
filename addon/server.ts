@@ -15,7 +15,10 @@ import { performVersionCleanup } from './lib/versionCleanup.js';
 import { waitForRedisReady } from './lib/redisReady.js';
 import database from './lib/database.js';
 import consola from 'consola';
+import { installLogReporter } from './lib/logBuffer.js';
+import { initializeSettings } from './lib/settingsService.js';
 
+installLogReporter();
 
 const PORT: number = parseInt(process.env.PORT || '3232', 10);
  
@@ -40,6 +43,8 @@ async function startServer(): Promise<void> {
   consola.info('Initializing Database...');
   await database.initialize();
   consola.success('Database initialization complete.');
+
+  await initializeSettings();
 
   const redisReady = await waitForRedisReady();
   if (redisReady) {

@@ -437,6 +437,7 @@ export function createPublicMetaDBUpNextCatalog(): CatalogConfig {
     enabled: true,
     showInHome: true,
     source: 'publicmetadb' as const,
+    cacheTTL: 900,
     metadata: { useShowPosterForUpNext: false },
   };
 }
