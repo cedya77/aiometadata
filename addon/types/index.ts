@@ -234,6 +234,7 @@ export interface AuthenticatedRequest extends Express.Request {
 // Environment variables
 export interface EnvironmentConfig {
   PORT?: string;
+  TMDB_API_KEY?: string;
   TMDB_API?: string;
   TVDB_API_KEY?: string;
   FANART_API_KEY?: string;

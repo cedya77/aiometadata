@@ -764,7 +764,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     logger.info(`Fetching TMDB discover catalog: ${id}, Type: ${type}, Page: ${page}`);
 
     const catalogConfig = config.catalogs?.find(c => c.id === id && c.type === type);
-    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
     const isMovieCatalog = type === 'movie';
     const isSeriesCatalog = type === 'series';
 
@@ -849,7 +849,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
     logger.info(`Fetching TMDB list catalog: ${id}, Type: ${type}, Page: ${page}, Genre: ${genre}`);
     
     const catalogConfig = config.catalogs?.find(c => c.id === id);
-    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
     
     if (!tmdbApiKey) {
       logger.warn('[TMDB List] Missing API key');
@@ -969,7 +969,7 @@ async function getTmdbAndMdbListCatalog(type: string, id: string, genre: string,
         queryParams.append(key, String(value));
       }
     });
-    queryParams.append('api_key', config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '');
+    queryParams.append('api_key', config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '');
     const fullUrl = `${baseUrl}${endpoint}?${queryParams.toString()}`;
     // Note: Full URL/params logging removed to avoid exposing API keys in logs
   }

@@ -403,7 +403,7 @@ const respond = function (req, res, data, opts) {
     const resolvedOptions = simklTrendingPageSizeOptions.length > 0 ? simklTrendingPageSizeOptions : fallbackOptions;
 
     const publicEnvConfig = {
-      tmdb: getSetting('TMDB_API'),
+      tmdb: getSetting('TMDB_API_KEY'),
       tvdb: getSetting('TVDB_API_KEY'),
       fanart: getSetting('FANART_API_KEY'),
       rpdb: getSetting('RPDB_API_KEY'),
@@ -1388,7 +1388,7 @@ async function resolveTmdbDiscoverApiKey(req) {
     }
   }
 
-  return (process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '').trim();
+  return (process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '').trim();
 }
 
 async function resolveTvdbDiscoverApiKey(req) {
@@ -1444,7 +1444,7 @@ addon.get("/api/tmdb/discover/reference", async (req, res) => {
 
     if (!tmdbApiKey) {
       return res.status(400).json({
-        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API_KEY, or BUILT_IN_TMDB_API_KEY)"
       });
     }
 
@@ -1505,7 +1505,7 @@ addon.get("/api/tmdb/discover/providers", async (req, res) => {
 
     if (!tmdbApiKey) {
       return res.status(400).json({
-        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API_KEY, or BUILT_IN_TMDB_API_KEY)"
       });
     }
 
@@ -1562,7 +1562,7 @@ addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
 
     if (!tmdbApiKey) {
       return res.status(400).json({
-        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API_KEY, or BUILT_IN_TMDB_API_KEY)"
       });
     }
 
@@ -1995,7 +1995,7 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     }
 
     // Resolve dynamic entities
-    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
     const tvdbApiKey = config.apiKeys?.tvdb || process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '';
     const resolveCtx = { tmdbApiKey, tvdbApiKey, userUUID };
     consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? '...' + tvdbApiKey.slice(-4) : 'NONE'}, Prompt sources: TMDB=${hasTmdb}, TVDB=${hasTvdb}`);

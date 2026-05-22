@@ -555,7 +555,7 @@ class DashboardAPI {
         {
           name: "TMDB",
           // Check for user key or built-in key
-          keyStatus: (process.env.TMDB_API || process.env.BUILT_IN_TMDB_API) 
+          keyStatus: (process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY)
             ? "Built-in key set" 
             : "No API key",
           requiresKey: true,

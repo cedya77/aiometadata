@@ -8,6 +8,7 @@ export interface DisabledRule {
 export interface SettingDefinition {
   key: string;
   envVar: string;
+  legacyEnvVar?: string;
   label: string;
   description: string;
   category: string;
@@ -28,8 +29,9 @@ export interface SettingDefinition {
 export const SETTINGS_REGISTRY: SettingDefinition[] = [
   // --- API Keys ---
   {
-    key: 'TMDB_API',
-    envVar: 'TMDB_API',
+    key: 'TMDB_API_KEY',
+    envVar: 'TMDB_API_KEY',
+    legacyEnvVar: 'TMDB_API',
     label: 'TMDB API Key',
     description: 'The Movie Database API key for metadata lookups',
     category: 'API Keys',
