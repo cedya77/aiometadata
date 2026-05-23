@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.4.1](https://github.com/cedya77/aiometadata/compare/v2.4.0...v2.4.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* normalize Fribb themoviedb_id object to plain numeric ID at ingestion ([67c1f12](https://github.com/cedya77/aiometadata/commit/67c1f12af4b891293ffe17a7aa68ec88badbd9d6))
+
 ## [2.4.0](https://github.com/cedya77/aiometadata/compare/v2.3.0...v2.4.0) (2026-05-22)
 
 
