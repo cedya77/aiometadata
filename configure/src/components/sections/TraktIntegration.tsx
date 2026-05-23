@@ -93,6 +93,7 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
   const [disconnecting, setDisconnecting] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loadingUsername, setLoadingUsername] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState<{ status?: string; statusMessage?: string } | null>(null);
   const [watchlistSortBy, setWatchlistSortBy] = useState('default');
   const [watchlistSortHow, setWatchlistSortHow] = useState<'asc' | 'desc'>('asc');
   const [customListSortBy, setCustomListSortBy] = useState('default');
@@ -137,11 +138,17 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
           .then(res => res.ok ? res.json() : null)
           .then(data => {
             if (data?.username) setUsername(data.username);
+            if (data?.status === 'invalid') {
+              setTokenStatus({ status: data.status, statusMessage: data.statusMessage });
+            } else {
+              setTokenStatus(null);
+            }
           })
-          .catch(() => setUsername(null))
+          .catch(() => { setUsername(null); setTokenStatus(null); })
           .finally(() => setLoadingUsername(false));
       } else {
         setUsername(null);
+        setTokenStatus(null);
       }
     }
   }, [isOpen, config.apiKeys?.traktTokenId]);
@@ -1094,7 +1101,23 @@ export function TraktIntegration({ isOpen, onClose }: TraktIntegrationProps) {
                 <div className="space-y-4">
                   <div className="space-y-3">
                     {/* Connected Status */}
-                    {isConnected && (
+                    {isConnected && tokenStatus?.status === 'invalid' && (
+                      <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                          <div>
+                            <p className="font-medium text-red-900 dark:text-red-100">Trakt Connection Expired</p>
+                            <p className="text-xs text-red-700 dark:text-red-300">
+                              {tokenStatus.statusMessage || 'Please disconnect and reconnect your account.'}
+                            </p>
+                          </div>
+                        </div>
+                        <Button variant="destructive" size="sm" onClick={handleDisconnect} disabled={disconnecting}>
+                          {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+                        </Button>
+                      </div>
+                    )}
+                    {isConnected && tokenStatus?.status !== 'invalid' && (
                       <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                         <div className="flex items-center gap-3">
                           <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />

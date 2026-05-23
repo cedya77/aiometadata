@@ -804,7 +804,17 @@ addon.post("/api/oauth/token/info", async (req, res) => {
     if (!token) {
       return res.status(404).json({ error: "Token not found" });
     }
-    res.json({ provider: token.provider, username: token.user_id, expiresAt: token.expires_at });
+    const response = { provider: token.provider, username: token.user_id, expiresAt: token.expires_at };
+    if (token.provider === 'trakt') {
+      try {
+        const { isTokenInvalidated } = require('./utils/traktUtils');
+        if (isTokenInvalidated(tokenId)) {
+          response.status = 'invalid';
+          response.statusMessage = 'Your Trakt refresh token has expired or been revoked. Please disconnect and reconnect your account.';
+        }
+      } catch {}
+    }
+    res.json(response);
   } catch (error) {
     consola.error("[OAuth] Token info fetch error:", error);
     res.status(500).json({ error: "Failed to fetch token info" });
