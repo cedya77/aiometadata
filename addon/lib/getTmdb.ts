@@ -415,6 +415,20 @@ export async function tvInfo(params: any, config: UserConfig) {
   return makeTmdbRequest(`/tv/${id}`, getApiKey(config), queryParams, 'GET', null, config);
 }
 
+export async function movieReleaseDates(id: string, config: UserConfig) {
+  return cacheWrapGlobal(`tmdb:movie:release_dates:${id}`, () =>
+    makeTmdbRequest(`/movie/${id}/release_dates`, getApiKey(config), {}, 'GET', null, config),
+    7 * 24 * 60 * 60
+  );
+}
+
+export async function tvContentRatings(id: string, config: UserConfig) {
+  return cacheWrapGlobal(`tmdb:tv:content_ratings:${id}`, () =>
+    makeTmdbRequest(`/tv/${id}/content_ratings`, getApiKey(config), {}, 'GET', null, config),
+    7 * 24 * 60 * 60
+  );
+}
+
 export async function movieExternalIds(id: string, config: UserConfig) {
   return cacheWrapGlobal(`tmdb:movie:external_ids:${id}`, () =>
     makeTmdbRequest(`/movie/${id}/external_ids`, getApiKey(config), {}, 'GET', null, config)
@@ -1029,6 +1043,8 @@ module.exports = {
   getMovieWatchProviders,
   getTvWatchProviders,
   getTranslations,
+  movieReleaseDates,
+  tvContentRatings,
   movieExternalIds,
   tvExternalIds,
   movieCredits,

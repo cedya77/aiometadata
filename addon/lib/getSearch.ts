@@ -31,10 +31,15 @@ function getTvdbCertification(contentRatings: any[], countryCode: string, conten
     return null;
   }
 
-  let certification = contentRatings.find((rating: any) =>
-    rating.country?.toLowerCase() === countryCode?.toLowerCase() &&
+  let code = countryCode?.toLowerCase();
+  if (code && code.length === 2) {
+    try { code = require('country-iso-2-to-3')(code.toUpperCase())?.toLowerCase(); } catch {}
+  }
+
+  let certification = code ? contentRatings.find((rating: any) =>
+    rating.country?.toLowerCase() === code &&
     (!contentType || rating.contentType === contentType || rating.contentType === '')
-  );
+  ) : null;
 
   if (!certification) {
     certification = contentRatings.find((rating: any) =>
@@ -129,16 +134,42 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
   const posterProxyUrl = Utils.buildPosterProxyUrl(host, type, posterProxyId, validPosterUrl, language, config);
 
   let certification: string | null = null;
-  try {
-    const langParts = language.split('-');
-    const countryCode = langParts[1] || langParts[0];
-    const contentType = type === 'movie' ? 'movie' : '';
+  let certificationLocal: string | null = null;
+  if (config.displayAgeRating) {
+    try {
+      const langParts = language.split('-');
+      const userCountry = langParts[1] || langParts[0];
+      const contentType = type === 'movie' ? 'movie' : '';
 
-    if (extendedRecord.contentRatings) {
-      certification = getTvdbCertification(extendedRecord.contentRatings, countryCode, contentType);
+      if (tmdbId) {
+        if (type === 'movie') {
+          const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
+          if (releaseDatesData) {
+            certification = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
+            certificationLocal = userCountry && userCountry.toUpperCase() !== 'US'
+              ? (Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry) || certification)
+              : certification;
+          }
+        } else {
+          const contentRatingsData = await moviedb.tvContentRatings(String(tmdbId), config);
+          if (contentRatingsData) {
+            certification = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
+            certificationLocal = userCountry && userCountry.toUpperCase() !== 'US'
+              ? (Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry) || certification)
+              : certification;
+          }
+        }
+      }
+
+      if (!certification && extendedRecord.contentRatings) {
+        certification = getTvdbCertification(extendedRecord.contentRatings, 'usa', contentType);
+        certificationLocal = userCountry && userCountry.toUpperCase() !== 'US'
+          ? (getTvdbCertification(extendedRecord.contentRatings, userCountry, contentType) || certification)
+          : certification;
+      }
+    } catch (error: any) {
+      logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
     }
-  } catch (error: any) {
-    logger.warn(`Failed to get TVDB certification for ${type} ${tvdbId}:`, error.message);
   }
 
   let stremioId: string = `tvdb:${extendedRecord.id}`;
@@ -156,6 +187,7 @@ async function parseTvdbSearchResult(type: string, extendedRecord: any, language
     released: extendedRecord.firstAired ? new Date(extendedRecord.firstAired) : undefined,
     description: Utils.addMetaProviderAttribution(overview, 'TVDB', config),
     certification: certification,
+    app_extras: { certification, certificationLocal },
     logo: validLogoUrl,
     runtime: type === 'movie' ? Utils.parseRunTime(extendedRecord.runtime) : Utils.parseRunTime(extendedRecord.averageRuntime),
     genres: extendedRecord.genres?.map((g: any) => g.name) || [],

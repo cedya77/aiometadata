@@ -822,18 +822,23 @@ function getTvdbCertification(contentRatings, countryCode, contentType) {
     return null;
   }
 
-  let certification = contentRatings.find(rating => 
-    rating.country?.toLowerCase() === countryCode?.toLowerCase() && 
+  let code = countryCode?.toLowerCase();
+  if (code && code.length === 2) {
+    try { code = require('country-iso-2-to-3')(code.toUpperCase())?.toLowerCase(); } catch {}
+  }
+
+  let certification = code ? contentRatings.find(rating =>
+    rating.country?.toLowerCase() === code &&
     (!contentType || rating.contentType === contentType || rating.contentType === '')
-  );
-  
+  ) : null;
+
   if (!certification) {
-    certification = contentRatings.find(rating => 
-      rating.country?.toLowerCase() === 'usa' && 
+    certification = contentRatings.find(rating =>
+      rating.country?.toLowerCase() === 'usa' &&
       (!contentType || rating.contentType === contentType || rating.contentType === '')
     );
   }
-  
+
   return certification?.name || null;
 }
 
