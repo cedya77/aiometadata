@@ -51,7 +51,7 @@ interface CatalogConfig {
   enabled: boolean;
   showInHome: boolean;
   source: string;
-  cacheTTL: number;
+  cacheTTL?: number;
   metadata: {
     description: string;
     discover: {

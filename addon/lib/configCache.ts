@@ -10,7 +10,7 @@ function parsePositiveIntEnv(envValue: string | undefined, defaultValue: number,
   return parsed;
 }
 
-const CONFIG_CACHE_TTL_SEC = parsePositiveIntEnv(process.env.CONFIG_CACHE_TTL_SEC, 300, 10);
+function CONFIG_CACHE_TTL_SEC() { return parsePositiveIntEnv(process.env.CONFIG_CACHE_TTL_SEC, 300, 10); }
 const KEY_PREFIX = 'user-config:';
 
 function redisKey(id: string): string {
@@ -35,7 +35,7 @@ class ConfigCache {
     if (!redis || redis.status !== 'ready' || value === undefined) return;
     try {
       const compressed = lz.compressToUTF16(JSON.stringify(value));
-      await redis.set(redisKey(key), compressed, 'EX', CONFIG_CACHE_TTL_SEC);
+      await redis.set(redisKey(key), compressed, 'EX', CONFIG_CACHE_TTL_SEC());
     } catch (err: any) {
       logger.warn(`set failed for ${String(key).substring(0, 8)}...: ${err.message}`);
     }
@@ -121,7 +121,7 @@ class ConfigCache {
 const configCache = new ConfigCache();
 
 if (redis) {
-  logger.info(`ConfigCache backed by Redis, TTL=${CONFIG_CACHE_TTL_SEC}s`);
+  logger.info(`ConfigCache backed by Redis, TTL=${CONFIG_CACHE_TTL_SEC()}s`);
 } else {
   logger.warn('ConfigCache: Redis unavailable, falling through to loader on every call');
 }

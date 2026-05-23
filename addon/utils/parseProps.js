@@ -15,7 +15,7 @@ const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
 const { getReleaseAvailability } = require('./releaseAvailability');
 const wikiMappings = require('../lib/wiki-mapper.js');
-const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
+function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const buildInfo = require('../lib/buildInfo');
 // Dynamic import to avoid circular dependency
 
@@ -1898,7 +1898,7 @@ async function getCachedKitsuAnimeBatchDetails(kitsuIds, appends = KITSU_ANIME_D
   return cacheWrapGlobal(
     getKitsuBatchDetailsCacheKey(normalizedIds, appends),
     () => kitsu.getMultipleAnimeDetails(normalizedIds, appends),
-    CATALOG_TTL
+    CATALOG_TTL()
   );
 }
 

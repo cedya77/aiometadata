@@ -198,7 +198,7 @@ addon.use((req, res, next) => {
   next();
 });
 
-const TEST_KEYS_RATE_LIMIT_PER_MIN = parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10);
+function TEST_KEYS_RATE_LIMIT_PER_MIN() { return parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10); }
 
 async function testKeysRateLimitMiddleware(req, res, next) {
   // If Redis is disabled/unavailable, do not block requests.
@@ -216,7 +216,7 @@ async function testKeysRateLimitMiddleware(req, res, next) {
       await redis.expire(rateKey, 70);
     }
 
-    if (currentCount > TEST_KEYS_RATE_LIMIT_PER_MIN) {
+    if (currentCount > TEST_KEYS_RATE_LIMIT_PER_MIN()) {
       return res.status(429).json({ error: 'Too many API key validation requests. Please try again shortly.' });
     }
   } catch (error) {

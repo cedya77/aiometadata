@@ -404,6 +404,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Essential Warming',
     type: 'boolean',
     default: true,
+    requiresRestart: true,
   },
   {
     key: 'CACHE_WARMING_INTERVAL',
@@ -413,6 +414,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Essential Warming',
     type: 'number',
     default: 720,
+    requiresRestart: true,
   },
   {
     key: 'CACHE_WARM_INTERVAL_HOURS',
@@ -424,6 +426,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     default: 24,
     min: 12,
     validate: (v: string) => parseInt(v, 10) >= 12,
+    requiresRestart: true,
   },
   {
     key: 'CACHE_WARM_LANGUAGE',
@@ -675,6 +678,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Rate Limiting',
     type: 'number',
     default: 3,
+    requiresRestart: true,
   },
   {
     key: 'JIKAN_MAX_PER_MINUTE',
@@ -684,6 +688,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Rate Limiting',
     type: 'number',
     default: 60,
+    requiresRestart: true,
   },
   {
     key: 'JIKAN_MIN_INTERVAL',
@@ -693,6 +698,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Rate Limiting',
     type: 'number',
     default: 334,
+    requiresRestart: true,
   },
   {
     key: 'JIKAN_API_BASE',
@@ -702,6 +708,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Rate Limiting',
     type: 'string',
     default: 'https://api.jikan.moe/v4',
+    requiresRestart: true,
   },
   {
     key: 'TEST_KEYS_RATE_LIMIT_PER_MIN',
@@ -732,6 +739,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Data Updates',
     type: 'number',
     default: 24,
+    requiresRestart: true,
   },
   {
     key: 'ANIME_LIST_UPDATE_INTERVAL_HOURS',
@@ -741,6 +749,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Data Updates',
     type: 'number',
     default: 168,
+    requiresRestart: true,
   },
   {
     key: 'WIKI_MAPPER_UPDATE_INTERVAL_HOURS',
@@ -750,6 +759,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Data Updates',
     type: 'number',
     default: 168,
+    requiresRestart: true,
   },
   {
     key: 'KITSU_TO_IMDB_UPDATE_INTERVAL_HOURS',
@@ -759,6 +769,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Data Updates',
     type: 'number',
     default: 168,
+    requiresRestart: true,
   },
   {
     key: 'TRAKT_ANIME_MOVIES_UPDATE_INTERVAL_HOURS',
@@ -768,6 +779,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Data Updates',
     type: 'number',
     default: 168,
+    requiresRestart: true,
   },
 
   // --- Proxy ---
@@ -799,6 +811,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Proxy',
     type: 'string',
     default: '',
+    requiresRestart: true,
   },
   {
     key: 'MAL_SOCKS_PROXY_URL',
@@ -808,6 +821,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Proxy',
     type: 'string',
     default: '',
+    requiresRestart: true,
   },
 
   // --- Diagnostics ---

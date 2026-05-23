@@ -191,7 +191,6 @@ export function buildCatalogConfigs(catalogs: AICatalogOutput[], resolvedParams:
       enabled: true,
       showInHome: true,
       source: catalog.source,
-      cacheTTL: 3600,
       metadata: {
         description: `${sourceLabel} Discover (${discoverMediaType}) - AI Generated`,
         discover: {

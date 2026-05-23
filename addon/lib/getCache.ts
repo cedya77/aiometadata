@@ -72,18 +72,20 @@ const cacheHealth: any = {
 };
 
 const SELF_HEALING_CONFIG = {
-  enabled: process.env.ENABLE_SELF_HEALING !== 'false',
-  maxRetries: parsePositiveIntEnv(process.env.CACHE_MAX_RETRIES, 2),
-  retryDelay: parsePositiveIntEnv(process.env.CACHE_RETRY_DELAY, 1000),
-  healthCheckInterval: parsePositiveIntEnv(process.env.CACHE_HEALTH_CHECK_INTERVAL, 300000),
-  corruptedEntryThreshold: parsePositiveIntEnv(process.env.CACHE_CORRUPTED_THRESHOLD, 10)
+  get enabled() { return process.env.ENABLE_SELF_HEALING !== 'false'; },
+  get maxRetries() { return parsePositiveIntEnv(process.env.CACHE_MAX_RETRIES, 2); },
+  get retryDelay() { return parsePositiveIntEnv(process.env.CACHE_RETRY_DELAY, 1000); },
+  get healthCheckInterval() { return parsePositiveIntEnv(process.env.CACHE_HEALTH_CHECK_INTERVAL, 300000); },
+  get corruptedEntryThreshold() { return parsePositiveIntEnv(process.env.CACHE_CORRUPTED_THRESHOLD, 10); },
 };
 
-const MAX_TRACKED_KEYS = parsePositiveIntEnv(process.env.MAX_TRACKED_KEYS, 30000, 100);
-const KEYS_TO_KEEP_AFTER_PRUNE = Math.min(
-  parsePositiveIntEnv(process.env.KEYS_TO_KEEP_AFTER_PRUNE, 6000, 10),
-  Math.max(1, MAX_TRACKED_KEYS - 1)
-);
+function MAX_TRACKED_KEYS() { return parsePositiveIntEnv(process.env.MAX_TRACKED_KEYS, 30000, 100); }
+function KEYS_TO_KEEP_AFTER_PRUNE() {
+  return Math.min(
+    parsePositiveIntEnv(process.env.KEYS_TO_KEEP_AFTER_PRUNE, 6000, 10),
+    Math.max(1, MAX_TRACKED_KEYS() - 1)
+  );
+}
 
 const inFlightRequests = new Map();
 const cacheValidator: any = require('./cacheValidator');
@@ -247,14 +249,14 @@ function truncateCacheKey(key: string, maxLength: number = 80): string {
 }
 
 function pruneKeyAccessCounts(): { oldSize: number; newSize: number } | null {
-  if (cacheHealth.keyAccessCounts.size <= MAX_TRACKED_KEYS) {
+  if (cacheHealth.keyAccessCounts.size <= MAX_TRACKED_KEYS()) {
     return null;
   }
 
   const oldSize = cacheHealth.keyAccessCounts.size;
   const sorted = Array.from(cacheHealth.keyAccessCounts.entries())
     .sort((a: any, b: any) => b[1] - a[1])
-    .slice(0, KEYS_TO_KEEP_AFTER_PRUNE);
+    .slice(0, KEYS_TO_KEEP_AFTER_PRUNE());
 
   cacheHealth.keyAccessCounts.clear();
   for (const [trackedKey, count] of sorted as [string, number][]) {

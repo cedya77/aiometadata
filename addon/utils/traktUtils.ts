@@ -464,7 +464,7 @@ async function fetchTraktUpdatedShows(
   }
 }
 
-const TRAKT_SEARCH_DISABLED = process.env.DISABLE_TRAKT_SEARCH === 'true';
+function TRAKT_SEARCH_DISABLED() { return process.env.DISABLE_TRAKT_SEARCH === 'true'; }
 
 
 interface TraktUpNextState {
@@ -2933,7 +2933,7 @@ async function fetchTraktSearchItems(
   query: string,
   config?: any
 ): Promise<any[]> {
-  if (TRAKT_SEARCH_DISABLED) {
+  if (TRAKT_SEARCH_DISABLED()) {
     logger.debug('[Trakt Search] Disabled via DISABLE_TRAKT_SEARCH env');
     return [];
   }
@@ -2982,7 +2982,7 @@ async function fetchTraktSearchItems(
  * @returns Array of person search results
  */
 async function fetchTraktPersonSearch(query: string): Promise<any[]> {
-  if (TRAKT_SEARCH_DISABLED) {
+  if (TRAKT_SEARCH_DISABLED()) {
     return [];
   }
   try {
