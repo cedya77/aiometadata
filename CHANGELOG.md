@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.4.3](https://github.com/cedya77/aiometadata/compare/v2.4.2...v2.4.3) (2026-05-23)
+
+
+### Bug Fixes
+
+* AI catalog TTL, warmer hot-reload, and stale env reads ([4838c2b](https://github.com/cedya77/aiometadata/commit/4838c2bc9a8c7c06435b54b59e629058caeae9cc))
+* country-aware TVDB age ratings with TMDB fallback and caching ([164f038](https://github.com/cedya77/aiometadata/commit/164f03828ab73e78d0b6bd06387285ae35d35445))
+* invalidate Trakt tokens on 400, surface expired status in UI ([96a73d0](https://github.com/cedya77/aiometadata/commit/96a73d08052aec0ae41e3e22deea854556d280fe))
+
 ## [2.4.2](https://github.com/cedya77/aiometadata/compare/v2.4.1...v2.4.2) (2026-05-23)
 
 
