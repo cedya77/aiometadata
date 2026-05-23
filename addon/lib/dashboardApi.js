@@ -805,6 +805,7 @@ class DashboardAPI {
         ratingPostersRpdb: 0,
         ratingPostersTop: 0,
         aiSearchEnabled: 0,
+        aiCatalogs: 0,
       },
     };
 
@@ -879,11 +880,14 @@ class DashboardAPI {
       if (Array.isArray(config.catalogs)) {
         const enabled = config.catalogs.filter((cat) => cat.enabled !== false);
         stats.catalogCounts.push(enabled.length);
+        let hasAiCatalog = false;
         enabled.forEach((cat) => {
           if (cat.source) {
             stats.catalogSources[cat.source] = (stats.catalogSources[cat.source] || 0) + 1;
           }
+          if (cat.metadata?.discover?.formState?.aiGenerated) hasAiCatalog = true;
         });
+        if (hasAiCatalog) stats.features.aiCatalogs++;
       }
 
       // Search providers
@@ -1002,6 +1006,7 @@ class DashboardAPI {
         ratingPostersRpdb: Math.round((stats.features.ratingPostersRpdb / total) * 100),
         ratingPostersTop: Math.round((stats.features.ratingPostersTop / total) * 100),
         aiSearchEnabled: Math.round((stats.features.aiSearchEnabled / total) * 100),
+        aiCatalogs: Math.round((stats.features.aiCatalogs / total) * 100),
       },
     };
   }
@@ -1047,6 +1052,7 @@ class DashboardAPI {
         ratingPostersRpdb: 0,
         ratingPostersTop: 0,
         aiSearchEnabled: 0,
+        aiCatalogs: 0,
       },
     };
   }
