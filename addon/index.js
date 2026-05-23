@@ -5805,8 +5805,14 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
   
   try {
     const timingMetrics = require('./lib/timing-metrics');
+
+    const cached = timingMetrics.getCachedResponse();
+    if (cached) {
+      return res.json(cached);
+    }
+
     const { getPerformanceStats } = require('./lib/id-resolver.js');
-    
+
     // Get comprehensive timing data
     const [dashboardData, providerBreakdown, resolutionBreakdown, idResolverStats] = await Promise.all([
       timingMetrics.getDashboardData(),
@@ -5814,15 +5820,15 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
       timingMetrics.getResolutionTimingBreakdown(),
       Promise.resolve(getPerformanceStats())
     ]);
-    
+
     // Get timing trends for key metrics
     const timingTrends = {};
     const keyMetrics = ['id_resolution_total', 'search_operation', 'api_lookup'];
-    
+
     for (const metric of keyMetrics) {
       timingTrends[metric] = await timingMetrics.getTimingTrends(metric);
     }
-    
+
     // Add IMDb ratings stats
     let imdbRatingsStats = null;
     try {
@@ -5831,8 +5837,8 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
     } catch (err) {
       consola.warn('[Dashboard API] Failed to get IMDb ratings stats:', err);
     }
-    
-    res.json({
+
+    const response = {
       dashboard: dashboardData,
       providerBreakdown,
       resolutionBreakdown,
@@ -5840,7 +5846,9 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
       imdbRatingsStats,
       idResolverPerformance: idResolverStats,
       lastUpdated: new Date().toISOString()
-    });
+    };
+    timingMetrics.setCachedResponse(response);
+    res.json(response);
   } catch (error) {
     consola.error('[Timing API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch timing data' });

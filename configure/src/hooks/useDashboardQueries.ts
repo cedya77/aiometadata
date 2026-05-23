@@ -21,7 +21,7 @@ interface DashboardQueryOptions {
 const POLLING_INTERVALS = {
   OVERVIEW: 5 * 1000,           // 5 seconds - quick stats + health (most visible)
   ANALYTICS: 15 * 1000,         // 15 seconds - metrics data
-  PERFORMANCE: 15 * 1000,       // 15 seconds - timing data
+  PERFORMANCE: 60 * 1000,       // 60 seconds - timing data (aggregated stats, slow-changing)
   SYSTEM: 10 * 1000,            // 10 seconds - system config + activity
   OPERATIONS: 5 * 1000,         // 5 seconds - warming tasks need fast updates
   USERS: 15 * 1000,             // 15 seconds - user activity
