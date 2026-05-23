@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.4.2](https://github.com/cedya77/aiometadata/compare/v2.4.1...v2.4.2) (2026-05-23)
+
+
+### Bug Fixes
+
+* timing endpoint perf + Trakt 429 refresh cooldown ([8064282](https://github.com/cedya77/aiometadata/commit/80642828eb6b5f45f3d14c26399957e2c951aa39))
+
 ## [2.4.1](https://github.com/cedya77/aiometadata/compare/v2.4.0...v2.4.1) (2026-05-23)
 
 
