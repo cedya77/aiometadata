@@ -207,6 +207,11 @@ function getCommonKidSafePatterns() {
  * @param {string} actorRegexPattern - Regex pattern matched against cast member names
  * @returns {Array} - Filtered array with excluded content removed
  */
+function normalizeAccents(str) {
+  // U+0300–U+036F: combining diacritical marks (accents, tildes, etc.)
+  return str.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function filterMetasByActorRegex(metas, actorRegexPattern) {
   if (!Array.isArray(metas) || !actorRegexPattern || !actorRegexPattern.trim()) {
     return metas;
@@ -215,7 +220,8 @@ function filterMetasByActorRegex(metas, actorRegexPattern) {
   let compiledRegex = null;
   try {
     const { pattern: cleanPattern, flags } = parseInlineFlags(actorRegexPattern.trim());
-    compiledRegex = new RegExp(cleanPattern, flags);
+    // Normalize the pattern so accent-free queries match accented names and vice versa
+    compiledRegex = new RegExp(normalizeAccents(cleanPattern), flags);
   } catch (error) {
     console.warn(`[Actor Regex Filter] Invalid regex pattern "${actorRegexPattern}":`, error.message);
     return metas;
@@ -224,7 +230,7 @@ function filterMetasByActorRegex(metas, actorRegexPattern) {
   const before = metas.length;
   const filtered = metas.filter(meta => {
     if (!meta?.cast || !Array.isArray(meta.cast) || meta.cast.length === 0) return true;
-    return !meta.cast.some(member => member?.name && compiledRegex.test(member.name));
+    return !meta.cast.some(member => member?.name && compiledRegex.test(normalizeAccents(member.name)));
   });
 
   if (before !== filtered.length) {
