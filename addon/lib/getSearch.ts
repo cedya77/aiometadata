@@ -1078,7 +1078,7 @@ async function performAiSearch(query: string, language: string, config: any): Pr
         ? `${aiModel}:online` : aiModel;
       suggestions = await performOpenRouterSearch(openrouterKey, query, 'mixed', language, effectiveModel);
     } else if (aiProvider === 'ollama') {
-      const ollamaUrl = config.apiKeys?.ollamaUrl || 'http://host.docker.internal:11434';
+      const ollamaUrl = config.apiKeys?.ollamaUrl || 'http://ollama:11434';
       suggestions = await performOllamaSearch(ollamaUrl, query, 'mixed', language, aiModel);
     } else {
       const geminiKey = config.apiKeys?.gemini;

@@ -1256,7 +1256,7 @@ addon.post("/api/trakt/proxy", async (req, res) => {
 addon.get("/api/ollama/models", async (req, res) => {
   try {
     const { url } = req.query;
-    const baseUrl = (url || 'http://host.docker.internal:11434').replace(/\/+$/, '').replace(/\/v1$/, '');
+    const baseUrl = (url || 'http://ollama:11434').replace(/\/+$/, '').replace(/\/v1$/, '');
     const { httpGet } = require('./utils/httpClient');
     const response = await httpGet(`${baseUrl}/api/tags`, { timeout: 5000 });
     const models = (response.data?.models || []).map(m => {

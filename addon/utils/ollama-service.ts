@@ -5,7 +5,7 @@ import { buildPrompt, parseAIResponse } from './gemini-service';
 
 const logger = consola.withTag('OllamaService');
 
-const DEFAULT_OLLAMA_URL = 'http://host.docker.internal:11434';
+const DEFAULT_OLLAMA_URL = 'http://ollama:11434';
 const DEFAULT_OLLAMA_MODEL = 'llama3.2';
 
 interface Suggestion {
