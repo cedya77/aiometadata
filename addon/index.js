@@ -1252,6 +1252,24 @@ addon.post("/api/trakt/proxy", async (req, res) => {
 // Manual cache clearing endpoint (temporarily disabled due to binding issue)
 // addon.post("/api/config/clear-cache/:userUUID", configApi.clearCache.bind(configApi));
 
+// --- Ollama Proxy Endpoints ---
+addon.get("/api/ollama/models", async (req, res) => {
+  try {
+    const { url } = req.query;
+    const baseUrl = (url || 'http://host.docker.internal:11434').replace(/\/+$/, '').replace(/\/v1$/, '');
+    const { httpGet } = require('./utils/httpClient');
+    const response = await httpGet(`${baseUrl}/api/tags`, { timeout: 5000 });
+    const models = (response.data?.models || []).map(m => {
+      const name = m.name.replace(/:latest$/, '');
+      return { id: name, name };
+    });
+    res.json({ models });
+  } catch (error) {
+    consola.warn('[Ollama Proxy] Failed to fetch models:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to fetch Ollama models' });
+  }
+});
+
 // --- MDBList Proxy Endpoints ---
 // These proxy frontend MDBList calls through the backend rate limiter
 const { makeRateLimitedMDBListRequest } = require('./utils/mdbList');
