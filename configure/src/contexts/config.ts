@@ -165,6 +165,7 @@ export interface AppConfig {
   exclusionKeywords?: string;
   regexExclusionFilter?: string;
   exclusionGenres?: string;
+  regexActorExclusionFilter?: string;
   catalogSetupComplete?: boolean;
   searchEnabled: boolean;
   sessionId: string;
