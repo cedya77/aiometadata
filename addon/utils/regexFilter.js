@@ -229,8 +229,10 @@ function filterMetasByActorRegex(metas, actorRegexPattern) {
 
   const before = metas.length;
   const filtered = metas.filter(meta => {
-    if (!meta?.cast || !Array.isArray(meta.cast) || meta.cast.length === 0) return true;
-    return !meta.cast.some(member => member?.name && compiledRegex.test(normalizeAccents(member.name)));
+    // Cast can be at meta.cast (direct) or meta.app_extras.cast (full metadata from getMeta)
+    const castArray = meta?.app_extras?.cast || meta?.cast;
+    if (!castArray || !Array.isArray(castArray) || castArray.length === 0) return true;
+    return !castArray.some(member => member?.name && compiledRegex.test(normalizeAccents(member.name)));
   });
 
   if (before !== filtered.length) {
