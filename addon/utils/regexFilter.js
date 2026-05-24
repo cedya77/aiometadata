@@ -201,50 +201,9 @@ function getCommonKidSafePatterns() {
   };
 }
 
-/**
- * Filter an array of metadata objects by excluding those whose cast contains an actor matching the regex
- * @param {Array} metas - Array of metadata objects
- * @param {string} actorRegexPattern - Regex pattern matched against cast member names
- * @returns {Array} - Filtered array with excluded content removed
- */
-function normalizeAccents(str) {
-  // U+0300–U+036F: combining diacritical marks (accents, tildes, etc.)
-  return str.normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
-
-function filterMetasByActorRegex(metas, actorRegexPattern) {
-  if (!Array.isArray(metas) || !actorRegexPattern || !actorRegexPattern.trim()) {
-    return metas;
-  }
-
-  let compiledRegex = null;
-  try {
-    const { pattern: cleanPattern, flags } = parseInlineFlags(actorRegexPattern.trim());
-    // Normalize the pattern so accent-free queries match accented names and vice versa
-    compiledRegex = new RegExp(normalizeAccents(cleanPattern), flags);
-  } catch (error) {
-    console.warn(`[Actor Regex Filter] Invalid regex pattern "${actorRegexPattern}":`, error.message);
-    return metas;
-  }
-
-  const before = metas.length;
-  const filtered = metas.filter(meta => {
-    // Cast can be at meta.cast (direct) or meta.app_extras.cast (full metadata from getMeta)
-    const castArray = meta?.app_extras?.cast || meta?.cast;
-    if (!castArray || !Array.isArray(castArray) || castArray.length === 0) return true;
-    return !castArray.some(member => member?.name && compiledRegex.test(normalizeAccents(member.name)));
-  });
-
-  if (before !== filtered.length) {
-    console.log(`[Actor Filter] Excluded ${before - filtered.length} items matching actor regex: "${actorRegexPattern}"`);
-  }
-  return filtered;
-}
-
 module.exports = {
   shouldExcludeContent,
   filterMetasByRegex,
-  filterMetasByActorRegex,
   validateRegexPattern,
   getCommonKidSafePatterns,
   parseInlineFlags,

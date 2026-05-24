@@ -209,15 +209,6 @@ async function applyCatalogFilters(metas: any[], { type, config, catalogConfig, 
     }
   }
 
-  if (config.regexActorExclusionFilter) {
-    const { filterMetasByActorRegex } = require('./regexFilter');
-    const before = metas.length;
-    metas = filterMetasByActorRegex(metas, config.regexActorExclusionFilter);
-    if (before !== metas.length) {
-      logger.debug(`Actor exclusion filter: removed ${before - metas.length} items`);
-    }
-  }
-
   return metas;
 }
 
