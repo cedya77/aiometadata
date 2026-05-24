@@ -124,7 +124,7 @@ export function SearchSettings() {
   const [editType, setEditType] = useState('');
   const hasGeminiKey = !!config.apiKeys?.gemini;
   const hasOpenRouterKey = !!config.apiKeys?.openrouter;
-  const hasAnyAiKey = hasGeminiKey || hasOpenRouterKey;
+  const hasAnyAiKey = hasGeminiKey || hasOpenRouterKey || true; // Ollama is always available (no key needed)
   const [openRouterModels, setOpenRouterModels] = useState<AIModel[]>([]);
   const [openRouterModelsLoading, setOpenRouterModelsLoading] = useState(false);
   const openRouterKeyRef = React.useRef(config.apiKeys?.openrouter);
@@ -374,8 +374,10 @@ export function SearchSettings() {
     }));
   };
 
-  const handleAiProviderChange = (provider: 'gemini' | 'openrouter') => {
-    const defaultModel = provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
+  const handleAiProviderChange = (provider: 'gemini' | 'openrouter' | 'ollama') => {
+    const defaultModel = provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL :
+                         provider === 'ollama' ? 'llama3.2' :
+                         DEFAULT_GEMINI_MODEL;
     setConfig(prev => ({
       ...prev,
       search: {
@@ -733,9 +735,9 @@ export function SearchSettings() {
                 <CardContent className="space-y-4">
                     <div className="flex items-center justify-between gap-4">
                         <div className="flex-1 min-w-0">
-                            {!hasAnyAiKey && (
+                            {!hasGeminiKey && !hasOpenRouterKey && (
                                 <p className="text-sm text-muted-foreground">
-                                    A Gemini or OpenRouter API key is required to enable AI search. Add your key in the Integrations settings.
+                                    Use Ollama (free, local) or add a Gemini / OpenRouter API key in the Integrations settings.
                                 </p>
                             )}
                         </div>
@@ -752,9 +754,9 @@ export function SearchSettings() {
                                         />
                                     </div>
                                 </TooltipTrigger>
-                                {!hasAnyAiKey && (
+                                {!hasGeminiKey && !hasOpenRouterKey && (
                                     <TooltipContent>
-                                        <p>Add a Gemini or OpenRouter API key in Integrations to enable AI search</p>
+                                        <p>Select Ollama (no key needed) or add a Gemini / OpenRouter API key in Integrations</p>
                                     </TooltipContent>
                                 )}
                             </Tooltip>
@@ -771,7 +773,7 @@ export function SearchSettings() {
                                 </div>
                                 <Select
                                     value={config.search.ai_provider || 'gemini'}
-                                    onValueChange={(value) => handleAiProviderChange(value as 'gemini' | 'openrouter')}
+                                    onValueChange={(value) => handleAiProviderChange(value as 'gemini' | 'openrouter' | 'ollama')}
                                 >
                                     <SelectTrigger id="ai-provider" className="w-full sm:w-[200px]">
                                         <SelectValue />
@@ -783,9 +785,34 @@ export function SearchSettings() {
                                         <SelectItem value="openrouter" disabled={!hasOpenRouterKey}>
                                             OpenRouter{!hasOpenRouterKey ? ' (no key)' : ''}
                                         </SelectItem>
+                                        <SelectItem value="ollama">
+                                            Instancia propia
+                                        </SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {/* Ollama URL input */}
+                            {(config.search.ai_provider || 'gemini') === 'ollama' && (
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                                    <div className="min-w-0">
+                                        <Label htmlFor="ollama-url" className="text-sm font-medium">URL de la instancia</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Endpoint compatible con OpenAI (<code>/v1</code> se añade automáticamente si falta)
+                                        </p>
+                                    </div>
+                                    <Input
+                                        id="ollama-url"
+                                        value={config.apiKeys?.ollamaUrl ?? 'http://host.docker.internal:11434'}
+                                        onChange={(e) => setConfig(prev => ({
+                                            ...prev,
+                                            apiKeys: { ...prev.apiKeys, ollamaUrl: e.target.value }
+                                        }))}
+                                        placeholder="http://host.docker.internal:11434"
+                                        className="w-full sm:w-[280px]"
+                                    />
+                                </div>
+                            )}
 
                             {/* Model Selection */}
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
@@ -794,6 +821,8 @@ export function SearchSettings() {
                                     <p className="text-xs text-muted-foreground">
                                         {(config.search.ai_provider || 'gemini') === 'openrouter'
                                             ? 'Any OpenRouter model ID'
+                                            : (config.search.ai_provider || 'gemini') === 'ollama'
+                                            ? 'Modelo disponible en tu instancia'
                                             : (() => {
                                                 const selected = GEMINI_MODELS.find(m => m.id === config.search.ai_model);
                                                 return (selected?.grounding || config.search.ai_web_search) ? 'with Web Search' : 'without Web Search';
@@ -817,6 +846,14 @@ export function SearchSettings() {
                                             ))}
                                         </datalist>
                                     </>
+                                ) : (config.search.ai_provider || 'gemini') === 'ollama' ? (
+                                    <Input
+                                        id="ai-model"
+                                        value={config.search.ai_model ?? ''}
+                                        onChange={(e) => handleAiModelChange(e.target.value)}
+                                        placeholder="llama3.2, phi4, mistral, gemma3, qwen2.5..."
+                                        className="w-full sm:w-[280px]"
+                                    />
                                 ) : (
                                     <Select
                                         value={config.search.ai_model || DEFAULT_GEMINI_MODEL}
