@@ -14,7 +14,7 @@ const { resolveAllIds }: any = require('./id-resolver');
 const { isAnime }: any = require("../utils/isAnime");
 const { performGeminiSearch }: any = require('../utils/gemini-service');
 const { performOpenRouterSearch }: any = require('../utils/openrouter-service');
-const { filterMetasByRegex }: any = require('../utils/regexFilter');
+const { filterMetasByRegex, filterMetasByActorRegex }: any = require('../utils/regexFilter');
 import consola from 'consola';
 const { cacheWrapMetaSmart }: any = require('./getCache');
 const wikiMappings: any = require('./wiki-mapper');
@@ -1152,6 +1152,15 @@ async function performAiSearch(query: string, language: string, config: any): Pr
       const afterCount = filteredResults.length;
       if (beforeCount !== afterCount) {
         logger.info(`Content exclusion filter: ${beforeCount} -> ${afterCount} results`);
+      }
+    }
+
+    if (config.regexActorExclusionFilter) {
+      const beforeCount = filteredResults.length;
+      filteredResults = filterMetasByActorRegex(filteredResults, config.regexActorExclusionFilter);
+      const afterCount = filteredResults.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Actor exclusion filter: ${beforeCount} -> ${afterCount} results`);
       }
     }
 
@@ -2477,6 +2486,15 @@ async function getSearch(id: string, type: string, language: string, extra: any,
       const afterCount = metas.length;
       if (beforeCount !== afterCount) {
         logger.info(`Content filter excluded ${beforeCount - afterCount} search results`);
+      }
+    }
+
+    if (config.regexActorExclusionFilter) {
+      const beforeCount = metas.length;
+      metas = filterMetasByActorRegex(metas, config.regexActorExclusionFilter);
+      const afterCount = metas.length;
+      if (beforeCount !== afterCount) {
+        logger.info(`Actor exclusion filter excluded ${beforeCount - afterCount} search results`);
       }
     }
 
