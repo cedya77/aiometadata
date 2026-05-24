@@ -43,6 +43,11 @@ cp .env.example .env
 - **Description**: Logging verbosity level
 - **Example**: `LOG_LEVEL=info`
 
+### `LOG_BUFFER_SIZE`
+- **Default**: `10000`
+- **Description**: Maximum number of log entries kept in the in-memory ring buffer for the dashboard logs tab. Lower this on memory-constrained instances.
+- **Example**: `LOG_BUFFER_SIZE=5000`
+
 ---
 
 ## Database Configuration
@@ -77,9 +82,10 @@ cp .env.example .env
 
 ## API Keys
 
-### `TMDB_API`
+### `TMDB_API_KEY`
 - **Required**: Yes
 - **Description**: The Movie Database (TMDB) API key
+- **Legacy**: `TMDB_API` is also supported for backwards compatibility
 - **Get it**: https://www.themoviedb.org/settings/api
 
 ### `TVDB_API_KEY`
@@ -530,7 +536,7 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 DATABASE_URL=postgresql://user:pass@localhost:5432/aiometadata
 REDIS_URL=redis://localhost:6379
 HOST_NAME=my-addon.com
-TMDB_API=your_key_here
+TMDB_API_KEY=your_key_here
 
 # Optional (but recommended)
 TVDB_API_KEY=your_key_here
@@ -555,7 +561,7 @@ REDIS_URL=redis://localhost:6379
 ADMIN_KEY=your_secure_random_key
 
 # API Keys
-TMDB_API=your_key_here
+TMDB_API_KEY=your_key_here
 TVDB_API_KEY=your_key_here  # Optional
 FANART_API_KEY=your_key_here
 MDBLIST_API_KEY=your_key_here
@@ -594,7 +600,7 @@ PORT=3232
 HOST_NAME=my-addon.com
 DATABASE_URL=sqlite:./data/aiometadata.db
 REDIS_URL=redis://localhost:6379
-TMDB_API=your_key_here
+TMDB_API_KEY=your_key_here
 TVDB_API_KEY=your_key_here  # Optional
 
 # Cache Warmup (essential mode - lightweight)

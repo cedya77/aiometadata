@@ -3,6 +3,7 @@ import { useConfig } from '@/contexts/ConfigContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Sparkles, Check, AlertCircle } from 'lucide-react';
 import { toast } from "sonner";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,16 +13,61 @@ interface AICatalogDialogProps {
   onClose: () => void;
 }
 
-const EXAMPLE_PROMPTS = [
-  "Top Pixar movies sorted by rating",
-  "Trending horror movies from 2020 onwards",
-  "Currently airing anime from MAPPA",
-  "Popular Korean dramas on Netflix",
-  "Best sci-fi series of the 90s",
-  "Give me horror, comedy, and thriller catalogs",
-  "Top rated anime movies on MAL",
-  "A24 movies sorted by popularity",
+type AICatalogGenerationMode = 'auto' | 'tmdb' | 'anilist' | 'mal' | 'tvdb' | 'simkl';
+
+const GENERATION_MODE_OPTIONS: Array<{ value: AICatalogGenerationMode; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'tmdb', label: 'TMDB' },
+  { value: 'anilist', label: 'AniList' },
+  { value: 'mal', label: 'MAL' },
+  { value: 'tvdb', label: 'TVDB' },
+  { value: 'simkl', label: 'Simkl' },
 ];
+
+const EXAMPLE_PROMPTS: Record<AICatalogGenerationMode, string[]> = {
+  auto: [
+    "Top Pixar movies sorted by rating",
+    "Trending horror movies from 2020 onwards",
+    "Currently airing anime from MAPPA",
+    "Popular Korean dramas on Netflix",
+    "Best sci-fi series of the 90s",
+    "Give me horror, comedy, and thriller catalogs",
+    "Top rated anime movies on MAL",
+    "A24 movies sorted by popularity",
+  ],
+  tmdb: [
+    "Top Pixar movies sorted by rating",
+    "Trending horror movies from 2020 onwards",
+    "Popular Korean dramas on Netflix",
+    "Best sci-fi series of the 90s",
+    "A24 movies sorted by popularity",
+    "Netflix true crime documentaries",
+  ],
+  anilist: [
+    "Currently airing anime from MAPPA",
+    "Feel-good anime movies without fanservice",
+    "Best action anime from the 2010s",
+    "High rated Kyoto Animation series",
+  ],
+  mal: [
+    "Top rated anime movies on MAL",
+    "Popular finished anime from the 2000s",
+    "Best fantasy anime sorted by score",
+    "Upcoming anime movies",
+  ],
+  tvdb: [
+    "Continuing HBO drama series",
+    "British mystery shows from 2020",
+    "TV-MA horror series",
+    "Netflix documentary series",
+  ],
+  simkl: [
+    "Popular anime this month",
+    "Top rated sci-fi shows from the 2010s",
+    "Trending Korean dramas",
+    "Best action movies this year",
+  ],
+};
 
 type DialogState = 'idle' | 'generating' | 'resolving' | 'success' | 'error';
 
@@ -38,17 +84,19 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
   const hasBothProviders = !!(config.apiKeys?.openrouter && config.apiKeys?.gemini);
   const defaultProvider = config.apiKeys?.openrouter ? 'openrouter' : 'gemini';
   const [provider, setProvider] = useState<'openrouter' | 'gemini'>(defaultProvider);
+  const [generationMode, setGenerationMode] = useState<AICatalogGenerationMode>('auto');
 
   useEffect(() => {
     if (isOpen) {
-      setExampleIndex(Math.floor(Math.random() * EXAMPLE_PROMPTS.length));
+      setExampleIndex(Math.floor(Math.random() * EXAMPLE_PROMPTS.tmdb.length));
       setState('idle');
       setError(null);
       setCreatedCatalogs([]);
       setWarnings([]);
       setProvider(defaultProvider);
+      setGenerationMode('auto');
     }
-  }, [isOpen]);
+  }, [isOpen, defaultProvider]);
 
   const providerLabel = provider === 'openrouter' ? 'OpenRouter' : 'Gemini';
 
@@ -71,10 +119,7 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
           password: auth.password,
           query: query.trim(),
           provider,
-          availableSources: {
-            tmdb: !!config.apiKeys?.tmdb?.trim(),
-            tvdb: !!config.apiKeys?.tvdb?.trim(),
-          },
+          generationMode,
         }),
       });
 
@@ -127,11 +172,12 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
     onClose();
   };
 
+  const activeExamples = EXAMPLE_PROMPTS[generationMode];
   const visibleExamples = [
-    EXAMPLE_PROMPTS[exampleIndex % EXAMPLE_PROMPTS.length],
-    EXAMPLE_PROMPTS[(exampleIndex + 1) % EXAMPLE_PROMPTS.length],
-    EXAMPLE_PROMPTS[(exampleIndex + 2) % EXAMPLE_PROMPTS.length],
-    EXAMPLE_PROMPTS[(exampleIndex + 3) % EXAMPLE_PROMPTS.length],
+    activeExamples[exampleIndex % activeExamples.length],
+    activeExamples[(exampleIndex + 1) % activeExamples.length],
+    activeExamples[(exampleIndex + 2) % activeExamples.length],
+    activeExamples[(exampleIndex + 3) % activeExamples.length],
   ];
 
   return (
@@ -192,7 +238,7 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
                     ref={textareaRef}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder={`e.g. "${EXAMPLE_PROMPTS[exampleIndex]}"`}
+                    placeholder={`e.g. "${activeExamples[exampleIndex % activeExamples.length]}"`}
                     className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
                     disabled={state === 'generating' || state === 'resolving'}
                     onKeyDown={(e) => {
@@ -222,6 +268,29 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
                     <span>{error}</span>
                   </div>
                 )}
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">Mode</span>
+                  <Select
+                    value={generationMode}
+                    onValueChange={(value) => {
+                      setGenerationMode(value as AICatalogGenerationMode);
+                      setExampleIndex(0);
+                    }}
+                    disabled={state === 'generating' || state === 'resolving'}
+                  >
+                    <SelectTrigger className="h-8 w-32 rounded-md text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GENERATION_MODE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <div className="flex items-center justify-between">
                   {hasBothProviders ? (

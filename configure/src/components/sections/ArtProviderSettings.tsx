@@ -468,156 +468,170 @@ export function ArtProviderSettings() {
           Override artwork with custom URL patterns. Select a rating poster provider for pre-filled defaults, or use fully custom patterns.
         </p>
 
-        <div className="space-y-4 max-w-2xl">
-          {/* Provider Selection */}
-          <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-            <div className="flex-1">
-              <Label htmlFor="posterRatingProvider" className="text-base font-medium">Rating Poster Provider</Label>
-              <p className="text-sm text-muted-foreground mt-1">
-                Pre-fills poster patterns with the selected provider's URL. Choose Custom for fully manual patterns.
-              </p>
-            </div>
-            <Select
-              value={config.posterRatingProvider || 'rpdb'}
-              onValueChange={(value) => {
-                const provider = value as 'rpdb' | 'top' | 'custom';
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="mr-4">
+                  <Label htmlFor="posterRatingProvider" className="font-medium">Rating Poster Provider</Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Pre-fills poster patterns. Choose Custom for manual patterns.
+                  </p>
+                </div>
+                <Select
+                  value={config.posterRatingProvider || 'rpdb'}
+                  onValueChange={(value) => {
+                    const provider = value as 'rpdb' | 'top' | 'custom';
 
-                if (provider === 'custom') {
-                  setConfig(prev => ({ ...prev, posterRatingProvider: provider }));
-                } else if (provider === 'rpdb') {
-                  setConfig(prev => ({
-                    ...prev,
-                    posterRatingProvider: provider,
-                    customPosterUrlPattern: 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true',
-                    customBackgroundUrlPattern: '',
-                    customLogoUrlPattern: '',
-                    customThumbnailUrlPattern: ''
-                  }));
-                } else if (provider === 'top') {
-                  setConfig(prev => ({
-                    ...prev,
-                    posterRatingProvider: provider,
-                    customPosterUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}',
-                    customBackgroundUrlPattern: '',
-                    customLogoUrlPattern: '',
-                    customThumbnailUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}'
-                  }));
-                }
-              }}
-            >
-              <SelectTrigger id="posterRatingProvider" className="w-[200px]">
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
-                <SelectItem value="top">TOP Posters API</SelectItem>
-                <SelectItem value="custom">Custom Art URLs</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Proxy Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-            <div className="flex-1">
-              <Label htmlFor="usePosterProxy" className="text-base font-medium">Proxy Rating & Custom Art</Label>
-              <p className="text-sm text-muted-foreground mt-1">
-                Route poster, logo, and backdrop requests through this addon. Enables fallback to the original art when a rating provider or custom URL is missing or down, but adds a small delay.
-              </p>
-            </div>
-            <Switch
-              id="usePosterProxy"
-              checked={!!config.usePosterProxy}
-              onCheckedChange={(checked) => setConfig(prev => ({ ...prev, usePosterProxy: checked }))}
-            />
-          </div>
-
-          {/* Pattern Fields */}
-          <div className="space-y-3 p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-            <div>
-              <Label className="text-base font-medium">URL Patterns</Label>
-              <p className="text-sm text-muted-foreground mt-1">
-                {config.posterRatingProvider === 'rpdb' || config.posterRatingProvider === 'top'
-                  ? 'Pre-filled with the default pattern for your selected provider. You can customize it if needed.'
-                  : 'Override art with custom URL patterns. If a placeholder references an unavailable value, normal art is used instead.'}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                ID placeholders: <code>{'{id}'}</code>, <code>{'{imdb_id}'}</code>, <code>{'{tmdb_id}'}</code>, <code>{'{tvdb_id}'}</code>, <code>{'{mal_id}'}</code>, <code>{'{kitsu_id}'}</code>, <code>{'{anilist_id}'}</code>, <code>{'{anidb_id}'}</code>, <code>{'{type}'}</code>.
-                API keys/Extra: <code>{'{rpdb_key}'}</code>, <code>{'{top_key}'}</code>, <code>{'{tmdb_key}'}</code>, <code>{'{mdblist_key}'}</code>, <code>{'{fanart_key}'}</code>, <code>{'{user_agent}'}</code>.
-                Language: <code>{'{language}'}</code> (e.g. fr-FR), <code>{'{language_short}'}</code> (e.g. fr).
-                RPDB/TOP patterns automatically fall back to alternative IDs when the primary one is unavailable.
-              </p>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium block">Poster URL Pattern</label>
-                {(config.posterRatingProvider === 'rpdb' || config.posterRatingProvider === 'top') && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      const pattern = config.posterRatingProvider === 'rpdb'
-                        ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true'
-                        : 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
-                      setConfig(prev => ({ ...prev, customPosterUrlPattern: pattern }));
-                    }}
-                  >
-                    <RotateCcw className="w-3 h-3 mr-1" />
-                    Reset to Default
-                  </Button>
-                )}
+                    if (provider === 'custom') {
+                      setConfig(prev => ({ ...prev, posterRatingProvider: provider }));
+                    } else if (provider === 'rpdb') {
+                      setConfig(prev => ({
+                        ...prev,
+                        posterRatingProvider: provider,
+                        customPosterUrlPattern: 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true',
+                        customBackgroundUrlPattern: '',
+                        customLogoUrlPattern: '',
+                        customThumbnailUrlPattern: ''
+                      }));
+                    } else if (provider === 'top') {
+                      setConfig(prev => ({
+                        ...prev,
+                        posterRatingProvider: provider,
+                        customPosterUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}',
+                        customBackgroundUrlPattern: '',
+                        customLogoUrlPattern: '',
+                        customThumbnailUrlPattern: 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}'
+                      }));
+                    }
+                  }}
+                >
+                  <SelectTrigger id="posterRatingProvider" className="w-[220px] shrink-0">
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rpdb">RatingPosterDB (RPDB)</SelectItem>
+                    <SelectItem value="top">TOP Posters API</SelectItem>
+                    <SelectItem value="custom">Custom Art URLs</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Input
-                placeholder="https://example.com/poster/{imdb_id}.jpg"
-                value={config.customPosterUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Background URL Pattern</label>
-              <Input
-                placeholder="https://example.com/background/{tmdb_id}.jpg"
-                value={config.customBackgroundUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customBackgroundUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Logo URL Pattern</label>
-              <Input
-                placeholder="https://example.com/logo/{tmdb_id}.png"
-                value={config.customLogoUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customLogoUrlPattern: e.target.value }))}
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium block">Episode Thumbnail URL Pattern</label>
-                {(config.posterRatingProvider === 'top') && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      const pattern = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
-                      setConfig(prev => ({ ...prev, customThumbnailUrlPattern: pattern }));
-                    }}
-                  >
-                    <RotateCcw className="w-3 h-3 mr-1" />
-                    Reset to Default
-                  </Button>
-                )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="mr-4">
+                  <Label htmlFor="usePosterProxy" className="font-medium">Proxy Rating & Custom Art</Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Route requests through addon with fallback to original art.
+                  </p>
+                </div>
+                <Switch
+                  id="usePosterProxy"
+                  checked={!!config.usePosterProxy}
+                  onCheckedChange={(checked) => setConfig(prev => ({ ...prev, usePosterProxy: checked }))}
+                />
               </div>
-              <Input
-                placeholder="https://example.com/thumbnail/{imdb_id}/S{season}E{episode}.jpg"
-                value={config.customThumbnailUrlPattern || ''}
-                onChange={(e) => setConfig(prev => ({ ...prev, customThumbnailUrlPattern: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Extra placeholders: <code>{'{season}'}</code>, <code>{'{episode}'}</code>, <code>{'{blur}'}</code> (true/false from blur thumbs setting), <code>{'{thumbnail}'}</code> (original thumbnail URL, encoded), <code>{'{user_agent}'}</code>.
-              </p>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">URL Patterns</CardTitle>
+            <CardDescription>
+              {config.posterRatingProvider === 'rpdb' || config.posterRatingProvider === 'top'
+                ? 'Pre-filled with the default pattern for your selected provider. You can customize it if needed.'
+                : 'Override art with custom URL patterns. If a placeholder references an unavailable value, normal art is used instead.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-medium">Poster URL Pattern</label>
+                  {(config.posterRatingProvider === 'rpdb' || config.posterRatingProvider === 'top') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        const pattern = config.posterRatingProvider === 'rpdb'
+                          ? 'https://api.ratingposterdb.com/{rpdb_key}/imdb/poster-default/{imdb_id}.jpg?fallback=true'
+                          : 'https://api.top-posters.com/{top_key}/imdb/poster/{imdb_id}.jpg?lang={language_short}';
+                        setConfig(prev => ({ ...prev, customPosterUrlPattern: pattern }));
+                      }}
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Reset
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  placeholder="https://example.com/poster/{imdb_id}.jpg"
+                  value={config.customPosterUrlPattern || ''}
+                  onChange={(e) => setConfig(prev => ({ ...prev, customPosterUrlPattern: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Background URL Pattern</label>
+                <Input
+                  placeholder="https://example.com/background/{tmdb_id}.jpg"
+                  value={config.customBackgroundUrlPattern || ''}
+                  onChange={(e) => setConfig(prev => ({ ...prev, customBackgroundUrlPattern: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Logo URL Pattern</label>
+                <Input
+                  placeholder="https://example.com/logo/{tmdb_id}.png"
+                  value={config.customLogoUrlPattern || ''}
+                  onChange={(e) => setConfig(prev => ({ ...prev, customLogoUrlPattern: e.target.value }))}
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-medium">Episode Thumbnail URL Pattern</label>
+                  {(config.posterRatingProvider === 'top') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        const pattern = 'https://api.top-posters.com/{top_key}/imdb/thumbnail/{imdb_id}/S{season}E{episode}.jpg?blur={blur}&fallback_url={thumbnail}&user_agent={user_agent}';
+                        setConfig(prev => ({ ...prev, customThumbnailUrlPattern: pattern }));
+                      }}
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Reset
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  placeholder="https://example.com/thumbnail/{imdb_id}/S{season}E{episode}.jpg"
+                  value={config.customThumbnailUrlPattern || ''}
+                  onChange={(e) => setConfig(prev => ({ ...prev, customThumbnailUrlPattern: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground bg-muted p-3 rounded-lg space-y-1">
+              <p>
+                <strong>ID placeholders:</strong> <code>{'{id}'}</code> <code>{'{imdb_id}'}</code> <code>{'{tmdb_id}'}</code> <code>{'{tvdb_id}'}</code> <code>{'{mal_id}'}</code> <code>{'{kitsu_id}'}</code> <code>{'{anilist_id}'}</code> <code>{'{anidb_id}'}</code> <code>{'{type}'}</code>
+              </p>
+              <p>
+                <strong>API keys:</strong> <code>{'{rpdb_key}'}</code> <code>{'{top_key}'}</code> <code>{'{tmdb_key}'}</code> <code>{'{mdblist_key}'}</code> <code>{'{fanart_key}'}</code> <code>{'{user_agent}'}</code>
+              </p>
+              <p>
+                <strong>Language:</strong> <code>{'{language}'}</code> (e.g. fr-FR) <code>{'{language_short}'}</code> (e.g. fr) &nbsp;
+                <strong>Thumbnail:</strong> <code>{'{season}'}</code> <code>{'{episode}'}</code> <code>{'{blur}'}</code> <code>{'{thumbnail}'}</code>
+              </p>
+              <p>RPDB/TOP patterns automatically fall back to alternative IDs when the primary one is unavailable.</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
     </div>

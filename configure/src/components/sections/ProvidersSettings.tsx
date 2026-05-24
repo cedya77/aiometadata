@@ -189,7 +189,7 @@ export function ProvidersSettings() {
               : 'Add your TVDB API key in the Integrations tab to enable these settings.'}
           </CardDescription>
         </CardHeader>
-        <CardContent className="max-w-md">
+        <CardContent className="max-w-lg">
             <Label className="text-lg font-medium">Season Order</Label>
             <Select value={config.tvdbSeasonType} onValueChange={handleSeasonTypeChange} disabled={!hasTvdbKey}>
               <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>

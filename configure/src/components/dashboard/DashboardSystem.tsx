@@ -149,13 +149,14 @@ export function DashboardSystem({ data }: DashboardSystemProps) {
       </div>
 
       {/* Catalog Usage Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         <StatCard label="Avg/User" value={catalogStats.avg || "—"} icon={Layers} color="text-blue-500" />
         <StatCard label="Median" value={catalogStats.median || "—"} icon={Layers} color="text-indigo-500" />
         <StatCard label="Max" value={catalogStats.max || "—"} icon={Layers} color="text-rose-500" />
         <StatCard label="P25 / P75" value={`${catalogStats.p25 || 0} / ${catalogStats.p75 || 0}`} icon={Layers} color="text-amber-500" />
         <StatCard label="Total Catalogs" value={catalogStats.total || "—"} icon={Activity} color="text-emerald-500" />
         <StatCard label="AI Search" value={`${features.aiSearchEnabled || 0}%`} icon={Sparkles} color="text-violet-500" />
+        <StatCard label="AI Catalogs" value={`${features.aiCatalogs || 0}%`} icon={Sparkles} color="text-purple-500" />
       </div>
 
       {/* Catalog Sources & Meta Providers */}

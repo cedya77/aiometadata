@@ -1961,14 +1961,22 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let release_dates = null;
   let certification = null;
   let certificationLocal = null;
-  if(tmdbId){
-    const tmdbMovieData = await moviedb.movieInfo({ id: tmdbId, language, append_to_response: "release_dates" }, config);
-    if (tmdbMovieData) {
-      release_dates = tmdbMovieData.release_dates || null;
-    certification = Utils.getTmdbMovieCertificationForCountry(release_dates);
-    const userCountry = language?.split('-')[1];
-    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(release_dates, userCountry) || certification) : certification;
-  }
+  const userCountry = language?.split('-')[1];
+  if (config.displayAgeRating) {
+    if (tmdbId) {
+      try {
+        const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
+        if (releaseDatesData) {
+          release_dates = releaseDatesData;
+          certification = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
+          certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry) || certification) : certification;
+        }
+      } catch (e) {}
+    }
+    if (!certification) {
+      certification = Utils.getTvdbCertification(movieData.contentRatings, 'usa', 'movie');
+      certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(movieData.contentRatings, userCountry, 'movie') || certification) : certification;
+    }
   }
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
@@ -2399,14 +2407,31 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
     }
   }
 
-  const certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
+  let certification = null;
+  let certificationLocal = null;
+  const userCountry = language?.split('-')[1];
+  if (config.displayAgeRating) {
+    if (tmdbId) {
+      try {
+        const contentRatingsData = await moviedb.tvContentRatings(String(tmdbId), config);
+        if (contentRatingsData) {
+          certification = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
+          certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry) || certification) : certification;
+        }
+      } catch (e) {}
+    }
+    if (!certification) {
+      certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
+      certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(tvdbShow.contentRatings, userCountry, 'tv') || certification) : certification;
+    }
+  }
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
   else links = [...links];
   links.push(...directorLinks, ...writerLinks);
   if(certification && config.displayAgeRating){
     const certificationLink = {
-      name: certification,
+      name: certificationLocal,
       category: 'Genres',
       url: imdbId ? `https://www.imdb.com/title/${imdbId}/parentalguide/` : `https://www.thetvdb.com/series/${tvdbShow.slug}`
     };
@@ -2442,7 +2467,7 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
 
     links: links,
     behaviorHints: { defaultVideoId: null, hasScheduledVideos: true },
-    app_extras: { cast: Utils.parseCast(tvdbCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, certification: certification },
+    app_extras: { cast: Utils.parseCast(tvdbCredits, undefined, 'tvdb'), directors: directorDetails, writers: writerDetails, seasonPosters: seasonPosters, certification: certification, certificationLocal: certificationLocal },
     ...stampIds(allIds),
   };
   //console.log(Utils.parseCast(tmdbLikeCredits, castCount));

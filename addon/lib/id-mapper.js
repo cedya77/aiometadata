@@ -158,17 +158,21 @@ function processAndIndexData(data) {
   onaTypeCache.clear();
   
   for (const item of animeList) {
+    if (item.themoviedb_id && typeof item.themoviedb_id === 'object') {
+      item.themoviedb_id = item.themoviedb_id.tv ?? item.themoviedb_id.movie ?? null;
+    }
+
     if (item.mal_id) {
       animeIdMap.set(item.mal_id, item);
     }
-    
+
     // Build auxiliary indices for O(1) lookups
     if (item.kitsu_id) kitsuIdMap.set(item.kitsu_id, item);
     if (item.anidb_id) anidbIdMap.set(item.anidb_id, item);
     if (item.anilist_id) anilistIdMap.set(item.anilist_id, item);
     if (item.imdb_id) imdbIdMap.set(item.imdb_id, item);
     if (item.simkl_id) simklIdMap.set(item.simkl_id, item);
-    
+
     if (item.tvdb_id) {
       const tvdbId = item.tvdb_id;
       // If we haven't seen this TVDB ID before, create a new array for it

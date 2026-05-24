@@ -881,6 +881,16 @@ class ComprehensiveCatalogWarmer {
       return false;
     }
 
+    this.config.uuids = parseWarmupUUIDs();
+    this.config.enabled = !!(process.env.CACHE_WARMUP_UUIDS || process.env.CACHE_WARMUP_UUID) && (process.env.CACHE_WARMUP_MODE || 'essential') === 'comprehensive';
+    this.config.intervalHours = Math.max(12, parseFloat(process.env.CATALOG_WARMUP_INTERVAL_HOURS) || 24);
+    this.config.maxPagesPerCatalog = parseInt(process.env.CATALOG_WARMUP_MAX_PAGES_PER_CATALOG) || 100;
+    this.config.quietHoursEnabled = process.env.CATALOG_WARMUP_QUIET_HOURS_ENABLED === 'true';
+    this.config.quietHoursRange = process.env.CATALOG_WARMUP_QUIET_HOURS || '02:00-06:00';
+    this.config.taskDelayMs = parseInt(process.env.CATALOG_WARMUP_TASK_DELAY_MS) || 100;
+    this.config.logLevel = process.env.CATALOG_WARMUP_LOG_LEVEL || 'info';
+    this.config.autoOnVersionChange = process.env.CATALOG_WARMUP_AUTO_ON_VERSION_CHANGE === 'true';
+
     if (!this.config.enabled) {
       this.log('debug', 'Catalog warming is disabled');
       return false;
@@ -911,6 +921,7 @@ class ComprehensiveCatalogWarmer {
     this.shouldStop = false;
     this.isRunning = true;
     this.stats.isRunning = true;
+    this.stats.totalUUIDs = this.config.uuids.length;
     const startTime = Date.now();
 
     await redis.set('catalog-warmup:in-progress', Date.now().toString());

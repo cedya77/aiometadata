@@ -15,7 +15,7 @@ const consola = require('consola');
 const { cacheWrapMetaSmart, cacheWrapGlobal } = require('../lib/getCache');
 const { getReleaseAvailability } = require('./releaseAvailability');
 const wikiMappings = require('../lib/wiki-mapper.js');
-const CATALOG_TTL = parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10);
+function CATALOG_TTL() { return parseInt(process.env.CATALOG_TTL || 1 * 24 * 60 * 60, 10); }
 const buildInfo = require('../lib/buildInfo');
 // Dynamic import to avoid circular dependency
 
@@ -822,18 +822,23 @@ function getTvdbCertification(contentRatings, countryCode, contentType) {
     return null;
   }
 
-  let certification = contentRatings.find(rating => 
-    rating.country?.toLowerCase() === countryCode?.toLowerCase() && 
+  let code = countryCode?.toLowerCase();
+  if (code && code.length === 2) {
+    try { code = require('country-iso-2-to-3')(code.toUpperCase())?.toLowerCase(); } catch {}
+  }
+
+  let certification = code ? contentRatings.find(rating =>
+    rating.country?.toLowerCase() === code &&
     (!contentType || rating.contentType === contentType || rating.contentType === '')
-  );
-  
+  ) : null;
+
   if (!certification) {
-    certification = contentRatings.find(rating => 
-      rating.country?.toLowerCase() === 'usa' && 
+    certification = contentRatings.find(rating =>
+      rating.country?.toLowerCase() === 'usa' &&
       (!contentType || rating.contentType === contentType || rating.contentType === '')
     );
   }
-  
+
   return certification?.name || null;
 }
 
@@ -1898,7 +1903,7 @@ async function getCachedKitsuAnimeBatchDetails(kitsuIds, appends = KITSU_ANIME_D
   return cacheWrapGlobal(
     getKitsuBatchDetailsCacheKey(normalizedIds, appends),
     () => kitsu.getMultipleAnimeDetails(normalizedIds, appends),
-    CATALOG_TTL
+    CATALOG_TTL()
   );
 }
 

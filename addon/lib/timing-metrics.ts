@@ -36,12 +36,30 @@ class TimingMetrics {
   keyPrefix: string;
   maxSamples: number;
   ttl: number;
+  private _rawCache: Map<string, { entries: any[]; expires: number }>;
+  private _responseCache: { data: any; expires: number } | null;
+  private static RAW_CACHE_TTL = 30_000;
+  private static RESPONSE_CACHE_TTL = 30_000;
 
   constructor() {
     this.redis = redis;
     this.keyPrefix = 'timing_metrics:';
     this.maxSamples = 1000;
     this.ttl = 7 * 24 * 60 * 60;
+    this._rawCache = new Map();
+    this._responseCache = null;
+  }
+
+  private async _getRawEntries(metric: string): Promise<any[]> {
+    const key = `${this.keyPrefix}${metric}`;
+    const cached = this._rawCache.get(key);
+    if (cached && cached.expires > Date.now()) {
+      return cached.entries;
+    }
+    const rawData = await this.redis.lrange(key, 0, -1);
+    const entries = rawData ? rawData.map((item: string) => JSON.parse(item)) : [];
+    this._rawCache.set(key, { entries, expires: Date.now() + TimingMetrics.RAW_CACHE_TTL });
+    return entries;
   }
 
   recordTiming(metric: string, duration: number, metadata: Record<string, any> = {}): void {
@@ -73,15 +91,13 @@ class TimingMetrics {
 
   async getStats(metric: string, filters: Record<string, any> = {}): Promise<TimingStats> {
     try {
-      const key = `${this.keyPrefix}${metric}`;
-      const rawData = await this.redis.lrange(key, 0, -1);
+      const entries = await this._getRawEntries(metric);
 
-      if (!rawData || rawData.length === 0) {
+      if (entries.length === 0) {
         return { ...EMPTY_STATS };
       }
 
-      const data: number[] = rawData
-        .map((item: string) => JSON.parse(item))
+      const data: number[] = entries
         .filter((item: any) => this._matchesFilters(item.metadata, filters))
         .map((item: any) => item.duration)
         .sort((a: number, b: number) => a - b);
@@ -215,18 +231,14 @@ class TimingMetrics {
 
   async getSuccessRate(metric: string): Promise<number> {
     try {
-      const key = `${this.keyPrefix}${metric}`;
-      const rawData = await this.redis.lrange(key, 0, -1);
+      const entries = await this._getRawEntries(metric);
 
-      if (!rawData || rawData.length === 0) {
+      if (entries.length === 0) {
         return 100;
       }
 
-      const data = rawData.map((item: string) => JSON.parse(item));
-      const totalCount = data.length;
-      const errorCount = data.filter((item: any) => item.metadata.error).length;
-
-      return Math.round(((totalCount - errorCount) / totalCount) * 100);
+      const errorCount = entries.filter((item: any) => item.metadata.error).length;
+      return Math.round(((entries.length - errorCount) / entries.length) * 100);
     } catch (error: any) {
       logger.error(`Failed to get success rate for metric ${metric}:`, error.message);
       return 100;
@@ -236,19 +248,16 @@ class TimingMetrics {
   async getTimingTrends(metric: string, periods: number[] = [1, 24, 168]): Promise<Record<string, TrendEntry>> {
     try {
       const trends: Record<string, TrendEntry> = {};
+      const allEntries = await this._getRawEntries(metric);
 
       for (const period of periods) {
-        const cutoff = Date.now() - (period * 60 * 60 * 1000);
-        const key = `${this.keyPrefix}${metric}`;
-        const rawData = await this.redis.lrange(key, 0, -1);
-
-        if (!rawData || rawData.length === 0) {
+        if (allEntries.length === 0) {
           trends[`${period}h`] = { count: 0, average: 0 };
           continue;
         }
 
-        const data: number[] = rawData
-          .map((item: string) => JSON.parse(item))
+        const cutoff = Date.now() - (period * 60 * 60 * 1000);
+        const data: number[] = allEntries
           .filter((item: any) => item.timestamp > cutoff)
           .map((item: any) => item.duration)
           .sort((a: number, b: number) => a - b);
@@ -273,6 +282,17 @@ class TimingMetrics {
       logger.error(`Failed to get timing trends for metric ${metric}:`, error.message);
       return {};
     }
+  }
+
+  getCachedResponse(): any | null {
+    if (this._responseCache && this._responseCache.expires > Date.now()) {
+      return this._responseCache.data;
+    }
+    return null;
+  }
+
+  setCachedResponse(data: any): void {
+    this._responseCache = { data, expires: Date.now() + TimingMetrics.RESPONSE_CACHE_TTL };
   }
 
   async clearOldData(metric: string, maxAge: number = 24 * 60 * 60 * 1000): Promise<void> {

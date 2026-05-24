@@ -1,6 +1,7 @@
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useConfig } from '@/contexts/ConfigContext';
 
 // Define the options for the language select dropdown for clarity
@@ -324,230 +325,185 @@ export function GeneralSettings() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Page Header */}
       <div>
         <h2 className="text-2xl font-semibold">General</h2>
-        {/* FIX: Use theme-aware text-muted-foreground */}
         <p className="text-muted-foreground mt-1">Configure the basic display and content settings for your addon.</p>
       </div>
 
-      {/* Settings Group */}
-      <div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Display & Language</CardTitle>
+            <CardDescription>Control how content is presented in your addon.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="language" className="font-medium">Display Language</Label>
+                <p className="text-sm text-muted-foreground">Language for titles and descriptions.</p>
+              </div>
+              <Select value={config.language} onValueChange={handleLanguageChange}>
+                <SelectTrigger id="language" className="w-[200px] shrink-0">
+                  <SelectValue placeholder="Select language" />
+                </SelectTrigger>
+                <SelectContent>
+                  {languageOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {/* Language Setting */}
-        {/* FIX: Use theme-aware background/border on hover */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="language" className="text-lg font-medium">Display Language</Label>
-            {/* FIX: Use theme-aware text color */}
-            <p className="text-sm text-muted-foreground">Select the language for titles and descriptions.</p>
-          </div>
-          <Select value={config.language} onValueChange={handleLanguageChange}>
-            {/* FIX: Remove all hard-coded colors. Let shadcn handle it. */}
-            <SelectTrigger id="language" className="w-[200px]">
-              <SelectValue placeholder="Select language" />
-            </SelectTrigger>
-            <SelectContent>
-              {languageOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="timezone" className="font-medium">Timezone</Label>
+                <p className="text-sm text-muted-foreground">For calendar-based features (e.g., Trakt Calendar).</p>
+              </div>
+              <Select value={config.timezone || 'UTC'} onValueChange={handleTimezoneChange}>
+                <SelectTrigger id="timezone" className="w-[240px] shrink-0">
+                  <SelectValue placeholder="Select timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {timezoneOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {/* Timezone Setting */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="timezone" className="text-lg font-medium">Timezone</Label>
-            <p className="text-sm text-muted-foreground">Select your timezone for calendar-based features (e.g., Trakt Calendar).</p>
-          </div>
-          <Select value={config.timezone || 'UTC'} onValueChange={handleTimezoneChange}>
-            <SelectTrigger id="timezone" className="w-[280px]">
-              <SelectValue placeholder="Select timezone" />
-            </SelectTrigger>
-            <SelectContent>
-              {timezoneOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="cast-count" className="font-medium">Cast Members</Label>
+                <p className="text-sm text-muted-foreground">Number of cast members on details page.</p>
+              </div>
+              <Select value={String(config.castCount ?? -1)} onValueChange={handleCastCountChange}>
+                <SelectTrigger id="cast-count" className="w-[160px] shrink-0">
+                  <SelectValue placeholder="Select count" />
+                </SelectTrigger>
+                <SelectContent>
+                  {castCountOptions.map(opt => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {/* Include Adult Setting */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="adult-content" className="text-lg font-medium">Include Adult Content</Label>
-            <p className="text-sm text-muted-foreground">Show NSFW (Not Safe For Work) content in catalogs and search.</p>
-          </div>
-          <Switch
-            id="adult-content"
-            checked={config.includeAdult}
-            onCheckedChange={handleIncludeAdultChange}
-          />
-        </div>
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="show-prefix" className="font-medium">Show Prefix</Label>
+                <p className="text-sm text-muted-foreground">Add "{config.addonName || 'AIOMetadata'} - " prefix to catalogs.</p>
+              </div>
+              <Switch id="show-prefix" checked={config.showPrefix} onCheckedChange={handleShowPrefixChange} />
+            </div>
 
-        {/* Blur Thumbnails Setting */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="blur-thumbs" className="text-lg font-medium">Hide Episode Spoilers</Label>
-            <p className="text-sm text-muted-foreground">Blur episode thumbnails to avoid spoilers.</p>
-          </div>
-          <Switch
-            id="blur-thumbs"
-            checked={config.blurThumbs}
-            onCheckedChange={handleBlurThumbsChange}
-          />
-        </div>
-        {/* Show Prefix Setting */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="show-prefix" className="text-lg font-medium">Show Prefix</Label>
-            <p className="text-sm text-muted-foreground">Add "{config.addonName || 'AIOMetadata'} - " prefix to all catalogs and search names.</p>
-          </div>
-          <Switch
-            id="show-prefix"
-            checked={config.showPrefix}
-            onCheckedChange={handleShowPrefixChange}
-          />
-        </div>
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="show-meta-provider-attribution" className="font-medium">Meta Attribution</Label>
+                <p className="text-sm text-muted-foreground">Show "[Meta provided by Provider]" in overview.</p>
+              </div>
+              <Switch id="show-meta-provider-attribution" checked={config.showMetaProviderAttribution} onCheckedChange={handleShowMetaProviderAttributionChange} />
+            </div>
 
-        {/* Show Meta Provider Attribution Setting */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="show-meta-provider-attribution" className="text-lg font-medium">Show Meta Provider Attribution</Label>
-            <p className="text-sm text-muted-foreground">Add "[Meta provided by Provider]" to the end of overview text.</p>
-          </div>
-          <Switch
-            id="show-meta-provider-attribution"
-            checked={config.showMetaProviderAttribution}
-            onCheckedChange={handleShowMetaProviderAttributionChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="cast-count" className="text-lg font-medium">Cast Members to Display</Label>
-            <p className="text-sm text-muted-foreground">Number of cast members shown on a details page.</p>
-          </div>
-          <Select
-            value={String(config.castCount ?? -1)}
-            onValueChange={handleCastCountChange}
-          >
-            <SelectTrigger id="cast-count" className="w-[180px]">
-              <SelectValue placeholder="Select count" />
-            </SelectTrigger>
-            <SelectContent>
-              {castCountOptions.map(opt => (
-                <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="display-age-rating" className="font-medium">Display Age Rating</Label>
+                <p className="text-sm text-muted-foreground">Show rating/certification in genres.</p>
+              </div>
+              <Switch id="display-age-rating" checked={config.displayAgeRating} onCheckedChange={handleDisplayAgeRatingChange} />
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Display Age Rating Setting */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="display-age-rating" className="text-lg font-medium">Display Age Rating</Label>
-            <p className="text-sm text-muted-foreground">Show age rating/certification as the first link in the genres section.</p>
-          </div>
-          <Switch
-            id="display-age-rating"
-            checked={config.displayAgeRating}
-            onCheckedChange={handleDisplayAgeRatingChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="mdblist-watch-tracking" className="text-lg font-medium">MDBList Watch Tracking</Label>
-            <p className="text-sm text-muted-foreground">
-              Automatically sync watched status to MDBList when you play movies or episodes (requires MDBList API key).
-            </p>
-          </div>
-          <Switch
-            id="mdblist-watch-tracking"
-            checked={!!config.mdblistWatchTracking}
-            onCheckedChange={handleMDBListTrackingChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="anilist-watch-tracking" className="text-lg font-medium">AniList Watch Tracking</Label>
-            <p className="text-sm text-muted-foreground">
-              Automatically sync anime watch progress when you play episodes (requires connection in Catalogs → 'Manage AniList Integration').
-            </p>
-          </div>
-          <Switch
-            id="anilist-watch-tracking"
-            checked={!!config.anilistWatchTracking}
-            onCheckedChange={handleAniListTrackingChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="simkl-watch-tracking" className="text-lg font-medium">Simkl Checkin</Label>
-            <p className="text-sm text-muted-foreground">
-              Automatically sync simkl watch progress when you play titles (requires connection in Catalogs → 'Manage Simkl Integration').
-            </p>
-          </div>
-          <Switch
-            id="simkl-watch-tracking"
-            checked={!!config.simklWatchTracking}
-            onCheckedChange={handleSimklTrackingChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="trakt-watch-tracking" className="text-lg font-medium">Trakt Checkin</Label>
-            <p className="text-sm text-muted-foreground">
-              Automatically sync trakt watch progress when you play titles (requires connection in Catalogs → 'Manage Trakt Integration').
-            </p>
-          </div>
-          <Switch
-            id="trakt-watch-tracking"
-            checked={!!config.traktWatchTracking}
-            onCheckedChange={handleTraktTrackingChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="publicmetadb-watch-tracking" className="text-lg font-medium">PublicMetaDB Watch Tracking</Label>
-            <p className="text-sm text-muted-foreground">
-              Automatically log plays to your PublicMetaDB account when you watch content (requires API key in Integrations & API Keys).
-            </p>
-          </div>
-          <Switch
-            id="publicmetadb-watch-tracking"
-            checked={!!config.publicmetadbWatchTracking}
-            onCheckedChange={handlePublicMetaDBTrackingChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="enable-rating-posters-for-library" className="text-lg font-medium">Keep Rating Posters for Library Items</Label>
-            <p className="text-sm text-muted-foreground">
-              Keep Rating Posters for items in Continue Watching and Library (enabled by default) in Stremio. Useful when Rating Posters is enabled for your catalogs. When disabled, Rating Posters are removed from library items since catalog context is unavailable.
-            </p>
-          </div>
-          <Switch
-            id="enable-rating-posters-for-library"
-            checked={config.enableRatingPostersForLibrary !== false}
-            onCheckedChange={handleEnableRatingPostersForLibraryChange}
-          />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-lg border border-transparent hover:border-border hover:bg-accent transition-colors">
-          <div>
-            <Label htmlFor="show-rate-me-button" className="text-lg font-medium">Show Rate Me Button</Label>
-            <p className="text-sm text-muted-foreground">
-              Display a "⭐ Rate Me" genre button in meta pages that links to the rating page for quick access to rate content.
-            </p>
-          </div>
-          <Switch
-            id="show-rate-me-button"
-            checked={!!config.showRateMeButton}
-            onCheckedChange={handleShowRateMeButtonChange}
-          />
-        </div>
-        
+        <Card>
+          <CardHeader>
+            <CardTitle>Content & Privacy</CardTitle>
+            <CardDescription>Manage adult content, spoilers, and poster settings.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="adult-content" className="font-medium">Include Adult Content</Label>
+                <p className="text-sm text-muted-foreground">Show NSFW content in catalogs and search.</p>
+              </div>
+              <Switch id="adult-content" checked={config.includeAdult} onCheckedChange={handleIncludeAdultChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="blur-thumbs" className="font-medium">Hide Episode Spoilers</Label>
+                <p className="text-sm text-muted-foreground">Blur episode thumbnails to avoid spoilers.</p>
+              </div>
+              <Switch id="blur-thumbs" checked={config.blurThumbs} onCheckedChange={handleBlurThumbsChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="show-rate-me-button" className="font-medium">Show Rate Me Button</Label>
+                <p className="text-sm text-muted-foreground">Display a rating button in meta pages.</p>
+              </div>
+              <Switch id="show-rate-me-button" checked={!!config.showRateMeButton} onCheckedChange={handleShowRateMeButtonChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="enable-rating-posters-for-library" className="font-medium">Rating Posters for Library</Label>
+                <p className="text-sm text-muted-foreground">Keep rating posters for Continue Watching and Library items.</p>
+              </div>
+              <Switch id="enable-rating-posters-for-library" checked={config.enableRatingPostersForLibrary !== false} onCheckedChange={handleEnableRatingPostersForLibraryChange} />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Watch Tracking</CardTitle>
+          <CardDescription>Automatically sync your watch progress to external services when you play content.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="trakt-watch-tracking" className="font-medium">Trakt Checkin</Label>
+                <p className="text-sm text-muted-foreground">Sync watch progress to Trakt.</p>
+              </div>
+              <Switch id="trakt-watch-tracking" checked={!!config.traktWatchTracking} onCheckedChange={handleTraktTrackingChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="simkl-watch-tracking" className="font-medium">Simkl Checkin</Label>
+                <p className="text-sm text-muted-foreground">Sync watch progress to Simkl.</p>
+              </div>
+              <Switch id="simkl-watch-tracking" checked={!!config.simklWatchTracking} onCheckedChange={handleSimklTrackingChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="anilist-watch-tracking" className="font-medium">AniList Tracking</Label>
+                <p className="text-sm text-muted-foreground">Sync anime watch progress to AniList.</p>
+              </div>
+              <Switch id="anilist-watch-tracking" checked={!!config.anilistWatchTracking} onCheckedChange={handleAniListTrackingChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="mdblist-watch-tracking" className="font-medium">MDBList Tracking</Label>
+                <p className="text-sm text-muted-foreground">Sync watched status to MDBList.</p>
+              </div>
+              <Switch id="mdblist-watch-tracking" checked={!!config.mdblistWatchTracking} onCheckedChange={handleMDBListTrackingChange} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
+              <div className="mr-4">
+                <Label htmlFor="publicmetadb-watch-tracking" className="font-medium">PublicMetaDB Tracking</Label>
+                <p className="text-sm text-muted-foreground">Log plays to PublicMetaDB.</p>
+              </div>
+              <Switch id="publicmetadb-watch-tracking" checked={!!config.publicmetadbWatchTracking} onCheckedChange={handlePublicMetaDBTrackingChange} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

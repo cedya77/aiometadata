@@ -521,7 +521,7 @@ export function SearchSettings() {
       </Card>
       
       {config.search.enabled && (
-        <div className="space-y-8 pl-4 sm:pl-6 border-l-2 border-border">
+        <div className="space-y-8 rounded-xl bg-muted/20 p-4 sm:p-6">
             <Card>
                 <CardHeader>
                     <CardTitle>Primary Keyword Engines</CardTitle>

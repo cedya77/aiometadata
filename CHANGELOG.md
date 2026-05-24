@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.4.3](https://github.com/cedya77/aiometadata/compare/v2.4.2...v2.4.3) (2026-05-23)
+
+
+### Bug Fixes
+
+* AI catalog TTL, warmer hot-reload, and stale env reads ([4838c2b](https://github.com/cedya77/aiometadata/commit/4838c2bc9a8c7c06435b54b59e629058caeae9cc))
+* country-aware TVDB age ratings with TMDB fallback and caching ([164f038](https://github.com/cedya77/aiometadata/commit/164f03828ab73e78d0b6bd06387285ae35d35445))
+* invalidate Trakt tokens on 400, surface expired status in UI ([96a73d0](https://github.com/cedya77/aiometadata/commit/96a73d08052aec0ae41e3e22deea854556d280fe))
+
+## [2.4.2](https://github.com/cedya77/aiometadata/compare/v2.4.1...v2.4.2) (2026-05-23)
+
+
+### Bug Fixes
+
+* timing endpoint perf + Trakt 429 refresh cooldown ([8064282](https://github.com/cedya77/aiometadata/commit/80642828eb6b5f45f3d14c26399957e2c951aa39))
+
+## [2.4.1](https://github.com/cedya77/aiometadata/compare/v2.4.0...v2.4.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* normalize Fribb themoviedb_id object to plain numeric ID at ingestion ([67c1f12](https://github.com/cedya77/aiometadata/commit/67c1f12af4b891293ffe17a7aa68ec88badbd9d6))
+
+## [2.4.0](https://github.com/cedya77/aiometadata/compare/v2.3.0...v2.4.0) (2026-05-22)
+
+
+### Features
+
+* add AI Catalog Builder for natural language catalog creation ([8e230c4](https://github.com/cedya77/aiometadata/commit/8e230c474be4fd4a577f88d81f76bf76438248a7))
+* add PMDB settings dialog with cache TTL controls ([6d6375f](https://github.com/cedya77/aiometadata/commit/6d6375f27bc1595a605189859e3ed009effb9fd2))
+* add timeframe selector to dashboard content tab (today/week/month/all) ([67ab246](https://github.com/cedya77/aiometadata/commit/67ab2464ff2c4fa53960d30f6149a4f346e483f3))
+* AIOMetadata integration modal, deletable default catalogs, TMDB_API_KEY rename & docs ([1305c3f](https://github.com/cedya77/aiometadata/commit/1305c3fb30a913074d1ca7df4af4afb858728a9e))
+* AsyncLocalStorage-based UUID propagation for log entries ([bb60262](https://github.com/cedya77/aiometadata/commit/bb60262ebcc49d335940a04832637f4525a91078))
+* dashboard logs tab + component extraction into dashboard/ folder ([ccdab82](https://github.com/cedya77/aiometadata/commit/ccdab829155d3f08a432fcee0b38da06000c9026))
+* dashboard settings tab with runtime env management ([9f58d36](https://github.com/cedya77/aiometadata/commit/9f58d361b154e8d425dbab8528df201acb240f03))
+* display localized age rating based on user's language country ([8573e14](https://github.com/cedya77/aiometadata/commit/8573e14fe164fdedf8035333ffaff3b4b0959551))
+* revamp dashboard tabs — extract components, add user config insights ([53ee24f](https://github.com/cedya77/aiometadata/commit/53ee24ff98df4a116555f51e511dc66d4deab6b2))
+* scroll-spy sidebar layout for configure UI ([e0d38c7](https://github.com/cedya77/aiometadata/commit/e0d38c7029fe097d74bbd475fe375f87f12b9ba3))
+
+
+### Bug Fixes
+
+* add pmdb_resume_ prefix to upnext fallback and manifest idPrefixes ([ac4d84f](https://github.com/cedya77/aiometadata/commit/ac4d84f6bb9efb8cb4aceaae284363fd6812b3f2))
+* dashboard content tab always returning top 10 regardless of limit selection ([0c21fae](https://github.com/cedya77/aiometadata/commit/0c21fae31e499c21e3055cddf5faa5173990650c))
+* fallback stale upnext meta ids to canonical series ([8c2ce3b](https://github.com/cedya77/aiometadata/commit/8c2ce3becddf6ca858d1e1ccb89d44cf47ea7c70))
+* fallback stale upnext meta ids to canonical series ([afd80e3](https://github.com/cedya77/aiometadata/commit/afd80e3c67f9f279d8c7a7672c7bbccf3c5ef068))
+* FlixPatrol fallback ISO country codes to slug names ([467396d](https://github.com/cedya77/aiometadata/commit/467396de92eded72fe1c94ea86810f3b8327ede1))
+* MAL seasons 504 errors — drop broken sfw param, decode genre URI ([d27235d](https://github.com/cedya77/aiometadata/commit/d27235ddcf0f92c686c824b2965c76558fa461e5))
+* MDBList anime genre filter sending title instead of slug ([448ae91](https://github.com/cedya77/aiometadata/commit/448ae91cfaa76e8a2f9a7e705aec545e8911a205))
+* prevent cross-user meta component cache contamination ([3ab12d0](https://github.com/cedya77/aiometadata/commit/3ab12d09dd1d628443e3f8de5e46a479c18eaf1b))
+* resync episode availability on cache reconstruction ([5407ba3](https://github.com/cedya77/aiometadata/commit/5407ba368d3144e92d33c290875890e3735512e1))
+* sort Simkl plantowatch/hold by added_to_watchlist_at instead of reverse() ([3d5812e](https://github.com/cedya77/aiometadata/commit/3d5812e8852c9073574cfae4052ea1fe5b48eae8))
+* timezone-aware dashboard stats + dark theme fixes ([46461f2](https://github.com/cedya77/aiometadata/commit/46461f2fc611d0ea321c42ad88ba57f1ba43f12e))
+
 ## [2.3.0](https://github.com/cedya77/aiometadata/compare/v2.2.2...v2.3.0) (2026-05-10)
 
 

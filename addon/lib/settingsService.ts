@@ -30,10 +30,11 @@ export async function initializeSettings(): Promise<void> {
 export function getSetting(key: string): string {
   const def = getSettingDefinition(key);
   if (!def) return '';
-  if (def.envOnly && process.env[def.envVar]) return process.env[def.envVar]!;
+  const envVal = process.env[def.envVar] || (def.legacyEnvVar ? process.env[def.legacyEnvVar] : undefined);
+  if (def.envOnly && envVal) return envVal;
   const dbVal = cache.get(key);
   if (dbVal !== undefined) return dbVal;
-  if (process.env[def.envVar]) return process.env[def.envVar]!;
+  if (envVal) return envVal;
   return String(def.default);
 }
 
@@ -108,7 +109,8 @@ export function getAllSettings(): object[] {
 
   return SETTINGS_REGISTRY.map((def) => {
     const currentValue = getSetting(def.key);
-    const hasEnvVar = originalEnv.has(def.envVar) || !!(process.env[def.envVar] && !cache.has(def.key));
+    const hasEnvVar = originalEnv.has(def.envVar) || !!(process.env[def.envVar] && !cache.has(def.key))
+      || !!(def.legacyEnvVar && process.env[def.legacyEnvVar] && !cache.has(def.key));
     const hasDbOverride = cache.has(def.key);
     const disabledReason = disabledMap.get(def.key) || null;
 

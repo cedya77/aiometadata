@@ -7,6 +7,8 @@ import { initializeMapper } from './lib/id-mapper.js';
 import { initializeAnimeListMapper } from './lib/anime-list-mapper.js';
 import { initializeMappings } from './lib/wiki-mapper.js';
 import { initializeRatings } from './lib/imdbRatings.js';
+import { initializeTmdbNetworkIndex } from './lib/tmdb-network-index.js';
+import { initializeTmdbKeywordIndex } from './lib/tmdb-keyword-index.js';
 import { runCacheCleanup } from './cache-cleanup.js';
 import { runCachePathMigration } from './lib/cache-path-migration.js';
 import { performVersionCleanup } from './lib/versionCleanup.js';
@@ -94,6 +96,28 @@ async function startServer(): Promise<void> {
         await initializeRatings();
       },
       critical: true
+    },
+    {
+      name: 'TMDB Network Index',
+      task: async () => {
+        consola.info('Initializing TMDB Network Index...');
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TMDB Network Index init timed out after 30s — will retry on first use')), 30000)
+        );
+        await Promise.race([initializeTmdbNetworkIndex(), timeout]);
+      },
+      critical: false
+    },
+    {
+      name: 'TMDB Keyword Index',
+      task: async () => {
+        consola.info('Initializing TMDB Keyword Index...');
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TMDB Keyword Index init timed out after 30s — will retry on first use')), 30000)
+        );
+        await Promise.race([initializeTmdbKeywordIndex(), timeout]);
+      },
+      critical: false
     },
     {
       name: 'Cache Cleanup Check',

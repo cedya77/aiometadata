@@ -10,6 +10,7 @@ import { LetterboxdIntegration } from './LetterboxdIntegration';
 import { AniListIntegration } from './AniListIntegration';
 import { CustomManifestIntegration } from './CustomManifestIntegration';
 import { StreamingTop10Integration } from './StreamingTop10Integration';
+import { AIOMetadataIntegration } from './AIOMetadataIntegration';
 import { QuickAddDialog } from '@/components/QuickAddDialog';
 import { AICatalogDialog } from '@/components/AICatalogDialog';
 import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
@@ -1954,10 +1955,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
     (catalog.source === 'tmdb' && (catalog.id === 'tmdb.year' || catalog.id === 'tmdb.language')) ||
     !!(config.apiKeys?.traktTokenId || config.apiKeys?.anilistTokenId || config.apiKeys?.mdblist);
   const isDiscover = catalog.id.includes('.discover.') && !!catalog.metadata?.discover?.formState;
-  const canDelete = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol', 'publicmetadb'].includes(catalog.source) ||
-    (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
-    (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
-    catalog.id.includes('.discover.');
+  const canDelete = true;
 
   return (
     <Card
@@ -2494,19 +2492,14 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 <TooltipContent>Clone and Edit as Built Catalog</TooltipContent>
               </Tooltip>
 
-          {(['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol', 'publicmetadb'].includes(catalog.source) ||
-            (catalog.source === 'tmdb' && (catalog.id === 'tmdb.watchlist' || catalog.id === 'tmdb.favorites' || catalog.id.startsWith('tmdb.list.') || catalog.id.startsWith('tmdb.discover.'))) ||
-            (catalog.source === 'tvdb' && catalog.id.startsWith('tvdb.discover.')) ||
-            catalog.id.includes('.discover.')) && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog" className="active:scale-90 transition-transform">
-                  <Trash2 className="h-5 w-5 text-red-500" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Remove from your catalog list</TooltipContent>
-            </Tooltip>
-          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={handleDelete} aria-label="Delete Catalog" className="active:scale-90 transition-transform">
+                <Trash2 className="h-5 w-5 text-red-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Remove from your catalog list</TooltipContent>
+          </Tooltip>
         </TooltipProvider>
         <div className="shrink-0">
           <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
@@ -2745,6 +2738,7 @@ function CatalogsSettingsContent({
   const [isAniListOpen, setIsAniListOpen] = useState(false);
   const [isCustomManifestOpen, setIsCustomManifestOpen] = useState(false);
   const [isStreamingTop10Open, setIsStreamingTop10Open] = useState(false);
+  const [isAIOMetadataOpen, setIsAIOMetadataOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isAICatalogOpen, setIsAICatalogOpen] = useState(false);
   const [streamingDialogOpen, setStreamingDialogOpen] = useState(false);
@@ -2793,6 +2787,12 @@ function CatalogsSettingsContent({
   const [hasChosenCatalogSetup, setHasChosenCatalogSetup] = useState(
     () => config.catalogSetupComplete === true
   );
+
+  useEffect(() => {
+    if (config.catalogSetupComplete) {
+      setHasChosenCatalogSetup(true);
+    }
+  }, [config.catalogSetupComplete]);
 
   const handleCustomize = (catalog: CatalogConfig) => {
     const getTemplate = DEFAULT_CATALOG_TEMPLATES[catalog.id];
@@ -3553,23 +3553,7 @@ function CatalogsSettingsContent({
     setShowDeleteConfirmDialog(true);
   };
 
-  const isRemovableCatalog = (catalog: CatalogConfig) => {
-    const removableSources = ['mdblist', 'streaming', 'stremthru', 'custom', 'trakt', 'simkl', 'anilist', 'letterboxd', 'flixpatrol', 'publicmetadb'];
-    if (removableSources.includes(catalog.source)) {
-      return true;
-    }
-    if (catalog.id.includes('.discover.')) {
-      return true;
-    }
-    if (catalog.source === 'tmdb') {
-      return (
-        catalog.id === 'tmdb.watchlist' ||
-        catalog.id === 'tmdb.favorites' ||
-        catalog.id.startsWith('tmdb.list.')
-      );
-    }
-    return false;
-  };
+  const isRemovableCatalog = (_catalog: CatalogConfig) => true;
 
   const handleConfirmBulkDelete = async () => {
     setShowDeleteConfirmDialog(false);
@@ -3684,16 +3668,31 @@ function CatalogsSettingsContent({
               <Download className="h-4 w-4 mr-2" />
               Import Setup
             </Button>
-            <div className="hidden sm:block h-6 w-px bg-border" /> {}
-            
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
             <TooltipProvider delayDuration={200}>
               <div className="flex items-center flex-wrap gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => setIsMdbListOpen(true)} 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsAIOMetadataOpen(true)}
+                      aria-label="AIOMetadata Catalogs"
+                      className="h-9 w-9"
+                    >
+                      <img src="/logo.png" alt="AIOMetadata" className="h-5 w-5 object-contain" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>AIOMetadata Built-in Catalogs</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsMdbListOpen(true)}
                       aria-label="MDBList Integration"
                       className="h-9 w-9"
                     >
@@ -3889,6 +3888,10 @@ function CatalogsSettingsContent({
           <StreamingTop10Integration
             isOpen={isStreamingTop10Open}
             onClose={() => setIsStreamingTop10Open(false)}
+          />
+          <AIOMetadataIntegration
+            isOpen={isAIOMetadataOpen}
+            onClose={() => setIsAIOMetadataOpen(false)}
           />
         </div>
       </div>

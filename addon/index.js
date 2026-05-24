@@ -20,6 +20,7 @@ const requestTracker = require("./lib/requestTracker");
 const { runWithRequestContext } = require('./lib/logBuffer.js');
 const { getSetting } = require('./lib/settingsService');
 const consola = require('consola');
+const aiCatalogLogger = consola.withTag('AICatalog');
 const { stripReleaseAvailabilityForResponse } = require('./utils/releaseAvailability');
 
 const { getMediaRatingFromMDBList } = require("./utils/mdbList");
@@ -197,7 +198,7 @@ addon.use((req, res, next) => {
   next();
 });
 
-const TEST_KEYS_RATE_LIMIT_PER_MIN = parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10);
+function TEST_KEYS_RATE_LIMIT_PER_MIN() { return parseInt(process.env.TEST_KEYS_RATE_LIMIT_PER_MIN || '60', 10); }
 
 async function testKeysRateLimitMiddleware(req, res, next) {
   // If Redis is disabled/unavailable, do not block requests.
@@ -215,7 +216,7 @@ async function testKeysRateLimitMiddleware(req, res, next) {
       await redis.expire(rateKey, 70);
     }
 
-    if (currentCount > TEST_KEYS_RATE_LIMIT_PER_MIN) {
+    if (currentCount > TEST_KEYS_RATE_LIMIT_PER_MIN()) {
       return res.status(429).json({ error: 'Too many API key validation requests. Please try again shortly.' });
     }
   } catch (error) {
@@ -403,7 +404,7 @@ const respond = function (req, res, data, opts) {
     const resolvedOptions = simklTrendingPageSizeOptions.length > 0 ? simklTrendingPageSizeOptions : fallbackOptions;
 
     const publicEnvConfig = {
-      tmdb: getSetting('TMDB_API'),
+      tmdb: getSetting('TMDB_API_KEY'),
       tvdb: getSetting('TVDB_API_KEY'),
       fanart: getSetting('FANART_API_KEY'),
       rpdb: getSetting('RPDB_API_KEY'),
@@ -803,7 +804,17 @@ addon.post("/api/oauth/token/info", async (req, res) => {
     if (!token) {
       return res.status(404).json({ error: "Token not found" });
     }
-    res.json({ provider: token.provider, username: token.user_id, expiresAt: token.expires_at });
+    const response = { provider: token.provider, username: token.user_id, expiresAt: token.expires_at };
+    if (token.provider === 'trakt') {
+      try {
+        const { isTokenInvalidated } = require('./utils/traktUtils');
+        if (isTokenInvalidated(tokenId)) {
+          response.status = 'invalid';
+          response.statusMessage = 'Your Trakt refresh token has expired or been revoked. Please disconnect and reconnect your account.';
+        }
+      } catch {}
+    }
+    res.json(response);
   } catch (error) {
     consola.error("[OAuth] Token info fetch error:", error);
     res.status(500).json({ error: "Failed to fetch token info" });
@@ -1388,7 +1399,7 @@ async function resolveTmdbDiscoverApiKey(req) {
     }
   }
 
-  return (process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '').trim();
+  return (process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '').trim();
 }
 
 async function resolveTvdbDiscoverApiKey(req) {
@@ -1444,7 +1455,7 @@ addon.get("/api/tmdb/discover/reference", async (req, res) => {
 
     if (!tmdbApiKey) {
       return res.status(400).json({
-        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API_KEY, or BUILT_IN_TMDB_API_KEY)"
       });
     }
 
@@ -1505,7 +1516,7 @@ addon.get("/api/tmdb/discover/providers", async (req, res) => {
 
     if (!tmdbApiKey) {
       return res.status(400).json({
-        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API_KEY, or BUILT_IN_TMDB_API_KEY)"
       });
     }
 
@@ -1562,7 +1573,7 @@ addon.get("/api/tmdb/discover/search/:entity", async (req, res) => {
 
     if (!tmdbApiKey) {
       return res.status(400).json({
-        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API, or BUILT_IN_TMDB_API_KEY)"
+        error: "TMDB API key is required (config.apiKeys.tmdb, TMDB_API_KEY, or BUILT_IN_TMDB_API_KEY)"
       });
     }
 
@@ -1892,13 +1903,17 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
 const aiCatalogRateLimit = new Map();
 addon.post("/api/ai/create-catalog", async (req, res) => {
   try {
-    const { userUUID, password, query, provider, availableSources } = req.body;
+    const { userUUID, password, query, provider, generationMode } = req.body;
 
     if (!userUUID || !password) {
       return res.status(400).json({ error: 'User UUID and password are required' });
     }
     if (!query || typeof query !== 'string' || !query.trim()) {
       return res.status(400).json({ error: 'Query is required' });
+    }
+    const allowedGenerationModes = new Set(['auto', 'tmdb', 'anilist', 'mal', 'tvdb', 'simkl']);
+    if (!allowedGenerationModes.has(generationMode)) {
+      return res.status(400).json({ error: 'generationMode must be one of: auto, tmdb, anilist, mal, tvdb' });
     }
 
     // Rate limit: 5 requests per minute per user
@@ -1926,9 +1941,19 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     }
 
     const { buildCatalogCreationPrompt, parseCatalogAIResponse, normalizeCatalog, validateCatalogParams, resolveEntities, buildCatalogConfigs } = require('./utils/ai-catalog-service');
-    const hasTmdb = availableSources?.tmdb ?? !!(config.apiKeys?.tmdb || process.env.BUILT_IN_TMDB_API_KEY);
-    const hasTvdb = availableSources?.tvdb ?? !!(config.apiKeys?.tvdb || process.env.BUILT_IN_TVDB_API_KEY);
-    const { systemPrompt, userPrompt } = buildCatalogCreationPrompt(query.trim(), { tmdb: hasTmdb, tvdb: hasTvdb });
+    const hasTmdb = !!(config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY);
+    const hasTvdb = !!(config.apiKeys?.tvdb || process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY);
+    const hasSimkl = !!process.env.SIMKL_CLIENT_ID;
+    if (generationMode === 'tmdb' && !hasTmdb) {
+      return res.status(400).json({ error: 'TMDB catalog generation requires a TMDB API key.' });
+    }
+    if (generationMode === 'tvdb' && !hasTvdb) {
+      return res.status(400).json({ error: 'TVDB catalog generation requires a TVDB API key.' });
+    }
+    const { systemPrompt, userPrompt } = buildCatalogCreationPrompt(query.trim(), {
+      mode: generationMode,
+      keys: { tmdb: hasTmdb, tvdb: hasTvdb, simkl: hasSimkl },
+    });
 
     let rawText = null;
     const useOpenRouter = provider === 'gemini' ? (!geminiKey && !!openrouterKey) : !!openrouterKey;
@@ -1961,56 +1986,98 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
       return res.status(500).json({ error: 'AI returned an empty response. Please try again.' });
     }
 
-    consola.debug(`[AI Catalog] Raw response: ${rawText.substring(0, 500)}`);
+    aiCatalogLogger.debug(`Raw response: ${rawText.substring(0, 500)}`);
 
     const parsed = parseCatalogAIResponse(rawText);
     if (!parsed || !parsed.catalogs.length) {
       return res.status(422).json({ error: 'AI returned an invalid response. Try again or rephrase your request.' });
     }
+    if (generationMode !== 'auto') {
+      const filteredCatalogs = parsed.catalogs.filter(catalog => catalog.source === generationMode);
+      if (filteredCatalogs.length === 0) {
+        return res.status(422).json({ error: `AI did not return a ${generationMode.toUpperCase()} catalog. Try again or switch to Auto.` });
+      }
+      if (filteredCatalogs.length !== parsed.catalogs.length) {
+        parsed.warnings = [
+          ...(parsed.warnings || []),
+          `Ignored ${parsed.catalogs.length - filteredCatalogs.length} catalog${parsed.catalogs.length - filteredCatalogs.length === 1 ? '' : 's'} that did not match ${generationMode.toUpperCase()} mode`,
+        ];
+        parsed.catalogs = filteredCatalogs;
+      }
+    }
 
     // Normalize and validate each catalog
     const validCatalogs = [];
-    const warnings = [];
+    const userWarnings = [];
+    const userWarningSet = new Set();
+    const addUserWarning = (message) => {
+      if (!message || userWarningSet.has(message)) return;
+      userWarningSet.add(message);
+      userWarnings.push(message);
+    };
+    const visibleWarnings = () => {
+      const visible = userWarnings.slice(0, 3);
+      const omitted = userWarnings.length - visible.length;
+      if (omitted > 0) {
+        visible.push(`${omitted} more warning${omitted === 1 ? '' : 's'} omitted`);
+      }
+      return visible;
+    };
+
+    for (const warning of parsed.warnings || []) {
+      addUserWarning(warning);
+    }
+
     for (const catalog of parsed.catalogs) {
-      normalizeCatalog(catalog);
+      const normalizeDiagnostics = normalizeCatalog(catalog, { originalQuery: query.trim() });
+      if (normalizeDiagnostics?.length) {
+        aiCatalogLogger.debug(`Normalized "${catalog.name || 'unnamed'}": ${normalizeDiagnostics.join('; ')}`);
+      }
       if (catalog.source === 'tmdb' && !hasTmdb) {
-        warnings.push(`Skipped "${catalog.name || 'unnamed'}": no TMDB API key configured`);
+        addUserWarning(`Skipped "${catalog.name || 'unnamed'}": no TMDB API key configured`);
         continue;
       }
       if (catalog.source === 'tvdb' && !hasTvdb) {
-        warnings.push(`Skipped "${catalog.name || 'unnamed'}": no TVDB API key configured`);
+        addUserWarning(`Skipped "${catalog.name || 'unnamed'}": no TVDB API key configured`);
+        continue;
+      }
+      if (catalog.source === 'simkl' && !hasSimkl) {
+        addUserWarning(`Skipped "${catalog.name || 'unnamed'}": no Simkl client ID configured`);
         continue;
       }
       const validation = validateCatalogParams(catalog);
       if (validation.valid) {
         validCatalogs.push(catalog);
       } else {
-        warnings.push(`Skipped "${catalog.name || 'unnamed'}": ${validation.errors.join(', ')}`);
-        consola.debug(`[AI Catalog] Validation failed for catalog: ${JSON.stringify(validation.errors)}`);
+        addUserWarning(`Skipped "${catalog.name || 'unnamed'}": invalid configuration`);
+        aiCatalogLogger.debug(`Validation failed for catalog: ${JSON.stringify(validation.errors)}`);
       }
     }
 
     if (validCatalogs.length === 0) {
-      return res.status(422).json({ error: 'AI generated invalid configurations. Try a more specific request.', warnings });
+      const warnings = visibleWarnings();
+      return res.status(422).json({ error: 'AI generated invalid configurations. Try a more specific request.', warnings: warnings.length ? warnings : undefined });
     }
 
     // Resolve dynamic entities
-    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
+    const tmdbApiKey = config.apiKeys?.tmdb || process.env.TMDB_API_KEY || process.env.TMDB_API || process.env.BUILT_IN_TMDB_API_KEY || '';
     const tvdbApiKey = config.apiKeys?.tvdb || process.env.TVDB_API_KEY || process.env.BUILT_IN_TVDB_API_KEY || '';
     const resolveCtx = { tmdbApiKey, tvdbApiKey, userUUID };
-    consola.info(`[AI Catalog] Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? '...' + tvdbApiKey.slice(-4) : 'NONE'}, Prompt sources: TMDB=${hasTmdb}, TVDB=${hasTvdb}`);
+    aiCatalogLogger.info(`Resolving entities. TMDB key: ${tmdbApiKey ? '...' + tmdbApiKey.slice(-4) : 'NONE'}, TVDB key: ${tvdbApiKey ? '...' + tvdbApiKey.slice(-4) : 'NONE'}, Simkl client ID: ${hasSimkl ? 'SET' : 'NONE'}, Generation mode: ${generationMode}, Prompt sources: TMDB=${hasTmdb}, TVDB=${hasTvdb}, Simkl=${hasSimkl}`);
 
     const resolvedParams = [];
     const perCatalogWarnings = [];
     for (const catalog of validCatalogs) {
       try {
         const { resolved, warnings: resolveWarnings } = await resolveEntities(catalog, resolveCtx);
-        consola.info(`[AI Catalog] Resolved for "${catalog.name}": ${JSON.stringify(resolved)}`);
+        aiCatalogLogger.info(`Resolved for "${catalog.name}": ${JSON.stringify(resolved)}`);
         resolvedParams.push(resolved);
-        perCatalogWarnings.push(resolveWarnings);
-        if (resolveWarnings.length) warnings.push(...resolveWarnings);
+        if (resolveWarnings.length) {
+          aiCatalogLogger.debug(`Resolve warnings for "${catalog.name}": ${resolveWarnings.join('; ')}`);
+          addUserWarning('Some requested filters could not be resolved and were omitted');
+        }
       } catch (e) {
-        consola.error(`[AI Catalog] Entity resolution error: ${e.message}`);
+        aiCatalogLogger.error(`Entity resolution error: ${e.message}`);
         resolvedParams.push({});
         perCatalogWarnings.push([]);
       }
@@ -2019,9 +2086,10 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
     // Build final catalog configs
     const catalogConfigs = buildCatalogConfigs(validCatalogs, resolvedParams, query.trim(), config.catalogTTL, perCatalogWarnings);
 
+    const warnings = visibleWarnings();
     return res.json({ catalogs: catalogConfigs, warnings: warnings.length ? warnings : undefined });
   } catch (error) {
-    consola.error("[AI Catalog] Error:", error.message);
+    aiCatalogLogger.error("Error:", error.message);
     if (error.statusCode === 429) {
       return res.status(429).json({ error: 'AI provider rate limited. Please wait and try again.' });
     }
@@ -5747,8 +5815,14 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
   
   try {
     const timingMetrics = require('./lib/timing-metrics');
+
+    const cached = timingMetrics.getCachedResponse();
+    if (cached) {
+      return res.json(cached);
+    }
+
     const { getPerformanceStats } = require('./lib/id-resolver.js');
-    
+
     // Get comprehensive timing data
     const [dashboardData, providerBreakdown, resolutionBreakdown, idResolverStats] = await Promise.all([
       timingMetrics.getDashboardData(),
@@ -5756,15 +5830,15 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
       timingMetrics.getResolutionTimingBreakdown(),
       Promise.resolve(getPerformanceStats())
     ]);
-    
+
     // Get timing trends for key metrics
     const timingTrends = {};
     const keyMetrics = ['id_resolution_total', 'search_operation', 'api_lookup'];
-    
+
     for (const metric of keyMetrics) {
       timingTrends[metric] = await timingMetrics.getTimingTrends(metric);
     }
-    
+
     // Add IMDb ratings stats
     let imdbRatingsStats = null;
     try {
@@ -5773,8 +5847,8 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
     } catch (err) {
       consola.warn('[Dashboard API] Failed to get IMDb ratings stats:', err);
     }
-    
-    res.json({
+
+    const response = {
       dashboard: dashboardData,
       providerBreakdown,
       resolutionBreakdown,
@@ -5782,7 +5856,9 @@ addon.get("/api/dashboard/timing", requireAuthUnlessGuestMode, async (req, res) 
       imdbRatingsStats,
       idResolverPerformance: idResolverStats,
       lastUpdated: new Date().toISOString()
-    });
+    };
+    timingMetrics.setCachedResponse(response);
+    res.json(response);
   } catch (error) {
     consola.error('[Timing API] Error:', error);
     res.status(500).json({ error: 'Failed to fetch timing data' });

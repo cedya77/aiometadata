@@ -27,7 +27,7 @@ docker run -d \
   -p 3232:3232 \
   -e MONGODB_URI=your_mongodb_uri \
   -e FANART_API=your_fanart_key \
-  -e TMDB_API=your_tmdb_key \
+  -e TMDB_API_KEY=your_tmdb_key \
   -e RPDB_API_KEY=your_rpdb_key \
   -e HOST_NAME=http://your_domain:3232 \
   mrcanelas/tmdb-addon:latest
@@ -48,7 +48,7 @@ services:
     environment:
       - MONGODB_URI=your_mongodb_uri
       - FANART_API=your_fanart_key
-      - TMDB_API=your_tmdb_key
+      - TMDB_API_KEY=your_tmdb_key
       - RPDB_API_KEY=your_rpdb_key
       - HOST_NAME=http://your_domain:3232
     restart: unless-stopped
@@ -92,7 +92,7 @@ node addon/server.js
 |----------|-------------|----------|
 | `MONGODB_URI` | MongoDB connection URI | Yes |
 | `FANART_API` | Fanart.tv API key | Yes |
-| `TMDB_API` | TMDB API key | Yes |
+| `TMDB_API_KEY` | TMDB API key (legacy: `TMDB_API` also supported) | Yes |
 | `RPDB_API_KEY` | RPDB API key | No |
 | `HOST_NAME` | Public URL of your addon (e.g., http://your_domain:3232) | Yes |
 | `PORT` | Server port (default: 3232) | No |

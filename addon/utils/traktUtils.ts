@@ -464,7 +464,7 @@ async function fetchTraktUpdatedShows(
   }
 }
 
-const TRAKT_SEARCH_DISABLED = process.env.DISABLE_TRAKT_SEARCH === 'true';
+function TRAKT_SEARCH_DISABLED() { return process.env.DISABLE_TRAKT_SEARCH === 'true'; }
 
 
 interface TraktUpNextState {
@@ -2764,6 +2764,9 @@ async function fetchTraktAnticipatedItems(
 }
 
 const refreshLocks = new Map<string, Promise<string | null>>();
+const refreshCooldowns = new Map<string, number>();
+const invalidatedTokens = new Set<string>();
+const DEFAULT_REFRESH_COOLDOWN_MS = 60 * 1000;
 /**
  * Get Trakt access token from database with automatic refresh
  * @param config - User configuration object
@@ -2823,6 +2826,20 @@ async function getTraktAccessToken(config: any, forceRefresh: boolean = false): 
   const oneHour = 60 * 60 * 1000;
 
   if (forceRefresh || numericExpiresAt < (now + oneHour)) {
+    if (invalidatedTokens.has(tokenId) && !forceRefresh) {
+      return null;
+    }
+
+    const cooldownUntil = refreshCooldowns.get(tokenId);
+    if (cooldownUntil) {
+      if (now >= cooldownUntil) {
+        refreshCooldowns.delete(tokenId);
+      } else if (!forceRefresh) {
+        logger.debug(`Trakt token refresh for ${tokenId} is in cooldown until ${new Date(cooldownUntil).toISOString()}, skipping`);
+        return null;
+      }
+    }
+
     // Prevent concurrent refreshes for the same token
     if (refreshLocks.has(tokenId)) {
       logger.debug(`Trakt token refresh already in progress for ${tokenId}, waiting...`);
@@ -2850,10 +2867,22 @@ async function getTraktAccessToken(config: any, forceRefresh: boolean = false): 
           return null;
         }
         logger.debug(`Trakt token refreshed successfully (new expiry: ${new Date(newTokens.expires_at).toISOString()})`);
+        refreshCooldowns.delete(tokenId);
+        invalidatedTokens.delete(tokenId);
         return newTokens.access_token;
       } catch (error: any) {
         logger.error(`Failed to refresh Trakt token: ${error.message}`);
         logger.error(`Stack trace:`, error.stack);
+        if (error.response?.status === 400) {
+          logger.error(`Trakt refresh token is invalid for ${tokenId}. User must reconnect their Trakt account.`);
+          invalidatedTokens.add(tokenId);
+        } else if (error.response?.status === 429) {
+          const retryAfter = parseInt(error.response.headers?.['retry-after'], 10);
+          const cooldownMs = (Number.isFinite(retryAfter) && retryAfter > 0)
+            ? retryAfter * 1000
+            : DEFAULT_REFRESH_COOLDOWN_MS;
+          refreshCooldowns.set(tokenId, Date.now() + cooldownMs);
+        }
         try {
           const stillExists = await database.getOAuthToken(tokenId);
           if (!stillExists) {
@@ -2904,7 +2933,7 @@ async function fetchTraktSearchItems(
   query: string,
   config?: any
 ): Promise<any[]> {
-  if (TRAKT_SEARCH_DISABLED) {
+  if (TRAKT_SEARCH_DISABLED()) {
     logger.debug('[Trakt Search] Disabled via DISABLE_TRAKT_SEARCH env');
     return [];
   }
@@ -2953,7 +2982,7 @@ async function fetchTraktSearchItems(
  * @returns Array of person search results
  */
 async function fetchTraktPersonSearch(query: string): Promise<any[]> {
-  if (TRAKT_SEARCH_DISABLED) {
+  if (TRAKT_SEARCH_DISABLED()) {
     return [];
   }
   try {
@@ -3160,7 +3189,13 @@ function getTraktMemoryStats() {
     writeChains: writeChains.size,
     lastWriteAtByToken: lastWriteAtByToken.size,
     refreshLocks: refreshLocks.size,
+    refreshCooldowns: refreshCooldowns.size,
+    invalidatedTokens: invalidatedTokens.size,
   };
+}
+
+function isTokenInvalidated(tokenId: string): boolean {
+  return invalidatedTokens.has(tokenId);
 }
 
 export {
@@ -3173,4 +3208,5 @@ export {
   fetchTraktPersonCredits,
   traktDispatcher,
   getTraktMemoryStats,
+  isTokenInvalidated,
 };
