@@ -130,7 +130,6 @@ export function SearchSettings() {
   const openRouterKeyRef = React.useRef(config.apiKeys?.openrouter);
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string }[]>([]);
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
-  const ollamaUrlRef = React.useRef(config.apiKeys?.ollamaUrl);
 
   // Fetch OpenRouter model list when key is available
   useEffect(() => {
@@ -160,24 +159,15 @@ export function SearchSettings() {
     return () => { cancelled = true; };
   }, [config.apiKeys?.openrouter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch Ollama model list when provider is ollama or URL changes
-  useEffect(() => {
-    if (config.search.ai_provider !== 'ollama') return;
+  const fetchOllamaModels = () => {
     const url = config.apiKeys?.ollamaUrl || 'http://host.docker.internal:11434';
-    if (url === ollamaUrlRef.current && ollamaModels.length > 0) return;
-    ollamaUrlRef.current = url;
-    let cancelled = false;
     setOllamaModelsLoading(true);
     fetch(`/api/ollama/models?url=${encodeURIComponent(url)}`)
       .then(res => res.json())
-      .then(data => {
-        if (cancelled) return;
-        setOllamaModels(data?.models || []);
-      })
-      .catch(() => { if (!cancelled) setOllamaModels([]); })
-      .finally(() => { if (!cancelled) setOllamaModelsLoading(false); });
-    return () => { cancelled = true; };
-  }, [config.search.ai_provider, config.apiKeys?.ollamaUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+      .then(data => setOllamaModels(data?.models || []))
+      .catch(() => setOllamaModels([]))
+      .finally(() => setOllamaModelsLoading(false));
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -814,7 +804,7 @@ export function SearchSettings() {
                                 </Select>
                             </div>
 
-                            {/* Ollama URL input */}
+                            {/* Ollama URL input + fetch button */}
                             {(config.search.ai_provider || 'gemini') === 'ollama' && (
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                                     <div className="min-w-0">
@@ -823,16 +813,30 @@ export function SearchSettings() {
                                             Endpoint compatible con OpenAI (<code>/v1</code> se añade automáticamente si falta)
                                         </p>
                                     </div>
-                                    <Input
-                                        id="ollama-url"
-                                        value={config.apiKeys?.ollamaUrl ?? 'http://host.docker.internal:11434'}
-                                        onChange={(e) => setConfig(prev => ({
-                                            ...prev,
-                                            apiKeys: { ...prev.apiKeys, ollamaUrl: e.target.value }
-                                        }))}
-                                        placeholder="http://host.docker.internal:11434"
-                                        className="w-full sm:w-[280px]"
-                                    />
+                                    <div className="flex gap-2 w-full sm:w-auto">
+                                        <Input
+                                            id="ollama-url"
+                                            value={config.apiKeys?.ollamaUrl ?? 'http://host.docker.internal:11434'}
+                                            onChange={(e) => {
+                                                setConfig(prev => ({
+                                                    ...prev,
+                                                    apiKeys: { ...prev.apiKeys, ollamaUrl: e.target.value }
+                                                }));
+                                                setOllamaModels([]);
+                                            }}
+                                            placeholder="http://host.docker.internal:11434"
+                                            className="flex-1 sm:w-[200px]"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={fetchOllamaModels}
+                                            disabled={ollamaModelsLoading}
+                                        >
+                                            {ollamaModelsLoading ? 'Cargando...' : 'Consultar'}
+                                        </Button>
+                                    </div>
                                 </div>
                             )}
 
