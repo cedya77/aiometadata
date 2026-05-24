@@ -14,6 +14,7 @@ const { resolveAllIds }: any = require('./id-resolver');
 const { isAnime }: any = require("../utils/isAnime");
 const { performGeminiSearch }: any = require('../utils/gemini-service');
 const { performOpenRouterSearch }: any = require('../utils/openrouter-service');
+const { performOllamaSearch }: any = require('../utils/ollama-service');
 const { filterMetasByRegex }: any = require('../utils/regexFilter');
 import consola from 'consola';
 const { cacheWrapMetaSmart }: any = require('./getCache');
@@ -1059,10 +1060,14 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
 async function performAiSearch(query: string, language: string, config: any): Promise<any[]> {
   const startTime = Date.now();
   const aiProvider = config.search?.ai_provider || 'gemini';
-  const aiModel = config.search?.ai_model || (aiProvider === 'openrouter' ? 'google/gemini-2.5-flash' : 'gemini-2.5-flash-lite');
+  const aiModel = config.search?.ai_model || (
+    aiProvider === 'openrouter' ? 'google/gemini-2.5-flash' :
+    aiProvider === 'ollama' ? 'llama3.2' :
+    'gemini-2.5-flash-lite'
+  );
   const aiWebSearch = config.search?.ai_web_search === true;
 
-  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${aiProvider === 'openrouter' ? 'always' : aiWebSearch})`);
+  logger.info(`Starting AI search for query: "${query}" (provider: ${aiProvider}, model: ${aiModel}, webSearch: ${aiProvider === 'openrouter' ? 'always' : aiProvider === 'ollama' ? 'never' : aiWebSearch})`);
 
   try {
     let suggestions: any[];
@@ -1072,6 +1077,9 @@ async function performAiSearch(query: string, language: string, config: any): Pr
       const effectiveModel = aiModel && !aiModel.endsWith(':online')
         ? `${aiModel}:online` : aiModel;
       suggestions = await performOpenRouterSearch(openrouterKey, query, 'mixed', language, effectiveModel);
+    } else if (aiProvider === 'ollama') {
+      const ollamaUrl = config.apiKeys?.ollamaUrl || 'http://host.docker.internal:11434';
+      suggestions = await performOllamaSearch(ollamaUrl, query, 'mixed', language, aiModel);
     } else {
       const geminiKey = config.apiKeys?.gemini;
       suggestions = await performGeminiSearch(geminiKey, query, 'mixed', language, aiModel, aiWebSearch);
