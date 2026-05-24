@@ -1159,11 +1159,13 @@ async function performAiSearch(query: string, language: string, config: any): Pr
 
     if (config.regexActorExclusionFilter) {
       const beforeCount = filteredResults.length;
+      const castCoverage = filteredResults.filter((r: any) => r.app_extras?.cast?.length > 0).length;
+      logger.info(`Actor exclusion filter active: "${config.regexActorExclusionFilter}" | items with cast: ${castCoverage}/${beforeCount}`);
       filteredResults = filterMetasByActorRegex(filteredResults, config.regexActorExclusionFilter);
       const afterCount = filteredResults.length;
-      if (beforeCount !== afterCount) {
-        logger.info(`Actor exclusion filter: ${beforeCount} -> ${afterCount} results`);
-      }
+      logger.info(`Actor exclusion filter: ${beforeCount} -> ${afterCount} results`);
+    } else {
+      logger.info(`Actor exclusion filter: NOT active (regexActorExclusionFilter is empty)`);
     }
 
     const totalTime = Date.now() - startTime;
