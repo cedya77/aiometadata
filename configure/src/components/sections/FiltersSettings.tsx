@@ -54,10 +54,6 @@ export function FiltersSettings() {
     setConfig(prev => ({ ...prev, exclusionGenres: value }));
   };
 
-  const handleRegexActorExclusionFilterChange = (value: string) => {
-    setConfig(prev => ({ ...prev, regexActorExclusionFilter: value }));
-  };
-
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -264,20 +260,6 @@ export function FiltersSettings() {
             />
             <p className="text-sm text-muted-foreground">
               Advanced users only. Matched against title and description. Use | to separate patterns.
-            </p>
-          </div>
-
-          {/* Actor Regex */}
-          <div className="space-y-2">
-            <Label htmlFor="regex-actor-exclusion-filter">Exclude by Actor (Regex)</Label>
-            <Input
-              id="regex-actor-exclusion-filter"
-              placeholder="Tom Hanks|Brad Pitt"
-              value={config.regexActorExclusionFilter || ''}
-              onChange={(e) => handleRegexActorExclusionFilterChange(e.target.value)}
-            />
-            <p className="text-sm text-muted-foreground">
-              Regex matched against cast member names. Use | to separate patterns.
             </p>
           </div>
 

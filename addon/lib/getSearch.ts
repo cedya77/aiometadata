@@ -14,7 +14,7 @@ const { resolveAllIds }: any = require('./id-resolver');
 const { isAnime }: any = require("../utils/isAnime");
 const { performGeminiSearch }: any = require('../utils/gemini-service');
 const { performOpenRouterSearch }: any = require('../utils/openrouter-service');
-const { filterMetasByRegex, filterMetasByActorRegex }: any = require('../utils/regexFilter');
+const { filterMetasByRegex }: any = require('../utils/regexFilter');
 import consola from 'consola';
 const { cacheWrapMetaSmart }: any = require('./getCache');
 const wikiMappings: any = require('./wiki-mapper');
@@ -570,10 +570,9 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         const langSet = new Set([langCode, 'en', 'null']);
         if (originalLanguage) langSet.add(originalLanguage);
         const imageLanguages = Array.from(langSet).join(',');
-        const needsCredits = !!config.regexActorExclusionFilter;
         const details = mediaType === 'movie'
-            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: needsCredits ? "external_ids,release_dates,images,translations,keywords,credits" : "external_ids,release_dates,images,translations,keywords", include_image_language: imageLanguages }, config)
-            : await moviedb.tvInfo({ id: media.id, language, append_to_response: needsCredits ? "external_ids,content_ratings,images,translations,keywords,credits" : "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
+            ? await moviedb.movieInfo({ id: media.id, language, append_to_response: "external_ids,release_dates,images,translations,keywords", include_image_language: imageLanguages }, config)
+            : await moviedb.tvInfo({ id: media.id, language, append_to_response: "external_ids,content_ratings,images,translations,keywords", include_image_language: imageLanguages }, config);
 
         let allIds: any = {
             tmdbId: details.id,
@@ -629,7 +628,7 @@ async function performTmdbSearch(type: string, query: string, language: string, 
         if(allIds.tvdbId) parsed._tvdbId = String(allIds.tvdbId);
         parsed.runtime = type === 'movie' ? Utils.parseRunTime(details.runtime) : null;
         if(type === 'series') parsed.runtime  = Utils.parseRunTime(details.episode_run_time?.[0] ?? details.last_episode_to_air?.runtime ?? details.next_episode_to_air?.runtime ?? null);
-        parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal, ...(details.credits ? { cast: Utils.parseCast(details.credits) } : {}) };
+        parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
         return { parsed, details };
     } catch (error: any) {
         logger.error(`Failed to hydrate TMDB item ${media.id} (${media.title || media.name}):`, error);
@@ -956,18 +955,17 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
     if (originalLanguage) langSet.add(originalLanguage);
     const imageLanguages = Array.from(langSet).join(',');
 
-    const needsCredits = !!config.regexActorExclusionFilter;
     const details = type === 'movie'
       ? await moviedb.movieInfo({
           id: tmdbId,
           language,
-          append_to_response: needsCredits ? "external_ids,release_dates,images,keywords,credits" : "external_ids,release_dates,images,keywords",
+          append_to_response: "external_ids,release_dates,images,keywords",
           include_image_language: imageLanguages
         }, config)
       : await moviedb.tvInfo({
           id: tmdbId,
           language,
-          append_to_response: needsCredits ? "external_ids,content_ratings,images,keywords,credits" : "external_ids,content_ratings,images,keywords",
+          append_to_response: "external_ids,content_ratings,images,keywords",
           include_image_language: imageLanguages
         }, config);
 
@@ -1047,7 +1045,7 @@ async function matchAndEnrichFromTMDB(suggestion: { title: string; year: string 
       );
     }
 
-    parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal, ...(details.credits ? { cast: Utils.parseCast(details.credits) } : {}) };
+    parsed.app_extras = { releaseDates: details.release_dates, certification, certificationLocal: certLocal };
 
     return parsed;
 
@@ -1155,17 +1153,6 @@ async function performAiSearch(query: string, language: string, config: any): Pr
       if (beforeCount !== afterCount) {
         logger.info(`Content exclusion filter: ${beforeCount} -> ${afterCount} results`);
       }
-    }
-
-    if (config.regexActorExclusionFilter) {
-      const beforeCount = filteredResults.length;
-      const castCoverage = filteredResults.filter((r: any) => r.app_extras?.cast?.length > 0).length;
-      logger.info(`Actor exclusion filter active: "${config.regexActorExclusionFilter}" | items with cast: ${castCoverage}/${beforeCount}`);
-      filteredResults = filterMetasByActorRegex(filteredResults, config.regexActorExclusionFilter);
-      const afterCount = filteredResults.length;
-      logger.info(`Actor exclusion filter: ${beforeCount} -> ${afterCount} results`);
-    } else {
-      logger.info(`Actor exclusion filter: NOT active (regexActorExclusionFilter is empty)`);
     }
 
     const totalTime = Date.now() - startTime;
@@ -2490,15 +2477,6 @@ async function getSearch(id: string, type: string, language: string, extra: any,
       const afterCount = metas.length;
       if (beforeCount !== afterCount) {
         logger.info(`Content filter excluded ${beforeCount - afterCount} search results`);
-      }
-    }
-
-    if (config.regexActorExclusionFilter) {
-      const beforeCount = metas.length;
-      metas = filterMetasByActorRegex(metas, config.regexActorExclusionFilter);
-      const afterCount = metas.length;
-      if (beforeCount !== afterCount) {
-        logger.info(`Actor exclusion filter excluded ${beforeCount - afterCount} search results`);
       }
     }
 
