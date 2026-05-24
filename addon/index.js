@@ -3117,10 +3117,18 @@ addon.delete("/api/cache/clear/:key", async (req, res) => {
 
 // --- Static, Auth, and Configuration Routes ---
 addon.get("/", function (_, res) {
+  try {
+    let html = fs.readFileSync(clientIndexPath, 'utf8');
+    html = html.replace(/<title>.*?<\/title>/, '<title>AIOMetadata</title>');
+    html = html.replace('</head>', `  <script>window.LANDING_MODE = true;</script>\n  </head>`);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0'); 
-    res.redirect("/configure"); 
+    res.setHeader('Expires', '0');
+    res.send(html);
+  } catch (error) {
+    consola.error('Error serving landing page:', error);
+    res.redirect('/configure');
+  }
 });
 // --- Basic Manifest Route ---
 addon.get("/manifest.json", function (req, res) {
