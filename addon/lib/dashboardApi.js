@@ -1797,7 +1797,17 @@ class DashboardAPI {
           description: description,
           nextRun: catalogStats.enabled ? (catalogStats.nextRun ? this.getTimeUntil(new Date(catalogStats.nextRun)) : "Scheduled") : "Disabled",
           action: taskAction,
-          category: "warming"
+          category: "warming",
+          warmingDetail: {
+            isRunning: catalogStats.isRunning,
+            catalogsWarmed: catalogStats.catalogsWarmed || 0,
+            totalCatalogs: catalogStats.totalCatalogs || 0,
+            totalItems: catalogStats.totalItems || 0,
+            uuids: (catalogStats.config?.uuids || []).map(uuid => ({
+              uuid: uuid.slice(0, 8),
+              ...(catalogStats.uuidStats?.[uuid] || {}),
+            })),
+          },
         });
       } catch (error) {
         logger.warn("Failed to get comprehensive warming status:", error.message);

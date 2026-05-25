@@ -23,6 +23,9 @@ function deriveFormState(source: string, catalogType: string, params: Record<str
     if (params.watch_region) fs.watchRegion = params.watch_region;
     if (params.region) fs.releaseRegion = params.region;
     if (params.with_release_type === '4|5|6' || params.with_status === '0|3|4|5') fs.releasedOnly = true;
+    if (params.with_status && params.with_status !== '0|3|4|5') {
+      fs.tmdbTvStatuses = String(params.with_status).split('|');
+    }
     if (params.with_networks) {
       fs.withNetworks = String(params.with_networks).split(/[|,]/).map((id: string) => ({ id: Number(id), label: `Network ${id}` }));
     }

@@ -11,9 +11,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useConfig } from '@/contexts/ConfigContext';
 import { AppConfig, CatalogConfig } from '@/contexts/config';
 import { allCatalogDefinitions } from '@/data/catalogs';
-import { Film, Tv, Sparkles, Users, ShieldCheck, PlayCircle, CheckCircle2, Loader2, CircleHelp } from 'lucide-react';
+import { Film, Tv, Sparkles, Users, ShieldCheck, PlayCircle, CheckCircle2, Loader2, CircleHelp, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { MDBListAPIKeyModal } from '@/components/MDBListAPIKeyModal';
+import { AICatalogDialog } from '@/components/AICatalogDialog';
 import { cn } from '@/lib/utils';
 import { exportConfigFile } from '@/lib/exportConfigFile';
 import { apiCache } from '@/utils/apiCache';
@@ -243,7 +244,7 @@ const presetConfigs: PresetConfig[] = [
   }
 ];
 
-type WizardStep = 1 | 2 | 3 | 4 | 5;
+type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 type StepOneMode = 'cards' | 'guided';
 type RequiredKeyId = 'tmdb' | 'tvdb';
 type RequiredKeyMode = 'custom' | 'builtin';
@@ -467,6 +468,7 @@ const wizardStepConfig: WizardStepConfig[] = [
   { id: 3, label: 'Keys', hint: 'Add required API keys for your selected preset.' },
   { id: 4, label: 'Streaming Services', hint: 'Quickly add TMDB discover catalogs by service and region.' },
   { id: 5, label: 'Curators', hint: 'Optionally import trusted curated collections.' },
+  { id: 6, label: 'AI Catalogs', hint: 'Optionally generate custom catalogs with AI.' },
 ];
 
 const trustedCurators: CuratorProfile[] = [
@@ -535,6 +537,8 @@ export function PresetManager() {
   const [selectedStreamingServices, setSelectedStreamingServices] = useState<SelectedStreamingService[]>([]);
   const [streamingReleasedOnly, setStreamingReleasedOnly] = useState<boolean>(false);
   const [streamingDatePreset, setStreamingDatePreset] = useState<StreamingTimeRangePreset>('last_5_years');
+
+  const [aiGeneratedCatalogs, setAiGeneratedCatalogs] = useState<CatalogConfig[]>([]);
 
   const [showMDBListModal, setShowMDBListModal] = useState(false);
   const [isValidatingApiKey, setIsValidatingApiKey] = useState(false);
@@ -1592,7 +1596,7 @@ export function PresetManager() {
       toast.error('Add the required keys to continue.');
       return;
     }
-    setWizardStep((previousStep) => Math.min(5, previousStep + 1) as WizardStep);
+    setWizardStep((previousStep) => Math.min(6, previousStep + 1) as WizardStep);
   };
 
   const goToPreviousStep = () => {
@@ -1639,10 +1643,14 @@ export function PresetManager() {
         }
       }
 
+      if (aiGeneratedCatalogs.length > 0) {
+        summaryParts.push(`Generated ${aiGeneratedCatalogs.length} AI catalog${aiGeneratedCatalogs.length === 1 ? '' : 's'}.`);
+      }
+
       const displayTypeOverrides = getDisplayTypeOverrides();
       const presetCatalogs = buildPresetCatalogs(selectedPreset.id);
       const finalCatalogs = applyDisplayOverridesToCatalogs(
-        [...presetCatalogs, ...generatedStreamingCatalogs, ...importedCatalogs],
+        [...presetCatalogs, ...generatedStreamingCatalogs, ...importedCatalogs, ...aiGeneratedCatalogs],
         displayTypeOverrides
       );
 
@@ -1799,6 +1807,8 @@ export function PresetManager() {
   const hasReachedKeysStep = wizardStep >= 3;
   const hasReachedStreamingStep = wizardStep >= 4;
   const hasReachedCuratorsStep = wizardStep >= 5;
+  const hasReachedAIStep = wizardStep >= 6;
+  const hasAIKey = !!(config.apiKeys?.openrouter || config.apiKeys?.gemini);
 
   const renderStepActions = () => (
     <div className="mt-2 flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center">
@@ -1812,7 +1822,7 @@ export function PresetManager() {
           Back
         </Button>
       )}
-      {wizardStep < 5 ? (
+      {wizardStep < 6 ? (
         <Button
           className="w-full whitespace-normal text-center sm:ml-auto sm:w-auto"
           onClick={goToNextStep}
@@ -1851,7 +1861,7 @@ export function PresetManager() {
               <div className="space-y-2">
                 <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Preset Wizard</h2>
                 <p className="text-base leading-relaxed text-muted-foreground">
-                  Pick a preset, choose safety and labels, optionally add streaming-service discover catalogs, and optionally import trusted MDBList collections.
+                  Pick a preset, choose safety and labels, optionally add streaming-service discover catalogs, import trusted MDBList collections, and generate AI-powered catalogs.
                   Your selections are applied in order, and display label overrides are applied last.
                 </p>
               </div>
@@ -1891,10 +1901,10 @@ export function PresetManager() {
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
-            <p className="text-sm font-semibold shrink-0">Step {wizardStep} of 5</p>
+            <p className="text-sm font-semibold shrink-0">Step {wizardStep} of 6</p>
             <p className="text-xs text-muted-foreground">{activeStepMeta?.hint}</p>
           </div>
-          <div className="grid gap-2 md:grid-cols-5">
+          <div className="grid gap-2 md:grid-cols-6">
             {wizardStepConfig.map((step) => {
               const isActive = wizardStep === step.id;
               const isComplete = wizardStep > step.id;
@@ -2866,6 +2876,73 @@ export function PresetManager() {
         </Card>
       )}
 
+      {wizardStep === 6 && (
+        <Card className="animate-in fade-in-0 slide-in-from-right-2 duration-300">
+          <CardHeader>
+            <CardTitle>Step 6: AI-Powered Catalogs (Optional)</CardTitle>
+            <CardDescription>
+              Describe what you want to watch in plain language and AI will generate discover catalogs for you.
+              You can create multiple catalogs — they'll be added alongside your preset and streaming selections.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {!hasAIKey ? (
+              <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-center space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  To use the AI Catalog Builder, add an OpenRouter or Gemini API key in your configuration.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You can skip this step and add AI catalogs later from the Catalogs tab.
+                </p>
+              </div>
+            ) : (
+              <>
+                <AICatalogDialog
+                  isOpen={true}
+                  onClose={() => {}}
+                  embedded
+                  onCatalogsCreated={(catalogs) => {
+                    setAiGeneratedCatalogs(prev => [...prev, ...catalogs]);
+                  }}
+                />
+
+                {aiGeneratedCatalogs.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Generated catalogs ({aiGeneratedCatalogs.length})</p>
+                    <div className="space-y-1.5">
+                      {aiGeneratedCatalogs.map((catalog, index) => (
+                        <div
+                          key={`${catalog.id}-${index}`}
+                          className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/80 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="secondary" className="text-xs shrink-0">
+                              {(catalog.source || catalog.metadata?.discover?.source || 'tmdb').toUpperCase()}
+                            </Badge>
+                            <span className="text-sm truncate">{catalog.name}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 shrink-0"
+                            onClick={() => {
+                              setAiGeneratedCatalogs(prev => prev.filter((_, i) => i !== index));
+                            }}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            {renderStepActions()}
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-dashed border-border bg-muted/20">
         <CardContent className="p-4 md:p-5 space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -2912,12 +2989,22 @@ export function PresetManager() {
               </div>
             )}
             {hasReachedCuratorsStep && (
-              <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2 sm:col-span-2 lg:col-span-1">
+              <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Curator import</p>
                 <p className="text-sm font-medium text-foreground truncate">
                   {selectedCuratorListCount > 0
                     ? `${selectedCuratorListCount} selected from ${selectedCuratorNames || 'featured curators'}`
                     : 'Skipped'}
+                </p>
+              </div>
+            )}
+            {hasReachedAIStep && (
+              <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">AI catalogs</p>
+                <p className="text-sm font-medium text-foreground truncate">
+                  {aiGeneratedCatalogs.length > 0
+                    ? `${aiGeneratedCatalogs.length} generated`
+                    : hasAIKey ? 'Skipped' : 'No AI key'}
                 </p>
               </div>
             )}

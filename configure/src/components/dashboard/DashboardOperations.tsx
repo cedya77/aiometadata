@@ -678,6 +678,106 @@ export function DashboardOperations({ data, loading, activeTab }: { data: any; l
                     )}
                   </div>
                 </div>
+
+                {task.warmingDetail && task.warmingDetail.uuids?.length > 0 && (
+                  task.warmingDetail.isRunning ? (
+                    <div className="mt-3 pt-3 border-t space-y-3">
+                      {/* Live progress header */}
+                      {task.warmingDetail.totalCatalogs > 0 && (
+                        <div className="rounded-lg p-3 bg-blue-500/10 border border-blue-500/20">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500" />
+                              </div>
+                              <span className="text-xs font-medium">Warming in progress</span>
+                            </div>
+                            <span className="text-xs tabular-nums">
+                              <AnimatedNumber value={task.warmingDetail.catalogsWarmed} /> / {task.warmingDetail.totalCatalogs} catalogs
+                            </span>
+                          </div>
+                          <div className="relative h-2 w-full overflow-hidden rounded-full bg-black/20">
+                            <div
+                              className="h-full rounded-full transition-all duration-700 ease-out bg-gradient-to-r from-blue-500 to-cyan-400"
+                              style={{ width: `${(task.warmingDetail.catalogsWarmed / task.warmingDetail.totalCatalogs) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Per-UUID live cards */}
+                      <div className="grid gap-2">
+                        {task.warmingDetail.uuids.map((u: any) => {
+                          const isComplete = u.totalCatalogs > 0 && u.catalogsWarmed >= u.totalCatalogs;
+                          const isActive = !isComplete && u.totalCatalogs > 0 && u.catalogsWarmed < u.totalCatalogs;
+                          const isPending = !isComplete && u.catalogsWarmed === 0 && (!u.totalCatalogs || u.totalCatalogs === 0);
+                          const progress = u.totalCatalogs > 0 ? (u.catalogsWarmed / u.totalCatalogs) * 100 : 0;
+                          return (
+                            <div
+                              key={u.uuid}
+                              className={`rounded-md border p-2.5 transition-colors ${
+                                isActive
+                                  ? 'border-blue-500/40 bg-blue-500/5'
+                                  : isComplete
+                                    ? 'border-green-500/30 bg-green-500/5'
+                                    : 'border-border/50 bg-muted/30'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className={`w-2 h-2 rounded-full shrink-0 ${
+                                    isActive ? 'bg-blue-500 animate-pulse' : isComplete ? 'bg-green-500' : 'bg-muted-foreground/30'
+                                  }`} />
+                                  <code className="text-xs font-mono text-muted-foreground">{u.uuid}</code>
+                                  {isComplete && <Badge variant="outline" className="text-[10px] h-4 px-1 border-green-500/40 text-green-600">done</Badge>}
+                                  {isPending && <Badge variant="outline" className="text-[10px] h-4 px-1">queued</Badge>}
+                                </div>
+                                {u.totalCatalogs > 0 && (
+                                  <span className="text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                                    <AnimatedNumber value={u.catalogsWarmed} />/{u.totalCatalogs}
+                                    {u.duration && !isActive && <span className="hidden sm:inline"> · {u.duration}</span>}
+                                  </span>
+                                )}
+                              </div>
+                              {u.totalCatalogs > 0 && (
+                                <div className="relative h-1 w-full overflow-hidden rounded-full bg-black/10 mt-2">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-700 ease-out ${
+                                      isActive ? 'bg-blue-500' : isComplete ? 'bg-green-500' : 'bg-muted-foreground/30'
+                                    }`}
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                              )}
+                              {isActive && u.currentCatalog && (
+                                <p className="mt-1.5 text-[11px] text-blue-400 truncate">
+                                  Warming: {u.currentCatalog}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : task.warmingDetail.uuids.some((u: any) => u.totalCatalogs > 0) ? (
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="grid gap-1">
+                        {task.warmingDetail.uuids.map((u: any) => (
+                          <div key={u.uuid} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500/60" />
+                            <code className="font-mono">{u.uuid}</code>
+                            {u.totalCatalogs > 0 && (
+                              <span className="ml-auto tabular-nums whitespace-nowrap">
+                                {u.catalogsWarmed}/{u.totalCatalogs} catalogs{u.duration && <> · {u.duration}</>}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null
+                )}
               </div>
             ))}
           </div>

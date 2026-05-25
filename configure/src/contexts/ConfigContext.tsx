@@ -146,10 +146,10 @@ const initialConfig: AppConfig = {
   },
   posterRatingProvider: 'rpdb' as 'rpdb' | 'top',
   usePosterProxy: true,
-  mdblistWatchTracking: true,
-  anilistWatchTracking: true,
-  simklWatchTracking: true,
-  traktWatchTracking: true,
+  mdblistWatchTracking: false,
+  anilistWatchTracking: false,
+  simklWatchTracking: false,
+  traktWatchTracking: false,
   publicmetadbWatchTracking: false,
   enableRatingPostersForLibrary: true, // Default to enabled - keep Rating Posters for library items
   showRateMeButton: false, // Default to disabled - user must enable to show rate button

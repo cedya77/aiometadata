@@ -993,6 +993,7 @@ class ComprehensiveCatalogWarmer {
 
             try {
               this.log('info', `Warming catalog: ${catalog.id} (${catalog.name}) for UUID ${uuid}`);
+              this.stats.uuidStats[uuid].currentCatalog = catalog.name || catalog.id;
               const result = await this.warmCatalog(catalog, config, uuid);
 
               // Update Instance Stats (UUID)
@@ -1012,6 +1013,7 @@ class ComprehensiveCatalogWarmer {
             }
           }
 
+          delete this.stats.uuidStats[uuid].currentCatalog;
           const uuidDuration = Date.now() - uuidStartTime;
           this.stats.uuidStats[uuid].duration = `${Math.floor(uuidDuration / 60000)}m ${Math.floor((uuidDuration % 60000) / 1000)}s`;
 

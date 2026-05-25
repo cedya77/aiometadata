@@ -142,6 +142,15 @@ const TV_SORT_OPTIONS = [
   { value: 'vote_count.desc', label: 'Vote Count (Highest)' },
 ] as const;
 
+const TMDB_TV_STATUS_OPTIONS = [
+  { value: '0', label: 'Returning Series' },
+  { value: '1', label: 'Planned' },
+  { value: '2', label: 'In Production' },
+  { value: '3', label: 'Ended' },
+  { value: '4', label: 'Cancelled' },
+  { value: '5', label: 'Pilot' },
+] as const;
+
 const TVDB_MOVIE_SORT_OPTIONS = [
   { value: 'score', label: 'Score' },
   { value: 'firstAired', label: 'First Aired' },
@@ -735,6 +744,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
   const [simklYear, setSimklYear] = useState(getSimklDefaultYear('movies'));
   const [includeAdult, setIncludeAdult] = useState<boolean>(config.includeAdult);
   const [releasedOnly, setReleasedOnly] = useState<boolean>(false);
+  const [tmdbTvStatuses, setTmdbTvStatuses] = useState<string[]>([]);
   const [cacheTTL, setCacheTTL] = useState<number>(Math.max(catalogTTL, 300));
 
   const [references, setReferences] = useState<TmdbDiscoverReferenceResponse | null>(null);
@@ -1009,6 +1019,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     simklYear,
     includeAdult,
     releasedOnly,
+    tmdbTvStatuses,
     includeGenres,
     excludeGenres,
     genreJoinMode,
@@ -1122,6 +1133,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     setSimklYear(getSimklDefaultYear('movies'));
     setIncludeAdult(config.includeAdult);
     setReleasedOnly(false);
+    setTmdbTvStatuses([]);
     setCacheTTL(Math.max(catalogTTL, 300));
 
     setReferences(null);
@@ -1268,6 +1280,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     // TMDB-only
     if (typeof fs.includeAdult === 'boolean') setIncludeAdult(fs.includeAdult);
     if (typeof fs.releasedOnly === 'boolean') setReleasedOnly(fs.releasedOnly);
+    if (fs.tmdbTvStatuses) setTmdbTvStatuses(fs.tmdbTvStatuses);
     if (fs.selectedPeople) setSelectedPeople(fs.selectedPeople);
     if (fs.peopleJoinMode) setPeopleJoinMode(fs.peopleJoinMode);
     if (fs.withCompanies) setWithCompanies(fs.withCompanies);
@@ -1393,6 +1406,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
     if (fs.sortBy) setSortBy(fs.sortBy);
     if (typeof fs.includeAdult === 'boolean') setIncludeAdult(fs.includeAdult);
     if (typeof fs.releasedOnly === 'boolean') setReleasedOnly(fs.releasedOnly);
+    if (fs.tmdbTvStatuses) setTmdbTvStatuses(fs.tmdbTvStatuses);
     if (typeof fs.voteCountMin === 'number') setVoteCountMin(fs.voteCountMin);
     if (fs.voteAverageRange) setVoteAverageRange(fs.voteAverageRange);
     if (fs.runtimeRange) setRuntimeRange(fs.runtimeRange);
@@ -2221,11 +2235,12 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
       params.region = releaseRegion;
     }
     if (catalogType === 'movie' && releasedOnly) {
-      // Home release channels only: digital, physical, or TV.
       params.with_release_type = '4|5|6';
       params['release_date.lte'] = getTodayLocalDateString();
+    }
+    if (catalogType === 'series' && tmdbTvStatuses.length > 0) {
+      params.with_status = tmdbTvStatuses.join('|');
     } else if (catalogType === 'series' && releasedOnly) {
-      // Exclude planned/in-production series. Keep statuses that indicate released content.
       params.with_status = '0|3|4|5';
     }
 
@@ -2290,6 +2305,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
       Object.assign(state, {
         includeAdult,
         releasedOnly,
+        tmdbTvStatuses,
         selectedPeople,
         peopleJoinMode,
         withCompanies,
@@ -3479,6 +3495,7 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                 </div>
 
                 {discoverSource === 'tmdb' ? (
+                  <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div>
@@ -3489,7 +3506,15 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                             : 'Exclude series that are planned or in production.'}
                         </p>
                       </div>
-                      <Switch checked={releasedOnly} onCheckedChange={setReleasedOnly} />
+                      <Switch
+                        checked={releasedOnly}
+                        onCheckedChange={(checked) => {
+                          setReleasedOnly(checked);
+                          if (catalogType === 'series') {
+                            setTmdbTvStatuses(checked ? ['0', '3', '4', '5'] : []);
+                          }
+                        }}
+                      />
                     </div>
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div>
@@ -3499,6 +3524,45 @@ export function DiscoverBuilderDialog({ isOpen, onClose, editingCatalog, customi
                       <Switch checked={includeAdult} onCheckedChange={setIncludeAdult} />
                     </div>
                   </div>
+                  {catalogType === 'series' && (
+                    <div className="space-y-2">
+                      <LabelWithTooltip tooltip="Filter TV shows by their current airing status. Select multiple to include shows matching any of the chosen statuses.">
+                        Status
+                      </LabelWithTooltip>
+                      <div className="flex flex-wrap gap-2">
+                        {TMDB_TV_STATUS_OPTIONS.map(option => {
+                          const isSelected = tmdbTvStatuses.includes(option.value);
+                          return (
+                            <Badge
+                              key={option.value}
+                              variant={isSelected ? 'default' : 'outline'}
+                              className="cursor-pointer select-none"
+                              onClick={() => {
+                                setReleasedOnly(false);
+                                if (isSelected) {
+                                  setTmdbTvStatuses(prev => prev.filter(v => v !== option.value));
+                                } else {
+                                  setTmdbTvStatuses(prev => [...prev, option.value]);
+                                }
+                              }}
+                            >
+                              {option.label}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                      {tmdbTvStatuses.length > 0 && (
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => { setTmdbTvStatuses([]); setReleasedOnly(false); }}
+                        >
+                          Clear selection
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  </>
                 ) : discoverSource === 'tvdb' ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">

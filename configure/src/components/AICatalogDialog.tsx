@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useConfig } from '@/contexts/ConfigContext';
+import { useConfig, type CatalogConfig } from '@/contexts/ConfigContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface AICatalogDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  embedded?: boolean;
+  onCatalogsCreated?: (catalogs: CatalogConfig[]) => void;
 }
 
 type AICatalogGenerationMode = 'auto' | 'tmdb' | 'anilist' | 'mal' | 'tvdb' | 'simkl';
@@ -71,7 +73,7 @@ const EXAMPLE_PROMPTS: Record<AICatalogGenerationMode, string[]> = {
 
 type DialogState = 'idle' | 'generating' | 'resolving' | 'success' | 'error';
 
-export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
+export function AICatalogDialog({ isOpen, onClose, embedded, onCatalogsCreated }: AICatalogDialogProps) {
   const { config, setConfig, auth } = useConfig();
   const [query, setQuery] = useState('');
   const [state, setState] = useState<DialogState>('idle');
@@ -140,10 +142,14 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
         throw new Error('No catalogs were generated');
       }
 
-      setConfig(prev => ({
-        ...prev,
-        catalogs: [...prev.catalogs, ...catalogs],
-      }));
+      if (onCatalogsCreated) {
+        onCatalogsCreated(catalogs);
+      } else {
+        setConfig(prev => ({
+          ...prev,
+          catalogs: [...prev.catalogs, ...catalogs],
+        }));
+      }
 
       setCreatedCatalogs(catalogs.map((c: any) => ({ name: c.name, source: c.source })));
       if (data.warnings?.length) setWarnings(data.warnings);
@@ -180,6 +186,156 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
     activeExamples[(exampleIndex + 3) % activeExamples.length],
   ];
 
+  const formContent = (
+    <div className="space-y-4 py-2">
+      <AnimatePresence mode="wait">
+        {state === 'success' ? (
+          <motion.div
+            key="success"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-3"
+          >
+            <div className="flex items-center gap-2 text-green-500">
+              <Check className="h-5 w-5" />
+              <span className="font-medium">
+                {createdCatalogs.length === 1 ? 'Catalog created!' : `${createdCatalogs.length} catalogs created!`}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {createdCatalogs.map((c, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <Badge variant="secondary" className="text-xs">{c.source.toUpperCase()}</Badge>
+                  <span>{c.name}</span>
+                </div>
+              ))}
+            </div>
+            {warnings.length > 0 && (
+              <div className="text-xs text-muted-foreground mt-2">
+                {warnings.map((w, i) => <p key={i}>{w}</p>)}
+              </div>
+            )}
+            <div className="flex gap-2 pt-2">
+              <Button size="sm" variant="outline" onClick={() => { setState('idle'); setQuery(''); }}>
+                Create more
+              </Button>
+              {!embedded && (
+                <Button size="sm" onClick={handleClose}>
+                  Done
+                </Button>
+              )}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div key="form" initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+            <div className="space-y-2">
+              <textarea
+                ref={textareaRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`e.g. "${activeExamples[exampleIndex % activeExamples.length]}"`}
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+                disabled={state === 'generating' || state === 'resolving'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && query.trim()) {
+                    e.preventDefault();
+                    handleCreate();
+                  }
+                }}
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {visibleExamples.map((example) => (
+                  <button
+                    key={example}
+                    onClick={() => handleExampleClick(example)}
+                    disabled={state === 'generating' || state === 'resolving'}
+                    className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {state === 'error' && error && (
+              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Mode</span>
+              <Select
+                value={generationMode}
+                onValueChange={(value) => {
+                  setGenerationMode(value as AICatalogGenerationMode);
+                  setExampleIndex(0);
+                }}
+                disabled={state === 'generating' || state === 'resolving'}
+              >
+                <SelectTrigger className="h-8 w-32 rounded-md text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GENERATION_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between">
+              {hasBothProviders ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setProvider('openrouter')}
+                    className={`text-xs px-2 py-1 rounded-md transition-colors ${provider === 'openrouter' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+                    disabled={state === 'generating' || state === 'resolving'}
+                  >
+                    OpenRouter
+                  </button>
+                  <button
+                    onClick={() => setProvider('gemini')}
+                    className={`text-xs px-2 py-1 rounded-md transition-colors ${provider === 'gemini' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+                    disabled={state === 'generating' || state === 'resolving'}
+                  >
+                    Gemini
+                  </button>
+                </div>
+              ) : (
+                <Badge variant="outline" className="text-xs text-muted-foreground">
+                  via {providerLabel}
+                </Badge>
+              )}
+              <Button
+                onClick={handleCreate}
+                disabled={!query.trim() || state === 'generating' || state === 'resolving'}
+                size="sm"
+              >
+                {(state === 'generating' || state === 'resolving') ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {state === 'generating' ? 'Generating...' : 'Resolving...'}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Create
+                  </>
+                )}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
+  if (embedded) return formContent;
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -193,150 +349,7 @@ export function AICatalogDialog({ isOpen, onClose }: AICatalogDialogProps) {
             You can request up to 5 catalogs at once.
           </DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <AnimatePresence mode="wait">
-            {state === 'success' ? (
-              <motion.div
-                key="success"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-3"
-              >
-                <div className="flex items-center gap-2 text-green-500">
-                  <Check className="h-5 w-5" />
-                  <span className="font-medium">
-                    {createdCatalogs.length === 1 ? 'Catalog created!' : `${createdCatalogs.length} catalogs created!`}
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  {createdCatalogs.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <Badge variant="secondary" className="text-xs">{c.source.toUpperCase()}</Badge>
-                      <span>{c.name}</span>
-                    </div>
-                  ))}
-                </div>
-                {warnings.length > 0 && (
-                  <div className="text-xs text-muted-foreground mt-2">
-                    {warnings.map((w, i) => <p key={i}>{w}</p>)}
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2">
-                  <Button size="sm" variant="outline" onClick={() => { setState('idle'); setQuery(''); }}>
-                    Create more
-                  </Button>
-                  <Button size="sm" onClick={handleClose}>
-                    Done
-                  </Button>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div key="form" initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="space-y-2">
-                  <textarea
-                    ref={textareaRef}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder={`e.g. "${activeExamples[exampleIndex % activeExamples.length]}"`}
-                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-                    disabled={state === 'generating' || state === 'resolving'}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey && query.trim()) {
-                        e.preventDefault();
-                        handleCreate();
-                      }
-                    }}
-                  />
-                  <div className="flex flex-wrap gap-1.5">
-                    {visibleExamples.map((example) => (
-                      <button
-                        key={example}
-                        onClick={() => handleExampleClick(example)}
-                        disabled={state === 'generating' || state === 'resolving'}
-                        className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                      >
-                        {example}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {state === 'error' && error && (
-                  <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
-                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">Mode</span>
-                  <Select
-                    value={generationMode}
-                    onValueChange={(value) => {
-                      setGenerationMode(value as AICatalogGenerationMode);
-                      setExampleIndex(0);
-                    }}
-                    disabled={state === 'generating' || state === 'resolving'}
-                  >
-                    <SelectTrigger className="h-8 w-32 rounded-md text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {GENERATION_MODE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  {hasBothProviders ? (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setProvider('openrouter')}
-                        className={`text-xs px-2 py-1 rounded-md transition-colors ${provider === 'openrouter' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
-                        disabled={state === 'generating' || state === 'resolving'}
-                      >
-                        OpenRouter
-                      </button>
-                      <button
-                        onClick={() => setProvider('gemini')}
-                        className={`text-xs px-2 py-1 rounded-md transition-colors ${provider === 'gemini' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
-                        disabled={state === 'generating' || state === 'resolving'}
-                      >
-                        Gemini
-                      </button>
-                    </div>
-                  ) : (
-                    <Badge variant="outline" className="text-xs text-muted-foreground">
-                      via {providerLabel}
-                    </Badge>
-                  )}
-                  <Button
-                    onClick={handleCreate}
-                    disabled={!query.trim() || state === 'generating' || state === 'resolving'}
-                    size="sm"
-                  >
-                    {(state === 'generating' || state === 'resolving') ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        {state === 'generating' ? 'Generating...' : 'Resolving...'}
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-4 w-4 mr-2" />
-                        Create
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {formContent}
       </DialogContent>
     </Dialog>
   );
