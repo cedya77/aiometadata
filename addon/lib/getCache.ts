@@ -1207,6 +1207,7 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
   const isSimklDiscoverCatalog = idOnly.startsWith('simkl.discover.');
   const isMalDiscoverCatalog = idOnly.startsWith('mal.discover.');
   const isDiscoverCatalog = isTmdbDiscoverCatalog || isTvdbDiscoverCatalog || isAniListDiscoverCatalog || isSimklDiscoverCatalog || isMalDiscoverCatalog;
+  const isMergedCatalog = idOnly.startsWith('merged.');
   const shouldExcludeLanguageForMAL = isMALCatalog && isMALAnimeProvider;
 
   const catalogFromConfig = config.catalogs?.find((c: any) => c.id === idOnly && c.type === catalogType);
@@ -1343,6 +1344,11 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
       cacheTTL = catCfg.cacheTTL;
       cacheLogger.debug(`[Catalog] Using custom cache TTL for discover catalog ${idOnly}: ${cacheTTL}s`);
     }
+  }
+
+  if (isMergedCatalog) {
+    cacheTTL = 0;
+    cacheLogger.debug(`[Catalog] Skipping outer cache for merged catalog ${idOnly} (sources cache internally)`);
   }
 
   let key: string;

@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, EyeOff, Home, GripVertical, RefreshCw, Trash2, Pencil, Settings, ExternalLink, Star, Shuffle, Link, Wand2, Upload, Download, Trophy, Database, Copy, MoreHorizontal, Sparkles } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -270,6 +270,54 @@ const ANILIST_SORT_OPTIONS: { value: AniListSortOption; label: string }[] = [
   { value: 'PROGRESS_VOLUMES', label: 'Progress (Volumes)' },
 ];
 
+function reconcileMergedReferences(catalogs: CatalogConfig[]): CatalogConfig[] {
+  const liveIdSet = new Set(catalogs.map(c => `${c.id}-${c.type}`));
+
+  // 1) For each merged catalog, prune dead source refs and decide if it survives.
+  type MergedSurvivor = { id: string; sources: NonNullable<NonNullable<CatalogConfig['metadata']>['mergedSources']> };
+  const mergedSurvivors = new Map<string, MergedSurvivor>();
+  const droppedMergedSources = new Map<string, NonNullable<NonNullable<CatalogConfig['metadata']>['mergedSources']>>();
+
+  let next: CatalogConfig[] = catalogs.map(c => {
+    if (c.source !== 'merged') return c;
+    const sources = c.metadata?.mergedSources || [];
+    const filtered = sources.filter(s => liveIdSet.has(`${s.catalogId}-${s.catalogType}`));
+    if (filtered.length >= 2) {
+      mergedSurvivors.set(c.id, { id: c.id, sources: filtered });
+      return filtered.length === sources.length
+        ? c
+        : { ...c, metadata: { ...c.metadata, mergedSources: filtered } };
+    }
+    // Doesn't survive; remember sources so we can restore them in step 3.
+    droppedMergedSources.set(c.id, filtered);
+    return c;
+  });
+
+  // 2) Drop merged catalogs that didn't survive.
+  next = next.filter(c => c.source !== 'merged' || mergedSurvivors.has(c.id));
+
+  // 3) Restore originalEnabled/originalShowInHome on sources of dropped merges,
+  //    and clear stale mergedInto flags whose target is gone.
+  next = next.map(c => {
+    if (!c.mergedInto) return c;
+    if (mergedSurvivors.has(c.mergedInto)) return c;
+
+    const dropped = droppedMergedSources.get(c.mergedInto);
+    const original = dropped?.find(s => s.catalogId === c.id && s.catalogType === c.type);
+    const { mergedInto, ...rest } = c;
+    if (original) {
+      return {
+        ...rest,
+        enabled: original.originalEnabled,
+        showInHome: original.originalShowInHome,
+      };
+    }
+    return rest;
+  });
+
+  return next;
+}
+
 const sourceBadgeStyles = {
   tmdb: "bg-blue-800/80 text-blue-200 border-blue-600/50 hover:bg-blue-800",
   tvdb: "bg-green-800/80 text-green-200 border-green-600/50 hover:bg-green-800",
@@ -281,6 +329,7 @@ const sourceBadgeStyles = {
   trakt: "bg-red-800/80 text-red-200 border-red-600/50 hover:bg-red-800",
   anilist: "bg-cyan-800/80 text-cyan-200 border-cyan-600/50 hover:bg-cyan-800",
   flixpatrol: "bg-emerald-800/80 text-emerald-200 border-emerald-600/50 hover:bg-emerald-800",
+  merged: "bg-violet-800/80 text-violet-200 border-violet-600/50 hover:bg-violet-800",
 };
 
 const sourceBadgeLabels: Record<string, string> = {
@@ -1781,7 +1830,164 @@ const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
-import { Layers } from 'lucide-react';
+import { Layers, GitMerge } from 'lucide-react';
+
+const MergedCatalogCard = ({
+  catalog,
+  allCatalogs,
+  onDisband,
+}: {
+  catalog: CatalogConfig;
+  allCatalogs: CatalogConfig[];
+  onDisband: () => void;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `${catalog.id}-${catalog.type}`,
+  });
+  const { toggleSelection, isSelected } = useSelection();
+  const catalogKey = `${catalog.id}-${catalog.type}`;
+  const selected = isSelected(catalogKey);
+
+  const sources = catalog.metadata?.mergedSources || [];
+  const sourceCatalogs = sources
+    .map(s => allCatalogs.find(c => c.id === s.catalogId && c.type === s.catalogType))
+    .filter(Boolean) as CatalogConfig[];
+
+  const [expanded, setExpanded] = useState(false);
+  const [showDisbandConfirm, setShowDisbandConfirm] = useState(false);
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "relative flex flex-col p-4",
+        "border-violet-600/40 bg-violet-950/10 dark:bg-violet-950/20",
+        "transition-all duration-200 ease-out",
+        isDragging && "opacity-80 scale-[1.02] shadow-2xl ring-2 ring-violet-500/50",
+        !isDragging && "hover:-translate-y-[1px] hover:shadow-md",
+        selected && "ring-2 ring-blue-500"
+      )}
+    >
+      <div className="flex items-center gap-3 flex-wrap md:flex-nowrap">
+        {/* Selection checkbox */}
+        <div
+          onClick={(e) => { e.stopPropagation(); toggleSelection(catalogKey); }}
+          className="cursor-pointer p-2 -ml-2 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 flex items-center"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label="Select merged catalog"
+        >
+          <div className={cn(
+            "w-5 h-5 border-2 rounded flex items-center justify-center transition-all duration-200 ease-out",
+            selected
+              ? "bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500"
+              : "border-gray-400 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400"
+          )}>
+            {selected && (
+              <svg
+                className="w-3.5 h-3.5 text-white"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.5"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+        </div>
+
+        {/* Drag handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none"
+          aria-label="Drag to reorder"
+        >
+          <GripVertical />
+        </button>
+
+        {/* Identity */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <GitMerge className="h-4 w-4 text-violet-400 shrink-0" />
+            <p className="font-medium break-words min-w-0">{catalog.name}</p>
+            <Badge variant="outline" className="text-xs capitalize">
+              {catalog.displayType || catalog.type}
+            </Badge>
+            <Badge variant="outline" className="font-semibold text-xs bg-violet-800/80 text-violet-200 border-violet-600/50">
+              MERGED
+            </Badge>
+            <Badge variant="outline" className="text-xs">
+              {sources.length} sources
+            </Badge>
+            {catalog.showInHome && (
+              <Badge variant="outline" className="text-xs flex items-center gap-1">
+                <Home className="h-3 w-3" />Home
+              </Badge>
+            )}
+          </div>
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="mt-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            {expanded ? 'Hide sources' : 'Show sources'}
+          </button>
+        </div>
+
+        {/* Disband button */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowDisbandConfirm(true)}
+          className="border-red-300 dark:border-red-800 text-red-500 hover:text-red-600"
+        >
+          <Trash2 className="h-4 w-4 mr-1" />
+          Disband
+        </Button>
+      </div>
+
+      {expanded && sourceCatalogs.length > 0 && (
+        <div className="mt-3 pl-12 space-y-1">
+          {sourceCatalogs.map(sc => {
+            const styleClass = sourceBadgeStyles[sc.source as keyof typeof sourceBadgeStyles] || "bg-gray-700";
+            return (
+              <div key={`${sc.id}-${sc.type}`} className="flex items-center gap-2 text-sm flex-wrap">
+                <Badge variant="outline" className={`text-[10px] ${styleClass}`}>
+                  {sourceBadgeLabels[sc.source] || sc.source.toUpperCase()}
+                </Badge>
+                <span className="text-muted-foreground break-words min-w-0">{sc.name}</span>
+                <Badge variant="outline" className="text-[10px] capitalize">
+                  {sc.displayType || sc.type}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={showDisbandConfirm}
+        onClose={() => setShowDisbandConfirm(false)}
+        onConfirm={onDisband}
+        title="Disband Merged Catalog"
+        description={`This restores the ${sources.length} source catalog${sources.length === 1 ? '' : 's'} to the list. The merged catalog "${catalog.name}" will be deleted.`}
+        confirmText="Disband"
+        variant="destructive"
+      />
+    </Card>
+  );
+};
+
 const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicateDiscover }: {
   catalog: CatalogConfig & { source?: string };
   onEditDiscover?: (catalog: CatalogConfig) => void;
@@ -1912,10 +2118,56 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
   };
 
   const handleDelete = () => {
-    setConfig(prev => ({
-      ...prev,
-      catalogs: prev.catalogs.filter(c => !(c.id === catalog.id && c.type === catalog.type)),
-    }));
+    setConfig(prev => {
+      const targetKey = `${catalog.id}-${catalog.type}`;
+      let next = prev.catalogs;
+
+      // 1) Scrub references to this catalog from any merged catalog's sources.
+      next = next.map(c => {
+        if (c.source !== 'merged') return c;
+        const sources = c.metadata?.mergedSources || [];
+        const filtered = sources.filter(s => `${s.catalogId}-${s.catalogType}` !== targetKey);
+        if (filtered.length === sources.length) return c;
+        return { ...c, metadata: { ...c.metadata, mergedSources: filtered } };
+      });
+
+      // 2) Auto-disband merged catalogs that fell below 2 sources after scrub.
+      //    Restore any remaining source's original flags before dropping the merged entry.
+      const orphans = next.filter(c =>
+        c.source === 'merged' && (c.metadata?.mergedSources?.length || 0) < 2
+      );
+      for (const merged of orphans) {
+        const sources = merged.metadata?.mergedSources || [];
+        next = next
+          .filter(c => !(c.id === merged.id && c.type === merged.type))
+          .map(c => {
+            const src = sources.find(s => s.catalogId === c.id && s.catalogType === c.type);
+            if (!src) return c;
+            const { mergedInto, ...rest } = c;
+            return {
+              ...rest,
+              enabled: src.originalEnabled,
+              showInHome: src.originalShowInHome,
+            };
+          });
+      }
+
+      // 3) Drop any stale mergedInto flags whose target no longer exists.
+      const liveMergedIds = new Set(
+        next.filter(c => c.source === 'merged').map(c => c.id)
+      );
+      next = next.map(c => {
+        if (!c.mergedInto) return c;
+        if (liveMergedIds.has(c.mergedInto)) return c;
+        const { mergedInto, ...rest } = c;
+        return rest;
+      });
+
+      // 4) Finally, drop the target catalog itself.
+      next = next.filter(c => !(c.id === catalog.id && c.type === catalog.type));
+
+      return { ...prev, catalogs: reconcileMergedReferences(next) };
+    });
   };
 
   const handleMoveToTop = () => {
@@ -2924,6 +3176,9 @@ function CatalogsSettingsContent({
 
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
+      // Hide catalogs absorbed into a merged catalog
+      if (cat.mergedInto) return false;
+
       // Filter out disabled catalogs if hideDisabledCatalogs is true
       if (hideDisabledCatalogs && !cat.enabled) return false;
 
@@ -3526,7 +3781,7 @@ function CatalogsSettingsContent({
     if (!importPreview) return;
     try {
       const newCatalogs = mergeCatalogs(config.catalogs, importPreview.payload.catalogs, importMode);
-      setConfig(prev => ({ ...prev, catalogs: newCatalogs }));
+      setConfig(prev => ({ ...prev, catalogs: reconcileMergedReferences(newCatalogs) }));
       toast.success(`Imported ${importPreview.catalogCount} catalogs`, {
         description: importMode === 'replace'
           ? 'Matching catalogs replaced, new catalogs added'
@@ -3548,6 +3803,100 @@ function CatalogsSettingsContent({
     setIsImportLoading(false);
   };
 
+  // Merge dialog state
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeName, setMergeName] = useState('');
+  const [mergeShowInHome, setMergeShowInHome] = useState(true);
+  const [mergeDisplayType, setMergeDisplayType] = useState('');
+
+  const openMergeDialog = () => {
+    if (selectedCatalogs.some(c => c.source === 'merged')) {
+      toast.error('Cannot include an existing merged catalog in a new merge.');
+      return;
+    }
+    if (selectedCatalogs.length < 2) {
+      toast.error('Select at least 2 catalogs to merge.');
+      return;
+    }
+    const baseName = selectedCatalogs.slice(0, 3).map(c => c.name).join(' + ')
+      + (selectedCatalogs.length > 3 ? ` +${selectedCatalogs.length - 3}` : '');
+    setMergeName(baseName);
+    setMergeShowInHome(true);
+    setMergeDisplayType('');
+    setShowMergeDialog(true);
+  };
+
+  const handleConfirmMerge = () => {
+    const types = new Set(selectedCatalogs.map(c => c.type));
+    const mergedType: CatalogConfig['type'] = types.size === 1
+      ? ([...types][0] as CatalogConfig['type'])
+      : 'all';
+
+    const uuid = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const mergeId = `merged.${uuid.replace(/-/g, '').slice(0, 12)}`;
+
+    const mergedSources = selectedCatalogs.map(c => ({
+      catalogId: c.id,
+      catalogType: c.type,
+      originalEnabled: !!c.enabled,
+      originalShowInHome: !!c.showInHome,
+    }));
+
+    const newCatalog: CatalogConfig = {
+      id: mergeId,
+      name: mergeName.trim() || 'Merged Catalog',
+      type: mergedType,
+      enabled: true,
+      source: 'merged',
+      showInHome: mergeShowInHome,
+      displayType: mergeDisplayType.trim() || undefined,
+      metadata: { mergedSources },
+    };
+
+    setConfig(prev => ({
+      ...prev,
+      catalogs: reconcileMergedReferences([
+        ...prev.catalogs.map(c => {
+          const match = selectedCatalogs.some(s => s.id === c.id && s.type === c.type);
+          return match ? { ...c, mergedInto: mergeId } : c;
+        }),
+        newCatalog,
+      ]),
+    }));
+    deselectAll();
+    setShowMergeDialog(false);
+    toast.success(`Merged ${mergedSources.length} catalogs into "${newCatalog.name}"`);
+  };
+
+  const handleDisbandMerge = (mergedCatalog: CatalogConfig) => {
+    const sources = mergedCatalog.metadata?.mergedSources || [];
+
+    setConfig(prev => {
+      const idx = prev.catalogs.findIndex(c =>
+        c.id === mergedCatalog.id && c.type === mergedCatalog.type
+      );
+      if (idx === -1) return prev;
+
+      const restored = prev.catalogs
+        .filter((_, i) => i !== idx)
+        .map(c => {
+          const src = sources.find(s => s.catalogId === c.id && s.catalogType === c.type);
+          if (!src) return c;
+          const { mergedInto, ...rest } = c;
+          return {
+            ...rest,
+            enabled: src.originalEnabled,
+            showInHome: src.originalShowInHome,
+          };
+        });
+      return { ...prev, catalogs: reconcileMergedReferences(restored) };
+    });
+
+    toast.success(`Disbanded "${mergedCatalog.name}" - ${sources.length} catalogs restored`);
+  };
+
   const handleBulkDelete = () => {
     // Show confirmation dialog
     setShowDeleteConfirmDialog(true);
@@ -3561,30 +3910,78 @@ function CatalogsSettingsContent({
     setLoadingAction('delete');
 
     try {
-      // Filter selected catalogs to only removable ones
-      const catalogsToDelete = selectedCatalogs.filter(isRemovableCatalog);
+      // Split selection: merged catalogs get disbanded (sources restored),
+      // non-merged catalogs get deleted normally.
+      const toDisband = selectedCatalogs.filter(c => c.source === 'merged');
+      const toDelete = selectedCatalogs.filter(c => c.source !== 'merged' && isRemovableCatalog(c));
+      const skippedCount = selectedCatalogs.length - toDisband.length - toDelete.length;
 
-      // Count skipped catalogs (non-removable ones)
-      const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
+      if (toDisband.length > 0 || toDelete.length > 0) {
+        setConfig(prev => {
+          let next = prev.catalogs;
 
-      // Remove catalogs from config state
-      if (catalogsToDelete.length > 0) {
-        setConfig(prev => ({
-          ...prev,
-          catalogs: prev.catalogs.filter(c => {
-            const catalogKey = `${c.id}-${c.type}`;
-            const shouldDelete = catalogsToDelete.some(
-              cat => `${cat.id}-${cat.type}` === catalogKey
-            );
-            return !shouldDelete;
-          })
-        }));
+          // 1) Disband each selected merged catalog: restore sources & remove merged entry.
+          for (const merged of toDisband) {
+            const sources = merged.metadata?.mergedSources || [];
+            const idx = next.findIndex(c => c.id === merged.id && c.type === merged.type);
+            if (idx === -1) continue;
+            next = next
+              .filter((_, i) => i !== idx)
+              .map(c => {
+                const src = sources.find(s => s.catalogId === c.id && s.catalogType === c.type);
+                if (!src) return c;
+                const { mergedInto, ...rest } = c;
+                return {
+                  ...rest,
+                  enabled: src.originalEnabled,
+                  showInHome: src.originalShowInHome,
+                };
+              });
+          }
+
+          // 2) Defensive scrub: for every still-living merged catalog, drop any
+          //    mergedSources that point at catalogs we're about to delete.
+          const toDeleteKeys = new Set(toDelete.map(c => `${c.id}-${c.type}`));
+          next = next.map(c => {
+            if (c.source !== 'merged') return c;
+            const sources = c.metadata?.mergedSources || [];
+            const filtered = sources.filter(s => !toDeleteKeys.has(`${s.catalogId}-${s.catalogType}`));
+            if (filtered.length === sources.length) return c;
+            return { ...c, metadata: { ...c.metadata, mergedSources: filtered } };
+          });
+
+          // 3) Auto-disband merged catalogs that fell below 2 sources after the
+          //    scrub (orphans). Restore any remaining sources first.
+          const orphanMerged: typeof next = next.filter(c =>
+            c.source === 'merged' && (c.metadata?.mergedSources?.length || 0) < 2
+          );
+          for (const merged of orphanMerged) {
+            const sources = merged.metadata?.mergedSources || [];
+            next = next
+              .filter(c => !(c.id === merged.id && c.type === merged.type))
+              .map(c => {
+                const src = sources.find(s => s.catalogId === c.id && s.catalogType === c.type);
+                if (!src) return c;
+                const { mergedInto, ...rest } = c;
+                return {
+                  ...rest,
+                  enabled: src.originalEnabled,
+                  showInHome: src.originalShowInHome,
+                };
+              });
+          }
+
+          // 4) Apply the regular delete now that no merged catalog references them.
+          next = next.filter(c => !toDeleteKeys.has(`${c.id}-${c.type}`));
+
+          return { ...prev, catalogs: reconcileMergedReferences(next) };
+        });
       }
 
       // Show toast notifications using helper
       showBulkDeleteSuccess({
-        affectedCount: catalogsToDelete.length,
-        skippedCount: skippedCount
+        affectedCount: toDelete.length + toDisband.length,
+        skippedCount,
       });
 
       // Clear selection after deletion
@@ -3916,6 +4313,7 @@ function CatalogsSettingsContent({
           onSetDisplayType={handleBulkSetDisplayType}
           onResetDisplayType={handleBulkResetDisplayType}
           onFindReplaceType={handleBulkFindReplaceType}
+          onMergeSelected={openMergeDialog}
           hasRatingPostersKey={!!config.apiKeys?.rpdb || !!config.apiKeys?.topPoster || !!config.customPosterUrlPattern}
           isLoading={isLoading}
           loadingAction={loadingAction}
@@ -3962,15 +4360,23 @@ function CatalogsSettingsContent({
                   delay: isInitialMount.current ? Math.min(index * 0.015, 0.5) : 0,
                 }}
               >
-              <SortableCatalogItem
-                catalog={catalog}
-                onEditDiscover={(cat) => {
-                  setEditingDiscoverCatalog(cat);
-                  setIsTmdbDiscoverBuilderOpen(true);
-                }}
-                onCustomize={DEFAULT_CATALOG_TEMPLATES[catalog.id] ? handleCustomize : undefined}
-                onDuplicateDiscover={handleDuplicateDiscover}
-              />
+              {catalog.source === 'merged' ? (
+                <MergedCatalogCard
+                  catalog={catalog}
+                  allCatalogs={config.catalogs}
+                  onDisband={() => handleDisbandMerge(catalog)}
+                />
+              ) : (
+                <SortableCatalogItem
+                  catalog={catalog}
+                  onEditDiscover={(cat) => {
+                    setEditingDiscoverCatalog(cat);
+                    setIsTmdbDiscoverBuilderOpen(true);
+                  }}
+                  onCustomize={DEFAULT_CATALOG_TEMPLATES[catalog.id] ? handleCustomize : undefined}
+                  onDuplicateDiscover={handleDuplicateDiscover}
+                />
+              )}
               </motion.div>
             ))}
             </AnimatePresence>
@@ -4036,6 +4442,83 @@ function CatalogsSettingsContent({
         customizeTemplate={customizeTemplate}
       />
 
+      {/* Merge Dialog */}
+      <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Merge {selectedCatalogs.length} Catalogs</DialogTitle>
+            <DialogDescription>
+              The selected catalogs will appear as one combined row. Disbanding restores them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="merge-name">Name</Label>
+              <Input
+                id="merge-name"
+                value={mergeName}
+                onChange={e => setMergeName(e.target.value)}
+                placeholder="Merged Catalog"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="merge-display-type">Display Type (optional)</Label>
+              <Input
+                id="merge-display-type"
+                value={mergeDisplayType}
+                onChange={e => setMergeDisplayType(e.target.value)}
+                placeholder={(() => {
+                  const types = new Set(selectedCatalogs.map(c => c.type));
+                  return types.size === 1 ? [...types][0] : 'all';
+                })()}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="merge-home">Show in Home Board</Label>
+              <Switch
+                id="merge-home"
+                checked={mergeShowInHome}
+                onCheckedChange={setMergeShowInHome}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Type preview: <code className="font-mono">{
+                (new Set(selectedCatalogs.map(c => c.type)).size === 1)
+                  ? selectedCatalogs[0]?.type
+                  : 'all'
+              }</code>
+            </div>
+            <div className="border rounded p-2 max-h-48 overflow-y-auto space-y-1">
+              {selectedCatalogs.map(c => {
+                const styleClass = sourceBadgeStyles[c.source as keyof typeof sourceBadgeStyles] || 'bg-gray-700';
+                return (
+                  <div key={`${c.id}-${c.type}`} className="flex items-center gap-2 text-sm">
+                    <Badge variant="outline" className={`text-[10px] ${styleClass}`}>
+                      {sourceBadgeLabels[c.source] || c.source.toUpperCase()}
+                    </Badge>
+                    <span className="truncate">{c.name}</span>
+                    <Badge variant="outline" className="text-[10px] capitalize ml-auto">
+                      {c.displayType || c.type}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowMergeDialog(false)}>Cancel</Button>
+            <Button
+              onClick={handleConfirmMerge}
+              disabled={!mergeName.trim() || selectedCatalogs.length < 2}
+            >
+              <GitMerge className="h-4 w-4 mr-1" />
+              Create Merged Catalog
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Bulk Delete Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showDeleteConfirmDialog}
@@ -4043,10 +4526,20 @@ function CatalogsSettingsContent({
         onConfirm={handleConfirmBulkDelete}
         title="Delete Selected Catalogs"
         description={(() => {
-          const catalogsToDelete = selectedCatalogs.filter(isRemovableCatalog);
-          const skippedCount = selectedCatalogs.length - catalogsToDelete.length;
+          const mergedSelected = selectedCatalogs.filter(c => c.source === 'merged');
+          const catalogsToDelete = selectedCatalogs.filter(c => c.source !== 'merged' && isRemovableCatalog(c));
+          const skippedCount = selectedCatalogs.length - mergedSelected.length - catalogsToDelete.length;
 
-          let message = `Are you sure you want to delete ${catalogsToDelete.length} catalog${catalogsToDelete.length === 1 ? '' : 's'}?`;
+          const parts: string[] = [];
+          if (catalogsToDelete.length > 0) {
+            parts.push(`delete ${catalogsToDelete.length} catalog${catalogsToDelete.length === 1 ? '' : 's'}`);
+          }
+          if (mergedSelected.length > 0) {
+            parts.push(`disband ${mergedSelected.length} merged catalog${mergedSelected.length === 1 ? '' : 's'} (originals will be restored)`);
+          }
+          let message = parts.length > 0
+            ? `This will ${parts.join(' and ')}.`
+            : 'Nothing selected to delete.';
 
           if (catalogsToDelete.length > 0 && catalogsToDelete.length <= 10) {
             const catalogNames = catalogsToDelete.map(c => `• ${c.name}`).join('\n');
@@ -4054,6 +4547,11 @@ function CatalogsSettingsContent({
           } else if (catalogsToDelete.length > 10) {
             const firstTen = catalogsToDelete.slice(0, 10).map(c => `• ${c.name}`).join('\n');
             message += `\n\n${firstTen}\n• ...and ${catalogsToDelete.length - 10} more`;
+          }
+
+          if (mergedSelected.length > 0 && mergedSelected.length <= 5) {
+            const names = mergedSelected.map(c => `• ${c.name} (merged)`).join('\n');
+            message += `\n\n${names}`;
           }
 
           if (skippedCount > 0) {
@@ -4378,6 +4876,9 @@ export function CatalogsSettings() {
   // Compute filtered catalogs to pass to SelectionProvider
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
+      // Hide catalogs absorbed into a merged catalog (must match the inner-section filter)
+      if (cat.mergedInto) return false;
+
       // Filter out disabled catalogs if hideDisabledCatalogs is true
       if (hideDisabledCatalogs && !cat.enabled) return false;
 
