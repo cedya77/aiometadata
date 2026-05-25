@@ -21,6 +21,7 @@ import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
+import { roundRobinInterleave, dedupMetas, filterMetasByGenre, normalizeGenreKey } from '../utils/mergedCatalog.js';
 
 const consola = require('consola');
 const database = require('./database.js');
@@ -108,6 +109,13 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       logger.debug(`Routing to PublicMetaDB catalog handler for id: ${id}`);
       const pmdbResults = await getPublicMetaDBCatalog(type, id, page, language, config, userUUID);
       return { metas: pmdbResults };
+    }
+    else if (id.startsWith('merged.')) {
+      logger.debug(`Routing to Merged catalog handler for id: ${id}`);
+      const mergedResults = await getMergedCatalog(
+        type, id, genre, page, language, config, userUUID, includeVideos
+      );
+      return { metas: mergedResults };
     }
 
     else {
@@ -2667,6 +2675,96 @@ async function getPublicMetaDBCatalog(
     logger.error(`[PublicMetaDB] Error processing catalog ${catalogId}: ${err.message}`);
     return [];
   }
+}
+
+/**
+ * Fetch and merge results from multiple source catalogs.
+ * Uses round-robin interleaving and multi-namespace deduplication.
+ * Each source catalog handles its own internal caching
+ */
+async function getMergedCatalog(
+  type: string,
+  catalogId: string,
+  genre: string,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string,
+  includeVideos: boolean = false
+): Promise<any[]> {
+  const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
+  if (!catalogConfig) {
+    logger.warn(`[Merged] Catalog config not found for ${catalogId}`);
+    return [];
+  }
+  const sources = (catalogConfig as any).metadata?.mergedSources;
+  if (!sources || sources.length === 0) {
+    logger.warn(`[Merged] No sources defined for ${catalogId}`);
+    return [];
+  }
+
+  // Guard against nested merges and missing-source pruning
+  const validSources = sources.filter((s: any) => {
+    if (s.catalogId.startsWith('merged.')) {
+      logger.warn(`[Merged] Skipping nested merge reference: ${s.catalogId}`);
+      return false;
+    }
+    const stillExists = config.catalogs?.some((c: any) =>
+      c.id === s.catalogId && c.type === s.catalogType
+    );
+    if (!stillExists) {
+      logger.warn(`[Merged] Source ${s.catalogId} (${s.catalogType}) no longer exists in config`);
+      return false;
+    }
+    return true;
+  });
+  if (validSources.length === 0) return [];
+
+  // Per-source page sizing: ask each source for its full page; we then
+  // round-robin interleave, dedup, and slice to the final pageSize.
+  const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+  const hasGenreFilter = !!(genre && genre !== 'None' && normalizeGenreKey(genre));
+  const results = await Promise.all(
+    validSources.map(async (src: any) => {
+      try {
+        const result = await getCatalog(
+          src.catalogType,
+          language,
+          page,
+          src.catalogId,
+          genre,
+          config,
+          userUUID,
+          includeVideos
+        );
+        const raw = result?.metas || [];
+        if (!hasGenreFilter) return raw;
+        // Drop metas whose own `genres` array doesn't include the requested genre
+        const filtered = filterMetasByGenre(raw, genre);
+        if (filtered.length !== raw.length) {
+          logger.debug(
+            `[Merged] ${src.catalogId} (${src.catalogType}): genre="${genre}" dropped ` +
+            `${raw.length - filtered.length}/${raw.length} metas without matching genre`
+          );
+        }
+        return filtered;
+      } catch (err: any) {
+        logger.warn(`[Merged] Source ${src.catalogId} failed: ${err.message}`);
+        return [];
+      }
+    })
+  );
+
+  const interleaved = roundRobinInterleave(results);
+  const deduped = dedupMetas(interleaved);
+  const sliced = deduped.slice(0, pageSize);
+
+  logger.success(
+    `[Merged] ${catalogId}: ${sliced.length} items from ` +
+    `${validSources.length} sources (page ${page}, pool ${deduped.length}` +
+    `${hasGenreFilter ? `, genre="${genre}"` : ''})`
+  );
+  return sliced;
 }
 
 export { getCatalog };

@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move, Type } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move, Type, GitMerge } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +35,7 @@ type BulkActionType =
   | 'moveToTop'     
   | 'moveToBottom'   
   | 'setDisplayType'
+  | 'merge'
   | null;
 
 interface BulkActionBarProps {
@@ -55,6 +56,7 @@ interface BulkActionBarProps {
   onSetDisplayType?: (type: string) => void;
   onResetDisplayType?: () => void;
   onFindReplaceType?: (find: string, replace: string) => void;
+  onMergeSelected?: () => void;
   hasRatingPostersKey?: boolean;
   isLoading?: boolean;
   loadingAction?: BulkActionType;
@@ -78,6 +80,7 @@ export function BulkActionBar({
   onSetDisplayType,
   onResetDisplayType,
   onFindReplaceType,
+  onMergeSelected,
   hasRatingPostersKey = false,
   isLoading = false,
   loadingAction = null,
@@ -479,6 +482,19 @@ export function BulkActionBar({
                   {loadingAction === 'invert' && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   Invert Selection
                 </DropdownMenuItem>
+                {onMergeSelected && selectionCount >= 2 && !selectedCatalogs.some(c => c.source === 'merged') && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onMergeSelected} disabled={isLoading}>
+                      {loadingAction === 'merge' ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <GitMerge className="h-4 w-4 mr-2 text-violet-400" />
+                      )}
+                      Merge into One Catalog
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             {onSetDisplayType && (

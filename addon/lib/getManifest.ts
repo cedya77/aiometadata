@@ -11,6 +11,7 @@ import CATALOG_TYPES from "../static/catalog-types.json";
 const jikan: any = require('./mal');
 const DEFAULT_LANGUAGE = "en-US";
 import { cacheWrapJikanApi, cacheWrapGlobal, cacheWrapStremThruGenres } from './getCache';
+import { mergeGenreOptions } from '../utils/mergedCatalog';
 import consola from 'consola';
 const logger = consola.withTag('Manifest');
 
@@ -600,6 +601,62 @@ function createPublicMetaDBCatalog(userCatalog: any, showPrefix: boolean = false
   }
 }
 
+function createMergedCatalog(
+  userCatalog: any,
+  allBuiltCatalogs: any[],
+  showPrefix: boolean = false,
+  prefixName: string = "AIOMetadata"
+): any {
+  try {
+    logger.debug(`Creating Merged catalog: ${userCatalog.id} (${userCatalog.type})`);
+    const catalogType = userCatalog.displayType || userCatalog.type;
+    const sources = userCatalog.metadata?.mergedSources || [];
+
+    // Genre union across the already-built source manifest entries, deduped by
+    // a normalized key so that slug-style labels (e.g. Simkl "science-fiction")
+    // collapse onto display-style labels (e.g. Letterboxd "Science Fiction").
+    const perSourceOptions: string[][] = [];
+    for (const src of sources) {
+      const suffixed = `${src.catalogId}_${src.catalogType}`;
+      const built = allBuiltCatalogs.find((c: any) => {
+        if (!c) return false;
+        if (c.id === src.catalogId && c.type === src.catalogType) return true;
+        if (c.id === suffixed) return true; // displayType-overridden manifest entry
+        return false;
+      })
+        // Fallback: id-only match
+        || allBuiltCatalogs.find((c: any) =>
+          c && (c.id === src.catalogId || c.id.startsWith(src.catalogId + '_'))
+        );
+      if (!built) continue;
+      const genreExtra = built.extra?.find((e: any) => e.name === 'genre');
+      const opts: string[] = genreExtra?.options || [];
+      if (opts.length > 0) perSourceOptions.push(opts);
+    }
+
+    const genreOptions = mergeGenreOptions(perSourceOptions);
+
+    const finalGenreOptions = genreOptions.length > 0
+      ? (userCatalog.showInHome ? genreOptions : ['None', ...genreOptions])
+      : ['None'];
+
+    return {
+      id: userCatalog.id,
+      type: catalogType,
+      name: `${showPrefix ? `${prefixName} - ` : ""}${userCatalog.name}`,
+      pageSize: parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20,
+      extra: [
+        { name: "genre", options: finalGenreOptions, isRequired: !userCatalog.showInHome },
+        { name: "skip" },
+      ],
+      showInHome: userCatalog.showInHome,
+    };
+  } catch (error: any) {
+    logger.error(`Error creating Merged catalog ${userCatalog.id}:`, error.message);
+    return null;
+  }
+}
+
 async function createSimklCatalog(userCatalog: any, showPrefix: boolean = false, prefixName: string = "AIOMetadata"): Promise<any> {
   try {
     logger.debug(`Creating Simkl catalog: ${userCatalog.id} (${userCatalog.type})`);
@@ -857,8 +914,10 @@ async function getManifest(config: any): Promise<any> {
     }
   }
 
-  let catalogs: any[] = await Promise.all(enabledCatalogs
-    .filter((userCatalog: any) => {
+  const pass1UserCatalogs = enabledCatalogs.filter((userCatalog: any) => {
+      if (userCatalog.id.startsWith('merged.')) {
+        return false; // handled in pass 2 (needs source manifest entries to be built first)
+      }
       const catalogDef = getCatalogDefinition(userCatalog.id);
       if (isMDBList(userCatalog.id)) {
         return true;
@@ -904,7 +963,9 @@ async function getManifest(config: any): Promise<any> {
         return false;
       }
       return true;
-    })
+    });
+
+  let catalogs: any[] = await Promise.all(pass1UserCatalogs
     .map(async (userCatalog: any) => {
       if (isMDBList(userCatalog.id)) {
           logger.debug(`Processing MDBList catalog: ${userCatalog.id}`);
@@ -1084,6 +1145,17 @@ async function getManifest(config: any): Promise<any> {
       return catalog;
     }));
 
+  // Tag absorbed (mergedInto) built entries by index-correlation with pass1UserCatalogs.
+  // Each builder above returns a single entry (or null), so positions line up.
+  catalogs = catalogs.map((built: any, i: number) => {
+    if (!built) return built;
+    const uc = pass1UserCatalogs[i];
+    if (uc?.mergedInto) {
+      built.__mergedInto = uc.mergedInto;
+    }
+    return built;
+  });
+
   catalogs = catalogs.filter(Boolean);
 
   const seen = new Set<string>();
@@ -1093,6 +1165,23 @@ async function getManifest(config: any): Promise<any> {
     seen.add(key);
     return true;
   });
+
+  // Pass 2: Build merged catalogs after all source catalogs have been built so
+  // we can resolve genre options from their manifest entries
+  const mergedUserCatalogs = enabledCatalogs.filter((c: any) => c.id.startsWith('merged.'));
+  if (mergedUserCatalogs.length > 0) {
+    const builtMerged = mergedUserCatalogs
+      .map((uc: any) => createMergedCatalog(uc, catalogs, showPrefix, prefixName))
+      .filter(Boolean);
+    catalogs = [...catalogs, ...builtMerged];
+    logger.debug(`Appended ${builtMerged.length} merged catalogs to manifest`);
+  }
+
+  // Strip absorbed source catalogs from the final manifest
+  catalogs = catalogs.filter((c: any) => !c.__mergedInto);
+  for (const c of catalogs) {
+    if (c.__mergedInto !== undefined) delete c.__mergedInto;
+  }
 
   const isSearchEnabled = config.search?.enabled ?? true;
   const engineEnabled = config.search?.engineEnabled || {};

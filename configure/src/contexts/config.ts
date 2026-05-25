@@ -3,7 +3,7 @@ export interface CatalogConfig {
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
-  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol' | 'publicmetadb'; // Keep source as the display label
+  source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol' | 'publicmetadb' | 'merged'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
   genres?: string[]; // Optional genres array for catalogs that support genre filtering
@@ -28,6 +28,8 @@ export interface CatalogConfig {
   randomizePerPage?: boolean;
   // Page size for custom/StremThru catalogs (default: 100)
   pageSize?: number;
+  /** If set, this catalog is absorbed into a merged catalog and hidden from UI/manifest */
+  mergedInto?: string;
   // List metadata (item count, privacy, author, description, AniList-specific fields, Trakt Up Next settings, Letterboxd-specific fields, TMDB-specific fields)
   metadata?: {
     itemCount?: number;
@@ -68,6 +70,13 @@ export interface CatalogConfig {
     interval?: 'today' | 'week' | 'month';
     pageSize?: number; // Results per page for Simkl trending and watchlist catalogs (default: 50)
     status?: 'watching' | 'plantowatch' | 'hold' | 'completed' | 'dropped'; // Status for Simkl watchlist catalogs
+    /** Source references for merged catalogs (id starts with 'merged.') */
+    mergedSources?: Array<{
+      catalogId: string;       // source catalog id, e.g. "tmdb.top"
+      catalogType: string;     // source catalog type at merge time
+      originalEnabled: boolean;
+      originalShowInHome: boolean;
+    }>;
   };
 }
 
