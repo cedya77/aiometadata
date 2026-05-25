@@ -520,20 +520,28 @@ function _filterTvdbSearchResults(results: TvdbSearchResult[], query: string): T
     return [];
   }
 
+  const normalizedQuery = query.toLowerCase().replace(/[^a-z0-9]/g, '');
+
   const filteredResults = results.filter((item: TvdbSearchResult) => {
-    // Rule 1: Filter out items with "YouTube" as the network.
     if (item.network === 'YouTube') {
       return false;
     }
 
-    // Rule 2: Filter out items that have no network AND a missing/placeholder poster.
     const hasMissingPoster = !item.image_url || item.image_url.includes('/images/missing/');
     if (!item.network && hasMissingPoster) {
+      const normalizedName = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName)) {
+        return true;
+      }
       return false;
     }
-    
+
     return true;
   });
+
+  if (filteredResults.length === 0) {
+    return results.filter((item: TvdbSearchResult) => item.network !== 'YouTube');
+  }
 
   return filteredResults;
 }
