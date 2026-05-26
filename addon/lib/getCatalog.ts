@@ -2966,14 +2966,52 @@ async function getMergedCatalog(
 
   const seenIds = new Set<string>(cursor?.seenIds || []);
 
+  const resolveDefaultGenre = async (srcId: string, srcType: string): Promise<string | null> => {
+    const srcCfg = (config.catalogs as any[])?.find((c: any) => c.id === srcId && c.type === srcType);
+    if (!srcCfg || srcCfg.showInHome !== false) return null;
+
+    if (srcId === 'tmdb.trending') return 'Day';
+    if (srcId === 'mal.schedule') return 'Monday';
+    if (srcId === 'mal.seasons') {
+      const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+      const d = new Date();
+      const m = d.getMonth();
+      const idx = m <= 2 ? 0 : m <= 5 ? 1 : m <= 8 ? 2 : 3;
+      return `${seasons[idx]} ${d.getFullYear()}`;
+    }
+    if (srcId === 'tvdb.genres' || srcId === 'tvdb.trending') {
+      try {
+        const genres = await getGenreList('tvdb', language, srcType as 'movie' | 'series', config);
+        const names = genres.map((g: any) => g.name).sort();
+        if (names.length > 0) return names[0];
+      } catch {}
+    }
+    if (srcId === 'mal.studios') {
+      try {
+        const studios = await cacheWrapJikanApi('mal-studios', async () => await jikan.getStudios(100), 30 * 24 * 60 * 60);
+        const names = studios.map((s: any) => { const t = s.titles.find((x: any) => x.type === 'Default'); return t?.title; }).filter(Boolean);
+        if (names.length > 0) return names[0];
+      } catch {}
+    }
+    if (srcId === 'mal.genres') {
+      try {
+        const animeGenres = await cacheWrapJikanApi('anime-genres', async () => await jikan.getAnimeGenres(), 30 * 24 * 60 * 60, { skipVersion: true });
+        const names = animeGenres.filter(Boolean).map((g: any) => g.name).sort();
+        if (names.length > 0) return names[0];
+      } catch {}
+    }
+    return 'None';
+  };
+
   const fetchSourcePage = async (src: any, srcPage: number): Promise<any[]> => {
     try {
-      const cacheArgs = buildCatalogCacheArgs(src.catalogId, src.catalogType, srcPage, genre, config);
+      const effectiveGenre = genre || await resolveDefaultGenre(src.catalogId, src.catalogType) || '';
+      const cacheArgs = buildCatalogCacheArgs(src.catalogId, src.catalogType, srcPage, effectiveGenre, config);
       const catalogKey = `${src.catalogId}:${src.catalogType}:${stableStringify(cacheArgs)}`;
 
       const result = await cacheWrapCatalog(userUUID, catalogKey, async () => {
         return await getCatalog(
-          src.catalogType, language, srcPage, src.catalogId, genre, config, userUUID, includeVideos
+          src.catalogType, language, srcPage, src.catalogId, effectiveGenre, config, userUUID, includeVideos
         );
       }, { config });
 
