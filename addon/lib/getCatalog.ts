@@ -2987,7 +2987,7 @@ async function getMergedCatalog(
   };
 
   const collected: any[] = [];
-  const maxAttempts = 5;
+  const maxAttempts = 15;
   let attempts = 0;
 
   if (mergeMode === 'sequential') {
@@ -3009,6 +3009,38 @@ async function getMergedCatalog(
         const exhausted = markSourcePage(src, items.length);
         if (exhausted) activeSourceIdx++;
       }
+    }
+  } else if (mergeMode === 'alternating') {
+    const liveCount = validSources.filter((_: any, i: number) => {
+      const k = `${validSources[i].catalogId}:${validSources[i].catalogType}`;
+      return perSourcePage.get(k)! > 0;
+    }).length;
+    let exhaustedCount = validSources.length - liveCount;
+    let consecutiveSkips = 0;
+
+    while (collected.length < pageSize && exhaustedCount < validSources.length && attempts < maxAttempts) {
+      attempts++;
+      const srcIdx = activeSourceIdx % validSources.length;
+      const src = validSources[srcIdx];
+      const key = `${src.catalogId}:${src.catalogType}`;
+      const srcPage = perSourcePage.get(key)!;
+
+      if (srcPage <= 0) {
+        activeSourceIdx++;
+        consecutiveSkips++;
+        if (consecutiveSkips >= validSources.length) break;
+        attempts--;
+        continue;
+      }
+      consecutiveSkips = 0;
+
+      const items = await fetchSourcePage(src, srcPage);
+      const { consumed } = collectDeduped(items, collected);
+      if (consumed >= items.length) {
+        const exhausted = markSourcePage(src, items.length);
+        if (exhausted) exhaustedCount++;
+      }
+      activeSourceIdx++;
     }
   } else {
     let exhaustedCount = [...perSourcePage.values()].filter(p => p <= 0).length;

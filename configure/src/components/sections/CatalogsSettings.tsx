@@ -1860,7 +1860,7 @@ const MergedCatalogCard = ({
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsMergeMode, setSettingsMergeMode] = useState<'interleaved' | 'sequential'>(catalog.metadata?.mergeMode || 'interleaved');
+  const [settingsMergeMode, setSettingsMergeMode] = useState<'interleaved' | 'sequential' | 'alternating'>(catalog.metadata?.mergeMode || 'interleaved');
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -2019,7 +2019,7 @@ const MergedCatalogCard = ({
               MERGED
             </Badge>
             <Badge variant="outline" className="text-xs">
-              {sources.length} sources · {catalog.metadata?.mergeMode === 'sequential' ? 'sequential' : 'interleaved'}
+              {sources.length} sources · {catalog.metadata?.mergeMode || 'interleaved'}
             </Badge>
           </div>
           <button
@@ -2207,13 +2207,14 @@ const MergedCatalogCard = ({
           <div className="space-y-4 pt-2">
             <div>
               <Label>Merge Mode</Label>
-              <Select value={settingsMergeMode} onValueChange={(v: 'interleaved' | 'sequential') => setSettingsMergeMode(v)}>
+              <Select value={settingsMergeMode} onValueChange={(v: 'interleaved' | 'sequential' | 'alternating') => setSettingsMergeMode(v)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="interleaved">Interleaved (A1 B1 A2 B2)</SelectItem>
                   <SelectItem value="sequential">Sequential (all A, then all B)</SelectItem>
+                  <SelectItem value="alternating">Alternating (page 1 = A, page 2 = B)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2571,6 +2572,21 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             >
               {catalog.displayType || catalog.type}
             </Badge>
+            {catalog.mergedInto && (() => {
+              const parent = config.catalogs.find(c => c.id === catalog.mergedInto);
+              return (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <GitMerge className="h-3.5 w-3.5 text-purple-400 shrink-0 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p className="text-xs">Part of <span className="font-medium">{parent?.name || 'a merged catalog'}</span></p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -3429,8 +3445,7 @@ function CatalogsSettingsContent({
 
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
-      // Hide catalogs absorbed into a merged catalog
-      if (cat.mergedInto) return false;
+      // Absorbed catalogs remain visible (with a badge) so they can be merged elsewhere
 
       // Filter out disabled catalogs if hideDisabledCatalogs is true
       if (hideDisabledCatalogs && !cat.enabled) return false;
@@ -4061,7 +4076,7 @@ function CatalogsSettingsContent({
   const [mergeName, setMergeName] = useState('');
   const [mergeShowInHome, setMergeShowInHome] = useState(true);
   const [mergeDisplayType, setMergeDisplayType] = useState('');
-  const [mergeMode, setMergeMode] = useState<'interleaved' | 'sequential'>('interleaved');
+  const [mergeMode, setMergeMode] = useState<'interleaved' | 'sequential' | 'alternating'>('interleaved');
 
   const openMergeDialog = () => {
     if (selectedCatalogs.some(c => c.source === 'merged')) {
@@ -4764,6 +4779,18 @@ function CatalogsSettingsContent({
                   <p className="text-sm font-medium">Sequential</p>
                   <p className="text-xs text-muted-foreground">Show all of source A, then B, etc.</p>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMergeMode('alternating')}
+                  className={`flex-1 rounded-md border p-2.5 text-left transition-colors ${
+                    mergeMode === 'alternating'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <p className="text-sm font-medium">Alternating</p>
+                  <p className="text-xs text-muted-foreground">Page 1 = A, page 2 = B, cycle</p>
+                </button>
               </div>
             </div>
             <div className="text-xs text-muted-foreground">
@@ -5160,8 +5187,7 @@ export function CatalogsSettings() {
   // Compute filtered catalogs to pass to SelectionProvider
   const filteredCatalogs = useMemo(() =>
     config.catalogs.filter(cat => {
-      // Hide catalogs absorbed into a merged catalog (must match the inner-section filter)
-      if (cat.mergedInto) return false;
+      // Absorbed catalogs remain visible so they can be merged elsewhere
 
       // Filter out disabled catalogs if hideDisabledCatalogs is true
       if (hideDisabledCatalogs && !cat.enabled) return false;

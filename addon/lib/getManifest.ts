@@ -1145,17 +1145,6 @@ async function getManifest(config: any): Promise<any> {
       return catalog;
     }));
 
-  // Tag absorbed (mergedInto) built entries by index-correlation with pass1UserCatalogs.
-  // Each builder above returns a single entry (or null), so positions line up.
-  catalogs = catalogs.map((built: any, i: number) => {
-    if (!built) return built;
-    const uc = pass1UserCatalogs[i];
-    if (uc?.mergedInto) {
-      built.__mergedInto = uc.mergedInto;
-    }
-    return built;
-  });
-
   catalogs = catalogs.filter(Boolean);
 
   const seen = new Set<string>();
@@ -1177,11 +1166,6 @@ async function getManifest(config: any): Promise<any> {
     logger.debug(`Appended ${builtMerged.length} merged catalogs to manifest`);
   }
 
-  // Strip absorbed source catalogs from the final manifest
-  catalogs = catalogs.filter((c: any) => !c.__mergedInto);
-  for (const c of catalogs) {
-    if (c.__mergedInto !== undefined) delete c.__mergedInto;
-  }
 
   const isSearchEnabled = config.search?.enabled ?? true;
   const engineEnabled = config.search?.engineEnabled || {};
