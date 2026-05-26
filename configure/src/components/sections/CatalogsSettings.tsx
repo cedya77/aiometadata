@@ -1830,7 +1830,7 @@ const GenericSettingsDialog = ({ catalog, isOpen, onClose }: { catalog: CatalogC
   );
 };
 
-import { Layers, GitMerge } from 'lucide-react';
+import { Layers, GitMerge, Unlink } from 'lucide-react';
 
 const MergedCatalogCard = ({
   catalog,
@@ -1841,10 +1841,11 @@ const MergedCatalogCard = ({
   allCatalogs: CatalogConfig[];
   onDisband: () => void;
 }) => {
+  const { setConfig, config } = useConfig();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `${catalog.id}-${catalog.type}`,
   });
-  const { toggleSelection, isSelected } = useSelection();
+  const { toggleSelection, isSelected, selectionCount } = useSelection();
   const catalogKey = `${catalog.id}-${catalog.type}`;
   const selected = isSelected(catalogKey);
 
@@ -1855,12 +1856,89 @@ const MergedCatalogCard = ({
 
   const [expanded, setExpanded] = useState(false);
   const [showDisbandConfirm, setShowDisbandConfirm] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [newName, setNewName] = useState(catalog.name);
+  const [newType, setNewType] = useState(catalog.displayType || catalog.type);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsMergeMode, setSettingsMergeMode] = useState<'interleaved' | 'sequential'>(catalog.metadata?.mergeMode || 'interleaved');
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 50 : 'auto',
   };
+
+  const updateCatalog = (updater: (c: CatalogConfig) => CatalogConfig) => {
+    setConfig(prev => ({
+      ...prev,
+      catalogs: prev.catalogs.map(c =>
+        (c.id === catalog.id && c.type === catalog.type) ? updater(c) : c
+      ),
+    }));
+  };
+
+  const handleToggleEnabled = () => {
+    updateCatalog(c => {
+      const isNowEnabled = !c.enabled;
+      return { ...c, enabled: isNowEnabled, showInHome: isNowEnabled ? c.showInHome : false };
+    });
+  };
+
+  const handleToggleShowInHome = () => {
+    if (!catalog.enabled) return;
+    updateCatalog(c => ({ ...c, showInHome: !c.showInHome }));
+  };
+
+  const handleToggleRatingPosters = () => {
+    updateCatalog(c => ({ ...c, enableRatingPosters: c.enableRatingPosters === false ? true : false }));
+  };
+
+  const handleToggleRandomize = () => {
+    updateCatalog(c => ({ ...c, randomizePerPage: !c.randomizePerPage }));
+  };
+
+  const handleEditSave = () => {
+    const trimmedName = newName.trim();
+    const trimmedType = newType.trim();
+    if (!trimmedName || !trimmedType) {
+      setNewName(catalog.name);
+      setNewType(catalog.displayType || catalog.type);
+      setShowEditDialog(false);
+      return;
+    }
+    updateCatalog(c => ({ ...c, name: trimmedName, displayType: trimmedType }));
+    setShowEditDialog(false);
+  };
+
+  const handleEditCancel = () => {
+    setNewName(catalog.name);
+    setNewType(catalog.displayType || catalog.type);
+    setShowEditDialog(false);
+  };
+
+  const handleMoveToTop = () => {
+    setConfig(prev => {
+      const idx = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
+      if (idx <= 0) return prev;
+      const next = [...prev.catalogs];
+      const [moved] = next.splice(idx, 1);
+      next.unshift(moved);
+      return { ...prev, catalogs: next };
+    });
+  };
+
+  const handleMoveToBottom = () => {
+    setConfig(prev => {
+      const idx = prev.catalogs.findIndex(c => c.id === catalog.id && c.type === catalog.type);
+      if (idx === -1 || idx === prev.catalogs.length - 1) return prev;
+      const next = [...prev.catalogs];
+      const [moved] = next.splice(idx, 1);
+      next.push(moved);
+      return { ...prev, catalogs: next };
+    });
+  };
+
+  const hasRatingPosters = !!(config.apiKeys?.rpdb || config.apiKeys?.topPoster || config.customPosterUrlPattern);
 
   return (
     <Card
@@ -1872,11 +1950,20 @@ const MergedCatalogCard = ({
         "transition-all duration-200 ease-out",
         isDragging && "opacity-80 scale-[1.02] shadow-2xl ring-2 ring-violet-500/50",
         !isDragging && "hover:-translate-y-[1px] hover:shadow-md",
+        !catalog.enabled && "opacity-60",
         selected && "ring-2 ring-blue-500"
       )}
     >
+      {isDragging && selected && selectionCount > 1 && (
+        <div className="absolute -top-3 -right-3 z-[60] animate-in zoom-in duration-200">
+          <Badge className="bg-blue-600 text-white shadow-xl px-3 py-1 flex items-center gap-1.5 border-2 border-background">
+            <Layers className="h-3.5 w-3.5" />
+            <span className="font-bold">Moving {selectionCount} items</span>
+          </Badge>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 flex-wrap md:flex-nowrap">
-        {/* Selection checkbox */}
         <div
           onClick={(e) => { e.stopPropagation(); toggleSelection(catalogKey); }}
           className="cursor-pointer p-2 -ml-2 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 flex items-center"
@@ -1906,7 +1993,6 @@ const MergedCatalogCard = ({
           </div>
         </div>
 
-        {/* Drag handle */}
         <button
           {...attributes}
           {...listeners}
@@ -1916,11 +2002,16 @@ const MergedCatalogCard = ({
           <GripVertical />
         </button>
 
-        {/* Identity */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <GitMerge className="h-4 w-4 text-violet-400 shrink-0" />
-            <p className="font-medium break-words min-w-0">{catalog.name}</p>
+            <p className={`font-medium break-words min-w-0 ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            <button
+              onClick={() => setShowEditDialog(true)}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <Pencil size={14} />
+            </button>
             <Badge variant="outline" className="text-xs capitalize">
               {catalog.displayType || catalog.type}
             </Badge>
@@ -1928,13 +2019,8 @@ const MergedCatalogCard = ({
               MERGED
             </Badge>
             <Badge variant="outline" className="text-xs">
-              {sources.length} sources
+              {sources.length} sources · {catalog.metadata?.mergeMode === 'sequential' ? 'sequential' : 'interleaved'}
             </Badge>
-            {catalog.showInHome && (
-              <Badge variant="outline" className="text-xs flex items-center gap-1">
-                <Home className="h-3 w-3" />Home
-              </Badge>
-            )}
           </div>
           <button
             onClick={() => setExpanded(v => !v)}
@@ -1944,16 +2030,130 @@ const MergedCatalogCard = ({
           </button>
         </div>
 
-        {/* Disband button */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowDisbandConfirm(true)}
-          className="border-red-300 dark:border-red-800 text-red-500 hover:text-red-600"
-        >
-          <Trash2 className="h-4 w-4 mr-1" />
-          Disband
-        </Button>
+        {/* Desktop actions */}
+        <div className="hidden md:flex items-center gap-1">
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleToggleEnabled}>
+                  {catalog.enabled ? (
+                    <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
+                  ) : (
+                    <EyeOff className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{catalog.enabled ? 'Disable' : 'Enable'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
+                  <Home className={`h-5 w-5 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{catalog.showInHome ? 'Remove from Home' : 'Show on Home'}</TooltipContent>
+            </Tooltip>
+            {hasRatingPosters && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
+                    <Star className={`h-5 w-5 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}</TooltipContent>
+              </Tooltip>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleToggleRandomize} disabled={!catalog.enabled}>
+                  <Shuffle className={`h-5 w-5 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleMoveToTop} aria-label="Move to Top" className="h-8 w-8 active:scale-90 transition-transform">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
+                    <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
+                  </svg>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move to top of list</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleMoveToBottom} aria-label="Move to Bottom" className="h-8 w-8 active:scale-90 transition-transform">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="text-muted-foreground hover:text-foreground" fill="currentColor">
+                    <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
+                  </svg>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Move to bottom of list</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => { setSettingsMergeMode(catalog.metadata?.mergeMode || 'interleaved'); setShowSettings(true); }} className="h-8 w-8 active:scale-90 transition-transform">
+                  <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Merge settings</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setShowDisbandConfirm(true)} className="h-8 w-8 active:scale-90 transition-transform">
+                  <Unlink className="h-5 w-5 text-red-400 hover:text-red-500" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Disband merged catalog</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+
+        {/* Mobile actions */}
+        <div className="flex md:hidden items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-9 w-9">
+            {catalog.enabled ? (
+              <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
+            ) : (
+              <EyeOff className="h-5 w-5 text-muted-foreground" />
+            )}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9">
+                <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
+                <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
+                {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
+              </DropdownMenuItem>
+              {hasRatingPosters && (
+                <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
+                  <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                  {catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={handleToggleRandomize} disabled={!catalog.enabled}>
+                <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
+                {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setSettingsMergeMode(catalog.metadata?.mergeMode || 'interleaved'); setShowSettings(true); }}>
+                <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
+                Merge Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleMoveToTop}>Move to Top</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleMoveToBottom}>Move to Bottom</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setShowDisbandConfirm(true)} className="text-red-500">
+                <Trash2 className="h-4 w-4 mr-2" />Disband
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {expanded && sourceCatalogs.length > 0 && (
@@ -1974,6 +2174,59 @@ const MergedCatalogCard = ({
           })}
         </div>
       )}
+
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Merged Catalog</DialogTitle>
+            <DialogDescription>Change the name or display type.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>Name</Label>
+              <Input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSave()} />
+            </div>
+            <div>
+              <Label>Display Type</Label>
+              <Input value={newType} onChange={e => setNewType(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSave()} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={handleEditCancel}>Cancel</Button>
+              <Button onClick={handleEditSave}>Save</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Merge Settings</DialogTitle>
+            <DialogDescription>Configure how source catalogs are combined.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>Merge Mode</Label>
+              <Select value={settingsMergeMode} onValueChange={(v: 'interleaved' | 'sequential') => setSettingsMergeMode(v)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="interleaved">Interleaved (A1 B1 A2 B2)</SelectItem>
+                  <SelectItem value="sequential">Sequential (all A, then all B)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowSettings(false)}>Cancel</Button>
+              <Button onClick={() => {
+                updateCatalog(c => ({ ...c, metadata: { ...c.metadata, mergeMode: settingsMergeMode } }));
+                setShowSettings(false);
+              }}>Save</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         isOpen={showDisbandConfirm}
@@ -3808,6 +4061,7 @@ function CatalogsSettingsContent({
   const [mergeName, setMergeName] = useState('');
   const [mergeShowInHome, setMergeShowInHome] = useState(true);
   const [mergeDisplayType, setMergeDisplayType] = useState('');
+  const [mergeMode, setMergeMode] = useState<'interleaved' | 'sequential'>('interleaved');
 
   const openMergeDialog = () => {
     if (selectedCatalogs.some(c => c.source === 'merged')) {
@@ -3823,6 +4077,7 @@ function CatalogsSettingsContent({
     setMergeName(baseName);
     setMergeShowInHome(true);
     setMergeDisplayType('');
+    setMergeMode('interleaved');
     setShowMergeDialog(true);
   };
 
@@ -3852,19 +4107,19 @@ function CatalogsSettingsContent({
       source: 'merged',
       showInHome: mergeShowInHome,
       displayType: mergeDisplayType.trim() || undefined,
-      metadata: { mergedSources },
+      metadata: { mergedSources, mergeMode },
     };
 
-    setConfig(prev => ({
-      ...prev,
-      catalogs: reconcileMergedReferences([
-        ...prev.catalogs.map(c => {
-          const match = selectedCatalogs.some(s => s.id === c.id && s.type === c.type);
-          return match ? { ...c, mergedInto: mergeId } : c;
-        }),
-        newCatalog,
-      ]),
-    }));
+    setConfig(prev => {
+      const selectedKeys = new Set(selectedCatalogs.map(s => `${s.id}-${s.type}`));
+      const updated = prev.catalogs.map(c =>
+        selectedKeys.has(`${c.id}-${c.type}`) ? { ...c, mergedInto: mergeId } : c
+      );
+      const firstAbsorbedIdx = updated.findIndex(c => selectedKeys.has(`${c.id}-${c.type}`));
+      const insertAt = firstAbsorbedIdx >= 0 ? firstAbsorbedIdx : updated.length;
+      const withMerged = [...updated.slice(0, insertAt), newCatalog, ...updated.slice(insertAt)];
+      return { ...prev, catalogs: reconcileMergedReferences(withMerged) };
+    });
     deselectAll();
     setShowMergeDialog(false);
     toast.success(`Merged ${mergedSources.length} catalogs into "${newCatalog.name}"`);
@@ -4481,6 +4736,35 @@ function CatalogsSettingsContent({
                 checked={mergeShowInHome}
                 onCheckedChange={setMergeShowInHome}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Merge Mode</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMergeMode('interleaved')}
+                  className={`flex-1 rounded-md border p-2.5 text-left transition-colors ${
+                    mergeMode === 'interleaved'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <p className="text-sm font-medium">Interleaved</p>
+                  <p className="text-xs text-muted-foreground">Mix items from all sources (A B A B)</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMergeMode('sequential')}
+                  className={`flex-1 rounded-md border p-2.5 text-left transition-colors ${
+                    mergeMode === 'sequential'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <p className="text-sm font-medium">Sequential</p>
+                  <p className="text-xs text-muted-foreground">Show all of source A, then B, etc.</p>
+                </button>
+              </div>
             </div>
             <div className="text-xs text-muted-foreground">
               Type preview: <code className="font-mono">{

@@ -59,7 +59,6 @@ const { SimklClient } = require('./lib/simkl');
 const axios = require('axios');
 const getCountryISO3 = require('country-iso-2-to-3');
 const jikan = require('./lib/mal');
-const { getTvmazeScheduleCatalog } = require('./lib/tvmazeScheduleCatalog');
 const buildInfo = require('./lib/buildInfo');
 const { clientDistDir, clientIndexPath, publicDir } = require('./lib/runtimePaths');
 const ADDON_VERSION = buildInfo.version;
@@ -3669,6 +3668,11 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
       const result = await getCatalog(actualType, language, catalogPage, cleanId, genreName, config, userUUID, false, skipValue);
       responseData = { metas: result.metas || [] };
+      } else if (cleanId.startsWith('merged.')) {
+      const { genre: genreName } = extraArgs;
+      const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
+      const result = await getCatalog(actualType, language, catalogPage, cleanId, genreName, config, userUUID, false, skipValue);
+      responseData = { metas: result.metas || [] };
       } else {
       // Use regular catalog cache wrapper
       responseData = await cacheWrapper(userUUID, catalogKey, async () => {
@@ -3697,103 +3701,9 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
             metas = (await getCatalog(actualType, language, tvdbPage, cleanId, genreName, config, userUUID)).metas;
             break;
           }
-          case 'mal.airing':
-          case 'mal.upcoming':
-          case 'mal.top_movies':
-          case 'mal.top_series':
-          case 'mal.most_favorites':
-          case 'mal.most_popular':
-          case 'mal.top_anime':
-          case 'mal.80sDecade':
-          case 'mal.90sDecade':
-          case 'mal.00sDecade':
-          case 'mal.10sDecade':
-          case 'mal.20sDecade': {
-            const decadeMap = {
-              'mal.80sDecade': ['1980-01-01', '1989-12-31'],
-              'mal.90sDecade': ['1990-01-01', '1999-12-31'],
-              'mal.00sDecade': ['2000-01-01', '2009-12-31'],
-              'mal.10sDecade': ['2010-01-01', '2019-12-31'],
-              'mal.20sDecade': ['2020-01-01', '2029-12-31'],
-            };
-            if (cleanId === 'mal.airing') {
-              const animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
-                return await jikan.getAiringNow(page, config);
-              }, 24 * 60 * 60, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (cleanId === 'mal.upcoming') {
-              const animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
-                return await jikan.getUpcoming(page, config);
-              }, 24 * 60 * 60, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (cleanId === 'mal.top_movies') {
-              const animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {
-                return await jikan.getTopAnimeByType('movie', page, config);
-              }, null, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (cleanId === 'mal.top_series') {
-              const animeResults = await cacheWrapJikanApi(`mal-top-series-${page}-${config.sfw}`, async () => {
-                return await jikan.getTopAnimeByType('tv', page, config);
-              }, null, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (cleanId === 'mal.most_popular') {
-              //consola.debug(`[CATALOG ROUTE 2] mal.most_popular called with type=${actualType}, language=${language}, page=${page}`);
-              const animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
-                return await jikan.getTopAnimeByFilter('bypopularity', page, config);
-              }, null, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (cleanId === 'mal.most_favorites') {
-              const animeResults = await cacheWrapJikanApi(`mal-most-favorites-${page}-${config.sfw}`, async () => {
-                return await jikan.getTopAnimeByFilter('favorite', page, config);
-              }, null, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else if (cleanId === 'mal.top_anime') {
-              const animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
-                return await jikan.getTopAnimeByType('anime', page, config);
-              }, null, { skipVersion: true });
-              metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            } else {
-            const [startDate, endDate] = decadeMap[cleanId];
-            const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
-              return await jikan.getAnimeGenres();
-             }, null, { skipVersion: true });
-                const genreNameToFetch = genreName && genreName !== 'None' ? genreName : allAnimeGenres[0]?.name;
-            if (genreNameToFetch) {
-              const selectedGenre = allAnimeGenres.find(g => g.name === genreNameToFetch);
-              if (selectedGenre) {
-                const genreId = selectedGenre.mal_id;
-                    const animeResults = await cacheWrapJikanApi(`mal-${cleanId}-${page}-${genreId}-${config.sfw}`, async () => {
-                  return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
-                }, null, { skipVersion: true });
-                    metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-                }
-              }
-              
-            }
-            break;
-          }
-          case 'tvmaze.schedule': {
-            const scheduleDate = extraArgs.date;
-            const scheduleCountry = extraArgs.genre;
-            metas = (await getTvmazeScheduleCatalog({
-              date: scheduleDate,
-              country: scheduleCountry,
-              page,
-              pageSize: catalogPageSize,
-              language,
-              config,
-              userUUID,
-              includeVideos: false,
-              enableErrorCaching: true,
-              maxRetries: 2,
-            })).metas;
-            break;
-          }
           case 'mal.genres': {
             const mediaType = type_filter || 'series';
             const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
-              //consola.debug('[Cache Miss] Fetching fresh anime genre list from Jikan...');
               return await jikan.getAnimeGenres();
             }, null, { skipVersion: true });
             const genreNameToFetch = genreName || allAnimeGenres[0]?.name;
@@ -3807,63 +3717,6 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
                 metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
               }
             }
-            break;
-          }
-
-          case 'mal.studios': {
-            if (genreName) {
-                //consola.debug(`[Catalog] Fetching anime for MAL studio: ${genreName}`);
-                const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100), null, { skipVersion: true });
-                const selectedStudio = studios.find(studio => {
-                    const defaultTitle = studio.titles.find(t => t.type === 'Default');
-                    return defaultTitle && defaultTitle.title === genreName;
-                });
-        
-                if (selectedStudio) {
-                    const studioId = selectedStudio.mal_id;
-                    const animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
-                      return await jikan.getAnimeByStudio(studioId, page);
-                    }, null, { skipVersion: true });
-                    metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-                } else {
-                    consola.warn(`[Catalog] Could not find a MAL ID for studio name: ${genreName}`);
-                }
-            }
-            break;
-          }
-          case 'mal.schedule': {
-            const dayOfWeek = genreName || 'Monday';
-            const animeResults = await cacheWrapJikanApi(`mal-schedule-${dayOfWeek}-${page}-${config.sfw}`, async () => {
-              return await jikan.getAiringSchedule(dayOfWeek, page, config);
-            }, null, { skipVersion: true });
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
-            break;
-          }
-          case 'mal.seasons': {
-            let seasonString = genreName ? decodeURIComponent(genreName) : null;
-            
-            // If no season specified, calculate current season based on today's date
-            if (!seasonString) {
-              const currentDate = new Date();
-              const currentYear = currentDate.getFullYear();
-              const currentMonth = currentDate.getMonth(); // 0-11
-              
-              let currentSeason;
-              if (currentMonth <= 2) currentSeason = 'Winter'; // Jan-Mar
-              else if (currentMonth <= 5) currentSeason = 'Spring'; // Apr-Jun
-              else if (currentMonth <= 8) currentSeason = 'Summer'; // Jul-Sep
-              else currentSeason = 'Fall'; // Oct-Dec
-              
-              seasonString = `${currentSeason} ${currentYear}`;
-            }
-            
-            const parts = seasonString.split(' ');
-            const season = parts[0].toLowerCase(); // winter, spring, summer, fall
-            const year = parseInt(parts[1]);
-            const animeResults = await cacheWrapJikanApi(`mal-season-${year}-${season}-${page}-${config.sfw}`, async () => {
-              return await jikan.getAnimeBySeason(year, season, page, config);
-            }, null, { skipVersion: true });
-            metas = await parseAnimeCatalogMetaBatch(animeResults, config, language);
             break;
           }
           case 'mal.genre_search': {

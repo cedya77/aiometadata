@@ -21,7 +21,8 @@ import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
-import { roundRobinInterleave, dedupMetas, filterMetasByGenre, normalizeGenreKey } from '../utils/mergedCatalog.js';
+import { roundRobinInterleaveTagged, mergedDedupKey, filterMetasByGenre, normalizeGenreKey } from '../utils/mergedCatalog.js';
+const { getTvmazeScheduleCatalog } = require('./tvmazeScheduleCatalog');
 
 const consola = require('consola');
 const database = require('./database.js');
@@ -80,6 +81,16 @@ async function getCatalog(type: string, language: string, page: number, id: stri
       const malDiscoverResults = await getMalDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
       return { metas: malDiscoverResults };
     }
+    else if (id.startsWith('mal.')) {
+      logger.debug(`Routing to MAL catalog handler for id: ${id}`);
+      const malResults = await getMalCatalog(type, id, genre, page, language, config);
+      return { metas: malResults };
+    }
+    else if (id === 'tvmaze.schedule') {
+      logger.debug(`Routing to TVMaze schedule catalog handler`);
+      const tvmazeResults = await getTvmazeScheduleHandler(genre, page, language, config, userUUID);
+      return { metas: tvmazeResults };
+    }
     else if (id.startsWith('anilist.discover.')) {
      logger.debug(`Routing to AniList discover catalog handler for id: ${id}`);
      const anilistDiscoverResults = await getAniListDiscoverCatalog(type, id, genre, page, language, config, userUUID, includeVideos);
@@ -113,7 +124,7 @@ async function getCatalog(type: string, language: string, page: number, id: stri
     else if (id.startsWith('merged.')) {
       logger.debug(`Routing to Merged catalog handler for id: ${id}`);
       const mergedResults = await getMergedCatalog(
-        type, id, genre, page, language, config, userUUID, includeVideos
+        type, id, genre, page, language, config, userUUID, includeVideos, skip
       );
       return { metas: mergedResults };
     }
@@ -214,6 +225,156 @@ async function getMalDiscoverCatalog(
     logger.error(`[MAL Discover] Error processing catalog ${catalogId}: ${err.message}`);
     return [];
   }
+}
+
+async function getMalCatalog(
+  type: string,
+  catalogId: string,
+  genre: string | null,
+  page: number,
+  language: string,
+  config: UserConfig
+): Promise<any[]> {
+  const decadeMap: Record<string, [string, string]> = {
+    'mal.80sDecade': ['1980-01-01', '1989-12-31'],
+    'mal.90sDecade': ['1990-01-01', '1999-12-31'],
+    'mal.00sDecade': ['2000-01-01', '2009-12-31'],
+    'mal.10sDecade': ['2010-01-01', '2019-12-31'],
+    'mal.20sDecade': ['2020-01-01', '2029-12-31'],
+  };
+
+  let animeResults: any[] = [];
+
+  if (catalogId === 'mal.airing') {
+    animeResults = await cacheWrapJikanApi(`mal-airing-${page}-${config.sfw}`, async () => {
+      return await jikan.getAiringNow(page, config);
+    }, 24 * 60 * 60, { skipVersion: true });
+  } else if (catalogId === 'mal.upcoming') {
+    animeResults = await cacheWrapJikanApi(`mal-upcoming-${page}-${config.sfw}`, async () => {
+      return await jikan.getUpcoming(page, config);
+    }, 24 * 60 * 60, { skipVersion: true });
+  } else if (catalogId === 'mal.top_movies') {
+    animeResults = await cacheWrapJikanApi(`mal-top-movies-${page}-${config.sfw}`, async () => {
+      return await jikan.getTopAnimeByType('movie', page, config);
+    }, null, { skipVersion: true });
+  } else if (catalogId === 'mal.top_series') {
+    animeResults = await cacheWrapJikanApi(`mal-top-series-${page}-${config.sfw}`, async () => {
+      return await jikan.getTopAnimeByType('tv', page, config);
+    }, null, { skipVersion: true });
+  } else if (catalogId === 'mal.most_popular') {
+    animeResults = await cacheWrapJikanApi(`mal-most-popular-${page}-${config.sfw}`, async () => {
+      return await jikan.getTopAnimeByFilter('bypopularity', page, config);
+    }, null, { skipVersion: true });
+  } else if (catalogId === 'mal.most_favorites') {
+    animeResults = await cacheWrapJikanApi(`mal-most-favorites-${page}-${config.sfw}`, async () => {
+      return await jikan.getTopAnimeByFilter('favorite', page, config);
+    }, null, { skipVersion: true });
+  } else if (catalogId === 'mal.top_anime') {
+    animeResults = await cacheWrapJikanApi(`mal-top-anime-${page}-${config.sfw}`, async () => {
+      return await jikan.getTopAnimeByType('anime', page, config);
+    }, null, { skipVersion: true });
+  } else if (decadeMap[catalogId]) {
+    const [startDate, endDate] = decadeMap[catalogId];
+    const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+      return await jikan.getAnimeGenres();
+    }, null, { skipVersion: true });
+    const genreNameToFetch = genre && genre !== 'None' ? genre : allAnimeGenres[0]?.name;
+    if (genreNameToFetch) {
+      const selectedGenre = allAnimeGenres.find((g: any) => g.name === genreNameToFetch);
+      if (selectedGenre) {
+        const genreId = selectedGenre.mal_id;
+        animeResults = await cacheWrapJikanApi(`mal-${catalogId}-${page}-${genreId}-${config.sfw}`, async () => {
+          return await jikan.getTopAnimeByDateRange(startDate, endDate, page, genreId, config);
+        }, null, { skipVersion: true });
+      }
+    }
+  } else if (catalogId === 'mal.genres') {
+    const mediaType = 'series';
+    const allAnimeGenres = await cacheWrapJikanApi('anime-genres', async () => {
+      return await jikan.getAnimeGenres();
+    }, null, { skipVersion: true });
+    const genreNameToFetch = genre || allAnimeGenres[0]?.name;
+    if (genreNameToFetch) {
+      const selectedGenre = allAnimeGenres.find((g: any) => g.name === genreNameToFetch);
+      if (selectedGenre) {
+        const genreId = selectedGenre.mal_id;
+        animeResults = await cacheWrapJikanApi(`mal-genre-${genreId}-${mediaType}-${page}-${config.sfw}`, async () => {
+          return await jikan.getAnimeByGenre(genreId, mediaType, page, config);
+        }, null, { skipVersion: true });
+      }
+    }
+  } else if (catalogId === 'mal.studios') {
+    if (genre) {
+      const studios = await cacheWrapJikanApi('mal-studios', () => jikan.getStudios(100), null, { skipVersion: true });
+      const selectedStudio = studios.find((studio: any) => {
+        const defaultTitle = studio.titles.find((t: any) => t.type === 'Default');
+        return defaultTitle && defaultTitle.title === genre;
+      });
+      if (selectedStudio) {
+        const studioId = selectedStudio.mal_id;
+        animeResults = await cacheWrapJikanApi(`mal-studio-${studioId}-${page}-${config.sfw}`, async () => {
+          return await jikan.getAnimeByStudio(studioId, page);
+        }, null, { skipVersion: true });
+      }
+    }
+  } else if (catalogId === 'mal.schedule') {
+    const dayOfWeek = genre || 'Monday';
+    animeResults = await cacheWrapJikanApi(`mal-schedule-${dayOfWeek}-${page}-${config.sfw}`, async () => {
+      return await jikan.getAiringSchedule(dayOfWeek, page, config);
+    }, null, { skipVersion: true });
+  } else if (catalogId === 'mal.seasons') {
+    let seasonString = genre ? decodeURIComponent(genre) : null;
+    if (!seasonString) {
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth();
+      let currentSeason: string;
+      if (currentMonth <= 2) currentSeason = 'Winter';
+      else if (currentMonth <= 5) currentSeason = 'Spring';
+      else if (currentMonth <= 8) currentSeason = 'Summer';
+      else currentSeason = 'Fall';
+      seasonString = `${currentSeason} ${currentYear}`;
+    }
+    const parts = seasonString.split(' ');
+    const season = parts[0].toLowerCase();
+    const year = parseInt(parts[1]);
+    animeResults = await cacheWrapJikanApi(`mal-season-${year}-${season}-${page}-${config.sfw}`, async () => {
+      return await jikan.getAnimeBySeason(year, season, page, config);
+    }, null, { skipVersion: true });
+  } else {
+    logger.warn(`[MAL] Unknown catalog id: ${catalogId}`);
+    return [];
+  }
+
+  return await Utils.parseAnimeCatalogMetaBatch(animeResults, config, language);
+}
+
+async function getTvmazeScheduleHandler(
+  genre: string | null,
+  page: number,
+  language: string,
+  config: UserConfig,
+  userUUID: string
+): Promise<any[]> {
+  const tz = config.timezone || process.env.TZ || 'UTC';
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const date = formatter.format(new Date());
+  const country = genre && genre !== 'None' ? genre.toUpperCase() : '';
+  const pageSize = 20;
+
+  const result = await getTvmazeScheduleCatalog({
+    date,
+    country,
+    page,
+    pageSize,
+    language,
+    config,
+    userUUID,
+    includeVideos: false,
+    enableErrorCaching: true,
+    maxRetries: 2,
+  });
+  return result.metas;
 }
 
 /**
@@ -2679,8 +2840,10 @@ async function getPublicMetaDBCatalog(
 
 /**
  * Fetch and merge results from multiple source catalogs.
- * Uses round-robin interleaving and multi-namespace deduplication.
- * Each source catalog handles its own internal caching
+ * Uses cursor-based pagination stored in Redis for cross-page dedup.
+ * Supports two modes:
+ *   - interleaved (default): round-robin items from all sources (A1 B1 A2 B2)
+ *   - sequential: exhaust source A fully, then source B, etc.
  */
 async function getMergedCatalog(
   type: string,
@@ -2690,7 +2853,8 @@ async function getMergedCatalog(
   language: string,
   config: UserConfig,
   userUUID: string,
-  includeVideos: boolean = false
+  includeVideos: boolean = false,
+  skip?: number
 ): Promise<any[]> {
   const catalogConfig = config.catalogs?.find((c: any) => c.id === catalogId);
   if (!catalogConfig) {
@@ -2702,8 +2866,8 @@ async function getMergedCatalog(
     logger.warn(`[Merged] No sources defined for ${catalogId}`);
     return [];
   }
+  const mergeMode: string = (catalogConfig as any).metadata?.mergeMode || 'interleaved';
 
-  // Guard against nested merges and missing-source pruning
   const validSources = sources.filter((s: any) => {
     if (s.catalogId.startsWith('merged.')) {
       logger.warn(`[Merged] Skipping nested merge reference: ${s.catalogId}`);
@@ -2720,51 +2884,187 @@ async function getMergedCatalog(
   });
   if (validSources.length === 0) return [];
 
-  // Per-source page sizing: ask each source for its full page; we then
-  // round-robin interleave, dedup, and slice to the final pageSize.
   const pageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE as string) || 20;
+  const stremioSkip = skip ?? (page - 1) * pageSize;
   const hasGenreFilter = !!(genre && genre !== 'None' && normalizeGenreKey(genre));
-  const results = await Promise.all(
-    validSources.map(async (src: any) => {
-      try {
-        const result = await getCatalog(
-          src.catalogType,
-          language,
-          page,
-          src.catalogId,
-          genre,
-          config,
-          userUUID,
-          includeVideos
-        );
-        const raw = result?.metas || [];
-        if (!hasGenreFilter) return raw;
-        // Drop metas whose own `genres` array doesn't include the requested genre
-        const filtered = filterMetasByGenre(raw, genre);
-        if (filtered.length !== raw.length) {
-          logger.debug(
-            `[Merged] ${src.catalogId} (${src.catalogType}): genre="${genre}" dropped ` +
-            `${raw.length - filtered.length}/${raw.length} metas without matching genre`
-          );
-        }
-        return filtered;
-      } catch (err: any) {
-        logger.warn(`[Merged] Source ${src.catalogId} failed: ${err.message}`);
-        return [];
-      }
-    })
-  );
+  const catalogTTL = parseInt(process.env.CATALOG_TTL || String(24 * 60 * 60), 10);
 
-  const interleaved = roundRobinInterleave(results);
-  const deduped = dedupMetas(interleaved);
-  const sliced = deduped.slice(0, pageSize);
+  const cursorKey = redis ? `merged-cursor:${userUUID}:${catalogId}:${genre || 'all'}` : null;
+
+  interface MergedCursor {
+    served: number;
+    perSource: { catalogId: string; catalogType: string; nextPage: number }[];
+    seenIds: string[];
+    activeSourceIdx?: number;
+  }
+
+  let cursor: MergedCursor | null = null;
+  let perSourcePage: Map<string, number>;
+  let activeSourceIdx = 0;
+
+  if (stremioSkip === 0) {
+    if (cursorKey) await redis!.del(cursorKey);
+    perSourcePage = new Map(validSources.map((s: any) => [`${s.catalogId}:${s.catalogType}`, 1]));
+  } else if (cursorKey) {
+    const raw = await redis!.get(cursorKey);
+    if (raw) {
+      cursor = JSON.parse(raw);
+      perSourcePage = new Map(
+        cursor!.perSource.map((s) => [`${s.catalogId}:${s.catalogType}`, s.nextPage])
+      );
+      activeSourceIdx = cursor!.activeSourceIdx ?? 0;
+    } else {
+      perSourcePage = new Map(validSources.map((s: any) => [`${s.catalogId}:${s.catalogType}`, 1]));
+    }
+  } else {
+    perSourcePage = new Map(validSources.map((s: any) => [`${s.catalogId}:${s.catalogType}`, 1]));
+  }
+
+  const seenIds = new Set<string>(cursor?.seenIds || []);
+
+  const fetchSourcePage = async (src: any, srcPage: number): Promise<any[]> => {
+    try {
+      const result = await getCatalog(
+        src.catalogType, language, srcPage, src.catalogId, genre, config, userUUID, includeVideos
+      );
+      const raw = result?.metas || [];
+      if (!hasGenreFilter) return raw;
+      const filtered = filterMetasByGenre(raw, genre);
+      if (filtered.length !== raw.length) {
+        logger.debug(
+          `[Merged] ${src.catalogId}: genre="${genre}" dropped ${raw.length - filtered.length}/${raw.length} metas`
+        );
+      }
+      return filtered;
+    } catch (err: any) {
+      logger.warn(`[Merged] Source ${src.catalogId} failed: ${err.message}`);
+      return [];
+    }
+  };
+
+  const collectDeduped = (metas: any[], collected: any[]): { added: number; consumed: number } => {
+    let added = 0;
+    let consumed = 0;
+    for (const meta of metas) {
+      if (collected.length >= pageSize) break;
+      consumed++;
+      const key = mergedDedupKey(meta);
+      if (key && seenIds.has(key)) continue;
+      if (key) seenIds.add(key);
+      collected.push(meta);
+      added++;
+    }
+    return { added, consumed };
+  };
+
+  const collectDedupedTagged = (
+    tagged: Array<{ meta: any; srcIdx: number }>,
+    collected: any[]
+  ): { added: number; consumedPerSource: number[] } => {
+    let added = 0;
+    const consumedPerSource = new Array(validSources.length).fill(0);
+    for (const { meta, srcIdx } of tagged) {
+      if (collected.length >= pageSize) break;
+      const key = mergedDedupKey(meta);
+      if (key && seenIds.has(key)) { consumedPerSource[srcIdx]++; continue; }
+      if (key) seenIds.add(key);
+      collected.push(meta);
+      consumedPerSource[srcIdx]++;
+      added++;
+    }
+    return { added, consumedPerSource };
+  };
+
+  const markSourcePage = (src: any, resultLength: number): boolean => {
+    const key = `${src.catalogId}:${src.catalogType}`;
+    const srcPage = perSourcePage.get(key)!;
+    if (resultLength === 0) {
+      perSourcePage.set(key, -1);
+      return true;
+    }
+    perSourcePage.set(key, srcPage + 1);
+    return false;
+  };
+
+  const collected: any[] = [];
+  const maxAttempts = 5;
+  let attempts = 0;
+
+  if (mergeMode === 'sequential') {
+    while (collected.length < pageSize && activeSourceIdx < validSources.length && attempts < maxAttempts) {
+      attempts++;
+      const src = validSources[activeSourceIdx];
+      const key = `${src.catalogId}:${src.catalogType}`;
+      const srcPage = perSourcePage.get(key)!;
+
+      if (srcPage <= 0) {
+        activeSourceIdx++;
+        attempts--;
+        continue;
+      }
+
+      const items = await fetchSourcePage(src, srcPage);
+      const { consumed } = collectDeduped(items, collected);
+      if (consumed >= items.length) {
+        const exhausted = markSourcePage(src, items.length);
+        if (exhausted) activeSourceIdx++;
+      }
+    }
+  } else {
+    let exhaustedCount = [...perSourcePage.values()].filter(p => p <= 0).length;
+
+    while (collected.length < pageSize && exhaustedCount < validSources.length && attempts < maxAttempts) {
+      attempts++;
+
+      const results = await Promise.all(
+        validSources.map(async (src: any) => {
+          const key = `${src.catalogId}:${src.catalogType}`;
+          const srcPage = perSourcePage.get(key)!;
+          if (srcPage <= 0) return [];
+          return fetchSourcePage(src, srcPage);
+        })
+      );
+
+      const tagged = roundRobinInterleaveTagged(results);
+      const { added, consumedPerSource } = collectDedupedTagged(
+        tagged.map(t => ({ meta: t.item, srcIdx: t.srcIdx })),
+        collected
+      );
+
+      for (let i = 0; i < validSources.length; i++) {
+        const key = `${validSources[i].catalogId}:${validSources[i].catalogType}`;
+        if (perSourcePage.get(key)! <= 0) continue;
+        if (results[i].length === 0) {
+          if (markSourcePage(validSources[i], 0)) exhaustedCount++;
+        } else if (consumedPerSource[i] >= results[i].length) {
+          if (markSourcePage(validSources[i], results[i].length)) exhaustedCount++;
+        }
+      }
+
+      if (added === 0) break;
+    }
+  }
+
+  if (cursorKey && collected.length > 0) {
+    const newCursor: MergedCursor = {
+      served: stremioSkip + collected.length,
+      perSource: validSources.map((s: any) => ({
+        catalogId: s.catalogId,
+        catalogType: s.catalogType,
+        nextPage: perSourcePage.get(`${s.catalogId}:${s.catalogType}`) || -1,
+      })),
+      seenIds: [...seenIds],
+      activeSourceIdx,
+    };
+    await redis!.set(cursorKey, JSON.stringify(newCursor), 'EX', catalogTTL);
+  }
 
   logger.success(
-    `[Merged] ${catalogId}: ${sliced.length} items from ` +
-    `${validSources.length} sources (page ${page}, pool ${deduped.length}` +
+    `[Merged] ${catalogId}: ${collected.length} items from ${validSources.length} sources ` +
+    `(skip=${stremioSkip}, seen=${seenIds.size}, mode=${mergeMode}` +
     `${hasGenreFilter ? `, genre="${genre}"` : ''})`
   );
-  return sliced;
+  return collected;
 }
 
 export { getCatalog };

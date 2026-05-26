@@ -14,6 +14,18 @@ export function roundRobinInterleave<T>(arrays: T[][]): T[] {
   return result;
 }
 
+export function roundRobinInterleaveTagged<T>(arrays: T[][]): Array<{ item: T; srcIdx: number }> {
+  const result: Array<{ item: T; srcIdx: number }> = [];
+  if (!arrays.length) return result;
+  const maxLen = Math.max(...arrays.map(a => a.length), 0);
+  for (let i = 0; i < maxLen; i++) {
+    for (let s = 0; s < arrays.length; s++) {
+      if (i < arrays[s].length) result.push({ item: arrays[s][i], srcIdx: s });
+    }
+  }
+  return result;
+}
+
 /**
  * Multi-namespace dedup key. Mirrors extractIdsFromMeta logic in addon/index.js.
  * Returns the first available canonical id. Items lacking any usable id pass

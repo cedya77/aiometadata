@@ -77,6 +77,7 @@ export interface CatalogConfig {
       originalEnabled: boolean;
       originalShowInHome: boolean;
     }>;
+    mergeMode?: 'interleaved' | 'sequential';
   };
 }
 
