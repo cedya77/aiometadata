@@ -1382,7 +1382,9 @@ async function fetchTraktRecommendationsItems(
   return await cacheWrapGlobal(cacheKey, async () => {
     try {
       // Trakt recommendations endpoint doesn't support pagination, only a limit (max 100)
-      // We use limit=50 and ignore the page parameter
+      if (page > 1) {
+        return { items: [], totalItems: undefined, hasMore: false, totalPages: 1 };
+      }
       const recommendationsLimit = 50;
       const url = `${TRAKT_BASE_URL}/recommendations/${type}?limit=${recommendationsLimit}&ignore_collected=false&ignore_watchlisted=false`;
       

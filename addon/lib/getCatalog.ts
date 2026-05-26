@@ -17,7 +17,8 @@ import * as moviedb from "./getTmdb.js";
 import * as tvdb from './tvdb.js';
 import { to3LetterCode, to3LetterCountryCode } from './language-map.js';
 import { resolveAllIds } from './id-resolver.js';
-import { cacheWrapTvdbApi, cacheWrap, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
+import { cacheWrapTvdbApi, cacheWrap, cacheWrapCatalog, cacheWrapAniListCatalog, cacheWrapJikanApi, stableStringify } from './getCache.js';
+import crypto from 'crypto';
 import { getTVDBContentRatingId } from '../utils/tvdbContentRating.js';
 import { getMeta } from './getMeta.js';
 import { resolveDynamicTmdbDiscoverParams } from './tmdbDiscoverDateTokens.js';
@@ -2838,13 +2839,56 @@ async function getPublicMetaDBCatalog(
   }
 }
 
-/**
- * Fetch and merge results from multiple source catalogs.
- * Uses cursor-based pagination stored in Redis for cross-page dedup.
- * Supports two modes:
- *   - interleaved (default): round-robin items from all sources (A1 B1 A2 B2)
- *   - sequential: exhaust source A fully, then source B, etc.
- */
+function buildCatalogCacheArgs(
+  catalogId: string,
+  catalogType: string,
+  page: number,
+  genre: string | null,
+  config: UserConfig
+): Record<string, any> {
+  const args: Record<string, any> = {};
+  if (page > 1) args.page = page;
+  if (genre) args.genre = genre;
+
+  const catCfg = (config.catalogs as any[])?.find((c: any) => c.id === catalogId && c.type === catalogType);
+
+  if (catalogId.startsWith('trakt.') || catalogId.startsWith('anilist.') || catalogId.startsWith('streaming.') || catalogId.startsWith('tmdb.year') || catalogId.startsWith('tmdb.language')) {
+    if (catCfg?.sort) args.sort = catCfg.sort;
+    if (catCfg?.sortDirection) args.sortDirection = catCfg.sortDirection;
+  } else if (catalogId.startsWith('mdblist.')) {
+    if (catCfg?.sort) args.sort = catCfg.sort;
+    if (catCfg?.order) args.order = catCfg.order;
+    if (catCfg?.source === 'mdblist' && catCfg?.sourceUrl?.includes('/external/lists/')) {
+      if (typeof catCfg.filter_score_min === 'number') args.filter_score_min = catCfg.filter_score_min;
+      if (typeof catCfg.filter_score_max === 'number') args.filter_score_max = catCfg.filter_score_max;
+    }
+  } else if (catalogId.startsWith('tmdb.discover.') || catalogId.startsWith('tvdb.discover.') || catalogId.startsWith('simkl.discover.') || catalogId.startsWith('anilist.discover.') || catalogId.startsWith('mal.discover.')) {
+    const discoverParams = catCfg?.metadata?.discover?.params || catCfg?.metadata?.discoverParams || null;
+    if (discoverParams && typeof discoverParams === 'object') {
+      const resolved = catalogId.startsWith('tmdb.discover.')
+        ? resolveDynamicTmdbDiscoverParams(discoverParams, { timezone: (config as any).timezone })
+        : discoverParams;
+      args.discoverSig = crypto.createHash('md5').update(stableStringify(resolved)).digest('hex').substring(0, 8);
+    }
+  }
+
+  if (catalogId === 'trakt.calendar' || catalogId.startsWith('simkl.calendar')) {
+    const tz = (config as any).timezone || process.env.TZ || 'UTC';
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    args.date = fmt.format(new Date());
+    args.days = typeof catCfg?.metadata?.airingSoonDays === 'number' ? catCfg.metadata.airingSoonDays : 1;
+  }
+
+  if (catalogId === 'tvmaze.schedule') {
+    const tz = (config as any).timezone || process.env.TZ || 'UTC';
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    args.date = fmt.format(new Date());
+    args.genre = !args.genre || args.genre === 'None' ? '' : args.genre.toUpperCase();
+  }
+
+  return args;
+}
+
 async function getMergedCatalog(
   type: string,
   catalogId: string,
@@ -2924,9 +2968,15 @@ async function getMergedCatalog(
 
   const fetchSourcePage = async (src: any, srcPage: number): Promise<any[]> => {
     try {
-      const result = await getCatalog(
-        src.catalogType, language, srcPage, src.catalogId, genre, config, userUUID, includeVideos
-      );
+      const cacheArgs = buildCatalogCacheArgs(src.catalogId, src.catalogType, srcPage, genre, config);
+      const catalogKey = `${src.catalogId}:${src.catalogType}:${stableStringify(cacheArgs)}`;
+
+      const result = await cacheWrapCatalog(userUUID, catalogKey, async () => {
+        return await getCatalog(
+          src.catalogType, language, srcPage, src.catalogId, genre, config, userUUID, includeVideos
+        );
+      }, { config });
+
       const raw = result?.metas || [];
       if (!hasGenreFilter) return raw;
       const filtered = filterMetasByGenre(raw, genre);
@@ -3004,10 +3054,15 @@ async function getMergedCatalog(
       }
 
       const items = await fetchSourcePage(src, srcPage);
-      const { consumed } = collectDeduped(items, collected);
+      const { added, consumed } = collectDeduped(items, collected);
       if (consumed >= items.length) {
-        const exhausted = markSourcePage(src, items.length);
-        if (exhausted) activeSourceIdx++;
+        if (added === 0 && items.length > 0) {
+          markSourcePage(src, 0);
+          activeSourceIdx++;
+        } else {
+          const exhausted = markSourcePage(src, items.length);
+          if (exhausted) activeSourceIdx++;
+        }
       }
     }
   } else if (mergeMode === 'alternating') {
@@ -3035,10 +3090,15 @@ async function getMergedCatalog(
       consecutiveSkips = 0;
 
       const items = await fetchSourcePage(src, srcPage);
-      const { consumed } = collectDeduped(items, collected);
+      const { added, consumed } = collectDeduped(items, collected);
       if (consumed >= items.length) {
-        const exhausted = markSourcePage(src, items.length);
-        if (exhausted) exhaustedCount++;
+        if (added === 0 && items.length > 0) {
+          markSourcePage(src, 0);
+          exhaustedCount++;
+        } else {
+          const exhausted = markSourcePage(src, items.length);
+          if (exhausted) exhaustedCount++;
+        }
       }
       activeSourceIdx++;
     }
@@ -3073,7 +3133,16 @@ async function getMergedCatalog(
         }
       }
 
-      if (added === 0) break;
+      if (added === 0) {
+        for (let i = 0; i < validSources.length; i++) {
+          const key = `${validSources[i].catalogId}:${validSources[i].catalogType}`;
+          if (perSourcePage.get(key)! > 0 && results[i].length > 0) {
+            markSourcePage(validSources[i], 0);
+            exhaustedCount++;
+          }
+        }
+        break;
+      }
     }
   }
 

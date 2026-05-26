@@ -1855,7 +1855,6 @@ const MergedCatalogCard = ({
     .filter(Boolean) as CatalogConfig[];
 
   const [expanded, setExpanded] = useState(false);
-  const [showDisbandConfirm, setShowDisbandConfirm] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
@@ -2101,7 +2100,7 @@ const MergedCatalogCard = ({
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => setShowDisbandConfirm(true)} className="h-8 w-8 active:scale-90 transition-transform">
+                <Button variant="ghost" size="icon" onClick={onDisband} className="h-8 w-8 active:scale-90 transition-transform">
                   <Unlink className="h-5 w-5 text-red-400 hover:text-red-500" />
                 </Button>
               </TooltipTrigger>
@@ -2148,7 +2147,7 @@ const MergedCatalogCard = ({
               <DropdownMenuItem onClick={handleMoveToTop}>Move to Top</DropdownMenuItem>
               <DropdownMenuItem onClick={handleMoveToBottom}>Move to Bottom</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setShowDisbandConfirm(true)} className="text-red-500">
+              <DropdownMenuItem onClick={onDisband} className="text-red-500">
                 <Trash2 className="h-4 w-4 mr-2" />Disband
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -2229,15 +2228,6 @@ const MergedCatalogCard = ({
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        isOpen={showDisbandConfirm}
-        onClose={() => setShowDisbandConfirm(false)}
-        onConfirm={onDisband}
-        title="Disband Merged Catalog"
-        description={`This restores the ${sources.length} source catalog${sources.length === 1 ? '' : 's'} to the list. The merged catalog "${catalog.name}" will be deleted.`}
-        confirmText="Disband"
-        variant="destructive"
-      />
     </Card>
   );
 };
@@ -2249,14 +2239,16 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
   onDuplicateDiscover?: (catalog: CatalogConfig) => void;
 }) => {
   const { setConfig, config } = useConfig();
-  const { toggleSelection, isSelected, selectionCount } = useSelection(); 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
-    id: `${catalog.id}-${catalog.type}` 
+  const { toggleSelection, isSelected, selectionCount } = useSelection();
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `${catalog.id}-${catalog.type}`
   });
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newName, setNewName] = useState(catalog.name);
   const [newType, setNewType] = useState(catalog.displayType || catalog.type);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDisbandWarning, setShowDisbandWarning] = useState(false);
+  const [disbandTargetName, setDisbandTargetName] = useState('');
 
   const catalogKey = `${catalog.id}-${catalog.type}`;
   const selected = isSelected(catalogKey);
@@ -2371,12 +2363,22 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
     setShowEditDialog(false);
   };
 
-  const handleDelete = () => {
+  const wouldDisbandMerge = (): string | null => {
+    const targetKey = `${catalog.id}-${catalog.type}`;
+    for (const c of config.catalogs) {
+      if (c.source !== 'merged') continue;
+      const sources = c.metadata?.mergedSources || [];
+      const remaining = sources.filter(s => `${s.catalogId}-${s.catalogType}` !== targetKey);
+      if (remaining.length < sources.length && remaining.length < 2) return c.name || c.id;
+    }
+    return null;
+  };
+
+  const executeDelete = () => {
     setConfig(prev => {
       const targetKey = `${catalog.id}-${catalog.type}`;
       let next = prev.catalogs;
 
-      // 1) Scrub references to this catalog from any merged catalog's sources.
       next = next.map(c => {
         if (c.source !== 'merged') return c;
         const sources = c.metadata?.mergedSources || [];
@@ -2385,8 +2387,6 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         return { ...c, metadata: { ...c.metadata, mergedSources: filtered } };
       });
 
-      // 2) Auto-disband merged catalogs that fell below 2 sources after scrub.
-      //    Restore any remaining source's original flags before dropping the merged entry.
       const orphans = next.filter(c =>
         c.source === 'merged' && (c.metadata?.mergedSources?.length || 0) < 2
       );
@@ -2406,7 +2406,6 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
           });
       }
 
-      // 3) Drop any stale mergedInto flags whose target no longer exists.
       const liveMergedIds = new Set(
         next.filter(c => c.source === 'merged').map(c => c.id)
       );
@@ -2417,11 +2416,20 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         return rest;
       });
 
-      // 4) Finally, drop the target catalog itself.
       next = next.filter(c => !(c.id === catalog.id && c.type === catalog.type));
 
       return { ...prev, catalogs: reconcileMergedReferences(next) };
     });
+  };
+
+  const handleDelete = () => {
+    const mergeName = wouldDisbandMerge();
+    if (mergeName) {
+      setDisbandTargetName(mergeName);
+      setShowDisbandWarning(true);
+    } else {
+      executeDelete();
+    }
   };
 
   const handleMoveToTop = () => {
@@ -3150,6 +3158,15 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
           </div>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        isOpen={showDisbandWarning}
+        onClose={() => setShowDisbandWarning(false)}
+        onConfirm={() => { setShowDisbandWarning(false); executeDelete(); }}
+        title="This will disband a merged catalog"
+        description={`Deleting "${catalog.name}" will leave "${disbandTargetName}" with fewer than 2 sources, so it will be automatically disbanded.`}
+        confirmText="Delete anyway"
+        variant="destructive"
+      />
     </Card>
   );
 };
@@ -4164,7 +4181,7 @@ function CatalogsSettingsContent({
       return { ...prev, catalogs: reconcileMergedReferences(restored) };
     });
 
-    toast.success(`Disbanded "${mergedCatalog.name}" - ${sources.length} catalogs restored`);
+    toast.success(`Disbanded "${mergedCatalog.name}"`);
   };
 
   const handleBulkDelete = () => {
@@ -4180,8 +4197,7 @@ function CatalogsSettingsContent({
     setLoadingAction('delete');
 
     try {
-      // Split selection: merged catalogs get disbanded (sources restored),
-      // non-merged catalogs get deleted normally.
+      // Split selection: merged catalogs get disbanded, non-merged get deleted.
       const toDisband = selectedCatalogs.filter(c => c.source === 'merged');
       const toDelete = selectedCatalogs.filter(c => c.source !== 'merged' && isRemovableCatalog(c));
       const skippedCount = selectedCatalogs.length - toDisband.length - toDelete.length;
@@ -4718,7 +4734,7 @@ function CatalogsSettingsContent({
           <DialogHeader>
             <DialogTitle>Merge {selectedCatalogs.length} Catalogs</DialogTitle>
             <DialogDescription>
-              The selected catalogs will appear as one combined row. Disbanding restores them.
+              The selected catalogs will appear as one combined catalog in Stremio.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -4846,7 +4862,7 @@ function CatalogsSettingsContent({
             parts.push(`delete ${catalogsToDelete.length} catalog${catalogsToDelete.length === 1 ? '' : 's'}`);
           }
           if (mergedSelected.length > 0) {
-            parts.push(`disband ${mergedSelected.length} merged catalog${mergedSelected.length === 1 ? '' : 's'} (originals will be restored)`);
+            parts.push(`disband ${mergedSelected.length} merged catalog${mergedSelected.length === 1 ? '' : 's'}`);
           }
           let message = parts.length > 0
             ? `This will ${parts.join(' and ')}.`
