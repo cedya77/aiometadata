@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.5.3](https://github.com/cedya77/aiometadata/compare/v2.5.2...v2.5.3) (2026-05-27)
+
+
+### Bug Fixes
+
+* manifest ordering id-only fallback for displayType overrides ([cf133b0](https://github.com/cedya77/aiometadata/commit/cf133b0a2ba60f47693c602d19710152378b814b))
+
 ## [2.5.2](https://github.com/cedya77/aiometadata/compare/v2.5.1...v2.5.2) (2026-05-27)
 
 
