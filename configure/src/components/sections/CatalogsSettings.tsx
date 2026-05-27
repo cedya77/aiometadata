@@ -4293,7 +4293,7 @@ function CatalogsSettingsContent({
     <div className={cn(
       "space-y-8 animate-fade-in",
       // Add bottom padding on mobile when items are selected to prevent overlap with bottom sheet
-      selectionCount > 0 && "pb-[280px] md:pb-0"
+      selectionCount > 0 && "pb-[280px] md:pb-0 md:pt-[140px]"
     )}>
       <div className="space-y-4">
         <div className="space-y-1">

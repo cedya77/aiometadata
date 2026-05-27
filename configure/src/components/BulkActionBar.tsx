@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -113,29 +113,21 @@ export function BulkActionBar({
   const findReplaceMatchCount = findTypeValue.trim()
     ? selectedCatalogs.filter(c => (c.displayType || c.type) === findTypeValue.trim()).length
     : 0;
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
-  );
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mql = window.matchMedia('(max-width: 767px)');
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, []);
+  const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
 
   if (selectionCount === 0) {
     return null;
   }
 
+  const canMerge = onMergeSelected && selectionCount >= 2 && !selectedCatalogs.some(c => c.source === 'merged');
+
   const bar = (
     <div
       className={cn(
-        "md:sticky md:top-0 z-10 bg-background border-b shadow-md",
-        "fixed bottom-0 left-0 right-0 md:relative",
-        "animate-slide-down",
-        "px-4 py-3 md:py-3",
-        "pb-safe"
+        "fixed left-0 right-0 z-50 bg-background px-4 py-3 pb-safe",
+        isMobile
+          ? "bottom-0 border-t shadow-[0_-2px_10px_rgba(0,0,0,0.1)] animate-slide-up"
+          : "top-0 border-b shadow-[0_2px_10px_rgba(0,0,0,0.1)] animate-slide-down"
       )}
       role="region"
       aria-label="Bulk actions"
@@ -197,6 +189,30 @@ export function BulkActionBar({
               </TooltipTrigger>
               <TooltipContent>Move selection to end of list</TooltipContent>
             </Tooltip>
+
+            {/* Merge Selected */}
+            {canMerge && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onMergeSelected}
+                    disabled={isLoading}
+                    aria-label="Merge selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0 border-violet-300 dark:border-violet-700"
+                  >
+                    {loadingAction === 'merge' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <GitMerge className="h-4 w-4 text-violet-400" />
+                    )}
+                    <span className="ml-2">Merge</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Merge selected catalogs into one</TooltipContent>
+              </Tooltip>
+            )}
 
             {/* Enable Selected */}
             {hasDisabledCatalogs && (
@@ -482,19 +498,6 @@ export function BulkActionBar({
                   {loadingAction === 'invert' && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   Invert Selection
                 </DropdownMenuItem>
-                {onMergeSelected && selectionCount >= 2 && !selectedCatalogs.some(c => c.source === 'merged') && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onMergeSelected} disabled={isLoading}>
-                      {loadingAction === 'merge' ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <GitMerge className="h-4 w-4 mr-2 text-violet-400" />
-                      )}
-                      Merge into One Catalog
-                    </DropdownMenuItem>
-                  </>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
             {onSetDisplayType && (
@@ -621,7 +624,7 @@ export function BulkActionBar({
     </div>
   );
 
-  if (isMobile && typeof document !== 'undefined') {
+  if (typeof document !== 'undefined') {
     return createPortal(bar, document.body);
   }
   return bar;

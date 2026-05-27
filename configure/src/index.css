@@ -109,6 +109,10 @@
   animation: slide-down 0.2s ease-out;
 }
 
+@utility animate-slide-up {
+  animation: slide-up 0.2s ease-out;
+}
+
 @layer utilities {
   @keyframes checkbox-ripple {
     0% {
@@ -134,6 +138,16 @@
     from {
       opacity: 0;
       transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
     }
     to {
       opacity: 1;
