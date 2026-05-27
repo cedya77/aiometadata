@@ -936,7 +936,20 @@ class ComprehensiveCatalogWarmer {
         try {
           const config = await database.getUserConfig(uuid);
           if (config) {
-            const enabledCatalogs = (config.catalogs || []).filter(c => c.enabled && c.source !== 'merged' && c.id !== 'trakt.upnext' && c.id !== 'mdblist.upnext' && c.id !== 'publicmetadb.upnext');
+            const allCatalogs = config.catalogs || [];
+            const mergedChildIds = new Set();
+            for (const c of allCatalogs) {
+              if (c.enabled && c.source === 'merged' && c.metadata?.mergedSources) {
+                for (const src of c.metadata.mergedSources) {
+                  mergedChildIds.add(`${src.catalogId}:${src.catalogType}`);
+                }
+              }
+            }
+            const skipIds = new Set(['trakt.upnext', 'mdblist.upnext', 'publicmetadb.upnext']);
+            const enabledCatalogs = allCatalogs.filter(c =>
+              c.source !== 'merged' && !skipIds.has(c.id) &&
+              (c.enabled || mergedChildIds.has(`${c.id}:${c.type}`))
+            );
             userConfigs[uuid] = { config, enabledCatalogs };
             grandTotalCatalogs += enabledCatalogs.length;
             
