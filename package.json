@@ -1,6 +1,6 @@
 {
   "name": "aio-metadata",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Metadata provider for Stremio",
   "main": "dist/server/server.js",
   "scripts": {
