@@ -124,10 +124,10 @@ export function BulkActionBar({
   const bar = (
     <div
       className={cn(
-        "fixed left-0 right-0 z-50 bg-background px-4 py-3 pb-safe",
+        "z-50 bg-background px-4 py-3 pb-safe",
         isMobile
-          ? "bottom-0 border-t shadow-[0_-2px_10px_rgba(0,0,0,0.1)] animate-slide-up"
-          : "top-0 border-b shadow-[0_2px_10px_rgba(0,0,0,0.1)] animate-slide-down"
+          ? "fixed bottom-0 left-0 right-0 border-t shadow-[0_-2px_10px_rgba(0,0,0,0.1)] animate-slide-up"
+          : "sticky top-0 border-b shadow-[0_2px_10px_rgba(0,0,0,0.1)] animate-slide-down"
       )}
       role="region"
       aria-label="Bulk actions"
@@ -624,7 +624,7 @@ export function BulkActionBar({
     </div>
   );
 
-  if (typeof document !== 'undefined') {
+  if (isMobile && typeof document !== 'undefined') {
     return createPortal(bar, document.body);
   }
   return bar;
