@@ -1902,7 +1902,7 @@ addon.get("/api/tvdb/discover/search/:entity", async (req, res) => {
 const aiCatalogRateLimit = new Map();
 addon.post("/api/ai/create-catalog", async (req, res) => {
   try {
-    const { userUUID, password, query, provider, generationMode } = req.body;
+    const { userUUID, password, query, provider, generationMode, geminiKey: clientGeminiKey, openrouterKey: clientOpenrouterKey } = req.body;
 
     if (!userUUID || !password) {
       return res.status(400).json({ error: 'User UUID and password are required' });
@@ -1932,9 +1932,8 @@ addon.post("/api/ai/create-catalog", async (req, res) => {
       return res.status(401).json({ error: 'Invalid UUID or password' });
     }
 
-    // Get AI key
-    const openrouterKey = config.apiKeys?.openrouter;
-    const geminiKey = config.apiKeys?.gemini;
+    const openrouterKey = config.apiKeys?.openrouter || clientOpenrouterKey;
+    const geminiKey = config.apiKeys?.gemini || clientGeminiKey;
     if (!openrouterKey && !geminiKey) {
       return res.status(400).json({ error: 'No AI API key configured. Add an OpenRouter or Gemini key in your settings.' });
     }

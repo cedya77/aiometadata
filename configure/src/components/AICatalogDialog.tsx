@@ -122,6 +122,8 @@ export function AICatalogDialog({ isOpen, onClose, embedded, onCatalogsCreated }
           query: query.trim(),
           provider,
           generationMode,
+          geminiKey: config.apiKeys?.gemini || undefined,
+          openrouterKey: config.apiKeys?.openrouter || undefined,
         }),
       });
 
