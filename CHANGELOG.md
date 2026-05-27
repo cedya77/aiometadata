@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.5.0](https://github.com/cedya77/aiometadata/compare/v2.4.3...v2.5.0) (2026-05-27)
+
+
+### Features
+
+* add merged catalogs ([832dc85](https://github.com/cedya77/aiometadata/commit/832dc85e5d0a756d70af47f4563a4623369de2c2))
+
+
+### Bug Fixes
+
+* preserve TVDB search results for niche shows without posters ([577c5b6](https://github.com/cedya77/aiometadata/commit/577c5b6b458c4dcb6e08041a58d84befd891dd1a))
+
 ## [2.4.3](https://github.com/cedya77/aiometadata/compare/v2.4.2...v2.4.3) (2026-05-23)
 
 
