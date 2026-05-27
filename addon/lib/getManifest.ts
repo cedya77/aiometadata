@@ -1164,7 +1164,9 @@ async function getManifest(config: any): Promise<any> {
     const findManifestIndex = (catId: string, catType: string) => {
       const idx = catalogs.findIndex(c => c.id === catId && c.type === catType);
       if (idx !== -1) return idx;
-      return catalogs.findIndex(c => c.id === `${catId}_${catType}`);
+      const suffixed = catalogs.findIndex(c => c.id === `${catId}_${catType}`);
+      if (suffixed !== -1) return suffixed;
+      return catalogs.findIndex(c => c.id === catId);
     };
     for (const { userCatalog, configIndex } of mergedUserCatalogs) {
       const built = createMergedCatalog(userCatalog, catalogs, showPrefix, prefixName);
