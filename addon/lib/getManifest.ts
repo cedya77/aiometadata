@@ -1156,14 +1156,27 @@ async function getManifest(config: any): Promise<any> {
   });
 
   // Pass 2: Build merged catalogs after all source catalogs have been built so
-  // we can resolve genre options from their manifest entries
-  const mergedUserCatalogs = enabledCatalogs.filter((c: any) => c.id.startsWith('merged.'));
+  // we can resolve genre options from their manifest entries.
+  const mergedUserCatalogs = enabledCatalogs
+    .map((c: any, i: number) => ({ userCatalog: c, configIndex: i }))
+    .filter((entry: any) => entry.userCatalog.id.startsWith('merged.'));
   if (mergedUserCatalogs.length > 0) {
-    const builtMerged = mergedUserCatalogs
-      .map((uc: any) => createMergedCatalog(uc, catalogs, showPrefix, prefixName))
-      .filter(Boolean);
-    catalogs = [...catalogs, ...builtMerged];
-    logger.debug(`Appended ${builtMerged.length} merged catalogs to manifest`);
+    for (const { userCatalog, configIndex } of mergedUserCatalogs) {
+      const built = createMergedCatalog(userCatalog, catalogs, showPrefix, prefixName);
+      if (!built) continue;
+      const preceding = enabledCatalogs.slice(0, configIndex);
+      let insertIdx = 0;
+      for (let i = preceding.length - 1; i >= 0; i--) {
+        const key = `${preceding[i].id}:${preceding[i].type}`;
+        const found = catalogs.findIndex(c => `${c.id}:${c.type}` === key);
+        if (found !== -1) {
+          insertIdx = found + 1;
+          break;
+        }
+      }
+      catalogs.splice(insertIdx, 0, built);
+    }
+    logger.debug(`Inserted ${mergedUserCatalogs.length} merged catalogs into manifest`);
   }
 
 
