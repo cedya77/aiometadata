@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.5.1](https://github.com/cedya77/aiometadata/compare/v2.5.0...v2.5.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* respect merged catalog position in manifest ordering ([d067767](https://github.com/cedya77/aiometadata/commit/d067767c3fdf76657ca74c66aa5fcc54d74bba1d))
+
 ## [2.5.0](https://github.com/cedya77/aiometadata/compare/v2.4.3...v2.5.0) (2026-05-27)
 
 
