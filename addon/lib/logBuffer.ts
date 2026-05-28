@@ -47,7 +47,7 @@ const LEVEL_LABEL_TO_NUM: Record<string, number> = {
   verbose: 5,
 };
 
-const BUFFER_SIZE = parseInt(process.env.LOG_BUFFER_SIZE || '10000', 10);
+const BUFFER_SIZE = parseInt(process.env.LOG_BUFFER_SIZE || '100000', 10);
 
 let buffer: (LogEntry | null)[] = new Array(BUFFER_SIZE).fill(null);
 let writeIndex = 0;

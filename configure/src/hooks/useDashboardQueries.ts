@@ -480,8 +480,7 @@ export function useDashboardLogs(options: DashboardQueryOptions = {}) {
       cursorRef.current = query.data.cursor;
       setAccumulated(prev => {
         const combined = [...prev.entries, ...query.data!.entries];
-        const capped = combined.length > 5000 ? combined.slice(-5000) : combined;
-        return { entries: capped, cursor: query.data!.cursor, tags: query.data!.tags };
+        return { entries: combined, cursor: query.data!.cursor, tags: query.data!.tags };
       });
     } else if (query.data.tags.length > 0) {
       setAccumulated(prev => {

@@ -832,7 +832,7 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     description: 'Maximum number of log entries kept in memory',
     category: 'Diagnostics',
     type: 'number',
-    default: 10000,
+    default: 100000,
     requiresRestart: true,
   },
   {
