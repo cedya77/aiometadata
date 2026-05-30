@@ -5431,19 +5431,20 @@ addon.get("/api/dashboard/overview", requireAuthUnlessGuestMode, async (req, res
       return;
     }
     
-    // Overview tab only needs: systemOverview, quickStats
-    // Other data is fetched by their respective tab endpoints
+    const { buildOverviewSignals } = require('./lib/dashboardSignals.js');
     const [systemOverview, quickStats] = await Promise.all([
       dashboardApi.getSystemOverview(),
       dashboardApi.getQuickStats(),
     ]);
+    const signals = await buildOverviewSignals(dashboardApi, { tz: req.query.tz || null, systemOverview });
 
     const data = {
       systemOverview,
       quickStats,
+      signals,
       timestamp: new Date().toISOString(),
     };
-    
+
     res.json(data);
   } catch (error) {
     consola.error('[Dashboard API] Error:', error);
@@ -5543,14 +5544,14 @@ addon.get("/api/dashboard/logs", requireDashboardAdmin, (req, res) => {
     const { getLogEntries, getLogTags } = require('./lib/logBuffer.js');
     const afterCursor = req.query.afterCursor ? parseInt(req.query.afterCursor, 10) : 0;
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : 200;
-    const { entries, cursor } = getLogEntries({
+    const { entries, cursor, newestId } = getLogEntries({
       afterCursor,
       level: req.query.level || undefined,
       tag: req.query.tag || undefined,
       search: req.query.search || undefined,
       limit,
     });
-    res.json({ entries, cursor, tags: getLogTags() });
+    res.json({ entries, cursor, newestId, tags: getLogTags() });
   } catch (error) {
     consola.error('[Dashboard API] Logs error:', error);
     res.status(500).json({ error: 'Failed to fetch logs' });

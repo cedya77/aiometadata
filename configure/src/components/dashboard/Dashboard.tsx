@@ -331,6 +331,12 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [activeMobileSection, setActiveMobileSection] = useState<DashboardTab | undefined>(undefined);
   const [contentTimeframe, setContentTimeframe] = useState('today');
+  const [logsPaused, setLogsPaused] = useState(false);
+
+  const navigateToTab = (tab: string) => {
+    setActiveTab(tab as DashboardTab);
+    setActiveMobileSection((prev) => (prev !== undefined ? (tab as DashboardTab) : prev));
+  };
 
   // Access level state management - tracks current access level based on AdminContext state
   const accessLevel: AccessLevel = isAdmin ? 'admin' : isGuest ? 'guest' : 'none';
@@ -345,7 +351,7 @@ export function Dashboard() {
   const systemQuery = useDashboardSystem(queryOptions);
   const operationsQuery = useDashboardOperations(queryOptions);
   const usersQuery = useDashboardUsers(queryOptions);
-  const logsQuery = useDashboardLogs(queryOptions);
+  const logsQuery = useDashboardLogs({ ...queryOptions, paused: logsPaused });
   const settingsQuery = useDashboardSettings(queryOptions);
 
   // Refetch data when tab changes (only if not already fetching)
@@ -477,8 +483,8 @@ export function Dashboard() {
       component: (
         <DashboardOverview
           data={dashboardData.overview}
-          systemData={dashboardData.system}
           loading={dashboardData.loading}
+          onNavigate={navigateToTab}
         />
       ),
     },
@@ -555,6 +561,9 @@ export function Dashboard() {
         component: (
           <DashboardLogs
             data={dashboardData.logs}
+            paused={logsPaused}
+            onPauseToggle={() => setLogsPaused((p) => !p)}
+            onClear={logsQuery.resetLogs}
           />
         ),
       },
@@ -693,8 +702,8 @@ export function Dashboard() {
         <TabsContent value="overview" className="mt-0">
           <DashboardOverview
             data={dashboardData.overview}
-            systemData={dashboardData.system}
             loading={dashboardData.loading}
+            onNavigate={navigateToTab}
           />
         </TabsContent>
 
@@ -748,6 +757,9 @@ export function Dashboard() {
             <TabsContent value="logs" className="mt-0">
               <DashboardLogs
                 data={dashboardData.logs}
+                paused={logsPaused}
+                onPauseToggle={() => setLogsPaused((p) => !p)}
+                onClear={logsQuery.resetLogs}
               />
             </TabsContent>
 

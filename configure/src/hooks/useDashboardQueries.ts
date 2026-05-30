@@ -19,7 +19,7 @@ interface DashboardQueryOptions {
 
 // Polling intervals in milliseconds
 const POLLING_INTERVALS = {
-  OVERVIEW: 5 * 1000,           // 5 seconds - quick stats + health (most visible)
+  OVERVIEW: 5 * 1000,           // 5 seconds - live strip stays snappy; heavy signals memoized server-side
   ANALYTICS: 15 * 1000,         // 15 seconds - metrics data
   PERFORMANCE: 60 * 1000,       // 60 seconds - timing data (aggregated stats, slow-changing)
   SYSTEM: 10 * 1000,            // 10 seconds - system config + activity
@@ -134,7 +134,9 @@ export function useDashboardOverview(options: DashboardQueryOptions = {}) {
     queryKey: DASHBOARD_QUERY_KEYS.overview,
     queryFn: async () => {
       try {
-        return await fetchDashboardData('/api/dashboard/overview', getHeaders());
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const params = tz ? `?tz=${encodeURIComponent(tz)}` : '';
+        return await fetchDashboardData(`/api/dashboard/overview${params}`, getHeaders());
       } catch (error) {
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           logout();
@@ -440,16 +442,17 @@ export interface LogsData {
   entries: LogEntry[];
   cursor: number;
   tags: string[];
+  newestId?: number;
 }
 
-export function useDashboardLogs(options: DashboardQueryOptions = {}) {
+export function useDashboardLogs(options: DashboardQueryOptions & { paused?: boolean } = {}) {
   const { isAdmin, logout, adminKey } = useAdmin();
   const getHeaders = useApiHeaders();
   const isVisible = usePageVisibility();
-  const { activeTab = 'overview', enabled = true } = options;
+  const { activeTab = 'overview', enabled = true, paused = false } = options;
 
   const isActiveTab = activeTab === 'logs';
-  const shouldPoll = isVisible && isActiveTab && isAdmin;
+  const shouldPoll = isVisible && isActiveTab && isAdmin && !paused;
 
   const cursorRef = useRef(0);
   const [accumulated, setAccumulated] = useState<LogsData>({ entries: [], cursor: 0, tags: [] });
@@ -476,6 +479,11 @@ export function useDashboardLogs(options: DashboardQueryOptions = {}) {
 
   useEffect(() => {
     if (!query.data) return;
+    if (typeof query.data.newestId === 'number' && query.data.newestId < cursorRef.current) {
+      cursorRef.current = 0;
+      setAccumulated({ entries: [], cursor: 0, tags: query.data.tags });
+      return;
+    }
     if (query.data.entries.length > 0 && query.data.cursor > cursorRef.current) {
       cursorRef.current = query.data.cursor;
       setAccumulated(prev => {
@@ -493,8 +501,7 @@ export function useDashboardLogs(options: DashboardQueryOptions = {}) {
   }, [query.data]);
 
   const resetLogs = useCallback(() => {
-    cursorRef.current = 0;
-    setAccumulated({ entries: [], cursor: 0, tags: [] });
+    setAccumulated(prev => ({ entries: [], cursor: prev.cursor, tags: prev.tags }));
   }, []);
 
   return { ...query, data: accumulated, resetLogs };

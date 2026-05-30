@@ -54,6 +54,8 @@ let writeIndex = 0;
 let nextId = 1;
 const tagSet = new Set<string>();
 
+const ARG_DETAIL_MAX = 20000;
+
 function stringify(arg: unknown): string {
   if (arg === null || arg === undefined) return '';
   if (typeof arg === 'string') return arg;
@@ -65,12 +67,21 @@ function stringify(arg: unknown): string {
   }
 }
 
+function prettyDetail(arg: unknown): string {
+  if (arg instanceof Error) return arg.stack || `${arg.name}: ${arg.message}`;
+  try {
+    return JSON.stringify(arg, null, 2);
+  } catch {
+    return String(arg);
+  }
+}
+
 function pushEntry(entry: LogEntry): void {
   buffer[writeIndex] = entry;
   writeIndex = (writeIndex + 1) % BUFFER_SIZE;
 }
 
-export function getLogEntries(filters: LogQueryFilters = {}): { entries: LogEntry[]; cursor: number } {
+export function getLogEntries(filters: LogQueryFilters = {}): { entries: LogEntry[]; cursor: number; newestId: number } {
   const { afterCursor = 0, level, tag, search, limit = 200 } = filters;
   const effectiveLimit = Math.min(Math.max(1, limit), 1000);
   const searchLower = search?.toLowerCase();
@@ -93,7 +104,7 @@ export function getLogEntries(filters: LogQueryFilters = {}): { entries: LogEntr
   const sliced = results.slice(-effectiveLimit);
   const cursor = sliced.length > 0 ? sliced[sliced.length - 1].id : afterCursor;
 
-  return { entries: sliced, cursor };
+  return { entries: sliced, cursor, newestId: nextId - 1 };
 }
 
 export function getLogTags(): string[] {
@@ -116,9 +127,27 @@ export function getBufferStats(): { size: number; capacity: number; oldestId: nu
 }
 
 function handleLogObj(logObj: any): void {
-  const args: unknown[] = logObj.args || [];
-  const messageParts = args.map(stringify).filter(Boolean);
-  const message = messageParts.join(' ');
+  const rawArgs: unknown[] = logObj.args || [];
+
+  const messageParts: string[] = [];
+  const detailParts: string[] = [];
+  for (const arg of rawArgs) {
+    if (arg === null || arg === undefined) continue;
+    if (typeof arg === 'string' || typeof arg === 'number' || typeof arg === 'boolean') {
+      const s = stringify(arg);
+      if (s) messageParts.push(s);
+    } else {
+      detailParts.push(prettyDetail(arg));
+    }
+  }
+
+  let message = messageParts.join(' ');
+  let args: string | undefined = detailParts.length ? detailParts.join('\n') : undefined;
+  if (!message && args) message = args.split('\n')[0].slice(0, 300);
+  if (args && args.length > ARG_DETAIL_MAX) {
+    args = args.slice(0, ARG_DETAIL_MAX) + '\n… (truncated)';
+  }
+
   const tag = logObj.tag || '';
   const levelNum = typeof logObj.level === 'number' ? logObj.level : 3;
   const levelLabel = logObj.type || LEVEL_MAP[levelNum] || 'info';
@@ -133,6 +162,7 @@ function handleLogObj(logObj: any): void {
     levelLabel,
     tag,
     message,
+    ...(args && { args }),
     ...(ctx?.userId && { userId: ctx.userId }),
   };
 
