@@ -3580,7 +3580,10 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   
   try {
     let responseData;
-      
+    // Set by any branch whose handler already ran applyCatalogFilters internally
+    // (external addon catalogs filter before computing their pagination cursor).
+    let filtersAlreadyApplied = false;
+
       if (cleanId === 'search' || cleanId === 'gemini.search' || cleanId === 'people_search') {
       let originalSearchId = null;
       if (id.startsWith('search.')) {
@@ -3667,6 +3670,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
       const result = await getCatalog(actualType, language, catalogPage, cleanId, genreName, config, userUUID, false, skipValue);
       responseData = { metas: result.metas || [] };
+      filtersAlreadyApplied = true;
       } else if (cleanId.startsWith('merged.')) {
       const { genre: genreName } = extraArgs;
       const skipValue = extraArgs.skip !== undefined ? parseInt(extraArgs.skip) : 0;
@@ -3739,7 +3743,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
       return { metas: metas || [] };
     }, cacheOptions);
     }
-    if (!cleanId.startsWith('custom.') && !cleanId.startsWith('stremthru.') && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
+    if (!filtersAlreadyApplied && responseData?.metas && Array.isArray(responseData.metas) && responseData.metas.length > 0) {
       const { applyCatalogFilters } = require('./utils/catalogFilters');
       responseData.metas = await applyCatalogFilters(responseData.metas, {
         type,

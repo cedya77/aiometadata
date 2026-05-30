@@ -1657,6 +1657,8 @@ async function getExternalAddonCatalog(type: string, catalogId: string, genre: s
       return [];
     }
 
+    // Filter here (not at the catalog route) so the pagination cursor below counts
+    // post-filter items. The route detects this via filtersAlreadyApplied and skips re-filtering.
     const { applyCatalogFilters } = require('../utils/catalogFilters.js');
     const collected: any[] = [];
 
