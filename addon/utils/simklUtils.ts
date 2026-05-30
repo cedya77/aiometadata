@@ -286,6 +286,23 @@ async function fetchSimklLastActivities(accessToken: string): Promise<any> {
   );
 }
 
+async function getSimklActivityFingerprint(
+  accessToken: string,
+  type: 'movies' | 'shows' | 'anime',
+  status: string
+): Promise<string> {
+  try {
+    const activities = await fetchSimklLastActivities(accessToken);
+    if (!activities) return '';
+    const cat = type === 'shows' ? activities.tv_shows : activities[type];
+    const specific = cat?.[status] ?? cat?.all ?? activities.all ?? '';
+    const removed = cat?.removed_from_list ?? '';
+    return (specific || removed) ? `${specific}|${removed}` : '';
+  } catch {
+    return '';
+  }
+}
+
 async function fetchSimklWatchlistItems(
   accessToken: string,
   type: 'movies' | 'shows' | 'anime',
@@ -1171,6 +1188,7 @@ export {
   parseSimklItems,
   makeAuthenticatedSimklRequest,
   getSimklToken,
+  getSimklActivityFingerprint,
   fetchSimklTrendingItems,
   fetchSimklDvdReleases,
   fetchSimklGenreItems,

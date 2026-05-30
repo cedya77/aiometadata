@@ -1306,6 +1306,14 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     cacheLogger.debug(`[Catalog] Using cache TTL for Simkl trending catalog ${idOnly}: ${cacheTTL}s`);
   }
 
+  if (idOnly.startsWith('simkl.watchlist.')) {
+    const catCfg = config.catalogs?.find((c: any) => c.id === idOnly);
+    if (catCfg?.cacheTTL) {
+      cacheTTL = catCfg.cacheTTL;
+      cacheLogger.debug(`[Catalog] Using custom cache TTL for Simkl watchlist catalog ${idOnly}: ${cacheTTL}s`);
+    }
+  }
+
   if (idOnly.startsWith('letterboxd.')) {
     const catCfg = config.catalogs?.find((c: any) => c.id === idOnly);
     if (catCfg?.cacheTTL) {

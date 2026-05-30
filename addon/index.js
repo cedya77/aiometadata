@@ -3570,6 +3570,24 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
   const cacheExtraArgs = { ...extraArgs };
   delete cacheExtraArgs.skip;
   if (catalogPage > 1) cacheExtraArgs.page = catalogPage;
+
+  if (cleanId.startsWith('simkl.watchlist.')) {
+    try {
+      const { getSimklToken, getSimklActivityFingerprint } = require('./utils/simklUtils');
+      const tokenId = config.apiKeys?.simklTokenId;
+      if (tokenId) {
+        const token = await getSimklToken(tokenId);
+        if (token?.access_token) {
+          const parts = cleanId.split('.');
+          const fp = await getSimklActivityFingerprint(token.access_token, parts[2], parts[3]);
+          if (fp) cacheExtraArgs._simklAct = fp;
+        }
+      }
+    } catch (e) {
+      consola.warn(`[Catalog] Simkl activity fingerprint failed for ${cleanId}: ${e.message}`);
+    }
+  }
+
   const catalogKey = `${cleanId}:${actualType}:${stableStringify(cacheExtraArgs)}`;
 
   const cacheOptions = {
