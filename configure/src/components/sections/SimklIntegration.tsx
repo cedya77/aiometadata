@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ExternalLink, CheckCircle2, XCircle, Loader2, ChevronDown, Plus, Link2, BarChart3, Bookmark, TrendingUp } from 'lucide-react';
+import { ExternalLink, CheckCircle2, XCircle, Loader2, ChevronDown, Plus, Link2, BarChart3, Bookmark, TrendingUp, Sparkles } from 'lucide-react';
 import { toast } from "sonner";
 import { apiCache } from '@/utils/apiCache';
 
@@ -189,6 +189,28 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
     };
     setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
     toast.success('Added Simkl DVD Releases');
+  };
+
+  const handleAddRecipeCatalog = (recipe: string, type: 'movies' | 'shows' | 'anime', label: string) => {
+    const id = `simkl.recipe.${recipe}.${type}`;
+    if (config.catalogs.some(c => c.id === id)) {
+      toast.info(`${label} catalog already added.`);
+      return;
+    }
+    const catalogType = type === 'movies' ? 'movie' : type === 'anime' ? 'anime' : 'series';
+    const displayType = getDisplayTypeOverride(catalogType, config.displayTypeOverrides);
+    const newCatalog: CatalogConfig = {
+      id,
+      type: catalogType,
+      name: `Simkl ${label}`,
+      enabled: true,
+      showInHome: true,
+      source: 'simkl' as any,
+      metadata: { interval: 'week' },
+      ...(displayType && { displayType })
+    };
+    setConfig(prev => ({ ...prev, catalogs: [...prev.catalogs, newCatalog] }));
+    toast.success(`Added Simkl ${label}`);
   };
 
   // Handlers to add watchlist catalogs
@@ -764,6 +786,93 @@ export function SimklIntegration({ isOpen, onClose }: SimklIntegrationProps) {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Trending catalogs update automatically. Airing Soon shows TV and Anime episodes releasing in your timezone.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-violet-500/10 via-card/80 to-card/80 border-violet-400/20">
+                <CardHeader className="flex-row items-start gap-3 sm:gap-4 space-y-0 p-4 sm:p-6">
+                  <div className="shrink-0 h-10 w-10 rounded-lg bg-violet-500/15 text-violet-300 flex items-center justify-center ring-1 ring-violet-400/20">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <CardTitle>Curated Picks</CardTitle>
+                    <CardDescription>Hidden Gems — highly rated titles that are flying under the radar</CardDescription>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Hidden Gems — highly rated, under the radar</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('hiddengems', 'movies', 'Hidden Gems (Movies)')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.hiddengems.movies')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Movies
+                      </Button>
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('hiddengems', 'shows', 'Hidden Gems (Shows)')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.hiddengems.shows')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Shows
+                      </Button>
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('hiddengems', 'anime', 'Hidden Gems (Anime)')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.hiddengems.anime')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Anime
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Binge-Worthy — finished series, low drop-off</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('marathon', 'shows', 'Binge-Worthy (Shows)')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.marathon.shows')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Shows
+                      </Button>
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('marathon', 'anime', 'Binge-Worthy (Anime)')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.marathon.anime')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Anime
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">More picks — movies only</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('quick', 'movies', 'Quick Watches')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.quick.movies')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Quick Watches (under 100 min)
+                      </Button>
+                      <Button
+                        onClick={() => handleAddRecipeCatalog('boxoffice', 'movies', 'Box Office Hits')}
+                        variant="outline"
+                        disabled={config.catalogs.some(c => c.id === 'simkl.recipe.boxoffice.movies')}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Box Office Hits
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Computed from the trending pool — no extra API calls. Defaults to this week.
                   </p>
                 </CardContent>
               </Card>

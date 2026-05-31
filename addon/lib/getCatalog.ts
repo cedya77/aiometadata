@@ -4,7 +4,7 @@ import { getLanguages } from "./getLanguages.js";
 import { fetchMDBListItems, parseMDBListItems, fetchMDBListBatchMediaInfo, fetchMDBListUpNext, parseMDBListUpNextItems } from "../utils/mdbList.js";
 import { fetchStremThruCatalog, parseStremThruItems } from "../utils/stremthru.js";
 import { fetchTraktWatchlistItems, fetchTraktFavoritesItems, fetchTraktRecommendationsItems, fetchTraktListItems, fetchTraktListItemsById, parseTraktItems, fetchTraktMostFavoritedItems, fetchTraktCalendarShows, fetchTraktSearchItems, getTraktAccessToken, fetchTraktUpNextEpisodes, fetchTraktUnwatchedEpisodes, fetchTraktTrendingItems, fetchTraktPopularItems, fetchTraktAnticipatedItems } from "../utils/traktUtils.js";
-import { fetchSimklTrendingItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
+import { fetchSimklTrendingItems, fetchSimklRecipeItems, fetchSimklWatchlistItems, parseSimklItems, getSimklToken, fetchSimklCalendarItems, fetchSimklGenreItems, fetchSimklDvdReleases } from "../utils/simklUtils.js";
 import { fetchLetterboxdList, parseLetterboxdItems, getLetterboxdGenreIdByName } from "../utils/letterboxdUtils.js";
 import { getFlixPatrolMetas } from "../utils/flixpatrolUtils.js";
 import { fetchResume, parseResumeItems, fetchListItems, parseListItems, fetchPickItems, parsePickItems } from "../utils/publicmetadbUtils.js";
@@ -2571,6 +2571,20 @@ async function getSimklCatalog(
         return ok;
       });
       response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
+    } else if (catalogId.startsWith('simkl.recipe.')) {
+      const parts = catalogId.split('.');
+      const recipe = parts[2];
+      const recipeType = (parts[3] || 'movies') as 'movies' | 'shows' | 'anime';
+      const interval: 'today' | 'week' | 'month' = (genre && ['today', 'week', 'month'].includes(genre.toLowerCase())
+        ? genre.toLowerCase() as 'today' | 'week' | 'month'
+        : (catalogConfig?.metadata?.interval as 'today' | 'week' | 'month')) || 'week';
+      logger.debug(`[Simkl] Fetching recipe ${recipe} (${recipeType}, interval: ${interval}, pageSize: ${pageSize})`);
+      const result = await fetchSimklRecipeItems(recipe, recipeType, interval, page, pageSize, catalogConfig?.cacheTTL);
+      const items = (result.items as any[]).filter((it: any) => {
+        const ids = it.ids || {};
+        return !!(ids.imdb || ids.tmdb || ids.tvdb || ids.mal || ids.anilist || ids.kitsu || ids.anidb || ids.simkl || ids.simkl_id);
+      });
+      response = { items, hasMore: result.hasMore, totalItems: result.totalItems };
     } else if (catalogId === 'simkl.dvd.movies') {
       logger.debug(`[Simkl] Fetching latest DVD movie releases (pageSize: ${pageSize})`);
       const result = await fetchSimklDvdReleases(page, pageSize, catalogConfig?.cacheTTL);
@@ -2730,7 +2744,8 @@ async function getSimklCatalog(
       || catalogId.startsWith('simkl.watchlist.anime.')
       || catalogId === 'simkl.calendar'
       || catalogId === 'simkl.calendar.anime'
-      || catalogId.startsWith('simkl.discover.anime.');
+      || catalogId.startsWith('simkl.discover.anime.')
+      || (catalogId.startsWith('simkl.recipe.') && catalogId.endsWith('.anime'));
     const parseStart = Date.now();
     let metas = await parseSimklItems(response.items, type as 'movie' | 'series', config, userUUID, includeVideos, isAnimeCatalog);
     const parseTime = Date.now() - parseStart;

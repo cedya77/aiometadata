@@ -3554,7 +3554,7 @@ addon.get("/stremio/:userUUID/catalog/:type/:id{/:extra}.json", async function (
     catalogPageSize = 25;
   } else if (cleanId === 'anilist.trending' || cleanId.startsWith('anilist.discover')) {
     catalogPageSize = 50;
-  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.dvd.') || cleanId.startsWith('simkl.trending.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
+  } else if (cleanId.startsWith('simkl.watchlist.') || cleanId.startsWith('simkl.dvd.') || cleanId.startsWith('simkl.trending.') || cleanId.startsWith('simkl.recipe.') || cleanId.startsWith('stremthru.') || cleanId.startsWith('mdblist.') || cleanId.startsWith('custom.') || cleanId.startsWith('trakt.') || cleanId.startsWith('anilist.') || cleanId.startsWith('letterboxd.') || (cleanId.startsWith('tvdb.') && !cleanId.startsWith('tvdb.collection.'))) {
     catalogPageSize = parseInt(process.env.CATALOG_LIST_ITEMS_SIZE || '20');
   } else {
     catalogPageSize = 20;

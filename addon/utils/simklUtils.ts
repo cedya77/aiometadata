@@ -20,6 +20,16 @@ const SIMKL_WATCHLIST_TTL = 24 * 60 * 60; // Cache in Redis for 24h, relies on a
 const SIMKL_ACTIVITIES_TTL = parseInt(process.env.SIMKL_ACTIVITIES_TTL || '21600'); // Cache activity check for 6 hours (21600s) to prevent spamming on pagination
 const SIMKL_TRENDING_DATA_URL = 'https://data.simkl.in/discover/trending';
 const SIMKL_DISCOVER_DATA_URL = 'https://data.simkl.in/discover';
+const SIMKL_APP_NAME = 'aiometadata';
+
+function simklDataParams(): string {
+  const params = new URLSearchParams({
+    'app-name': SIMKL_APP_NAME,
+    'app-version': process.env.npm_package_version || '1.0'
+  });
+  if (SIMKL_CLIENT_ID) params.set('client_id', SIMKL_CLIENT_ID);
+  return params.toString();
+}
 
 /**
  * Sanitize URL by removing access token for safe logging
@@ -980,7 +990,7 @@ async function fetchSimklTrendingItems(
   try {
     // Map type to the JSON file path segments
     const endpoint = type === 'movies' ? 'movies' : type === 'shows' ? 'tv' : 'anime';
-    const url = `${SIMKL_TRENDING_DATA_URL}/${endpoint}/${interval}_500.json`;
+    const url = `${SIMKL_TRENDING_DATA_URL}/${endpoint}/${interval}_500.json?${simklDataParams()}`;
 
     logger.debug(`Simkl trending ${type}: interval=${interval}, page=${page}, limit=${limit}, url=${url}`);
 
@@ -1034,6 +1044,117 @@ async function fetchSimklTrendingItems(
     logger.error(`Error fetching Simkl trending ${type}, interval ${interval}, page ${page}:`, err.message);
     return { items: [], hasMore: false };
   }
+}
+
+function simklEntryRating(entry: any): { rating: number; votes: number } {
+  const s = entry?.ratings?.simkl;
+  return { rating: Number(s?.rating) || 0, votes: Number(s?.votes) || 0 };
+}
+
+function parseRuntimeMinutes(runtime: any): number {
+  if (!runtime) return 0;
+  const str = String(runtime);
+  const h = /(\d+)\s*h/.exec(str);
+  const m = /(\d+)\s*m/.exec(str);
+  return (h ? parseInt(h[1], 10) * 60 : 0) + (m ? parseInt(m[1], 10) : 0);
+}
+
+function parseDropRate(dropRate: any): number {
+  if (!dropRate) return 0;
+  const v = parseFloat(String(dropRate).replace('%', ''));
+  return isNaN(v) ? 0 : v;
+}
+
+function parseBoxOffice(metadata: any): number {
+  if (!metadata) return 0;
+  const m = /Box office\s*\$?([\d.]+)\s*([KMB])?/i.exec(String(metadata));
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (isNaN(n)) return 0;
+  const suffix = m[2]?.toUpperCase();
+  const mult = suffix === 'B' ? 1e9 : suffix === 'M' ? 1e6 : suffix === 'K' ? 1e3 : 1;
+  return n * mult;
+}
+
+type SimklRecipeFn = (items: any[]) => any[];
+
+const SIMKL_RECIPES: Record<string, SimklRecipeFn> = {
+  hiddengems: (items) => {
+    const watchedVals = items
+      .map((it: any) => Number(it.watched) || 0)
+      .filter((v: number) => v > 0)
+      .sort((a: number, b: number) => a - b);
+    const median = watchedVals.length ? watchedVals[Math.floor(watchedVals.length / 2)] : 0;
+    return items
+      .filter((it: any) => {
+        const { rating, votes } = simklEntryRating(it);
+        const watched = Number(it.watched) || 0;
+        return rating >= 7.5 && votes >= 100 && (median === 0 || watched <= median);
+      })
+      .sort((a: any, b: any) => {
+        const ra = simklEntryRating(a);
+        const rb = simklEntryRating(b);
+        return rb.rating - ra.rating || rb.votes - ra.votes;
+      });
+  },
+  marathon: (items) => {
+    return items
+      .filter((it: any) => {
+        const eps = Number(it.total_episodes) || 0;
+        return it.status === 'ended' && eps >= 24 && parseDropRate(it.drop_rate) <= 5;
+      })
+      .sort((a: any, b: any) => {
+        const ra = simklEntryRating(a);
+        const rb = simklEntryRating(b);
+        return rb.rating - ra.rating || (Number(b.watched) || 0) - (Number(a.watched) || 0);
+      });
+  },
+  quick: (items) => {
+    return items
+      .filter((it: any) => {
+        const mins = parseRuntimeMinutes(it.runtime);
+        const { votes } = simklEntryRating(it);
+        return mins > 0 && mins <= 100 && votes >= 30;
+      })
+      .sort((a: any, b: any) => {
+        const ra = simklEntryRating(a);
+        const rb = simklEntryRating(b);
+        return rb.rating - ra.rating || (Number(b.watched) || 0) - (Number(a.watched) || 0);
+      });
+  },
+  boxoffice: (items) => {
+    return items
+      .map((it: any) => ({ it, bo: parseBoxOffice(it.metadata) }))
+      .filter((x: any) => x.bo > 0)
+      .sort((a: any, b: any) => b.bo - a.bo)
+      .map((x: any) => x.it);
+  }
+};
+
+async function fetchSimklRecipeItems(
+  recipe: string,
+  type: 'movies' | 'shows' | 'anime',
+  interval: 'today' | 'week' | 'month' = 'week',
+  page: number = 1,
+  limit: number = 20,
+  cacheTTL?: number
+): Promise<{ items: any[]; totalItems?: number; hasMore: boolean; totalPages?: number }> {
+  const recipeFn = SIMKL_RECIPES[recipe];
+  if (!recipeFn) {
+    logger.warn(`[Simkl] Unknown recipe: ${recipe}`);
+    return { items: [], hasMore: false };
+  }
+
+  const full = await fetchSimklTrendingItems(type, interval, 1, 100000, cacheTTL);
+  const transformed = recipeFn(full.items || []);
+
+  const startIndex = (page - 1) * limit;
+  const pageItems = transformed.slice(startIndex, startIndex + limit);
+  const hasMore = startIndex + limit < transformed.length;
+  const totalItems = transformed.length;
+
+  logger.debug(`[Simkl] Recipe ${recipe} (${type}/${interval}): ${totalItems} matches, page ${page} -> ${pageItems.length} items`);
+  return { items: pageItems, hasMore, totalItems, totalPages: Math.ceil(totalItems / limit) };
 }
 
 interface SimklDiscoverQuery {
@@ -1132,7 +1253,7 @@ async function fetchSimklDvdReleases(
   cacheTTL?: number
 ): Promise<{items: any[], totalItems?: number, hasMore: boolean, totalPages?: number}> {
   try {
-    const url = `${SIMKL_DISCOVER_DATA_URL}/dvd/releases_500.json`;
+    const url = `${SIMKL_DISCOVER_DATA_URL}/dvd/releases_500.json?${simklDataParams()}`;
 
     logger.debug(`Simkl dvd releases: page=${page}, limit=${limit}, url=${url}`);
 
@@ -1190,6 +1311,7 @@ export {
   getSimklToken,
   getSimklActivityFingerprint,
   fetchSimklTrendingItems,
+  fetchSimklRecipeItems,
   fetchSimklDvdReleases,
   fetchSimklGenreItems,
   fetchSimklCalendarItems,
@@ -1207,7 +1329,7 @@ async function fetchSimklCalendar(
     return await cacheWrapGlobal(
       cacheKey,
       async () => {
-        const url = `https://data.simkl.in/calendar/${type}.json`;
+        const url = `https://data.simkl.in/calendar/${type}.json?${simklDataParams()}`;
         // Use a simple GET request for the CDN file
         const response: any = await makeRateLimitedRequest(
           () => httpGet(url, { dispatcher: simklDispatcher }),

@@ -1300,10 +1300,10 @@ async function cacheWrapCatalog(userUUID: string, catalogKey: string, method: ()
     }
   }
 
-  if (idOnly.startsWith('simkl.trending.')) {
+  if (idOnly.startsWith('simkl.trending.') || idOnly.startsWith('simkl.recipe.')) {
     const catCfg = config.catalogs?.find((c: any) => c.id === idOnly);
     cacheTTL = Math.max(catCfg?.cacheTTL || CATALOG_TTL(), 3600);
-    cacheLogger.debug(`[Catalog] Using cache TTL for Simkl trending catalog ${idOnly}: ${cacheTTL}s`);
+    cacheLogger.debug(`[Catalog] Using cache TTL for Simkl catalog ${idOnly}: ${cacheTTL}s`);
   }
 
   if (idOnly.startsWith('simkl.watchlist.')) {

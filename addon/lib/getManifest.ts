@@ -704,9 +704,9 @@ async function createSimklCatalog(userCatalog: any, showPrefix: boolean = false,
       showInHome: userCatalog.showInHome
     };
 
-    if (userCatalog.id.startsWith('simkl.trending.')) {
+    if (userCatalog.id.startsWith('simkl.trending.') || userCatalog.id.startsWith('simkl.recipe.')) {
       const intervalOptions = userCatalog.showInHome ? ['today', 'week', 'month'] : ['None', 'today', 'week', 'month'];
-      const defaultInterval = userCatalog.metadata?.interval || 'today';
+      const defaultInterval = userCatalog.metadata?.interval || (userCatalog.id.startsWith('simkl.recipe.') ? 'week' : 'today');
 
       catalog.extra.unshift({
         name: "genre",
