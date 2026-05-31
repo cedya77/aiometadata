@@ -745,6 +745,21 @@ async function getManifest(config: any): Promise<any> {
 
 
   const enabledCatalogs = userCatalogs.filter((c: any) => c.enabled);
+
+  // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
+  const mergedSourceKeys = new Set<string>();
+  for (const c of enabledCatalogs) {
+    if (!c.id.startsWith('merged.')) continue;
+    for (const s of (c.metadata?.mergedSources || [])) {
+      mergedSourceKeys.add(`${s.catalogId}:${s.catalogType}`);
+    }
+  }
+  const enabledKeys = new Set(enabledCatalogs.map((c: any) => `${c.id}:${c.type}`));
+  const absorbedSourceCatalogs = userCatalogs.filter((c: any) =>
+    mergedSourceKeys.has(`${c.id}:${c.type}`) && !enabledKeys.has(`${c.id}:${c.type}`)
+  );
+  const absorbedKeys = new Set<string>(absorbedSourceCatalogs.map((c: any) => `${c.id}:${c.type}`));
+
   logger.info(`Total catalogs: ${userCatalogs.length}, Enabled: ${enabledCatalogs.length}`);
   logger.debug(`MDBList catalogs in enabled:`, enabledCatalogs.filter((c: any) => c.id.startsWith('mdblist.')).map((c: any) => c.id));
   logger.debug(`Custom catalogs in enabled:`, enabledCatalogs.filter((c: any) => c.id.startsWith('custom.')).map((c: any) => c.id));
@@ -914,7 +929,7 @@ async function getManifest(config: any): Promise<any> {
     }
   }
 
-  const pass1UserCatalogs = enabledCatalogs.filter((userCatalog: any) => {
+  const pass1UserCatalogs = [...enabledCatalogs, ...absorbedSourceCatalogs].filter((userCatalog: any) => {
       if (userCatalog.id.startsWith('merged.')) {
         return false; // handled in pass 2 (needs source manifest entries to be built first)
       }
@@ -1183,6 +1198,19 @@ async function getManifest(config: any): Promise<any> {
       catalogs.splice(insertIdx, 0, built);
     }
     logger.debug(`Inserted ${mergedUserCatalogs.length} merged catalogs into manifest`);
+  }
+
+  // Drop absorbed sources now that parents have harvested their genres.
+  if (absorbedKeys.size > 0) {
+    catalogs = catalogs.filter((c: any) => {
+      for (const key of absorbedKeys) {
+        const sep = key.lastIndexOf(':');
+        const sid = key.slice(0, sep);
+        const stype = key.slice(sep + 1);
+        if ((c.id === sid && c.type === stype) || c.id === `${sid}_${stype}`) return false;
+      }
+      return true;
+    });
   }
 
 
