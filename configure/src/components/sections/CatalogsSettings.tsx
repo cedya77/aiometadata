@@ -35,7 +35,7 @@ import { GenreSelection } from '@/data/genres';
 import { SelectionProvider, useSelection } from '@/contexts/SelectionContext';
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { SelectAllControl } from '@/components/SelectAllControl';
-import { SelectBySourceControl } from '@/components/SelectBySourceControl';
+import { SelectByFieldControl } from '@/components/SelectByFieldControl';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CatalogStarterChoice } from '@/components/CatalogStarterChoice';
 import {
@@ -3260,6 +3260,8 @@ function CatalogsSettingsContent({
     deselectAll,
     selectBySource,
     deselectBySource,
+    selectByType,
+    deselectByType,
     invertSelection,
     selectionCount,
     selectedIds
@@ -4614,10 +4616,21 @@ function CatalogsSettingsContent({
           onSelectAll={selectAll}
           onDeselectAll={deselectAll}
         />
-        <SelectBySourceControl
+        <SelectByFieldControl
           catalogs={filteredCatalogs}
-          onSelectBySource={selectBySource}
-          onDeselectBySource={deselectBySource}
+          field="source"
+          label="Select by Source"
+          shortLabel="By Source"
+          onSelect={selectBySource}
+          onDeselect={deselectBySource}
+        />
+        <SelectByFieldControl
+          catalogs={filteredCatalogs}
+          field="type"
+          label="Select by Type"
+          shortLabel="By Type"
+          onSelect={selectByType}
+          onDeselect={deselectByType}
         />
       </div>
 
