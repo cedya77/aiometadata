@@ -756,6 +756,7 @@ export interface SettingItem {
   hasEnvVar: boolean;
   hasDbOverride: boolean;
   disabledReason: string | null;
+  changedSinceBoot: boolean;
 }
 
 export function useDashboardSettings(options: DashboardQueryOptions = {}) {
@@ -763,7 +764,7 @@ export function useDashboardSettings(options: DashboardQueryOptions = {}) {
   const getHeaders = useApiHeaders();
   const { activeTab = 'settings', enabled = true } = options;
 
-  return useQuery<{ settings: SettingItem[] }>({
+  return useQuery<{ settings: SettingItem[]; canRestart?: boolean }>({
     queryKey: DASHBOARD_QUERY_KEYS.settings,
     queryFn: async () => {
       try {
@@ -804,6 +805,29 @@ export function useUpdateSetting() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEYS.settings });
+    },
+  });
+}
+
+export function useRestartServer() {
+  const { adminKey, logout } = useAdmin();
+
+  return useMutation({
+    mutationFn: async () => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (adminKey) headers['x-admin-key'] = adminKey;
+
+      const response = await fetch('/api/dashboard/restart', {
+        method: 'POST',
+        headers,
+      });
+
+      if (response.status === 401) { logout(); throw new Error('Session expired.'); }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return response.json();
     },
   });
 }

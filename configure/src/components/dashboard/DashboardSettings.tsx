@@ -45,9 +45,10 @@ import {
   useUpdateSetting,
   useResetSetting,
 } from "@/hooks/useDashboardQueries";
+import { RestartManager } from "./RestartManager";
 
 interface DashboardSettingsProps {
-  data: { settings: SettingItem[] } | null | undefined;
+  data: { settings: SettingItem[]; canRestart?: boolean; bootId?: string } | null | undefined;
 }
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -421,6 +422,11 @@ export function DashboardSettings({ data }: DashboardSettingsProps) {
     [grouped]
   );
 
+  const pendingLabels = useMemo(
+    () => settings.filter((s) => s.requiresRestart && s.changedSinceBoot).map((s) => s.label),
+    [settings]
+  );
+
   function scrollToCategory(cat: string) {
     setActiveCategory(cat);
     document.getElementById(`settings-cat-${cat}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -436,7 +442,9 @@ export function DashboardSettings({ data }: DashboardSettingsProps) {
   }
 
   return (
-    <div className="flex gap-6">
+    <div className="space-y-4">
+      <RestartManager pendingLabels={pendingLabels} canRestart={data?.canRestart} />
+      <div className="flex gap-6">
       <nav className="hidden lg:block w-52 shrink-0 sticky top-0 self-start space-y-1">
         {categories.map((cat) => (
           <button
@@ -476,6 +484,7 @@ export function DashboardSettings({ data }: DashboardSettingsProps) {
             </CardContent>
           </Card>
         ))}
+      </div>
       </div>
     </div>
   );

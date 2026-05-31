@@ -6,6 +6,7 @@ const database: any = require('./database');
 
 const cache = new Map<string, string>();
 const originalEnv = new Map<string, string | undefined>();
+const bootValues = new Map<string, string>();
 let initialized = false;
 
 export async function initializeSettings(): Promise<void> {
@@ -22,6 +23,9 @@ export async function initializeSettings(): Promise<void> {
       originalEnv.set(def.envVar, process.env[def.envVar]);
       process.env[def.envVar] = value;
     }
+  }
+  for (const def of SETTINGS_REGISTRY) {
+    bootValues.set(def.key, getSetting(def.key));
   }
   initialized = true;
   logger.info(`Loaded ${rows.length} settings from database`);
@@ -133,6 +137,9 @@ export function getAllSettings(): object[] {
       hasEnvVar,
       hasDbOverride,
       disabledReason,
+      changedSinceBoot: (def.requiresRestart ?? false)
+        && bootValues.has(def.key)
+        && String(currentValue) !== String(bootValues.get(def.key)),
     };
   });
 }

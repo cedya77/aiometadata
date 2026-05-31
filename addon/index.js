@@ -6278,7 +6278,7 @@ addon.get('/api/dashboard/settings', (req, res) => {
   if (adminKey && req.headers['x-admin-key'] !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  res.json({ settings: settingsService.getAllSettings() });
+  res.json({ settings: settingsService.getAllSettings(), canRestart: canUiRestart() });
 });
 
 addon.put('/api/dashboard/settings/:key', async (req, res) => {
@@ -6307,6 +6307,42 @@ addon.post('/api/dashboard/settings/reset/:key', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+function canUiRestart() {
+  const flag = process.env.ENABLE_UI_RESTART;
+  if (flag === 'true' || flag === '1') return true;
+  if (flag === 'false' || flag === '0') return false;
+  try {
+    return require('fs').existsSync('/.dockerenv');
+  } catch {
+    return false;
+  }
+}
+
+const SERVER_BOOT_ID = require('crypto').randomBytes(8).toString('hex');
+
+addon.get('/api/dashboard/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), bootId: SERVER_BOOT_ID });
+});
+
+addon.post('/api/dashboard/restart', (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!canUiRestart()) {
+    return res.status(400).json({ error: 'UI restart is not available in this environment' });
+  }
+  consola.warn('[Dashboard] Restart requested from UI');
+  res.json({ success: true });
+  setTimeout(() => {
+    try {
+      process.kill(process.pid, 'SIGTERM');
+    } catch {
+      process.exit(0);
+    }
+  }, 500);
 });
 
 // Blocking startup function that waits for cache warming
