@@ -743,12 +743,10 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
     const userCatalogs = config.catalogs || getDefaultCatalogs();
     const translatedCatalogs = loadTranslations(language);
 
-  // Tag profiles: when a tag is requested, membership in that tag is the selector
-  // (ignoring the enabled flag); otherwise the manifest is all enabled catalogs.
   const tag = (opts.tag || '').trim();
-  const enabledCatalogs = tag
-    ? userCatalogs.filter((c: any) => Array.isArray(c.tags) && c.tags.includes(tag))
-    : userCatalogs.filter((c: any) => c.enabled);
+  const enabledCatalogs = userCatalogs.filter((c: any) =>
+    c.enabled && (!tag || (Array.isArray(c.tags) && c.tags.includes(tag)))
+  );
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
   const mergedSourceKeys = new Set<string>();
@@ -1441,7 +1439,7 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
   }
 
   const manifest = {
-    id: tag ? `${buildInfo.name}.tag-${tag}` : buildInfo.name,
+    id: buildInfo.name,
     version: buildInfo.version,
     logo: manifestLogoUrl(),
     background: `${host}/background.png`,
