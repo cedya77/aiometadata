@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
@@ -13,7 +13,8 @@ import { StreamingTop10Integration } from './StreamingTop10Integration';
 import { AIOMetadataIntegration } from './AIOMetadataIntegration';
 import { QuickAddDialog } from '@/components/QuickAddDialog';
 import { AICatalogDialog } from '@/components/AICatalogDialog';
-import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
+import { useConfig } from '@/contexts/ConfigContext';
+import type { CatalogConfig } from '@/contexts/config';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -1965,10 +1966,12 @@ const MergedCatalogCard = ({
         </div>
       )}
 
-      <div className="flex items-center gap-3 flex-wrap md:flex-nowrap">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-2">
+        {/* Row 1: Catalog info (checkbox, drag, name) */}
+        <div className="flex items-start md:items-center space-x-2 sm:space-x-4 w-full md:w-auto">
         <div
           onClick={(e) => { e.stopPropagation(); toggleSelection(catalogKey); }}
-          className="cursor-pointer p-2 -ml-2 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 flex items-center"
+          className="cursor-pointer p-2 -ml-2 min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center pt-1 md:pt-0"
           role="checkbox"
           aria-checked={selected}
           aria-label="Select merged catalog"
@@ -1998,49 +2001,97 @@ const MergedCatalogCard = ({
         <button
           {...attributes}
           {...listeners}
-          className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none"
+          className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none pt-1 md:pt-0"
           aria-label="Drag to reorder"
         >
           <GripVertical />
         </button>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <GitMerge className="h-4 w-4 text-violet-400 shrink-0" />
-            <p className={`font-medium break-words min-w-0 ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
-            <button
-              onClick={() => setShowEditDialog(true)}
-              className="text-muted-foreground hover:text-foreground shrink-0"
-            >
-              <Pencil size={14} />
-            </button>
-            <Badge variant="outline" className="text-xs capitalize">
-              {catalog.displayType || catalog.type}
-            </Badge>
-            <Badge variant="outline" className="font-semibold text-xs bg-violet-800/80 text-violet-200 border-violet-600/50">
-              MERGED
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              {sources.length} sources · {catalog.metadata?.mergeMode || 'interleaved'}
-            </Badge>
-          </div>
-          <button
-            onClick={() => setExpanded(v => !v)}
-            className="mt-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-          >
-            {expanded ? 'Hide sources' : 'Show sources'}
-          </button>
-          <div className="mt-1.5">
-            <CatalogTagRow catalog={catalog} />
+          <div className="flex items-start gap-2 min-w-0">
+            <GitMerge className="h-4 w-4 text-violet-400 shrink-0 mt-1" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1 min-w-0">
+                <p className={`font-medium line-clamp-2 min-w-0 flex-1 md:flex-none transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+                <button
+                  onClick={() => setShowEditDialog(true)}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  <Pencil size={14} />
+                </button>
+                <div className="flex md:hidden items-center shrink-0 -mr-1">
+                  <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-9 w-9 active:scale-90 transition-transform">
+                    {catalog.enabled ? (
+                      <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
+                    ) : (
+                      <EyeOff className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-9 w-9">
+                        <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
+                        <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
+                        {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
+                      </DropdownMenuItem>
+                      {hasRatingPosters && (
+                        <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
+                          <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                          {catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={handleToggleRandomize} disabled={!catalog.enabled}>
+                        <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
+                        {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setSettingsMergeMode(catalog.metadata?.mergeMode || 'interleaved'); setShowSettings(true); }}>
+                        <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
+                        Merge Settings
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleMoveToTop}>Move to Top</DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleMoveToBottom}>Move to Bottom</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={onDisband} className="text-red-500">
+                        <Trash2 className="h-4 w-4 mr-2" />Disband
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                <Badge variant="outline" className="text-xs capitalize shrink-0">
+                  {catalog.displayType || catalog.type}
+                </Badge>
+                <CatalogTagRow catalog={catalog} mode="button" />
+              </div>
+              <CatalogTagRow catalog={catalog} mode="chips" className="mt-1.5" />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {sources.length} sources · {catalog.metadata?.mergeMode || 'interleaved'}
+                {' · '}
+                <button
+                  type="button"
+                  onClick={() => setExpanded(v => !v)}
+                  className="hover:text-foreground underline-offset-2 hover:underline"
+                >
+                  {expanded ? 'Hide sources' : 'Show sources'}
+                </button>
+              </p>
+            </div>
           </div>
         </div>
+        </div>
 
-        {/* Desktop actions */}
-        <div className="hidden md:flex items-center gap-1">
+        {/* Row 2 (Desktop): Full action buttons */}
+        <div className="hidden md:flex items-center flex-wrap gap-1 md:ml-auto justify-end">
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleToggleEnabled}>
+                <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-8 w-8 active:scale-90 transition-transform">
                   {catalog.enabled ? (
                     <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
                   ) : (
@@ -2052,7 +2103,7 @@ const MergedCatalogCard = ({
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
+                <Button variant="ghost" size="icon" onClick={handleToggleShowInHome} disabled={!catalog.enabled} className="h-8 w-8 active:scale-90 transition-transform">
                   <Home className={`h-5 w-5 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
                 </Button>
               </TooltipTrigger>
@@ -2061,7 +2112,7 @@ const MergedCatalogCard = ({
             {hasRatingPosters && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
+                  <Button variant="ghost" size="icon" onClick={handleToggleRatingPosters} disabled={!catalog.enabled} className="h-8 w-8 active:scale-90 transition-transform">
                     <Star className={`h-5 w-5 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
                   </Button>
                 </TooltipTrigger>
@@ -2070,7 +2121,7 @@ const MergedCatalogCard = ({
             )}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleToggleRandomize} disabled={!catalog.enabled}>
+                <Button variant="ghost" size="icon" onClick={handleToggleRandomize} disabled={!catalog.enabled} className="h-8 w-8 active:scale-90 transition-transform">
                   <Shuffle className={`h-5 w-5 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
                 </Button>
               </TooltipTrigger>
@@ -2113,51 +2164,9 @@ const MergedCatalogCard = ({
               <TooltipContent>Disband merged catalog</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-        </div>
-
-        {/* Mobile actions */}
-        <div className="flex md:hidden items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-9 w-9">
-            {catalog.enabled ? (
-              <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
-            ) : (
-              <EyeOff className="h-5 w-5 text-muted-foreground" />
-            )}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
-                <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
-                {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
-              </DropdownMenuItem>
-              {hasRatingPosters && (
-                <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
-                  <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
-                  {catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={handleToggleRandomize} disabled={!catalog.enabled}>
-                <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
-                {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSettingsMergeMode(catalog.metadata?.mergeMode || 'interleaved'); setShowSettings(true); }}>
-                <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
-                Merge Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleMoveToTop}>Move to Top</DropdownMenuItem>
-              <DropdownMenuItem onClick={handleMoveToBottom}>Move to Bottom</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onDisband} className="text-red-500">
-                <Trash2 className="h-4 w-4 mr-2" />Disband
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Badge variant="outline" className={`font-semibold shrink-0 ${sourceBadgeStyles.merged}`}>
+            MERGED
+          </Badge>
         </div>
       </div>
 
@@ -2268,15 +2277,9 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
   const badgeSource = catalog.source || 'custom';
   const badgeStyle = sourceBadgeStyles[badgeSource as keyof typeof sourceBadgeStyles] || "bg-gray-700";
 
-  const [isRippling, setIsRippling] = useState(false);
-
   const handleCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     toggleSelection(catalogKey);
-    
-    // Trigger ripple effect
-    setIsRippling(true);
-    setTimeout(() => setIsRippling(false), 600);
   };
 
   const handleToggleEnabled = () => {
@@ -2482,7 +2485,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
       ref={setNodeRef}
       style={style}
       className={cn(
-        "relative flex flex-col md:flex-row md:items-center md:justify-between p-4",
+        "relative flex flex-col p-4",
         // Smooth transitions for all properties
         "transition-all duration-200 ease-out",
         // Dragging state
@@ -2509,11 +2512,12 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
         </div>
       )}
 
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-2">
       {/* Row 1: Catalog info (checkbox, drag, name) */}
-      <div className="flex items-center space-x-4 w-full md:w-auto">
+      <div className="flex items-start md:items-center space-x-2 sm:space-x-4 w-full md:w-auto">
         <div
           onClick={handleCheckboxClick}
-          className="flex items-center cursor-pointer p-2 -ml-2 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0"
+          className="flex items-center cursor-pointer p-2 -ml-2 min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 pt-1 md:pt-0"
           role="checkbox"
           aria-checked={selected}
           aria-label="Select catalog"
@@ -2522,9 +2526,6 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             "w-5 h-5 border-2 rounded flex items-center justify-center",
             // Smooth color transitions
             "transition-all duration-200 ease-out",
-            // Ripple effect container
-            "checkbox-ripple",
-            isRippling && "ripple-active",
             // Selected state
             selected && "bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500",
             // Unselected state with hover
@@ -2545,54 +2546,18 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             )}
           </div>
         </div>
-        <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none" aria-label="Drag to reorder">
+        <button {...attributes} {...listeners} className="cursor-grab text-muted-foreground p-2 -ml-2 touch-none pt-1 md:pt-0" aria-label="Drag to reorder">
           <GripVertical />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className={`font-medium transition-colors break-words min-w-0 ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
-            <button
-              onClick={() => setShowEditDialog(true)}
-              className="text-muted-foreground hover:text-foreground shrink-0"
-            >
-              <Pencil size={14} />
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            {/* Show itemCount and author only on screens >= sm for trakt and mdblist */}
-            <div className="hidden sm:inline-flex gap-2 flex-wrap">
-              {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.itemCount !== undefined && (
-                <Badge variant="outline" className="text-xs">
-                  {(catalog as any).metadata.itemCount} items
-                </Badge>
-              )}
-              {(catalog.source === 'trakt' || catalog.source === 'mdblist') && (catalog as any).metadata?.author && (
-                <Badge variant="outline" className="text-xs">
-                  @{(catalog as any).metadata.author}
-                </Badge>
-              )}
-            </div>
-            {/* Show only type badge on mobile */}
-            <Badge
-              variant="outline"
-              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} flex sm:hidden`}
-            >
-              {catalog.displayType || catalog.type}
-            </Badge>
-            {/* Show type badge on desktop as well */}
-            <Badge
-              variant="outline"
-              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} hidden sm:flex`}
-            >
-              {catalog.displayType || catalog.type}
-            </Badge>
+          <div className="flex items-center gap-1 min-w-0">
             {catalog.mergedInto && (() => {
               const parent = config.catalogs.find(c => c.id === catalog.mergedInto);
               return (
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <GitMerge className="h-3.5 w-3.5 text-purple-400 shrink-0 cursor-help" />
+                      <GitMerge className="h-4 w-4 text-purple-400 shrink-0 mt-0.5 cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent side="top">
                       <p className="text-xs">Part of <span className="font-medium">{parent?.name || 'a merged catalog'}</span></p>
@@ -2601,104 +2566,143 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 </TooltipProvider>
               );
             })()}
+            <p className={`font-medium line-clamp-2 min-w-0 flex-1 md:flex-none transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            <button
+              onClick={() => setShowEditDialog(true)}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <Pencil size={14} />
+            </button>
+            <div className="flex md:hidden items-center shrink-0 -mr-1">
+              <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-9 w-9 active:scale-90 transition-transform">
+                {catalog.enabled ? (
+                  <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
+                ) : (
+                  <EyeOff className="h-5 w-5 text-muted-foreground" />
+                )}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                    <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
+                    <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
+                    {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
+                  </DropdownMenuItem>
+                  {hasRatingPosters && (
+                    <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
+                      <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
+                      {catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={handleToggleRandomize} disabled={!catalog.enabled}>
+                    <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
+                    {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleMoveToTop}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
+                      <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
+                    </svg>
+                    Move to Top
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleMoveToBottom}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
+                      <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
+                    </svg>
+                    Move to Bottom
+                  </DropdownMenuItem>
+                  {hasSettings && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setShowSettings(true)}>
+                        <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
+                        Settings
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
+                    <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
+                    Rename
+                  </DropdownMenuItem>
+                  {isDiscover && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => onEditDiscover?.(catalog)}>
+                        <Wand2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                        Edit Filters
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onDuplicateDiscover?.(catalog)}>
+                        <Copy className="h-4 w-4 mr-2 text-muted-foreground" />
+                        Duplicate
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {onCustomize && (
+                    <DropdownMenuItem onClick={() => onCustomize(catalog)}>
+                      <Wand2 className="h-4 w-4 mr-2 text-blue-400" />
+                      Clone as Built Catalog
+                    </DropdownMenuItem>
+                  )}
+                  {canDelete && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleDelete} className="text-red-400 focus:text-red-400">
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-          <div className="mt-1.5">
-            <CatalogTagRow catalog={catalog} />
+          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+            <Badge
+              variant="outline"
+              className={`font-semibold text-xs shrink-0 md:hidden ${badgeStyle} ${catalog.enabled ? '' : 'opacity-50'}`}
+            >
+              {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={`text-xs capitalize ${catalog.enabled ? '' : 'opacity-50'} shrink-0`}
+            >
+              {catalog.displayType || catalog.type}
+            </Badge>
+            <CatalogTagRow catalog={catalog} mode="button" />
           </div>
+          <CatalogTagRow catalog={catalog} mode="chips" className="mt-1.5" />
+          {(catalog.source === 'trakt' || catalog.source === 'mdblist') &&
+            ((catalog as any).metadata?.itemCount !== undefined || (catalog as any).metadata?.author) && (
+            <>
+              <div className="hidden sm:flex flex-wrap items-center gap-2 mt-1.5">
+                {(catalog as any).metadata?.itemCount !== undefined && (
+                  <Badge variant="outline" className="text-xs">
+                    {(catalog as any).metadata.itemCount} items
+                  </Badge>
+                )}
+                {(catalog as any).metadata?.author && (
+                  <Badge variant="outline" className="text-xs">
+                    @{(catalog as any).metadata.author}
+                  </Badge>
+                )}
+              </div>
+              <p className="sm:hidden mt-1.5 text-xs text-muted-foreground">
+                {(catalog as any).metadata?.itemCount !== undefined && (
+                  <span>{(catalog as any).metadata.itemCount} items</span>
+                )}
+                {(catalog as any).metadata?.itemCount !== undefined && (catalog as any).metadata?.author && ' · '}
+                {(catalog as any).metadata?.author && (
+                  <span>@{(catalog as any).metadata.author}</span>
+                )}
+              </p>
+            </>
+          )}
         </div>
-      </div>
-
-      {/* Row 2 (Mobile): Compact actions with overflow menu */}
-      <div className="flex md:hidden items-center gap-2 mt-3 justify-between">
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={handleToggleEnabled} className="h-9 w-9 active:scale-90 transition-transform">
-            {catalog.enabled ? (
-              <Eye className="h-5 w-5 text-green-500 dark:text-green-400" />
-            ) : (
-              <EyeOff className="h-5 w-5 text-muted-foreground" />
-            )}
-          </Button>
-          <Badge variant="outline" className={`font-semibold text-xs ${badgeStyle}`}>
-            {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
-          </Badge>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuItem onClick={handleToggleShowInHome} disabled={!catalog.enabled}>
-              <Home className={`h-4 w-4 mr-2 ${catalog.showInHome && catalog.enabled ? 'text-blue-400' : 'text-muted-foreground'}`} />
-              {catalog.showInHome && catalog.enabled ? 'Remove from Home' : 'Show on Home'}
-            </DropdownMenuItem>
-            {hasRatingPosters && (
-              <DropdownMenuItem onClick={handleToggleRatingPosters} disabled={!catalog.enabled}>
-                <Star className={`h-4 w-4 mr-2 ${catalog.enableRatingPosters !== false && catalog.enabled ? 'text-yellow-400' : 'text-muted-foreground'}`} />
-                {catalog.enableRatingPosters !== false ? 'Disable Rating Posters' : 'Enable Rating Posters'}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onClick={handleToggleRandomize} disabled={!catalog.enabled}>
-              <Shuffle className={`h-4 w-4 mr-2 ${catalog.randomizePerPage && catalog.enabled ? 'text-purple-400' : 'text-muted-foreground'}`} />
-              {catalog.randomizePerPage ? 'Original Order' : 'Randomize Order'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleMoveToTop}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
-                <path d="M213.66,194.34a8,8,0,0,1-11.32,11.32L128,131.31,53.66,205.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0Zm-160-68.68L128,51.31l74.34,74.35a8,8,0,0,0,11.32-11.32l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32Z" />
-              </svg>
-              Move to Top
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleMoveToBottom}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" className="h-4 w-4 mr-2 text-muted-foreground" fill="currentColor">
-                <path d="M213.66,130.34a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L128,204.69l74.34-74.35A8,8,0,0,1,213.66,130.34Zm-91.32,11.32a8,8,0,0,0,11.32,0l80-80a8,8,0,0,0-11.32-11.32L128,124.69,53.66,50.34A8,8,0,0,0,42.34,61.66Z" />
-              </svg>
-              Move to Bottom
-            </DropdownMenuItem>
-            {hasSettings && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setShowSettings(true)}>
-                  <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
-                  Settings
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
-              <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
-              Rename
-            </DropdownMenuItem>
-            {isDiscover && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onEditDiscover?.(catalog)}>
-                  <Wand2 className="h-4 w-4 mr-2 text-muted-foreground" />
-                  Edit Filters
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onDuplicateDiscover?.(catalog)}>
-                  <Copy className="h-4 w-4 mr-2 text-muted-foreground" />
-                  Duplicate
-                </DropdownMenuItem>
-              </>
-            )}
-            {onCustomize && (
-              <DropdownMenuItem onClick={() => onCustomize(catalog)}>
-                <Wand2 className="h-4 w-4 mr-2 text-blue-400" />
-                Clone as Built Catalog
-              </DropdownMenuItem>
-            )}
-            {canDelete && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleDelete} className="text-red-400 focus:text-red-400">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {/* Row 2 (Desktop): Full action buttons + Source badge */}
@@ -3039,11 +3043,13 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             <TooltipContent>Remove from your catalog list</TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <div className="shrink-0">
-          <Badge variant="outline" className={`font-semibold ${badgeStyle}`}>
-            {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
-          </Badge>
-        </div>
+        <Badge
+          variant="outline"
+          className={`font-semibold shrink-0 ${badgeStyle} ${catalog.enabled ? '' : 'opacity-50'}`}
+        >
+          {sourceBadgeLabels[badgeSource] || badgeSource.toUpperCase()}
+        </Badge>
+      </div>
       </div>
 
       <MDBListSettingsDialog
@@ -3334,11 +3340,6 @@ function CatalogsSettingsContent({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
-
-
-  const isInitialMount = useRef(true);
-  useEffect(() => { isInitialMount.current = false; }, []);
-
   const [hasChosenCatalogSetup, setHasChosenCatalogSetup] = useState(
     () => config.catalogSetupComplete === true
   );
@@ -4672,16 +4673,14 @@ function CatalogsSettingsContent({
           <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
             <AnimatePresence mode="popLayout" initial={false}>
-            {filteredCatalogs.map((catalog, index) => (
+            {filteredCatalogs.map((catalog) => (
               <motion.div
                 key={`${catalog.id}-${catalog.type}`}
                 layout
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
                 transition={{
                   duration: 0.2,
-                  delay: isInitialMount.current ? Math.min(index * 0.015, 0.5) : 0,
                 }}
               >
               {catalog.source === 'merged' ? (
