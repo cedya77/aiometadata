@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MDBListIntegration } from './MDBListIntegration';
 import { TraktIntegration } from './TraktIntegration';
@@ -13,7 +13,8 @@ import { StreamingTop10Integration } from './StreamingTop10Integration';
 import { AIOMetadataIntegration } from './AIOMetadataIntegration';
 import { QuickAddDialog } from '@/components/QuickAddDialog';
 import { AICatalogDialog } from '@/components/AICatalogDialog';
-import { useConfig, CatalogConfig } from '@/contexts/ConfigContext';
+import { useConfig } from '@/contexts/ConfigContext';
+import type { CatalogConfig } from '@/contexts/config';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -2268,15 +2269,9 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
   const badgeSource = catalog.source || 'custom';
   const badgeStyle = sourceBadgeStyles[badgeSource as keyof typeof sourceBadgeStyles] || "bg-gray-700";
 
-  const [isRippling, setIsRippling] = useState(false);
-
   const handleCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     toggleSelection(catalogKey);
-    
-    // Trigger ripple effect
-    setIsRippling(true);
-    setTimeout(() => setIsRippling(false), 600);
   };
 
   const handleToggleEnabled = () => {
@@ -2522,9 +2517,6 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
             "w-5 h-5 border-2 rounded flex items-center justify-center",
             // Smooth color transitions
             "transition-all duration-200 ease-out",
-            // Ripple effect container
-            "checkbox-ripple",
-            isRippling && "ripple-active",
             // Selected state
             selected && "bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500",
             // Unselected state with hover
@@ -3334,11 +3326,6 @@ function CatalogsSettingsContent({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
-
-
-  const isInitialMount = useRef(true);
-  useEffect(() => { isInitialMount.current = false; }, []);
-
   const [hasChosenCatalogSetup, setHasChosenCatalogSetup] = useState(
     () => config.catalogSetupComplete === true
   );
@@ -4672,16 +4659,14 @@ function CatalogsSettingsContent({
           <SortableContext items={catalogItemIds} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
             <AnimatePresence mode="popLayout" initial={false}>
-            {filteredCatalogs.map((catalog, index) => (
+            {filteredCatalogs.map((catalog) => (
               <motion.div
                 key={`${catalog.id}-${catalog.type}`}
                 layout
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
                 transition={{
                   duration: 0.2,
-                  delay: isInitialMount.current ? Math.min(index * 0.015, 0.5) : 0,
                 }}
               >
               {catalog.source === 'merged' ? (
