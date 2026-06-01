@@ -1962,21 +1962,19 @@ async function buildTvdbMovieResponse(stremioId, movieData, language, config, us
   let certification = null;
   let certificationLocal = null;
   const userCountry = language?.split('-')[1];
-  if (config.displayAgeRating) {
-    if (tmdbId) {
-      try {
-        const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
-        if (releaseDatesData) {
-          release_dates = releaseDatesData;
-          certification = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
-          certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry) || certification) : certification;
-        }
-      } catch (e) {}
-    }
-    if (!certification) {
-      certification = Utils.getTvdbCertification(movieData.contentRatings, 'usa', 'movie');
-      certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(movieData.contentRatings, userCountry, 'movie') || certification) : certification;
-    }
+  if (tmdbId) {
+    try {
+      const releaseDatesData = await moviedb.movieReleaseDates(String(tmdbId), config);
+      if (releaseDatesData) {
+        release_dates = releaseDatesData;
+        certification = Utils.getTmdbMovieCertificationForCountry(releaseDatesData);
+        certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbMovieCertificationForCountry(releaseDatesData, userCountry) || certification) : certification;
+      }
+    } catch (e) {}
+  }
+  if (!certification) {
+    certification = Utils.getTvdbCertification(movieData.contentRatings, 'usa', 'movie');
+    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(movieData.contentRatings, userCountry, 'movie') || certification) : certification;
   }
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'movie', movieData.genres, movieCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
@@ -2410,20 +2408,18 @@ async function buildTvdbSeriesResponse(stremioId, tvdbShow, tvdbEpisodes, langua
   let certification = null;
   let certificationLocal = null;
   const userCountry = language?.split('-')[1];
-  if (config.displayAgeRating) {
-    if (tmdbId) {
-      try {
-        const contentRatingsData = await moviedb.tvContentRatings(String(tmdbId), config);
-        if (contentRatingsData) {
-          certification = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
-          certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry) || certification) : certification;
-        }
-      } catch (e) {}
-    }
-    if (!certification) {
-      certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
-      certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(tvdbShow.contentRatings, userCountry, 'tv') || certification) : certification;
-    }
+  if (tmdbId) {
+    try {
+      const contentRatingsData = await moviedb.tvContentRatings(String(tmdbId), config);
+      if (contentRatingsData) {
+        certification = Utils.getTmdbTvCertificationForCountry(contentRatingsData);
+        certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTmdbTvCertificationForCountry(contentRatingsData, userCountry) || certification) : certification;
+      }
+    } catch (e) {}
+  }
+  if (!certification) {
+    certification = Utils.getTvdbCertification(tvdbShow.contentRatings, 'usa', 'tv');
+    certificationLocal = userCountry && userCountry !== 'US' ? (Utils.getTvdbCertification(tvdbShow.contentRatings, userCountry, 'tv') || certification) : certification;
   }
   let links = Utils.buildLinks(imdbRating, imdbId, translatedName, 'series', tvdbShow.genres, tvdbCredits, language, castCount, userUUID, true, 'tvdb');
   if (!Array.isArray(links)) links = [];
