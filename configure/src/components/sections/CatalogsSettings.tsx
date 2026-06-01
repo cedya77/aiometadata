@@ -2012,7 +2012,7 @@ const MergedCatalogCard = ({
             <GitMerge className="h-4 w-4 text-violet-400 shrink-0 mt-1" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1 min-w-0">
-                <p className={`font-medium line-clamp-2 min-w-0 flex-1 ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+                <p className={`font-medium line-clamp-2 min-w-0 flex-1 md:flex-none transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
                 <button
                   onClick={() => setShowEditDialog(true)}
                   className="text-muted-foreground hover:text-foreground shrink-0"
@@ -2566,7 +2566,7 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 </TooltipProvider>
               );
             })()}
-            <p className={`font-medium line-clamp-2 min-w-0 flex-1 transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
+            <p className={`font-medium line-clamp-2 min-w-0 flex-1 md:flex-none transition-colors ${catalog.enabled ? 'text-foreground' : 'text-muted-foreground'}`}>{catalog.name}</p>
             <button
               onClick={() => setShowEditDialog(true)}
               className="text-muted-foreground hover:text-foreground shrink-0"
