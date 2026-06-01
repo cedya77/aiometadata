@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.0](https://github.com/cedya77/aiometadata/compare/v2.5.3...v2.6.0) (2026-06-01)
+
+
+### Features
+
+* add bulk select-by-type for catalogs ([82e27f6](https://github.com/cedya77/aiometadata/commit/82e27f6cea7cc264c316080cca81aa35d431e2f8))
+* add restart-from-UI for settings that require a reboot ([17ca283](https://github.com/cedya77/aiometadata/commit/17ca283790dcedb525441748cf238d9015f8128e))
+* add simkl curated recipe catalogs ([0423159](https://github.com/cedya77/aiometadata/commit/042315980c5bc2d13528d20649c76c253615e85b))
+* catalog tags with per-tag manifest profiles ([e4d801a](https://github.com/cedya77/aiometadata/commit/e4d801a3e1bab121287ee9ea78d881c52b2a67c4))
+* revamp dashboard logs and overview tabs ([9099dc5](https://github.com/cedya77/aiometadata/commit/9099dc5adf373b790d078d7d506f459444229f18))
+
+
+### Bug Fixes
+
+* always populate certification for tvdb metas so age-rating filtering works when the rating display toggle is off ([9dd510c](https://github.com/cedya77/aiometadata/commit/9dd510c1475bc4eb216a619cd969fa240651092c))
+* cast config_data to jsonb in postgres user queries ([9075da3](https://github.com/cedya77/aiometadata/commit/9075da3bc7cfaa2ce8fe017386dcfe657445c440))
+* include disabled merge sources when building genres for merged catalogs ([dc42b17](https://github.com/cedya77/aiometadata/commit/dc42b17ec89948611e4f58b380ad0422064d8548))
+* invalidate simkl watchlist cache on activity change ([ec9956e](https://github.com/cedya77/aiometadata/commit/ec9956e7c38bc81b7056d57a38672dff4ef11faf))
+* route content filtering through single applyCatalogFilters chokepoint ([7bb8acf](https://github.com/cedya77/aiometadata/commit/7bb8acfaf72382c750ee04e3aa290a0d51f05d70))
+
 ## [2.5.3](https://github.com/cedya77/aiometadata/compare/v2.5.2...v2.5.3) (2026-05-27)
 
 
