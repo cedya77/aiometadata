@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { useConfig } from '@/contexts/ConfigContext';
-import type { CatalogConfig, TagDef, TagColorKey } from '@/contexts/config';
+import { MAX_TAG_NAME_LENGTH, type CatalogConfig, type TagDef, type TagColorKey } from '@/contexts/config';
 import { nextTagColor } from '@/lib/tagColors';
 
 const catalogKey = (c: CatalogConfig) => `${c.id}-${c.type}`;
@@ -20,7 +20,7 @@ export function useCatalogTags() {
 
   const createTag = useCallback((name: string, color?: TagColorKey) => {
     const clean = name.trim();
-    if (!clean) return;
+    if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
       if (registry.some(t => t.name === clean)) return prev;
@@ -31,7 +31,7 @@ export function useCatalogTags() {
 
   const renameTag = useCallback((oldName: string, nextName: string) => {
     const clean = nextName.trim();
-    if (!clean || clean === oldName) return;
+    if (!clean || clean.length > MAX_TAG_NAME_LENGTH || clean === oldName) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
       if (registry.some(t => t.name === clean)) return prev;
@@ -66,7 +66,7 @@ export function useCatalogTags() {
 
   const addTagToCatalogs = useCallback((keys: Set<string>, name: string) => {
     const clean = name.trim();
-    if (!clean) return;
+    if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
       const tagsUpdate = registry.some(t => t.name === clean)

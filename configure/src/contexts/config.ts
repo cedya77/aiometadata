@@ -2,6 +2,8 @@ export type TagColorKey =
   | 'blue' | 'green' | 'red' | 'violet' | 'amber' | 'cyan'
   | 'pink' | 'emerald' | 'orange' | 'indigo' | 'rose' | 'slate';
 
+export const MAX_TAG_NAME_LENGTH = 32;
+
 export interface TagDef {
   name: string;
   color: TagColorKey;

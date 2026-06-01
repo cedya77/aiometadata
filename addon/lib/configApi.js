@@ -48,6 +48,8 @@ const logger = consola.withTag('ConfigApi');
 const configCache = require('./configCache');
 const { deleteKeysByPattern } = require('./redisUtils');
 
+const MAX_TAG_NAME_LENGTH = 32;
+
 const MAX_CATALOGS = (() => {
   const raw = process.env.MAX_CATALOGS;
   if (!raw) return null;
@@ -166,6 +168,41 @@ class ConfigApi {
     };
   }
 
+  validateTagNames(config) {
+    const invalidNames = [];
+    const addInvalid = (name) => {
+      if (typeof name !== 'string') {
+        invalidNames.push(String(name));
+        return;
+      }
+      if (name.trim().length === 0 || name.length > MAX_TAG_NAME_LENGTH) {
+        invalidNames.push(name);
+      }
+    };
+
+    if (Array.isArray(config?.tags)) {
+      for (const tag of config.tags) {
+        addInvalid(tag?.name);
+      }
+    }
+
+    if (Array.isArray(config?.catalogs)) {
+      for (const catalog of config.catalogs) {
+        if (!Array.isArray(catalog?.tags)) continue;
+        for (const tagName of catalog.tags) {
+          addInvalid(tagName);
+        }
+      }
+    }
+
+    if (invalidNames.length === 0) return { valid: true };
+    return {
+      valid: false,
+      max: MAX_TAG_NAME_LENGTH,
+      message: `Tag names must be 1-${MAX_TAG_NAME_LENGTH} characters.`,
+    };
+  }
+
   // Save configuration with password
   async saveConfig(req, res) {
     logger.debug('saveConfig called - starting function');
@@ -210,6 +247,14 @@ class ConfigApi {
           error: catalogCheck.message,
           catalogCount: catalogCheck.count,
           maxCatalogs: catalogCheck.max,
+        });
+      }
+
+      const tagCheck = this.validateTagNames(config);
+      if (!tagCheck.valid) {
+        return res.status(400).json({
+          error: tagCheck.message,
+          maxTagNameLength: tagCheck.max,
         });
       }
 
@@ -544,6 +589,14 @@ class ConfigApi {
           error: catalogCheck.message,
           catalogCount: catalogCheck.count,
           maxCatalogs: catalogCheck.max,
+        });
+      }
+
+      const tagCheck = this.validateTagNames(config);
+      if (!tagCheck.valid) {
+        return res.status(400).json({
+          error: tagCheck.message,
+          maxTagNameLength: tagCheck.max,
         });
       }
 
