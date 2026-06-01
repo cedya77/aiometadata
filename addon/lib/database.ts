@@ -657,7 +657,7 @@ class Database {
       } else {
         const placeholders = tokenIds.map((_, i) => `$${i + 1}`).join(', ');
         const query = `SELECT user_uuid, password_hash, config_data FROM user_configs
-          WHERE config_data->'apiKeys'->>'${tokenField}' IN (${placeholders})`;
+          WHERE config_data::jsonb->'apiKeys'->>'${tokenField}' IN (${placeholders})`;
         const rows = await this.allQuery(query, tokenIds);
         return rows.map(row => ({
           id: row.user_uuid,
@@ -690,10 +690,10 @@ class Database {
              user_uuid,
              created_at,
              updated_at,
-             CASE WHEN (config_data->'apiKeys'->>'tmdb') IS NOT NULL
-                    OR (config_data->'apiKeys'->>'tvdb') IS NOT NULL
-                    OR (config_data->'apiKeys'->>'imdb') IS NOT NULL
-                    OR (config_data->'apiKeys'->>'kitsu') IS NOT NULL
+             CASE WHEN (config_data::jsonb->'apiKeys'->>'tmdb') IS NOT NULL
+                    OR (config_data::jsonb->'apiKeys'->>'tvdb') IS NOT NULL
+                    OR (config_data::jsonb->'apiKeys'->>'imdb') IS NOT NULL
+                    OR (config_data::jsonb->'apiKeys'->>'kitsu') IS NOT NULL
                THEN true ELSE false END AS has_api_keys,
              CASE WHEN updated_at >= NOW() - INTERVAL '7 days' THEN true ELSE false END AS is_active
            FROM user_configs
