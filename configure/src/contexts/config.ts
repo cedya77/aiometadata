@@ -1,8 +1,18 @@
+export type TagColorKey =
+  | 'blue' | 'green' | 'red' | 'violet' | 'amber' | 'cyan'
+  | 'pink' | 'emerald' | 'orange' | 'indigo' | 'rose' | 'slate';
+
+export interface TagDef {
+  name: string;
+  color: TagColorKey;
+}
+
 export interface CatalogConfig {
   id: string;
   name: string;
   type: 'movie' | 'series' | 'anime' | 'all';
   enabled: boolean;
+  tags?: string[];
   source: 'tmdb' | 'tvdb' | 'mal' | 'tvmaze' | 'mdblist' | 'trakt' | 'streaming' | 'stremthru' | 'custom' | 'anilist' | 'letterboxd' | 'simkl' | 'flixpatrol' | 'publicmetadb' | 'merged'; // Keep source as the display label
   sourceUrl?: string; // Store the actual URL for StremThru and custom catalogs
   showInHome: boolean;
@@ -224,6 +234,7 @@ export interface AppConfig {
     series?: string;
   };
   showDisabledCatalogs?: boolean;
+  tags?: TagDef[];
   catalogModeOnly?: boolean;
   customPosterUrlPattern?: string;
   customBackgroundUrlPattern?: string;

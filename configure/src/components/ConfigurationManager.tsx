@@ -9,6 +9,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, AlertTriangle, CheckCircle, Copy, Loader2, Save, Key, User, Download, Eye, EyeOff, List } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { TagChip } from "@/components/TagChip";
+import { cn } from "@/lib/utils";
 
 interface ConfigurationManagerProps {
   children?: React.ReactNode;
@@ -47,6 +49,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [installUrl, setInstallUrl] = useState("");
+  const [selectedTag, setSelectedTag] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [addonPassword, setAddonPassword] = useState("");
@@ -203,6 +206,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
         throw new Error(text || 'Invalid JSON response from server');
       }
       setSavedConfig(result);
+      setSelectedTag('');
       if (!isAuthenticated && result?.userUUID) {
         setAuth({ authenticated: true, userUUID: result.userUUID, password });
       }
@@ -307,6 +311,11 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
   };
 
   const validation = useMemo(() => validateRequiredKeys(), [config, hasBuiltInTmdb, hasBuiltInTvdb, contextLoading]);
+
+  const profileTags = config.tags ?? [];
+  const taggedInstallUrl = savedConfig
+    ? (selectedTag ? `${savedConfig.installUrl}?tag=${encodeURIComponent(selectedTag)}` : savedConfig.installUrl)
+    : "";
 
   return (
     <div className="space-y-6">
@@ -654,20 +663,51 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
               </div>
               <div>
                 <Label className="text-sm font-medium">Install URL</Label>
+                {profileTags.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-xs text-muted-foreground mr-1">Profile:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTag('')}
+                      className={cn(
+                        'rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
+                        selectedTag === ''
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-muted-foreground/30 text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      All catalogs
+                    </button>
+                    {profileTags.map((t) => (
+                      <TagChip
+                        key={t.name}
+                        name={t.name}
+                        color={t.color}
+                        onClick={() => setSelectedTag(t.name)}
+                        dimmed={selectedTag !== '' && selectedTag !== t.name}
+                      />
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 mt-1">
-                  <Input 
-                    value={savedConfig.installUrl} 
-                    readOnly 
+                  <Input
+                    value={taggedInstallUrl}
+                    readOnly
                     className="font-mono text-sm"
                   />
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => copyToClipboard(savedConfig.installUrl, 'Install URL')}
+                    onClick={() => copyToClipboard(taggedInstallUrl, 'Install URL')}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
+                {selectedTag !== '' && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Installs only catalogs tagged <span className="font-medium">{selectedTag}</span> as a separate addon profile.
+                  </p>
+                )}
               </div>
             </div>
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
@@ -773,7 +813,7 @@ export function ConfigurationManager({ children }: ConfigurationManagerProps) {
                   </div>
                 </DialogContent>
               </Dialog>
-              <Button onClick={() => { setInstallUrl(savedConfig.installUrl); setIsInstallOpen(true); }}>
+              <Button onClick={() => { setInstallUrl(taggedInstallUrl); setIsInstallOpen(true); }}>
                 <Download className="h-4 w-4 mr-2" /> Install
               </Button>
             </div>

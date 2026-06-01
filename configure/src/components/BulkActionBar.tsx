@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,9 +17,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move, Type, GitMerge } from 'lucide-react';
+import { X, MoreHorizontal, Power, PowerOff, Home, HomeIcon, Trash2, Loader2, Star, Shuffle, ArrowUpToLine, ArrowDownToLine, Move, Type, GitMerge, Tag } from 'lucide-react';
 import { CatalogConfig } from '@/contexts/config';
 import { cn } from '@/lib/utils';
+import { TagEditorDialog } from '@/components/TagEditorDialog';
 
 type BulkActionType =
   | 'enable'
@@ -107,6 +108,11 @@ export function BulkActionBar({
   const [showDisplayTypeDialog, setShowDisplayTypeDialog] = useState(false);
   const [displayTypeValue, setDisplayTypeValue] = useState('');
   const [showFindReplaceDialog, setShowFindReplaceDialog] = useState(false);
+  const [showTagDialog, setShowTagDialog] = useState(false);
+  const tagTargetKeys = useMemo(
+    () => new Set(selectedCatalogs.map(c => `${c.id}-${c.type}`)),
+    [selectedCatalogs]
+  );
   const [findTypeValue, setFindTypeValue] = useState('');
   const [replaceTypeValue, setReplaceTypeValue] = useState('');
   const hasDisplayTypeOverrides = selectedCatalogs.some(c => c.displayType);
@@ -211,6 +217,26 @@ export function BulkActionBar({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Merge selected catalogs into one</TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Tag Selected */}
+            {selectionCount > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowTagDialog(true)}
+                    disabled={isLoading}
+                    aria-label="Tag selected catalogs"
+                    className="w-full md:w-auto justify-start md:justify-center min-h-[44px] md:min-h-0"
+                  >
+                    <Tag className="h-4 w-4" />
+                    <span className="ml-2">Tag</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Apply or remove tags</TooltipContent>
               </Tooltip>
             )}
 
@@ -621,6 +647,13 @@ export function BulkActionBar({
           </div>
         </TooltipProvider>
       </div>
+
+      <TagEditorDialog
+        open={showTagDialog}
+        onOpenChange={setShowTagDialog}
+        targetKeys={tagTargetKeys}
+        title="Tag selected catalogs"
+      />
     </div>
   );
 

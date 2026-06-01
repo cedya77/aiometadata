@@ -306,6 +306,10 @@ const respond = function (req, res, data, opts) {
         etagContent += ':manifest';
       }
 
+      if (typeof req.query.tag === 'string' && req.query.tag.trim()) {
+        etagContent += ':tag:' + req.query.tag.trim();
+      }
+
       const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
       const etag = `W/"${etagHash}"`;
 
@@ -3229,8 +3233,9 @@ addon.get("/stremio/:userUUID/manifest.json", async function (req, res) {
             return res.status(404).send({ err: "User configuration not found." });
         }
         
-        consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}`);
-        const manifest = await getManifest(config);
+        const tag = typeof req.query.tag === 'string' ? req.query.tag.trim() : '';
+        consola.debug(`[Manifest] Building fresh manifest for user: ${userUUID}${tag ? ` (tag: ${tag})` : ''}`);
+        const manifest = await getManifest(config, { tag });
             if (!manifest) {
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 res.setHeader('Access-Control-Allow-Headers', '*');

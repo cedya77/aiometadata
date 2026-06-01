@@ -36,6 +36,9 @@ import { SelectionProvider, useSelection } from '@/contexts/SelectionContext';
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { SelectAllControl } from '@/components/SelectAllControl';
 import { SelectByFieldControl } from '@/components/SelectByFieldControl';
+import { SelectByTagControl } from '@/components/SelectByTagControl';
+import { CatalogTagRow } from '@/components/CatalogTagRow';
+import { TagFilterBar } from '@/components/TagFilterBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CatalogStarterChoice } from '@/components/CatalogStarterChoice';
 import {
@@ -2027,6 +2030,9 @@ const MergedCatalogCard = ({
           >
             {expanded ? 'Hide sources' : 'Show sources'}
           </button>
+          <div className="mt-1.5">
+            <CatalogTagRow catalog={catalog} />
+          </div>
         </div>
 
         {/* Desktop actions */}
@@ -2595,6 +2601,9 @@ const SortableCatalogItem = ({ catalog, onEditDiscover, onCustomize, onDuplicate
                 </TooltipProvider>
               );
             })()}
+          </div>
+          <div className="mt-1.5">
+            <CatalogTagRow catalog={catalog} />
           </div>
         </div>
       </div>
@@ -3249,10 +3258,14 @@ const StreamingProvidersSettings = ({ open, onClose, selectedProviders, setSelec
 // Inner component that consumes SelectionContext
 function CatalogsSettingsContent({
   hideDisabledCatalogs,
-  setHideDisabledCatalogs
+  setHideDisabledCatalogs,
+  tagFilters,
+  setTagFilters
 }: {
   hideDisabledCatalogs: boolean;
   setHideDisabledCatalogs: (value: boolean) => void;
+  tagFilters: string[];
+  setTagFilters: React.Dispatch<React.SetStateAction<string[]>>;
 }) {
   const { config, setConfig, hasBuiltInTvdb } = useConfig();
   const {
@@ -3262,6 +3275,8 @@ function CatalogsSettingsContent({
     deselectBySource,
     selectByType,
     deselectByType,
+    selectByTag,
+    deselectByTag,
     invertSelection,
     selectionCount,
     selectedIds
@@ -3472,11 +3487,14 @@ function CatalogsSettingsContent({
       // Filter out TVDB catalogs if no TVDB key is available
       if (cat.source === 'tvdb' && !hasTvdbKey) return false;
 
+      // Filter by selected tags (match any)
+      if (tagFilters.length > 0 && !tagFilters.some(t => cat.tags?.includes(t))) return false;
+
       if (cat.source !== "streaming") return true;
       const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
       return Array.isArray(config.streaming) && config.streaming.includes(serviceId);
     }),
-    [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey]
+    [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey, tagFilters]
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -4632,7 +4650,14 @@ function CatalogsSettingsContent({
           onSelect={selectByType}
           onDeselect={deselectByType}
         />
+        <SelectByTagControl onSelect={selectByTag} onDeselect={deselectByTag} />
       </div>
+
+      <TagFilterBar
+        tagFilters={tagFilters}
+        onToggle={(name) => setTagFilters(prev => prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name])}
+        onClear={() => setTagFilters([])}
+      />
 
       <div className="relative">
         {/* Loading overlay to prevent interaction during bulk operations */}
@@ -5200,6 +5225,7 @@ function CatalogsSettingsContent({
 export function CatalogsSettings() {
   const { config, hasBuiltInTvdb, setConfig } = useConfig();
   const [hideDisabledCatalogs, setHideDisabledCatalogs] = useState(config.showDisabledCatalogs ?? false);
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
 
   useEffect(() => {
     setHideDisabledCatalogs(config.showDisabledCatalogs ?? false);
@@ -5224,11 +5250,14 @@ export function CatalogsSettings() {
       // Filter out TVDB catalogs if no TVDB key is available
       if (cat.source === 'tvdb' && !hasTvdbKey) return false;
 
+      // Filter by selected tags (match any)
+      if (tagFilters.length > 0 && !tagFilters.some(t => cat.tags?.includes(t))) return false;
+
       if (cat.source !== "streaming") return true;
       const serviceId = cat.id.replace("streaming.", "").replace(/ .*/, "");
       return Array.isArray(config.streaming) && config.streaming.includes(serviceId);
     }),
-    [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey]
+    [config.catalogs, config.streaming, hideDisabledCatalogs, hasTvdbKey, tagFilters]
   );
 
   return (
@@ -5236,6 +5265,8 @@ export function CatalogsSettings() {
       <CatalogsSettingsContent
         hideDisabledCatalogs={hideDisabledCatalogs}
         setHideDisabledCatalogs={handleSetHideDisabled}
+        tagFilters={tagFilters}
+        setTagFilters={setTagFilters}
       />
     </SelectionProvider>
   );

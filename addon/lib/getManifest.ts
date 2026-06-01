@@ -731,7 +731,7 @@ async function createSimklCatalog(userCatalog: any, showPrefix: boolean = false,
   }
 }
 
-async function getManifest(config: any): Promise<any> {
+async function getManifest(config: any, opts: { tag?: string } = {}): Promise<any> {
   const startTime = Date.now();
   logger.start('Starting manifest generation...');
 
@@ -743,8 +743,12 @@ async function getManifest(config: any): Promise<any> {
     const userCatalogs = config.catalogs || getDefaultCatalogs();
     const translatedCatalogs = loadTranslations(language);
 
-
-  const enabledCatalogs = userCatalogs.filter((c: any) => c.enabled);
+  // Tag profiles: when a tag is requested, membership in that tag is the selector
+  // (ignoring the enabled flag); otherwise the manifest is all enabled catalogs.
+  const tag = (opts.tag || '').trim();
+  const enabledCatalogs = tag
+    ? userCatalogs.filter((c: any) => Array.isArray(c.tags) && c.tags.includes(tag))
+    : userCatalogs.filter((c: any) => c.enabled);
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
   const mergedSourceKeys = new Set<string>();
@@ -1437,11 +1441,11 @@ async function getManifest(config: any): Promise<any> {
   }
 
   const manifest = {
-    id: buildInfo.name,
+    id: tag ? `${buildInfo.name}.tag-${tag}` : buildInfo.name,
     version: buildInfo.version,
     logo: manifestLogoUrl(),
     background: `${host}/background.png`,
-    name: addonName,
+    name: tag ? `${addonName} · ${tag}` : addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
     resources,
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],

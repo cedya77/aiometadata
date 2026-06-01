@@ -15,6 +15,8 @@ interface SelectionContextType {
   deselectBySource: (source: string) => void;
   selectByType: (type: string) => void;
   deselectByType: (type: string) => void;
+  selectByTag: (tag: string) => void;
+  deselectByTag: (tag: string) => void;
   invertSelection: () => void;
   isSelected: (id: string) => boolean;
   selectionCount: number;
@@ -147,6 +149,36 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
     });
   }, [catalogs, getCatalogKey]);
 
+  const selectByTag = useCallback((tag: string) => {
+    setState(prev => {
+      const newSelectedIds = new Set(prev.selectedIds);
+      catalogs
+        .filter(catalog => catalog.tags?.includes(tag))
+        .forEach(catalog => {
+          newSelectedIds.add(getCatalogKey(catalog));
+        });
+      return {
+        selectedIds: newSelectedIds,
+        lastSelectedId: prev.lastSelectedId,
+      };
+    });
+  }, [catalogs, getCatalogKey]);
+
+  const deselectByTag = useCallback((tag: string) => {
+    setState(prev => {
+      const newSelectedIds = new Set(prev.selectedIds);
+      catalogs
+        .filter(catalog => catalog.tags?.includes(tag))
+        .forEach(catalog => {
+          newSelectedIds.delete(getCatalogKey(catalog));
+        });
+      return {
+        selectedIds: newSelectedIds,
+        lastSelectedId: prev.lastSelectedId,
+      };
+    });
+  }, [catalogs, getCatalogKey]);
+
   // Invert selection (select unselected visible, deselect selected visible, maintain hidden)
   const invertSelection = useCallback(() => {
     setState(prev => {
@@ -196,6 +228,8 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
     deselectBySource,
     selectByType,
     deselectByType,
+    selectByTag,
+    deselectByTag,
     invertSelection,
     isSelected,
     selectionCount,
@@ -208,6 +242,8 @@ export function SelectionProvider({ children, catalogs }: SelectionProviderProps
     deselectBySource,
     selectByType,
     deselectByType,
+    selectByTag,
+    deselectByTag,
     invertSelection,
     isSelected,
     selectionCount,
