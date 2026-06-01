@@ -64,14 +64,14 @@ export function useCatalogTags() {
     }));
   }, [setConfig]);
 
-  const addTagToCatalogs = useCallback((keys: Set<string>, name: string) => {
+  const addTagToCatalogs = useCallback((keys: Set<string>, name: string, color?: TagColorKey) => {
     const clean = name.trim();
     if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
       const tagsUpdate = registry.some(t => t.name === clean)
         ? registry
-        : [...registry, { name: clean, color: nextTagColor(registry.map(t => t.color)) }];
+        : [...registry, { name: clean, color: color ?? nextTagColor(registry.map(t => t.color)) }];
       return {
         ...prev,
         tags: tagsUpdate,

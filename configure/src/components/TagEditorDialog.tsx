@@ -49,15 +49,15 @@ export function TagEditorDialog({ open, onOpenChange, targetKeys, title }: TagEd
     else addTagToCatalogs(targetKeys, name);
   };
 
+  const resolvedNewColor = newColor ?? nextTagColor(tags.map(t => t.color));
+
   const handleCreate = () => {
     const clean = newName.trim();
     if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
-    addTagToCatalogs(targetKeys, clean);
+    addTagToCatalogs(targetKeys, clean, resolvedNewColor);
     setNewName('');
     setNewColor(null);
   };
-
-  const resolvedNewColor = newColor ?? nextTagColor(tags.map(t => t.color));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
