@@ -51,6 +51,11 @@ export function TagEditorDialog({ open, onOpenChange, targetKeys, title }: TagEd
 
   const resolvedNewColor = newColor ?? nextTagColor(tags.map(t => t.color));
 
+  const duplicateTag = useMemo(() => {
+    const clean = newName.trim().toLowerCase();
+    return clean ? tags.find(t => t.name.toLowerCase() === clean) : undefined;
+  }, [newName, tags]);
+
   const handleCreate = () => {
     const clean = newName.trim();
     if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
@@ -148,12 +153,18 @@ export function TagEditorDialog({ open, onOpenChange, targetKeys, title }: TagEd
               className="h-9"
             />
             <Button size="sm" onClick={handleCreate} disabled={!newName.trim() || newName.trim().length > MAX_TAG_NAME_LENGTH} className="shrink-0 sm:w-auto">
-              <Plus className="mr-1 h-4 w-4" /> Add
+              <Plus className="mr-1 h-4 w-4" /> {duplicateTag ? 'Apply' : 'Add'}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {newName.length}/{MAX_TAG_NAME_LENGTH} characters
-          </p>
+          {duplicateTag ? (
+            <p className="text-xs text-amber-500">
+              A tag named "{duplicateTag.name}" already exists — adding will apply it to the selection.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {newName.length}/{MAX_TAG_NAME_LENGTH} characters
+            </p>
+          )}
 
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Color</p>

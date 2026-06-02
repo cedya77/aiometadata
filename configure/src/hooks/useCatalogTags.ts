@@ -23,7 +23,7 @@ export function useCatalogTags() {
     if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
-      if (registry.some(t => t.name === clean)) return prev;
+      if (registry.some(t => t.name.toLowerCase() === clean.toLowerCase())) return prev;
       const chosen = color ?? nextTagColor(registry.map(t => t.color));
       return { ...prev, tags: [...registry, { name: clean, color: chosen }] };
     });
@@ -34,7 +34,7 @@ export function useCatalogTags() {
     if (!clean || clean.length > MAX_TAG_NAME_LENGTH || clean === oldName) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
-      if (registry.some(t => t.name === clean)) return prev;
+      if (registry.some(t => t.name !== oldName && t.name.toLowerCase() === clean.toLowerCase())) return prev;
       return {
         ...prev,
         tags: registry.map(t => (t.name === oldName ? { ...t, name: clean } : t)),
@@ -69,7 +69,9 @@ export function useCatalogTags() {
     if (!clean || clean.length > MAX_TAG_NAME_LENGTH) return;
     setConfig(prev => {
       const registry = prev.tags ?? [];
-      const tagsUpdate = registry.some(t => t.name === clean)
+      const existing = registry.find(t => t.name.toLowerCase() === clean.toLowerCase());
+      const canonical = existing ? existing.name : clean;
+      const tagsUpdate = existing
         ? registry
         : [...registry, { name: clean, color: color ?? nextTagColor(registry.map(t => t.color)) }];
       return {
@@ -78,7 +80,7 @@ export function useCatalogTags() {
         catalogs: prev.catalogs.map(c => {
           if (!keys.has(catalogKey(c))) return c;
           const current = c.tags ?? [];
-          return current.includes(clean) ? c : { ...c, tags: [...current, clean] };
+          return current.includes(canonical) ? c : { ...c, tags: [...current, canonical] };
         }),
       };
     });

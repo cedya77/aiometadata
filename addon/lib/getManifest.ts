@@ -744,9 +744,17 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
     const translatedCatalogs = loadTranslations(language);
 
   const tag = (opts.tag || '').trim();
+  const tagLower = tag.toLowerCase();
   const enabledCatalogs = userCatalogs.filter((c: any) =>
-    c.enabled && (!tag || (Array.isArray(c.tags) && c.tags.includes(tag)))
+    c.enabled && (!tag || (Array.isArray(c.tags) && c.tags.some((t: any) => String(t).toLowerCase() === tagLower)))
   );
+
+  // Resolve the tag to its stored casing (install URLs may be hand-typed in any case).
+  const displayTag = tag
+    ? (enabledCatalogs
+        .flatMap((c: any) => (Array.isArray(c.tags) ? c.tags : []))
+        .find((t: any) => String(t).toLowerCase() === tagLower) || tag)
+    : tag;
 
   // Absorbed merge sources must be built (even if disabled) so their genres feed the parent.
   const mergedSourceKeys = new Set<string>();
@@ -1443,7 +1451,7 @@ async function getManifest(config: any, opts: { tag?: string } = {}): Promise<an
     version: buildInfo.version,
     logo: manifestLogoUrl(),
     background: `${host}/background.png`,
-    name: tag ? `${addonName} · ${tag}` : addonName,
+    name: tag ? `${addonName} · ${displayTag}` : addonName,
     description: "A metadata addon for power users. AIOMetadata uses TMDB, TVDB, TVMaze, MyAnimeList, IMDB and Fanart.tv to provide accurate data for movies, series, and anime. You choose the source.",
     resources,
     types: ["movie", "series", "anime.movie", "anime.series", "anime", "Trakt", "collection"],

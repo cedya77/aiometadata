@@ -307,7 +307,7 @@ const respond = function (req, res, data, opts) {
       }
 
       if (typeof req.query.tag === 'string' && req.query.tag.trim()) {
-        etagContent += ':tag:' + req.query.tag.trim();
+        etagContent += ':tag:' + req.query.tag.trim().toLowerCase();
       }
 
       const etagHash = crypto.createHash('md5').update(etagContent).digest('hex');
