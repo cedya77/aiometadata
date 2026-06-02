@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.1](https://github.com/cedya77/aiometadata/compare/v2.6.0...v2.6.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* improve dashboard logs, settings, content, and tab navigation on mobile ([ca01188](https://github.com/cedya77/aiometadata/commit/ca011882edc24b7c3d4e6f16aba140923f5c7d8a))
+* match catalog tags case-insensitively and warn on duplicates ([77d6766](https://github.com/cedya77/aiometadata/commit/77d67666102836a2175681f2e0bdb6374ebceede))
+* redesign mobile bulk action bar as a compact scrollable icon row ([6423c04](https://github.com/cedya77/aiometadata/commit/6423c0485220497ec6e112a5d82158faa57f33f9))
+* restore bulk delete for all non-merged catalogs ([f2f84f5](https://github.com/cedya77/aiometadata/commit/f2f84f5eb77a102ce5c9573d0b2a18f1c24d32c8))
+
 ## [2.6.0](https://github.com/cedya77/aiometadata/compare/v2.5.3...v2.6.0) (2026-06-01)
 
 
