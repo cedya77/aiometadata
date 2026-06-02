@@ -45,6 +45,18 @@ const processLogo = (logoUrl) => {
   return logoUrl.replace(/^http:/, "https:");
 };
 
+async function recoverTvdbIdViaImdb(imdbId, contentType, config, currentTvdbId) {
+  if (!imdbId) return null;
+  try {
+    const results = await tvdb.findByImdbId(imdbId, config);
+    const recovered = contentType === 'movie' ? results?.[0]?.movie?.id : results?.[0]?.series?.id;
+    if (recovered && String(recovered) !== String(currentTvdbId)) return String(recovered);
+  } catch (e) {
+    logger.warn(`[Meta] TVDB recovery by IMDb ${imdbId} failed: ${e.message}`);
+  }
+  return null;
+}
+
 const COUNTRY_TIMEZONES = {
   us: 'America/New_York', usa: 'America/New_York',
   gb: 'Europe/London', uk: 'Europe/London',
@@ -824,11 +836,23 @@ async function getSeriesMeta(preferredProvider, stremioId, language, config, use
   // Try TVDB as fallback
   if (allIds?.tvdbId) {
     try {
-      const [seriesData, episodes] = await Promise.all([
+      let [seriesData, episodes] = await Promise.all([
         tvdb.getSeriesExtended(allIds.tvdbId, config),
         includeVideos ? tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config) : null
       ]);
-      
+
+      if (!seriesData && allIds?.imdbId) {
+        const recoveredId = await recoverTvdbIdViaImdb(allIds.imdbId, 'series', config, allIds.tvdbId);
+        if (recoveredId) {
+          logger.warn(`[SeriesMeta] TVDB id ${allIds.tvdbId} returned no data for ${stremioId}; recovered ${recoveredId} via IMDb ${allIds.imdbId}.`);
+          allIds.tvdbId = recoveredId;
+          [seriesData, episodes] = await Promise.all([
+            tvdb.getSeriesExtended(recoveredId, config),
+            includeVideos ? tvdb.getSeriesEpisodes(recoveredId, language, config.tvdbSeasonType, config) : null
+          ]);
+        }
+      }
+
       // Check if we got valid data
       if (seriesData) {
         return await buildTvdbSeriesResponse(stremioId, seriesData, episodes, language, config, userUUID, { allIds }, false, includeVideos);
@@ -934,12 +958,24 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
       }
       if (preferredProvider === 'tvdb' && allIds?.tvdbId) {
         if (type === 'series') {
-          const [seriesData, episodes] = await Promise.all([
+          let [seriesData, episodes] = await Promise.all([
             tvdb.getSeriesExtended(allIds.tvdbId, config),
             includeVideos ? tvdb.getSeriesEpisodes(allIds.tvdbId, language, config.tvdbSeasonType, config) : null
           ]);
+          if (!seriesData && allIds?.imdbId) {
+            const recoveredId = await recoverTvdbIdViaImdb(allIds.imdbId, 'series', config, allIds.tvdbId);
+            if (recoveredId) {
+              logger.warn(`[AnimeMeta] TVDB id ${allIds.tvdbId} returned no data for ${stremioId}; recovered ${recoveredId} via IMDb ${allIds.imdbId}.`);
+              allIds.tvdbId = recoveredId;
+              [seriesData, episodes] = await Promise.all([
+                tvdb.getSeriesExtended(recoveredId, config),
+                includeVideos ? tvdb.getSeriesEpisodes(recoveredId, language, config.tvdbSeasonType, config) : null
+              ]);
+            }
+          }
           if (!seriesData) {
             if (allIds?.imdbId) {
+              logger.warn(`[AnimeMeta] TVDB unavailable for ${stremioId} (tvdb:${allIds.tvdbId}); falling back to IMDB.`);
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'series');
               return await buildImdbSeriesResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
@@ -948,9 +984,18 @@ async function getAnimeMeta(preferredProvider, stremioId, language, config, user
           }
         } else if (type === 'movie') {
           logger.debug(`[AnimeMeta] Attempting preferred provider TVDB with ID: ${allIds.tvdbId}`);
-          const movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
+          let movieData = await tvdb.getMovieExtended(allIds.tvdbId, config);
+          if (!movieData && allIds?.imdbId) {
+            const recoveredId = await recoverTvdbIdViaImdb(allIds.imdbId, 'movie', config, allIds.tvdbId);
+            if (recoveredId) {
+              logger.warn(`[AnimeMeta] TVDB id ${allIds.tvdbId} returned no data for ${stremioId}; recovered ${recoveredId} via IMDb ${allIds.imdbId}.`);
+              allIds.tvdbId = recoveredId;
+              movieData = await tvdb.getMovieExtended(recoveredId, config);
+            }
+          }
           if (!movieData) {
             if (allIds?.imdbId) {
+              logger.warn(`[AnimeMeta] TVDB unavailable for ${stremioId} (tvdb:${allIds.tvdbId}); falling back to IMDB.`);
               let imdbData = await imdb.getMetaFromImdb(allIds.imdbId, 'movie');
               return await buildImdbMovieResponse(stremioId, imdbData, { allIds }, config, isAnime);
             }
