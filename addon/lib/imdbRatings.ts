@@ -218,6 +218,15 @@ export async function getImdbRatingString(imdbId: string): Promise<string | unde
   return result ? String(result.rating) : undefined;
 }
 
+export async function ratingsAvailable(): Promise<boolean> {
+  try {
+    if (redis?.status !== 'ready') return false;
+    return (await redis.hlen(REDIS_RATINGS_HASH)) > 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Initialize ratings on startup
  */

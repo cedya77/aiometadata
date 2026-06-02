@@ -1635,6 +1635,14 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
     cacheLogger.warn(`Failed to capture metadata for dashboard: ${error.message}`);
   }
 
+  if (meta.imdb_id && (meta.imdbRating == null || meta.imdbRating === 'N/A')) {
+    const imdbRatings = require('./imdbRatings');
+    if (!(await imdbRatings.ratingsAvailable())) {
+      cacheLogger.debug(`[Meta] Not caching ${metaId}: IMDb rating unavailable (ratings dataset not loaded yet)`);
+      return { meta: projectMetaForUser(meta, config) };
+    }
+  }
+
    const componentsToCache: any[] = [];
 
    const basicMeta: any = {
