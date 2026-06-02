@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.3](https://github.com/cedya77/aiometadata/compare/v2.6.2...v2.6.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* don't cache N/A imdb rating while the ratings dataset is unavailable ([b39f649](https://github.com/cedya77/aiometadata/commit/b39f6496ce9163e1adff60d3800331111057361e))
+* recover correct TVDB id via IMDb lookup when a mapped id returns no data ([3e9dce1](https://github.com/cedya77/aiometadata/commit/3e9dce19e05e895bb505164e2b18c0444684b8e2))
+
 ## [2.6.2](https://github.com/cedya77/aiometadata/compare/v2.6.1...v2.6.2) (2026-06-02)
 
 
