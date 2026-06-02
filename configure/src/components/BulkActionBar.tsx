@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -123,14 +123,286 @@ export function BulkActionBar({
 
   const canMerge = onMergeSelected && selectionCount >= 2 && !selectedCatalogs.some(c => c.source === 'merged');
 
+  type MobileAction = {
+    id: string;
+    label: string;
+    icon: ReactNode;
+    onClick: () => void;
+    show: boolean;
+    destructive?: boolean;
+  };
+
+  const mobileActions: MobileAction[] = [
+    {
+      id: 'merge',
+      label: 'Merge',
+      icon: loadingAction === 'merge' ? <Loader2 className="h-5 w-5 animate-spin" /> : <GitMerge className="h-5 w-5 text-violet-400" />,
+      onClick: () => onMergeSelected?.(),
+      show: !!canMerge,
+    },
+    {
+      id: 'tag',
+      label: 'Tag',
+      icon: <Tag className="h-5 w-5" />,
+      onClick: () => setShowTagDialog(true),
+      show: true,
+    },
+    {
+      id: 'enable',
+      label: 'Enable',
+      icon: loadingAction === 'enable' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Power className="h-5 w-5" />,
+      onClick: onEnableSelected,
+      show: hasDisabledCatalogs,
+    },
+    {
+      id: 'disable',
+      label: 'Disable',
+      icon: loadingAction === 'disable' ? <Loader2 className="h-5 w-5 animate-spin" /> : <PowerOff className="h-5 w-5" />,
+      onClick: onDisableSelected,
+      show: hasEnabledCatalogs,
+    },
+    {
+      id: 'addToHome',
+      label: 'To Home',
+      icon: loadingAction === 'addToHome' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Home className="h-5 w-5" />,
+      onClick: onAddToHome,
+      show: hasNotInHome,
+    },
+    {
+      id: 'removeFromHome',
+      label: 'From Home',
+      icon: loadingAction === 'removeFromHome' ? <Loader2 className="h-5 w-5 animate-spin" /> : <HomeIcon className="h-5 w-5" />,
+      onClick: onRemoveFromHome,
+      show: hasInHome,
+    },
+    {
+      id: 'enableRatingPosters',
+      label: 'Ratings',
+      icon: loadingAction === 'enableRatingPosters' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Star className="h-5 w-5 text-yellow-500" />,
+      onClick: () => onEnableRatingPosters?.(),
+      show: hasRatingPostersKey && hasRatingPostersDisabled && !!onEnableRatingPosters,
+    },
+    {
+      id: 'disableRatingPosters',
+      label: 'No Ratings',
+      icon: loadingAction === 'disableRatingPosters' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Star className="h-5 w-5 text-muted-foreground" />,
+      onClick: () => onDisableRatingPosters?.(),
+      show: hasRatingPostersKey && hasRatingPostersEnabled && !!onDisableRatingPosters,
+    },
+    {
+      id: 'enableRandomize',
+      label: 'Shuffle',
+      icon: loadingAction === 'enableRandomize' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shuffle className="h-5 w-5 text-purple-500" />,
+      onClick: () => onEnableRandomize?.(),
+      show: hasRandomizeDisabled && !!onEnableRandomize,
+    },
+    {
+      id: 'disableRandomize',
+      label: 'No Shuffle',
+      icon: loadingAction === 'disableRandomize' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shuffle className="h-5 w-5 text-muted-foreground" />,
+      onClick: () => onDisableRandomize?.(),
+      show: hasRandomizeEnabled && !!onDisableRandomize,
+    },
+    {
+      id: 'setDisplayType',
+      label: 'Set Type',
+      icon: <Type className="h-5 w-5" />,
+      onClick: () => { setDisplayTypeValue(''); setShowDisplayTypeDialog(true); },
+      show: !!onSetDisplayType,
+    },
+    {
+      id: 'resetDisplayType',
+      label: 'Reset Type',
+      icon: <Type className="h-5 w-5 text-muted-foreground" />,
+      onClick: () => onResetDisplayType?.(),
+      show: !!onSetDisplayType && hasDisplayTypeOverrides && !!onResetDisplayType,
+    },
+    {
+      id: 'findReplaceType',
+      label: 'Find/Replace',
+      icon: <Type className="h-5 w-5" />,
+      onClick: () => { setFindTypeValue(''); setReplaceTypeValue(''); setShowFindReplaceDialog(true); },
+      show: !!onFindReplaceType,
+    },
+    {
+      id: 'invert',
+      label: 'Invert',
+      icon: loadingAction === 'invert' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Move className="h-5 w-5" />,
+      onClick: onInvertSelection,
+      show: true,
+    },
+    {
+      id: 'delete',
+      label: 'Delete',
+      icon: loadingAction === 'delete' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trash2 className="h-5 w-5" />,
+      onClick: onDeleteSelected,
+      show: hasRemovableCatalogs,
+      destructive: true,
+    },
+  ];
+
+  const dialogs = (
+    <>
+      <TagEditorDialog
+        open={showTagDialog}
+        onOpenChange={setShowTagDialog}
+        targetKeys={tagTargetKeys}
+        title="Tag selected catalogs"
+      />
+      {onSetDisplayType && (
+        <Dialog open={showDisplayTypeDialog} onOpenChange={setShowDisplayTypeDialog}>
+          <DialogContent className="sm:max-w-[320px]">
+            <DialogHeader>
+              <DialogTitle>Set Display Type</DialogTitle>
+              <DialogDescription>
+                Override the type label for {selectionCount} selected catalog{selectionCount === 1 ? '' : 's'} (e.g. "film", "shows", "anime")
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              value={displayTypeValue}
+              onChange={(e) => setDisplayTypeValue(e.target.value)}
+              placeholder="e.g. film, shows, anime..."
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && displayTypeValue.trim()) {
+                  onSetDisplayType(displayTypeValue.trim());
+                  setDisplayTypeValue('');
+                  setShowDisplayTypeDialog(false);
+                } else if (e.key === 'Escape') {
+                  setShowDisplayTypeDialog(false);
+                }
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowDisplayTypeDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={!displayTypeValue.trim()}
+                onClick={() => {
+                  onSetDisplayType(displayTypeValue.trim());
+                  setDisplayTypeValue('');
+                  setShowDisplayTypeDialog(false);
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+      {onFindReplaceType && (
+        <Dialog open={showFindReplaceDialog} onOpenChange={setShowFindReplaceDialog}>
+          <DialogContent className="sm:max-w-[360px]">
+            <DialogHeader>
+              <DialogTitle>Find &amp; Replace Type</DialogTitle>
+              <DialogDescription>
+                Replace all instances of one type with another across {selectionCount} selected catalog{selectionCount === 1 ? '' : 's'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Find</label>
+                <Input
+                  value={findTypeValue}
+                  onChange={(e) => setFindTypeValue(e.target.value)}
+                  placeholder="Current type (e.g. movie)"
+                  autoFocus
+                />
+                {findTypeValue.trim() && (
+                  <p className="text-xs text-muted-foreground">
+                    {findReplaceMatchCount} catalog{findReplaceMatchCount === 1 ? '' : 's'} match{findReplaceMatchCount === 1 ? 'es' : ''}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Replace with</label>
+                <Input
+                  value={replaceTypeValue}
+                  onChange={(e) => setReplaceTypeValue(e.target.value)}
+                  placeholder="New type (e.g. film)"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && findTypeValue.trim() && replaceTypeValue.trim() && findReplaceMatchCount > 0) {
+                      onFindReplaceType(findTypeValue.trim(), replaceTypeValue.trim());
+                      setShowFindReplaceDialog(false);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowFindReplaceDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={!findTypeValue.trim() || !replaceTypeValue.trim() || findReplaceMatchCount === 0}
+                onClick={() => {
+                  onFindReplaceType(findTypeValue.trim(), replaceTypeValue.trim());
+                  setShowFindReplaceDialog(false);
+                }}
+              >
+                Replace {findReplaceMatchCount > 0 ? `(${findReplaceMatchCount})` : ''}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+
+  const mobileBar = (
+    <div
+      className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t px-3 py-2 pb-safe shadow-[0_-2px_10px_rgba(0,0,0,0.1)] animate-slide-up"
+      role="region"
+      aria-label="Bulk actions"
+      aria-live="polite"
+      aria-busy={isLoading}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium">
+          {selectionCount} {selectionCount === 1 ? 'item' : 'items'} selected
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onClearSelection}
+          disabled={isLoading}
+          aria-label="Clear selection"
+          className="h-8 px-2 text-muted-foreground"
+        >
+          <X className="h-4 w-4" />
+          <span className="ml-1">Clear</span>
+        </Button>
+      </div>
+      <div className="flex items-stretch gap-2 overflow-x-auto -mx-3 px-3 pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        {mobileActions.filter(a => a.show).map(a => (
+          <button
+            key={a.id}
+            type="button"
+            onClick={a.onClick}
+            disabled={isLoading}
+            aria-label={a.label}
+            className={cn(
+              "flex shrink-0 flex-col items-center justify-center gap-1 rounded-xl border px-3 py-2 min-w-[68px] transition-colors active:bg-accent/60 disabled:opacity-50",
+              a.destructive
+                ? "border-destructive/40 text-destructive bg-destructive/5"
+                : "border-white/[0.08] bg-card/60 text-foreground"
+            )}
+          >
+            {a.icon}
+            <span className="text-[10px] font-medium leading-none whitespace-nowrap">{a.label}</span>
+          </button>
+        ))}
+      </div>
+      {dialogs}
+    </div>
+  );
+
   const bar = (
     <div
-      className={cn(
-        "z-50 bg-background px-4 py-3 pb-safe",
-        isMobile
-          ? "fixed bottom-0 left-0 right-0 border-t shadow-[0_-2px_10px_rgba(0,0,0,0.1)] animate-slide-up"
-          : "sticky top-0 border-b shadow-[0_2px_10px_rgba(0,0,0,0.1)] animate-slide-down"
-      )}
+      className="z-50 bg-background px-4 py-3 pb-safe sticky top-0 border-b shadow-[0_2px_10px_rgba(0,0,0,0.1)] animate-slide-down"
       role="region"
       aria-label="Bulk actions"
       aria-live="polite"
@@ -654,7 +926,7 @@ export function BulkActionBar({
   );
 
   if (isMobile && typeof document !== 'undefined') {
-    return createPortal(bar, document.body);
+    return createPortal(mobileBar, document.body);
   }
   return bar;
 }
