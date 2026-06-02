@@ -4491,12 +4491,14 @@ addon.get("/api/proxy-manifest", async function (req, res) {
 
 // API endpoint to auto-detect page size for external addon catalogs
 
+function POSTER_PROXY_TIMEOUT_MS() { return parseInt(process.env.POSTER_PROXY_TIMEOUT_MS || '10000', 10); }
+
 async function fetchPosterImageStream(posterUrl) {
   const imageResponse = await axios({
     method: 'get',
     url: posterUrl,
     responseType: 'stream',
-    timeout: 5000,
+    timeout: POSTER_PROXY_TIMEOUT_MS(),
     maxRedirects: 5,
     validateStatus: (status) => status >= 200 && status < 300,
     headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
@@ -4563,7 +4565,12 @@ addon.get("/poster/:type/:id", async function (req, res) {
     const imageResponse = await fetchPosterImageStream(posterUrl);
     pipePosterImageResponse(res, imageResponse);
   } catch (error) {
-    consola.error(`Error in poster proxy for ${id}:`, error.message);
+    const isTimeout = error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '');
+    if (isTimeout) {
+      consola.warn(`Poster proxy timed out for ${id}, serving fallback:`, error.message);
+    } else {
+      consola.error(`Error in poster proxy for ${id}:`, error.message);
+    }
     res.redirect(302, fallback);
   }
 });
@@ -4585,7 +4592,7 @@ function streamArtWithFallback(assetName) {
         method: 'get',
         url: customUrl,
         responseType: 'stream',
-        timeout: 5000,
+        timeout: POSTER_PROXY_TIMEOUT_MS(),
         validateStatus: (status) => status >= 200 && status < 300,
         headers: { 'User-Agent': `AIOMetadata/${buildInfo.version}` }
       });

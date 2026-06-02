@@ -671,6 +671,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
 
   // --- Rate Limiting ---
   {
+    key: 'POSTER_PROXY_TIMEOUT_MS',
+    envVar: 'POSTER_PROXY_TIMEOUT_MS',
+    label: 'Poster Proxy Timeout (ms)',
+    description: 'Milliseconds to wait for an upstream poster/art image before serving the fallback. Raise this if a slow rating/poster-generation service times out on first render.',
+    category: 'Rate Limiting',
+    type: 'number',
+    default: 10000,
+  },
+  {
     key: 'JIKAN_MAX_CONCURRENT',
     envVar: 'JIKAN_MAX_CONCURRENT',
     label: 'Jikan Max Concurrent',
@@ -861,6 +870,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     category: 'Diagnostics',
     type: 'number',
     default: 10000,
+  },
+  {
+    key: 'DASHBOARD_METADATA_LANGUAGE',
+    envVar: 'DASHBOARD_METADATA_LANGUAGE',
+    label: 'Dashboard Title Language',
+    description: 'Preferred language code for popular-content titles in the dashboard (e.g. en). A title captured in this language is not overwritten by requests in other languages. Leave blank to always use the most recent request.',
+    category: 'Diagnostics',
+    type: 'string',
+    default: 'en',
   },
 
   // --- Server (bootstrap, env-only) ---

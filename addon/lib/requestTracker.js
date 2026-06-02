@@ -593,15 +593,36 @@ class RequestTracker {
   // Capture metadata from complete meta components
   // NOTE: This function intentionally runs even when DISABLE_METRICS=true because it stores
   // content_metadata for the rating page functionality, not just telemetry/analytics metrics.
-  async captureMetadataFromComponents(metaId, meta, metaType) {
+  async captureMetadataFromComponents(metaId, meta, metaType, buildLanguage = null) {
     try {
       if (!meta || !meta.name) return;
 
       const type = meta.type || metaType || "unknown";
+      const canonicalKey = this.canonicalContentMetadataKey(type, metaId);
+
+      const preferredLang = (process.env.DASHBOARD_METADATA_LANGUAGE || "en").split("-")[0].toLowerCase();
+      const buildLang = (buildLanguage || "").split("-")[0].toLowerCase();
+      const buildIsPreferred = !preferredLang || (!!buildLang && buildLang === preferredLang);
+
+      let title = meta.name;
+      let titleLang = buildLang || null;
+
+      if (preferredLang && !buildIsPreferred) {
+        let existing = null;
+        try {
+          const existingStr = await redis.get(canonicalKey);
+          if (existingStr) existing = JSON.parse(existingStr);
+        } catch (_) {}
+        if (existing && existing.title_lang === preferredLang && existing.title) {
+          title = existing.title;
+          titleLang = preferredLang;
+        }
+      }
 
       // Store metadata for later lookup
       const metadataInfo = {
-        title: meta.name,
+        title,
+        title_lang: titleLang,
         type: meta.type || metaType,
         rating: meta.imdbRating || meta.rating || null,
         year: meta.year || null,
@@ -612,7 +633,6 @@ class RequestTracker {
         cached_at: new Date().toISOString(),
       };
 
-      const canonicalKey = this.canonicalContentMetadataKey(type, metaId);
       const metadataPayload = JSON.stringify(metadataInfo);
 
       logger.debug(

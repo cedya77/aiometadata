@@ -503,6 +503,15 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 
 ---
 
+## Dashboard Configuration
+
+### `DASHBOARD_METADATA_LANGUAGE`
+- **Default**: `en`
+- **Description**: Preferred language code for popular-content titles shown on the dashboard Content tab. A title captured in this language is not overwritten by requests in other languages. Leave blank to always use the most recent request's language.
+- **Example**: `DASHBOARD_METADATA_LANGUAGE=fr`
+
+---
+
 ## Rate Limiting & Performance
 
 ### `MAX_CONCURRENT_REQUESTS`
@@ -520,6 +529,11 @@ These caps bound the per-process heap used by module-level caches. The defaults 
 - **Default**: `0` (disabled)
 - **Description**: Periodically logs heap usage and in-memory cache sizes to the console. Value is the interval in minutes. Useful for monitoring memory on public instances.
 - **Example**: `HEAP_LOG_INTERVAL_MIN=30`
+
+### `POSTER_PROXY_TIMEOUT_MS`
+- **Default**: `10000`
+- **Description**: Milliseconds to wait for an upstream poster/art image (RPDB, Top Posters, or a custom art pattern) before giving up and serving the fallback poster. Raise this if a slow rating/poster-generation service frequently times out on first render.
+- **Example**: `POSTER_PROXY_TIMEOUT_MS=15000`
 
 ### `REQUEST_TIMEOUT`
 - **Default**: `8000`

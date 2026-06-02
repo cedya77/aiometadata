@@ -1630,7 +1630,7 @@ async function writeMetaComponentsWithConfig({ config, metaId, result, ttl = MET
 
   try {
     const requestTracker = require('./requestTracker');
-    requestTracker.captureMetadataFromComponents(metaId, meta, meta.type).catch(() => {});
+    requestTracker.captureMetadataFromComponents(metaId, meta, meta.type, config?.language || 'en-US').catch(() => {});
   } catch (error: any) {
     cacheLogger.warn(`Failed to capture metadata for dashboard: ${error.message}`);
   }
