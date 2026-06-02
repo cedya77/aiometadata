@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.2](https://github.com/cedya77/aiometadata/compare/v2.6.1...v2.6.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* stamp tmdb/tvdb/imdb/kitsu/mal ids on anime catalog metas so custom art patterns resolve ([977fc72](https://github.com/cedya77/aiometadata/commit/977fc72e27469752dfce0d7eb4c0ae9f8ca2587b))
+
 ## [2.6.1](https://github.com/cedya77/aiometadata/compare/v2.6.0...v2.6.1) (2026-06-02)
 
 
