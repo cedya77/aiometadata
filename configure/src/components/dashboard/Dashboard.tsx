@@ -582,6 +582,18 @@ export function Dashboard() {
   // Mobile layout with push/pop navigation
   if (isMobile) {
     const activePage = dashboardPages.find(p => p.value === activeMobileSection);
+    const activePageIndex = activeMobileSection
+      ? dashboardPages.findIndex(p => p.value === activeMobileSection)
+      : -1;
+    const prevPage = activePageIndex > 0 ? dashboardPages[activePageIndex - 1] : null;
+    const nextPage = activePageIndex >= 0 && activePageIndex < dashboardPages.length - 1
+      ? dashboardPages[activePageIndex + 1]
+      : null;
+    const goToSection = (value: DashboardTab) => {
+      setActiveTab(value);
+      setActiveMobileSection(value);
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+    };
 
     return (
       <div className="w-full p-4 overflow-hidden">
@@ -639,6 +651,33 @@ export function Dashboard() {
               </button>
               <h2 className="text-xl font-semibold mb-4">{activePage?.title}</h2>
               {activePage?.component}
+
+              <div className="mt-8 flex items-stretch gap-2">
+                <button
+                  onClick={() => prevPage && goToSection(prevPage.value as DashboardTab)}
+                  disabled={!prevPage}
+                  className="flex-1 min-w-0 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-card/80 backdrop-blur-sm px-3 py-3 text-left transition-colors active:bg-white/[0.04] disabled:opacity-40 disabled:active:bg-transparent"
+                  aria-label={prevPage ? `Previous: ${prevPage.title}` : 'No previous section'}
+                >
+                  <ChevronLeft className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground/70">Previous</div>
+                    <div className="truncate text-sm font-medium text-foreground">{prevPage?.title ?? '—'}</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => nextPage && goToSection(nextPage.value as DashboardTab)}
+                  disabled={!nextPage}
+                  className="flex-1 min-w-0 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-card/80 backdrop-blur-sm px-3 py-3 text-right transition-colors active:bg-white/[0.04] disabled:opacity-40 disabled:active:bg-transparent"
+                  aria-label={nextPage ? `Next: ${nextPage.title}` : 'No next section'}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground/70">Next</div>
+                    <div className="truncate text-sm font-medium text-foreground">{nextPage?.title ?? '—'}</div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

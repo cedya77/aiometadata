@@ -106,29 +106,28 @@ function ContentRow({ content, rank, maxRequests }: { content: ContentItem; rank
     <div className="group relative flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
       <RankBadge rank={rank} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1.5">
           <TypeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <span className="font-medium truncate">{content.title}</span>
           {content.year && (
             <span className="text-xs text-muted-foreground shrink-0">({content.year})</span>
           )}
         </div>
-        <div className="relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
-            style={{ width: `${barWidth}%` }}
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-3 shrink-0">
-        {content.rating && (
-          <Badge variant="outline" className="text-xs font-medium bg-yellow-500/15 text-yellow-300 border-yellow-500/30">
-            {String(content.rating)}
-          </Badge>
-        )}
-        <div className="text-right min-w-[3rem]">
-          <span className="text-sm font-semibold">{content.requests}</span>
-          <p className="text-[10px] text-muted-foreground leading-none">requests</p>
+        <div className="flex items-center gap-2.5">
+          <div className="relative h-1.5 flex-1 min-w-0 rounded-full bg-muted/50 overflow-hidden">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
+              style={{ width: `${barWidth}%` }}
+            />
+          </div>
+          {content.rating && (
+            <Badge variant="outline" className="shrink-0 text-xs font-medium bg-yellow-500/15 text-yellow-300 border-yellow-500/30">
+              {String(content.rating)}
+            </Badge>
+          )}
+          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+            <span className="font-semibold text-foreground">{content.requests}</span> {content.requests === 1 ? "request" : "requests"}
+          </span>
         </div>
       </div>
     </div>

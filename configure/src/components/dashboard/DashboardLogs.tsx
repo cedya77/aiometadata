@@ -248,7 +248,7 @@ export function DashboardLogs({ data, loading, paused = false, onPauseToggle, on
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               {hasFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X className="h-3 w-3 mr-1" />
@@ -425,7 +425,7 @@ const LogRow = React.memo(function LogRow({
 
   return (
     <div
-      className="group flex items-start gap-2 px-2 py-0.5 rounded hover:bg-white/[0.03]"
+      className="group flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2 px-2 py-1.5 sm:py-0.5 border-b border-white/[0.04] sm:border-0 sm:rounded hover:bg-white/[0.03]"
       role={hasDetail ? "button" : undefined}
       tabIndex={hasDetail ? 0 : undefined}
       aria-expanded={hasDetail ? expanded : undefined}
@@ -435,6 +435,7 @@ const LogRow = React.memo(function LogRow({
       } : undefined}
       style={{ cursor: hasDetail ? "pointer" : "default" }}
     >
+      <div className="flex items-center gap-2 flex-wrap shrink-0 min-w-0">
       {hasDetail ? (
         expanded
           ? <ChevronDown className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground/60" />
@@ -444,7 +445,7 @@ const LogRow = React.memo(function LogRow({
       )}
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="text-muted-foreground/50 shrink-0 tabular-nums select-none mt-px">
+          <span className="text-muted-foreground/50 shrink-0 tabular-nums select-none mt-px order-last ml-auto sm:order-none sm:ml-0">
             {formatTime(entry.timestamp)}
           </span>
         </TooltipTrigger>
@@ -468,6 +469,7 @@ const LogRow = React.memo(function LogRow({
           <TooltipContent side="right">{entry.userId}</TooltipContent>
         </Tooltip>
       )}
+      </div>
       <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${entry.level === 0 ? "text-red-400" : entry.level === 1 ? "text-yellow-400" : "text-foreground/80"}`}>
         {entry.message}
         {expanded && entry.args && (
@@ -476,7 +478,7 @@ const LogRow = React.memo(function LogRow({
       </span>
       <button
         onClick={(e) => { e.stopPropagation(); onCopy(entry); }}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-foreground p-0.5"
+        className="hidden sm:block shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-foreground p-0.5"
         title="Copy entry"
         tabIndex={-1}
       >

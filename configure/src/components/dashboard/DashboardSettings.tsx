@@ -149,7 +149,7 @@ function TagsInput({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-1.5 min-h-[2rem] rounded-md border border-input bg-background px-2 py-1 w-72 ${
+      className={`flex flex-wrap items-center gap-1.5 min-h-[2rem] rounded-md border border-input bg-background px-2 py-1 flex-1 min-w-0 sm:flex-none sm:w-72 ${
         disabled ? "opacity-50 pointer-events-none" : ""
       }`}
       onClick={() => inputRef.current?.focus()}
@@ -243,7 +243,7 @@ function SettingRow({ setting }: { setting: SettingItem }) {
   }
 
   return (
-    <div className={`flex items-start gap-4 py-4 border-b border-border/50 last:border-0 transition-opacity ${isDisabled ? "opacity-40" : ""}`}>
+    <div className={`flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4 py-4 border-b border-border/50 last:border-0 transition-opacity ${isDisabled ? "opacity-40" : ""}`}>
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{setting.label}</span>
@@ -289,9 +289,9 @@ function SettingRow({ setting }: { setting: SettingItem }) {
         </p>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
         {setting.uiHint === "tags" ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto">
             <TagsInput
               value={localValue}
               onChange={setLocalValue}
@@ -342,7 +342,7 @@ function SettingRow({ setting }: { setting: SettingItem }) {
               );
             }}
           >
-            <SelectTrigger className="h-8 w-48 text-xs">
+            <SelectTrigger className="h-8 w-full sm:w-48 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -354,8 +354,8 @@ function SettingRow({ setting }: { setting: SettingItem }) {
             </SelectContent>
           </Select>
         ) : (
-          <div className="flex items-center gap-1.5">
-            <div className="relative">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto">
+            <div className="relative flex-1 min-w-0 sm:flex-none">
               <Input
                 type={setting.type === "number" ? "number" : "text"}
                 value={displayValue}
@@ -366,7 +366,7 @@ function SettingRow({ setting }: { setting: SettingItem }) {
                 }}
                 {...(setting.type === "number" && setting.min != null ? { min: setting.min } : {})}
                 {...(setting.type === "number" && setting.max != null ? { max: setting.max } : {})}
-                className={`h-8 w-48 text-xs font-mono ${setting.sensitive ? "pr-8" : ""}`}
+                className={`h-8 w-full sm:w-48 text-xs font-mono ${setting.sensitive ? "pr-8" : ""}`}
               />
               {setting.sensitive && (
                 <button
